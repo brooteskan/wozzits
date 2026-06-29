@@ -8,7 +8,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 27;
+    internal const uint AbiVersion = 28;
 
     private static int _resolverRegistered;
 
@@ -55,15 +55,19 @@ internal static partial class WozzitsEngineAbi
     internal static partial WzResult WzEditorAssetCatalog(out WzBuffer outCatalog);
 
     // Device-free, read-only import of a GLB scene's component hierarchy (issue
-    // #213 Phase 3b-1). glbPathUtf8 is an ABSOLUTE path; the returned WzBuffer's
-    // byte 0 is a WzEditorGlbSceneHierarchyAbi (ok=0 + error on failure). Free the
-    // buffer with WzFreeBuffer.
+    // #213 Phase 3b-1). glbPathUtf8 is the authored source_path verbatim (relative
+    // or absolute, optionally quote-wrapped); the engine roots it against
+    // resourceRootUtf8 using its file-carrier convention, so no path resolution is
+    // done editor-side. The returned WzBuffer's byte 0 is a
+    // WzEditorGlbSceneHierarchyAbi (ok=0 + error on failure). Free the buffer with
+    // WzFreeBuffer.
     [LibraryImport(
         LibraryName,
         EntryPoint = "wz_import_glb_scene_hierarchy",
         StringMarshalling = StringMarshalling.Utf8)]
     internal static partial WzBuffer WzImportGlbSceneHierarchy(
         string glbPathUtf8,
+        string? resourceRootUtf8,
         uint sceneIndex);
 
     [LibraryImport(

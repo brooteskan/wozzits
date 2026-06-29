@@ -282,10 +282,11 @@ public sealed partial class WozzitsEngineNativeClient
     }
 
     public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
-        string absoluteGlbPath,
+        string glbPath,
+        string? resourceRoot,
         uint sceneIndex)
     {
-        if (string.IsNullOrWhiteSpace(absoluteGlbPath))
+        if (string.IsNullOrWhiteSpace(glbPath))
         {
             return new EngineGlbSceneHierarchy
             {
@@ -300,7 +301,8 @@ public sealed partial class WozzitsEngineNativeClient
         try
         {
             buffer = WozzitsEngineAbi.WzImportGlbSceneHierarchy(
-                absoluteGlbPath,
+                glbPath,
+                resourceRoot,
                 sceneIndex);
             if (buffer.Data == IntPtr.Zero)
             {

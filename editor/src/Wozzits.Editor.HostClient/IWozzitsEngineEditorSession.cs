@@ -12,10 +12,11 @@ public interface IWozzitsEngineEditorSession
 
     // Device-free, READ-ONLY import of a GLB scene's component hierarchy (issue
     // #213 Phase 3b-1), so the inspector can show what a node's glb_scene_source
-    // descriptor grafts as children. absoluteGlbPath is a resolved filesystem
-    // path; returns Ok=false (with Error) when the GLB cannot be read/imported.
+    // descriptor grafts as children. glbPath is the authored source_path verbatim
+    // (relative or absolute); the engine roots it against the project's resource
+    // root. Returns Ok=false (with Error) when the GLB cannot be read/imported.
     EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
-        string absoluteGlbPath,
+        string glbPath,
         uint sceneIndex);
 
     EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(

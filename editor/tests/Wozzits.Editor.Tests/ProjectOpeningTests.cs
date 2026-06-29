@@ -1936,10 +1936,24 @@ public sealed partial class ProjectOpeningTests
 
         var client = new WozzitsEngineNativeClient();
 
-        var hierarchy = client.ImportGlbSceneHierarchy(glbPath, sceneIndex: 0u);
+        // Absolute path with no resource root.
+        var hierarchy = client.ImportGlbSceneHierarchy(
+            glbPath, resourceRoot: null, sceneIndex: 0u);
         Assert.True(hierarchy.Ok, hierarchy.Error);
         Assert.Equal("Scene", hierarchy.SceneName);
         Assert.Equal(0u, hierarchy.SceneIndex);
+
+        // The engine roots a resource-relative path against the supplied resource
+        // root (the rooting the editor used to do itself) — same hierarchy.
+        var rooted = client.ImportGlbSceneHierarchy(
+            "tank1.glb",
+            resourceRoot: Path.Combine(
+                Path.GetDirectoryName(abiPath) ?? string.Empty,
+                "resources",
+                "gltf"),
+            sceneIndex: 0u);
+        Assert.True(rooted.Ok, rooted.Error);
+        Assert.Equal(3, rooted.Components.Count);
 
         // tank1.glb scene 0 is a single chain body -> turret -> gun, all meshes.
         Assert.Equal(3, hierarchy.Components.Count);
@@ -1958,6 +1972,7 @@ public sealed partial class ProjectOpeningTests
                 "resources",
                 "gltf",
                 "does_not_exist.glb"),
+            resourceRoot: null,
             sceneIndex: 0u);
         Assert.False(missing.Ok);
         Assert.False(string.IsNullOrWhiteSpace(missing.Error));
@@ -2465,8 +2480,8 @@ public sealed partial class ProjectOpeningTests
 
     // Selecting a "Mesh from GLB scene" node (schema e7000414) resolves the connected
     // GLB by walking its OWN `source_file` edge to the file node's source_path (one
-    // hop — no Scene dependency), imports the hierarchy (against the project dir), and
-    // shows it as a tree with mesh markers.
+    // hop — no Scene dependency), forwards that authored path verbatim to the import
+    // (the engine roots it), and shows the hierarchy as a tree with mesh markers.
     [Fact]
     public void MeshFromGlbScenePickerPopulatesTreeFromConnectedGlb()
     {
@@ -2500,12 +2515,11 @@ public sealed partial class ProjectOpeningTests
         Assert.True(viewModel.Inspector.HasGlbNodes);
         Assert.False(viewModel.Inspector.HasGlbNodePickerHint);
 
-        // The hierarchy was imported against the resolved absolute GLB path.
+        // The authored source_path is forwarded verbatim; rooting against the
+        // project's resource root is the engine's job, not the view-model's.
         var import = Assert.Single(session.GlbHierarchyImports);
         Assert.Equal(0u, import.SceneIndex);
-        Assert.Equal(
-            Path.GetFullPath(Path.Combine(projectDir, "gltf/tank1.glb")),
-            import.Path);
+        Assert.Equal("gltf/tank1.glb", import.Path);
 
         // The tree mirrors the GLB hierarchy: a single body root -> turret -> gun.
         var body = Assert.Single(viewModel.Inspector.GlbNodes);
@@ -2526,11 +2540,11 @@ public sealed partial class ProjectOpeningTests
     }
 
     // The file node's source_path may be a "Copy as path" value wrapped in double
-    // quotes ("...gltf/tank1.glb"); the picker strips a matched surrounding pair before
-    // resolving, so the hierarchy still imports against the bare path. (Belt-and-
-    // suspenders with the engine's resolve_path quote-stripping.)
+    // quotes ("...gltf/tank1.glb"). The picker forwards it verbatim (only trimmed) —
+    // stripping the surrounding quotes is the engine's resolve_path job now, not the
+    // view-model's — so the authored quotes survive the hand-off to the import.
     [Fact]
-    public void MeshFromGlbScenePickerStripsQuotedSourcePath()
+    public void MeshFromGlbScenePickerForwardsQuotedSourcePathVerbatim()
     {
         var projectDir = Path.Combine(Path.GetTempPath(), "wz-glb-quoted-vm");
         var session = new RecordingEditorSession
@@ -2552,13 +2566,10 @@ public sealed partial class ProjectOpeningTests
             n => n.SchemaLabel == "e7000414");
         viewModel.AssetGraph.SelectNode(extractor);
 
-        // The picker imported against the bare (unquoted) resolved path, not a path
-        // with embedded quotes.
+        // The quoted source_path is forwarded as authored; the engine strips the
+        // surrounding quotes when it roots the path.
         var import = Assert.Single(session.GlbHierarchyImports);
-        Assert.Equal(
-            Path.GetFullPath(Path.Combine(projectDir, "gltf/tank1.glb")),
-            import.Path);
-        Assert.DoesNotContain("\"", import.Path);
+        Assert.Equal("\"gltf/tank1.glb\"", import.Path);
 
         Assert.True(viewModel.Inspector.HasGlbNodes);
         Assert.False(viewModel.Inspector.HasGlbNodePickerHint);
@@ -3400,10 +3411,10 @@ public sealed partial class ProjectOpeningTests
             new() { Ok = true };
 
         public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
-            string absoluteGlbPath,
+            string glbPath,
             uint sceneIndex)
         {
-            GlbHierarchyImports.Add((absoluteGlbPath, sceneIndex));
+            GlbHierarchyImports.Add((glbPath, sceneIndex));
             return GlbHierarchy;
         }
 

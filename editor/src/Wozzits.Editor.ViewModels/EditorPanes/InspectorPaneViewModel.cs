@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.HostClient;
@@ -14,10 +13,6 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 {
     private readonly IWozzitsEngineEditorSession? _editorSession;
     private readonly Action<string>? _log;
-    // Project root the GLB import roots its path against (glb_scene_source.path is
-    // resource-relative, and the editor launches with the project dir as the
-    // resource root — issue #213 Phase 3a). Empty in design-time/test contexts.
-    private readonly string _projectDirectory;
     private string _emptyState = "No scene or asset graph node selected.";
     private string _header = string.Empty;
     private InspectorSelectionKind _selectionKind;
@@ -118,12 +113,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     public InspectorPaneViewModel(
         IWozzitsEngineEditorSession? editorSession = null,
-        Action<string>? log = null,
-        string? projectDirectory = null)
+        Action<string>? log = null)
     {
         _editorSession = editorSession;
         _log = log;
-        _projectDirectory = projectDirectory ?? string.Empty;
         ApplyCameraCommand = new RelayCommand(
             ApplyCamera,
             () => HasSceneNodeSelection && HasCameraComponent);
@@ -2289,10 +2282,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     }
 
     // Walk the asset-graph edges from the selected "Mesh from GLB scene" node to the
-    // GLB file on disk: follow the `scene` input edge to the connected "Scene from
-    // GLB" node, then that node's `source_file` input edge to the file node, and read
-    // its `source_path` string param, resolved to an absolute path against the
-    // project directory. Returns empty when any link is missing.
+    // GLB file: follow the `scene` input edge to the connected "Scene from GLB"
+    // node, then that node's `source_file` input edge to the file node, and read its
+    // `source_path` string param (returned verbatim; the engine roots it on import).
+    // Returns empty when any link is missing.
     private string ResolveConnectedGlbPath(AssetGraphNodeCardViewModel extractorNode)
     {
         // The extractor's `scene` input port index (the port carries the connected
@@ -2341,7 +2334,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return string.Empty;
         }
 
-        return ResolveProjectRelativePath(sourcePath!);
+        // Hand the authored source_path to the engine verbatim (only whitespace
+        // trimmed). The engine roots it against the project's resource root and
+        // strips any "Copy as path" quote-wrapping — the editor does not
+        // reimplement that path convention.
+        return sourcePath!.Trim();
     }
 
     // The id of the node feeding `toInputPort` of `toNodeId` (the single provider an
@@ -2388,47 +2385,6 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         return list.Count == 1 ? list[0].Index : null;
-    }
-
-    // Resolve a resource-relative GLB path (as authored on the file node's
-    // source_path param) to an absolute filesystem path against the project
-    // directory, the resource root the editor launches with (matching how the
-    // GLB scene-source descriptor paths are rooted). An already-absolute path is
-    // returned unchanged; with no project directory the path is returned as-is.
-    private string ResolveProjectRelativePath(string sourcePath)
-    {
-        var trimmed = StripSurroundingQuotes(sourcePath.Trim());
-        if (string.IsNullOrEmpty(trimmed))
-        {
-            return string.Empty;
-        }
-
-        if (Path.IsPathRooted(trimmed))
-        {
-            return trimmed;
-        }
-
-        if (string.IsNullOrEmpty(_projectDirectory))
-        {
-            return trimmed;
-        }
-
-        return Path.GetFullPath(Path.Combine(_projectDirectory, trimmed));
-    }
-
-    // Strip a single matched surrounding pair of ASCII double-quotes (belt-and-
-    // suspenders with the engine's FileCarrierAssetModule::resolve_path): Windows
-    // Explorer's "Copy as path" wraps the path in double-quotes ("C:\...\tank1.glb"),
-    // so a source_path authored that way still imports. Only a genuine leading+
-    // trailing pair is removed; interior quotes and a lone unbalanced quote stay.
-    private static string StripSurroundingQuotes(string value)
-    {
-        if (value.Length >= 2 && value[0] == '"' && value[^1] == '"')
-        {
-            return value[1..^1];
-        }
-
-        return value;
     }
 
     // The currently authored `node_id` param value (the picked GLB node), used to

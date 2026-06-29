@@ -52,7 +52,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(
-            editorSession, AppendEditorLog, _projectDirectory);
+            editorSession, AppendEditorLog);
         SceneTree = new SceneTreeEditorPaneViewModel(editorSession);
         InitializeDockLayout();
         _editorLogSubscription = editorLog?.Subscribe(AppendEditorLog);

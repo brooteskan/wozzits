@@ -48,12 +48,17 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
     }
 
     public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
-        string absoluteGlbPath,
+        string glbPath,
         uint sceneIndex)
     {
-        // Read-only GLB import is device-free and project-independent (it only
-        // reads + parses the file), so it does not need a live native session.
-        return _client.ImportGlbSceneHierarchy(absoluteGlbPath, sceneIndex);
+        // Read-only GLB import is device-free and does not need a live native
+        // session. `glbPath` is the authored source_path verbatim; the engine
+        // roots it against the project directory (the editor's resource root)
+        // using its file-carrier convention, so no resolution happens here.
+        return _client.ImportGlbSceneHierarchy(
+            glbPath,
+            _projectDirectory,
+            sceneIndex);
     }
 
     public EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
