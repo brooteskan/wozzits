@@ -176,7 +176,6 @@ target_sources(window_engine PRIVATE
 
     rendering/clipmap_view.cpp
     rendering/renderable_gpu_cache.cpp
-    rendering/renderable_debug_runtime.cpp
     rendering/renderable_pipeline_cache.cpp
     rendering/render_program_pipeline_cache.cpp
     rendering/builtin_render_programs.cpp

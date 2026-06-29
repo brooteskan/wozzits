@@ -261,26 +261,6 @@ namespace wz::engine::rendering
         terrain_far_splat_entries_.push_back(std::move(entry));
     }
 
-    PreparedRenderable RenderableGpuCache::realize(
-        wz::gpu::Device& device,
-        wz::engine::assets::EngineAssetLibrary& assets,
-        wz::engine::assets::RenderableHandle handle)
-    {
-        if (!device.valid())
-            return {};
-
-        if (!handle.valid())
-            return {};
-
-        const wz::engine::assets::RenderableAssetData* renderable =
-            assets.renderables().get_renderable_data(handle);
-
-        if (!renderable || !renderable->valid())
-            return {};
-
-        return realize_data(device, assets, *renderable);
-    }
-
     PreparedRenderable RenderableGpuCache::realize_data(
         wz::gpu::Device& device,
         wz::engine::assets::EngineAssetLibrary& assets,

@@ -50,11 +50,6 @@ namespace wz::engine::rendering
         explicit RenderableGpuCache(
             wz::gpu::DeferredReleaseQueue& release_queue);
 
-        PreparedRenderable realize(
-            wz::gpu::Device& device,
-            wz::engine::assets::EngineAssetLibrary& assets,
-            wz::engine::assets::RenderableHandle handle);
-
         PreparedRenderable realize_data(
             wz::gpu::Device& device,
             wz::engine::assets::EngineAssetLibrary& assets,
