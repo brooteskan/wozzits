@@ -946,7 +946,21 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneMotionAbi.AlignmentStrength),
             12);
 
-        AssertSize<WzEditorSceneNodeAbi>(616);
+        AssertSize<WzEditorSceneAudioSourceAbi>(16);
+        AssertOffset<WzEditorSceneAudioSourceAbi>(
+            nameof(WzEditorSceneAudioSourceAbi.AudioRenderableNodeId),
+            0);
+        AssertOffset<WzEditorSceneAudioSourceAbi>(
+            nameof(WzEditorSceneAudioSourceAbi.HasRenderableRef),
+            8);
+        AssertOffset<WzEditorSceneAudioSourceAbi>(
+            nameof(WzEditorSceneAudioSourceAbi.AutoPlay),
+            9);
+        AssertOffset<WzEditorSceneAudioSourceAbi>(
+            nameof(WzEditorSceneAudioSourceAbi.Enabled),
+            10);
+
+        AssertSize<WzEditorSceneNodeAbi>(632);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -1001,6 +1015,9 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Motion),
             600);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.AudioSource),
+            616);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -1335,6 +1352,22 @@ internal readonly struct WzEditorSceneNodeAbi
     // valid iff its HAS_* flag is set. Appended last to mirror the native struct.
     public readonly WzEditorSceneCollisionAbi Collision;
     public readonly WzEditorSceneMotionAbi Motion;
+    // Persisted AudioSource component field values (read-back). Appended last to
+    // mirror the native struct. Present iff HasAudioSource.
+    public readonly WzEditorSceneAudioSourceAbi AudioSource;
+}
+
+// Authored AudioSource-component field values surfaced read-back. Mirrors
+// WzEditorSceneAudioSource. Present iff HasAudioSource.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneAudioSourceAbi
+{
+    public readonly ulong AudioRenderableNodeId;
+    public readonly byte HasRenderableRef;
+    public readonly byte AutoPlay;
+    public readonly byte Enabled;
+    public readonly byte Reserved0;
+    public readonly uint Reserved1;
 }
 
 // Authored Collision-component field values surfaced read-back (read-back gap
@@ -1526,6 +1559,7 @@ internal static class WzEditorSceneNodeFlags
     // inspector restores them on select + after reload.
     public const uint HasCollision = 1u << 11;
     public const uint HasMotion = 1u << 12;
+    public const uint HasAudioSource = 1u << 13;
 }
 
 internal static class WzEditorSceneCameraFlags

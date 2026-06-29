@@ -373,7 +373,31 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // Thread the "Collision" picker (terrain-stick track) the same way: the
         // inspector takes plain option data, filtered to Collision outputs.
         RefreshInspectorCollisionSources();
+
+        // Thread the "Audio Source" picker (audio-track item 10), filtered to
+        // audio-renderable outputs.
+        RefreshInspectorAudioRenderableSources();
     }
+
+    // Thread the "Audio Source" picker with the asset-graph nodes whose OUTPUT
+    // asset type is AudioRenderable (2142), filtering on the output port's asset
+    // type exactly as the collision/render-program pickers do.
+    private void RefreshInspectorAudioRenderableSources()
+    {
+        Inspector.SetAvailableAudioRenderables(
+            AssetGraph.Nodes
+                .Where(IsAudioRenderableNode)
+                .Select(node => new InspectorAssetGraphRefOptionViewModel(
+                    node.Id,
+                    node.DisplayName)));
+    }
+
+    // True when a node produces an audio renderable the AudioSource component can
+    // reference (kAssetTypeAudioRenderable = 2142 in type_extensions.h).
+    private static bool IsAudioRenderableNode(AssetGraphNodeCardViewModel node) =>
+        node.OutputPorts.Any(port => port.Type == AudioRenderableAssetTypeId);
+
+    private const uint AudioRenderableAssetTypeId = 2142;
 
     // Thread the "Collision" picker (terrain-stick track) with the asset-graph
     // nodes whose OUTPUT asset type is Collision (150). Filtering on the output

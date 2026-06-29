@@ -341,6 +341,7 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         RenderProgramNodeId = node.RenderProgramNodeId;
         Collision = node.Collision;
         Motion = node.Motion;
+        AudioSource = node.AudioSource;
         Components = node.Components;
         Behaviors = node.Behaviors;
         IsInstanced = isInstanced;
@@ -427,6 +428,10 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     public EngineSceneNodeCollision? Collision { get; internal set; }
 
     public EngineSceneNodeMotion? Motion { get; internal set; }
+
+    // Persisted AudioSource component field values (read-back); settable so the
+    // inspector's live edits mirror back onto the cached node (like Collision).
+    public EngineSceneNodeAudioSource? AudioSource { get; internal set; }
 
     // Mutable so the inspector's live add/remove of optional components keeps
     // reselection consistent: SetComponentFields rebuilds the inspector rows from

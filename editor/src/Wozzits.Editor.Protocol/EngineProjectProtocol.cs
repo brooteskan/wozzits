@@ -348,6 +348,11 @@ public sealed record EngineSceneNode
 
     public EngineSceneNodeMotion? Motion { get; init; }
 
+    // Persisted AudioSource component field values (read-back), null when the node
+    // has no AudioSource. The inspector restores the renderable reference + play
+    // policy on select + after reload.
+    public EngineSceneNodeAudioSource? AudioSource { get; init; }
+
     public List<EngineSceneNode> Children { get; init; } = [];
 }
 
@@ -374,6 +379,18 @@ public sealed record EngineSceneNodeMotion
     public bool AlignToSurface { get; init; }
 
     public float AlignmentStrength { get; init; }
+}
+
+// Authored AudioSource-component field values surfaced read-back.
+// AudioRenderableNodeId is the authored audio-renderable asset-graph node id
+// (null when none); AutoPlay/Enabled are the per-entity play policy.
+public sealed record EngineSceneNodeAudioSource
+{
+    public ulong? AudioRenderableNodeId { get; init; }
+
+    public bool AutoPlay { get; init; } = true;
+
+    public bool Enabled { get; init; } = true;
 }
 
 public sealed record EngineSceneTransform

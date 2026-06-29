@@ -66,6 +66,15 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _motionFootprintRadius = string.Empty;
     private bool _motionAlignToSurface;
     private string _motionAlignmentStrength = string.Empty;
+    // "Audio Source" section (audio-track item 10): the audio-renderable asset-graph
+    // node this node references + per-entity play policy (auto_play / enabled). The
+    // picked reference stores the STABLE asset-graph node id; the section shows when
+    // the node HAS an audio_source component (added/removed via Add-Component / ✕).
+    private InspectorAssetGraphRefOptionViewModel? _selectedAudioRenderableOption;
+    private string _audioRenderableReferenceLabel = string.Empty;
+    private bool _hasAudioSourceComponent;
+    private bool _audioSourceAutoPlay = true;
+    private bool _audioSourceEnabled = true;
     private string _componentsHeader = "Components";
     private bool _hasTransform;
     private string _translationX = string.Empty;
@@ -137,6 +146,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // component via the generic remove verb and hides the section, like camera.
         RemoveCollisionComponentCommand = new RelayCommand(RemoveCollisionComponent);
         RemoveMotionComponentCommand = new RelayCommand(RemoveMotionComponent);
+        // "Audio Source" (audio-track item 10): the header ✕ removes the component
+        // via the generic remove verb and hides the section, like collision.
+        RemoveAudioSourceComponentCommand =
+            new RelayCommand(RemoveAudioSourceComponent);
     }
 
     // Raised after a scene-source reference/descriptor was set or cleared on the
@@ -173,6 +186,13 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // Collision outputs (kAssetTypeCollisionAsset = 150).
     public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
         AvailableCollisionSources { get; } = [];
+
+    // The audio-renderable asset-graph nodes the "Audio Source" picker offers
+    // (audio-track item 10). Threaded in from MainWindowViewModel on every
+    // selection, filtered to audio-renderable outputs (kAssetTypeAudioRenderable
+    // = 2142).
+    public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
+        AvailableAudioRenderables { get; } = [];
 
     // Registered behavior modules offered by the "+" add menu, refreshed from the
     // running engine each time a scene node is inspected. Each option carries its
@@ -216,6 +236,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public IRelayCommand RemoveCollisionComponentCommand { get; }
 
     public IRelayCommand RemoveMotionComponentCommand { get; }
+
+    // "Audio Source" (audio-track item 10).
+    public IRelayCommand RemoveAudioSourceComponentCommand { get; }
 
     public string NewBehaviorModule
     {
@@ -455,6 +478,76 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             if (SetProperty(ref _collisionConstrainMovement, value))
             {
                 OnCollisionFieldEdited();
+            }
+        }
+    }
+
+    // ─── Audio Source (audio-track item 10) ──────────────────────────────────────
+
+    // The audio-renderable asset-graph node chosen in the picker. Bound TwoWay to
+    // the ComboBox; a user pick applies immediately, mirroring the collision picker.
+    public InspectorAssetGraphRefOptionViewModel? SelectedAudioRenderableOption
+    {
+        get => _selectedAudioRenderableOption;
+        set
+        {
+            if (SetProperty(ref _selectedAudioRenderableOption, value)
+                && value is not null)
+            {
+                ApplyAudioRenderable();
+            }
+        }
+    }
+
+    public bool HasAvailableAudioRenderables =>
+        AvailableAudioRenderables.Count > 0;
+
+    public string AudioRenderableReferenceLabel
+    {
+        get => _audioRenderableReferenceLabel;
+        private set
+        {
+            if (SetProperty(ref _audioRenderableReferenceLabel, value))
+            {
+                OnPropertyChanged(nameof(AudioRenderableReferenceDisplay));
+            }
+        }
+    }
+
+    public string AudioRenderableReferenceDisplay =>
+        string.IsNullOrWhiteSpace(AudioRenderableReferenceLabel)
+            ? "(none)"
+            : $"Referencing: {AudioRenderableReferenceLabel}";
+
+    // Gates the "Audio Source" section: shown when the node HAS an audio_source
+    // component (added via Add-Component → Audio Source, removed via the ✕).
+    public bool HasAudioSourceComponent
+    {
+        get => _hasAudioSourceComponent;
+        private set => SetProperty(ref _hasAudioSourceComponent, value);
+    }
+
+    // Per-entity play policy. Toggling re-applies SetNodeAudioSourcePlay.
+    public bool AudioSourceAutoPlay
+    {
+        get => _audioSourceAutoPlay;
+        set
+        {
+            if (SetProperty(ref _audioSourceAutoPlay, value))
+            {
+                OnAudioSourcePlayEdited();
+            }
+        }
+    }
+
+    public bool AudioSourceEnabled
+    {
+        get => _audioSourceEnabled;
+        set
+        {
+            if (SetProperty(ref _audioSourceEnabled, value))
+            {
+                OnAudioSourcePlayEdited();
             }
         }
     }
@@ -1119,6 +1212,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // (held by Inspect) so populating the fields doesn't echo a live edit.
         RestoreCollisionState(node);
         RestoreMotionState(node);
+        RestoreAudioSourceState(node);
 
         if (node.Camera is not null)
         {
@@ -1359,6 +1453,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             HasMotionComponent = true;
             MirrorComponentAdded(kind);
         }
+        else if (string.Equals(kind, "audio_source", StringComparison.Ordinal))
+        {
+            HasAudioSourceComponent = true;
+            MirrorComponentAdded(kind);
+        }
         else if (!Components.Any(
             c => string.Equals(c.Kind, kind, StringComparison.Ordinal)))
         {
@@ -1447,6 +1546,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             "proximity" => "Proximity",
             "collision" => "Collision",
             "motion" => "Motion",
+            "audio_source" => "Audio Source",
+            "audio_listener" => "Audio Listener",
             _ => kind,
         };
     }
@@ -1863,6 +1964,138 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         _collisionConstrainMovement = false;
         OnPropertyChanged(nameof(CollisionConstrainMovement));
         HasCollisionComponent = false;
+    }
+
+    // ─── Audio Source (audio-track item 10) ──────────────────────────────────────
+
+    // Thread in the audio-renderable asset-graph nodes the picker offers, restoring
+    // the prior selection by id (mirrors SetAvailableCollisionSources).
+    public void SetAvailableAudioRenderables(
+        IEnumerable<InspectorAssetGraphRefOptionViewModel> options)
+    {
+        var previousId = _selectedAudioRenderableOption?.Id;
+        AvailableAudioRenderables.Clear();
+        InspectorAssetGraphRefOptionViewModel? restored = null;
+        foreach (var option in options)
+        {
+            AvailableAudioRenderables.Add(option);
+            if (previousId is { } id && option.Id == id)
+            {
+                restored = option;
+            }
+        }
+        _selectedAudioRenderableOption = restored;
+        OnPropertyChanged(nameof(SelectedAudioRenderableOption));
+        OnPropertyChanged(nameof(HasAvailableAudioRenderables));
+    }
+
+    // Apply the picked audio-renderable reference (stores the stable node id).
+    private void ApplyAudioRenderable()
+    {
+        if (!EnsureCanApply() || SelectedAudioRenderableOption is not { } option)
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeAudioRenderable(NodeId, option.Id);
+        SetEditResponse(response);
+        if (response.Ok)
+        {
+            AudioRenderableReferenceLabel = option.Label;
+        }
+        MirrorAudioSourceEdit();
+    }
+
+    // Re-push the play policy when auto_play / enabled toggles. Suppressed while a
+    // node's values are loading so selecting a node doesn't echo back.
+    private void OnAudioSourcePlayEdited()
+    {
+        if (_suppressLiveEdits || !EnsureCanApply())
+        {
+            return;
+        }
+        SetEditResponse(_editorSession!.SetNodeAudioSourcePlay(
+            NodeId, AudioSourceAutoPlay, AudioSourceEnabled));
+        MirrorAudioSourceEdit();
+    }
+
+    // Mirror the live edit onto the cached tree-node VM so an immediate reselect
+    // shows the edit instead of reverting to the snapshot (collision pattern).
+    private void MirrorAudioSourceEdit()
+    {
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.AudioSource = new EngineSceneNodeAudioSource
+            {
+                AudioRenderableNodeId = SelectedAudioRenderableOption?.Id,
+                AutoPlay = AudioSourceAutoPlay,
+                Enabled = AudioSourceEnabled,
+            };
+        }
+    }
+
+    // Remove the AudioSource component (section ✕): generic remove verb + hide.
+    private void RemoveAudioSourceComponent()
+    {
+        if (EnsureCanApply())
+        {
+            var response =
+                _editorSession!.RemoveNodeComponent(NodeId, "audio_source");
+            SetEditResponse(response);
+        }
+
+        MirrorComponentRemoved("audio_source");
+        ResetAudioSourceState();
+    }
+
+    // Reveal the section when the node carries an audio_source component and restore
+    // its persisted fields from the snapshot (pre-select the referenced renderable
+    // by id + the play flags). Runs under _suppressLiveEdits so populating doesn't
+    // echo a live edit.
+    private void RestoreAudioSourceState(SceneTreeNodeViewModel node)
+    {
+        var has = node.Components.Any(
+            c => string.Equals(c.Kind, "audio_source", StringComparison.Ordinal));
+        if (!has)
+        {
+            ResetAudioSourceState();
+            return;
+        }
+
+        HasAudioSourceComponent = true;
+
+        var audio = node.AudioSource;
+        if (audio?.AudioRenderableNodeId is { } nodeId)
+        {
+            var option = AvailableAudioRenderables.FirstOrDefault(
+                o => o.Id == nodeId);
+            _selectedAudioRenderableOption = option;
+            AudioRenderableReferenceLabel = option?.Label
+                ?? $"#{nodeId.ToString(CultureInfo.InvariantCulture)}";
+        }
+        else
+        {
+            _selectedAudioRenderableOption = null;
+            AudioRenderableReferenceLabel = string.Empty;
+        }
+        OnPropertyChanged(nameof(SelectedAudioRenderableOption));
+
+        _audioSourceAutoPlay = audio?.AutoPlay ?? true;
+        OnPropertyChanged(nameof(AudioSourceAutoPlay));
+        _audioSourceEnabled = audio?.Enabled ?? true;
+        OnPropertyChanged(nameof(AudioSourceEnabled));
+    }
+
+    private void ResetAudioSourceState()
+    {
+        _selectedAudioRenderableOption = null;
+        OnPropertyChanged(nameof(SelectedAudioRenderableOption));
+        AudioRenderableReferenceLabel = string.Empty;
+        _audioSourceAutoPlay = true;
+        OnPropertyChanged(nameof(AudioSourceAutoPlay));
+        _audioSourceEnabled = true;
+        OnPropertyChanged(nameof(AudioSourceEnabled));
+        HasAudioSourceComponent = false;
     }
 
     // ─── Motion (terrain-stick track) ────────────────────────────────────────────

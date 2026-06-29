@@ -362,6 +362,70 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Audio Source (audio-track item 10): pick the audio-
+                             renderable asset-graph node this node plays + its
+                             per-entity play policy (auto-play / enabled). Shown when
+                             the node has an AudioSource component, removed via the
+                             header ✕. Choosing a node / toggling a flag applies
+                             immediately (no Apply button). The picked reference
+                             stores the stable asset-graph node id. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasAudioSourceComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Audio Source"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveAudioSourceComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove audio source"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Audio renderable"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableAudioRenderables}"
+                                              SelectedItem="{Binding SelectedAudioRenderableOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick an audio renderable node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableAudioRenderables}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AudioRenderableReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Auto-play on load"
+                                          IsChecked="{Binding AudioSourceAutoPlay}"
+                                          Classes="InspectorCheck"/>
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding AudioSourceEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No audio renderable nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableAudioRenderables}"/>
+
+                            </StackPanel>
+                        </Border>
+
                         <!-- Motion (terrain-stick track): the Motion component's
                              terrain-constraint fields — whether the node sticks to the
                              terrain, ride height, footprint radius, surface-alignment
@@ -455,6 +519,12 @@
                                                 <MenuItem Header="Motion"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="motion"/>
+                                                <MenuItem Header="Audio Source"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="audio_source"/>
+                                                <MenuItem Header="Audio Listener"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="audio_listener"/>
                                             </MenuFlyout>
                                         </Button.Flyout>
                                     </Button>

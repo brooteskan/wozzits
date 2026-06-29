@@ -1239,6 +1239,96 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("(none)", viewModel.Inspector.CollisionReferenceDisplay);
     }
 
+    // Audio-track item 10: the "Audio Source" picker offers asset-graph nodes by
+    // their OUTPUT asset type (AudioRenderable = 2142). The section shows when the
+    // node has an audio_source component; picking a node applies SetNodeAudio-
+    // Renderable with the stable node id, toggling auto_play/enabled applies
+    // SetNodeAudioSourcePlay, and the ✕ removes the component.
+    [Fact]
+    public void InspectorAuthorsAudioSourceThroughEngineSession()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            // An audio renderable (output type 2142) — the only kind
+                            // the picker offers.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 9,
+                                DisplayName = "beep renderable",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 2142 },
+                                ],
+                            },
+                            // A render program (1049) — NOT audio, excluded.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 10,
+                                DisplayName = "lit program",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 1049 },
+                                ],
+                            },
+                        ],
+                    },
+                },
+                scene: SceneSnapshot(Node("host", visible: true))),
+            editorSession: editorSession);
+
+        var host = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(host);
+
+        // The picker lists only the audio renderable; the program is excluded.
+        var renderable =
+            Assert.Single(viewModel.Inspector.AvailableAudioRenderables);
+        Assert.Equal(9ul, renderable.Id);
+        Assert.Equal("beep renderable", renderable.Label);
+        Assert.False(viewModel.Inspector.HasAudioSourceComponent);
+
+        // Adding the AudioSource component reveals the section AND calls the
+        // generic add-component verb.
+        viewModel.Inspector.AddComponentCommand.Execute("audio_source");
+        Assert.True(viewModel.Inspector.HasAudioSourceComponent);
+        Assert.Contains(
+            editorSession.AddedComponents, c => c.Kind == "audio_source");
+
+        // Picking an audio renderable applies immediately with the STABLE node id.
+        viewModel.Inspector.SelectedAudioRenderableOption = renderable;
+        var pick = Assert.Single(editorSession.AudioRenderables);
+        Assert.Equal("host", pick.NodeId);
+        Assert.Equal(9ul, pick.AssetGraphNodeId);
+        Assert.Equal(
+            "Referencing: beep renderable",
+            viewModel.Inspector.AudioRenderableReferenceDisplay);
+
+        // Toggling a play flag re-applies the play policy.
+        viewModel.Inspector.AudioSourceAutoPlay = false;
+        var play = editorSession.AudioSourcePlays[^1];
+        Assert.Equal("host", play.NodeId);
+        Assert.False(play.AutoPlay);
+        Assert.True(play.Enabled);
+
+        // The ✕ removes the component (generic verb) and hides the section.
+        viewModel.Inspector.RemoveAudioSourceComponentCommand.Execute(null);
+        Assert.Contains(
+            editorSession.RemovedComponents, c => c.Kind == "audio_source");
+        Assert.False(viewModel.Inspector.HasAudioSourceComponent);
+        Assert.Null(viewModel.Inspector.SelectedAudioRenderableOption);
+        Assert.Equal(
+            "(none)", viewModel.Inspector.AudioRenderableReferenceDisplay);
+    }
+
     // Terrain-stick track: the "Motion" section shows when the node has a Motion
     // component; each terrain-constraint field edit applies live via
     // SetNodeMotionTerrain. The ✕ removes the component and hides the section.
