@@ -964,6 +964,10 @@ static inline uint8_t wz_write_set_motion_space(
 // so the entity is the whole address. Audio plays in PLAY mode only.
 
 // Play the entity's AudioSource (uses the renderable's baked gain/pitch/looping).
+// Plays the renderable's default clip: values[0] = -1 is the host's "use
+// default_index" sentinel, so this matches auto-play. A single-clip renderable
+// has only one clip, so it plays that. Use wz_write_play_sound_indexed to pick a
+// specific bank clip.
 static inline uint8_t wz_write_play_sound(
     const WzBehaviorFrameFacts* facts,
     WzBehaviorEntityId entity)
@@ -975,7 +979,28 @@ static inline uint8_t wz_write_play_sound(
     const WzBehaviorCommand command = {
         entity,
         WZ_BEHAVIOR_COMMAND_PLAY_SOUND,
-        { 0.0f, 0.0f, 0.0f, 0.0f },
+        { -1.0f, 0.0f, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Play a specific clip of the entity's AudioSource by index. For a bank-backed
+// renderable this selects entry `clip_index`; an out-of-range index falls back to
+// the renderable's default clip. The index is carried in values[0] (where the
+// host reads v0). A single-clip renderable ignores the index (it has one clip).
+static inline uint8_t wz_write_play_sound_indexed(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t clip_index)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_PLAY_SOUND,
+        { (float)clip_index, 0.0f, 0.0f, 0.0f },
     };
     return facts->write_command(facts->command_writer_user, &command);
 }

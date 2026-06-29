@@ -8,6 +8,7 @@
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/audio/audio_clip.h>
+#include <engine/assets/audio/audio_clip_bank.h>
 #include <engine/assets/audio/audio_renderable.h>
 
 #include <audio/mixer.h>
@@ -91,7 +92,11 @@ namespace wz::engine::assets::test {
             library_->audio_renderables().get_audio_renderable_data(h);
         ASSERT_NE(d, nullptr);
 
-        EXPECT_TRUE(d->clip.valid());
+        // Single-clip path now yields a one-element clip vector.
+        ASSERT_EQ(d->clips.size(), 1u);
+        EXPECT_EQ(d->default_index, 0u);
+        EXPECT_TRUE(d->clips[0].valid());
+        EXPECT_TRUE(d->valid());
         EXPECT_FLOAT_EQ(d->gain, 0.5f);
         EXPECT_FLOAT_EQ(d->pitch, 2.0f);
         EXPECT_TRUE(d->looping);
@@ -99,7 +104,7 @@ namespace wz::engine::assets::test {
         // The stored clip handle resolves to valid clip data in AudioClipTable.
         const AudioClipData* clip_data =
             library_->audio_clips().get_audio_clip_data(
-                AudioClipHandle{ d->clip });
+                AudioClipHandle{ d->clips[0] });
         ASSERT_NE(clip_data, nullptr);
         EXPECT_TRUE(clip_data->valid());
     }
@@ -125,9 +130,10 @@ namespace wz::engine::assets::test {
                 library_->audio_renderables().get_audio_renderable(rend));
         ASSERT_NE(d, nullptr);
 
+        ASSERT_EQ(d->clips.size(), 1u);
         const AudioClipData* clip_data =
             library_->audio_clips().get_audio_clip_data(
-                AudioClipHandle{ d->clip });
+                AudioClipHandle{ d->clips[0] });
         ASSERT_NE(clip_data, nullptr);
 
         // Execute the descriptor: play the source with the terminal's params.
@@ -148,6 +154,103 @@ namespace wz::engine::assets::test {
         const AudioRenderableAsset rend =
             library_->audio_renderables().create_audio_renderable({
                 .clip = AudioClipAsset{}, // invalid source
+                .gain = 1.0f,
+                });
+        EXPECT_FALSE(rend.valid());
+    }
+
+
+    // ── Bank-backed renderable ─────────────────────────────────────────────────
+
+    // Build a resolved 3-clip bank for the bank-renderable tests.
+    static AudioClipBankAsset make_bank(EngineAssetLibrary& lib)
+    {
+        auto tone = [&lib](const char* name) {
+            return lib.audio_clips().create_procedural_tone_audio_clip({
+                .name = name,
+                .sample_rate = 48000,
+                .channels = 1,
+                .waveform = AudioToneWaveform::Sine,
+                .frequency = 1000.0f,
+                .duration_seconds = 0.01f,
+                .amplitude = 0.5f,
+                });
+        };
+
+        AudioClipBankFromClipsDesc desc{};
+        desc.items = {
+            { "a", tone("bankrend/a") },
+            { "b", tone("bankrend/b") },
+            { "c", tone("bankrend/c") },
+        };
+        return lib.audio_clip_banks().create_audio_clip_bank_from_clips(desc);
+    }
+
+    TEST_F(AudioRenderableTest, BankRenderableHoldsAllClipsAndHonorsDefaultIndex)
+    {
+        const AudioClipBankAsset bank = make_bank(*library_);
+        ASSERT_TRUE(bank.valid());
+
+        const AudioRenderableAsset rend =
+            library_->audio_renderables().create_audio_clip_bank_renderable({
+                .bank = bank,
+                .default_index = 1,
+                .gain = 0.5f,
+                .pitch = 1.0f,
+                .looping = false,
+                });
+        ASSERT_TRUE(rend.valid());
+
+        ASSERT_TRUE(library_->commit());
+        library_->resolve_all();
+
+        const AudioRenderableData* d =
+            library_->audio_renderables().get_audio_renderable_data(
+                library_->audio_renderables().get_audio_renderable(rend));
+        ASSERT_NE(d, nullptr);
+
+        // The terminal holds the whole bank (3 clips) with the honored default.
+        ASSERT_EQ(d->clips.size(), 3u);
+        EXPECT_EQ(d->default_index, 1u);
+        EXPECT_TRUE(d->valid());
+
+        // clip_at selects in-range; out-of-range falls back to default_index.
+        EXPECT_EQ(d->clip_at(0).id, d->clips[0].id);
+        EXPECT_EQ(d->clip_at(2).id, d->clips[2].id);
+        EXPECT_EQ(d->clip_at(99).id, d->clips[1].id); // -> default_index 1
+    }
+
+    TEST_F(AudioRenderableTest, BankRenderableClampsOutOfRangeDefaultIndex)
+    {
+        const AudioClipBankAsset bank = make_bank(*library_);
+        ASSERT_TRUE(bank.valid());
+
+        const AudioRenderableAsset rend =
+            library_->audio_renderables().create_audio_clip_bank_renderable({
+                .bank = bank,
+                .default_index = 99, // beyond the 3-clip bank
+                .gain = 1.0f,
+                });
+        ASSERT_TRUE(rend.valid());
+
+        ASSERT_TRUE(library_->commit());
+        library_->resolve_all();
+
+        const AudioRenderableData* d =
+            library_->audio_renderables().get_audio_renderable_data(
+                library_->audio_renderables().get_audio_renderable(rend));
+        ASSERT_NE(d, nullptr);
+
+        ASSERT_EQ(d->clips.size(), 3u);
+        EXPECT_EQ(d->default_index, 2u); // clamped to clips.size() - 1
+        EXPECT_TRUE(d->valid());
+    }
+
+    TEST_F(AudioRenderableTest, InvalidBankProducesNoRenderable)
+    {
+        const AudioRenderableAsset rend =
+            library_->audio_renderables().create_audio_clip_bank_renderable({
+                .bank = AudioClipBankAsset{}, // invalid source
                 .gain = 1.0f,
                 });
         EXPECT_FALSE(rend.valid());

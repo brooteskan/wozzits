@@ -354,6 +354,7 @@ namespace wz::engine::assets
                 "Mesh cluster hierarchy");
             WZ_SET_TYPE_NAME(kAssetTypePlacement, "Placement");
             WZ_SET_TYPE_NAME(kAssetTypeAudioClip, "Audio clip");
+            WZ_SET_TYPE_NAME(kAssetTypeAudioBank, "Audio clip bank");
             WZ_SET_TYPE_NAME(kAssetTypeAudioRenderable, "Audio renderable");
             WZ_SET_TYPE_NAME(kAssetTypeCSVTable, "CSV table");
             WZ_SET_TYPE_NAME(kAssetTypeJSONDocument, "JSON");
@@ -453,6 +454,10 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kAudioClipFromWavSchema, "Audio clip from WAV");
             WZ_ADD_SCHEMA(kAudioClipProceduralToneSchema, "Procedural tone");
             WZ_ADD_SCHEMA(kAudioRenderableSchema, "Audio renderable");
+            WZ_ADD_SCHEMA(
+                kAudioClipBankFromClipsSchema, "Audio clip bank from clips");
+            WZ_ADD_SCHEMA(
+                kAudioClipBankRenderableSchema, "Audio clip bank renderable");
             WZ_ADD_SCHEMA(kCollisionFromMeshSchema, "Collision from mesh");
             WZ_ADD_SCHEMA(kCollisionFromTerrainSchema, "Collision from terrain");
             WZ_ADD_SCHEMA(

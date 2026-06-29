@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/audio/audio_clip_bank.h>
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/audio/scene_audio.h>
@@ -66,6 +67,44 @@ namespace wz::engine::assets::test {
                     .gain = gain,
                     .pitch = 1.0f,
                     .looping = looping,
+                    });
+            EXPECT_TRUE(library_->commit());
+            EXPECT_TRUE(library_->resolve_all().ok());
+            return rend.output;
+        }
+
+        // Build + resolve a bank-backed renderable whose clips have distinct
+        // amplitudes, so the played peak identifies which clip index was chosen.
+        // amplitudes[default_index] is the auto-play / out-of-range fallback.
+        wz::asset::AssetKey make_resolved_bank_renderable(
+            const std::vector<float>& amplitudes,
+            uint32_t default_index)
+        {
+            AudioClipBankFromClipsDesc bank_desc{};
+            for (size_t i = 0; i < amplitudes.size(); ++i) {
+                const AudioClipAsset clip =
+                    library_->audio_clips().create_procedural_tone_audio_clip({
+                        .name = "scene_audio/bank_" + std::to_string(i),
+                        .sample_rate = 48000,
+                        .channels = 1,
+                        .waveform = AudioToneWaveform::Sine,
+                        .frequency = 1000.0f,
+                        .duration_seconds = 0.01f,
+                        .amplitude = amplitudes[i],
+                        });
+                bank_desc.items.push_back(
+                    { "clip_" + std::to_string(i), clip });
+            }
+            const AudioClipBankAsset bank =
+                library_->audio_clip_banks()
+                    .create_audio_clip_bank_from_clips(bank_desc);
+            const AudioRenderableAsset rend =
+                library_->audio_renderables().create_audio_clip_bank_renderable({
+                    .bank = bank,
+                    .default_index = default_index,
+                    .gain = 1.0f,
+                    .pitch = 1.0f,
+                    .looping = false,
                     });
             EXPECT_TRUE(library_->commit());
             EXPECT_TRUE(library_->resolve_all().ok());
@@ -302,6 +341,102 @@ namespace wz::engine::assets::test {
         std::vector<float> out(64, 0.0f);
         scheduler.process(out.data(), 64, 1, 48000);
         EXPECT_FLOAT_EQ(peak(out), 0.0f);
+    }
+
+    // ── Bank-backed renderable + PLAY-by-index (clip bank track) ────────────────
+
+    // Auto-play of a bank-backed source uses the renderable's default_index.
+    TEST_F(SceneAudioPlayerTest, BankAutoPlayUsesDefaultIndex)
+    {
+        // amplitudes: index0=0.1, index1=0.5, index2=0.9; default_index = 1.
+        const wz::asset::AssetKey renderable =
+            make_resolved_bank_renderable({ 0.1f, 0.5f, 0.9f }, /*default*/ 1);
+
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "speaker";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, result.instance, scheduler).played, 1u);
+
+        std::vector<float> out(64, 0.0f);
+        scheduler.process(out.data(), 64, 1, 48000);
+        // The default clip (index 1, amplitude 0.5) sounded, not index 0 or 2.
+        EXPECT_NEAR(peak(out), 0.5f, 0.05f);
+    }
+
+    // A behavior Play with v0 = index selects clips[index].
+    TEST_F(SceneAudioPlayerTest, BehaviorPlayIndexSelectsClip)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_bank_renderable({ 0.1f, 0.5f, 0.9f }, /*default*/ 0);
+
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "speaker";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = false,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+        const auto entity = result.instance.authored_to_runtime.at("speaker");
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        // Play index 2 (amplitude 0.9).
+        EXPECT_TRUE(wz::engine::audio::apply_audio_behavior_command(
+            *library_, result.instance, scheduler,
+            wz::engine::audio::AudioBehaviorVerb::Play, entity,
+            /*v0 index*/ 2.0f, 0.0f));
+
+        std::vector<float> out(64, 0.0f);
+        scheduler.process(out.data(), 64, 1, 48000);
+        EXPECT_NEAR(peak(out), 0.9f, 0.05f);
+    }
+
+    // A behavior Play with an out-of-range index falls back to default_index.
+    TEST_F(SceneAudioPlayerTest, BehaviorPlayOutOfRangeIndexFallsBackToDefault)
+    {
+        // default_index = 2 (amplitude 0.9); request index 99 -> falls back.
+        const wz::asset::AssetKey renderable =
+            make_resolved_bank_renderable({ 0.1f, 0.5f, 0.9f }, /*default*/ 2);
+
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "speaker";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = false,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+        const auto entity = result.instance.authored_to_runtime.at("speaker");
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        EXPECT_TRUE(wz::engine::audio::apply_audio_behavior_command(
+            *library_, result.instance, scheduler,
+            wz::engine::audio::AudioBehaviorVerb::Play, entity,
+            /*v0 index*/ 99.0f, 0.0f));
+
+        std::vector<float> out(64, 0.0f);
+        scheduler.process(out.data(), 64, 1, 48000);
+        EXPECT_NEAR(peak(out), 0.9f, 0.05f); // default clip (index 2)
     }
 
 } // namespace wz::engine::assets::test

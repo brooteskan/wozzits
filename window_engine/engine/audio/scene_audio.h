@@ -57,7 +57,9 @@ namespace wz::engine::audio {
     // is an explicit play regardless of the auto-play policy.
     //   Stop:    v0 = fade-out frames (0 = hard cut); v1 unused.
     //   SetGain: v0 = target gain, v1 = ramp frames (0 = jump).
-    //   Play:    v0/v1 unused (uses the renderable's baked gain/pitch/looping).
+    //   Play:    v0 = clip index for a bank-backed renderable (>= 0 selects that
+    //            clip, rounded; < 0 uses the renderable's default_index); v1
+    //            unused. Uses the renderable's baked gain/pitch/looping.
     bool apply_audio_behavior_command(
         const wz::engine::assets::EngineAssetLibrary& assets,
         const wz::engine::assets::SceneInstance& instance,

@@ -240,6 +240,7 @@ namespace wz::engine::assets
         , collision_table_{}
         , placement_table_{}
         , audio_clip_table_{}
+        , audio_clip_bank_table_{}
         , audio_renderable_table_{}
         , gaussian_splat_cloud_table_{}
         , gaussian_splat_color_lod_table_{}
@@ -285,6 +286,7 @@ namespace wz::engine::assets
                 .collision_table           = collision_table_,
                 .placement_table           = placement_table_,
                 .audio_clip_table          = audio_clip_table_,
+                .audio_clip_bank_table     = audio_clip_bank_table_,
                 .audio_renderable_table    = audio_renderable_table_,
                 .gaussian_splat_cloud_table = gaussian_splat_cloud_table_,
                 .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table_,
@@ -338,6 +340,8 @@ namespace wz::engine::assets
         , collisions_(system_, logger_, collision_table_)
         , placements_(system_, logger_, placement_table_)
         , audio_clips_(system_, logger_, files_, audio_clip_table_)
+        , audio_clip_banks_(
+            system_, logger_, audio_clip_bank_table_, audio_clips_, files_)
         , audio_renderables_(system_, logger_, audio_renderable_table_)
         , gaussian_splats_(system_, logger_, gaussian_splat_cloud_table_)
         , gaussian_splat_color_lods_(system_, logger_, gaussian_splat_color_lod_table_)

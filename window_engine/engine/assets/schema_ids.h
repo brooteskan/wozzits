@@ -332,7 +332,9 @@ namespace wz::engine::assets {
 
     // Audio schemas occupy the reserved 0x000B80-0x000BFF sub-range (the upper
     // half of the 0x000B00 block; collision owns 0x000B00-0x000B7F). These IDs
-    // may appear in disk-cache keys later, so keep them stable.
+    // may appear in disk-cache keys later, so keep them stable. Allocated so far:
+    // WAV=B80, ProceduralTone=B81, Renderable=B82, ClipBankFromClips=B83,
+    // ClipBankRenderable=B84.
     //
     // Audio clip decoded from a WAV (RIFF/WAVE) file dependency into interleaved
     // float32 PCM. Expects one kRawFileSchema dependency carrying the WAV bytes.
@@ -356,6 +358,26 @@ namespace wz::engine::assets {
     // renderable recipe.
     inline constexpr wz::asset::SchemaID kAudioRenderableSchema{
         0xF11E'CA55'E7'000B82ull
+    };
+
+    // Audio clip bank built from an ordered list of audio-clip dependencies.
+    // Compiled from N kAssetTypeAudioClip dependencies plus a parallel list of
+    // per-entry name hashes (carried in the node meta); produces
+    // kAssetTypeAudioBank. A directory import enumerates *.wav under a folder,
+    // imports each as a clip, and feeds this recipe. Runtime data is owned by
+    // AudioClipBankTable.
+    inline constexpr wz::asset::SchemaID kAudioClipBankFromClipsSchema{
+        0xF11E'CA55'E7'000B83ull
+    };
+
+    // Bank-backed audio renderable: the terminal of an audio chain that holds a
+    // whole clip table instead of a single clip. Compiled from one
+    // kAssetTypeAudioBank dependency plus playback params (gain/pitch/looping)
+    // and a default clip index; produces kAssetTypeAudioRenderable. The behavior
+    // PLAY command selects a clip by index at trigger time, so one AudioSource
+    // can trigger many sounds.
+    inline constexpr wz::asset::SchemaID kAudioClipBankRenderableSchema{
+        0xF11E'CA55'E7'000B84ull
     };
 
     // CSV table recipe: compiled by the CSV parser; expects a kCSVFileSchema

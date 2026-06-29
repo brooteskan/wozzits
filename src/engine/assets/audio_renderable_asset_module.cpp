@@ -57,6 +57,44 @@ namespace wz::engine::assets
         return out;
     }
 
+    AudioRenderableAsset AudioRenderableAssetModule::create_audio_clip_bank_renderable(
+        const AudioClipBankRenderableDesc& desc)
+    {
+        AudioRenderableAsset out{};
+
+        if (!desc.bank.valid()) {
+            logger_.error("bank audio renderable requires a valid source bank");
+            return out;
+        }
+
+        const wz::asset::AssetKey bank_key = desc.bank.output;
+
+        const AudioRenderableCompileDesc compile_desc{
+            .gain          = desc.gain,
+            .pitch         = desc.pitch,
+            .looping       = desc.looping,
+            .default_index = desc.default_index,
+        };
+
+        const wz::asset::AssetKey key = make_audio_clip_bank_renderable_key(
+            bank_key, compile_desc.default_index, compile_desc.gain,
+            compile_desc.pitch, compile_desc.looping);
+
+        wz::asset::AssetNode node;
+        node.key     = key;
+        node.type    = kAssetTypeAudioRenderable;
+        node.schema  = kAudioClipBankRenderableSchema;
+        node.stage   = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta    = compile_desc;
+
+        if (!system_.register_asset(std::move(node), { bank_key }))
+            return AudioRenderableAsset{ .output = key };
+
+        out.output = key;
+        return out;
+    }
+
     AudioRenderableHandle AudioRenderableAssetModule::get_audio_renderable(
         const AudioRenderableAsset& asset) const
     {

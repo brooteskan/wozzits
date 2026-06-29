@@ -22,32 +22,56 @@ namespace wz::engine::assets {
 
     // ─── AudioRenderableData ──────────────────────────────────────────────────────
     //
-    // The compiled, executable terminal. `clip` is a handle into AudioClipTable
-    // (resolved from the source dependency at compile time), so the runtime can
-    // fetch the clip's AudioBufferView and start a voice without re-resolving the
-    // graph.
+    // The compiled, executable terminal. `clips` holds one or more handles into
+    // AudioClipTable (resolved from the source dependency at compile time), so the
+    // runtime can fetch a clip's AudioBufferView and start a voice without
+    // re-resolving the graph. A single-clip terminal stores a one-element vector;
+    // a bank-backed terminal stores the whole bank's clips and the behavior PLAY
+    // command selects one by index. `default_index` is the clip auto-play and
+    // out-of-range/<0 index requests fall back to.
 
     struct AudioRenderableData
     {
-        wz::asset::ResourceHandle clip{};  // source clip in AudioClipTable
+        std::vector<wz::asset::ResourceHandle> clips;  // source clips in AudioClipTable
+        uint32_t default_index = 0;
         float gain = 1.0f;
         float pitch = 1.0f;
         bool looping = false;
 
-        bool valid() const noexcept { return clip.valid(); }
+        bool valid() const noexcept
+        {
+            return !clips.empty()
+                && default_index < clips.size()
+                && clips[default_index].valid();
+        }
+
+        // Clip handle for the given index, falling back to default_index when the
+        // index is out of range. Returns an invalid handle only for an empty bank.
+        wz::asset::ResourceHandle clip_at(uint32_t index) const noexcept
+        {
+            if (clips.empty()) {
+                return {};
+            }
+            if (index < clips.size()) {
+                return clips[index];
+            }
+            return clips[default_index < clips.size() ? default_index : 0];
+        }
     };
 
 
     // ─── AudioRenderableCompileDesc ───────────────────────────────────────────────
     //
-    // Stored in AssetNode::meta. The source clip is a dependency (not a param);
-    // these are the playback params folded into the terminal.
+    // Stored in AssetNode::meta. The source (clip or bank) is a dependency (not a
+    // param); these are the playback params folded into the terminal.
+    // default_index is honored only by the bank-backed recipe.
 
     struct AudioRenderableCompileDesc
     {
         float gain = 1.0f;
         float pitch = 1.0f;
         bool looping = false;
+        uint32_t default_index = 0;
     };
 
 

@@ -697,6 +697,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     rs_add_test_group(asset_audio wav_decoder_tests)
     rs_add_test_group(asset_audio audio_clip_tests)
+    rs_add_test_group(asset_audio audio_clip_bank_tests)
     rs_add_test_group(asset_audio audio_renderable_tests)
     rs_add_test_group(asset_audio scene_audio_player_tests)
 

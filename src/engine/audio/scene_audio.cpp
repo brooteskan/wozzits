@@ -15,9 +15,16 @@ namespace wz::engine::audio {
         // + the renderable's baked params. False if the reference is empty or the
         // renderable/clip can't be resolved. Shared by the auto-play pass and the
         // behavior Play verb so both interpret the descriptor identically.
+        //
+        // requested_index selects which clip in a (possibly bank-backed)
+        // renderable to play: < 0 means "use the renderable's default_index"
+        // (auto-play); >= 0 selects that clip, falling back to default_index when
+        // out of range. A single-clip renderable has exactly one clip, so the
+        // index is effectively ignored there.
         bool resolve_source_voice(
             const wz::engine::assets::EngineAssetLibrary& assets,
             const wz::engine::assets::AudioSourceComponent& source,
+            int64_t requested_index,
             wz::audio::AudioBufferView& view,
             float& gain,
             float& pitch,
@@ -32,12 +39,17 @@ namespace wz::engine::audio {
                 assets.audio_renderables().get_audio_renderable_data(
                     assets.audio_renderables().get_audio_renderable(
                         AudioRenderableAsset{ .output = source.audio_renderable }));
-            if (renderable == nullptr) {
+            if (renderable == nullptr || !renderable->valid()) {
                 return false;
             }
+            const uint32_t index = (requested_index < 0)
+                ? renderable->default_index
+                : static_cast<uint32_t>(requested_index);
+            const wz::asset::ResourceHandle clip_handle =
+                renderable->clip_at(index);
             const AudioClipData* clip =
                 assets.audio_clips().get_audio_clip_data(
-                    AudioClipHandle{ renderable->clip });
+                    AudioClipHandle{ clip_handle });
             if (clip == nullptr || !clip->valid()) {
                 return false;
             }
@@ -80,8 +92,10 @@ namespace wz::engine::audio {
             cmd.type = wz::audio::AudioCommandType::Play;
             cmd.sample_time = 0;            // play as soon as the next block runs
             cmd.client_id = client_id;
-            if (!resolve_source_voice(assets, source, cmd.source, cmd.gain,
-                                      cmd.pitch, cmd.looping)) {
+            // Auto-play uses the renderable's default_index (requested_index < 0).
+            if (!resolve_source_voice(assets, source, /*requested_index*/ -1,
+                                      cmd.source, cmd.gain, cmd.pitch,
+                                      cmd.looping)) {
                 ++report.skipped_unresolved;
                 continue;
             }
@@ -127,13 +141,20 @@ namespace wz::engine::audio {
         cmd.client_id = source->client_id;
 
         switch (verb) {
-        case AudioBehaviorVerb::Play:
+        case AudioBehaviorVerb::Play: {
             cmd.type = wz::audio::AudioCommandType::Play;
-            if (!resolve_source_voice(assets, *source, cmd.source, cmd.gain,
-                                      cmd.pitch, cmd.looping)) {
+            // v0 is the clip index for a bank-backed renderable: >= 0 selects that
+            // clip (rounded), < 0 falls back to the renderable's default_index.
+            const int64_t requested_index = (v0 < 0.0f)
+                ? -1
+                : static_cast<int64_t>(v0 + 0.5f);
+            if (!resolve_source_voice(assets, *source, requested_index,
+                                      cmd.source, cmd.gain, cmd.pitch,
+                                      cmd.looping)) {
                 return false;  // renderable doesn't resolve to a clip
             }
             break;
+        }
         case AudioBehaviorVerb::Stop:
             cmd.type = wz::audio::AudioCommandType::Stop;
             cmd.ramp_frames = (v0 > 0.0f) ? static_cast<uint32_t>(v0) : 0u;

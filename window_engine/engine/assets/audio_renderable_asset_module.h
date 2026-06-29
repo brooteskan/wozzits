@@ -9,6 +9,7 @@
 
 #include <engine/assets/audio/audio_renderable.h>
 #include <engine/assets/audio_clip_asset_module.h>
+#include <engine/assets/audio_clip_bank_asset_module.h>
 
 namespace wz::engine::assets
 {
@@ -19,6 +20,20 @@ namespace wz::engine::assets
     {
         AudioClipAsset clip;
 
+        float gain = 1.0f;
+        float pitch = 1.0f;
+        bool looping = false;
+    };
+
+    // Describes a bank-backed audio renderable: a source clip bank plus playback
+    // params and the default clip index. The bank is referenced by its resolved
+    // AudioClipBankAsset (the terminal depends on the bank node). The behavior
+    // PLAY command selects a clip by index at trigger time.
+    struct AudioClipBankRenderableDesc
+    {
+        AudioClipBankAsset bank;
+
+        uint32_t default_index = 0;
         float gain = 1.0f;
         float pitch = 1.0f;
         bool looping = false;
@@ -54,6 +69,11 @@ namespace wz::engine::assets
         // Register an audio renderable in the DAG, depending on desc.clip.
         AudioRenderableAsset create_audio_renderable(
             const AudioRenderableDesc& desc);
+
+        // Register a bank-backed audio renderable in the DAG, depending on
+        // desc.bank. The terminal holds the bank's whole clip table.
+        AudioRenderableAsset create_audio_clip_bank_renderable(
+            const AudioClipBankRenderableDesc& desc);
 
         AudioRenderableHandle get_audio_renderable(
             const AudioRenderableAsset& asset) const;

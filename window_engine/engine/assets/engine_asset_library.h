@@ -57,6 +57,8 @@
 
 #include <engine/assets/audio/audio_clip.h>
 #include <engine/assets/audio_clip_asset_module.h>
+#include <engine/assets/audio/audio_clip_bank.h>
+#include <engine/assets/audio_clip_bank_asset_module.h>
 #include <engine/assets/audio/audio_renderable.h>
 #include <engine/assets/audio_renderable_asset_module.h>
 
@@ -288,6 +290,9 @@ namespace wz::engine::assets
         AudioClipAssetModule&       audio_clips()       { return audio_clips_; }
         const AudioClipAssetModule& audio_clips() const { return audio_clips_; }
 
+        AudioClipBankAssetModule&       audio_clip_banks()       { return audio_clip_banks_; }
+        const AudioClipBankAssetModule& audio_clip_banks() const { return audio_clip_banks_; }
+
         AudioRenderableAssetModule&       audio_renderables()       { return audio_renderables_; }
         const AudioRenderableAssetModule& audio_renderables() const { return audio_renderables_; }
 
@@ -436,6 +441,7 @@ namespace wz::engine::assets
         CollisionAssetTable         collision_table_;
         PlacementTable              placement_table_;
         AudioClipTable              audio_clip_table_;
+        AudioClipBankTable          audio_clip_bank_table_;
         AudioRenderableTable        audio_renderable_table_;
         GaussianSplatCloudTable     gaussian_splat_cloud_table_;
         GaussianSplatColorLODTable  gaussian_splat_color_lod_table_;
@@ -477,6 +483,7 @@ namespace wz::engine::assets
         CollisionAssetModule        collisions_;
         PlacementAssetModule        placements_;
         AudioClipAssetModule        audio_clips_;
+        AudioClipBankAssetModule    audio_clip_banks_;
         AudioRenderableAssetModule  audio_renderables_;
         GaussianSplatAssetModule    gaussian_splats_;
         GaussianSplatColorLODAssetModule gaussian_splat_color_lods_;

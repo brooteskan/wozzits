@@ -869,8 +869,10 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeSoundCue =
         static_cast<wz::asset::AssetType>(2140);
 
-    // Reserved audio asset type. Not implemented yet.
-    // Represents a packed or grouped collection of audio assets.
+    // Implemented: CPU-side table of decoded clips referenced by name/index;
+    // runtime data owned by AudioClipBankTable. Loaded from an explicit clip
+    // list or a directory of WAVs. The source side of a bank-backed audio
+    // renderable, letting one AudioSource trigger many sounds by index.
     inline constexpr wz::asset::AssetType kAssetTypeAudioBank =
         static_cast<wz::asset::AssetType>(2141);
 
