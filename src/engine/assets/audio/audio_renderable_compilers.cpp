@@ -73,6 +73,11 @@ namespace wz::engine::assets::internal
             },
             .parameters = {
                 {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
                     .name = "gain",
                     .type = wz::asset::ParamType::Float,
                     .label = "Gain",
@@ -169,6 +174,11 @@ namespace wz::engine::assets::internal
                 { "bank", kAssetTypeAudioBank },
             },
             .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
                 {
                     .name = "gain",
                     .type = wz::asset::ParamType::Float,
@@ -296,6 +306,8 @@ namespace wz::engine::assets::internal
                 { "bank", kAssetTypeAudioBank },
             },
             .parameters = {
+                { .name = "name", .type = wz::asset::ParamType::String,
+                  .label = "Name" },
                 { .name = "density", .type = wz::asset::ParamType::Float,
                   .label = "Density (grains/s)", .default_num = 20.0, .min = 0.0,
                   .max = 2000.0 },

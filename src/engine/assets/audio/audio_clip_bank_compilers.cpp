@@ -61,6 +61,10 @@ namespace wz::engine::assets::internal
                     wz::asset::InputPortArity::Many,
                 },
             },
+            .parameters = {
+                { .name = "name", .type = wz::asset::ParamType::String,
+                  .label = "Name" },
+            },
             .compile = [&logger, &audio_clip_bank_table, &audio_clip_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -152,6 +156,11 @@ namespace wz::engine::assets::internal
             .input_schema = kAudioClipBankFromDirectorySchema,
             .output_type = kAssetTypeAudioBank,
             .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
                 {
                     .name = "directory",
                     .type = wz::asset::ParamType::String,

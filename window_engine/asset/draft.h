@@ -914,13 +914,21 @@ namespace wz::asset {
                 const auto [it, inserted] =
                     seen_keys.emplace(node.node.key, node.id);
                 if (!inserted) {
+                    // Asset keys are content hashes, so two nodes with the same
+                    // key are the SAME asset (an identical recipe: same schema,
+                    // params, and inputs). Name both so the author can find and
+                    // remove or differentiate one of them.
                     add_validation_message(
                         draft,
                         AssetGraphDraftValidationCode::DuplicateAssetKey,
                         node.id,
                         INVALID_ASSET_GRAPH_DRAFT_EDGE,
                         0,
-                        "another draft node has the same asset key");
+                        "node " + std::to_string(node.id)
+                            + " has the same asset key as node "
+                            + std::to_string(it->second)
+                            + " (identical recipe — delete one, or differentiate "
+                              "them, e.g. give them distinct params)");
                 }
             }
 
