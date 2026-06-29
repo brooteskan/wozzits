@@ -12,7 +12,10 @@ namespace
         float left_tread_speed = 0.0f;
         float right_tread_speed = 0.0f;
 
+        uint8_t ammo = 10;
         WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
+        WzBehaviorEntityId canon_audio = WZ_INVALID_BEHAVIOR_ENTITY;
+
     };
 
     static constexpr float movement_factor = 0.1;
@@ -48,14 +51,15 @@ namespace
         WzBehaviorEntityId,
         void*)
     {
-        auto* state = static_cast<TankState*>(
-            wz_alloc_instance_state(
-                facts,
-                sizeof(TankState),
-                alignof(TankState)));
+        TankState* state = wz_instance_state<TankState>(facts);
 
         if (state) {
             uint8_t result = wz_find_entity_by_authored_id(facts, "empty_2", &state->terrain);
+            wz_log_infof(facts, "[tank init] find terrain: %u", result);
+
+            result = wz_find_entity_by_authored_id(facts, "1", &state->canon_audio);
+            wz_log_infof(facts, "[tank init] find audio: %u", result);
+
             // wz_log_infof(facts, "find empty_2: %u", result);
             // wz_find_entity_by_name(facts, "terrain", &state->terrain);
             // First load gives zeroed memory. Re-init/hot reload may preserve it.
@@ -63,6 +67,21 @@ namespace
     }
 
 
+    static void try_fire_canon(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        TankState* state)
+    {
+        (void)event;
+        if (state->ammo > 0) {
+            wz_log_infof(facts, "[tank] we have ammo %u", state->ammo);
+            state->ammo--;
+            if (state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY) {
+                wz_log_info(facts, "[tank] played the canon");
+                wz_write_play_sound(facts, state->canon_audio);
+            }
+        }
+    }
 
     static void apply_tank_motion(
         const WzBehaviorFrameFacts* facts,
@@ -122,14 +141,19 @@ namespace
         {
             uint32_t controller = wz_input_event_controller(facts);
             uint32_t button = wz_input_event_controller_button(facts);
-            //wz_log_infof(facts, "frame %u pressed controller %u button %u",frame_index, controller, button);
+            wz_log_infof(facts, "frame %u pressed controller %u button %u",frame_index, controller, button);
+            
+            if (button == 8) {
+                wz_log_info(facts, "[tank] try fire canon");
+                try_fire_canon(facts, event, state);
+            }
             break;
         }
         case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
         {
             uint32_t controller = wz_input_event_controller(facts);
             uint32_t button = wz_input_event_controller_button(facts);
-            //wz_log_infof(facts, "farme %u released controller %u button %u",frame_index, controller, button);
+            // wz_log_infof(facts, "farme %u released controller %u button %u",frame_index, controller, button);
             break;
         }
         
