@@ -874,6 +874,15 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeAudioBank =
         static_cast<wz::asset::AssetType>(2141);
 
+    // Implemented: terminal of an audio processing chain — the audio analog of
+    // kAssetTypeRenderable. References a source (an AudioClip) plus playback
+    // params; the runtime mixer EXECUTES this descriptor (plays the source with
+    // the params) the way the renderer executes a visual renderable. Runtime data
+    // is owned by AudioRenderableTable. V1 is the minimal source->out form; filter
+    // nodes (gain/biquad/delay) extend the chain later.
+    inline constexpr wz::asset::AssetType kAssetTypeAudioRenderable =
+        static_cast<wz::asset::AssetType>(2142);
+
 
     // ─── UI / text authored asset types: 2160–2199 ──────────────────────────────
     //

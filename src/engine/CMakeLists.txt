@@ -96,6 +96,9 @@ target_sources(window_engine PRIVATE
     assets/audio/wav_decoder.cpp
     assets/audio/audio_clip_compilers.cpp
     assets/audio_clip_asset_module.cpp
+    assets/audio/audio_renderable.cpp
+    assets/audio/audio_renderable_compilers.cpp
+    assets/audio_renderable_asset_module.cpp
 
     assets/gaussian_splat/gaussian_splat.cpp
     assets/gaussian_splat/gaussian_splat_decode.cpp

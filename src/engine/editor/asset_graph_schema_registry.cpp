@@ -49,6 +49,7 @@ namespace wz::engine::editor
             CollisionAssetTable         collision_table;
             PlacementTable              placement_table;
             AudioClipTable              audio_clip_table;
+            AudioRenderableTable        audio_renderable_table;
             GaussianSplatCloudTable     gaussian_splat_cloud_table;
             GaussianSplatColorLODTable  gaussian_splat_color_lod_table;
             DataTable                   data_table;
@@ -95,6 +96,7 @@ namespace wz::engine::editor
                     .collision_table           = collision_table,
                     .placement_table           = placement_table,
                     .audio_clip_table          = audio_clip_table,
+                    .audio_renderable_table    = audio_renderable_table,
                     .gaussian_splat_cloud_table = gaussian_splat_cloud_table,
                     .gaussian_splat_color_lod_table =
                         gaussian_splat_color_lod_table,

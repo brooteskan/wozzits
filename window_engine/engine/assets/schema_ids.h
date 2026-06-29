@@ -349,6 +349,15 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000B81ull
     };
 
+    // Audio renderable: the terminal of an audio chain. Compiled from one
+    // kAssetTypeAudioClip dependency plus playback params (gain/pitch/looping);
+    // produces kAssetTypeAudioRenderable. V1 is the minimal source->out form —
+    // filter nodes extend the chain later. The audio analog of a visual
+    // renderable recipe.
+    inline constexpr wz::asset::SchemaID kAudioRenderableSchema{
+        0xF11E'CA55'E7'000B82ull
+    };
+
     // CSV table recipe: compiled by the CSV parser; expects a kCSVFileSchema
     // dependency. header_mode ordinal is encoded in the key so the same file
     // compiled with different modes produces distinct asset keys.

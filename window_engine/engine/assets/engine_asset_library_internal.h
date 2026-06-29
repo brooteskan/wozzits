@@ -30,6 +30,8 @@
 #include <engine/assets/placement/placement_compilers.h>
 #include <engine/assets/audio/audio_clip.h>
 #include <engine/assets/audio/audio_clip_compilers.h>
+#include <engine/assets/audio/audio_renderable.h>
+#include <engine/assets/audio/audio_renderable_compilers.h>
 #include <engine/assets/gaussian_splat/gaussian_splat.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
@@ -108,6 +110,7 @@ namespace wz::engine::assets::internal {
         CollisionAssetTable&        collision_table;
         PlacementTable&             placement_table;
         AudioClipTable&             audio_clip_table;
+        AudioRenderableTable&       audio_renderable_table;
         GaussianSplatCloudTable&    gaussian_splat_cloud_table;
         GaussianSplatColorLODTable& gaussian_splat_color_lod_table;
         DataTable&                          data_table;
