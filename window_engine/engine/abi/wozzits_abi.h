@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 27u
+#define WZ_ABI_VERSION 28u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -731,15 +731,19 @@ WZ_ABI_API uint32_t wz_abi_version(void);
 WZ_ABI_API WzResult wz_host_asset_catalog(WzBuffer* out_catalog);
 
 // Device-free, READ-ONLY import of a GLB scene's component hierarchy (issue #213,
-// Phase 3b-1): reads the file at `glb_path_utf8` (an ABSOLUTE path the editor
-// builds by joining its resource root with the node's scene_source path), runs the
-// pure-CPU glTF scene importer for `scene_index`, and packs the flat component list
-// into a blob whose byte 0 is a WzEditorGlbSceneHierarchy. No runtime, project, or
-// host capability required — this only reads bytes and parses them. A null/empty
-// path, an unreadable file, or an import failure returns a blob with ok = 0 and an
-// `error` string (never crashes). Caller frees with wz_free_buffer.
+// Phase 3b-1): the engine roots `glb_path_utf8` against `resource_root_utf8` using
+// the shared file-carrier convention (the editor passes the node's scene_source
+// path verbatim — relative or absolute, optionally quote-wrapped — and never
+// reimplements the rooting), reads the file, runs the pure-CPU glTF scene importer
+// for `scene_index`, and packs the flat component list into a blob whose byte 0 is
+// a WzEditorGlbSceneHierarchy. A null/empty resource root roots relative paths
+// against the process working directory. No runtime, project, or host capability
+// required — this only reads bytes and parses them. A null/empty path, an
+// unreadable file, or an import failure returns a blob with ok = 0 and an `error`
+// string (never crashes). Caller frees with wz_free_buffer.
 WZ_ABI_API WzBuffer wz_import_glb_scene_hierarchy(
     const char* glb_path_utf8,
+    const char* resource_root_utf8,
     uint32_t scene_index);
 
 WZ_ABI_API WzResult wz_host_load_project_snapshot(

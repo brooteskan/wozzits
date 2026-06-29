@@ -11,6 +11,17 @@
 
 namespace wz::engine::assets
 {
+    // Resolve a file-carrier path against a resource root, mirroring how source
+    // nodes are rooted: strip a single matched surrounding pair of ASCII
+    // double-quotes (Windows Explorer's "Copy as path" wraps the path), then
+    // return the path unchanged when absolute, or joined onto `resource_root`
+    // when relative. This is the single engine-side authority for the rooting
+    // convention so callers (FileCarrierAssetModule, the editor ABI's GLB
+    // import) never reimplement it.
+    [[nodiscard]] wz::fs::Path resolve_file_carrier_path(
+        const wz::fs::Path& resource_root,
+        const wz::fs::Path& path);
+
     // Manages file-backed source node registration in the shared AssetSystem.
     //
     // This module is implementation plumbing shared by ShaderAssetModule,

@@ -51,8 +51,9 @@ namespace wz::engine::assets
         return key;
     }
 
-    wz::fs::Path FileCarrierAssetModule::resolve_path(
-        const wz::fs::Path& path) const
+    wz::fs::Path resolve_file_carrier_path(
+        const wz::fs::Path& resource_root,
+        const wz::fs::Path& path)
     {
         // Strip a single matched surrounding pair of ASCII double-quotes before
         // resolving. Windows Explorer's "Copy as path" wraps the path in double
@@ -69,7 +70,13 @@ namespace wz::engine::assets
 
         return wz::fs::is_absolute(cleaned)
             ? cleaned
-            : wz::fs::join(resource_root_, cleaned);
+            : wz::fs::join(resource_root, cleaned);
+    }
+
+    wz::fs::Path FileCarrierAssetModule::resolve_path(
+        const wz::fs::Path& path) const
+    {
+        return resolve_file_carrier_path(resource_root_, path);
     }
 
 } // namespace wz::engine::assets

@@ -1,6 +1,7 @@
 #include <engine/abi/wozzits_abi.h>
 
 #include <engine/app/editor_runtime.h>
+#include <engine/assets/file_carrier_asset_module.h>
 #include <engine/assets/gltf/gltf_importer.h>
 #include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/asset_graph_layout.h>
@@ -327,6 +328,7 @@ extern "C"
 
     WzBuffer wz_import_glb_scene_hierarchy(
         const char* glb_path_utf8,
+        const char* resource_root_utf8,
         uint32_t scene_index)
     {
         // Pack an ok=0 hierarchy blob carrying `message`; never throws past here
@@ -350,10 +352,20 @@ extern "C"
         }
 
         try {
-            const auto file = wz::fs::read_file(glb_path_utf8);
+            // Root the (possibly resource-relative, possibly quote-wrapped) path
+            // engine-side using the shared file-carrier rooting convention, so
+            // the editor passes the authored source_path verbatim and never
+            // reimplements path resolution. A null/empty resource root resolves
+            // relative paths against the process working directory.
+            const wz::fs::Path resolved =
+                wz::engine::assets::resolve_file_carrier_path(
+                    resource_root_utf8 ? resource_root_utf8 : "",
+                    glb_path_utf8);
+
+            const auto file = wz::fs::read_file(resolved);
             if (!file) {
                 return failure(
-                    std::string("failed to read GLB file: ") + glb_path_utf8);
+                    std::string("failed to read GLB file: ") + resolved);
             }
 
             wz::engine::assets::ImportedGLTFScene imported{};
