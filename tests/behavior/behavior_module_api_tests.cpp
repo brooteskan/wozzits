@@ -1952,3 +1952,49 @@ TEST(BehaviorPluginAbi, DebugLogBehaviorWritesThroughLogCallback)
     EXPECT_NE(found, capture.messages.end());
 }
 
+
+TEST(BehaviorModuleApi, PlaySoundNamedEncodesNameHashSelector)
+{
+    struct Probe { WzBehaviorCommand last{}; int count = 0; } probe;
+    WzBehaviorFrameFacts facts{
+        .command_writer_user = &probe,
+        .write_command = [](void* user, const WzBehaviorCommand* cmd) -> uint8_t
+        {
+            auto* p = static_cast<Probe*>(user);
+            p->last = *cmd;
+            ++p->count;
+            return 1u;
+        },
+    };
+
+    // Named play encodes the name-select sentinel in v0 and the 32-bit FNV-1a/32
+    // name hash as the bit pattern of v1 (full 32 bits preserved through float).
+    ASSERT_EQ(wz_write_play_sound_named(&facts, 7u, "Canon_b"), 1u);
+    EXPECT_EQ(probe.count, 1);
+    EXPECT_EQ(probe.last.entity, 7u);
+    EXPECT_EQ(probe.last.kind, WZ_BEHAVIOR_COMMAND_PLAY_SOUND);
+    EXPECT_FLOAT_EQ(probe.last.values[0], -2.0f);
+
+    uint32_t decoded = 0u;
+    memcpy(&decoded, &probe.last.values[1], sizeof(uint32_t));
+    EXPECT_EQ(decoded, wz_play_sound_hash("Canon_b"));
+
+    // wz_write_play_sound_hashed yields the identical encoding.
+    probe.count = 0;
+    ASSERT_EQ(
+        wz_write_play_sound_hashed(&facts, 7u, wz_play_sound_hash("Canon_b")),
+        1u);
+    uint32_t decoded2 = 0u;
+    memcpy(&decoded2, &probe.last.values[1], sizeof(uint32_t));
+    EXPECT_EQ(decoded2, decoded);
+
+    // The hash is usable at compile time (zero runtime cost path).
+    static_assert(
+        wz_play_sound_hash("Canon_b") != 0u, "constexpr name hash");
+}
+
+TEST(BehaviorModuleApi, PlaySoundNamedNullFactsIsNoOp)
+{
+    EXPECT_EQ(wz_write_play_sound_named(nullptr, 1u, "x"), 0u);
+    EXPECT_EQ(wz_write_play_sound_hashed(nullptr, 1u, 123u), 0u);
+}

@@ -19,8 +19,11 @@
 #include <logging/logger.h>
 
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 namespace wz::engine::assets::test {
@@ -437,6 +440,89 @@ namespace wz::engine::assets::test {
         std::vector<float> out(64, 0.0f);
         scheduler.process(out.data(), 64, 1, 48000);
         EXPECT_NEAR(peak(out), 0.9f, 0.05f); // default clip (index 2)
+    }
+
+    namespace {
+        // FNV-1a/32, matching wz_play_sound_hash / the bank's per-entry hash.
+        uint32_t name_hash(std::string_view s)
+        {
+            uint32_t h = 2166136261u;
+            for (const unsigned char c : s) { h ^= c; h *= 16777619u; }
+            return h;
+        }
+        // The name-select encoding apply_audio_behavior_command expects: the host
+        // reinterprets v1's bits as the 32-bit name hash.
+        float name_hash_bits(std::string_view s)
+        {
+            const uint32_t h = name_hash(s);
+            float bits = 0.0f;
+            std::memcpy(&bits, &h, sizeof(uint32_t));
+            return bits;
+        }
+    }
+
+    // A behavior Play by name (v0 = -2, v1 = name-hash bits) selects that clip.
+    TEST_F(SceneAudioPlayerTest, BehaviorPlayByNameSelectsClip)
+    {
+        // Bank clips are named "clip_0".."clip_2" by make_resolved_bank_renderable.
+        const wz::asset::AssetKey renderable =
+            make_resolved_bank_renderable({ 0.1f, 0.5f, 0.9f }, /*default*/ 0);
+
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "speaker";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = false,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+        const auto entity = result.instance.authored_to_runtime.at("speaker");
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        // Select "clip_2" (amplitude 0.9) by name, not by index.
+        EXPECT_TRUE(wz::engine::audio::apply_audio_behavior_command(
+            *library_, result.instance, scheduler,
+            wz::engine::audio::AudioBehaviorVerb::Play, entity,
+            /*v0 name-mode*/ -2.0f, /*v1 hash bits*/ name_hash_bits("clip_2")));
+
+        std::vector<float> out(64, 0.0f);
+        scheduler.process(out.data(), 64, 1, 48000);
+        EXPECT_NEAR(peak(out), 0.9f, 0.05f);
+    }
+
+    // A behavior Play by an unknown name falls back to default_index.
+    TEST_F(SceneAudioPlayerTest, BehaviorPlayByUnknownNameFallsBackToDefault)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_bank_renderable({ 0.1f, 0.5f, 0.9f }, /*default*/ 1);
+
+        SceneAssetData authored{};
+        SceneNodeAsset node{};
+        node.id = "speaker";
+        node.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = false,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(node));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+        const auto entity = result.instance.authored_to_runtime.at("speaker");
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        EXPECT_TRUE(wz::engine::audio::apply_audio_behavior_command(
+            *library_, result.instance, scheduler,
+            wz::engine::audio::AudioBehaviorVerb::Play, entity,
+            -2.0f, name_hash_bits("no_such_clip")));
+
+        std::vector<float> out(64, 0.0f);
+        scheduler.process(out.data(), 64, 1, 48000);
+        EXPECT_NEAR(peak(out), 0.5f, 0.05f); // default clip (index 1)
     }
 
 } // namespace wz::engine::assets::test

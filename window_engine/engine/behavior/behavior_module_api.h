@@ -1005,6 +1005,59 @@ static inline uint8_t wz_write_play_sound_indexed(
     return facts->write_command(facts->command_writer_user, &command);
 }
 
+// FNV-1a/32 over a clip name. constexpr, so a plugin can hash a string literal at
+// COMPILE time (zero runtime cost) and pass the result to wz_write_play_sound_hashed:
+//   static constexpr uint32_t kFire = wz_play_sound_hash("Canon_b");
+//   wz_write_play_sound_hashed(facts, e, kFire);
+// Must match the engine's clip-name hash (the bank stores the same FNV-1a/32).
+static inline constexpr uint32_t wz_play_sound_hash(const char* name)
+{
+    uint32_t h = 2166136261u;
+    if (name) {
+        for (const char* p = name; *p; ++p) {
+            h ^= (uint32_t)(unsigned char)(*p);
+            h *= 16777619u;
+        }
+    }
+    return h;
+}
+
+// Play a clip of the entity's AudioSource selected by name hash. The host looks
+// the hash up in the renderable's clip names; an unknown name falls back to the
+// default clip. Encoding: values[0] = -2 (name-select sentinel), values[1] carries
+// the 32-bit hash as a bit pattern (a container, not a numeric value), so the full
+// 32 bits survive the float slot. Prefer the compile-time wz_play_sound_hash().
+static inline uint8_t wz_write_play_sound_hashed(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t name_hash)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    float hash_bits = 0.0f;
+    memcpy(&hash_bits, &name_hash, sizeof(uint32_t));
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_PLAY_SOUND,
+        { -2.0f, hash_bits, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Convenience: play a clip by name, hashing at the call site. For a hot trigger,
+// prefer wz_write_play_sound_hashed(facts, e, wz_play_sound_hash("name")) so the
+// hash is computed at compile time.
+static inline uint8_t wz_write_play_sound_named(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* name)
+{
+    return wz_write_play_sound_hashed(facts, entity, wz_play_sound_hash(name));
+}
+
 // Stop the entity's AudioSource. fade_frames > 0 ramps it out (de-click); 0 cuts.
 static inline uint8_t wz_write_stop_sound(
     const WzBehaviorFrameFacts* facts,

@@ -8,23 +8,32 @@
 #include <audio/audio_command.h>
 #include <audio/audio_scheduler.h>
 
+#include <cstring>
+
 namespace wz::engine::audio {
 
     namespace {
+        // Which clip of a (possibly bank-backed) renderable to play. Default uses
+        // the renderable's default_index (auto-play); Index selects by ordinal;
+        // Name selects by FNV-1a/32 name hash. Name/out-of-range that don't resolve
+        // fall back to default_index. A single-clip renderable has one clip, so
+        // any selector resolves to it.
+        struct ClipSelector {
+            enum class Mode { Default, Index, Name } mode = Mode::Default;
+            uint32_t index = 0;
+            uint32_t name_hash = 0;
+        };
+
         // Resolve an AudioSource's renderable terminal → clip → playable PCM view
         // + the renderable's baked params. False if the reference is empty or the
         // renderable/clip can't be resolved. Shared by the auto-play pass and the
-        // behavior Play verb so both interpret the descriptor identically.
-        //
-        // requested_index selects which clip in a (possibly bank-backed)
-        // renderable to play: < 0 means "use the renderable's default_index"
-        // (auto-play); >= 0 selects that clip, falling back to default_index when
-        // out of range. A single-clip renderable has exactly one clip, so the
-        // index is effectively ignored there.
+        // behavior Play verb so both interpret the descriptor identically. All clip
+        // selection (index/name → ordinal) happens here, against the resolved
+        // renderable.
         bool resolve_source_voice(
             const wz::engine::assets::EngineAssetLibrary& assets,
             const wz::engine::assets::AudioSourceComponent& source,
-            int64_t requested_index,
+            const ClipSelector& selector,
             wz::audio::AudioBufferView& view,
             float& gain,
             float& pitch,
@@ -42,9 +51,23 @@ namespace wz::engine::audio {
             if (renderable == nullptr || !renderable->valid()) {
                 return false;
             }
-            const uint32_t index = (requested_index < 0)
-                ? renderable->default_index
-                : static_cast<uint32_t>(requested_index);
+            uint32_t index = renderable->default_index;
+            switch (selector.mode) {
+            case ClipSelector::Mode::Default:
+                break;
+            case ClipSelector::Mode::Index:
+                index = selector.index;
+                break;
+            case ClipSelector::Mode::Name: {
+                const int found =
+                    renderable->index_for_name_hash(selector.name_hash);
+                if (found >= 0) {
+                    index = static_cast<uint32_t>(found);
+                }
+                // Unknown name → keep default_index.
+                break;
+            }
+            }
             const wz::asset::ResourceHandle clip_handle =
                 renderable->clip_at(index);
             const AudioClipData* clip =
@@ -92,8 +115,8 @@ namespace wz::engine::audio {
             cmd.type = wz::audio::AudioCommandType::Play;
             cmd.sample_time = 0;            // play as soon as the next block runs
             cmd.client_id = client_id;
-            // Auto-play uses the renderable's default_index (requested_index < 0).
-            if (!resolve_source_voice(assets, source, /*requested_index*/ -1,
+            // Auto-play uses the renderable's default_index.
+            if (!resolve_source_voice(assets, source, ClipSelector{},
                                       cmd.source, cmd.gain, cmd.pitch,
                                       cmd.looping)) {
                 ++report.skipped_unresolved;
@@ -143,12 +166,24 @@ namespace wz::engine::audio {
         switch (verb) {
         case AudioBehaviorVerb::Play: {
             cmd.type = wz::audio::AudioCommandType::Play;
-            // v0 is the clip index for a bank-backed renderable: >= 0 selects that
-            // clip (rounded), < 0 falls back to the renderable's default_index.
-            const int64_t requested_index = (v0 < 0.0f)
-                ? -1
-                : static_cast<int64_t>(v0 + 0.5f);
-            if (!resolve_source_voice(assets, *source, requested_index,
+            // Clip selection for a bank-backed renderable, encoded in v0/v1:
+            //   v0 <= -2  → select by name; v1 carries the 32-bit name hash as a
+            //               bit pattern (reinterpreted, not a numeric value).
+            //   v0 == -1  → use the renderable's default_index.
+            //   v0 >= 0   → select that clip index (rounded).
+            ClipSelector selector{};
+            if (v0 <= -1.5f) {
+                selector.mode = ClipSelector::Mode::Name;
+                std::memcpy(&selector.name_hash, &v1, sizeof(uint32_t));
+            }
+            else if (v0 < 0.0f) {
+                selector.mode = ClipSelector::Mode::Default;
+            }
+            else {
+                selector.mode = ClipSelector::Mode::Index;
+                selector.index = static_cast<uint32_t>(v0 + 0.5f);
+            }
+            if (!resolve_source_voice(assets, *source, selector,
                                       cmd.source, cmd.gain, cmd.pitch,
                                       cmd.looping)) {
                 return false;  // renderable doesn't resolve to a clip

@@ -217,11 +217,15 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
-                // ── 3. Copy the bank's clip handles into the terminal ─────────
+                // ── 3. Copy the bank's clip handles + name hashes into the
+                //       terminal (the latter for behavior select-by-name) ───────
                 std::vector<wz::asset::ResourceHandle> clips;
+                std::vector<uint32_t> clip_name_hashes;
                 clips.reserve(bank->entries.size());
+                clip_name_hashes.reserve(bank->entries.size());
                 for (const AudioClipBankEntry& e : bank->entries) {
                     clips.push_back(e.clip);
+                    clip_name_hashes.push_back(e.name_hash);
                 }
 
                 // Clamp default_index into [0, clips.size()) (clips is non-empty
@@ -235,6 +239,7 @@ namespace wz::engine::assets::internal
                 const wz::asset::ResourceHandle handle =
                     audio_renderable_table.add(AudioRenderableData{
                         .clips = std::move(clips),
+                        .clip_name_hashes = std::move(clip_name_hashes),
                         .default_index = default_index,
                         .gain = desc->gain,
                         .pitch = std::max(desc->pitch, kMinPitch),

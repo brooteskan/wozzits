@@ -27,12 +27,18 @@ namespace wz::engine::assets {
     // runtime can fetch a clip's AudioBufferView and start a voice without
     // re-resolving the graph. A single-clip terminal stores a one-element vector;
     // a bank-backed terminal stores the whole bank's clips and the behavior PLAY
-    // command selects one by index. `default_index` is the clip auto-play and
-    // out-of-range/<0 index requests fall back to.
+    // command selects one by index OR by name. `default_index` is the clip
+    // auto-play and out-of-range/<0 index requests fall back to.
+    //
+    // `clip_name_hashes` parallels `clips` (FNV-1a/32 of each clip's name) so a
+    // behavior can select a clip by name without the bank — populated by the
+    // bank-backed recipe, left empty by the single-clip recipe (which has no
+    // names, so name selection there always falls back to default_index).
 
     struct AudioRenderableData
     {
         std::vector<wz::asset::ResourceHandle> clips;  // source clips in AudioClipTable
+        std::vector<uint32_t> clip_name_hashes;        // parallel to clips, may be empty
         uint32_t default_index = 0;
         float gain = 1.0f;
         float pitch = 1.0f;
@@ -56,6 +62,19 @@ namespace wz::engine::assets {
                 return clips[index];
             }
             return clips[default_index < clips.size() ? default_index : 0];
+        }
+
+        // Index of the clip with the given name hash, or -1 if none matches (incl.
+        // the single-clip case, where clip_name_hashes is empty). Linear scan over
+        // a tiny contiguous vector — banks hold a handful to a few dozen clips.
+        int index_for_name_hash(uint32_t name_hash) const noexcept
+        {
+            for (size_t i = 0; i < clip_name_hashes.size(); ++i) {
+                if (clip_name_hashes[i] == name_hash) {
+                    return static_cast<int>(i);
+                }
+            }
+            return -1;
         }
     };
 
