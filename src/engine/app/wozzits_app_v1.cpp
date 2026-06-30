@@ -5,6 +5,7 @@
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/scene/scene_authoring_materialize.h>
+#include <engine/assets/scene/scene_compilers.h>
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/assets/scene/scene_json_export.h>
 #include <engine/assets/scene/prefab_instantiate.h>
@@ -508,6 +509,12 @@ namespace wz::app
         load_behavior_modules(desc.behavior_module_folder);
         rebuild_behavior_scene();
 
+        // Auto-register the project's scenelets as spawnable prefabs (runtime
+        // prefab spawning): each <resource_root>/scenelets/*.scene.json becomes a
+        // prefab named by its stem, so a prefab_spawner behavior can graft it on a
+        // SPAWN_PREFAB command. Silent no-op when the project has no scenelets.
+        register_scenelet_prefabs();
+
         // One-shot scene-load lifecycle pass: lets a scene-setup behavior pick
         // the active camera (WZ_EVENT_SCENE_LOADED -> SET_ACTIVE_CAMERA) before
         // the first frame renders. Runs only on initial load, not on the
@@ -588,6 +595,92 @@ namespace wz::app
         ctx_.logger.info(
             "load_scene: loaded " + std::to_string(loaded)
             + " behavior module DLL(s) from " + resolved);
+    }
+
+    std::size_t WozzitsApp_v1::register_scenelet_prefabs()
+    {
+        if (!ctx_.assets) {
+            return 0;
+        }
+
+        // Scenelets live in a "scenelets" folder next to the scene file (the
+        // project root), so derive the folder from the scene's directory and
+        // resolve it through the asset file system the way load_behavior_modules
+        // resolves the module folder (resolve_path joins a relative path onto the
+        // absolute resource root). A missing/empty folder is a silent no-op —
+        // projects without scenelets register nothing.
+        const wz::fs::Path project_dir = wz::fs::parent_path(scene_source_path_);
+        const wz::fs::Path scenelets_rel =
+            project_dir.empty()
+                ? wz::fs::Path{ "scenelets" }
+                : wz::fs::join(project_dir, "scenelets");
+        const wz::fs::Path scenelets_dir =
+            ctx_.assets->files().resolve_path(scenelets_rel);
+
+        const wz::fs::FileResult<std::vector<wz::fs::DirEntry>> listing =
+            wz::fs::list_directory(scenelets_dir);
+        if (!listing) {
+            return 0;  // no scenelets folder (or unreadable): nothing to register
+        }
+
+        std::size_t registered = 0;
+        for (const wz::fs::DirEntry& entry : listing.value) {
+            if (entry.is_directory) {
+                continue;
+            }
+            // Match "*.scene.json" only (the scene-file convention). The prefab
+            // name is the filename stem with the ".scene" suffix stripped, so
+            // tank.scene.json -> "tank". wz::fs::extension returns the suffix
+            // WITHOUT a leading dot.
+            const wz::fs::Path full = wz::fs::join(scenelets_dir, entry.name);
+            if (wz::fs::extension(full) != "json") {
+                continue;
+            }
+            wz::fs::Path name = wz::fs::stem(full);  // "tank.scene"
+            if (wz::fs::extension(name) != "scene") {
+                continue;
+            }
+            name = wz::fs::stem(name);  // "tank"
+
+            const wz::fs::FileResult<std::string> text =
+                wz::fs::read_file_text(full);
+            if (!text) {
+                ctx_.logger.warn(
+                    "register_scenelet_prefabs: could not read '"
+                    + entry.name + "' (skipped)");
+                continue;
+            }
+
+            wz::json::JSONParseResult parsed =
+                wz::json::parse_json_string(text.value);
+            if (!parsed.ok || !parsed.document.root) {
+                ctx_.logger.warn(
+                    "register_scenelet_prefabs: '" + entry.name
+                    + "' is not valid JSON (skipped)");
+                continue;
+            }
+
+            std::optional<wz::engine::assets::SceneAssetData> scene_data =
+                wz::engine::assets::internal::parse_scene_data_from_json(
+                    parsed.document, ctx_.logger);
+            if (!scene_data) {
+                ctx_.logger.warn(
+                    "register_scenelet_prefabs: '" + entry.name
+                    + "' did not parse as a scene (skipped)");
+                continue;
+            }
+
+            register_prefab(name, std::move(scene_data->nodes));
+            ++registered;
+        }
+
+        if (registered > 0) {
+            ctx_.logger.info(
+                "register_scenelet_prefabs: registered "
+                + std::to_string(registered) + " prefab(s) from "
+                + scenelets_dir);
+        }
+        return registered;
     }
 
     std::size_t WozzitsApp_v1::resolve_glb_scene_sources()

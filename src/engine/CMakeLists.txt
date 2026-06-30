@@ -21,6 +21,7 @@ target_sources(window_engine PRIVATE
     behavior/builtin_behaviors.cpp
     behavior/sample_collision_behaviors.cpp
     behavior/scene_camera_behaviors.cpp
+    behavior/prefab_spawner_behaviors.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp

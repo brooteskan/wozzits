@@ -5660,4 +5660,24 @@ namespace wz::engine::assets::internal
             });
     }
 
+    std::optional<SceneAssetData> parse_scene_data_from_json(
+        const wz::json::JSONDocument& doc,
+        wz::Logger& logger)
+    {
+        // A scenelet/prefab carries no pre-resolved asset-key references — its
+        // renderables are bridged through the graph once grafted — so parse with
+        // empty reference maps. parse_scene_json lives in this TU's anonymous
+        // namespace, visible here.
+        const SceneAssetReferenceMap empty;
+        return parse_scene_json(
+            doc,
+            logger,
+            empty,
+            empty,
+            empty,
+            empty,
+            empty,
+            empty);
+    }
+
 } // namespace wz::engine::assets::internal

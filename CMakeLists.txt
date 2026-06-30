@@ -381,6 +381,13 @@ configure_file(
     "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/scene.json"
     "${WZ_PREFAB_SPAWN_FIXTURE_DST}/scene.json"
     COPYONLY)
+# A scenelet auto-registered as the "spawnling" prefab on scene load (the
+# runtime-spawning glue): scenelets/<stem>.scene.json -> prefab "<stem>". Its
+# root binds accumulate_on_frame, so a spawned instance's behavior runs.
+configure_file(
+    "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/scenelets/spawnling.scene.json"
+    "${WZ_PREFAB_SPAWN_FIXTURE_DST}/scenelets/spawnling.scene.json"
+    COPYONLY)
 
 # Self-contained fixture for the WozzitsApp_v1 GLB scene-source test (issue
 # #213): an empty asset graph + a scene whose host node carries a
@@ -660,6 +667,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(behavior behavior_commands_transform_tests)
     rs_add_test_group(behavior behavior_scene_component_tests)
     rs_add_test_group(behavior scene_camera_behavior_tests)
+    rs_add_test_group(behavior prefab_spawner_behavior_tests)
 
     add_library(behavior_dynamic_test_plugin SHARED
         tests/behavior/dynamic_behavior_plugin.cpp)

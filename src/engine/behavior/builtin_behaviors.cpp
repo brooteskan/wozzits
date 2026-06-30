@@ -1,4 +1,5 @@
 #include <engine/behavior/builtin_behaviors.h>
+#include <engine/behavior/prefab_spawner_behaviors.h>
 #include <engine/behavior/sample_collision_behaviors.h>
 #include <engine/behavior/scene_camera_behaviors.h>
 
@@ -93,6 +94,11 @@ namespace wz::engine::behavior
                 registry,
                 register_scene_camera_behaviors,
                 &logger);
+        const bool registered_prefab_spawner =
+            plugins.register_static_pack(
+                registry,
+                register_prefab_spawner_behaviors,
+                &logger);
         if (!registered_debug) {
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: debug");
@@ -105,6 +111,11 @@ namespace wz::engine::behavior
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: "
                 "scene_camera");
+        }
+        if (!registered_prefab_spawner) {
+            logger.warn(
+                "[behavior] failed to register builtin behavior pack: "
+                "prefab_spawner");
         }
     }
 }

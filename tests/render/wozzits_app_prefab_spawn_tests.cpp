@@ -173,6 +173,34 @@ TEST_F(WozzitsAppPrefabFixture, SpawnPrefabGraftsSubtreeAndRunsItsBehavior)
     EXPECT_TRUE(app.node_local_translation("spawn:2:spawnling_root").has_value());
 }
 
+// Scenelets under <resource_root>/scenelets/ are auto-registered as prefabs on
+// load (the runtime-spawning glue): the fixture ships scenelets/spawnling.scene.-
+// json, so the "spawnling" prefab exists WITHOUT the test calling register_prefab.
+// The fixture's spawner emits SPAWN_PREFAB for "spawnling"; on the first tick it
+// grafts the auto-registered scenelet's node into the running scene.
+TEST_F(WozzitsAppPrefabFixture, AutoRegistersSceneletsAsPrefabsOnLoad)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    // No app.register_prefab(...) here — auto-registration from the scenelets
+    // folder is the only source of the "spawnling" prefab.
+    ASSERT_TRUE(app.load_scene(scene_load_desc()));
+
+    EXPECT_EQ(app.spawned_prefab_node_count(), 0u);
+
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_EQ(app.spawned_prefab_node_count(), 1u)
+        << "auto-registered scenelet prefab was not grafted on spawn";
+
+    // The spawned node carries the scenelet root's id under the spawn prefix and
+    // sits at the spawner world (100,0,0) × offset (0,0,5) = (100,0,5).
+    const auto spawned_pos =
+        app.node_local_translation("spawn:1:spawnling_root");
+    ASSERT_TRUE(spawned_pos.has_value())
+        << "spawned node 'spawn:1:spawnling_root' missing from scene";
+    EXPECT_FLOAT_EQ(spawned_pos->x, 100.0f);
+    EXPECT_FLOAT_EQ(spawned_pos->z, 5.0f);
+}
+
 // A spawn while the scene camera is active (play mode) must NOT flip the active
 // camera off its anchor (#219). The fixture's scene_camera behavior selects "cam"
 // on load; after a spawn-induced rebuild the anchor is unchanged.

@@ -581,6 +581,15 @@ namespace wz::app
         // across a scene/project swap (the plugin host reloads existing modules).
         void load_behavior_modules(const wz::fs::Path& module_folder);
 
+        // Auto-register every "<resource_root>/scenelets/*.scene.json" as a prefab
+        // (the runtime-spawning glue): each file is parsed into SceneAssetData and
+        // its nodes registered via register_prefab under the filename stem (so
+        // scenelets/tank.scene.json -> prefab "tank"). A behavior's SPAWN_PREFAB
+        // command naming that stem then grafts it. Mirrors load_behavior_modules:
+        // resolves the folder through the asset file system and is a silent no-op
+        // when the scenelets folder is missing/empty. Returns the count registered.
+        std::size_t register_scenelet_prefabs();
+
         // Resolve every node's glb_scene_source DESCRIPTOR into a Scene asset
         // (issue #213, the descriptor route). For each scene node carrying a
         // glb_scene_source, register the GLB file + call
