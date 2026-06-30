@@ -49,4 +49,22 @@ namespace wz::cognition
         const CommitPolicy& policy,
         double dt,
         wz::qstate::Rng& rng);
+
+    // MARGINAL-level commit -- the same policy as try_commit, but driven by an
+    // agent's decision marginal z = <sigma_z> in [-1, 1] rather than a qstate
+    // register. The COORDINATION backends expose only the marginal (decision_z),
+    // not a single shared register the way a lone agent does (the TTN holds
+    // tensors; the exact backend a joint register over the whole group), so a
+    // coordinated agent commits on its marginal. P(|1>) = (1 - z)/2.
+    bool confident_marginal(double z, double confidence);
+
+    //   - confident -> commit to the LEADING disposition (deterministic);
+    //   - else decoherence (prob decoherence_rate*dt) -> Born-sample the bit from z;
+    //   - else nullopt (keep deliberating).
+    // The decided bit is true for |1> (z < 0), false for |0> (z > 0).
+    std::optional<bool> try_commit_marginal(
+        double z,
+        const CommitPolicy& policy,
+        double dt,
+        wz::qstate::Rng& rng);
 }

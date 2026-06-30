@@ -686,6 +686,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(cognition tree_tn_tests)
     rs_add_test_group(cognition coordination_tests)
     rs_add_test_group(cognition cognition_clock_tests)
+    rs_add_test_group(cognition agent_cognition_tests)
 
     add_library(behavior_dynamic_test_plugin SHARED
         tests/behavior/dynamic_behavior_plugin.cpp)

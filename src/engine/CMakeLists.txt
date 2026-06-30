@@ -39,6 +39,7 @@ target_sources(window_engine PRIVATE
     cognition/tree_tn.cpp
     cognition/coordination.cpp
     cognition/cognition_clock.cpp
+    cognition/agent_cognition.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp
