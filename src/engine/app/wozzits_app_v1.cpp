@@ -7,6 +7,7 @@
 #include <engine/assets/scene/scene_authoring_materialize.h>
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/assets/scene/scene_json_export.h>
+#include <engine/assets/scene/scene_subtree_export.h>
 #include <engine/assets/scene_asset_module.h>
 #include <engine/assets/renderable_asset_module.h>
 #include <engine/assets/type_extensions.h>
@@ -2519,6 +2520,69 @@ namespace wz::app
 
         scene_dirty_ = false;
         ctx_.logger.info("save_scene: scene persisted");
+        return true;
+    }
+
+    bool WozzitsApp_v1::export_subtree_as_scene(
+        std::string_view root_node_id,
+        const wz::fs::Path& out_path)
+    {
+        // Carve the subtree out of the LIVE nodes. A missing root id yields no
+        // subtree — bail (the caller treats it as a failure).
+        std::optional<wz::engine::assets::SceneAssetData> subtree =
+            wz::engine::assets::extract_scene_subtree(
+                scene_nodes_, root_node_id);
+        if (!subtree) {
+            ctx_.logger.error(
+                "export_subtree_as_scene: root node not found");
+            return false;
+        }
+
+        // Exclude runtime-grafted instance children (#213), mirroring
+        // save_scene: a prefab keeps a scene_source host's reference but not the
+        // sub-tree it grafts at load (that re-imports from the reference). The
+        // host node itself (with its scene_source) stays if it is in the subtree.
+        if (!grafted_node_ids_.empty()) {
+            const std::unordered_set<std::string> grafted(
+                grafted_node_ids_.begin(), grafted_node_ids_.end());
+            std::vector<wz::engine::assets::SceneNodeAsset> kept;
+            kept.reserve(subtree->nodes.size());
+            for (wz::engine::assets::SceneNodeAsset& n : subtree->nodes) {
+                if (grafted.count(n.id) == 0) {
+                    kept.push_back(std::move(n));
+                }
+            }
+            subtree->nodes = std::move(kept);
+        }
+
+        // Resolve the output path the way save_scene resolves its source path:
+        // an absolute path is used as-is, otherwise it joins the resource root.
+        const wz::fs::Path resource_root =
+            ctx_.assets ? ctx_.assets->resource_root() : wz::fs::Path{};
+        const wz::fs::Path path =
+            wz::fs::is_absolute(out_path) || resource_root.empty()
+                ? out_path
+                : wz::fs::join(resource_root, out_path);
+
+        // Emit a FRESH scene document: a prefab is self-contained, so there is no
+        // existing-file non-node data to preserve (unlike save_scene).
+        wz::json::JSONDocument document =
+            wz::engine::assets::export_scene_to_json_document(*subtree);
+
+        std::ofstream out(path, std::ios::binary);
+        if (!out) {
+            ctx_.logger.error(
+                "export_subtree_as_scene: could not open output file");
+            return false;
+        }
+        out << wz::json::serialize_json(document);
+        if (!out.good()) {
+            ctx_.logger.error(
+                "export_subtree_as_scene: write failed");
+            return false;
+        }
+
+        ctx_.logger.info("export_subtree_as_scene: prefab written");
         return true;
     }
 

@@ -430,6 +430,23 @@ namespace wz::app
         // no live edit happened since load/last save; false on write failure.
         bool save_scene();
 
+        // Carve the subtree rooted at `root_node_id` out of the live scene and
+        // write it to `out_path` as a fresh, self-contained scene.json (the
+        // prefab-system milestone): the root node + its transitive descendants
+        // become the new scene's nodes, with the root re-rooted to the origin so
+        // a future spawn places the prefab purely by the spawn transform (see
+        // extract_scene_subtree). Runtime-grafted scene_source children (#213,
+        // grafted_node_ids_) are excluded, mirroring save_scene — a prefab keeps
+        // a scene_source host's reference, not its grafted subtree. `out_path` is
+        // resolved like save_scene's (absolute as-is, else joined onto the
+        // resource root). Emits a FRESH document (a prefab is self-contained; no
+        // merge into an existing file). Does NOT touch the live scene or
+        // scene_dirty_. Returns false (and logs) if `root_node_id` doesn't
+        // resolve or the write fails.
+        bool export_subtree_as_scene(
+            std::string_view root_node_id,
+            const wz::fs::Path& out_path);
+
         // Reload the project's behavior-module DLLs from `module_folder` into a
         // clean registry and re-materialize the behavior runtime, without
         // restarting the engine. Used by the editor after it recompiles the

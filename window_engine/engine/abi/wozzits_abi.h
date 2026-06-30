@@ -948,6 +948,22 @@ WZ_ABI_API WzResult wz_host_runtime_remove_node(
 // runtime.
 WZ_ABI_API WzResult wz_host_runtime_save_scene(WzHostRuntime* runtime);
 
+// Carve the subtree rooted at `root_node_id_utf8` out of the running scene and
+// write it to `out_path_utf8` as a standalone prefab scene.json (the prefab-
+// system milestone): the root node + its transitive descendants become the new
+// scene's nodes, the root re-rooted to the origin so a future spawn places the
+// prefab purely by the spawn transform. Runtime-grafted scene_source children
+// (#213) are excluded. `out_path_utf8` is resolved like the scene source path
+// (absolute as-is, else joined onto the project resource root). Blocks until the
+// engine thread completes it (it owns the scene + the write). WZ_RESULT_OK on
+// success; WZ_RESULT_INVALID_ARGUMENT for a null runtime, a caller without the
+// host capability, or an empty root id / output path; WZ_RESULT_INTERNAL_ERROR
+// if the root id does not resolve or the write fails.
+WZ_ABI_API WzResult wz_host_export_subtree_as_scene(
+    WzHostRuntime* runtime,
+    const char* root_node_id_utf8,
+    const char* out_path_utf8);
+
 // Reload the project's behavior-module DLLs into the running runtime (after the
 // editor recompiled them), without restarting the engine: the engine clears its
 // behavior registry, re-registers the built-ins, reloads every DLL in the

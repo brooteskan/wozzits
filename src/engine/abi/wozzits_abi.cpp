@@ -1367,6 +1367,47 @@ extern "C"
         return result(WZ_RESULT_OK, "");
     }
 
+    WzResult wz_host_export_subtree_as_scene(
+        WzHostRuntime* runtime,
+        const char* root_node_id_utf8,
+        const char* out_path_utf8)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!root_node_id_utf8 || root_node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "root_node_id_utf8 must not be empty");
+        }
+        if (!out_path_utf8 || out_path_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "out_path_utf8 must not be empty");
+        }
+
+        try {
+            // Blocking handshake (mirrors add_child): the engine thread carves
+            // the subtree out of its scene_nodes_ and writes the prefab, then
+            // hands back success/failure.
+            const bool ok = runtime->control.export_subtree_as_scene(
+                root_node_id_utf8, wz::fs::Path{ out_path_utf8 });
+            return ok
+                ? result(WZ_RESULT_OK, "")
+                : result(
+                    WZ_RESULT_INTERNAL_ERROR,
+                    "export subtree failed (unknown root or write error)");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR, "export subtree as scene failed");
+        }
+    }
+
     WzResult wz_host_runtime_reload_behavior_modules(WzHostRuntime* runtime)
     {
         if (!runtime) {

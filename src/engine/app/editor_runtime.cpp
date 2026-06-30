@@ -610,6 +610,58 @@ namespace wz::app
         cv_.notify_all();
     }
 
+    bool EditorRuntimeControl::export_subtree_as_scene(
+        const wz::scene::AuthoredEntityId& root_node_id,
+        const wz::fs::Path& out_path)
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this] { return !has_export_request_ || finished_; });
+        if (finished_) {
+            return false;  // runtime is not running — nothing to export
+        }
+
+        pending_export_root_ = root_node_id;
+        pending_export_path_ = out_path;
+        has_export_request_ = true;
+        has_export_result_ = false;
+        cv_.notify_all();
+
+        cv_.wait(lock, [this] { return has_export_result_ || finished_; });
+        if (!has_export_result_) {
+            has_export_request_ = false;
+            return false;  // stopped before the export completed
+        }
+
+        has_export_result_ = false;
+        return export_result_;
+    }
+
+    void EditorRuntimeControl::service_pending_export_subtree(
+        const std::function<bool(
+            const wz::scene::AuthoredEntityId&, const wz::fs::Path&)>& exporter)
+    {
+        wz::scene::AuthoredEntityId root;
+        wz::fs::Path path;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!has_export_request_) {
+                return;
+            }
+            root = std::move(pending_export_root_);
+            path = std::move(pending_export_path_);
+            has_export_request_ = false;
+        }
+
+        const bool applied = exporter(root, path);
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            export_result_ = applied;
+            has_export_result_ = true;
+        }
+        cv_.notify_all();
+    }
+
     wz::engine::assets::SceneAddBehaviorResult
     EditorRuntimeControl::add_node_behavior(
         const wz::scene::AuthoredEntityId& node_id,
@@ -1072,6 +1124,13 @@ namespace wz::app
                     if (control->take_save_request()) {
                         app.save_scene();
                     }
+                    control->service_pending_export_subtree(
+                        [&app](
+                            const wz::scene::AuthoredEntityId& root_node_id,
+                            const wz::fs::Path& out_path) {
+                            return app.export_subtree_as_scene(
+                                root_node_id, out_path);
+                        });
                     if (control->take_reload_behavior_modules_request()) {
                         app.reload_behavior_modules(behavior_module_folder);
                         control->set_behavior_modules(app.behavior_module_names());

@@ -266,6 +266,25 @@ namespace wz::app
         // Engine thread: consume a pending save request (true once per request).
         [[nodiscard]] bool take_save_request();
 
+        // Owner thread: carve the subtree rooted at `root_node_id` out of the
+        // running scene and write it to `out_path` as a standalone prefab
+        // scene.json, blocking until the engine thread does it (the prefab
+        // milestone). Unlike request_save this is a blocking request/response —
+        // like add_child — because the caller needs the success/failure back (the
+        // engine owns scene_nodes_ and the write). Returns false if the root id
+        // doesn't resolve, the write fails, or the runtime stopped first.
+        [[nodiscard]] bool export_subtree_as_scene(
+            const wz::scene::AuthoredEntityId& root_node_id,
+            const wz::fs::Path& out_path);
+
+        // Engine thread: if an export is pending, run `exporter` and publish the
+        // result. Called once per frame from run_project_runtime, alongside the
+        // other services.
+        void service_pending_export_subtree(
+            const std::function<bool(
+                const wz::scene::AuthoredEntityId&, const wz::fs::Path&)>&
+                exporter);
+
         // Owner thread: request the engine to reload the project's behavior-
         // module DLLs (after the editor recompiled them) on its next frame.
         // Non-blocking and coalescing (a flag): per-module results are logged.
@@ -536,6 +555,15 @@ namespace wz::app
         bool has_grafted_request_ = false;
         bool has_grafted_result_ = false;
         std::vector<wz::engine::assets::SceneNodeAsset> grafted_result_;
+
+        // Blocking export-subtree request/response (the prefab milestone, mirrors
+        // the add-child handshake): the owner posts a root node id + output path
+        // and blocks for the bool the engine thread produces.
+        bool has_export_request_ = false;
+        bool has_export_result_ = false;
+        wz::scene::AuthoredEntityId pending_export_root_;
+        wz::fs::Path pending_export_path_;
+        bool export_result_ = false;
     };
 
     struct EditorRuntimeLogSink
