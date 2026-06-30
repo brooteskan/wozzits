@@ -1469,7 +1469,9 @@ namespace wz::app
             scene_nodes_.end(),
             std::make_move_iterator(spawned.begin()),
             std::make_move_iterator(spawned.end()));
-        scene_dirty_ = true;
+        // A runtime spawn is ephemeral, NOT an authoring edit -- do not mark the
+        // scene dirty (and save_scene excludes "spawn:" nodes regardless), so
+        // spawned instances are never written back into scene.json.
 
         // Expand any scene_source (GLB) geometry the spawned subtree references
         // into grafted child nodes -- the SAME bridge + graft load_scene / bind
@@ -2858,23 +2860,24 @@ namespace wz::app
                 ? scene_source_path_
                 : wz::fs::join(resource_root, scene_source_path_);
 
-        // Exclude runtime-grafted instance children (#213): an instanced
-        // scene_source re-imports from its reference at load, so its grafted
-        // sub-tree must not be persisted as authored nodes (only the host node
-        // with its scene_source reference is). Flattened nodes are authored (not
-        // tracked here), so they persist normally.
+        // Exclude runtime-only nodes from the saved scene: GLB-grafted scene-
+        // source children (#213, re-imported from the reference at load) AND
+        // runtime-spawned prefab instances (their ids carry a "spawn:" prefix,
+        // covering both the spawned roots and their own grafted children). Both
+        // are ephemeral runtime state -- persisting them would re-load as authored
+        // nodes and collide with a fresh spawn's ids. Flattened nodes are authored
+        // (not tracked here), so they persist normally.
         std::vector<wz::engine::assets::SceneNodeAsset> persisted_nodes;
-        if (grafted_node_ids_.empty()) {
-            persisted_nodes = scene_nodes_;
-        }
-        else {
+        {
             const std::unordered_set<std::string> grafted(
                 grafted_node_ids_.begin(), grafted_node_ids_.end());
             persisted_nodes.reserve(scene_nodes_.size());
             for (const wz::engine::assets::SceneNodeAsset& n : scene_nodes_) {
-                if (grafted.count(n.id) == 0) {
-                    persisted_nodes.push_back(n);
+                if (grafted.count(n.id) != 0
+                    || n.id.rfind("spawn:", 0) == 0) {
+                    continue;
                 }
+                persisted_nodes.push_back(n);
             }
         }
 
