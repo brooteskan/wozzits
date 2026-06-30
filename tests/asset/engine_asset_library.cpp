@@ -247,6 +247,18 @@ float4 main(PSIn input) : SV_TARGET
             { kDirectLightSchema, kAssetTypeDirectLight },
             { kAmbientLightingSchema, kAssetTypeAmbientLighting },
             { kHDRIEnvironmentSchema, kAssetTypeEnvironmentMap },
+
+            // Audio family — CPU-resident (no GPU resource); like every recipe
+            // above, the module assigns keys via its key_factories/audio_*.h
+            // factory while the generic draft path still re-materializes them, so
+            // they belong on the allowlist until that path is schema-aware.
+            { kAudioClipFromWavSchema, kAssetTypeAudioClip },
+            { kAudioClipProceduralToneSchema, kAssetTypeAudioClip },
+            { kAudioClipBankFromClipsSchema, kAssetTypeAudioBank },
+            { kAudioClipBankFromDirectorySchema, kAssetTypeAudioBank },
+            { kAudioRenderableSchema, kAssetTypeAudioRenderable },
+            { kAudioClipBankRenderableSchema, kAssetTypeAudioRenderable },
+            { kAudioGrainCloudRenderableSchema, kAssetTypeAudioRenderable },
         };
 
         for (const Phase2KeyFactoryAllowlistEntry& entry : kAllowlist) {
