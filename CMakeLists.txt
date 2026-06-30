@@ -670,6 +670,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(behavior prefab_spawner_behavior_tests)
     rs_add_test_group(behavior drive_forward_behavior_tests)
     rs_add_test_group(behavior terrain_align_behavior_tests)
+    rs_add_test_group(qstate qstate_tests)
 
     add_library(behavior_dynamic_test_plugin SHARED
         tests/behavior/dynamic_behavior_plugin.cpp)

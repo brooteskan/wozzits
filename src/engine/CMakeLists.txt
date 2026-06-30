@@ -24,6 +24,7 @@ target_sources(window_engine PRIVATE
     behavior/prefab_spawner_behaviors.cpp
     behavior/drive_forward_behaviors.cpp
     behavior/terrain_align_behaviors.cpp
+    qstate/qstate.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp
