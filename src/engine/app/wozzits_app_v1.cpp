@@ -1444,9 +1444,27 @@ namespace wz::app
             std::make_move_iterator(spawned.end()));
         scene_dirty_ = true;
 
+        // Expand any scene_source (GLB) geometry the spawned subtree references
+        // into grafted child nodes -- the SAME bridge + graft load_scene / bind
+        // run. A prefab whose geometry comes from a scene_source (e.g. a GLB tank)
+        // carries only the host node; its meshes are the grafted children, so
+        // without this the host appends but nothing draws. bridge resolves the
+        // spawned node's scene_source_node_id -> Scene key; graft_scene_sources is
+        // idempotent (re-grafts every host) and prefixes child ids with the host
+        // id, which is unique per spawn, so each instance gets its own children.
+        if (ctx_.assets) {
+            wz::engine::assets::bridge_scene_source_keys(
+                scene_nodes_, graph_draft_);
+            graft_scene_sources();
+        }
+
         rebuild_behavior_scene();
         if (ctx_.assets) {
+            // assemble_render_bindings: a directly-renderable spawned node;
+            // rematerialize_render_bindings: the freshly grafted GLB children's
+            // intrinsic geometry bindings (the pre-graft assemble can't see them).
             assemble_render_bindings(graph_draft_);
+            rematerialize_render_bindings();
         }
         ctx_.logger.info(
             "spawn_prefab: grafted prefab as instance "
