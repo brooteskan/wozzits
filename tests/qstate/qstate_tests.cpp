@@ -2,7 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
+#include <vector>
 
 using namespace wz::qstate;
 
@@ -261,6 +264,127 @@ TEST(QState, ImagTimeZZAntiAlignsWithNegativeCoupling)
         apply_imag_time_zz(reg, 0, 1, -1.0, 0.1);
     }
     EXPECT_LT(expectation_zz(reg, 0, 1), -0.999);
+}
+
+// --- complex SVD --------------------------------------------------------
+
+namespace
+{
+    std::vector<Complex> random_matrix(uint32_t m, uint32_t n, Rng& rng)
+    {
+        std::vector<Complex> a(static_cast<std::size_t>(m) * n);
+        for (Complex& c : a) {
+            c = Complex{ rng.next_unit() * 2.0 - 1.0, rng.next_unit() * 2.0 - 1.0 };
+        }
+        return a;
+    }
+
+    std::vector<Complex> reconstruct(const Svd& d)
+    {
+        std::vector<Complex> r(
+            static_cast<std::size_t>(d.rows) * d.cols, Complex{ 0, 0 });
+        for (uint32_t i = 0; i < d.rows; ++i) {
+            for (uint32_t j = 0; j < d.cols; ++j) {
+                Complex acc{ 0, 0 };
+                for (uint32_t k = 0; k < d.rank; ++k) {
+                    acc += d.u[i * d.rank + k] * d.s[k] * d.vh[k * d.cols + j];
+                }
+                r[static_cast<std::size_t>(i) * d.cols + j] = acc;
+            }
+        }
+        return r;
+    }
+
+    double max_diff(const std::vector<Complex>& a, const std::vector<Complex>& b)
+    {
+        double m = 0;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            m = std::max(m, std::abs(a[i] - b[i]));
+        }
+        return m;
+    }
+}
+
+TEST(QState, SvdReconstructsRandomMatrices)
+{
+    Rng rng{ 0x5D0u };
+    for (auto [m, n] : { std::pair{ 4u, 4u }, std::pair{ 5u, 3u },
+             std::pair{ 3u, 5u }, std::pair{ 1u, 4u } }) {
+        for (int trial = 0; trial < 10; ++trial) {
+            const auto a = random_matrix(m, n, rng);
+            const Svd d = svd(a, m, n);
+            EXPECT_EQ(d.rank, std::min(m, n));
+            EXPECT_LT(max_diff(reconstruct(d), a), 1e-9)
+                << m << "x" << n << " trial " << trial;
+        }
+    }
+}
+
+TEST(QState, SvdSingularValuesAreDescendingAndNonNegative)
+{
+    Rng rng{ 0x123u };
+    const auto a = random_matrix(5, 4, rng);
+    const Svd d = svd(a, 5, 4);
+    for (uint32_t k = 0; k < d.rank; ++k) {
+        EXPECT_GE(d.s[k], 0.0);
+        if (k > 0) {
+            EXPECT_GE(d.s[k - 1] + 1e-12, d.s[k]);
+        }
+    }
+}
+
+TEST(QState, SvdFactorsAreOrthonormal)
+{
+    Rng rng{ 0x777u };
+    const auto a = random_matrix(5, 4, rng);
+    const Svd d = svd(a, 5, 4);
+
+    // U^dagger U = I (rank x rank).
+    for (uint32_t r = 0; r < d.rank; ++r) {
+        for (uint32_t rp = 0; rp < d.rank; ++rp) {
+            Complex acc{ 0, 0 };
+            for (uint32_t i = 0; i < d.rows; ++i) {
+                acc += std::conj(d.u[i * d.rank + r]) * d.u[i * d.rank + rp];
+            }
+            EXPECT_NEAR(acc.real(), r == rp ? 1.0 : 0.0, 1e-9);
+            EXPECT_NEAR(acc.imag(), 0.0, 1e-9);
+        }
+    }
+    // Vh Vh^dagger = I (rows of Vh orthonormal).
+    for (uint32_t r = 0; r < d.rank; ++r) {
+        for (uint32_t rp = 0; rp < d.rank; ++rp) {
+            Complex acc{ 0, 0 };
+            for (uint32_t j = 0; j < d.cols; ++j) {
+                acc += d.vh[r * d.cols + j] * std::conj(d.vh[rp * d.cols + j]);
+            }
+            EXPECT_NEAR(acc.real(), r == rp ? 1.0 : 0.0, 1e-9);
+            EXPECT_NEAR(acc.imag(), 0.0, 1e-9);
+        }
+    }
+}
+
+// Truncation keeps the largest singular values (the best low-rank approximation).
+TEST(QState, SvdTruncationKeepsLargestSingularValues)
+{
+    // diag(3, 2, 1).
+    std::vector<Complex> a(9, Complex{ 0, 0 });
+    a[0] = Complex{ 3, 0 };
+    a[4] = Complex{ 2, 0 };
+    a[8] = Complex{ 1, 0 };
+
+    const Svd full = svd(a, 3, 3);
+    ASSERT_EQ(full.rank, 3u);
+    EXPECT_NEAR(full.s[0], 3.0, 1e-9);
+    EXPECT_NEAR(full.s[1], 2.0, 1e-9);
+    EXPECT_NEAR(full.s[2], 1.0, 1e-9);
+    EXPECT_LT(max_diff(reconstruct(full), a), 1e-9);
+
+    const Svd trunc = svd(a, 3, 3, /*max_rank=*/2);
+    EXPECT_EQ(trunc.rank, 2u);
+    EXPECT_NEAR(trunc.s[0], 3.0, 1e-9);
+    EXPECT_NEAR(trunc.s[1], 2.0, 1e-9);
+    // Dropping the sigma=1 component leaves exactly that error.
+    EXPECT_NEAR(max_diff(reconstruct(trunc), a), 1.0, 1e-9);
 }
 
 TEST(QState, MeasureAllCollapsesToABasisState)

@@ -1,6 +1,8 @@
 #include <engine/qstate/qstate.h>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace wz::qstate
 {
@@ -205,6 +207,158 @@ namespace wz::qstate
             corr += (ba == bb) ? p : -p;
         }
         return total > 0 ? corr / total : 0;
+    }
+
+    Svd svd(
+        const std::vector<Complex>& a, uint32_t m, uint32_t n, uint32_t max_rank)
+    {
+        Svd out;
+        if (m == 0 || n == 0) {
+            out.rows = m;
+            out.cols = n;
+            return out;
+        }
+
+        // Orthogonalize the columns of the taller orientation (rows >= cols): work
+        // on B = A when m >= n, else B = A^dagger and swap U/V at the end.
+        const bool tr = (m < n);
+        const uint32_t rows = tr ? n : m;
+        const uint32_t cols = tr ? m : n;
+
+        std::vector<Complex> B(static_cast<std::size_t>(rows) * cols);
+        if (!tr) {
+            B = a;  // m x n
+        } else {
+            for (uint32_t i = 0; i < m; ++i) {
+                for (uint32_t j = 0; j < n; ++j) {
+                    B[static_cast<std::size_t>(j) * cols + i] =
+                        std::conj(a[static_cast<std::size_t>(i) * n + j]);
+                }
+            }
+        }
+
+        // V accumulates the right rotations (cols x cols, identity to start).
+        std::vector<Complex> V(static_cast<std::size_t>(cols) * cols,
+            Complex{ 0, 0 });
+        for (uint32_t k = 0; k < cols; ++k) {
+            V[static_cast<std::size_t>(k) * cols + k] = Complex{ 1, 0 };
+        }
+
+        const Real eps = std::numeric_limits<Real>::epsilon();
+        for (uint32_t sweep = 0; sweep < 100u; ++sweep) {
+            bool rotated = false;
+            for (uint32_t p = 0; p < cols; ++p) {
+                for (uint32_t q = p + 1; q < cols; ++q) {
+                    Real alpha = 0;
+                    Real beta = 0;
+                    Complex gamma{ 0, 0 };
+                    for (uint32_t i = 0; i < rows; ++i) {
+                        const Complex bp = B[static_cast<std::size_t>(i) * cols + p];
+                        const Complex bq = B[static_cast<std::size_t>(i) * cols + q];
+                        alpha += std::norm(bp);
+                        beta += std::norm(bq);
+                        gamma += std::conj(bp) * bq;
+                    }
+                    const Real absg = std::abs(gamma);
+                    if (absg <= eps * std::sqrt(alpha * beta) || absg == 0) {
+                        continue;  // columns p, q already orthogonal
+                    }
+                    rotated = true;
+
+                    // Real Jacobi angle + complex phase that diagonalize the 2x2
+                    // Hermitian Gram matrix [[alpha, conj(gamma)], [gamma, beta]].
+                    const Real zeta = (beta - alpha) / (2.0 * absg);
+                    const Real t = (zeta >= 0 ? 1.0 : -1.0)
+                        / (std::abs(zeta) + std::sqrt(zeta * zeta + 1.0));
+                    const Real c = 1.0 / std::sqrt(t * t + 1.0);
+                    const Real s = c * t;
+                    const Complex xi = gamma / absg;  // unit phase
+                    const Complex xs = xi * s;
+                    const Complex xcs = std::conj(xi) * s;
+
+                    for (uint32_t i = 0; i < rows; ++i) {
+                        const Complex bp = B[static_cast<std::size_t>(i) * cols + p];
+                        const Complex bq = B[static_cast<std::size_t>(i) * cols + q];
+                        B[static_cast<std::size_t>(i) * cols + p] = c * bp - xcs * bq;
+                        B[static_cast<std::size_t>(i) * cols + q] = xs * bp + c * bq;
+                    }
+                    for (uint32_t i = 0; i < cols; ++i) {
+                        const Complex vp = V[static_cast<std::size_t>(i) * cols + p];
+                        const Complex vq = V[static_cast<std::size_t>(i) * cols + q];
+                        V[static_cast<std::size_t>(i) * cols + p] = c * vp - xcs * vq;
+                        V[static_cast<std::size_t>(i) * cols + q] = xs * vp + c * vq;
+                    }
+                }
+            }
+            if (!rotated) {
+                break;
+            }
+        }
+
+        // Singular values = column norms of B; sort the columns descending.
+        std::vector<Real> sigma(cols);
+        for (uint32_t k = 0; k < cols; ++k) {
+            Real nrm = 0;
+            for (uint32_t i = 0; i < rows; ++i) {
+                nrm += std::norm(B[static_cast<std::size_t>(i) * cols + k]);
+            }
+            sigma[k] = std::sqrt(nrm);
+        }
+        std::vector<uint32_t> idx(cols);
+        for (uint32_t k = 0; k < cols; ++k) {
+            idx[k] = k;
+        }
+        std::sort(idx.begin(), idx.end(),
+            [&](uint32_t x, uint32_t y) { return sigma[x] > sigma[y]; });
+
+        const uint32_t full_rank = cols;  // min(m, n)
+        const uint32_t rank =
+            (max_rank > 0 && max_rank < full_rank) ? max_rank : full_rank;
+
+        // U_B = normalized selected columns of B (rows x rank);
+        // V_B = selected columns of the accumulated V (cols x rank).
+        std::vector<Complex> ub(static_cast<std::size_t>(rows) * rank);
+        std::vector<Complex> vb(static_cast<std::size_t>(cols) * rank);
+        std::vector<Real> s_out(rank);
+        for (uint32_t r = 0; r < rank; ++r) {
+            const uint32_t col = idx[r];
+            s_out[r] = sigma[col];
+            const Real inv = sigma[col] > 0 ? 1.0 / sigma[col] : 0.0;
+            for (uint32_t i = 0; i < rows; ++i) {
+                ub[static_cast<std::size_t>(i) * rank + r] =
+                    B[static_cast<std::size_t>(i) * cols + col] * inv;
+            }
+            for (uint32_t i = 0; i < cols; ++i) {
+                vb[static_cast<std::size_t>(i) * rank + r] =
+                    V[static_cast<std::size_t>(i) * cols + col];
+            }
+        }
+
+        out.rows = m;
+        out.cols = n;
+        out.rank = rank;
+        out.s = std::move(s_out);
+        out.vh.assign(static_cast<std::size_t>(rank) * n, Complex{ 0, 0 });
+        if (!tr) {
+            // A = U_B diag(s) V_B^dagger.
+            out.u = std::move(ub);  // m x rank
+            for (uint32_t r = 0; r < rank; ++r) {
+                for (uint32_t j = 0; j < n; ++j) {  // n == cols
+                    out.vh[static_cast<std::size_t>(r) * n + j] =
+                        std::conj(vb[static_cast<std::size_t>(j) * rank + r]);
+                }
+            }
+        } else {
+            // B = A^dagger = U_B diag(s) V_B^dagger  =>  A = V_B diag(s) U_B^dagger.
+            out.u = std::move(vb);  // m x rank (cols == m)
+            for (uint32_t r = 0; r < rank; ++r) {
+                for (uint32_t j = 0; j < n; ++j) {  // n == rows
+                    out.vh[static_cast<std::size_t>(r) * n + j] =
+                        std::conj(ub[static_cast<std::size_t>(j) * rank + r]);
+                }
+            }
+        }
+        return out;
     }
 
     bool measure(Register& reg, uint32_t q, Rng& rng)

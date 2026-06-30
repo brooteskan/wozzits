@@ -113,6 +113,31 @@ namespace wz::qstate
     // beyond a product state -- the entanglement witness mean-field cannot show.
     Real expectation_zz(const Register& reg, uint32_t a, uint32_t b);
 
+    // ---- complex SVD (for tensor-network chi-truncation) ----
+    // Thin singular value decomposition of a complex m x n matrix A (row-major,
+    // A[i*n + j]) via one-sided Jacobi: A = U * diag(s) * Vh, with
+    //   U  : m x rank, orthonormal columns,
+    //   s  : rank real singular values, descending, >= 0,
+    //   Vh : rank x n, orthonormal rows (= V^dagger),
+    // where rank = min(m, n), truncated to at most max_rank (0 = no truncation --
+    // keep all). Truncating to chi keeps the chi largest singular values, the
+    // best rank-chi approximation (Eckart-Young) -- the bond-dimension cap.
+    struct Svd
+    {
+        uint32_t rows = 0;
+        uint32_t cols = 0;
+        uint32_t rank = 0;
+        std::vector<Complex> u;   // rows x rank
+        std::vector<Real> s;      // rank
+        std::vector<Complex> vh;  // rank x cols
+    };
+
+    Svd svd(
+        const std::vector<Complex>& a,
+        uint32_t rows,
+        uint32_t cols,
+        uint32_t max_rank = 0);
+
     // ---- measurement (PARTIAL; Born rule; collapses + renormalizes) ----
     // Measures only qubit q: samples its value by the Born rule, projects the
     // state onto that outcome, and renormalizes. Other qubits stay coherent --
