@@ -107,12 +107,33 @@ namespace wz::engine::behavior
         bool valid() const noexcept { return index != UINT32_MAX; }
     };
 
+    // Declared tunable a behavior reads from its scene-component config. Mirrors
+    // WzBehaviorParamDesc on the C ABI; the registry holds these so the host and
+    // tools can enumerate a behavior's params with types + authoring defaults.
+    enum class BehaviorParamType : uint8_t
+    {
+        None = 0,
+        Float,
+        Bool,
+        String,
+    };
+
+    struct BehaviorParamSpec
+    {
+        std::string key;
+        std::string label;
+        BehaviorParamType type = BehaviorParamType::None;
+        double default_number = 0.0;
+        std::string default_string;
+    };
+
     struct BehaviorRegistration
     {
         std::string module;
         std::string name;
         BehaviorFn function = nullptr;
         void* user_data = nullptr;
+        std::vector<BehaviorParamSpec> params;
     };
 
     struct BehaviorModuleRegistration
@@ -146,6 +167,13 @@ namespace wz::engine::behavior
             std::string module,
             std::string name,
             BehaviorFn function,
+            void* user_data = nullptr);
+
+        BehaviorHandle register_behavior(
+            std::string module,
+            std::string name,
+            BehaviorFn function,
+            std::vector<BehaviorParamSpec> params,
             void* user_data = nullptr);
 
         BehaviorHandle register_behavior(

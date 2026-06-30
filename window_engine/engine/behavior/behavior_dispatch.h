@@ -30,6 +30,17 @@ namespace wz::engine::behavior
         const BehaviorRegistry& registry,
         BehaviorFrameContext& context);
 
+    // One-shot WZ_EVENT_SELF_START dispatch (module on_event subscribers only).
+    // Fires the event for each subscribed binding that has NOT yet started
+    // (tracked in scene.behavior_state.started_bindings, preserved across
+    // rebuilds), then marks it started. Run after the scene is (re)materialized;
+    // the caller applies the produced command buffer. On a spawn this fires only
+    // for the newly added bindings -- existing actors are not re-notified.
+    void dispatch_self_start(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context);
+
     void dispatch_behavior_event(
         wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,

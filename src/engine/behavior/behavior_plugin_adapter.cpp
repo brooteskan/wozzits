@@ -171,6 +171,8 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::SetGrainParam;
             case WZ_BEHAVIOR_COMMAND_SPAWN_PREFAB:
                 return BehaviorCommandKind::SpawnPrefab;
+            case WZ_BEHAVIOR_COMMAND_SET_TERRAIN_ALIGNMENT_RATE:
+                return BehaviorCommandKind::SetTerrainAlignmentRate;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;
@@ -1852,6 +1854,79 @@ namespace wz::engine::behavior
             return handle.valid() ? uint8_t{ 1 } : uint8_t{ 0 };
         }
 
+        BehaviorParamType from_abi_param_type(
+            WzBehaviorParamType type) noexcept
+        {
+            switch (type) {
+            case WZ_BEHAVIOR_PARAM_FLOAT:
+                return BehaviorParamType::Float;
+            case WZ_BEHAVIOR_PARAM_BOOL:
+                return BehaviorParamType::Bool;
+            case WZ_BEHAVIOR_PARAM_STRING:
+                return BehaviorParamType::String;
+            case WZ_BEHAVIOR_PARAM_NONE:
+            default:
+                return BehaviorParamType::None;
+            }
+        }
+
+        uint8_t register_behavior_desc(
+            void* user,
+            const WzBehaviorDesc* desc)
+        {
+            // Size-gated optional fields, mirroring register_module_desc: a
+            // host reads only the fields the caller's `size` actually covers.
+            const uint32_t required_size =
+                static_cast<uint32_t>(offsetof(WzBehaviorDesc, params));
+            const bool has_params =
+                desc
+                && desc->size
+                    >= offsetof(WzBehaviorDesc, param_count)
+                        + sizeof(desc->param_count);
+
+            auto* context = static_cast<RegisterContext*>(user);
+            if (!context || !context->registry || !context->host
+                || !desc || desc->size < required_size
+                || !desc->name || !desc->function)
+            {
+                return 0;
+            }
+
+            std::vector<BehaviorParamSpec> params;
+            const uint32_t param_count =
+                has_params ? desc->param_count : 0u;
+            params.reserve(param_count);
+            for (uint32_t i = 0; i < param_count; ++i) {
+                if (!desc->params || !desc->params[i].key
+                    || desc->params[i].key[0] == '\0')
+                {
+                    continue;
+                }
+                const WzBehaviorParamDesc& param = desc->params[i];
+                params.push_back(BehaviorParamSpec{
+                    .key = param.key,
+                    .label = param.label ? param.label : "",
+                    .type = from_abi_param_type(param.type),
+                    .default_number = param.default_number,
+                    .default_string =
+                        param.default_string ? param.default_string : "",
+                });
+            }
+
+            auto* binding_ptr = context->host->add_binding(
+                desc->function,
+                desc->behavior_user_data,
+                context->logger);
+            const BehaviorHandle handle =
+                context->registry->register_behavior(
+                    desc->module ? desc->module : "",
+                    desc->name,
+                    dispatch_abi_behavior,
+                    std::move(params),
+                    binding_ptr);
+            return handle.valid() ? uint8_t{ 1 } : uint8_t{ 0 };
+        }
+
         uint8_t register_module(
             void* user,
             const char* module,
@@ -2028,6 +2103,7 @@ namespace wz::engine::behavior
             .register_module_desc = register_module_desc,
             .register_gpu_kernel_contract =
                 register_gpu_kernel_contract,
+            .register_behavior_desc = register_behavior_desc,
         };
 
         return register_plugin(&api) != 0;

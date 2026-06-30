@@ -64,6 +64,19 @@
             "speed": 8,
             "turn_rate": 0
           }
+        },
+        {
+          "id": "enemy_tank_root.behavior.2",
+          "module": "terrain_align",
+          "name": "terrain_align",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start"
+          ],
+          "config": {
+            "alignment_rate": 120
+          }
         }
       ]
     }

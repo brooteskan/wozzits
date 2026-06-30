@@ -64,21 +64,56 @@ namespace wz::engine::behavior
                 offset_y,
                 offset_z);
         }
+
+        constexpr WzBehaviorParamDesc kPrefabSpawnerParams[] = {
+            {
+                kPrefabSpawnerNameConfigKey,
+                "Prefab name",
+                WZ_BEHAVIOR_PARAM_STRING,
+                0.0,
+                nullptr,
+            },
+            {
+                kPrefabSpawnerTriggerKeyConfigKey,
+                "Trigger key (VK code)",
+                WZ_BEHAVIOR_PARAM_FLOAT,
+                static_cast<double>(WZ_KEY_SPACE),
+                nullptr,
+            },
+            {
+                kPrefabSpawnerOffsetXConfigKey,
+                "Offset X",
+                WZ_BEHAVIOR_PARAM_FLOAT,
+                0.0,
+                nullptr,
+            },
+            {
+                kPrefabSpawnerOffsetYConfigKey,
+                "Offset Y",
+                WZ_BEHAVIOR_PARAM_FLOAT,
+                0.0,
+                nullptr,
+            },
+            {
+                kPrefabSpawnerOffsetZConfigKey,
+                "Offset Z",
+                WZ_BEHAVIOR_PARAM_FLOAT,
+                10.0,
+                nullptr,
+            },
+        };
     }
 
     uint8_t register_prefab_spawner_behaviors(WzBehaviorPluginApi* api)
     {
-        if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION
-            || !api->register_behavior)
-        {
-            return 0;
-        }
-
-        return api->register_behavior(
-            api->user,
+        return wz_register_behavior_with_params(
+            api,
             kPrefabSpawnerModule,
             kPrefabSpawnerBehavior,
             prefab_spawner,
-            nullptr);
+            kPrefabSpawnerParams,
+            static_cast<uint32_t>(
+                sizeof(kPrefabSpawnerParams)
+                / sizeof(kPrefabSpawnerParams[0])));
     }
 }

@@ -43,21 +43,34 @@ namespace wz::engine::behavior
             (void)wz_write_set_angular_velocity(
                 facts, entity, 0.0f, turn_rate_deg * kDegToRad, 0.0f);
         }
+
+        constexpr WzBehaviorParamDesc kDriveForwardParams[] = {
+            {
+                kDriveForwardSpeedConfigKey,
+                "Speed (units/s)",
+                WZ_BEHAVIOR_PARAM_FLOAT,
+                static_cast<double>(kDriveForwardDefaultSpeed),
+                nullptr,
+            },
+            {
+                kDriveForwardTurnRateConfigKey,
+                "Turn rate (deg/s)",
+                WZ_BEHAVIOR_PARAM_FLOAT,
+                0.0,
+                nullptr,
+            },
+        };
     }
 
     uint8_t register_drive_forward_behaviors(WzBehaviorPluginApi* api)
     {
-        if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION
-            || !api->register_behavior)
-        {
-            return 0;
-        }
-
-        return api->register_behavior(
-            api->user,
+        return wz_register_behavior_with_params(
+            api,
             kDriveForwardModule,
             kDriveForwardBehavior,
             drive_forward,
-            nullptr);
+            kDriveForwardParams,
+            static_cast<uint32_t>(
+                sizeof(kDriveForwardParams) / sizeof(kDriveForwardParams[0])));
     }
 }

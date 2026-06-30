@@ -84,6 +84,38 @@
         return api->register_module_desc(api->user, &desc);                 \
     }
 
+// Register a function-style behavior together with a declared param table (the
+// "expose parameters globally" surface). The params describe the config
+// tunables the behavior reads, with their types and authoring defaults, so the
+// host registers them in one place and tools can enumerate them. Declaring
+// params does not change how the behavior reads config at runtime
+// (wz_config_float still works); it makes the params discoverable + documented.
+static inline uint8_t wz_register_behavior_with_params(
+    WzBehaviorPluginApi* api,
+    const char* module,
+    const char* name,
+    WzBehaviorFn function,
+    const WzBehaviorParamDesc* params,
+    uint32_t param_count)
+{
+    if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION
+        || !api->register_behavior_desc)
+    {
+        return 0;
+    }
+
+    const WzBehaviorDesc desc = {
+        (uint32_t)sizeof(WzBehaviorDesc),
+        module,
+        name,
+        function,
+        nullptr,  // behavior_user_data
+        params,
+        param_count,
+    };
+    return api->register_behavior_desc(api->user, &desc);
+}
+
 // The stack helper keeps jobs small and easy to author. The engine-side queue
 // accepts more ports for generated/adapted jobs, but hand-written behavior
 // modules should fit comfortably inside this helper limit.
@@ -953,6 +985,28 @@ static inline uint8_t wz_write_set_motion_space(
         entity,
         WZ_BEHAVIOR_COMMAND_SET_MOTION_SPACE,
         { (float)space, 0.0f, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Set how fast `entity`'s terrain-constrained Motion swings its up-axis toward
+// the surface normal, in radians/second. <= 0 restores the instantaneous
+// strength-based alignment. Applied by apply_behavior_commands the same frame
+// the terrain pass runs; the value is runtime-only, so an aligned actor re-
+// asserts it each frame (cheap, idempotent, survives a scene rebuild/spawn).
+static inline uint8_t wz_write_set_terrain_alignment_rate(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float rate_radians_per_second)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_TERRAIN_ALIGNMENT_RATE,
+        { rate_radians_per_second, 0.0f, 0.0f, 0.0f },
     };
     return facts->write_command(facts->command_writer_user, &command);
 }
@@ -1891,6 +1945,19 @@ static inline uint8_t wz_self_set_motion_space(
     return wz_write_set_motion_space(facts, wz_self(event), space);
 }
 
+// Set the event's own entity's terrain-alignment slew rate (radians/sec). <= 0
+// restores the instantaneous strength-based alignment. The value is runtime-only
+// Motion state, so re-assert it (e.g. once per frame, or each time you adjust
+// motion) to keep it set across a scene rebuild.
+static inline uint8_t wz_self_set_terrain_alignment_rate(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float rate_radians_per_second)
+{
+    return wz_write_set_terrain_alignment_rate(
+        facts, wz_self(event), rate_radians_per_second);
+}
+
 // Deferred runtime-authoring convenience: spawn a child under the event's own
 // entity. Fire-and-forget, applied at the next frame boundary (see
 // wz_spawn_child).
@@ -2528,6 +2595,8 @@ static inline const char* wz_event_name(WzBehaviorEventKind kind)
         return "frame.update";
     case WZ_EVENT_SCENE_LOADED:
         return "scene.loaded";
+    case WZ_EVENT_SELF_START:
+        return "self.start";
     case WZ_EVENT_COLLISION_ENTER:
         return "collision.enter";
     case WZ_EVENT_COLLISION_STAY:

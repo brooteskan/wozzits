@@ -996,7 +996,7 @@ TEST(BehaviorCommands, TerrainConstraintSetsActorHeightAndRideOffset)
     std::vector<RuntimeEntityId> changed;
 
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
 
     ASSERT_EQ(changed.size(), 1u);
@@ -1049,7 +1049,7 @@ TEST(BehaviorCommands, TerrainConstraintAcceptsConstrainMovementCollisionCompone
     std::vector<RuntimeEntityId> changed;
 
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
     ASSERT_EQ(changed.size(), 1u);
     EXPECT_EQ(changed[0], actor_id);
@@ -1080,7 +1080,7 @@ TEST(BehaviorCommands, TerrainConstraintUsesNearestMeshSurfaceOnExactMiss)
     std::vector<RuntimeEntityId> changed;
 
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
 
     ASSERT_EQ(changed.size(), 1u);
@@ -1142,7 +1142,7 @@ TEST(BehaviorCommands, TerrainConstraintFootprintUsesHighestSupportSample)
     std::vector<RuntimeEntityId> changed;
 
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
 
     const auto& actor_node = wz::core::graph::node_data(
@@ -1182,7 +1182,7 @@ TEST(BehaviorCommands, TerrainConstraintPrefersConstraintSurfaceOverride)
     std::vector<RuntimeEntityId> changed;
 
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
 
     const auto& actor_node = wz::core::graph::node_data(
@@ -1213,7 +1213,7 @@ TEST(BehaviorCommands, TerrainConstraintUsesConstraintSurfaceWithoutWorldEntry)
     std::vector<RuntimeEntityId> changed;
 
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
 
     const auto& actor_node = wz::core::graph::node_data(
@@ -1246,7 +1246,7 @@ TEST(BehaviorCommands, TerrainConstraintAlignsActorUpToSurfaceNormal)
     std::vector<RuntimeEntityId> changed;
 
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
 
     const auto& actor_node = wz::core::graph::node_data(
@@ -1271,6 +1271,100 @@ TEST(BehaviorCommands, TerrainConstraintAlignsActorUpToSurfaceNormal)
     EXPECT_NEAR(forward.z, 1.0f, 1e-5f);
 }
 
+// SetTerrainAlignmentRate is applied by apply_behavior_commands: it writes the
+// actor's runtime MotionComponent.terrain_alignment_rate (the field the terrain
+// pass reads). This is the behavior-sets-a-motion-field half of the pattern.
+TEST(BehaviorCommands, SetTerrainAlignmentRateCommandWritesMotionField)
+{
+    auto asset = terrain_constraint_scene(true, true, 0.0f);
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+
+    BehaviorCommandBuffer commands{};
+    commands.set_terrain_alignment_rate(actor, 2.5f);
+    std::vector<RuntimeEntityId> changed;
+    EXPECT_EQ(
+        apply_behavior_commands(result.instance, commands.commands, &changed),
+        1u);
+    // Not a transform mutation: it does not mark the entity changed.
+    EXPECT_TRUE(changed.empty());
+
+    float applied_rate = -1.0f;
+    for (const auto& record : result.instance.motions) {
+        if (record.node == actor) {
+            applied_rate = record.component.terrain_alignment_rate;
+        }
+    }
+    EXPECT_FLOAT_EQ(applied_rate, 2.5f);
+}
+
+// With a positive alignment rate the up-axis only SLEWS toward the surface
+// normal: one small step lands partway (not the full instantaneous alignment),
+// and a second step makes further progress.
+TEST(BehaviorCommands, TerrainConstraintRateLimitsAlignmentSwing)
+{
+    auto asset = terrain_constraint_scene(
+        true,
+        true,
+        0.0f,
+        0.75f,
+        12.0f,
+        0.75f);
+    asset.nodes[1].motion->terrain_align_to_surface = true;
+    asset.nodes[1].motion->terrain_alignment_strength = 1.0f;
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const auto surface = sloped_mesh_surface();
+    const auto collision = collision_with_surface(terrain, surface);
+
+    // Push a slew rate of 1 rad/s onto the actor (mirrors what terrain_align
+    // does each frame). The full alignment here swings the up-axis ~0.927 rad
+    // (to (-0.8, 0.6, 0)), so a 0.1 rad step is clearly partial.
+    BehaviorCommandBuffer commands{};
+    commands.set_terrain_alignment_rate(actor, 1.0f);
+    std::vector<RuntimeEntityId> rate_changed;
+    apply_behavior_commands(result.instance, commands.commands, &rate_changed);
+
+    const float dt = 0.1f;
+    std::vector<RuntimeEntityId> changed;
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, dt, &changed),
+        1u);
+
+    const auto up_axis = [&]() {
+        const auto& node = wz::core::graph::node_data(
+            result.instance.storage.polytree, actor);
+        wz::math::Transform trs{};
+        EXPECT_TRUE(wz::math::decompose_trs(node.world, trs));
+        return wz::math::quat_axis_y(wz::math::normalize(trs.rotation));
+    };
+
+    const wz::math::Vec3 up1 = up_axis();
+    // Moved toward the slope normal (up.x went negative) but did NOT reach the
+    // full -0.8, and stayed close to vertical.
+    EXPECT_LT(up1.x, -1e-3f);
+    EXPECT_GT(up1.x, -0.7f);
+    EXPECT_GT(up1.y, 0.9f);
+
+    // A second step (the rate persists on the Motion field) makes further
+    // progress toward the surface normal.
+    std::vector<RuntimeEntityId> changed2;
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, dt, &changed2),
+        1u);
+    const wz::math::Vec3 up2 = up_axis();
+    EXPECT_LT(up2.x, up1.x);
+}
+
 TEST(BehaviorCommands, TerrainConstraintPreservesIntegratedHorizontalMotion)
 {
     auto asset = terrain_constraint_scene(true, true, 0.5f);
@@ -1291,7 +1385,7 @@ TEST(BehaviorCommands, TerrainConstraintPreservesIntegratedHorizontalMotion)
 
     EXPECT_EQ(integrate_motion(result.instance, 0.5f, &changed), 1u);
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
 
     const auto& actor_node = wz::core::graph::node_data(
@@ -1323,7 +1417,7 @@ TEST(BehaviorCommands, TerrainConstraintRequiresActorAndTerrainOptIn)
         std::vector<RuntimeEntityId> changed;
 
         EXPECT_EQ(
-            apply_terrain_constraints(result.instance, collision, &changed),
+            apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
             0u);
         EXPECT_TRUE(changed.empty());
 
@@ -1359,7 +1453,7 @@ TEST(BehaviorCommands, TerrainConstraintClampsOutOfBoundsToEdge)
     std::vector<RuntimeEntityId> changed;
 
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
     EXPECT_FALSE(changed.empty());
 
@@ -1406,7 +1500,7 @@ TEST(BehaviorCommands, TerrainConstraintUsesHighestSampledSurface)
     std::vector<RuntimeEntityId> changed;
 
     EXPECT_EQ(
-        apply_terrain_constraints(result.instance, collision, &changed),
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
         1u);
 
     const auto& actor_node = wz::core::graph::node_data(

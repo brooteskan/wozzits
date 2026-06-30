@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 24u
+#define WZ_BEHAVIOR_ABI_VERSION 25u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -55,6 +55,16 @@ enum
     WZ_EVENT_NONE = 0u,
     WZ_EVENT_FRAME_UPDATE = 1u,
     WZ_EVENT_SCENE_LOADED = 2u,
+    /*
+     * One-shot lifecycle: fired ONCE per behavior binding the first time it
+     * materializes -- both authored-at-load and runtime-spawned (prefab) bindings.
+     * Opt-in like any channel ("self.start"); module behaviors only. The host
+     * tracks which bindings have started (preserved across scene rebuilds), so a
+     * spawn fires it only for the NEW binding -- existing actors are not re-
+     * notified. Use it to set per-instance parameters once instead of every
+     * frame (e.g. terrain alignment rate).
+     */
+    WZ_EVENT_SELF_START = 3u,
     WZ_EVENT_COLLISION_ENTER = 100u,
     WZ_EVENT_COLLISION_STAY = 101u,
     WZ_EVENT_COLLISION_EXIT = 102u,
@@ -265,6 +275,18 @@ enum
      * offset xyz applied in the spawner's frame. Play-mode only.
      */
     WZ_BEHAVIOR_COMMAND_SPAWN_PREFAB = 16u,
+    /*
+     * Set the terrain-alignment slew RATE (radians/second) of `entity`'s Motion
+     * component. Unlike the camera/audio/spawn commands above, this IS applied by
+     * apply_behavior_commands: it writes the runtime MotionComponent so the
+     * terrain-constraint pass rate-limits how fast the actor's up-axis swings
+     * toward the surface normal that same frame. values[0] = rate in rad/s
+     * (<= 0 restores the instantaneous strength-based alignment). The rate is
+     * runtime-only state, so an aligned actor re-asserts it each frame. The
+     * pattern: a behavior declares a tunable param and pushes it onto a Motion
+     * field consumed by an engine pass.
+     */
+    WZ_BEHAVIOR_COMMAND_SET_TERRAIN_ALIGNMENT_RATE = 17u,
 };
 
 /*
@@ -870,6 +892,54 @@ typedef uint8_t (*WzRegisterBehaviorFn)(
     WzBehaviorFn function,
     void* behavior_user_data);
 
+/*
+ * Declared behavior parameters (the "expose parameters globally" surface). A
+ * behavior describes the tunables it reads from its scene-component config so
+ * the host can register them in one place and tools can enumerate them with
+ * their types and authoring defaults — instead of each behavior privately
+ * reading magic-string keys with inline fallbacks. Declaring a param does NOT
+ * change how a behavior reads config (wz_config_float still works); it makes
+ * the param discoverable and gives it a documented default.
+ */
+typedef uint32_t WzBehaviorParamType;
+enum
+{
+    WZ_BEHAVIOR_PARAM_NONE = 0u,
+    WZ_BEHAVIOR_PARAM_FLOAT = 1u,
+    WZ_BEHAVIOR_PARAM_BOOL = 2u,
+    WZ_BEHAVIOR_PARAM_STRING = 3u,
+};
+
+typedef struct WzBehaviorParamDesc
+{
+    const char* key;             /* config key the behavior reads */
+    const char* label;           /* human-friendly name; may be NULL */
+    WzBehaviorParamType type;    /* WZ_BEHAVIOR_PARAM_* */
+    double default_number;       /* FLOAT/BOOL default (BOOL: 0 or 1) */
+    const char* default_string;  /* STRING default; may be NULL */
+} WzBehaviorParamDesc;
+
+/*
+ * Behavior registration carrying declared params. Mirrors register_behavior but
+ * lets the behavior ship a param table. `size` makes the struct forward-
+ * compatible (the host reads only the fields its `size` covers), exactly like
+ * WzBehaviorModuleDesc. `params` may be NULL when `param_count` is 0.
+ */
+typedef struct WzBehaviorDesc
+{
+    uint32_t size;
+    const char* module;
+    const char* name;
+    WzBehaviorFn function;
+    void* behavior_user_data;
+    const WzBehaviorParamDesc* params;
+    uint32_t param_count;
+} WzBehaviorDesc;
+
+typedef uint8_t (*WzRegisterBehaviorDescFn)(
+    void* user,
+    const WzBehaviorDesc* desc);
+
 typedef uint8_t (*WzRegisterBehaviorModuleFn)(
     void* user,
     const char* module,
@@ -903,6 +973,9 @@ typedef struct WzBehaviorPluginApi
     WzRegisterBehaviorModuleFn register_module;
     WzRegisterBehaviorModuleDescFn register_module_desc;
     WzRegisterGpuKernelContractFn register_gpu_kernel_contract;
+    // APPEND-ONLY: registers a behavior with a declared param table. May be NULL
+    // on hosts that predate it; callers should null-check before use.
+    WzRegisterBehaviorDescFn register_behavior_desc;
 } WzBehaviorPluginApi;
 
 typedef uint8_t (*WzRegisterBehaviorPluginFn)(

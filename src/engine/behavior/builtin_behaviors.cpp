@@ -3,6 +3,7 @@
 #include <engine/behavior/prefab_spawner_behaviors.h>
 #include <engine/behavior/sample_collision_behaviors.h>
 #include <engine/behavior/scene_camera_behaviors.h>
+#include <engine/behavior/terrain_align_behaviors.h>
 
 #include <logging/logger.h>
 
@@ -105,6 +106,11 @@ namespace wz::engine::behavior
                 registry,
                 register_drive_forward_behaviors,
                 &logger);
+        const bool registered_terrain_align =
+            plugins.register_static_pack(
+                registry,
+                register_terrain_align_behaviors,
+                &logger);
         if (!registered_debug) {
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: debug");
@@ -127,6 +133,11 @@ namespace wz::engine::behavior
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: "
                 "drive_forward");
+        }
+        if (!registered_terrain_align) {
+            logger.warn(
+                "[behavior] failed to register builtin behavior pack: "
+                "terrain_align");
         }
     }
 }

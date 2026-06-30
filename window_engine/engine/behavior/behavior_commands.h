@@ -44,6 +44,12 @@ namespace wz::engine::behavior
         // values[0] = prefab name-hash as a float bit pattern, values[1..3] =
         // offset xyz in the spawner's frame. See WZ_BEHAVIOR_COMMAND_SPAWN_PREFAB.
         SpawnPrefab,
+        // Set `entity`'s Motion terrain-alignment slew rate (radians/sec). APPLIED
+        // by apply_behavior_commands (writes the runtime MotionComponent), unlike
+        // the host-handled kinds above. values[0] = rate; <= 0 restores the
+        // instantaneous strength path. See
+        // WZ_BEHAVIOR_COMMAND_SET_TERRAIN_ALIGNMENT_RATE.
+        SetTerrainAlignmentRate,
     };
 
     struct BehaviorCommand
@@ -190,6 +196,17 @@ namespace wz::engine::behavior
                     0.0f,
                     0.0f,
                     0.0f },
+            });
+        }
+
+        void set_terrain_alignment_rate(
+            wz::scene::RuntimeEntityId entity,
+            float rate_radians_per_second)
+        {
+            commands.push_back({
+                .entity = entity,
+                .kind = BehaviorCommandKind::SetTerrainAlignmentRate,
+                .values = { rate_radians_per_second, 0.0f, 0.0f, 0.0f },
             });
         }
     };

@@ -159,6 +159,7 @@ namespace wz::engine::behavior
             const wz::math::Quaternion& current_world_rotation,
             const wz::math::Vec3& surface_normal,
             float strength,
+            float max_step_radians,
             wz::math::Quaternion& out_rotation) noexcept
         {
             wz::math::Vec3 up = surface_normal;
@@ -225,11 +226,27 @@ namespace wz::engine::behavior
 
             const wz::math::Quaternion desired =
                 wz::math::from_rotation_matrix(basis);
-            const float clamped_strength =
-                (std::clamp)(strength, 0.0f, 1.0f);
-            out_rotation = clamped_strength >= 1.0f
+
+            // Blend factor toward the desired alignment. A positive
+            // max_step_radians rate-limits the swing: cap the step to that angle
+            // this frame (frame-rate independent, since the caller passes
+            // rate * delta_seconds). Otherwise fall back to the instantaneous
+            // strength blend.
+            float t;
+            if (max_step_radians > 0.0f) {
+                const float d = (std::clamp)(
+                    std::abs(wz::math::dot(current, desired)), 0.0f, 1.0f);
+                const float angle = 2.0f * std::acos(d);  // radians, [0, pi]
+                t = angle > 1e-5f
+                    ? (std::min)(1.0f, max_step_radians / angle)
+                    : 1.0f;
+            }
+            else {
+                t = (std::clamp)(strength, 0.0f, 1.0f);
+            }
+            out_rotation = t >= 1.0f
                 ? desired
-                : nlerp_shortest(current, desired, clamped_strength);
+                : nlerp_shortest(current, desired, t);
             return true;
         }
 
@@ -887,6 +904,18 @@ namespace wz::engine::behavior
                 break;
             }
 
+            case BehaviorCommandKind::SetTerrainAlignmentRate: {
+                // Write the runtime Motion field the terrain-constraint pass
+                // reads to rate-limit alignment. Not a transform mutation, so it
+                // does not mark the entity changed or trigger propagation.
+                auto* motion = ensure_motion(scene, command.entity);
+                if (motion && std::isfinite(command.values[0])) {
+                    motion->terrain_alignment_rate = command.values[0];
+                    ++applied;
+                }
+                break;
+            }
+
             case BehaviorCommandKind::SetActiveCamera:
             case BehaviorCommandKind::PlaySound:
             case BehaviorCommandKind::StopSound:
@@ -994,6 +1023,7 @@ namespace wz::engine::behavior
     uint32_t apply_terrain_constraints(
         wz::engine::assets::SceneInstance& scene,
         const wz::engine::collision::CollisionFrameStorage& collision,
+        float delta_seconds,
         std::vector<wz::scene::RuntimeEntityId>* out_changed_entities)
     {
         uint32_t applied = 0;
@@ -1055,9 +1085,20 @@ namespace wz::engine::behavior
                 changed = true;
             }
 
+            // A behavior-set slew rate (radians/sec) rate-limits the swing; pass
+            // rate * dt as the per-frame step cap (0 = use the strength blend).
+            const bool rate_limited =
+                std::isfinite(motion.terrain_alignment_rate)
+                && motion.terrain_alignment_rate > 0.0f
+                && std::isfinite(delta_seconds)
+                && delta_seconds > 0.0f;
+            const float max_step_radians = rate_limited
+                ? motion.terrain_alignment_rate * delta_seconds
+                : 0.0f;
             if (motion.terrain_align_to_surface
-                && std::isfinite(motion.terrain_alignment_strength)
-                && motion.terrain_alignment_strength > 0.0f)
+                && (rate_limited
+                    || (std::isfinite(motion.terrain_alignment_strength)
+                        && motion.terrain_alignment_strength > 0.0f)))
             {
                 wz::math::Transform world_trs{};
                 wz::math::Quaternion aligned_world_rotation{};
@@ -1066,6 +1107,7 @@ namespace wz::engine::behavior
                         world_trs.rotation,
                         support_normal,
                         motion.terrain_alignment_strength,
+                        max_step_radians,
                         aligned_world_rotation)
                     && set_world_rotation(
                         scene.storage.polytree,

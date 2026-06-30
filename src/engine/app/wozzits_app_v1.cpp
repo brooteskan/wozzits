@@ -1173,8 +1173,26 @@ namespace wz::app
         // block yet and initializes fresh. Carried for both instance and shared
         // state. Default-empty when there was no prior instance.
         wz::engine::assets::BehaviorStateStorage preserved_state;
+        // Behavior-set runtime Motion overrides do NOT live on the authored asset,
+        // so reinstantiating below would wipe them. Capture the terrain-alignment
+        // rate keyed by STABLE authored node id (runtime ids are renumbered on
+        // rebuild) and restore it after, so a surviving actor keeps the rate a
+        // self.start handler set -- without that, a spawn would reset every existing
+        // actor to instant alignment. Keyed by authored id, mirroring how
+        // behavior_state survives by binding id.
+        std::unordered_map<std::string, float> preserved_alignment_rate;
         if (behavior_scene_) {
             preserved_state = std::move(behavior_scene_->behavior_state);
+            for (const auto& record : behavior_scene_->motions) {
+                if (record.component.terrain_alignment_rate != 0.0f
+                    && record.node
+                        < behavior_scene_->runtime_to_authored.size())
+                {
+                    preserved_alignment_rate[
+                        behavior_scene_->runtime_to_authored[record.node]] =
+                        record.component.terrain_alignment_rate;
+                }
+            }
         }
 
         behavior_scene_.reset();
@@ -1241,6 +1259,25 @@ namespace wz::app
         // construction); a new binding has no block and initializes fresh.
         behavior_scene_->behavior_state = std::move(preserved_state);
 
+        // Restore behavior-set runtime alignment rates onto the rebuilt motions
+        // (matched by authored node id). A motion not in the map keeps its
+        // default 0; a newly spawned actor gets its rate from the self.start pass
+        // below instead.
+        if (!preserved_alignment_rate.empty()) {
+            for (auto& record : behavior_scene_->motions) {
+                if (record.node
+                    >= behavior_scene_->runtime_to_authored.size())
+                {
+                    continue;
+                }
+                const auto it = preserved_alignment_rate.find(
+                    behavior_scene_->runtime_to_authored[record.node]);
+                if (it != preserved_alignment_rate.end()) {
+                    record.component.terrain_alignment_rate = it->second;
+                }
+            }
+        }
+
         // Initialize behaviors (init callbacks + per-binding/shared state) once
         // for the materialized scene, exactly as game_app does after building
         // its scene.
@@ -1276,6 +1313,33 @@ namespace wz::app
         ctx_.logger.info(
             "behavior scene initialized (bindings="
             + std::to_string(behavior_scene_->behaviors.size()) + ")");
+
+        // One-shot self.start lifecycle pass: fire WZ_EVENT_SELF_START for every
+        // binding that has not started yet (tracked in behavior_state, preserved
+        // across rebuilds) and apply the commands it produces. On initial load
+        // this fires for all subscribed authored bindings; on a prefab spawn or a
+        // live edit it fires ONLY for the newly materialized bindings -- existing
+        // actors keep their started flag (and their preserved runtime overrides),
+        // so nothing re-runs per spawn. A single integration point covers load,
+        // spawn, and edit because they all funnel through rebuild_behavior_scene.
+        {
+            wz::engine::behavior::BehaviorCommandBuffer self_start_commands;
+            wz::engine::behavior::BehaviorFrameContext self_start_ctx{
+                .scene = &*behavior_scene_,
+                .behavior_state = &behavior_scene_->behavior_state,
+                .commands = &self_start_commands,
+                .logger = &ctx_.logger,
+            };
+            wz::engine::behavior::dispatch_self_start(
+                *behavior_scene_, registry_, self_start_ctx);
+            if (!self_start_commands.commands.empty()) {
+                std::vector<wz::scene::RuntimeEntityId> self_start_changed;
+                (void)wz::engine::behavior::apply_behavior_commands(
+                    *behavior_scene_,
+                    self_start_commands.commands,
+                    &self_start_changed);
+            }
+        }
 
         // Re-point the active camera handle at the rebuilt scene's entities, so a
         // selected scene camera survives a rebuild (e.g. a behavior spawning a
@@ -1794,6 +1858,7 @@ namespace wz::app
         (void)wz::engine::behavior::apply_terrain_constraints(
             *behavior_scene_,
             frame_storage_.collision,
+            dt,
             &constraint_changed);
         changed_entities.insert(
             changed_entities.end(),

@@ -31,6 +31,7 @@ namespace wz::engine::behavior
     uint32_t apply_terrain_constraints(
         wz::engine::assets::SceneInstance& scene,
         const wz::engine::collision::CollisionFrameStorage& collision,
+        float delta_seconds,
         std::vector<wz::scene::RuntimeEntityId>* out_changed_entities =
             nullptr);
 

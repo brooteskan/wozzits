@@ -23,6 +23,7 @@ target_sources(window_engine PRIVATE
     behavior/scene_camera_behaviors.cpp
     behavior/prefab_spawner_behaviors.cpp
     behavior/drive_forward_behaviors.cpp
+    behavior/terrain_align_behaviors.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp

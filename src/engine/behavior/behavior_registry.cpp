@@ -10,6 +10,17 @@ namespace wz::engine::behavior
         BehaviorFn function,
         void* user_data)
     {
+        return register_behavior(
+            std::move(module), std::move(name), function, {}, user_data);
+    }
+
+    BehaviorHandle BehaviorRegistry::register_behavior(
+        std::string module,
+        std::string name,
+        BehaviorFn function,
+        std::vector<BehaviorParamSpec> params,
+        void* user_data)
+    {
         if (name.empty() || !function) {
             return {};
         }
@@ -17,6 +28,7 @@ namespace wz::engine::behavior
         if (auto existing = find(module, name)) {
             registrations_[existing->index].function = function;
             registrations_[existing->index].user_data = user_data;
+            registrations_[existing->index].params = std::move(params);
             return *existing;
         }
 
@@ -28,6 +40,7 @@ namespace wz::engine::behavior
             .name = std::move(name),
             .function = function,
             .user_data = user_data,
+            .params = std::move(params),
         });
         return handle;
     }

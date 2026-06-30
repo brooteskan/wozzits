@@ -21,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace wz::engine::assets
@@ -135,6 +136,12 @@ namespace wz::engine::assets
         float terrain_footprint_radius = 0.0f;
         bool terrain_align_to_surface = false;
         float terrain_alignment_strength = 1.0f;
+        // Runtime-only slew rate (radians/sec) for terrain alignment, set by a
+        // behavior via SetTerrainAlignmentRate (not authored on SceneMotionAsset).
+        // > 0 rate-limits how fast the up-axis swings toward the surface normal;
+        // <= 0 uses the instantaneous strength path above. Re-asserted each frame
+        // by the aligning behavior, so it survives a scene rebuild/spawn.
+        float terrain_alignment_rate = 0.0f;
         bool enabled = true;
     };
 
@@ -276,6 +283,11 @@ namespace wz::engine::assets
     {
         std::unordered_map<std::string, BehaviorStateBlock> instance_state;
         std::unordered_map<std::string, BehaviorStateBlock> shared_state;
+        // Binding ids that have already received their one-shot WZ_EVENT_SELF_START.
+        // Preserved across rebuild_behavior_scene (moved with the storage), so a
+        // spawn fires self.start only for genuinely new bindings; existing actors
+        // keep their started flag and are not re-notified.
+        std::unordered_set<std::string> started_bindings;
 
         BehaviorStateBlock* find_instance_state(std::string_view binding_id)
         {

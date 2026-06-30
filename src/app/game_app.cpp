@@ -163,6 +163,7 @@ namespace wz::app
         struct TerrainConstraintJobData
         {
             wz::engine::FrameStorage* frame = nullptr;
+            const wz::engine::FrameContext* fctx = nullptr;
             wz::engine::FrameDirtyState* frame_dirty = nullptr;
             wz::engine::assets::SceneInstance* scene = nullptr;
             wz::app::DebugObjectRuntime* debug_object = nullptr;
@@ -1041,6 +1042,9 @@ namespace wz::app
             (void)wz::engine::behavior::apply_terrain_constraints(
                 *data->scene,
                 data->frame->collision,
+                data->fctx
+                    ? static_cast<float>(data->fctx->frame.delta_seconds())
+                    : 0.0f,
                 &changed_entities);
 
             if (changed_entities.empty()) {
@@ -1463,6 +1467,7 @@ namespace wz::app
 
         TerrainConstraintJobData terrain_constraint_data{
             .frame = &app.frame,
+            .fctx = &fctx,
             .frame_dirty = &app.frame_dirty,
             .scene =
                 app.debug_object.collision_scene_valid

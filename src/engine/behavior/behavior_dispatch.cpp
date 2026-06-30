@@ -628,4 +628,52 @@ namespace wz::engine::behavior
         context.commands->clear();
         dispatch_scene_loaded_events_to_modules(scene, registry, context);
     }
+
+    void dispatch_self_start(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context)
+    {
+        if (!context.commands) {
+            return;
+        }
+        if (!context.scene) {
+            context.scene = &scene;
+        }
+        if (!context.behavior_state) {
+            context.behavior_state = &scene.behavior_state;
+        }
+
+        // One-shot lifecycle pass: dispatch WZ_EVENT_SELF_START to subscribed
+        // modules only, and only for bindings that have not started yet. The
+        // started set lives in behavior_state (preserved across rebuilds), so on
+        // a spawn this fires only for the newly materialized bindings -- existing
+        // actors keep their flag and are not re-notified. Marks each fired binding
+        // started. Callers apply the produced commands.
+        context.commands->clear();
+        auto& started = scene.behavior_state.started_bindings;
+        for (const auto& record : scene.behaviors) {
+            const auto& component = record.component;
+            if (component.binding_id.empty()) {
+                continue;  // no stable key to dedupe on
+            }
+            if (!behavior_accepts_event(
+                    registry, component, WZ_EVENT_SELF_START))
+            {
+                continue;
+            }
+            if (started.find(component.binding_id) != started.end()) {
+                continue;  // already started
+            }
+
+            const BehaviorEvent event{
+                .kind = WZ_EVENT_SELF_START,
+                .entity = record.node,
+                .other = wz::scene::INVALID_RUNTIME_ENTITY,
+                .self_is_trigger = false,
+            };
+            dispatch_module_event(registry, context, component, event);
+            started.insert(component.binding_id);
+        }
+    }
 }
