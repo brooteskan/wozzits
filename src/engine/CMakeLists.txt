@@ -32,6 +32,7 @@ target_sources(window_engine PRIVATE
     cognition/agent_layout.cpp
     cognition/learning.cpp
     cognition/exclusivity.cpp
+    cognition/sequential_goals.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp
