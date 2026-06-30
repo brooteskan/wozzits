@@ -62,7 +62,7 @@
           ],
           "config": {
             "speed": 8,
-            "turn_rate": 12
+            "turn_rate": 0
           }
         }
       ]

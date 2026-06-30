@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -1417,6 +1418,32 @@ namespace wz::app
         if (!wz::math::decompose_trs(spawn_world, trs)) {
             trs = wz::math::rigid_pose_from_matrix(spawn_world);
         }
+
+        // Spawn LEVEL: replace the inherited rotation with an upright one facing
+        // the spawn heading (yaw about world +Y). The spawner's full rotation
+        // carries its OWN terrain-induced tilt (pitch/roll for ITS surface); at
+        // the spawn location that tilt is wrong -- it tips the tank onto a side
+        // edge and aims its local-forward partly into the ground, so it drives
+        // under the surface. Keep only the heading (the spawn matrix's +Z axis
+        // projected onto the horizontal plane) and let per-frame terrain
+        // alignment tilt the tank correctly for its own surface.
+        {
+            const float fwd_x = spawn_world.m[8];   // local +Z in world (column 2)
+            const float fwd_z = spawn_world.m[10];
+            const float horiz = std::sqrt(fwd_x * fwd_x + fwd_z * fwd_z);
+            if (horiz > 1.0e-4f) {
+                const float yaw = std::atan2(fwd_x, fwd_z);  // +Z at yaw 0
+                trs.rotation = wz::math::Quaternion{
+                    0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f) };
+            }
+        }
+        ctx_.logger.info(
+            "spawn_prefab: spawn at ("
+            + std::to_string(trs.position.x) + ", "
+            + std::to_string(trs.position.y) + ", "
+            + std::to_string(trs.position.z) + ") scale "
+            + std::to_string(trs.scale.x));
+
         wz::engine::assets::AuthoredTransform root_transform{};
         root_transform.translation[0] = trs.position.x;
         root_transform.translation[1] = trs.position.y;
