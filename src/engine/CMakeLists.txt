@@ -24,6 +24,7 @@ target_sources(window_engine PRIVATE
     behavior/prefab_spawner_behaviors.cpp
     behavior/drive_forward_behaviors.cpp
     behavior/terrain_align_behaviors.cpp
+    behavior/quantum_agent_behaviors.cpp
     qstate/qstate.cpp
     cognition/mean_field.cpp
     cognition/exact_group.cpp

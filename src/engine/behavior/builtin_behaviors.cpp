@@ -2,6 +2,7 @@
 #include <engine/behavior/drive_forward_behaviors.h>
 #include <engine/behavior/prefab_spawner_behaviors.h>
 #include <engine/behavior/sample_collision_behaviors.h>
+#include <engine/behavior/quantum_agent_behaviors.h>
 #include <engine/behavior/scene_camera_behaviors.h>
 #include <engine/behavior/terrain_align_behaviors.h>
 
@@ -111,6 +112,11 @@ namespace wz::engine::behavior
                 registry,
                 register_terrain_align_behaviors,
                 &logger);
+        const bool registered_quantum_agent =
+            plugins.register_static_pack(
+                registry,
+                register_quantum_agent_behaviors,
+                &logger);
         if (!registered_debug) {
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: debug");
@@ -138,6 +144,11 @@ namespace wz::engine::behavior
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: "
                 "terrain_align");
+        }
+        if (!registered_quantum_agent) {
+            logger.warn(
+                "[behavior] failed to register builtin behavior pack: "
+                "quantum_agent");
         }
     }
 }
