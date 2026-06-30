@@ -1422,6 +1422,35 @@ static inline uint8_t wz_set_next_wake(
     return facts->set_next_wake(facts->wake_scheduler_user, delay_seconds);
 }
 
+// Cognition read surface (decider/actuator split). Read the quantum_agent decision
+// on `entity` -- the committed disposition (out->committed: -1 deliberating, 0/1
+// the chosen outcome) + live marginal (out->marginal: <sigma_z> in [-1, 1]).
+// Returns 1 and fills `out` if that node hosts a quantum_agent, else 0. An actuator
+// behavior calls this to act on a decider's choice without owning the cognition.
+static inline uint8_t wz_agent_decision(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    WzAgentDecision* out)
+{
+    if (!facts || !facts->get_agent_decision || !out) {
+        return 0;
+    }
+    return facts->get_agent_decision(
+        facts->cognition_reader_user, entity, out);
+}
+
+// Convenience: read the quantum_agent co-located on the event's own entity (self).
+static inline uint8_t wz_self_agent_decision(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    WzAgentDecision* out)
+{
+    return wz_agent_decision(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        out);
+}
+
 static inline void wz_log_info(
     const WzBehaviorFrameFacts* facts,
     const char* message)

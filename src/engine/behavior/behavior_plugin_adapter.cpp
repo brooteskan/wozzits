@@ -1,5 +1,7 @@
 #include <engine/behavior/behavior_plugin_adapter.h>
 
+#include <engine/behavior/quantum_agent_behaviors.h>
+
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/collision/collision_frame.h>
 #include <engine/collision/collision_surface_sampling.h>
@@ -1415,6 +1417,43 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        uint8_t get_agent_decision_query(
+            void* user,
+            WzBehaviorEntityId entity,
+            WzAgentDecision* out)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->scene || !context->behavior_state || !out) {
+                return 0;
+            }
+
+            // Find the quantum_agent binding on `entity` and read the decision it
+            // cached into its instance state -- decoupled from the cognition store
+            // (an actuator reads the POD, not the wave function).
+            for (const auto& record : context->scene->behaviors) {
+                if (record.node != entity) {
+                    continue;
+                }
+                const auto& component = record.component;
+                if (component.module != kQuantumAgentModule
+                    || component.binding_id.empty())
+                {
+                    continue;
+                }
+                const auto* block = context->behavior_state->find_instance_state(
+                    component.binding_id);
+                if (!block || !block->data) {
+                    continue;
+                }
+                const auto* state =
+                    static_cast<const QuantumAgentState*>(block->data);
+                out->committed = state->committed;
+                out->marginal = state->marginal;
+                return 1;
+            }
+            return 0;
+        }
+
         uint8_t set_next_wake_request(
             void* user,
             double delay_seconds)
@@ -1701,6 +1740,8 @@ namespace wz::engine::behavior
                 .sim_time = context.sim_time,
                 .wake_scheduler_user = &context,
                 .set_next_wake = set_next_wake_request,
+                .cognition_reader_user = &context,
+                .get_agent_decision = get_agent_decision_query,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1777,6 +1818,8 @@ namespace wz::engine::behavior
                 .sim_time = context.sim_time,
                 .wake_scheduler_user = &context,
                 .set_next_wake = set_next_wake_request,
+                .cognition_reader_user = &context,
+                .get_agent_decision = get_agent_decision_query,
             };
         }
 

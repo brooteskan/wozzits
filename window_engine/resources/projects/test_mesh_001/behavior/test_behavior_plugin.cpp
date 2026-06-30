@@ -3,7 +3,7 @@
 namespace
 {
     static const char* kTankEvents[] = {
-    "input.*","self.start"
+    "input.*","self.start","frame.update"
     };
 
     struct TankState {
@@ -16,6 +16,10 @@ namespace
         WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
         WzBehaviorEntityId canon_audio = WZ_INVALID_BEHAVIOR_ENTITY;
 
+        // Last committed disposition of the co-located quantum_agent (if any):
+        // -2 = never read, -1 = deliberating, 0/1 = the chosen outcome. We react
+        // only on a CHANGE, so the announcement fires once per collapse.
+        int8_t last_decision = -2;
     };
 
     static constexpr float movement_factor = 0.1;
@@ -114,6 +118,41 @@ namespace
             wz_get_instance_state(facts));
         if (!state) {
             return;
+        }
+
+        // Decider/actuator split: if THIS node also hosts a quantum_agent (add the
+        // "quantum_agent" behavior to the tank node and give it a `goal`), it
+        // deliberates a binary disposition on its OWN clock. Here we just READ its
+        // committed decision -- a cheap cached read, no cognition runs here -- and
+        // react when the wave function collapses. The player still drives; the
+        // quantum sub-mind governs an auxiliary call (here, whether to engage). The
+        // read no-ops cleanly when no quantum_agent is authored on the node.
+        WzAgentDecision decision{};
+        if (wz_self_agent_decision(facts, event, &decision)
+            && decision.committed != state->last_decision)
+        {
+            state->last_decision = decision.committed;
+            if (decision.committed == 0) {
+                wz_log_infof(
+                    facts,
+                    "[tank] quantum mind committed: ENGAGE (z=%.2f)",
+                    decision.marginal);
+                // React audibly so the collapse is observable in play.
+                if (state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY) {
+                    wz_write_play_sound_named(
+                        facts, state->canon_audio, "Canon_a");
+                }
+            } else if (decision.committed == 1) {
+                wz_log_infof(
+                    facts,
+                    "[tank] quantum mind committed: HOLD (z=%.2f)",
+                    decision.marginal);
+            } else {
+                wz_log_infof(
+                    facts,
+                    "[tank] quantum mind deliberating (z=%.2f)",
+                    decision.marginal);
+            }
         }
 
         uint64_t frame_index =  wz_frame_index(facts);

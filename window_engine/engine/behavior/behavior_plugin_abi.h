@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 26u
+#define WZ_BEHAVIOR_ABI_VERSION 27u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -434,6 +434,26 @@ typedef uint8_t (*WzRemoveNodeComponentFn)(
  * it. Returns 1 if accepted (the active binding resolved), 0 otherwise.
  */
 typedef uint8_t (*WzSetNextWakeFn)(void* user, double delay_seconds);
+
+/*
+ * Cognition read surface (the decider/actuator split). A quantum_agent decides;
+ * other behaviors act on its decision by reading it here. `committed` is -1 while
+ * the agent is still deliberating (a superposition), or 0 / 1 once it collapses to
+ * the |0> / |1> disposition. `marginal` is the live <sigma_z> in [-1, 1] (> 0 leans
+ * |0>, < 0 leans |1>), readable even before commitment. get_agent_decision reads
+ * the quantum_agent bound to `entity` (any node -- pass self to read a co-located
+ * agent); it returns 0 if that node has no quantum_agent.
+ */
+typedef struct WzAgentDecision
+{
+    int8_t committed;
+    float marginal;
+} WzAgentDecision;
+
+typedef uint8_t (*WzGetAgentDecisionFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    WzAgentDecision* out);
 
 typedef struct WzGpuWorkId
 {
@@ -873,6 +893,15 @@ typedef struct WzBehaviorFrameFacts
     double sim_time;
     void* wake_scheduler_user;
     WzSetNextWakeFn set_next_wake;
+
+    /*
+     * Cognition read surface (decider/actuator split; APPEND-ONLY). An actuator
+     * behavior reads the committed decision + live marginal of the quantum_agent on
+     * a node via get_agent_decision (pass self to read a co-located agent). Null
+     * when the host wires no cognition reader.
+     */
+    void* cognition_reader_user;
+    WzGetAgentDecisionFn get_agent_decision;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts
