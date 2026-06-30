@@ -92,6 +92,14 @@ namespace wz::audio {
         // blend_depth = 0..1 (1 = a source fully drops out at its trough).
         float blend_rate = 0.0f;
         float blend_depth = 0.0f;
+
+        // Running power normalization (0 = off, exact legacy output). When > 0,
+        // each output frame's grain sum is scaled so loudness stays roughly
+        // constant as overlap density and source fade-ins swing — random grains
+        // add in POWER, so we pin RMS to a reference overlap count (this value,
+        // typically 1..4) without touching any grain's window shape. See
+        // render_add for the formula + soft-floor rationale.
+        float normalize = 0.0f;
     };
 
     class GrainCloud
@@ -151,6 +159,12 @@ namespace wz::audio {
         // player enters a new region. ramp_frames de-zippers the change (0 = jump).
         void set_blend_rate(float rate_hz, uint32_t ramp_frames = 0) noexcept;
         void set_blend_depth(float depth, uint32_t ramp_frames = 0) noexcept;
+
+        // Running power normalization (authored, set once at start; NOT a live
+        // per-frame param). 0 = off (exact legacy output); > 0 is the reference
+        // overlap count the cloud's loudness is pinned to. Clamped to >= 0. See
+        // render_add for how it scales the per-frame grain sum.
+        void set_normalize(float reference_overlap) noexcept;
 
         // Begin / end emitting. stop() stops SPAWNING; in-flight grains finish so
         // the texture tails out click-free (active() stays true until they do).
@@ -229,6 +243,8 @@ namespace wz::audio {
         Ramp     blend_rate_{};   // source-blend LFO cycles/sec (0 = off)
         Ramp     blend_depth_{};  // 0..1
         double   blend_phase_ = 0.0;   // [0,1) LFO phase
+
+        float    normalize_ = 0.0f;  // running power-normalize reference (0 = off)
 
         double   spawn_phase_ = 0.0;  // fractional grain-spawn accumulator
         uint32_t rng_state_ = 1;

@@ -59,6 +59,12 @@ namespace wz::engine::assets {
         // on its own. blend_rate = cycles/sec (0 = off); blend_depth = 0..1.
         float                blend_rate = 0.0f;
         float                blend_depth = 0.0f;
+
+        // Running power normalization (authored; 0 = off → exact legacy output).
+        // When > 0, the reference overlap count the cloud's loudness is pinned to
+        // (typically 1..4) so perceived level stays constant as grains come and
+        // go. See GrainCloud::render_add for the formula.
+        float                normalize = 0.0f;
     };
 
     // ─── AudioRenderableData ──────────────────────────────────────────────────────

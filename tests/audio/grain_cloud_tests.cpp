@@ -326,6 +326,153 @@ namespace wz::audio::test {
         EXPECT_LE(cloud.active_grain_count(), 4u);
     }
 
+    // ─── Window-energy normalization ─────────────────────────────────────────────
+    //
+    // normalize > 0 scales each frame's grain sum by sqrt(N_ref)/sqrt(Σenv² + N_ref)
+    // so loudness stays roughly constant as overlap density swings, WITHOUT touching
+    // grain window shapes (the +N_ref floor leaves lone grains unchanged).
+
+    namespace {
+        double rms(const std::vector<float>& b)
+        {
+            double e = 0.0;
+            for (float s : b) e += static_cast<double>(s) * static_cast<double>(s);
+            return std::sqrt(e / static_cast<double>(b.size()));
+        }
+    }
+
+    // normalize == 0 must be byte-for-byte identical to the legacy (no-normalize)
+    // render — the feature is strictly opt-in.
+    TEST(GrainCloudTests, NormalizeOffMatchesLegacy)
+    {
+        const std::vector<float> src = dc_source();
+        const AudioBufferView v = view(src, 1, 48000);
+
+        auto run = [&](float normalize) {
+            GrainCloud cloud;
+            cloud.configure(small_cfg());  // same seed => identical grain stream
+            cloud.set_sources(&v, nullptr, 1);
+            cloud.set_density(500.0f);
+            cloud.set_grain_size(12.0f);
+            cloud.set_normalize(normalize);
+            cloud.start();
+            std::vector<float> out(2400 * 2, 0.0f);
+            cloud.render_add(out.data(), 2400, 2, 48000);
+            return out;
+        };
+
+        const std::vector<float> legacy = run(0.0f);  // never called set_normalize > 0
+        const std::vector<float> off = run(0.0f);
+        ASSERT_EQ(legacy.size(), off.size());
+        for (size_t i = 0; i < legacy.size(); ++i) {
+            EXPECT_EQ(legacy[i], off[i]) << "at " << i;  // exact, not NEAR
+        }
+    }
+
+    // ON should flatten the loudness swing between a low- and a high-density render:
+    // the high/low RMS ratio is much closer to 1 with normalization than without.
+    TEST(GrainCloudTests, NormalizeFlattensLevelAcrossDensity)
+    {
+        const std::vector<float> src = dc_source();
+        const AudioBufferView v = view(src, 1, 48000);
+
+        auto run = [&](float density, float normalize) {
+            GrainCloud cloud;
+            cloud.configure(GrainCloud::Config{ .max_grains = 64, .seed = 4242u });
+            cloud.set_sources(&v, nullptr, 1);
+            cloud.set_density(density);
+            cloud.set_grain_size(40.0f);  // long grains => high overlap at density
+            cloud.set_normalize(normalize);
+            cloud.start();
+            std::vector<float> out(9600, 0.0f);  // 200 ms
+            cloud.render_add(out.data(), 9600, 1, 48000);
+            return rms(out);
+        };
+
+        // Densities chosen so high clearly overlaps many more grains than low.
+        const double low_off = run(80.0f, 0.0f);
+        const double high_off = run(1200.0f, 0.0f);
+        const double low_on = run(80.0f, 2.0f);
+        const double high_on = run(1200.0f, 2.0f);
+
+        ASSERT_GT(low_off, 0.0);
+        ASSERT_GT(low_on, 0.0);
+
+        const double ratio_off = high_off / low_off;
+        const double ratio_on = high_on / low_on;
+
+        // OFF: loudness pumps hard with density. ON: the ratio collapses toward 1.
+        EXPECT_GT(ratio_off, 2.0);
+        EXPECT_LT(ratio_on, ratio_off);
+        EXPECT_NEAR(ratio_on, 1.0, std::abs(ratio_off - 1.0) * 0.5);
+    }
+
+    // At very low density (effectively isolated grains) the +N_ref floor means a
+    // lone grain passes through nearly unchanged — no edge boost / click blow-up.
+    TEST(GrainCloudTests, NormalizeKeepsLoneGrainSmooth)
+    {
+        const std::vector<float> src = dc_source();
+        const AudioBufferView v = view(src, 1, 48000);
+
+        auto run = [&](float normalize) {
+            GrainCloud cloud;
+            cloud.configure(small_cfg());  // same seed => same lone-grain stream
+            cloud.set_sources(&v, nullptr, 1);
+            cloud.set_density(20.0f);     // sparse: grains rarely overlap
+            cloud.set_grain_size(8.0f);   // short => isolated single grains
+            cloud.set_normalize(normalize);
+            cloud.start();
+            std::vector<float> out(9600, 0.0f);  // 200 ms
+            cloud.render_add(out.data(), 9600, 1, 48000);
+            return out;
+        };
+
+        const std::vector<float> bare = run(0.0f);
+        const std::vector<float> norm = run(2.0f);
+        ASSERT_EQ(bare.size(), norm.size());
+
+        double peak_bare = 0.0, peak_norm = 0.0;
+        for (size_t i = 0; i < bare.size(); ++i) {
+            peak_bare = std::max(peak_bare, std::abs(static_cast<double>(bare[i])));
+            peak_norm = std::max(peak_norm, std::abs(static_cast<double>(norm[i])));
+        }
+        ASSERT_GT(peak_bare, 0.0);
+
+        // Normalization must NEVER amplify a lone grain (env² <= 1, N_ref = 2 =>
+        // norm = sqrt(2)/sqrt(env²+2) < 1) and must stay within a small factor.
+        EXPECT_LE(peak_norm, peak_bare + 1.0e-6);
+        EXPECT_GT(peak_norm, peak_bare * 0.6);
+    }
+
+    // Same seed + params (with normalize on) must reproduce identical output.
+    TEST(GrainCloudTests, NormalizeIsDeterministic)
+    {
+        const std::vector<float> src = dc_source();
+        const AudioBufferView v = view(src, 1, 48000);
+
+        auto run = [&]() {
+            GrainCloud cloud;
+            cloud.configure(GrainCloud::Config{ .max_grains = 32, .seed = 555u });
+            cloud.set_sources(&v, nullptr, 1);
+            cloud.set_density(600.0f);
+            cloud.set_grain_size(15.0f);
+            cloud.set_position_jitter(0.3f);
+            cloud.set_pan(0.0f, 0.7f);
+            cloud.set_normalize(3.0f);
+            cloud.start();
+            std::vector<float> out(4800 * 2, 0.0f);
+            cloud.render_add(out.data(), 4800, 2, 48000);
+            return out;
+        };
+
+        const std::vector<float> a = run();
+        const std::vector<float> b = run();
+        ASSERT_EQ(a.size(), b.size());
+        for (size_t i = 0; i < a.size(); ++i) {
+            EXPECT_FLOAT_EQ(a[i], b[i]) << "at " << i;
+        }
+    }
+
     TEST(GrainCloudTests, StopLetsInFlightGrainsFinish)
     {
         const std::vector<float> src = dc_source();

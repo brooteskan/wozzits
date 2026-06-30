@@ -52,6 +52,7 @@ namespace wz::engine::assets::internal
             g.window_param = params.get<float>("window_param", g.window_param);
             g.blend_rate = params.get<float>("blend_rate", g.blend_rate);
             g.blend_depth = params.get<float>("blend_depth", g.blend_depth);
+            g.normalize = params.get<float>("normalize", g.normalize);
             return g;
         }
     }
@@ -343,6 +344,9 @@ namespace wz::engine::assets::internal
                 { .name = "blend_depth", .type = wz::asset::ParamType::Float,
                   .label = "Blend depth", .default_num = 0.0, .min = 0.0,
                   .max = 1.0 },
+                { .name = "normalize", .type = wz::asset::ParamType::Float,
+                  .label = "Normalize (ref overlap)", .default_num = 0.0,
+                  .min = 0.0, .max = 16.0 },
                 { .name = "max_grains", .type = wz::asset::ParamType::Int,
                   .label = "Max grains", .default_num = 32, .min = 1,
                   .max = 32 },

@@ -10,6 +10,7 @@
 #include <engine/assets/audio/audio_clip.h>
 #include <engine/assets/audio/audio_clip_bank.h>
 #include <engine/assets/audio/audio_renderable.h>
+#include <engine/assets/key_factories/audio_renderable.h>
 
 #include <audio/mixer.h>
 
@@ -254,6 +255,65 @@ namespace wz::engine::assets::test {
                 .gain = 1.0f,
                 });
         EXPECT_FALSE(rend.valid());
+    }
+
+
+    // ── Grain-cloud renderable: normalize param ─────────────────────────────────
+
+    // The authored `normalize` (window-energy power normalization) round-trips
+    // through compilation into the executable GrainCloudParams.
+    TEST_F(AudioRenderableTest, GrainCloudNormalizeRoundTrips)
+    {
+        const AudioClipBankAsset bank = make_bank(*library_);
+        ASSERT_TRUE(bank.valid());
+
+        GrainCloudParams params{};
+        params.density = 200.0f;
+        params.grain_ms = 10.0f;
+        params.normalize = 2.5f;
+
+        const AudioRenderableAsset rend =
+            library_->audio_renderables().create_audio_grain_cloud_renderable({
+                .bank = bank,
+                .params = params,
+                });
+        ASSERT_TRUE(rend.valid());
+
+        ASSERT_TRUE(library_->commit());
+        library_->resolve_all();
+
+        const AudioRenderableData* d =
+            library_->audio_renderables().get_audio_renderable_data(
+                library_->audio_renderables().get_audio_renderable(rend));
+        ASSERT_NE(d, nullptr);
+        EXPECT_EQ(d->kind, AudioRenderableKind::GrainCloud);
+        EXPECT_FLOAT_EQ(d->grain.normalize, 2.5f);
+    }
+
+    // Two grain renderables that differ ONLY in `normalize` must produce distinct
+    // AssetKeys — i.e. the key fold actually mixes the field in (no padding/omit).
+    TEST_F(AudioRenderableTest, GrainCloudNormalizeAffectsAssetKey)
+    {
+        // The bank dependency is identical; only the params differ.
+        const wz::asset::AssetKey bank_key{
+            .content_hash = { 0xABCDEF01u, 0x12345678u },
+            .schema_hash = { 7u, 0u },
+            .compiler_hash = { 9u, 0u },
+            .deps_hash = { 11u, 0u },
+        };
+
+        GrainCloudParams a{};
+        GrainCloudParams b = a;
+        b.normalize = 3.0f;  // sole difference
+
+        const wz::asset::AssetKey key_a =
+            make_audio_grain_cloud_renderable_key(bank_key, a);
+        const wz::asset::AssetKey key_b =
+            make_audio_grain_cloud_renderable_key(bank_key, b);
+
+        EXPECT_FALSE(key_a == key_b);
+        // Same params reproduce the same key (fold is deterministic).
+        EXPECT_TRUE(key_a == make_audio_grain_cloud_renderable_key(bank_key, a));
     }
 
 } // namespace wz::engine::assets::test

@@ -79,6 +79,7 @@ namespace wz::audio {
         blend_rate_ = Ramp{};
         blend_depth_ = Ramp{};
         blend_phase_ = 0.0;
+        normalize_ = 0.0f;
         emitting_ = false;
 
         // Usable defaults: unity gain/pitch, no grains until density is set.
@@ -119,6 +120,7 @@ namespace wz::audio {
         set_grain_size(desc.grain_ms);
         set_window(desc.window, desc.window_param);
         set_blend(desc.blend_rate, desc.blend_depth);
+        set_normalize(desc.normalize);
     }
 
     void GrainCloud::set_sources(const AudioBufferView* views,
@@ -198,6 +200,11 @@ namespace wz::audio {
     void GrainCloud::set_blend_depth(float depth, uint32_t ramp_frames) noexcept
     {
         blend_depth_.set(std::clamp(depth, 0.0f, 1.0f), ramp_frames);
+    }
+
+    void GrainCloud::set_normalize(float reference_overlap) noexcept
+    {
+        normalize_ = (reference_overlap > 0.0f) ? reference_overlap : 0.0f;
     }
 
     void GrainCloud::start() noexcept { emitting_ = true; }
@@ -398,9 +405,12 @@ namespace wz::audio {
                 }
             }
 
-            // Sum every sounding grain into the two pan legs.
+            // Sum every sounding grain into the two pan legs. While we're here,
+            // accumulate the sum of SQUARED window envelopes (win_energy) so the
+            // optional power-normalize step below can read this frame's overlap.
             float left = 0.0f;
             float right = 0.0f;
+            float win_energy = 0.0f;
             for (Grain& g : grains_) {
                 if (!g.active) {
                     continue;
@@ -410,6 +420,7 @@ namespace wz::audio {
                     static_cast<float>(g.age) / static_cast<float>(g.size);
                 const float env =
                     grain_window_gain(g.window, phase, g.window_param);
+                win_energy += env * env;
                 const float s = env * read_source_mono(sources_[g.source], g.position);
 
                 // Constant-power pan: pan -1 → left, +1 → right.
@@ -421,6 +432,29 @@ namespace wz::audio {
                 if (++g.age >= g.size) {
                     g.active = false;
                 }
+            }
+
+            // Running power normalization (authored; 0 = off → exact legacy path).
+            // Grains are random and overlap-counts fluctuate, so loudness pumps as
+            // sources fade in/out. Random grains add in POWER, so a frame's RMS is
+            // ∝ sqrt(Σ env²) = sqrt(win_energy). Scaling the grain sum by
+            //
+            //     norm = sqrt(N_ref) / sqrt(win_energy + N_ref)
+            //
+            // pins the output RMS to a reference overlap N_ref (normalize_):
+            //   • win_energy → 0  (silence / a lone grain's quiet edges):
+            //       norm → sqrt(N_ref)/sqrt(N_ref) = 1 → grains pass UNCHANGED, so
+            //       each window stays smooth and low-density edges don't get
+            //       boosted into clicks. The +N_ref term is that soft floor.
+            //   • win_energy >> N_ref (dense overlap):
+            //       norm ≈ sqrt(N_ref/win_energy) → RMS flattens toward a constant
+            //       ~sqrt(N_ref)·(grain RMS) no matter how many grains overlap.
+            // Applied to the grain sum only, NOT the master gain below.
+            if (normalize_ > 0.0f) {
+                const float norm = std::sqrt(normalize_) /
+                                   std::sqrt(win_energy + normalize_);
+                left *= norm;
+                right *= norm;
             }
 
             const float gain = gain_.current;
