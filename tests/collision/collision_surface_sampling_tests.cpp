@@ -221,3 +221,24 @@ TEST(CollisionSurfaceSampling, HeightFieldNormalIsSmoothAcrossCellBoundary)
     EXPECT_NEAR(left_sample.normal.y, right_sample.normal.y, 0.03f);
     EXPECT_NEAR(left_sample.normal.z, right_sample.normal.z, 0.03f);
 }
+
+TEST(CollisionSurfaceSampling, HeightFieldExactSampleRejectsOffBounds)
+{
+    const auto surface = quadratic_height_field_surface();  // x extent [0, 2]
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    // The exact sampler reports no surface past the field edge.
+    EXPECT_FALSE(wz::engine::collision::sample_terrain_surface(
+        surface_entry(surface), 3.0f, 0.5f, sample));
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldNearestClampsOffBoundsToEdge)
+{
+    const auto surface = quadratic_height_field_surface();  // edge height 4 at x=2
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    // The nearest-surface query clamps an off-field probe to the boundary, so an
+    // actor that drove past the heightfield edge sticks to the rim height (4 at
+    // x=2) instead of falling through.
+    ASSERT_TRUE(wz::engine::collision::sample_nearest_terrain_surface(
+        surface_entry(surface), 3.0f, 0.5f, sample));
+    EXPECT_NEAR(sample.position.y, 4.0f, 1e-4f);
+}

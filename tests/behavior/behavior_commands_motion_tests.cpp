@@ -1334,8 +1334,12 @@ TEST(BehaviorCommands, TerrainConstraintRequiresActorAndTerrainOptIn)
     }
 }
 
-TEST(BehaviorCommands, TerrainConstraintIgnoresOutOfBoundsSamples)
+TEST(BehaviorCommands, TerrainConstraintClampsOutOfBoundsToEdge)
 {
+    // An actor whose XZ is off the heightfield used to be left unconstrained (it
+    // floated / fell through). The nearest-surface query now clamps an
+    // off-terrain probe to the boundary, so the actor snaps to the edge height
+    // (4 on this flat field) instead of being ignored.
     auto asset = terrain_constraint_scene(
         true,
         true,
@@ -1356,13 +1360,13 @@ TEST(BehaviorCommands, TerrainConstraintIgnoresOutOfBoundsSamples)
 
     EXPECT_EQ(
         apply_terrain_constraints(result.instance, collision, &changed),
-        0u);
-    EXPECT_TRUE(changed.empty());
+        1u);
+    EXPECT_FALSE(changed.empty());
 
     const auto& actor_node = wz::core::graph::node_data(
         result.instance.storage.polytree,
         actor);
-    EXPECT_FLOAT_EQ(actor_node.world.m[13], 12.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 4.0f);
 }
 
 TEST(BehaviorCommands, TerrainConstraintUsesHighestSampledSurface)

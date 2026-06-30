@@ -455,11 +455,19 @@ namespace wz::engine::collision
             };
         }
 
+        // clamp_to_bounds: when the (x,z) probe falls OUTSIDE the heightfield,
+        // false rejects it (no surface there); true clamps the probe to the
+        // nearest edge and returns that edge's height -- the genuine "nearest
+        // terrain surface" for a heightfield. The constraint uses the height to
+        // keep an actor that drove off the terrain riding the boundary instead of
+        // falling through (the precise sampler stays exact; only the nearest-
+        // surface fallback clamps).
         bool sample_height_field_surface(
             const CollisionWorldEntry& entry,
             float world_x,
             float world_z,
-            CollisionSurfaceSample& out_sample) noexcept
+            CollisionSurfaceSample& out_sample,
+            bool clamp_to_bounds = false) noexcept
         {
             const auto& data = *entry.resolved;
             if (data.resolution_x == 0u
@@ -489,13 +497,16 @@ namespace wz::engine::collision
             const float u = (local_probe.x - data.origin[0]) / data.size[0];
             const float v = (local_probe.z - data.origin[1]) / data.size[1];
             constexpr float k_bounds_epsilon = 1e-5f;
-            if (u < -k_bounds_epsilon
+            const bool out_of_bounds =
+                u < -k_bounds_epsilon
                 || u > 1.0f + k_bounds_epsilon
                 || v < -k_bounds_epsilon
-                || v > 1.0f + k_bounds_epsilon)
-            {
-                return false;
+                || v > 1.0f + k_bounds_epsilon;
+            if (out_of_bounds && !clamp_to_bounds) {
+                return false;  // exact sample: no terrain at this (x,z)
             }
+            // When clamping, the height/normal below come from the clamped (edge)
+            // u,v, so an off-terrain probe resolves to the boundary surface.
 
             const float clamped_u = (std::clamp)(u, 0.0f, 1.0f);
             const float clamped_v = (std::clamp)(v, 0.0f, 1.0f);
@@ -1131,11 +1142,16 @@ namespace wz::engine::collision
 
         switch (entry.resolved->shape_kind) {
         case wz::engine::assets::CollisionShapeKind::TerrainHeightField:
+            // Nearest-surface query: clamp an off-terrain probe to the boundary
+            // height so an actor that drove off the heightfield edge sticks to
+            // the rim instead of falling through (the exact sampler above does
+            // NOT clamp).
             return sample_height_field_surface(
                 entry,
                 world_x,
                 world_z,
-                out_sample);
+                out_sample,
+                /*clamp_to_bounds=*/true);
 
         case wz::engine::assets::CollisionShapeKind::TerrainMeshSurface:
             return sample_nearest_mesh_surface(
