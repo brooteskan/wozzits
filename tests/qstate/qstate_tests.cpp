@@ -186,6 +186,48 @@ TEST(QState, MeasurementFollowsBornRule)
     EXPECT_NEAR(freq, 0.25, 0.02);
 }
 
+// --- expectation + imaginary-time relaxation ---------------------------
+
+TEST(QState, ExpectationZMatchesBasisAndSuperposition)
+{
+    Register zero = basis_zero(1);
+    EXPECT_NEAR(expectation_z(zero, 0), 1.0, kTight);   // |0> -> +1
+
+    Register one = basis_zero(1);
+    apply_x_field(one, 0, kPi / 2.0);                    // -> |1>
+    EXPECT_NEAR(expectation_z(one, 0), -1.0, kTight);    // |1> -> -1
+
+    Register sup = uniform(1);
+    EXPECT_NEAR(expectation_z(sup, 0), 0.0, kTight);     // |+> -> 0
+}
+
+TEST(QState, ImagTimeFieldRelaxesTowardGroundState)
+{
+    // Positive longitudinal field, no transverse field: ground state is |0>, so
+    // <sigma_z> climbs toward +1 from an unbiased start.
+    Register up = uniform(1);
+    for (int i = 0; i < 200; ++i) {
+        apply_imag_time_field(up, 0, /*gamma=*/0.0, /*h=*/0.5, /*dtau=*/0.05);
+    }
+    EXPECT_GT(expectation_z(up, 0), 0.99);
+    EXPECT_NEAR(norm(up), 1.0, 1e-9);
+
+    // Negative field -> ground state |1> -> <sigma_z> toward -1.
+    Register down = uniform(1);
+    for (int i = 0; i < 200; ++i) {
+        apply_imag_time_field(down, 0, 0.0, -0.5, 0.05);
+    }
+    EXPECT_LT(expectation_z(down, 0), -0.99);
+
+    // Strong transverse field, no longitudinal: ground state is |+> -> <sz> ~ 0,
+    // even starting from a biased state.
+    Register para = basis_zero(1);  // biased to |0>
+    for (int i = 0; i < 400; ++i) {
+        apply_imag_time_field(para, 0, /*gamma=*/1.0, /*h=*/0.0, 0.05);
+    }
+    EXPECT_NEAR(expectation_z(para, 0), 0.0, 1e-6);
+}
+
 TEST(QState, MeasureAllCollapsesToABasisState)
 {
     Register reg = uniform(3);

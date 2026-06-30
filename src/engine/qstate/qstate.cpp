@@ -148,6 +148,34 @@ namespace wz::qstate
         return total > 0 ? set / total : 0;
     }
 
+    Real expectation_z(const Register& reg, uint32_t q)
+    {
+        // <sigma_z> = P(0) - P(1) = 1 - 2*P(1). sigma_z is +1 on |0>, -1 on |1>.
+        return 1.0 - 2.0 * marginal(reg, q);
+    }
+
+    void apply_imag_time_field(
+        Register& reg, uint32_t q, Real gamma, Real h, Real dtau)
+    {
+        // H = -h*sigma_z - gamma*sigma_x = [[-h, -gamma], [-gamma, +h]].
+        // sigma_z and sigma_x anticommute, so H^2 = (h^2 + gamma^2) I = E^2 I, and
+        //   e^{-H dtau} = cosh(E dtau) I - (sinh(E dtau)/E) H.
+        const Real e = std::sqrt(h * h + gamma * gamma);
+        if (e <= 0) {
+            return;  // H == 0: e^{-H dtau} = I, nothing to relax toward
+        }
+        const Real ch = std::cosh(e * dtau);
+        const Real sh_over_e = std::sinh(e * dtau) / e;
+
+        // M = cosh I - (sinh/E) H. Real-valued for this Hamiltonian.
+        const Complex m00{ ch + sh_over_e * h, 0 };   // cosh - (sinh/E)(-h)
+        const Complex off{ sh_over_e * gamma, 0 };     // -(sinh/E)(-gamma)
+        const Complex m11{ ch - sh_over_e * h, 0 };
+        const Complex m[4] = { m00, off, off, m11 };
+        apply_1q(reg, q, m);
+        normalize(reg);  // e^{-H dtau} is not unitary
+    }
+
     bool measure(Register& reg, uint32_t q, Rng& rng)
     {
         const uint64_t stride = uint64_t{ 1 } << q;

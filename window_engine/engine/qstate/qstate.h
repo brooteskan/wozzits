@@ -86,6 +86,18 @@ namespace wz::qstate
     Real norm(const Register& reg);            // sqrt(sum |amp|^2)
     void normalize(Register& reg);
     Real marginal(const Register& reg, uint32_t q);  // P(qubit q == 1)
+    Real expectation_z(const Register& reg, uint32_t q);  // <sigma_z> = P0 - P1, in [-1,1]
+
+    // ---- imaginary-time relaxation (NON-unitary; ground-state finding) ----
+    // Apply e^{-H dtau} with H = -h*sigma_z - gamma*sigma_x on qubit q, then
+    // renormalize. Unlike the unitary gates above this is dissipative: it nudges
+    // the register toward that qubit's ground state under a longitudinal field h
+    // and transverse field gamma. The cognition layer relaxes an agent toward its
+    // decision this way, with h the effective field from its neighbors. (Mirrors
+    // the paper's imaginary-time ground-state preparation; unitary evolution only
+    // oscillates and would never settle.)
+    void apply_imag_time_field(
+        Register& reg, uint32_t q, Real gamma, Real h, Real dtau);
 
     // ---- measurement (PARTIAL; Born rule; collapses + renormalizes) ----
     // Measures only qubit q: samples its value by the Born rule, projects the
