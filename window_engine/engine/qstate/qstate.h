@@ -99,6 +99,20 @@ namespace wz::qstate
     void apply_imag_time_field(
         Register& reg, uint32_t q, Real gamma, Real h, Real dtau);
 
+    // Imaginary-time coupling step for H = -j*sigma_z^a*sigma_z^b: applies the
+    // NON-unitary e^{-H dtau} and renormalizes. j > 0 relaxes the pair toward
+    // agreement (ferromagnetic), j < 0 toward disagreement. This is the two-body
+    // partner of apply_imag_time_field; together they relax a joint register
+    // toward the entangled ground state of a transverse-field Ising group.
+    void apply_imag_time_zz(
+        Register& reg, uint32_t a, uint32_t b, Real j, Real dtau);
+
+    // <sigma_z^a sigma_z^b>: +1 weight on basis states where qubits a,b agree,
+    // -1 where they differ. The connected correlation
+    // <sz_a sz_b> - <sz_a><sz_b> is nonzero exactly when a,b are correlated
+    // beyond a product state -- the entanglement witness mean-field cannot show.
+    Real expectation_zz(const Register& reg, uint32_t a, uint32_t b);
+
     // ---- measurement (PARTIAL; Born rule; collapses + renormalizes) ----
     // Measures only qubit q: samples its value by the Born rule, projects the
     // state onto that outcome, and renormalizes. Other qubits stay coherent --

@@ -58,4 +58,9 @@ namespace wz::cognition
             relax_step(net, gamma, dtau);
         }
     }
+
+    double decision_z(const MeanFieldNetwork& net, NodeHandle node)
+    {
+        return wz::qstate::expectation_z(node_data(net, node), 0u);
+    }
 }

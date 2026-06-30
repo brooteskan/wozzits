@@ -52,4 +52,10 @@ namespace wz::cognition
     // Run `iterations` relax steps (refreshing messages once up front).
     void relax(
         MeanFieldNetwork& net, double gamma, double dtau, uint32_t iterations);
+
+    // Agent's decision marginal <sigma_z> in [-1, 1] (its coupled qubit 0). Same
+    // read surface as the exact backend's decision_z, so the two coordination
+    // backends are interchangeable behind the contract.
+    double decision_z(
+        const MeanFieldNetwork& net, wz::core::graph::NodeHandle node);
 }

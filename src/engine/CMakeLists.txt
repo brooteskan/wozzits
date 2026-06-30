@@ -26,6 +26,7 @@ target_sources(window_engine PRIVATE
     behavior/terrain_align_behaviors.cpp
     qstate/qstate.cpp
     cognition/mean_field.cpp
+    cognition/exact_group.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp

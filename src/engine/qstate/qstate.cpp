@@ -176,6 +176,37 @@ namespace wz::qstate
         normalize(reg);  // e^{-H dtau} is not unitary
     }
 
+    void apply_imag_time_zz(
+        Register& reg, uint32_t a, uint32_t b, Real j, Real dtau)
+    {
+        // H = -j sigma_z^a sigma_z^b ; e^{-H dtau} = e^{+j dtau sigma_z sigma_z}.
+        // sigma_z^a sigma_z^b is +1 when bits a,b agree, -1 when they differ.
+        const Real agree = std::exp(j * dtau);
+        const Real differ = std::exp(-j * dtau);
+        const uint64_t dim = reg.dim();
+        for (uint64_t k = 0; k < dim; ++k) {
+            const uint64_t ba = (k >> a) & 1u;
+            const uint64_t bb = (k >> b) & 1u;
+            reg.amp[k] *= (ba == bb) ? agree : differ;
+        }
+        normalize(reg);  // e^{-H dtau} is not unitary
+    }
+
+    Real expectation_zz(const Register& reg, uint32_t a, uint32_t b)
+    {
+        const uint64_t dim = reg.dim();
+        Real total = 0;
+        Real corr = 0;
+        for (uint64_t k = 0; k < dim; ++k) {
+            const Real p = std::norm(reg.amp[k]);
+            total += p;
+            const uint64_t ba = (k >> a) & 1u;
+            const uint64_t bb = (k >> b) & 1u;
+            corr += (ba == bb) ? p : -p;
+        }
+        return total > 0 ? corr / total : 0;
+    }
+
     bool measure(Register& reg, uint32_t q, Rng& rng)
     {
         const uint64_t stride = uint64_t{ 1 } << q;

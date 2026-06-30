@@ -228,6 +228,41 @@ TEST(QState, ImagTimeFieldRelaxesTowardGroundState)
     EXPECT_NEAR(expectation_z(para, 0), 0.0, 1e-6);
 }
 
+TEST(QState, ExpectationZZMatchesBasisStates)
+{
+    Register agree = basis_zero(2);  // |00>
+    EXPECT_NEAR(expectation_zz(agree, 0, 1), 1.0, kTight);
+
+    Register differ = basis_zero(2);
+    apply_x_field(differ, 1, kPi / 2.0);  // -> |10> (qubit 1 set)
+    EXPECT_NEAR(expectation_zz(differ, 0, 1), -1.0, kTight);
+}
+
+// Imaginary-time ZZ relaxes a pair into the ferromagnetic cat state
+// (|00> + |11>)/sqrt2: each qubit is unpolarized (<sigma_z> = 0) yet perfectly
+// correlated (<sigma_z sigma_z> = 1). That is genuine entanglement -- correlation
+// without polarization -- which a product (mean-field) state cannot represent.
+TEST(QState, ImagTimeZZBuildsCorrelatedCatState)
+{
+    Register reg = uniform(2);
+    for (int i = 0; i < 200; ++i) {
+        apply_imag_time_zz(reg, 0, 1, /*j=*/1.0, /*dtau=*/0.1);
+    }
+    EXPECT_NEAR(expectation_z(reg, 0), 0.0, 1e-6);
+    EXPECT_NEAR(expectation_z(reg, 1), 0.0, 1e-6);
+    EXPECT_GT(expectation_zz(reg, 0, 1), 0.999);
+    EXPECT_NEAR(norm(reg), 1.0, 1e-9);
+}
+
+TEST(QState, ImagTimeZZAntiAlignsWithNegativeCoupling)
+{
+    Register reg = uniform(2);
+    for (int i = 0; i < 200; ++i) {
+        apply_imag_time_zz(reg, 0, 1, -1.0, 0.1);
+    }
+    EXPECT_LT(expectation_zz(reg, 0, 1), -0.999);
+}
+
 TEST(QState, MeasureAllCollapsesToABasisState)
 {
     Register reg = uniform(3);
