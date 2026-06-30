@@ -25,6 +25,7 @@ namespace wz::audio {
         SetMasterGain,   // set master gain to `value`
         PlayGrainCloud,  // start the grain cloud `grain` points at, tagged client_id
         SetGrainParam,   // ramp tagged cloud(s) param `grain_param` -> value
+        SetSpatial,      // put tagged voice(s) in spatial mode + steer pan/ITD/Doppler
     };
 
     struct AudioCommand
@@ -59,6 +60,15 @@ namespace wz::audio {
 
         // SetGrainParam: which GrainParam to ramp (ordinal). Ignored otherwise.
         uint8_t grain_param = 0;
+
+        // SetSpatial payload: per-channel equal-power pan gains and the far-leg
+        // ITD offset in output frames (sign convention in voice.h). Doppler reuses
+        // `pitch`; the ramp length reuses `ramp_frames`; the target reuses
+        // `client_id`. Ignored by other types. A SetSpatial puts every tagged
+        // voice into spatial mode (the producer's per-tick steer).
+        float gain_l = 1.0f;
+        float gain_r = 1.0f;
+        float itd_frames = 0.0f;
     };
 
     static_assert(std::is_trivially_copyable_v<AudioCommand>,

@@ -528,6 +528,23 @@ namespace wz::app
         // Materialize the single active view render_scene reads -- no work happens
         // in the render path.
         update_active_view();
+
+        // Per-tick audio spatialization (play mode only, and only when the audio
+        // device is actually running). Retunes already-playing Clip AudioSources
+        // from the active listener's pose: pan + ITD + distance + Doppler. It
+        // never starts a voice, so it's a harmless no-op for finished one-shots.
+        // Needs the behavior scene (the runtime audio_sources/audio_listeners +
+        // the runtime→authored map) and the nodes' world transforms.
+        if (prefer_scene_camera_ && audio_runtime_.running() && behavior_scene_
+            && ctx_.assets) {
+            const std::vector<wz::math::Mat4> node_world =
+                wz::engine::rendering::compute_scene_node_world_transforms(
+                    scene_nodes_);
+            wz::engine::audio::update_scene_audio_spatialization(
+                *ctx_.assets, *behavior_scene_, scene_nodes_, node_world,
+                dt, audio_runtime_.output_sample_rate(),
+                audio_runtime_.scheduler(), audio_spatialization_);
+        }
     }
 
     void WozzitsApp_v1::load_behavior_modules(
@@ -2550,6 +2567,10 @@ namespace wz::app
         // Drop any descs from a prior scene (the runtime was stopped on scene
         // exit, so the audio thread no longer references them), then repopulate.
         grain_desc_store_.clear();
+
+        // Reset spatialization velocity tracking so a new scene starts with no
+        // stale prev positions (the first tick then skips Doppler).
+        audio_spatialization_.clear();
 
         const wz::engine::audio::ScenePlaybackReport report =
             wz::engine::audio::play_scene_audio_sources(

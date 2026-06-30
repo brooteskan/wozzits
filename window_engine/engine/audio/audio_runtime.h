@@ -59,6 +59,17 @@ namespace wz::engine::audio {
             return output_.has_value() && output_->running();
         }
 
+        // The output device's sample rate (frames/sec) — the clock the scheduler
+        // renders on, needed by the producer's spatialization math (ITD + ramp
+        // frame counts). Falls back to the AudioFormat default (48 kHz) before a
+        // device is open, which is also what start() requests by default.
+        uint32_t output_sample_rate() const noexcept
+        {
+            return output_.has_value()
+                ? output_->format().sample_rate
+                : wz::audio::AudioFormat{}.sample_rate;
+        }
+
         // The control surface; post commands here from the sim thread.
         wz::audio::AudioScheduler& scheduler() noexcept { return scheduler_; }
 

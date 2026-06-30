@@ -186,6 +186,28 @@ namespace wz::audio {
         }
     }
 
+    void Mixer::set_spatial_client(uint32_t client_id,
+                                   float gain_l,
+                                   float gain_r,
+                                   float itd_frames,
+                                   float pitch,
+                                   uint32_t ramp_frames) noexcept
+    {
+        if (client_id == 0)
+            return;
+        for (Slot& slot : slots_) {
+            if (!slot.voice.active() || slot.client_id != client_id)
+                continue;
+            slot.voice.set_spatial(true);
+            slot.voice.set_spatial_params(gain_l, gain_r, itd_frames,
+                                          ramp_frames);
+            // Doppler rides the existing pitch field; per-tick deltas are tiny,
+            // so a snap is click-free (the resampler interpolates).
+            slot.voice.set_pitch(pitch);
+        }
+        // Grain clouds are ambient beds — spatialization does not address them.
+    }
+
     void Mixer::stop_all() noexcept
     {
         for (Slot& slot : slots_)

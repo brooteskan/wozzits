@@ -10,14 +10,18 @@
 
 #include <audio/grain_cloud.h>  // GrainCloudDesc
 
+#include <math/math_types.h>  // Mat4, Vec3
 #include <scene/scene_ecs.h>  // RuntimeEntityId
 
 #include <cstdint>
 #include <deque>
+#include <span>
+#include <unordered_map>
 
 namespace wz::engine::assets {
     class EngineAssetLibrary;
     struct SceneInstance;
+    struct SceneNodeAsset;
 }
 
 namespace wz::audio {
@@ -112,5 +116,58 @@ namespace wz::engine::audio {
         uint8_t param_id,
         float value,
         uint32_t ramp_frames);
+
+    // ─── Spatialization (audio-track seams 1–3) ────────────────────────────────
+
+    // Persistent per-scene spatialization state, owned by the app and passed by
+    // ref into update_scene_audio_spatialization each tick. It carries the
+    // previous-tick world positions (keyed by AudioSource client_id, plus the
+    // listener) needed to derive velocity for Doppler. Cleared on scene load (the
+    // app does this next to grain_desc_store_.clear()) so a new scene starts with
+    // no stale velocity. No prev entry on the first tick => Doppler is skipped
+    // that tick (pitch = 1).
+    struct AudioSpatializationState
+    {
+        std::unordered_map<uint32_t, wz::math::Vec3> prev_source_pos;
+        wz::math::Vec3 prev_listener_pos{};
+        bool has_prev_listener = false;
+
+        void clear() noexcept
+        {
+            prev_source_pos.clear();
+            prev_listener_pos = wz::math::Vec3{};
+            has_prev_listener = false;
+        }
+    };
+
+    // Per-tick producer-side spatialization pass (sim thread). Resolves the active
+    // listener and, for every enabled Clip-kind AudioSource, computes a pan
+    // (equal-power) + ITD from the source's azimuth relative to the listener, a
+    // distance attenuation, and a Doppler pitch from radial velocity, then posts a
+    // SetSpatial command tagged with the source's client_id (ramped over the
+    // tick's frame count so motion is smooth). GrainCloud sources stay ambient
+    // (2D) and the listener's own node is skipped. NEVER starts a voice — it only
+    // retunes ones already playing; posting to a finished one-shot's client_id is
+    // a harmless no-op. With no active listener it does nothing (sources stay 2D).
+    //
+    //   nodes                  the authored scene nodes (the app's scene_nodes_).
+    //   node_world_transforms  one world matrix per node, index-aligned with
+    //                          `nodes` (from compute_scene_node_world_transforms).
+    //   instance               the runtime scene (audio_sources / audio_listeners
+    //                          + runtime_to_authored, to map a record's node →
+    //                          authored id → index into `nodes`).
+    //   dt                     seconds since the last tick (for velocity/Doppler).
+    //   sample_rate            the device sample rate (for ITD + ramp-frame math).
+    //
+    // Returns the number of SetSpatial commands posted (diagnostics/tests).
+    uint32_t update_scene_audio_spatialization(
+        const wz::engine::assets::EngineAssetLibrary& assets,
+        const wz::engine::assets::SceneInstance& instance,
+        std::span<const wz::engine::assets::SceneNodeAsset> nodes,
+        std::span<const wz::math::Mat4> node_world_transforms,
+        float dt,
+        uint32_t sample_rate,
+        wz::audio::AudioScheduler& scheduler,
+        AudioSpatializationState& state);
 
 } // namespace wz::engine::audio

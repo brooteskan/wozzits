@@ -233,6 +233,76 @@ namespace wz::audio::test {
         EXPECT_EQ(sched.mixer().active_voice_count(), kVoices);
     }
 
+    // ─── SetSpatial through the queue (seam 2) ────────────────────────────────────
+
+    // A SetSpatial posted through the scheduler reaches the tagged voice, puts it
+    // in spatial mode, and pans it hard right: the right channel dominates and the
+    // far (left) leg is delayed.
+    TEST(AudioSchedulerTests, SetSpatialRoutesToTaggedVoiceAndPansRight)
+    {
+        std::vector<float> src(64, 0.0f);
+        src[0] = 1.0f; // impulse so the pan/ITD are unambiguous
+
+        AudioScheduler sched(8, 64);
+        ASSERT_TRUE(sched.post(
+            play_cmd(view(src, 1, 48000), /*at*/ 0, 1.0f, false, /*id*/ 9)));
+
+        AudioCommand sp;
+        sp.type = AudioCommandType::SetSpatial;
+        sp.sample_time = 0;
+        sp.client_id = 9;
+        sp.gain_l = 0.0f;   // hard right: left silent
+        sp.gain_r = 1.0f;
+        sp.itd_frames = 6.0f;
+        sp.pitch = 1.0f;
+        sp.ramp_frames = 0; // jump
+        ASSERT_TRUE(sched.post(sp));
+
+        std::vector<float> out(2 * 32, 0.0f); // stereo
+        sched.process(out.data(), 32, 2, 48000);
+
+        // Impulse in the right (near) channel at frame 0; left stays silent.
+        EXPECT_GT(out[2 * 0 + 1], 0.9f);
+        EXPECT_NEAR(out[2 * 0 + 0], 0.0f, 1.0e-3f);
+
+        double el = 0.0, er = 0.0;
+        for (size_t f = 0; f < 32; ++f) {
+            el += std::abs(static_cast<double>(out[2 * f + 0]));
+            er += std::abs(static_cast<double>(out[2 * f + 1]));
+        }
+        EXPECT_GT(er, el);
+    }
+
+    // SetSpatial with equal gains + integer ITD delays the far (left) leg: the
+    // impulse appears in right at frame 0 and in left `itd` frames later.
+    TEST(AudioSchedulerTests, SetSpatialAppliesItdThroughScheduler)
+    {
+        std::vector<float> src(64, 0.0f);
+        src[0] = 1.0f;
+
+        AudioScheduler sched(8, 64);
+        ASSERT_TRUE(sched.post(
+            play_cmd(view(src, 1, 48000), 0, 1.0f, false, /*id*/ 3)));
+
+        AudioCommand sp;
+        sp.type = AudioCommandType::SetSpatial;
+        sp.sample_time = 0;
+        sp.client_id = 3;
+        sp.gain_l = 1.0f;
+        sp.gain_r = 1.0f;
+        sp.itd_frames = 4.0f; // left leg delayed 4 frames
+        sp.pitch = 1.0f;
+        sp.ramp_frames = 0;
+        ASSERT_TRUE(sched.post(sp));
+
+        std::vector<float> out(2 * 16, 0.0f);
+        sched.process(out.data(), 16, 2, 48000);
+
+        EXPECT_FLOAT_EQ(out[2 * 0 + 1], 1.0f); // right, frame 0
+        EXPECT_FLOAT_EQ(out[2 * 0 + 0], 0.0f); // left,  frame 0
+        EXPECT_FLOAT_EQ(out[2 * 4 + 0], 1.0f); // left,  frame 4 (delay)
+    }
+
     // ─── Grain-cloud commands through the queue ───────────────────────────────────
 
     TEST(AudioSchedulerTests, PlayGrainCloudCommandStartsGenerator)

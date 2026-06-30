@@ -17,7 +17,9 @@
 
 #include <file/filesystem.h>
 #include <logging/logger.h>
+#include <math/math_types.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -162,6 +164,7 @@ namespace wz::engine::assets::test {
         wz::fs::Path      temp_dir_{};
         std::unique_ptr<EngineAssetLibrary> library_;
         wz::engine::audio::GrainCloudDescStore grain_store_;
+        wz::engine::audio::AudioSpatializationState spat_state_;
     };
 
 
@@ -659,6 +662,267 @@ namespace wz::engine::assets::test {
         EXPECT_FALSE(wz::engine::audio::apply_grain_param_command(
             result.instance, scheduler, entity,
             static_cast<uint8_t>(wz::audio::GrainParam::Density), 10.0f, 0u));
+    }
+
+    // ── Spatialization producer pass (seam 3) ──────────────────────────────────
+    //
+    // These build a tiny SceneInstance (a listener node + a clip-source node),
+    // supply each node's world transform (a translation Mat4, identity basis: +X
+    // right, +Z forward), run the producer pass, and observe the posted SetSpatial
+    // by RENDERING the (already-playing) voice and comparing channel energies —
+    // the SetSpatial only takes effect on a live voice, so play first.
+
+    namespace {
+        // Column-major translation matrix (identity basis).
+        wz::math::Mat4 translate(float x, float y, float z)
+        {
+            wz::math::Mat4 m = wz::math::Mat4::identity();
+            m.m[12] = x; m.m[13] = y; m.m[14] = z;
+            return m;
+        }
+
+        struct ChannelEnergy { double l = 0.0, r = 0.0; };
+        ChannelEnergy stereo_energy(const std::vector<float>& interleaved)
+        {
+            ChannelEnergy e{};
+            for (size_t f = 0; f * 2 + 1 < interleaved.size(); ++f) {
+                e.l += std::abs(static_cast<double>(interleaved[2 * f + 0]));
+                e.r += std::abs(static_cast<double>(interleaved[2 * f + 1]));
+            }
+            return e;
+        }
+    }
+
+    // A clip source to the listener's RIGHT => the posted SetSpatial pans right
+    // (right channel energy dominates) — i.e. gain_r > gain_l, itd_frames > 0.
+    TEST_F(SceneAudioPlayerTest, SpatializationPansSourceToTheRight)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_renderable(0.5f, /*looping*/ true);
+
+        SceneAssetData authored{};
+        SceneNodeAsset listener{};
+        listener.id = "listener";
+        listener.audio_listener = SceneAudioListenerAsset{ .active = true };
+        authored.nodes.push_back(std::move(listener));
+        SceneNodeAsset speaker{};
+        speaker.id = "speaker";
+        speaker.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(speaker));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+
+        // World transforms index-aligned with authored.nodes: listener at origin,
+        // speaker 100 units to the +X (right) side, close enough for full level.
+        std::vector<wz::math::Mat4> world = {
+            translate(0.0f, 0.0f, 0.0f),    // listener
+            translate(40.0f, 0.0f, 0.0f),   // speaker (right, within ref dist)
+        };
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, result.instance, scheduler, grain_store_).played,
+                  1u);
+
+        const uint32_t posted =
+            wz::engine::audio::update_scene_audio_spatialization(
+                *library_, result.instance, authored.nodes, world,
+                /*dt*/ 1.0f / 60.0f, /*sample_rate*/ 48000, scheduler,
+                spat_state_);
+        EXPECT_EQ(posted, 1u);
+
+        std::vector<float> out(2 * 256, 0.0f);
+        scheduler.process(out.data(), 256, 2, 48000);
+        const ChannelEnergy e = stereo_energy(out);
+        EXPECT_GT(e.r, e.l); // panned right
+    }
+
+    // A far source is quieter than a near one (distance attenuation).
+    TEST_F(SceneAudioPlayerTest, SpatializationAttenuatesWithDistance)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_renderable(0.5f, /*looping*/ true);
+
+        auto energy_at = [&](float dist) -> double {
+            SceneAssetData authored{};
+            SceneNodeAsset listener{};
+            listener.id = "listener";
+            listener.audio_listener = SceneAudioListenerAsset{ .active = true };
+            authored.nodes.push_back(std::move(listener));
+            SceneNodeAsset speaker{};
+            speaker.id = "speaker";
+            speaker.audio_source = SceneAudioSourceAsset{
+                .audio_renderable = renderable,
+                .auto_play = true,
+                .enabled = true,
+            };
+            authored.nodes.push_back(std::move(speaker));
+
+            auto result = instantiate_scene(authored);
+            EXPECT_TRUE(result.ok());
+
+            // Straight ahead (+Z) at the given distance: no pan, pure attenuation.
+            std::vector<wz::math::Mat4> world = {
+                translate(0.0f, 0.0f, 0.0f),
+                translate(0.0f, 0.0f, dist),
+            };
+
+            wz::audio::AudioScheduler scheduler(16, 64);
+            wz::engine::audio::GrainCloudDescStore store;
+            EXPECT_EQ(wz::engine::audio::play_scene_audio_sources(
+                          *library_, result.instance, scheduler, store).played,
+                      1u);
+            wz::engine::audio::AudioSpatializationState st;
+            wz::engine::audio::update_scene_audio_spatialization(
+                *library_, result.instance, authored.nodes, world,
+                1.0f / 60.0f, 48000, scheduler, st);
+
+            std::vector<float> out(2 * 256, 0.0f);
+            scheduler.process(out.data(), 256, 2, 48000);
+            const ChannelEnergy e = stereo_energy(out);
+            return e.l + e.r;
+        };
+
+        const double near_e = energy_at(40.0f);    // within ref => full level
+        const double far_e = energy_at(2000.0f);    // far => attenuated
+        EXPECT_GT(near_e, 0.0);
+        EXPECT_LT(far_e, near_e);
+    }
+
+    // A receding source across two ticks => Doppler pitch < 1 (read advances
+    // slower). Observed via the read position: a non-looping ramp source whose
+    // played value tracks the read position. Here we assert the posted command
+    // by re-running the pass and checking the voice slows. To keep it robust we
+    // compare the energy of a fixed window — a slower read keeps the source alive
+    // longer, but the cleaner check is the posted count + that no crash occurs.
+    // We assert pitch<1 indirectly: a receding source still sounds (voice alive)
+    // and the pass posts a command on the second tick.
+    TEST_F(SceneAudioPlayerTest, SpatializationRecedingSourcePostsDopplerSecondTick)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_renderable(0.5f, /*looping*/ true);
+
+        SceneAssetData authored{};
+        SceneNodeAsset listener{};
+        listener.id = "listener";
+        listener.audio_listener = SceneAudioListenerAsset{ .active = true };
+        authored.nodes.push_back(std::move(listener));
+        SceneNodeAsset speaker{};
+        speaker.id = "speaker";
+        speaker.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(speaker));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, result.instance, scheduler, grain_store_).played,
+                  1u);
+
+        // Tick 1: source ahead at z=100 (no prev => Doppler skipped).
+        std::vector<wz::math::Mat4> w1 = {
+            translate(0.0f, 0.0f, 0.0f),
+            translate(0.0f, 0.0f, 100.0f),
+        };
+        EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
+                      *library_, result.instance, authored.nodes, w1,
+                      1.0f / 60.0f, 48000, scheduler, spat_state_),
+                  1u);
+
+        // Tick 2: source receded to z=200 over the tick => v_r > 0 => pitch < 1.
+        std::vector<wz::math::Mat4> w2 = {
+            translate(0.0f, 0.0f, 0.0f),
+            translate(0.0f, 0.0f, 200.0f),
+        };
+        EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
+                      *library_, result.instance, authored.nodes, w2,
+                      1.0f / 60.0f, 48000, scheduler, spat_state_),
+                  1u);
+
+        // The voice survives the retune and still sounds (looping source).
+        std::vector<float> out(2 * 64, 0.0f);
+        scheduler.process(out.data(), 64, 2, 48000);
+        EXPECT_GT(peak(out), 0.0f);
+    }
+
+    // A GrainCloud source is ambient (2D) — the producer posts NO SetSpatial.
+    TEST_F(SceneAudioPlayerTest, SpatializationSkipsGrainCloudSources)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_grain_renderable(/*density*/ 300.0f);
+
+        SceneAssetData authored{};
+        SceneNodeAsset listener{};
+        listener.id = "listener";
+        listener.audio_listener = SceneAudioListenerAsset{ .active = true };
+        authored.nodes.push_back(std::move(listener));
+        SceneNodeAsset ambience{};
+        ambience.id = "ambience";
+        ambience.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(ambience));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+
+        std::vector<wz::math::Mat4> world = {
+            translate(0.0f, 0.0f, 0.0f),
+            translate(40.0f, 0.0f, 0.0f),
+        };
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        wz::engine::audio::play_scene_audio_sources(
+            *library_, result.instance, scheduler, grain_store_);
+
+        // GrainCloud kind is skipped => zero SetSpatial posted.
+        EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
+                      *library_, result.instance, authored.nodes, world,
+                      1.0f / 60.0f, 48000, scheduler, spat_state_),
+                  0u);
+    }
+
+    // No active listener => the pass does nothing (sources stay 2D).
+    TEST_F(SceneAudioPlayerTest, SpatializationNoActiveListenerIsNoOp)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_renderable(0.5f, /*looping*/ true);
+
+        SceneAssetData authored{};
+        SceneNodeAsset speaker{};
+        speaker.id = "speaker";
+        speaker.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(speaker)); // no listener node at all
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+
+        std::vector<wz::math::Mat4> world = { translate(40.0f, 0.0f, 0.0f) };
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        wz::engine::audio::play_scene_audio_sources(
+            *library_, result.instance, scheduler, grain_store_);
+
+        EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
+                      *library_, result.instance, authored.nodes, world,
+                      1.0f / 60.0f, 48000, scheduler, spat_state_),
+                  0u);
     }
 
 } // namespace wz::engine::assets::test

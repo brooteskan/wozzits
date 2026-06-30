@@ -101,6 +101,19 @@ namespace wz::audio {
                              float gain,
                              uint32_t ramp_frames) noexcept;
 
+        // Put every active voice tagged with client_id into spatial mode and
+        // steer it: ramp the per-channel L/R equal-power gains + far-leg ITD
+        // (in output frames) over `ramp_frames` (0 = jump) and set the Doppler
+        // pitch. Mirrors set_gain_client's fan-out. Grain clouds are unaffected
+        // (spatialization is a voice feature). No-op when client_id == 0 or none
+        // match — the producer's per-tick spatialization steer.
+        void set_spatial_client(uint32_t client_id,
+                                float gain_l,
+                                float gain_r,
+                                float itd_frames,
+                                float pitch,
+                                uint32_t ramp_frames) noexcept;
+
         // Stop every voice.
         void stop_all() noexcept;
 

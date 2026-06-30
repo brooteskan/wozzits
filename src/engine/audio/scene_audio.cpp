@@ -3,11 +3,14 @@
 #include <engine/audio/scene_audio.h>
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/scene/scene_instance.h>
 
 #include <audio/audio_command.h>
 #include <audio/audio_scheduler.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace wz::engine::audio {
@@ -335,6 +338,246 @@ namespace wz::engine::audio {
         cmd.value = value;
         cmd.ramp_frames = ramp_frames;
         return scheduler.post(cmd);
+    }
+
+    // ─── Spatialization producer pass ──────────────────────────────────────────
+
+    namespace {
+        // The world is scene-scale (the test scene spans thousands of units), so
+        // these distance-model defaults are picked to be audibly reasonable there
+        // and trivially tunable later (no per-source knobs yet). Inside kRefDist a
+        // source plays at full level; beyond it the level rolls off as
+        //     atten = ref / (ref + rolloff * (dist - ref)).
+        // kRolloff = 1 gives a gentle ~half-level at ref + ref/rolloff ≈ 2*ref.
+        constexpr float kRefDistance = 50.0f;   // world units of "close"
+        constexpr float kRolloff = 1.0f;        // unitless rolloff steepness
+        constexpr float kSpeedOfSound = 343.0f; // m/s, for Doppler
+        // Max ITD ≈ 0.66 ms (head width / speed of sound). At 48 kHz that's ~32
+        // output frames — the far ear's delay at full lateral offset.
+        constexpr float kMaxItdSeconds = 0.00066f;
+
+        constexpr float kPi = 3.14159265358979323846f;
+
+        using Vec3 = wz::math::Vec3;
+
+        Vec3 mat_translation(const wz::math::Mat4& m) noexcept
+        {
+            return { m.m[12], m.m[13], m.m[14] };  // column-major
+        }
+        // Column 0 = local +X (right); column 2 = local +Z (forward). Normalized
+        // so a scaled node (e.g. the test tank's 0.5) doesn't skew the basis.
+        Vec3 mat_axis(const wz::math::Mat4& m, int col) noexcept
+        {
+            const int b = col * 4;
+            Vec3 v{ m.m[b + 0], m.m[b + 1], m.m[b + 2] };
+            const float len = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+            if (len > 1.0e-6f) {
+                v.x /= len; v.y /= len; v.z /= len;
+            }
+            return v;
+        }
+        float dot(const Vec3& a, const Vec3& b) noexcept
+        {
+            return a.x * b.x + a.y * b.y + a.z * b.z;
+        }
+
+        // Map a RuntimeEntityId (a record's `node`) to an index into `nodes`
+        // (index-aligned with node_world_transforms), reusing the same chain the
+        // app uses for the active camera: runtime entity → authored id → the node
+        // in `nodes` with that id. Returns -1 if it can't be resolved.
+        int node_index_for_entity(
+            const wz::engine::assets::SceneInstance& instance,
+            std::span<const wz::engine::assets::SceneNodeAsset> nodes,
+            wz::scene::RuntimeEntityId entity)
+        {
+            if (entity >= instance.runtime_to_authored.size()) {
+                return -1;
+            }
+            const wz::scene::AuthoredEntityId& authored =
+                instance.runtime_to_authored[entity];
+            for (size_t i = 0; i < nodes.size(); ++i) {
+                if (nodes[i].id == authored) {
+                    return static_cast<int>(i);
+                }
+            }
+            return -1;
+        }
+    }
+
+    uint32_t update_scene_audio_spatialization(
+        const wz::engine::assets::EngineAssetLibrary& assets,
+        const wz::engine::assets::SceneInstance& instance,
+        std::span<const wz::engine::assets::SceneNodeAsset> nodes,
+        std::span<const wz::math::Mat4> node_world_transforms,
+        float dt,
+        uint32_t sample_rate,
+        wz::audio::AudioScheduler& scheduler,
+        AudioSpatializationState& state)
+    {
+        using namespace wz::engine::assets;
+
+        if (nodes.size() != node_world_transforms.size() || sample_rate == 0) {
+            return 0;
+        }
+
+        // 1. Resolve the active listener: the first listener record marked active.
+        //    No active listener => leave every source 2D (do nothing).
+        const wz::math::Mat4* listener_world = nullptr;
+        wz::scene::RuntimeEntityId listener_entity =
+            wz::scene::INVALID_RUNTIME_ENTITY;
+        for (const auto& record : instance.audio_listeners) {
+            if (!record.component.active) {
+                continue;
+            }
+            const int idx = node_index_for_entity(instance, nodes, record.node);
+            if (idx < 0) {
+                continue;
+            }
+            listener_world = &node_world_transforms[static_cast<size_t>(idx)];
+            listener_entity = record.node;
+            break;
+        }
+        if (listener_world == nullptr) {
+            // Drop any stale listener velocity so re-acquiring a listener later
+            // doesn't compute a bogus jump on the first reacquired tick.
+            state.has_prev_listener = false;
+            return 0;
+        }
+
+        const Vec3 listener_pos = mat_translation(*listener_world);
+        const Vec3 listener_right = mat_axis(*listener_world, 0);
+        const Vec3 listener_forward = mat_axis(*listener_world, 2);
+
+        // Listener velocity (0 on the first tick after acquiring it).
+        Vec3 listener_vel{};
+        const bool have_dt = dt > 1.0e-6f;
+        if (state.has_prev_listener && have_dt) {
+            listener_vel = {
+                (listener_pos.x - state.prev_listener_pos.x) / dt,
+                (listener_pos.y - state.prev_listener_pos.y) / dt,
+                (listener_pos.z - state.prev_listener_pos.z) / dt,
+            };
+        }
+
+        const float max_itd_frames =
+            std::round(kMaxItdSeconds * static_cast<float>(sample_rate));
+        // Ramp each per-tick steer over the tick's worth of output frames so the
+        // pan/ITD/Doppler slew smoothly between updates (de-zipper).
+        const uint32_t ramp_frames = have_dt
+            ? static_cast<uint32_t>(
+                  std::round(dt * static_cast<float>(sample_rate)))
+            : 0u;
+
+        uint32_t posted = 0;
+        for (const auto& record : instance.audio_sources) {
+            const AudioSourceComponent& source = record.component;
+            if (!source.enabled || source.client_id == 0) {
+                continue;
+            }
+            if (record.node == listener_entity) {
+                continue;  // never spatialize the listener's own node
+            }
+
+            // GrainCloud sources stay ambient (2D); only Clip sources position.
+            const AudioRenderableData* renderable =
+                fetch_renderable(assets, source);
+            if (renderable == nullptr
+                || renderable->kind != AudioRenderableKind::Clip) {
+                continue;
+            }
+
+            const int idx = node_index_for_entity(instance, nodes, record.node);
+            if (idx < 0) {
+                continue;
+            }
+            const Vec3 source_pos =
+                mat_translation(node_world_transforms[static_cast<size_t>(idx)]);
+
+            // Relative vector listener→source, and distance.
+            const Vec3 rel = {
+                source_pos.x - listener_pos.x,
+                source_pos.y - listener_pos.y,
+                source_pos.z - listener_pos.z,
+            };
+            const float dist =
+                std::sqrt(rel.x * rel.x + rel.y * rel.y + rel.z * rel.z);
+
+            // 2. Azimuth → pan + ITD. Project rel onto the listener's right/
+            //    forward (horizontal plane; elevation ignored for v1). pan in
+            //    [-1,1] from the lateral fraction; equal-power gains from
+            //    theta = (pan+1)*pi/4 (left = cos, right = sin).
+            float pan = 0.0f;
+            float sin_azimuth = 0.0f;
+            if (dist > 1.0e-4f) {
+                const float lateral = dot(rel, listener_right);
+                const float forward = dot(rel, listener_forward);
+                // azimuth measured from forward; sin(az) = lateral / horiz_len.
+                const float horiz =
+                    std::sqrt(lateral * lateral + forward * forward);
+                if (horiz > 1.0e-4f) {
+                    sin_azimuth = lateral / horiz;
+                }
+                pan = std::clamp(lateral / dist, -1.0f, 1.0f);
+            }
+            const float theta = (pan + 1.0f) * (kPi * 0.25f);
+            float gain_l = std::cos(theta);
+            float gain_r = std::sin(theta);
+            // itd_frames > 0 => source on the right => LEFT (far) leg delayed,
+            // matching Voice's convention (sin_azimuth > 0 is the right side).
+            const float itd_frames = sin_azimuth * max_itd_frames;
+
+            // 3. Distance attenuation (inverse model), folded into both gains.
+            float atten = 1.0f;
+            if (dist > kRefDistance) {
+                atten = kRefDistance
+                    / (kRefDistance + kRolloff * (dist - kRefDistance));
+            }
+            gain_l *= atten;
+            gain_r *= atten;
+
+            // 4. Doppler from radial velocity along the unit rel vector
+            //    (positive = receding). Skipped until we have a prev position.
+            float pitch = 1.0f;
+            const auto prev_it = state.prev_source_pos.find(source.client_id);
+            if (prev_it != state.prev_source_pos.end() && have_dt
+                && dist > 1.0e-4f) {
+                const Vec3 prev = prev_it->second;
+                const Vec3 source_vel = {
+                    (source_pos.x - prev.x) / dt,
+                    (source_pos.y - prev.y) / dt,
+                    (source_pos.z - prev.z) / dt,
+                };
+                const Vec3 rel_vel = {
+                    source_vel.x - listener_vel.x,
+                    source_vel.y - listener_vel.y,
+                    source_vel.z - listener_vel.z,
+                };
+                const Vec3 unit = { rel.x / dist, rel.y / dist, rel.z / dist };
+                const float v_r = dot(rel_vel, unit);  // + = receding
+                pitch = std::clamp(
+                    kSpeedOfSound / (kSpeedOfSound + v_r), 0.5f, 2.0f);
+            }
+            state.prev_source_pos[source.client_id] = source_pos;
+
+            wz::audio::AudioCommand cmd{};
+            cmd.type = wz::audio::AudioCommandType::SetSpatial;
+            cmd.sample_time = 0;  // apply on the next block
+            cmd.client_id = source.client_id;
+            cmd.gain_l = gain_l;
+            cmd.gain_r = gain_r;
+            cmd.itd_frames = itd_frames;
+            cmd.pitch = pitch;
+            cmd.ramp_frames = ramp_frames;
+            if (scheduler.post(cmd)) {
+                ++posted;
+            }
+        }
+
+        // Remember the listener position for next tick's velocity.
+        state.prev_listener_pos = listener_pos;
+        state.has_prev_listener = true;
+
+        return posted;
     }
 
 } // namespace wz::engine::audio

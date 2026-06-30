@@ -745,5 +745,10 @@ namespace wz::app
         // PlayGrainCloud command carries a pointer into this). Cleared on scene
         // load after the runtime is (re)started.
         wz::engine::audio::GrainCloudDescStore    grain_desc_store_{};
+
+        // Per-scene audio-spatialization state (prev positions for Doppler).
+        // Cleared on scene load next to grain_desc_store_; driven each
+        // simulation_tick (play mode only) by update_scene_audio_spatialization.
+        wz::engine::audio::AudioSpatializationState audio_spatialization_{};
     };
 }

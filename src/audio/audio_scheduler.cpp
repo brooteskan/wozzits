@@ -46,6 +46,11 @@ namespace wz::audio {
                 cmd.value,
                 cmd.ramp_frames);
             break;
+        case AudioCommandType::SetSpatial:
+            mixer_.set_spatial_client(cmd.client_id, cmd.gain_l, cmd.gain_r,
+                                      cmd.itd_frames, cmd.pitch,
+                                      cmd.ramp_frames);
+            break;
         }
     }
 
