@@ -1,13 +1,19 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes;
 
 using System.Collections.ObjectModel;
+using System.IO;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 
 public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
 {
+    // Default subfolder under the project root where exported scenelets land.
+    public const string SceneletsFolderName = "scenelets";
+
     private SceneTreeNodeViewModel? _selectedNode;
     private readonly IWozzitsEngineEditorSession? _editorSession;
+    private readonly string _projectDirectory;
+    private readonly Action<string>? _log;
 
     // The graft roots currently merged into the tree (issue #213), so a re-merge
     // (after a re-assign/clear) can drop the previous grafts before adding the
@@ -16,9 +22,13 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
     private readonly List<SceneTreeNodeViewModel> _mergedGraftRoots = [];
 
     public SceneTreeEditorPaneViewModel(
-        IWozzitsEngineEditorSession? editorSession = null)
+        IWozzitsEngineEditorSession? editorSession = null,
+        string? projectDirectory = null,
+        Action<string>? log = null)
     {
         _editorSession = editorSession;
+        _projectDirectory = projectDirectory ?? string.Empty;
+        _log = log;
     }
 
     public event Action<SceneTreeNodeViewModel?>? SelectedNodeChanged;
@@ -294,6 +304,73 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         }
         OnPropertyChanged(nameof(HasScene));
         OnPropertyChanged(nameof(HasNoScene));
+    }
+
+    // The default folder offered by the "Export subtree as scene…" save dialog: a
+    // `scenelets/` subfolder under the project root, created on demand. Returns
+    // null when there is no known project root (design-time / tests) or the folder
+    // cannot be created, so the caller falls back to the platform default folder.
+    public string? EnsureSceneletsDirectory()
+    {
+        if (string.IsNullOrWhiteSpace(_projectDirectory))
+        {
+            return null;
+        }
+
+        var scenelets = Path.Combine(_projectDirectory, SceneletsFolderName);
+        try
+        {
+            Directory.CreateDirectory(scenelets);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        return scenelets;
+    }
+
+    // The suggested file name the save dialog seeds for `node`:
+    // "<nodeName>.scene.json", sanitized of path-invalid characters and falling
+    // back to the node id when it has no distinct display name.
+    public static string SuggestExportFileName(SceneTreeNodeViewModel node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        var stem = string.IsNullOrWhiteSpace(node.DisplayName)
+            || node.DisplayName == node.Id
+                ? node.Id
+                : node.DisplayName;
+        if (string.IsNullOrWhiteSpace(stem))
+        {
+            stem = "scenelet";
+        }
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+        {
+            stem = stem.Replace(invalid, '_');
+        }
+        return $"{stem}.scene.json";
+    }
+
+    // Export `node` (its authored id) + its subtree to `outPath` (an absolute file
+    // path the caller chose via the save dialog) through the engine, logging the
+    // outcome the way the editor surfaces other engine-call results. The runtime
+    // does the carving + write; this only plumbs the call. No-op when no node /
+    // session.
+    public void ExportSubtree(SceneTreeNodeViewModel? node, string outPath)
+    {
+        if (_editorSession is null || node is null
+            || string.IsNullOrWhiteSpace(outPath))
+        {
+            return;
+        }
+
+        var response = _editorSession.ExportSubtreeAsScene(node.Id, outPath);
+        _log?.Invoke(response.Ok
+            ? $"[editor] Exported subtree '{node.Id}' to {outPath}"
+            : $"[editor] Export subtree failed: {response.Error}");
     }
 
     private bool RemoveFromTree(SceneTreeNodeViewModel node)

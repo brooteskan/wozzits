@@ -89,6 +89,12 @@ public interface IWozzitsEngineEditorSession
     // running). Also happens automatically when the runtime exits.
     EngineMutationResponse SaveScene();
 
+    // Carve the scene node `rootNodeId` (its authored string id) + its descendants
+    // out of the running scene and write them as a standalone scene.json (a
+    // reusable prefab / "scenelet") at the absolute `outPath`. Requires a running
+    // viewport; errors when none is running (there is nothing to export).
+    EngineMutationResponse ExportSubtreeAsScene(string rootNodeId, string outPath);
+
     // Reload the project's (freshly recompiled) behavior-module DLLs into the
     // running engine without restarting it: the engine clears its behavior
     // registry, re-registers built-ins, reloads the project DLLs, and rebuilds

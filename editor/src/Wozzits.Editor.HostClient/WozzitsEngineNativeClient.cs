@@ -1300,6 +1300,31 @@ public sealed partial class WozzitsEngineNativeClient
             () => WozzitsEngineAbi.WzEditorRuntimeSaveScene(runtime));
     }
 
+    internal EngineMutationResponse ExportSubtreeAsScene(
+        IntPtr runtime,
+        string rootNodeId,
+        string outPath)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine viewport is not running.");
+        }
+        if (string.IsNullOrWhiteSpace(rootNodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+        if (string.IsNullOrWhiteSpace(outPath))
+        {
+            return InvalidMutation("Export path is empty.");
+        }
+
+        return InvokeMutation(
+            () => WozzitsEngineAbi.WzEditorExportSubtreeAsScene(
+                runtime,
+                rootNodeId,
+                outPath));
+    }
+
     internal EngineMutationResponse ReloadBehaviorModules(IntPtr runtime)
     {
         if (runtime == IntPtr.Zero)

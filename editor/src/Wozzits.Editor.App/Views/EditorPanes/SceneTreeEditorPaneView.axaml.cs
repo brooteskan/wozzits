@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Wozzits.Editor.ViewModels.EditorPanes;
 
 namespace Wozzits.Editor.App.Views.EditorPanes;
@@ -52,6 +54,55 @@ public partial class SceneTreeEditorPaneView : UserControl
         {
             sceneTree.AddChild(node);
         }
+    }
+
+    // Open a save-file dialog (defaulting to the project's scenelets/ folder, with
+    // a node-derived suggested name) and, on confirm, export the node's subtree as
+    // a standalone scene.json through the engine session.
+    private async void ExportSubtreeClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { DataContext: SceneTreeNodeViewModel node } ||
+            DataContext is not SceneTreeEditorPaneViewModel sceneTree)
+        {
+            return;
+        }
+
+        var storageProvider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storageProvider is null)
+        {
+            return;
+        }
+
+        IStorageFolder? startFolder = null;
+        var scenelets = sceneTree.EnsureSceneletsDirectory();
+        if (scenelets is not null)
+        {
+            startFolder = await storageProvider.TryGetFolderFromPathAsync(scenelets);
+        }
+
+        var file = await storageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export subtree as scene",
+            SuggestedFileName =
+                SceneTreeEditorPaneViewModel.SuggestExportFileName(node),
+            SuggestedStartLocation = startFolder,
+            DefaultExtension = "json",
+            FileTypeChoices = new List<FilePickerFileType>
+            {
+                new("Scene")
+                {
+                    Patterns = ["*.scene.json", "*.json"],
+                },
+            },
+        });
+
+        var path = file?.TryGetLocalPath();
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        sceneTree.ExportSubtree(node, path);
     }
 
     private void DeleteClicked(object? sender, RoutedEventArgs e)

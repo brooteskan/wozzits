@@ -396,6 +396,41 @@ public sealed partial class ProjectOpeningTests
         Assert.False(mesh.IsSelected);
     }
 
+    // "Export subtree as scene…": invoking the scene-tree command for a node calls
+    // the session's export method with that node's authored id and the chosen
+    // absolute path. The save-file dialog itself is GUI-only (driven in the view),
+    // so the test exercises the command's call into the session given a path.
+    [Fact]
+    public void ExportSubtreeCallsSessionWithNodeIdAndChosenPath()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node("tank", displayName: "tank", kind: "renderable"),
+                        ]))),
+            editorSession: editorSession);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var tank = Assert.Single(root.Children, n => n.Id == "tank");
+
+        var outPath = @"D:\project\scenelets\tank.scene.json";
+        viewModel.SceneTree.ExportSubtree(tank, outPath);
+
+        var export = Assert.Single(editorSession.SubtreeExports);
+        Assert.Equal("tank", export.RootNodeId);
+        Assert.Equal(outPath, export.OutPath);
+
+        // The suggested file name is derived from the node's display name.
+        Assert.Equal(
+            "tank.scene.json",
+            SceneTreeEditorPaneViewModel.SuggestExportFileName(tank));
+    }
+
     [Fact]
     public void InspectorUpdatesWhenSceneNodeIsSelected()
     {
@@ -3570,6 +3605,21 @@ public sealed partial class ProjectOpeningTests
         {
             SaveSceneCount++;
             return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string RootNodeId, string OutPath)> SubtreeExports { get; } = [];
+
+        public EngineMutationResponse SubtreeExportResponse { get; set; } = new()
+        {
+            Ok = true,
+        };
+
+        public EngineMutationResponse ExportSubtreeAsScene(
+            string rootNodeId,
+            string outPath)
+        {
+            SubtreeExports.Add((rootNodeId, outPath));
+            return SubtreeExportResponse;
         }
 
         public int ReloadBehaviorModulesCount { get; private set; }

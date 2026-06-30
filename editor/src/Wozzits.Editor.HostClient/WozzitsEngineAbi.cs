@@ -303,6 +303,19 @@ internal static partial class WozzitsEngineAbi
     [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_save_scene")]
     internal static partial WzResult WzEditorRuntimeSaveScene(IntPtr runtime);
 
+    // Carve the selected scene node + its descendants out of the running scene
+    // and write them as a standalone scene.json (a reusable prefab / "scenelet").
+    // rootNodeIdUtf8 is the node's authored string id; outPathUtf8 is an absolute
+    // file path. Errors when no viewport is running (there is nothing to export).
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_export_subtree_as_scene",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorExportSubtreeAsScene(
+        IntPtr runtime,
+        string rootNodeIdUtf8,
+        string outPathUtf8);
+
     [LibraryImport(
         LibraryName,
         EntryPoint = "wz_host_runtime_reload_behavior_modules")]

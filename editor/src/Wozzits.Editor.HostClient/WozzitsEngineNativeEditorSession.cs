@@ -253,6 +253,21 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.SaveScene(runtime.Handle);
     }
 
+    public EngineMutationResponse ExportSubtreeAsScene(
+        string rootNodeId,
+        string outPath)
+    {
+        // Exporting is an explicit user action that is meaningless without a live
+        // engine (the subtree lives in the running scene), so surface that rather
+        // than silently succeeding — mirrors ReloadBehaviorModules.
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return WozzitsEngineNativeClient.InvalidMutation(
+                "Engine viewport is not running; cannot export subtree.");
+        }
+        return _client.ExportSubtreeAsScene(runtime.Handle, rootNodeId, outPath);
+    }
+
     public EngineMutationResponse ReloadBehaviorModules()
     {
         // Unlike the coalesced live edits, reloading is an explicit user action

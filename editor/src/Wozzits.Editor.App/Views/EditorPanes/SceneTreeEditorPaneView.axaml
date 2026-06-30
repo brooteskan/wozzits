@@ -26,6 +26,8 @@
                                     <ContextMenu>
                                         <MenuItem Header="Add Child"
                                                   Click="AddChildClicked"/>
+                                        <MenuItem Header="Export subtree as scene…"
+                                                  Click="ExportSubtreeClicked"/>
                                         <MenuItem Header="Delete"
                                                   Click="DeleteClicked"/>
                                     </ContextMenu>
