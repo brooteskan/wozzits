@@ -37,6 +37,7 @@ target_sources(window_engine PRIVATE
     cognition/tree_bp.cpp
     cognition/ttn.cpp
     cognition/tree_tn.cpp
+    cognition/coordination.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp
