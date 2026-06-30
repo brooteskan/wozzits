@@ -63,7 +63,7 @@
         ],
         "scale": [
           0.50000011920928955,
-          0.49999615550041199,
+          0.49999234080314636,
           0.50000011920928955
         ]
       },
@@ -156,9 +156,6 @@
         "enabled": true,
         "constrain_movement": true,
         "collision_asset_node_id": 25
-      },
-      "audio_listener": {
-        "active": true
       }
     },
     {
@@ -216,6 +213,9 @@
         "near": 0.10000000149011612,
         "far": 1000,
         "aspect": 1.7777777910232544
+      },
+      "audio_listener": {
+        "active": true
       },
       "audio_source": {
         "audio_renderable_node_id": 34,

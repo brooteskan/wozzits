@@ -3,7 +3,7 @@
 namespace
 {
     static const char* kTankEvents[] = {
-    "input.*"
+    "input.*","self.start"
     };
 
     struct TankState {
@@ -118,6 +118,13 @@ namespace
 
         uint64_t frame_index =  wz_frame_index(facts);
         switch (wz_event_kind(event)) {
+
+        case WZ_EVENT_SELF_START:
+        {
+            constexpr float kAlignRate = 2.094f;  // 120 deg/s
+            wz_self_set_terrain_alignment_rate(facts, event, kAlignRate);
+            return;   // set once; skip the motion code below on this event
+        }
 
         case WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED:
         {
