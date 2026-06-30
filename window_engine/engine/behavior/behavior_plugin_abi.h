@@ -252,6 +252,19 @@ enum
      * safe to post every frame.
      */
     WZ_BEHAVIOR_COMMAND_SET_GRAIN_PARAM = 15u,
+    /*
+     * Spawn a prefab ("scenelet" Scene asset) into the running scene at a
+     * transform derived from the spawning entity (runtime prefab spawning). Like
+     * SET_ACTIVE_CAMERA / the audio commands, this does NOT mutate `entity`: the
+     * host (WozzitsApp_v1) resolves the prefab, computes the spawn transform from
+     * the spawner's world transform, clones the prefab nodes with conflict-free
+     * ids, and grafts them — apply_behavior_commands ignores it. `entity` is the
+     * spawner (its world transform is the spawn anchor). Encoding: values[0] = the
+     * prefab name's FNV-1a/32 hash as a float BIT PATTERN (a container, not a
+     * numeric value, mirroring the audio clip-name trick), values[1..3] = an
+     * offset xyz applied in the spawner's frame. Play-mode only.
+     */
+    WZ_BEHAVIOR_COMMAND_SPAWN_PREFAB = 16u,
 };
 
 /*

@@ -1999,6 +1999,59 @@ TEST(BehaviorModuleApi, PlaySoundNamedNullFactsIsNoOp)
     EXPECT_EQ(wz_write_play_sound_hashed(nullptr, 1u, 123u), 0u);
 }
 
+TEST(BehaviorModuleApi, SpawnPrefabEncodesNameHashBitsAndOffset)
+{
+    struct Probe { WzBehaviorCommand last{}; int count = 0; } probe;
+    WzBehaviorFrameFacts facts{
+        .command_writer_user = &probe,
+        .write_command = [](void* user, const WzBehaviorCommand* cmd) -> uint8_t
+        {
+            auto* p = static_cast<Probe*>(user);
+            p->last = *cmd;
+            ++p->count;
+            return 1u;
+        },
+    };
+
+    // Spawn-by-name encodes the prefab name's FNV-1a/32 hash as the bit pattern of
+    // v0 (full 32 bits preserved through the float slot) and the offset in v1..v3.
+    ASSERT_EQ(
+        wz_write_spawn_prefab(&facts, 7u, "enemy_tank", 1.0f, 2.0f, 3.0f), 1u);
+    EXPECT_EQ(probe.count, 1);
+    EXPECT_EQ(probe.last.entity, 7u);
+    EXPECT_EQ(probe.last.kind, WZ_BEHAVIOR_COMMAND_SPAWN_PREFAB);
+
+    uint32_t decoded = 0u;
+    memcpy(&decoded, &probe.last.values[0], sizeof(uint32_t));
+    EXPECT_EQ(decoded, wz_prefab_hash("enemy_tank"));
+    EXPECT_FLOAT_EQ(probe.last.values[1], 1.0f);
+    EXPECT_FLOAT_EQ(probe.last.values[2], 2.0f);
+    EXPECT_FLOAT_EQ(probe.last.values[3], 3.0f);
+
+    // wz_write_spawn_prefab_hashed yields the identical hash encoding.
+    probe.count = 0;
+    ASSERT_EQ(
+        wz_write_spawn_prefab_hashed(
+            &facts, 7u, wz_prefab_hash("enemy_tank"), 1.0f, 2.0f, 3.0f),
+        1u);
+    uint32_t decoded2 = 0u;
+    memcpy(&decoded2, &probe.last.values[0], sizeof(uint32_t));
+    EXPECT_EQ(decoded2, decoded);
+
+    // The prefab hash is usable at compile time, and matches FNV-1a/32 exactly
+    // (the same constants the engine's prefab_name_hash uses). The ABI -> engine
+    // BehaviorCommandKind::SpawnPrefab mapping (from_abi_command_kind) is exercised
+    // end-to-end by the WozzitsApp_v1 prefab-spawn test, where the command must
+    // round-trip through the adapter for the host spawn to fire.
+    static_assert(wz_prefab_hash("enemy_tank") != 0u, "constexpr prefab hash");
+}
+
+TEST(BehaviorModuleApi, SpawnPrefabNullFactsIsNoOp)
+{
+    EXPECT_EQ(wz_write_spawn_prefab(nullptr, 1u, "x", 0.f, 0.f, 0.f), 0u);
+    EXPECT_EQ(wz_write_spawn_prefab_hashed(nullptr, 1u, 1u, 0.f, 0.f, 0.f), 0u);
+}
+
 TEST(BehaviorModuleApi, SetGrainParamHelpersEncodeParamValueRamp)
 {
     struct Probe { WzBehaviorCommand last{}; int count = 0; } probe;

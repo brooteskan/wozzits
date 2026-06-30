@@ -359,6 +359,29 @@ configure_file(
     "${WZ_BEHAVIOR_FIXTURE_DST}/scene.json"
     COPYONLY)
 
+# Self-contained fixture for the WozzitsApp_v1 prefab-spawn test (runtime prefab
+# spawning, milestone #2): an empty asset graph + a scene with an "accumulator"
+# node (accumulate_on_frame, instance-state probe for the state-preserving
+# rebuild) and a "spawner" node (spawn_prefab_on_frame, emits SPAWN_PREFAB). It
+# reuses the behavior fixture's staged module dir so the same test plugin DLL is
+# loaded; the prefab itself is registered programmatically by the test.
+set(WZ_PREFAB_SPAWN_FIXTURE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/prefab_spawn_fixture")
+set(WZ_PREFAB_SPAWN_FIXTURE_DST
+    "${CMAKE_BINARY_DIR}/resources/projects/prefab_spawn_fixture")
+configure_file(
+    "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/.wozzits/project.json.in"
+    "${WZ_PREFAB_SPAWN_FIXTURE_DST}/.wozzits/project.json"
+    @ONLY)
+configure_file(
+    "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/assets.graph.json"
+    "${WZ_PREFAB_SPAWN_FIXTURE_DST}/assets.graph.json"
+    COPYONLY)
+configure_file(
+    "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/scene.json"
+    "${WZ_PREFAB_SPAWN_FIXTURE_DST}/scene.json"
+    COPYONLY)
+
 # Self-contained fixture for the WozzitsApp_v1 GLB scene-source test (issue
 # #213): an empty asset graph + a scene whose host node carries a
 # glb_scene_source DESCRIPTOR pointing at the bundled gltf/tank1.glb (staged by
@@ -799,6 +822,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_scene scene_ecs_boundary_tests)
     rs_add_test_group(asset_scene scene_authoring_component_roundtrip_tests)
     rs_add_test_group(asset_scene scene_subtree_export_tests)
+    rs_add_test_group(asset_scene prefab_instantiate_tests)
     rs_add_test_group(asset_scene scene_compute_kernel_roundtrip_tests)
     rs_add_test_group(asset_scene scene_mesh_compute_field_roundtrip_tests)
     rs_add_test_group(asset_scene scene_render_shader_roundtrip_tests)
@@ -888,6 +912,15 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
         wozzits_app_behavior_test_plugin wz_stage_resources)
     rs_add_test_group(render wozzits_app_render_binding_tests)
     add_dependencies(render_wozzits_app_render_binding_tests wz_stage_resources)
+
+    # WozzitsApp_v1 runtime prefab-spawn test (prefab-system milestone #2). On-
+    # device: loads the prefab_spawn_fixture and reuses the staged behavior module
+    # DLL (accumulate_on_frame + spawn_prefab_on_frame); proves a state-preserving
+    # behavior-scene rebuild, a SPAWN_PREFAB graft whose behavior runs, and that a
+    # spawn does not flip the active scene camera (#219).
+    rs_add_test_group(render wozzits_app_prefab_spawn_tests)
+    add_dependencies(render_wozzits_app_prefab_spawn_tests
+        wozzits_app_behavior_test_plugin wz_stage_resources)
 
     # WozzitsApp_v1 terrain-constraint tick test (issue #216 work item B). On-
     # device: loads the portable terrain_constraint_fixture (procedural scalar

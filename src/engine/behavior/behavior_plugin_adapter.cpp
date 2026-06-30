@@ -169,6 +169,8 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::SetSoundGain;
             case WZ_BEHAVIOR_COMMAND_SET_GRAIN_PARAM:
                 return BehaviorCommandKind::SetGrainParam;
+            case WZ_BEHAVIOR_COMMAND_SPAWN_PREFAB:
+                return BehaviorCommandKind::SpawnPrefab;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;

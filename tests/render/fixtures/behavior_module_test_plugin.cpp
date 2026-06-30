@@ -186,6 +186,73 @@ namespace
         wz_self_remove_node_component(facts, event, "proximity");
     }
 
+    // Holds a per-node frame counter in INSTANCE STATE: on_init constructs it at
+    // 0 (only on first allocation — wz_instance_state constructs T{} once, then
+    // returns the preserved block AS-IS on a later init, e.g. after a structural
+    // rebuild). Each frame it increments the counter and writes the value into the
+    // node's local Y. So the node's Y == the number of frames this binding has
+    // dispatched IF its instance state survived every rebuild in between; if a
+    // rebuild had RESET the block, on_init would reconstruct counter=0 and Y would
+    // drop. The state-preserving-rebuild test reads node_local_translation().y to
+    // tell the two apart, and confirms a freshly-added binding starts at 1.
+    struct AccumulateState
+    {
+        float counter = 0.0f;
+    };
+
+    void accumulate_init(
+        const WzBehaviorInitFacts* facts,
+        WzBehaviorEntityId,
+        void*)
+    {
+        // Construct (first init) or fetch (preserved across a rebuild) the block.
+        (void)wz_instance_state<AccumulateState>(facts);
+    }
+
+    void accumulate_on_frame(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event || !facts->write_command) {
+            return;
+        }
+        if (event->kind != WZ_EVENT_FRAME_UPDATE) {
+            return;
+        }
+        AccumulateState* state = wz_instance_state<AccumulateState>(facts);
+        if (!state) {
+            return;
+        }
+        state->counter += 1.0f;
+        const WzBehaviorCommand command{
+            .entity = event->entity,
+            .kind = WZ_BEHAVIOR_COMMAND_SET_LOCAL_TRANSLATION,
+            .values = { 0.0f, state->counter, 0.0f, 0.0f },
+        };
+        facts->write_command(facts->command_writer_user, &command);
+    }
+
+    // Spawns the prefab named "spawnling" on every frame.update at an offset of
+    // (0, 0, 5) in the spawner's frame. The spawn end-to-end test registers that
+    // prefab, ticks once, and asserts the spawned subtree appears in the behavior
+    // runtime while the spawner's own state is untouched. Host-handled command,
+    // applied at the frame boundary (see WZ_BEHAVIOR_COMMAND_SPAWN_PREFAB).
+    void spawn_prefab_on_frame(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event) {
+            return;
+        }
+        if (event->kind != WZ_EVENT_FRAME_UPDATE) {
+            return;
+        }
+        wz_write_spawn_prefab(
+            facts, event->entity, "spawnling", 0.0f, 0.0f, 5.0f);
+    }
+
     // Subscribed to "input.*" (NOT frame.update): writes an add-local-translation
     // of (+1, 0, 0) for each input event the runtime routes to it. The dispatch
     // test ticks with a controller-axis InputState and asserts the bound node
@@ -275,6 +342,23 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         .event_channel_count = 1u,
         .module_user_data = nullptr,
     };
+    const WzBehaviorModuleDesc accumulate_desc{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "accumulate_on_frame",
+        .on_event = accumulate_on_frame,
+        .on_init = accumulate_init,
+        .event_channels = events,
+        .event_channel_count = 1u,
+        .module_user_data = nullptr,
+    };
+    const WzBehaviorModuleDesc spawn_prefab_desc{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "spawn_prefab_on_frame",
+        .on_event = spawn_prefab_on_frame,
+        .event_channels = events,
+        .event_channel_count = 1u,
+        .module_user_data = nullptr,
+    };
     static const char* input_events[] = { "input.*" };
     const WzBehaviorModuleDesc move_on_input_desc{
         .size = sizeof(WzBehaviorModuleDesc),
@@ -301,9 +385,13 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         api->register_module_desc(api->user, &remove_proximity_desc);
     const uint8_t move_on_input_ok =
         api->register_module_desc(api->user, &move_on_input_desc);
+    const uint8_t accumulate_ok =
+        api->register_module_desc(api->user, &accumulate_desc);
+    const uint8_t spawn_prefab_ok =
+        api->register_module_desc(api->user, &spawn_prefab_desc);
     return (move_ok && spawn_ok && remove_ok && set_renderable_ok
             && reparent_ok && add_proximity_ok && remove_proximity_ok
-            && move_on_input_ok)
+            && move_on_input_ok && accumulate_ok && spawn_prefab_ok)
         ? uint8_t{ 1 }
         : uint8_t{ 0 };
 }

@@ -45,6 +45,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace wz::app
@@ -447,6 +448,34 @@ namespace wz::app
             std::string_view root_node_id,
             const wz::fs::Path& out_path);
 
+        // Register a prefab ("scenelet" Scene asset) so a behavior can spawn it at
+        // runtime by name (the second prefab-system milestone, runtime spawning).
+        // The prefab is keyed by the FNV-1a/32 hash of `prefab_name` — the same
+        // hash wz_prefab_hash / wz_write_spawn_prefab use — so a SPAWN_PREFAB
+        // command naming it resolves to these nodes. `nodes` is a self-contained
+        // scenelet (a root + its descendants, as produced by extract_scene_subtree
+        // / export_subtree_as_scene): on spawn the host clones it with conflict-
+        // free ids and grafts it under the computed spawn transform. A second
+        // registration with the same name replaces the prior nodes. The spawn-apply
+        // resolves the prefab once and caches it.
+        void register_prefab(
+            const std::string& prefab_name,
+            std::vector<wz::engine::assets::SceneNodeAsset> nodes);
+
+        // Number of live scene nodes spawned from prefabs (the spawn graft).
+        // Lets the spawn end-to-end test observe a prefab landing in scene_nodes_
+        // / the behavior runtime without a snapshot. Counts every node whose id
+        // carries the "spawn:" prefix this milestone mints.
+        [[nodiscard]] std::size_t spawned_prefab_node_count() const;
+
+        // The authored id of the currently selected scene-camera anchor, or an
+        // empty string when no scene camera is selected (free-fly active). Lets the
+        // #219 guard confirm a prefab spawn (which rebuilds the behavior runtime
+        // mid-tick) does NOT flip the active camera off its anchor. Read-only
+        // diagnostic, mirroring the node_* accessors.
+        [[nodiscard]] const wz::scene::AuthoredEntityId&
+        active_scene_camera_id() const;
+
         // Reload the project's behavior-module DLLs from `module_folder` into a
         // clean registry and re-materialize the behavior runtime, without
         // restarting the engine. Used by the editor after it recompiles the
@@ -627,6 +656,25 @@ namespace wz::app
         // when there are no behavior bindings (nothing to run).
         void rebuild_behavior_scene();
 
+        // Apply a SPAWN_PREFAB request: resolve `prefab_name_hash` to a registered
+        // prefab, compute the spawn transform T = the spawner node's world
+        // transform × the offset (offset applied in the spawner's frame), clone the
+        // prefab nodes with conflict-free ids (instantiate_prefab_nodes), append
+        // them to scene_nodes_, then rebuild the behavior runtime (now state-
+        // preserving, so pre-existing bindings are untouched) and re-assemble
+        // render bindings. The spawner is addressed by its STABLE authored id (not
+        // a runtime entity), so the request stays valid even as a prior spawn in
+        // the same frame-boundary drain rebuilds + renumbers the runtime. No-op
+        // (logged) if the spawner id isn't in scene_nodes_ or the prefab hash is
+        // unknown. Drained at the frame boundary (like the deferred-authoring
+        // edits); play-mode oriented (the spawned subtree's behaviors run next tick).
+        void spawn_prefab(
+            const wz::scene::AuthoredEntityId& spawner_id,
+            uint32_t prefab_name_hash,
+            float offset_x,
+            float offset_y,
+            float offset_z);
+
         // One-shot WZ_EVENT_SCENE_LOADED dispatch after the scene is
         // materialized: lets a scene-setup behavior pick the active camera via
         // SET_ACTIVE_CAMERA. Called once from load_scene, before the frame loop.
@@ -752,6 +800,18 @@ namespace wz::app
         wz::engine::FrameStorage                 frame_storage_{};
         std::optional<wz::engine::assets::SceneInstance> behavior_scene_{};
         uint64_t                                 behavior_frame_index_ = 0;
+
+        // Runtime prefab spawning (the second prefab-system milestone). Prefabs are
+        // registered scenelets keyed by their name's FNV-1a/32 hash (register_prefab);
+        // a SPAWN_PREFAB behavior command resolves the hash here, clones the nodes
+        // with conflict-free ids, and grafts them. spawn_counter_ feeds the per-
+        // instance id remap (instantiate_prefab_nodes) so every spawn gets a
+        // disjoint id namespace; it only increments, so it is unique for the app's
+        // lifetime.
+        std::unordered_map<
+            uint32_t,
+            std::vector<wz::engine::assets::SceneNodeAsset>> prefab_by_hash_{};
+        uint32_t                                 spawn_counter_ = 0;
 
         // Play-mode audio runtime: owns the realtime scheduler and (when started)
         // the output device. Started lazily on the first play-mode scene load and

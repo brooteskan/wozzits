@@ -1,0 +1,79 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "prefab_spawn_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "behaviors": [
+        {
+          "module": "scene_camera",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": true,
+          "events": ["scene.loaded"],
+          "config": {
+            "camera_name": "cam"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cam",
+      "parent": "root",
+      "name": "cam",
+      "transform": {
+        "translation": [0, 5, 20],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0472,
+        "near_plane": 0.1,
+        "far_plane": 1000.0
+      }
+    },
+    {
+      "id": "accumulator",
+      "parent": "root",
+      "name": "accumulator",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "behavior": {
+        "label": "Accumulate frames into Y (instance state)",
+        "module": "accumulate_on_frame",
+        "enabled": true,
+        "events": ["frame.update"]
+      }
+    },
+    {
+      "id": "spawner",
+      "parent": "root",
+      "name": "spawner",
+      "transform": {
+        "translation": [100, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "behavior": {
+        "label": "Spawn the 'spawnling' prefab each frame",
+        "module": "spawn_prefab_on_frame",
+        "enabled": true,
+        "events": ["frame.update"]
+      }
+    }
+  ],
+  "defaults": {}
+}

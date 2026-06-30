@@ -39,6 +39,11 @@ namespace wz::engine::behavior
         // handled (not applied here). values[0] = WZ_GRAIN_PARAM_* ordinal,
         // values[1] = target, values[2] = ramp frames.
         SetGrainParam,
+        // Spawn a prefab at a transform derived from `entity` (the spawner). Also
+        // host-handled (not applied here): WozzitsApp_v1 owns the scene graft.
+        // values[0] = prefab name-hash as a float bit pattern, values[1..3] =
+        // offset xyz in the spawner's frame. See WZ_BEHAVIOR_COMMAND_SPAWN_PREFAB.
+        SpawnPrefab,
     };
 
     struct BehaviorCommand

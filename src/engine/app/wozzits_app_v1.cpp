@@ -7,6 +7,7 @@
 #include <engine/assets/scene/scene_authoring_materialize.h>
 #include <engine/assets/scene/scene_instance.h>
 #include <engine/assets/scene/scene_json_export.h>
+#include <engine/assets/scene/prefab_instantiate.h>
 #include <engine/assets/scene/scene_subtree_export.h>
 #include <engine/assets/scene_asset_module.h>
 #include <engine/assets/renderable_asset_module.h>
@@ -33,16 +34,33 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace wz::app
 {
+    namespace
+    {
+        // FNV-1a/32 over a prefab name. Matches wz_prefab_hash (the behavior-side
+        // constexpr) bit-for-bit so a SPAWN_PREFAB command's hash resolves to the
+        // prefab registered under the same name.
+        uint32_t prefab_name_hash(std::string_view name) noexcept
+        {
+            uint32_t h = 2166136261u;
+            for (const unsigned char c : name) {
+                h ^= static_cast<uint32_t>(c);
+                h *= 16777619u;
+            }
+            return h;
+        }
+    }
 
     WozzitsApp_v1::WozzitsApp_v1(wz::engine::AppContext& ctx)
         : ctx_(ctx)
@@ -1050,6 +1068,21 @@ namespace wz::app
                 + active_camera_id_ + "')");
         }
 
+        // Capture the outgoing instance's behavior state BEFORE the reset so a
+        // rebuild (structural edit / prefab spawn) preserves every pre-existing
+        // binding's BehaviorStateBlock: instance state is keyed by binding id, and
+        // a binding id is re-derived from the node id (effective_behavior_binding_id),
+        // so a binding present in both the old and rebuilt scenes keeps the SAME
+        // key. Moving the maps into the rebuilt instance before initialize_behaviors
+        // means on_init's wz_get_instance_state finds the preserved block and does
+        // NOT re-construct it (state survives), while a newly added binding has no
+        // block yet and initializes fresh. Carried for both instance and shared
+        // state. Default-empty when there was no prior instance.
+        wz::engine::assets::BehaviorStateStorage preserved_state;
+        if (behavior_scene_) {
+            preserved_state = std::move(behavior_scene_->behavior_state);
+        }
+
         behavior_scene_.reset();
 
         // Build the runtime SceneInstance whenever ANY node carries something the
@@ -1109,11 +1142,43 @@ namespace wz::app
 
         behavior_scene_ = std::move(instantiated.instance);
 
+        // Carry the preserved state into the rebuilt instance BEFORE init, so a
+        // binding that survives the rebuild keeps its block (and skips re-
+        // construction); a new binding has no block and initializes fresh.
+        behavior_scene_->behavior_state = std::move(preserved_state);
+
         // Initialize behaviors (init callbacks + per-binding/shared state) once
         // for the materialized scene, exactly as game_app does after building
         // its scene.
         wz::engine::behavior::initialize_behaviors(
             *behavior_scene_, registry_, &ctx_.logger);
+
+        // Prune carried-over instance-state blocks whose binding id is no longer
+        // present among the rebuilt scene's bindings (a removed/renamed node, or a
+        // node never re-added). Without this, those blocks would leak across every
+        // rebuild. Shared state is keyed independently of nodes (it is created on
+        // demand by key), so it is NOT pruned here — it is carried as-is.
+        {
+            std::unordered_set<std::string> live_binding_ids;
+            live_binding_ids.reserve(behavior_scene_->behaviors.size());
+            for (const auto& record : behavior_scene_->behaviors) {
+                live_binding_ids.insert(record.component.binding_id);
+            }
+            auto& instance_state =
+                behavior_scene_->behavior_state.instance_state;
+            for (auto it = instance_state.begin();
+                 it != instance_state.end();)
+            {
+                if (live_binding_ids.find(it->first)
+                    == live_binding_ids.end())
+                {
+                    it = instance_state.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+
         ctx_.logger.info(
             "behavior scene initialized (bindings="
             + std::to_string(behavior_scene_->behaviors.size()) + ")");
@@ -1165,6 +1230,134 @@ namespace wz::app
         // Materialize the active view once now so the first render after a load
         // (before the first simulation_tick) draws through the selected camera.
         update_active_view();
+    }
+
+    void WozzitsApp_v1::register_prefab(
+        const std::string& prefab_name,
+        std::vector<wz::engine::assets::SceneNodeAsset> nodes)
+    {
+        // Key by the same FNV-1a/32 hash the behavior helpers use, so a
+        // SPAWN_PREFAB command naming this prefab resolves here. A re-register
+        // replaces the prior nodes (the cache is the live prefab set).
+        const uint32_t hash = prefab_name_hash(prefab_name);
+        prefab_by_hash_[hash] = std::move(nodes);
+        ctx_.logger.info(
+            "register_prefab: '" + prefab_name + "' ("
+            + std::to_string(prefab_by_hash_[hash].size()) + " nodes)");
+    }
+
+    std::size_t WozzitsApp_v1::spawned_prefab_node_count() const
+    {
+        // The spawn graft mints ids with a "spawn:" prefix (instantiate_prefab_-
+        // nodes); count them so a test can observe a prefab landing in scene_nodes_.
+        std::size_t count = 0;
+        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            if (node.id.rfind("spawn:", 0) == 0) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    const wz::scene::AuthoredEntityId&
+    WozzitsApp_v1::active_scene_camera_id() const
+    {
+        return active_camera_id_;
+    }
+
+    void WozzitsApp_v1::spawn_prefab(
+        const wz::scene::AuthoredEntityId& spawner_id,
+        uint32_t prefab_name_hash,
+        float offset_x,
+        float offset_y,
+        float offset_z)
+    {
+        // Resolve the prefab once (the registered scenelet for this name hash).
+        const auto prefab_it = prefab_by_hash_.find(prefab_name_hash);
+        if (prefab_it == prefab_by_hash_.end()) {
+            ctx_.logger.warn(
+                "spawn_prefab: unknown prefab hash "
+                + std::to_string(prefab_name_hash) + " — skipped");
+            return;
+        }
+        if (prefab_it->second.empty()) {
+            ctx_.logger.warn("spawn_prefab: prefab has no nodes — skipped");
+            return;
+        }
+
+        // Resolve the spawner's stable authored id -> its index in scene_nodes_ so
+        // the spawn anchor is the spawner's live world transform. compute_scene_-
+        // node_world_transforms is index-aligned with scene_nodes_. Addressing by
+        // authored id (not runtime entity) keeps this valid across the rebuild a
+        // prior spawn in this drain may have done.
+        const std::vector<wz::math::Mat4> world_transforms =
+            wz::engine::rendering::compute_scene_node_world_transforms(
+                scene_nodes_);
+        wz::math::Mat4 spawner_world = wz::math::Mat4::identity();
+        bool found_spawner = false;
+        for (std::size_t i = 0; i < scene_nodes_.size(); ++i) {
+            if (scene_nodes_[i].id == spawner_id) {
+                spawner_world = world_transforms[i];
+                found_spawner = true;
+                break;
+            }
+        }
+        if (!found_spawner) {
+            ctx_.logger.warn(
+                "spawn_prefab: spawner node '" + spawner_id
+                + "' not in scene — skipped");
+            return;
+        }
+
+        // T = spawner world transform × the offset. mul(a, b) = a * b
+        // (column-major), so the offset is applied in the spawner's local frame
+        // and then carried by the spawner's world transform — i.e. the prefab is
+        // placed `offset` away from the spawner IN the spawner's frame. Decompose
+        // to a TRS for the re-rooted prefab root's local (it becomes a top-level
+        // node, so its local == this world transform).
+        const wz::math::Mat4 spawn_world = wz::math::mul(
+            spawner_world,
+            wz::math::translation(
+                wz::math::Vec3{ offset_x, offset_y, offset_z }));
+
+        wz::math::Transform trs{};
+        if (!wz::math::decompose_trs(spawn_world, trs)) {
+            trs = wz::math::rigid_pose_from_matrix(spawn_world);
+        }
+        wz::engine::assets::AuthoredTransform root_transform{};
+        root_transform.translation[0] = trs.position.x;
+        root_transform.translation[1] = trs.position.y;
+        root_transform.translation[2] = trs.position.z;
+        root_transform.rotation_quat[0] = trs.rotation.x;
+        root_transform.rotation_quat[1] = trs.rotation.y;
+        root_transform.rotation_quat[2] = trs.rotation.z;
+        root_transform.rotation_quat[3] = trs.rotation.w;
+        root_transform.scale[0] = trs.scale.x;
+        root_transform.scale[1] = trs.scale.y;
+        root_transform.scale[2] = trs.scale.z;
+
+        // Clone the prefab with conflict-free ids under the spawn transform, then
+        // graft: append to scene_nodes_ (the renderer's + behavior runtime's
+        // source of truth), rebuild the behavior runtime (now state-preserving, so
+        // pre-existing bindings keep their state and the spawned subtree's
+        // behaviors initialize fresh), and re-assemble render bindings (so a
+        // spawned renderable draws). Mirrors add_child_node's append->rebuild.
+        std::vector<wz::engine::assets::SceneNodeAsset> spawned =
+            wz::engine::assets::instantiate_prefab_nodes(
+                prefab_it->second, ++spawn_counter_, root_transform);
+        scene_nodes_.insert(
+            scene_nodes_.end(),
+            std::make_move_iterator(spawned.begin()),
+            std::make_move_iterator(spawned.end()));
+        scene_dirty_ = true;
+
+        rebuild_behavior_scene();
+        if (ctx_.assets) {
+            assemble_render_bindings(graph_draft_);
+        }
+        ctx_.logger.info(
+            "spawn_prefab: grafted prefab as instance "
+            + std::to_string(spawn_counter_));
     }
 
     void WozzitsApp_v1::apply_scene_active_camera(
@@ -1312,6 +1505,21 @@ namespace wz::app
         // semantics #204 requires (no EditorRuntimeControl involved).
         wz::engine::behavior::BehaviorAuthoringBuffer authoring;
 
+        // Frame-boundary spawn requests (runtime prefab spawning). A SPAWN_PREFAB
+        // command is host-handled (apply_behavior_commands ignores it), like the
+        // audio commands; but unlike audio it grafts nodes + rebuilds the behavior
+        // runtime, so it must NOT run mid command-pass (that would renumber the
+        // runtime ids the remaining commands address). It is resolved to the
+        // spawner's STABLE authored id here (while behavior_scene_ is current) and
+        // drained at the frame boundary, alongside the deferred-authoring edits.
+        struct SpawnRequest
+        {
+            wz::scene::AuthoredEntityId spawner_id;
+            uint32_t name_hash = 0u;
+            float offset[3]{ 0.0f, 0.0f, 0.0f };
+        };
+        std::vector<SpawnRequest> spawn_requests;
+
         if (has_behaviors) {
             // Build a minimal FrameContext carrying time + input. The collision,
             // proximity and input-event tables are populated above, so the
@@ -1392,6 +1600,41 @@ namespace wz::app
                         audio_runtime_.scheduler(), verb, command.entity,
                         command.values[0], command.values[1]);
                 }
+            }
+
+            // Collect SPAWN_PREFAB requests (runtime prefab spawning). Resolve the
+            // spawner runtime entity -> its STABLE authored id NOW, while
+            // behavior_scene_ is still the scene the command was issued against; a
+            // later spawn in the drain rebuilds + renumbers the runtime, so a
+            // runtime id would go stale. Decode values[0] (the name hash as a float
+            // BIT PATTERN, mirroring the audio clip-name trick) and values[1..3]
+            // (the offset). Drained below at the frame boundary.
+            for (const wz::engine::behavior::BehaviorCommand& command :
+                 frame_storage_.behavior_commands.commands)
+            {
+                if (command.kind
+                    != wz::engine::behavior::BehaviorCommandKind::SpawnPrefab)
+                {
+                    continue;
+                }
+                if (command.entity
+                    >= behavior_scene_->runtime_to_authored.size())
+                {
+                    continue;
+                }
+                uint32_t name_hash = 0u;
+                std::memcpy(
+                    &name_hash, &command.values[0], sizeof(uint32_t));
+                spawn_requests.push_back(SpawnRequest{
+                    .spawner_id =
+                        behavior_scene_->runtime_to_authored[command.entity],
+                    .name_hash = name_hash,
+                    .offset = {
+                        command.values[1],
+                        command.values[2],
+                        command.values[3],
+                    },
+                });
             }
         }
 
@@ -1555,6 +1798,22 @@ namespace wz::app
                     "behavior remove_node_component rejected for node '"
                     + request.node_id + "' kind '" + request.kind + "'");
             }
+        }
+
+        // SPAWN_PREFAB drain (runtime prefab spawning): same frame-boundary as the
+        // deferred-authoring edits above, AFTER every read of behavior_scene_ this
+        // tick — each spawn grafts nodes + rebuilds the behavior runtime out from
+        // under us, so it is safe only now. The spawner is addressed by its stable
+        // authored id (resolved during the command pass), so it stays valid even as
+        // a prior spawn here rebuilds + renumbers the runtime. State preservation
+        // in rebuild_behavior_scene leaves pre-existing bindings' state untouched.
+        for (const SpawnRequest& request : spawn_requests) {
+            spawn_prefab(
+                request.spawner_id,
+                request.name_hash,
+                request.offset[0],
+                request.offset[1],
+                request.offset[2]);
         }
     }
 

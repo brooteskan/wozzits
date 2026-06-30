@@ -892,9 +892,10 @@ namespace wz::engine::behavior
             case BehaviorCommandKind::StopSound:
             case BehaviorCommandKind::SetSoundGain:
             case BehaviorCommandKind::SetGrainParam:
+            case BehaviorCommandKind::SpawnPrefab:
                 // Not per-entity transform mutations: the host (WozzitsApp_v1)
-                // reads these directly — camera selection / audio scheduler.
-                // Ignored here.
+                // reads these directly — camera selection / audio scheduler /
+                // prefab graft. Ignored here.
                 break;
 
             case BehaviorCommandKind::None:

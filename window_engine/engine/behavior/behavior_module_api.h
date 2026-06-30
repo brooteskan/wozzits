@@ -1169,6 +1169,72 @@ static inline uint8_t wz_write_set_grain_blend_depth(
         facts, entity, WZ_GRAIN_PARAM_BLEND_DEPTH, depth, ramp_frames);
 }
 
+// FNV-1a/32 over a prefab name. constexpr, so a plugin can hash a string literal
+// at COMPILE time (zero runtime cost) and pass the result to wz_write_spawn_-
+// prefab:
+//   static constexpr uint32_t kEnemy = wz_prefab_hash("enemy_tank");
+//   wz_write_spawn_prefab_hashed(facts, e, kEnemy, 0.f, 0.f, -5.f);
+// Must match the engine's prefab-name hash (the host hashes the Scene asset name
+// the same way). Identical FNV-1a/32 to wz_play_sound_hash.
+static inline constexpr uint32_t wz_prefab_hash(const char* name)
+{
+    uint32_t h = 2166136261u;
+    if (name) {
+        for (const char* p = name; *p; ++p) {
+            h ^= (uint32_t)(unsigned char)(*p);
+            h *= 16777619u;
+        }
+    }
+    return h;
+}
+
+// Spawn a prefab ("scenelet" Scene asset) at a transform derived from `entity`
+// (the spawner): the host computes T = spawner world transform × the offset and
+// grafts a conflict-free clone of the prefab's nodes. Host-handled (it does not
+// mutate `entity`); applied in the per-frame command pass. Encoding: values[0]
+// carries the 32-bit prefab name hash as a bit pattern (a container, not a
+// numeric value, so the full 32 bits survive the float slot), values[1..3] = the
+// offset xyz in the spawner's frame. Play-mode only. Prefer the compile-time
+// wz_prefab_hash().
+static inline uint8_t wz_write_spawn_prefab_hashed(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t prefab_name_hash,
+    float offset_x,
+    float offset_y,
+    float offset_z)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    float hash_bits = 0.0f;
+    memcpy(&hash_bits, &prefab_name_hash, sizeof(uint32_t));
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SPAWN_PREFAB,
+        { hash_bits, offset_x, offset_y, offset_z },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Convenience: spawn a prefab by name, hashing at the call site. For a hot
+// trigger, prefer wz_write_spawn_prefab_hashed(.., wz_prefab_hash("name"), ..)
+// so the hash is computed at compile time.
+static inline uint8_t wz_write_spawn_prefab(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* prefab_name,
+    float offset_x,
+    float offset_y,
+    float offset_z)
+{
+    return wz_write_spawn_prefab_hashed(
+        facts, entity, wz_prefab_hash(prefab_name),
+        offset_x, offset_y, offset_z);
+}
+
 // Deferred runtime-authoring: ask the runtime to spawn a new child node under
 // `parent_entity`. The add is applied at the next frame boundary through the
 // shared runtime apply path (it does not mutate the scene during dispatch), and
