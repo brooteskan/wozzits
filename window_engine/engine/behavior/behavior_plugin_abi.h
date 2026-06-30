@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 25u
+#define WZ_BEHAVIOR_ABI_VERSION 26u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -65,6 +65,17 @@ enum
      * frame (e.g. terrain alignment rate).
      */
     WZ_EVENT_SELF_START = 3u,
+    /*
+     * Self-paced cognition wake. NOT a per-frame tick: a module subscribed to
+     * "cognition.tick" is fired only when its OWN scheduled wake time is due, and
+     * during the handler it calls wz_set_next_wake(facts, delay_seconds) to choose
+     * when it next wants to think. A binding with no scheduled wake yet is due
+     * immediately (its first think); one that does not reschedule sleeps. This is
+     * the engine side of the relax-across-frames model -- deliberation runs on the
+     * agent's own clock (sim-time), decoupled from the render frame rate, so a
+     * hundred spawned agents never each pull a function every frame.
+     */
+    WZ_EVENT_COGNITION_TICK = 4u,
     WZ_EVENT_COLLISION_ENTER = 100u,
     WZ_EVENT_COLLISION_STAY = 101u,
     WZ_EVENT_COLLISION_EXIT = 102u,
@@ -413,6 +424,16 @@ typedef uint8_t (*WzRemoveNodeComponentFn)(
     void* user,
     WzBehaviorEntityId entity,
     const char* kind);
+
+/*
+ * Self-paced cognition wake scheduler (cognition.tick). A module calls this from
+ * its WZ_EVENT_COGNITION_TICK handler to request its next wake `delay_seconds` of
+ * SIM-TIME from now (<= 0 means "as soon as possible", i.e. the next cognition
+ * pass). The host stores it per binding (preserved across scene rebuilds); a
+ * binding that does not call this after a tick sleeps until something reschedules
+ * it. Returns 1 if accepted (the active binding resolved), 0 otherwise.
+ */
+typedef uint8_t (*WzSetNextWakeFn)(void* user, double delay_seconds);
 
 typedef struct WzGpuWorkId
 {
@@ -839,6 +860,19 @@ typedef struct WzBehaviorFrameFacts
     WzReparentNodeFn reparent_node;
     WzAddNodeComponentFn add_node_component;
     WzRemoveNodeComponentFn remove_node_component;
+
+    /*
+     * Self-paced cognition (cognition.tick). Appended at the end (APPEND-ONLY;
+     * WzBehaviorFrameFacts is pointer-passed and not version-checked, like the
+     * deferred-authoring block above). `sim_time` is the ABSOLUTE accumulated
+     * simulation time in seconds -- a monotonic clock, unlike the per-frame
+     * `timing` above whose elapsed_seconds is only this frame's delta. set_next_wake
+     * schedules this binding's next WZ_EVENT_COGNITION_TICK relative to sim_time.
+     * Zero / null when the host wires no cognition scheduler.
+     */
+    double sim_time;
+    void* wake_scheduler_user;
+    WzSetNextWakeFn set_next_wake;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

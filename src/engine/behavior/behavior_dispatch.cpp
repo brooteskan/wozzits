@@ -4,6 +4,8 @@
 
 #include <scene/scene_graph.h>
 
+#include <limits>
+
 namespace wz::engine::behavior
 {
     namespace
@@ -674,6 +676,57 @@ namespace wz::engine::behavior
             };
             dispatch_module_event(registry, context, component, event);
             started.insert(component.binding_id);
+        }
+    }
+
+    void dispatch_cognition_tick(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context)
+    {
+        if (!context.commands) {
+            return;
+        }
+        if (!context.scene) {
+            context.scene = &scene;
+        }
+        if (!context.behavior_state) {
+            context.behavior_state = &scene.behavior_state;
+        }
+
+        // Self-paced wakes: fire WZ_EVENT_COGNITION_TICK only for bindings whose
+        // scheduled wake is due at the current sim-time. A binding with no entry is
+        // due now (its first think); after firing it is parked at +infinity, so a
+        // handler that does not call wz_set_next_wake stays asleep instead of
+        // busy-firing. This does NOT clear the command buffer -- it shares the
+        // frame buffer with the per-frame dispatch.
+        constexpr double kDueNow = -std::numeric_limits<double>::infinity();
+        constexpr double kAsleep = std::numeric_limits<double>::infinity();
+        const double now = context.sim_time;
+        auto& state = scene.behavior_state;
+        for (const auto& record : scene.behaviors) {
+            const auto& component = record.component;
+            if (component.binding_id.empty()) {
+                continue;  // no stable key to schedule on
+            }
+            if (!behavior_accepts_event(
+                    registry, component, WZ_EVENT_COGNITION_TICK))
+            {
+                continue;
+            }
+            if (now < state.next_wake_or(component.binding_id, kDueNow)) {
+                continue;  // not due yet
+            }
+
+            // Park before firing: the handler reschedules via wz_set_next_wake.
+            state.set_next_wake(component.binding_id, kAsleep);
+            const BehaviorEvent event{
+                .kind = WZ_EVENT_COGNITION_TICK,
+                .entity = record.node,
+                .other = wz::scene::INVALID_RUNTIME_ENTITY,
+                .self_is_trigger = false,
+            };
+            dispatch_module_event(registry, context, component, event);
         }
     }
 }

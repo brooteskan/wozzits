@@ -32,6 +32,7 @@ namespace wz::engine::behavior
         EventChannelGpuComputeFailed = 1u << 16,
         EventChannelGpuComputeRequest = 1u << 17,
         EventChannelSelfStart = 1u << 18,
+        EventChannelCognitionTick = 1u << 19,
     };
 
     constexpr EventChannelMask kCollisionEventChannels =
@@ -77,6 +78,9 @@ namespace wz::engine::behavior
         }
         if (channel == "self.start") {
             return EventChannelSelfStart;
+        }
+        if (channel == "cognition.tick") {
+            return EventChannelCognitionTick;
         }
         if (channel == "collision.enter") {
             return EventChannelCollisionEnter;
@@ -151,6 +155,8 @@ namespace wz::engine::behavior
             return EventChannelSceneLoaded;
         case WZ_EVENT_SELF_START:
             return EventChannelSelfStart;
+        case WZ_EVENT_COGNITION_TICK:
+            return EventChannelCognitionTick;
         case WZ_EVENT_COLLISION_ENTER:
             return EventChannelCollisionEnter;
         case WZ_EVENT_COLLISION_STAY:

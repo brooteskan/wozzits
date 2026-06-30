@@ -288,6 +288,28 @@ namespace wz::engine::assets
         // spawn fires self.start only for genuinely new bindings; existing actors
         // keep their started flag and are not re-notified.
         std::unordered_set<std::string> started_bindings;
+        // Self-paced cognition wake times (absolute sim-seconds) per binding, for
+        // the cognition.tick scheduler. Preserved across rebuild_behavior_scene
+        // like started_bindings (moved with the storage); a binding with no entry
+        // is due immediately (its first think), so a spawned agent thinks at once.
+        std::unordered_map<std::string, double> next_wakes;
+
+        // Schedule (or reschedule) a binding's next cognition wake.
+        void set_next_wake(std::string binding_id, double sim_time)
+        {
+            if (binding_id.empty()) {
+                return;
+            }
+            next_wakes[std::move(binding_id)] = sim_time;
+        }
+
+        // A binding's scheduled wake, or `fallback` when none is scheduled.
+        double next_wake_or(
+            std::string_view binding_id, double fallback) const
+        {
+            const auto it = next_wakes.find(std::string(binding_id));
+            return it == next_wakes.end() ? fallback : it->second;
+        }
 
         BehaviorStateBlock* find_instance_state(std::string_view binding_id)
         {

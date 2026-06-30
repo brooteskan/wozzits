@@ -66,6 +66,11 @@ namespace wz::engine::behavior
         BehaviorAuthoringBuffer* authoring = nullptr;
         wz::Logger* logger = nullptr;
         BehaviorSurfaceRayQueryStats* surface_ray_stats = nullptr;
+        // Absolute accumulated simulation time (seconds) for the self-paced
+        // cognition.tick scheduler -- the monotonic clock dispatch_cognition_tick
+        // compares scheduled wakes against, and the value surfaced to modules as
+        // facts.sim_time. The host accumulates it per frame.
+        double sim_time = 0.0;
     };
 
     using BehaviorFn = void (*)(

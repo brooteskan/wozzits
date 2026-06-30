@@ -46,4 +46,18 @@ namespace wz::engine::behavior
         const BehaviorRegistry& registry,
         BehaviorFrameContext& context,
         BehaviorEvent event);
+
+    // Self-paced cognition.tick dispatch. Fires WZ_EVENT_COGNITION_TICK to each
+    // subscribed binding whose scheduled wake (scene.behavior_state.next_wakes,
+    // preserved across rebuilds) is due at context.sim_time -- a binding with no
+    // entry is due immediately (its first think). Each fired binding is PARKED
+    // (next wake set to +infinity) before its handler runs, so a handler that does
+    // not call wz_set_next_wake sleeps rather than busy-firing every frame. Unlike
+    // the one-shot lifecycle passes this APPENDS to the command buffer (it shares
+    // the frame buffer) and does not clear it. Run once per frame, after
+    // dispatch_behaviors, before applying the command buffer.
+    void dispatch_cognition_tick(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context);
 }

@@ -1308,6 +1308,19 @@ namespace wz::app
                     ++it;
                 }
             }
+
+            // Same hygiene for the cognition wake schedule: drop wakes for
+            // bindings that no longer exist so they do not leak across rebuilds.
+            auto& next_wakes = behavior_scene_->behavior_state.next_wakes;
+            for (auto it = next_wakes.begin(); it != next_wakes.end();) {
+                if (live_binding_ids.find(it->first)
+                    == live_binding_ids.end())
+                {
+                    it = next_wakes.erase(it);
+                } else {
+                    ++it;
+                }
+            }
         }
 
         ctx_.logger.info(
@@ -1739,6 +1752,10 @@ namespace wz::app
 
             frame_storage_.behavior_commands.clear();
 
+            // Advance the monotonic sim clock the self-paced cognition scheduler
+            // stamps against (the FrameContext interval is per-frame, not absolute).
+            behavior_sim_time_ += static_cast<double>(dt);
+
             wz::engine::behavior::BehaviorFrameContext behavior_ctx{
                 .frame_context = &frame_context,
                 .frame_storage = &frame_storage_,
@@ -1748,8 +1765,16 @@ namespace wz::app
                 .gpu_compute = nullptr,
                 .authoring = &authoring,
                 .logger = &ctx_.logger,
+                .sim_time = behavior_sim_time_,
             };
             wz::engine::behavior::dispatch_behaviors(
+                *behavior_scene_, registry_, behavior_ctx);
+
+            // Self-paced cognition: fire cognition.tick to agents whose own
+            // scheduled wake is due now, APPENDING any actuator commands to the
+            // same buffer (applied just below). Not a per-frame call into every
+            // agent -- only those due at behavior_sim_time_.
+            wz::engine::behavior::dispatch_cognition_tick(
                 *behavior_scene_, registry_, behavior_ctx);
 
             // Apply the produced command buffer, exactly as game_app's

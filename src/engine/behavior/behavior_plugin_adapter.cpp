@@ -1415,6 +1415,28 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        uint8_t set_next_wake_request(
+            void* user,
+            double delay_seconds)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->behavior_state
+                || !context->active_behavior
+                || context->active_behavior->binding_id.empty())
+            {
+                return 0;
+            }
+
+            // Relative delay -> absolute sim-time. A non-positive delay means
+            // "as soon as possible" (the next cognition pass): clamp to now.
+            const double when =
+                context->sim_time
+                + (delay_seconds > 0.0 ? delay_seconds : 0.0);
+            context->behavior_state->set_next_wake(
+                context->active_behavior->binding_id, when);
+            return 1;
+        }
+
         uint8_t spawn_child_request(
             void* user,
             WzBehaviorEntityId parent_entity)
@@ -1676,6 +1698,9 @@ namespace wz::engine::behavior
                 .reparent_node = reparent_node_request,
                 .add_node_component = add_node_component_request,
                 .remove_node_component = remove_node_component_request,
+                .sim_time = context.sim_time,
+                .wake_scheduler_user = &context,
+                .set_next_wake = set_next_wake_request,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1749,6 +1774,9 @@ namespace wz::engine::behavior
                 .reparent_node = reparent_node_request,
                 .add_node_component = add_node_component_request,
                 .remove_node_component = remove_node_component_request,
+                .sim_time = context.sim_time,
+                .wake_scheduler_user = &context,
+                .set_next_wake = set_next_wake_request,
             };
         }
 

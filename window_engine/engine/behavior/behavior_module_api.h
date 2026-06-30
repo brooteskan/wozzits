@@ -1400,6 +1400,28 @@ static inline uint64_t wz_frame_index(const WzBehaviorFrameFacts* facts)
     return facts && facts->timing ? facts->timing->frame_index : 0u;
 }
 
+// Absolute accumulated simulation time in seconds (a monotonic clock). Unlike
+// wz_delta_seconds this is total sim-time, the input an agent's cognition clock
+// stamps against. 0 when the host wires no cognition scheduler.
+static inline double wz_sim_time(const WzBehaviorFrameFacts* facts)
+{
+    return facts ? facts->sim_time : 0.0;
+}
+
+// Self-paced wake: from a cognition.tick handler, request the next wake
+// `delay_seconds` of sim-time from now (<= 0 = next cognition pass). A handler
+// that does not call this sleeps until something else reschedules it. Returns 1
+// if accepted.
+static inline uint8_t wz_set_next_wake(
+    const WzBehaviorFrameFacts* facts,
+    double delay_seconds)
+{
+    if (!facts || !facts->set_next_wake) {
+        return 0;
+    }
+    return facts->set_next_wake(facts->wake_scheduler_user, delay_seconds);
+}
+
 static inline void wz_log_info(
     const WzBehaviorFrameFacts* facts,
     const char* message)
@@ -2597,6 +2619,8 @@ static inline const char* wz_event_name(WzBehaviorEventKind kind)
         return "scene.loaded";
     case WZ_EVENT_SELF_START:
         return "self.start";
+    case WZ_EVENT_COGNITION_TICK:
+        return "cognition.tick";
     case WZ_EVENT_COLLISION_ENTER:
         return "collision.enter";
     case WZ_EVENT_COLLISION_STAY:

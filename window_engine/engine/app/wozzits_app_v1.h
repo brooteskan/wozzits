@@ -809,6 +809,10 @@ namespace wz::app
         wz::engine::FrameStorage                 frame_storage_{};
         std::optional<wz::engine::assets::SceneInstance> behavior_scene_{};
         uint64_t                                 behavior_frame_index_ = 0;
+        // Absolute accumulated sim-time (seconds) for the self-paced cognition.tick
+        // scheduler: the monotonic clock dispatch_cognition_tick compares scheduled
+        // wakes against (the per-frame FrameContext only carries this frame's delta).
+        double                                   behavior_sim_time_ = 0.0;
 
         // Runtime prefab spawning (the second prefab-system milestone). Prefabs are
         // registered scenelets keyed by their name's FNV-1a/32 hash (register_prefab);
