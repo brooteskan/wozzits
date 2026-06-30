@@ -35,15 +35,34 @@ namespace wz::cognition
         double j = 0.0;  // > 0 ferromagnetic (agree), < 0 anti
     };
 
-    struct ExactGroup
+    // A goal biases an agent's decision: a longitudinal field that lowers the
+    // energy of one disposition. field > 0 favors +z (|0>), field < 0 favors -z
+    // (|1>); the magnitude is the goal's importance. Multiple goals on an agent
+    // sum. Goals enter the same Hamiltonian the group anneals against, so pursuit
+    // is just the relaxation -- and goals that conflict with the couplings (or
+    // each other) produce frustration: no clean ground state, so the agents waver
+    // / compromise rather than satisfy everything.
+    struct Goal
     {
-        wz::qstate::Register joint;  // over `agent_count` qubits
-        std::vector<ExactBond> bonds;
+        uint32_t agent = 0;
+        double field = 0.0;
     };
 
-    // Joint register starts in equal superposition over all agents.
+    struct ExactGroup
+    {
+        wz::qstate::Register joint;     // over `agent_count` qubits
+        std::vector<ExactBond> bonds;
+        std::vector<double> goal_field;  // per-agent longitudinal goal bias
+    };
+
+    // Joint register starts in equal superposition over all agents; goal_field
+    // starts all zero.
     ExactGroup make_exact_group(
         uint32_t agent_count, std::vector<ExactBond> bonds);
+
+    // Set the per-agent goal field = the sum of the given goals' fields (each
+    // agent's goals add). Replaces any previously set goal field.
+    void set_goals(ExactGroup& g, const std::vector<Goal>& goals);
 
     // One imaginary-time Trotter step toward the group's entangled ground state:
     // a transverse-field (gamma) relaxation on every agent qubit, then an
