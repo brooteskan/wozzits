@@ -29,6 +29,7 @@ target_sources(window_engine PRIVATE
     cognition/exact_group.cpp
     cognition/anneal.cpp
     cognition/commit.cpp
+    cognition/agent_layout.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp
