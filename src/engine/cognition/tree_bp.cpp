@@ -251,6 +251,22 @@ namespace wz::cognition
         }
     }
 
+    void apply_one_site_gate(MpsSite& A, const std::vector<Complex>& g)
+    {
+        const uint32_t L = A.left;
+        const uint32_t R = A.right;
+        for (uint32_t l = 0; l < L; ++l) {
+            for (uint32_t r = 0; r < R; ++r) {
+                const std::size_t i0 = (static_cast<std::size_t>(0) * L + l) * R + r;
+                const std::size_t i1 = (static_cast<std::size_t>(1) * L + l) * R + r;
+                const Complex a0 = A.a[i0];
+                const Complex a1 = A.a[i1];
+                A.a[i0] = g[0] * a0 + g[1] * a1;
+                A.a[i1] = g[2] * a0 + g[3] * a1;
+            }
+        }
+    }
+
     std::vector<double> dense_sigma_z(const TreeBpNetwork& net)
     {
         using namespace wz::core::graph;

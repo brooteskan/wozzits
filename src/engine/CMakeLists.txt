@@ -35,6 +35,7 @@ target_sources(window_engine PRIVATE
     cognition/sequential_goals.cpp
     cognition/conditional_policy.cpp
     cognition/tree_bp.cpp
+    cognition/ttn.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp

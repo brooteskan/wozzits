@@ -76,4 +76,10 @@ namespace wz::cognition
         MpsSite& right,
         const std::vector<wz::qstate::Complex>& gate,
         uint32_t chi);
+
+    // Apply a single-qubit gate to a site's physical leg (no bond change, no
+    // truncation): A'[s'][l][r] = sum_s gate[s'*2 + s] A[s][l][r]. `gate` is the
+    // 2x2 matrix row-major [out*2 + in].
+    void apply_one_site_gate(
+        MpsSite& site, const std::vector<wz::qstate::Complex>& gate);
 }
