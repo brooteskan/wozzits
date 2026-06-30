@@ -677,6 +677,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(cognition goals_tests)
     rs_add_test_group(cognition commit_tests)
     rs_add_test_group(cognition agent_layout_tests)
+    rs_add_test_group(cognition learning_tests)
 
     add_library(behavior_dynamic_test_plugin SHARED
         tests/behavior/dynamic_behavior_plugin.cpp)
