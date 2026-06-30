@@ -27,6 +27,7 @@
 #include <engine/app/wozzits_app_v1.h>
 #include <engine/app_context.h>
 #include <engine/assets/scene/scene_asset_data.h>
+#include <engine/behavior/drive_forward_behaviors.h>
 #include <engine/project/project_manifest.h>
 
 #include <gpu/gpu.h>
@@ -92,6 +93,42 @@ namespace
             behavior.enabled = true;
             behavior.events = { "frame.update" };
             root.behavior = behavior;
+
+            return { root };
+        }
+
+        // A 1-node prefab whose root binds the built-in drive_forward behavior +
+        // a motion component, so after a spawn the grafted root drives itself
+        // along its local +Z each tick — observable proof a spawned prefab not
+        // only initializes but visibly MOVES. turn_rate 0 keeps it straight so the
+        // path is predictable; plain (non-terrain) world motion so the integrated
+        // forward step is directly visible in the spawn fixture (no terrain here).
+        static std::vector<wz::engine::assets::SceneNodeAsset> make_driver()
+        {
+            wz::engine::assets::SceneNodeAsset root{};
+            root.id = "driver_root";
+
+            wz::engine::assets::SceneBehaviorAsset behavior{};
+            behavior.module = wz::engine::behavior::kDriveForwardModule;
+            behavior.name = wz::engine::behavior::kDriveForwardBehavior;
+            behavior.enabled = true;
+            behavior.events = { "frame.update" };
+            behavior.config = {
+                wz::engine::assets::SceneBehaviorConfigValue{
+                    .key = wz::engine::behavior::kDriveForwardSpeedConfigKey,
+                    .kind =
+                        wz::engine::assets::SceneBehaviorConfigValueKind::Number,
+                    .number_value = 8.0,
+                },
+                wz::engine::assets::SceneBehaviorConfigValue{
+                    .key = wz::engine::behavior::kDriveForwardTurnRateConfigKey,
+                    .kind =
+                        wz::engine::assets::SceneBehaviorConfigValueKind::Number,
+                    .number_value = 0.0,
+                },
+            };
+            root.behavior = behavior;
+            root.motion = wz::engine::assets::SceneMotionAsset{};
 
             return { root };
         }
@@ -221,4 +258,45 @@ TEST_F(WozzitsAppPrefabFixture, SpawnDoesNotFlipActiveSceneCamera)
     EXPECT_EQ(app.spawned_prefab_node_count(), 1u);
     EXPECT_EQ(app.active_scene_camera_id(), "cam")
         << "the spawn-induced rebuild flipped the active scene camera (#219)";
+}
+
+// End to end "spawn -> drives": a spawned prefab carrying the built-in
+// drive_forward behavior advances its own position over successive ticks after
+// being grafted. Registering make_driver() under the name the fixture's spawner
+// emits ("spawnling") makes the spawner graft the self-driving prefab. We then
+// watch the spawned root's position climb along its facing (+Z) tick over tick —
+// the proof that runtime spawning produces something that actually drives.
+TEST_F(WozzitsAppPrefabFixture, SpawnedPrefabDrivesItselfOverTicks)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(scene_load_desc()));
+    // Register AFTER load so this overrides the scenelet folder's auto-registered
+    // "spawnling" prefab — the fixture spawner emits "spawnling", and we want it to
+    // graft our self-driving driver prefab (root id driver_root) instead.
+    app.register_prefab("spawnling", make_driver());
+
+    // Tick 1 grafts the driver prefab at the spawner world (100,0,0) × offset
+    // (0,0,5) = (100,0,5). Its behavior runs starting the next tick.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    ASSERT_EQ(app.spawned_prefab_node_count(), 1u);
+    const auto start = app.node_local_translation("spawn:1:driver_root");
+    ASSERT_TRUE(start.has_value())
+        << "spawned driver node 'spawn:1:driver_root' missing from scene";
+    EXPECT_FLOAT_EQ(start->x, 100.0f);
+    EXPECT_FLOAT_EQ(start->z, 5.0f);
+
+    // Each subsequent tick, drive_forward sets the spawned node's local +Z
+    // velocity and the motion integrator advances it: Z strictly climbs. (A
+    // second instance also spawns each tick, but we only watch the first.)
+    float last_z = start->z;
+    for (uint32_t tick = 0; tick < 3u; ++tick) {
+        app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+        const auto pos = app.node_local_translation("spawn:1:driver_root");
+        ASSERT_TRUE(pos.has_value());
+        EXPECT_GT(pos->z, last_z)
+            << "spawned drive_forward prefab did not advance on tick " << tick;
+        last_z = pos->z;
+    }
+    EXPECT_GT(last_z, start->z)
+        << "spawned prefab carrying drive_forward never moved";
 }

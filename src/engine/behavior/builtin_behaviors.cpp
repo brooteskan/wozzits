@@ -1,4 +1,5 @@
 #include <engine/behavior/builtin_behaviors.h>
+#include <engine/behavior/drive_forward_behaviors.h>
 #include <engine/behavior/prefab_spawner_behaviors.h>
 #include <engine/behavior/sample_collision_behaviors.h>
 #include <engine/behavior/scene_camera_behaviors.h>
@@ -99,6 +100,11 @@ namespace wz::engine::behavior
                 registry,
                 register_prefab_spawner_behaviors,
                 &logger);
+        const bool registered_drive_forward =
+            plugins.register_static_pack(
+                registry,
+                register_drive_forward_behaviors,
+                &logger);
         if (!registered_debug) {
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: debug");
@@ -116,6 +122,11 @@ namespace wz::engine::behavior
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: "
                 "prefab_spawner");
+        }
+        if (!registered_drive_forward) {
+            logger.warn(
+                "[behavior] failed to register builtin behavior pack: "
+                "drive_forward");
         }
     }
 }
