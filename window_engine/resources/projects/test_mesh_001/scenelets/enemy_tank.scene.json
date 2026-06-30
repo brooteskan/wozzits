@@ -1,0 +1,72 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "enemy_tank",
+  "nodes": [
+    {
+      "id": "enemy_tank_root",
+      "parent": null,
+      "name": "enemy tank",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "render_program": {
+        "asset_graph_node_id": 10
+      },
+      "scene_source": {
+        "asset_graph_node_id": 21
+      },
+      "motion": {
+        "linear_velocity": [
+          0,
+          0,
+          0
+        ],
+        "angular_velocity": [
+          0,
+          0,
+          0
+        ],
+        "space": "world",
+        "terrain_constrained": true,
+        "terrain_ride_height": 0.10000000149011612,
+        "terrain_footprint_radius": 2,
+        "terrain_align_to_surface": true,
+        "terrain_alignment_strength": 1,
+        "enabled": true
+      },
+      "behaviors": [
+        {
+          "id": "enemy_tank_root.behavior.1",
+          "module": "drive_forward",
+          "name": "drive_forward",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "frame.update"
+          ],
+          "config": {
+            "speed": 8,
+            "turn_rate": 12
+          }
+        }
+      ]
+    }
+  ],
+  "defaults": {}
+}

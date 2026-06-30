@@ -103,6 +103,22 @@
           "events": [
             "input.*"
           ]
+        },
+        {
+          "id": "empty_1.behavior.2",
+          "module": "prefab_spawner",
+          "name": "prefab_spawner",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "frame.update"
+          ],
+          "config": {
+            "prefab_name": "enemy_tank",
+            "offset_x": 24,
+            "offset_y": 0,
+            "offset_z": 16
+          }
         }
       ]
     },
