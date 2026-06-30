@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -19,6 +20,54 @@ using wz::qstate::Rng;
 
 namespace
 {
+    // Statevector of a two-site MPS with trivial boundaries (left.left == 1,
+    // right.right == 1): psi[s0*2 + s1] = sum_m A[s0][0][m] B[s1][m][0].
+    std::vector<Complex> two_site_statevector(const MpsSite& A, const MpsSite& B)
+    {
+        std::vector<Complex> psi(4, Complex{ 0, 0 });
+        for (uint32_t s0 = 0; s0 < 2; ++s0) {
+            for (uint32_t s1 = 0; s1 < 2; ++s1) {
+                Complex acc{ 0, 0 };
+                for (uint32_t m = 0; m < A.right; ++m) {
+                    acc += A.a[(s0 * A.left + 0) * A.right + m]
+                        * B.a[(s1 * B.left + m) * B.right + 0];
+                }
+                psi[s0 * 2 + s1] = acc;
+            }
+        }
+        return psi;
+    }
+
+    std::vector<Complex> apply_gate_dense(
+        const std::vector<Complex>& g, const std::vector<Complex>& psi)
+    {
+        std::vector<Complex> out(4, Complex{ 0, 0 });
+        for (uint32_t o = 0; o < 4; ++o) {
+            for (uint32_t i = 0; i < 4; ++i) {
+                out[o] += g[o * 4 + i] * psi[i];
+            }
+        }
+        return out;
+    }
+
+    double vmax_diff(const std::vector<Complex>& a, const std::vector<Complex>& b)
+    {
+        double m = 0;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            m = std::max(m, std::abs(a[i] - b[i]));
+        }
+        return m;
+    }
+
+    MpsSite qubit_site(Complex c0, Complex c1)
+    {
+        MpsSite s;
+        s.left = 1;
+        s.right = 1;
+        s.a = { c0, c1 };  // |c0,c1> (a[s=0]=c0, a[s=1]=c1)
+        return s;
+    }
+
     // A chain MPS of `n` single-qubit sites with bulk bond dimension `chi`, filled
     // with random tensor entries.
     TreeBpNetwork build_random_chain(uint32_t n, uint32_t chi, Rng& rng)
@@ -123,4 +172,86 @@ TEST(TreeBP, EntangledCatChainIsUnpolarized)
     EXPECT_NEAR(bp[1], 0.0, 1e-12);
     EXPECT_NEAR(bp[0], dense[0], 1e-12);
     EXPECT_NEAR(bp[1], dense[1], 1e-12);
+}
+
+// With chi large enough that no truncation happens, the two-site update
+// reproduces applying the gate to the dense two-site state exactly.
+TEST(TwoSite, UntruncatedUpdateMatchesDenseGate)
+{
+    Rng rng{ 0x2517Eu };
+    for (int trial = 0; trial < 10; ++trial) {
+        MpsSite A;
+        A.left = 1;
+        A.right = 2;
+        A.a.resize(4);
+        MpsSite B;
+        B.left = 2;
+        B.right = 1;
+        B.a.resize(4);
+        for (Complex& c : A.a) {
+            c = Complex{ rng.next_unit() * 2 - 1, rng.next_unit() * 2 - 1 };
+        }
+        for (Complex& c : B.a) {
+            c = Complex{ rng.next_unit() * 2 - 1, rng.next_unit() * 2 - 1 };
+        }
+        std::vector<Complex> gate(16);
+        for (Complex& c : gate) {
+            c = Complex{ rng.next_unit() * 2 - 1, rng.next_unit() * 2 - 1 };
+        }
+
+        const auto reference = apply_gate_dense(gate, two_site_statevector(A, B));
+        apply_two_site_gate(A, B, gate, /*chi=*/2);  // chi=2 -> no truncation
+        EXPECT_LT(vmax_diff(two_site_statevector(A, B), reference), 1e-9)
+            << "trial " << trial;
+    }
+}
+
+// An entangling gate grows the bond and builds the cat state from a product:
+// (CNOT)(H x I) |00> = (|00> + |11>)/sqrt2.
+TEST(TwoSite, EntanglingGateBuildsCatAndGrowsBond)
+{
+    const double r = 1.0 / std::sqrt(2.0);
+    // G[out*4 + in], out/in = s0*2 + s1.
+    const std::vector<Complex> bell = {
+        Complex{ r, 0 }, Complex{ 0, 0 }, Complex{ r, 0 }, Complex{ 0, 0 },
+        Complex{ 0, 0 }, Complex{ r, 0 }, Complex{ 0, 0 }, Complex{ r, 0 },
+        Complex{ 0, 0 }, Complex{ r, 0 }, Complex{ 0, 0 }, Complex{ -r, 0 },
+        Complex{ r, 0 }, Complex{ 0, 0 }, Complex{ -r, 0 }, Complex{ 0, 0 },
+    };
+    MpsSite A = qubit_site(Complex{ 1, 0 }, Complex{ 0, 0 });  // |0>
+    MpsSite B = qubit_site(Complex{ 1, 0 }, Complex{ 0, 0 });  // |0>
+
+    apply_two_site_gate(A, B, bell, /*chi=*/2);
+    EXPECT_EQ(A.right, 2u);  // product (bond 1) -> entangled (bond 2)
+    EXPECT_EQ(B.left, 2u);
+
+    const auto psi = two_site_statevector(A, B);  // expect (|00> + |11>)/sqrt2
+    const std::vector<Complex> cat = {
+        Complex{ r, 0 }, Complex{ 0, 0 }, Complex{ 0, 0 }, Complex{ r, 0 }
+    };
+    EXPECT_LT(vmax_diff(psi, cat), 1e-9);
+}
+
+// Truncating to chi = 1 collapses an entangled bond back to a product bond.
+TEST(TwoSite, TruncationToChiOneCollapsesTheBond)
+{
+    const double r = 1.0 / std::sqrt(2.0);
+    const std::vector<Complex> bell = {
+        Complex{ r, 0 }, Complex{ 0, 0 }, Complex{ r, 0 }, Complex{ 0, 0 },
+        Complex{ 0, 0 }, Complex{ r, 0 }, Complex{ 0, 0 }, Complex{ r, 0 },
+        Complex{ 0, 0 }, Complex{ r, 0 }, Complex{ 0, 0 }, Complex{ -r, 0 },
+        Complex{ r, 0 }, Complex{ 0, 0 }, Complex{ -r, 0 }, Complex{ 0, 0 },
+    };
+    MpsSite A = qubit_site(Complex{ 1, 0 }, Complex{ 0, 0 });
+    MpsSite B = qubit_site(Complex{ 1, 0 }, Complex{ 0, 0 });
+    apply_two_site_gate(A, B, bell, 2);  // make the cat (bond 2)
+    ASSERT_EQ(A.right, 2u);
+
+    std::vector<Complex> identity(16, Complex{ 0, 0 });
+    for (uint32_t i = 0; i < 4; ++i) {
+        identity[i * 4 + i] = Complex{ 1, 0 };
+    }
+    apply_two_site_gate(A, B, identity, /*chi=*/1);  // truncate the bond
+    EXPECT_EQ(A.right, 1u);
+    EXPECT_EQ(B.left, 1u);
 }

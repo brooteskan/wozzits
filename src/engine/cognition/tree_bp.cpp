@@ -162,6 +162,95 @@ namespace wz::cognition
         return sz;
     }
 
+    void apply_two_site_gate(
+        MpsSite& A,
+        MpsSite& B,
+        const std::vector<Complex>& gate,
+        uint32_t chi)
+    {
+        const uint32_t L = A.left;
+        const uint32_t M = A.right;  // shared bond, == B.left
+        const uint32_t R = B.right;
+
+        // Theta[l][s0][s1][r] = sum_m A[s0][l][m] B[s1][m][r].
+        // Flat index ((l*2 + s0)*2 + s1)*R + r.
+        std::vector<Complex> theta(
+            static_cast<std::size_t>(L) * 2 * 2 * R, Complex{ 0, 0 });
+        for (uint32_t l = 0; l < L; ++l) {
+            for (uint32_t s0 = 0; s0 < 2; ++s0) {
+                for (uint32_t s1 = 0; s1 < 2; ++s1) {
+                    for (uint32_t r = 0; r < R; ++r) {
+                        Complex acc{ 0, 0 };
+                        for (uint32_t m = 0; m < M; ++m) {
+                            acc += A.a[(static_cast<std::size_t>(s0) * L + l) * M + m]
+                                * B.a[(static_cast<std::size_t>(s1) * M + m) * R + r];
+                        }
+                        theta[((static_cast<std::size_t>(l) * 2 + s0) * 2 + s1) * R + r]
+                            = acc;
+                    }
+                }
+            }
+        }
+
+        // Apply the gate and reshape into Mmat[(l*2 + s0')][(s1'*R + r)],
+        // dims (L*2) x (2*R).
+        const uint32_t rows = L * 2;
+        const uint32_t cols = 2 * R;
+        std::vector<Complex> mmat(
+            static_cast<std::size_t>(rows) * cols, Complex{ 0, 0 });
+        for (uint32_t l = 0; l < L; ++l) {
+            for (uint32_t s0p = 0; s0p < 2; ++s0p) {
+                for (uint32_t s1p = 0; s1p < 2; ++s1p) {
+                    for (uint32_t r = 0; r < R; ++r) {
+                        Complex acc{ 0, 0 };
+                        for (uint32_t s0 = 0; s0 < 2; ++s0) {
+                            for (uint32_t s1 = 0; s1 < 2; ++s1) {
+                                acc += gate[(s0p * 2 + s1p) * 4 + (s0 * 2 + s1)]
+                                    * theta[((static_cast<std::size_t>(l) * 2 + s0) * 2
+                                                + s1)
+                                            * R
+                                        + r];
+                            }
+                        }
+                        mmat[(static_cast<std::size_t>(l) * 2 + s0p) * cols
+                            + (static_cast<std::size_t>(s1p) * R + r)] = acc;
+                    }
+                }
+            }
+        }
+
+        const wz::qstate::Svd d = wz::qstate::svd(mmat, rows, cols, chi);
+        const uint32_t k = d.rank;
+
+        // New left site: A'[s0'][l][m'] = U[(l*2 + s0')][m'].  left bond L, right k.
+        A.left = L;
+        A.right = k;
+        A.a.assign(static_cast<std::size_t>(2) * L * k, Complex{ 0, 0 });
+        for (uint32_t s0p = 0; s0p < 2; ++s0p) {
+            for (uint32_t l = 0; l < L; ++l) {
+                for (uint32_t mp = 0; mp < k; ++mp) {
+                    A.a[(static_cast<std::size_t>(s0p) * L + l) * k + mp] =
+                        d.u[(static_cast<std::size_t>(l) * 2 + s0p) * k + mp];
+                }
+            }
+        }
+
+        // New right site: B'[s1'][m'][r] = s[m'] * Vh[m'][(s1'*R + r)]. left k, right R.
+        B.left = k;
+        B.right = R;
+        B.a.assign(static_cast<std::size_t>(2) * k * R, Complex{ 0, 0 });
+        for (uint32_t s1p = 0; s1p < 2; ++s1p) {
+            for (uint32_t mp = 0; mp < k; ++mp) {
+                for (uint32_t r = 0; r < R; ++r) {
+                    B.a[(static_cast<std::size_t>(s1p) * k + mp) * R + r] =
+                        d.s[mp]
+                        * d.vh[static_cast<std::size_t>(mp) * cols
+                            + (static_cast<std::size_t>(s1p) * R + r)];
+                }
+            }
+        }
+    }
+
     std::vector<double> dense_sigma_z(const TreeBpNetwork& net)
     {
         using namespace wz::core::graph;

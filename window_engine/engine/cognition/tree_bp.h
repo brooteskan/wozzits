@@ -59,4 +59,21 @@ namespace wz::cognition
     // Dense reference: contract the chain MPS into the full 2^N statevector and
     // read each site's <sigma_z> directly. For tests / small chains only.
     std::vector<double> dense_sigma_z(const TreeBpNetwork& net);
+
+    // Two-site update (TEBD "simple update"): apply a two-qubit gate across the
+    // bond shared by adjacent chain sites `left` (its right bond) and `right` (its
+    // left bond), then SVD-truncate that bond to at most `chi`. Both site tensors
+    // are rewritten in place; the new bond holds the chi largest Schmidt values,
+    // so the result is the best rank-chi approximation of the gated two-site
+    // state. This is the step that turns the exact tree-BP contraction into the
+    // SCALABLE chi-truncated tree tensor network: couplings are applied as gates
+    // and the entanglement they create is capped at chi.
+    //
+    // `gate` is the 4x4 matrix of the two-qubit gate, row-major and indexed
+    // [out * 4 + in] with out = s_left'*2 + s_right', in = s_left*2 + s_right.
+    void apply_two_site_gate(
+        MpsSite& left,
+        MpsSite& right,
+        const std::vector<wz::qstate::Complex>& gate,
+        uint32_t chi);
 }
