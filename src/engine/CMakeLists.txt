@@ -27,6 +27,7 @@ target_sources(window_engine PRIVATE
     qstate/qstate.cpp
     cognition/mean_field.cpp
     cognition/exact_group.cpp
+    cognition/anneal.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp

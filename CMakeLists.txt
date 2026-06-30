@@ -673,6 +673,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(qstate qstate_tests)
     rs_add_test_group(cognition mean_field_tests)
     rs_add_test_group(cognition exact_group_tests)
+    rs_add_test_group(cognition anneal_tests)
 
     add_library(behavior_dynamic_test_plugin SHARED
         tests/behavior/dynamic_behavior_plugin.cpp)
