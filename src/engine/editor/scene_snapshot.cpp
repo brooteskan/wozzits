@@ -382,6 +382,57 @@ namespace wz::engine::editor
             return behaviors;
         }
 
+        // Convert an authored SceneBehaviorConfigValue (the running scene's
+        // in-memory form) into the snapshot config shape -- the runtime-snapshot
+        // analogue of behavior_config_entry, kept in lockstep with it so the
+        // node-asset path reports the same kind tokens as the JSON path.
+        SceneSnapshotBehaviorConfig snapshot_config_from_asset(
+            const wz::engine::assets::SceneBehaviorConfigValue& value)
+        {
+            SceneSnapshotBehaviorConfig out;
+            out.name = value.key;
+            switch (value.kind) {
+            case wz::engine::assets::SceneBehaviorConfigValueKind::Bool:
+                out.kind = "bool";
+                out.value = value.bool_value ? "true" : "false";
+                break;
+            case wz::engine::assets::SceneBehaviorConfigValueKind::Number:
+                out.kind =
+                    value.number_value == std::floor(value.number_value)
+                        ? "int"
+                        : "float";
+                out.value = format_scene_number(value.number_value);
+                break;
+            case wz::engine::assets::SceneBehaviorConfigValueKind::String:
+            default:
+                out.kind = "string";
+                out.value = value.string_value;
+                break;
+            }
+            return out;
+        }
+
+        // Convert an authored SceneBehaviorAsset into the snapshot behavior shape
+        // -- the runtime analogue of read_behavior, so a snapshot built from live
+        // scene nodes (build_scene_snapshot_from_nodes) surfaces bindings the same
+        // way the disk/JSON path does.
+        SceneSnapshotBehavior snapshot_behavior_from_asset(
+            const wz::engine::assets::SceneBehaviorAsset& source)
+        {
+            SceneSnapshotBehavior behavior;
+            behavior.id = source.id;
+            behavior.label = source.label;
+            behavior.module = source.module;
+            behavior.name = source.name;
+            behavior.enabled = source.enabled;
+            behavior.events = source.events;
+            behavior.config.reserve(source.config.size());
+            for (const auto& value : source.config) {
+                behavior.config.push_back(snapshot_config_from_asset(value));
+            }
+            return behavior;
+        }
+
         // Read the high-impact subset (surface/wireframe enabled + color) of a
         // MeshRenderStyleData JSON object (issue #213 Phase 3b-2). The shape is
         // written by scene_json_export.cpp::mesh_render_style_data_value: a
@@ -660,6 +711,22 @@ namespace wz::engine::editor
                     .auto_play = source.audio_source->auto_play,
                     .enabled = source.audio_source->enabled,
                 };
+            }
+
+            // Surface behavior bindings. Without this, a tree rebuilt from the
+            // running scene (e.g. after the prefab-editor open_scene round-trip)
+            // shows "No behavior bindings" on every node even though they are
+            // intact -- the JSON path fills these via read_behaviors, so mirror
+            // it: the single `behavior` first, then the `behaviors` list.
+            if (source.behavior) {
+                node.behaviors.push_back(
+                    snapshot_behavior_from_asset(*source.behavior));
+            }
+            node.behaviors.reserve(
+                node.behaviors.size() + source.behaviors.size());
+            for (const auto& behavior : source.behaviors) {
+                node.behaviors.push_back(
+                    snapshot_behavior_from_asset(behavior));
             }
 
             node.kind = node_kind(node);

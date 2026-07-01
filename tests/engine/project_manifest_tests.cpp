@@ -472,6 +472,56 @@ TEST(ProjectSceneSnapshot, BuildsSnapshotFromGraftedNodes)
     EXPECT_FALSE(*gun_node.visible);
 }
 
+// A snapshot built from live scene nodes must surface behavior bindings, so the
+// prefab-editor open_scene round-trip (which refreshes the tree from the running
+// scene, not disk) does not blank out every node's bindings. Mirrors the JSON
+// path's read_behaviors: single `behavior` + the `behaviors` list, config kinds.
+TEST(ProjectSceneSnapshot, SurfacesBehaviorsFromNodes)
+{
+    wz::engine::assets::SceneNodeAsset tank;
+    tank.id = "empty_1";
+    tank.name = "tank";
+
+    wz::engine::assets::SceneBehaviorAsset spawner;
+    spawner.id = "empty_1.behavior.2";
+    spawner.module = "prefab_spawner";
+    spawner.name = "prefab_spawner";
+    spawner.enabled = true;
+    spawner.events = { "frame.update" };
+    spawner.config.push_back({
+        .key = "prefab_name",
+        .kind = wz::engine::assets::SceneBehaviorConfigValueKind::String,
+        .string_value = "enemy_tank",
+    });
+    spawner.config.push_back({
+        .key = "offset_x",
+        .kind = wz::engine::assets::SceneBehaviorConfigValueKind::Number,
+        .number_value = 24.0,
+    });
+    tank.behaviors.push_back(spawner);
+
+    const wz::engine::editor::SceneSnapshot snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes({ tank });
+
+    ASSERT_EQ(snapshot.roots.size(), 1u);
+    const auto& node = snapshot.roots[0];
+    ASSERT_EQ(node.behaviors.size(), 1u);
+    const auto& behavior = node.behaviors[0];
+    EXPECT_EQ(behavior.id, "empty_1.behavior.2");
+    EXPECT_EQ(behavior.module, "prefab_spawner");
+    EXPECT_TRUE(behavior.enabled);
+    ASSERT_EQ(behavior.events.size(), 1u);
+    EXPECT_EQ(behavior.events[0], "frame.update");
+
+    ASSERT_EQ(behavior.config.size(), 2u);
+    EXPECT_EQ(behavior.config[0].name, "prefab_name");
+    EXPECT_EQ(behavior.config[0].kind, "string");
+    EXPECT_EQ(behavior.config[0].value, "enemy_tank");
+    EXPECT_EQ(behavior.config[1].name, "offset_x");
+    EXPECT_EQ(behavior.config[1].kind, "int");  // integral number => "int"
+    EXPECT_EQ(behavior.config[1].value, "24");
+}
+
 // issue #213: an empty grafted set yields a valid-but-empty snapshot (no roots),
 // which the editor treats as "nothing to merge" — never a crash or a fallback to
 // "everything is a root".
