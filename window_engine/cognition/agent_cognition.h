@@ -64,6 +64,11 @@ namespace wz::engine::cognition
         // Forget an agent (it left the scene). Returns false if unknown.
         bool destroy(AgentHandle h);
 
+        // Drop every agent whose handle is NOT in `live` -- the sweep the host runs
+        // after a scene rebuild to release agents whose bindings vanished (spawned
+        // NPCs that died, nodes removed, scene swapped). Returns the count dropped.
+        std::size_t retain(const std::vector<AgentHandle>& live);
+
         // self.start: zero the agent's deliberation clock at sim-time `now`.
         bool start(AgentHandle h, double now);
 
@@ -74,8 +79,10 @@ namespace wz::engine::cognition
 
         // Re-bias one decision's goal field live (e.g. from changed world state).
         // Takes effect on the next think(); pair with rearm() to actually re-open a
-        // decision that has already latched. Returns false for an unknown handle /
-        // out-of-range agent.
+        // decision that has already latched. NOTE: this REPLACES that agent's goal
+        // field (last-write-wins), whereas create()/AgentSpec SUM multiple goals
+        // onto the same agent -- push the combined field if you mean to add.
+        // Returns false for an unknown handle / out-of-range agent.
         bool set_goal(AgentHandle h, uint32_t agent, double field);
 
         // Re-open EVERY decision: clear the latches and restart the anneal clock at
@@ -107,7 +114,12 @@ namespace wz::engine::cognition
             std::vector<std::optional<bool>> latched;  // per-agent committed bit
             std::vector<double> marginal_cache;        // last think()'s <sigma_z>
             std::vector<double> goal_fields;           // live per-agent goal bias
-            AgentSpec spec;                            // structure, to rebuild on rearm
+            // Structural parts kept so rearm can rebuild a fresh coordination (the
+            // goals come from goal_fields, so the spec's goals are NOT stored --
+            // that avoids a stale-goals footgun after set_goal runs).
+            std::vector<ExactBond> bonds;
+            uint32_t chi = 0;
+            uint64_t seed = 0;
             uint32_t agent_count = 0;
         };
 

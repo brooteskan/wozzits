@@ -363,20 +363,23 @@ namespace wz::engine::cognition::qstate
 
     bool measure(Register& reg, uint32_t q, Rng& rng)
     {
-        const uint64_t stride = uint64_t{ 1 } << q;
         const Real p1 = marginal(reg, q);
         const bool outcome = rng.next_unit() < p1;
+        project(reg, q, outcome);
+        return outcome;
+    }
 
-        // Project onto the sampled outcome, then renormalize.
+    void project(Register& reg, uint32_t q, bool value)
+    {
+        const uint64_t stride = uint64_t{ 1 } << q;
         const uint64_t dim = reg.dim();
         for (uint64_t k = 0; k < dim; ++k) {
             const bool bit = (k & stride) != 0;
-            if (bit != outcome) {
+            if (bit != value) {
                 reg.amp[k] = Complex{ 0, 0 };
             }
         }
         normalize(reg);
-        return outcome;
     }
 
     uint64_t measure_all(Register& reg, Rng& rng)

@@ -20,8 +20,8 @@ namespace wz::engine::cognition
                 continue;  // root has no parent-edge
             }
             MeanFieldBond& b = wz::core::graph::edge_to_parent(net, c);
-            b.up = wz::engine::cognition::qstate::expectation_z(node_data(net, c), b.child_qubit);
-            b.down = wz::engine::cognition::qstate::expectation_z(node_data(net, p), b.parent_qubit);
+            b.up = qstate::expectation_z(node_data(net, c), b.child_qubit);
+            b.down = qstate::expectation_z(node_data(net, p), b.parent_qubit);
         }
     }
 
@@ -43,7 +43,7 @@ namespace wz::engine::cognition
         // Relax each node toward its ground state under (gamma, h_eff). Single-
         // qubit nodes: the coupled qubit is qubit 0.
         for (NodeHandle u = 0; u < n; ++u) {
-            wz::engine::cognition::qstate::apply_imag_time_field(
+            qstate::apply_imag_time_field(
                 node_data(net, u), 0u, gamma, h_eff[u], dtau);
         }
 
@@ -61,6 +61,22 @@ namespace wz::engine::cognition
 
     double decision_z(const MeanFieldNetwork& net, NodeHandle node)
     {
-        return wz::engine::cognition::qstate::expectation_z(node_data(net, node), 0u);
+        return qstate::expectation_z(node_data(net, node), 0u);
+    }
+
+    std::vector<double> decisions(const MeanFieldNetwork& net)
+    {
+        const uint32_t n = node_count(net);
+        std::vector<double> z(n, 0.0);
+        for (NodeHandle u = 0; u < n; ++u) {
+            z[u] = qstate::expectation_z(
+                node_data(net, u), 0u);
+        }
+        return z;
+    }
+
+    void collapse(MeanFieldNetwork& net, NodeHandle node, bool bit)
+    {
+        qstate::project(node_data(net, node), 0u, bit);
     }
 }

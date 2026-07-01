@@ -8,7 +8,7 @@ namespace wz::engine::cognition
         uint32_t agent_count, std::vector<ExactBond> bonds)
     {
         return ExactGroup{
-            .joint = wz::engine::cognition::qstate::uniform(agent_count),
+            .joint = qstate::uniform(agent_count),
             .bonds = std::move(bonds),
             .goal_field = std::vector<double>(agent_count, 0.0),
         };
@@ -33,10 +33,10 @@ namespace wz::engine::cognition
         const uint32_t n = g.joint.qubits;
         for (uint32_t q = 0; q < n; ++q) {
             const double h = q < g.goal_field.size() ? g.goal_field[q] : 0.0;
-            wz::engine::cognition::qstate::apply_imag_time_field(g.joint, q, gamma, h, dtau);
+            qstate::apply_imag_time_field(g.joint, q, gamma, h, dtau);
         }
         for (const ExactBond& b : g.bonds) {
-            wz::engine::cognition::qstate::apply_imag_time_zz(g.joint, b.a, b.b, b.j, dtau);
+            qstate::apply_imag_time_zz(g.joint, b.a, b.b, b.j, dtau);
         }
     }
 
@@ -49,13 +49,27 @@ namespace wz::engine::cognition
 
     double decision_z(const ExactGroup& g, uint32_t agent)
     {
-        return wz::engine::cognition::qstate::expectation_z(g.joint, agent);
+        return qstate::expectation_z(g.joint, agent);
+    }
+
+    std::vector<double> decisions(const ExactGroup& g)
+    {
+        std::vector<double> z(g.joint.qubits, 0.0);
+        for (uint32_t i = 0; i < g.joint.qubits; ++i) {
+            z[i] = qstate::expectation_z(g.joint, i);
+        }
+        return z;
+    }
+
+    void collapse(ExactGroup& g, uint32_t agent, bool bit)
+    {
+        qstate::project(g.joint, agent, bit);
     }
 
     double connected_correlation(const ExactGroup& g, uint32_t a, uint32_t b)
     {
-        return wz::engine::cognition::qstate::expectation_zz(g.joint, a, b)
-            - wz::engine::cognition::qstate::expectation_z(g.joint, a)
-                * wz::engine::cognition::qstate::expectation_z(g.joint, b);
+        return qstate::expectation_zz(g.joint, a, b)
+            - qstate::expectation_z(g.joint, a)
+                * qstate::expectation_z(g.joint, b);
     }
 }

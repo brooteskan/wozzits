@@ -21,6 +21,26 @@ TEST(ExactGroup, FerromagneticPairIsEntangledCat)
     EXPECT_GT(connected_correlation(g, 0, 1), 0.95);
 }
 
+// Collapsing one agent of an entangled cat CONDITIONS its partner. On the pure
+// ferromagnetic cat (|00>+|11>)/sqrt2 both agents are unpolarized, but projecting
+// agent 0 onto |1> forces agent 1 to |1> too -- the mechanism that keeps coupled
+// commits jointly consistent (no probability-zero 01/10 outcome).
+TEST(ExactGroup, CollapseConditionsEntangledPartner)
+{
+    ExactGroup g = make_exact_group(2, { ExactBond{ .a = 0, .b = 1, .j = 1.0 } });
+    relax(g, /*gamma=*/0.1, /*dtau=*/0.05, /*iterations=*/400);
+    ASSERT_NEAR(decision_z(g, 1), 0.0, 0.05);   // undecided before the collapse
+
+    collapse(g, /*agent=*/0, /*bit=*/true);     // agent 0 -> |1>
+    EXPECT_LT(decision_z(g, 0), -0.99);         // agent 0 now definitely |1>
+    EXPECT_LT(decision_z(g, 1), -0.95);         // partner dragged to |1> (ferro)
+                                                // (not exactly -1: finite-gamma cat)
+    // decisions() (the bulk read) agrees.
+    const std::vector<double> z = decisions(g);
+    EXPECT_LT(z[0], -0.99);
+    EXPECT_LT(z[1], -0.95);
+}
+
 TEST(ExactGroup, AntiferromagneticPairIsAnticorrelated)
 {
     ExactGroup g = make_exact_group(2, { ExactBond{ .a = 0, .b = 1, .j = -1.0 } });

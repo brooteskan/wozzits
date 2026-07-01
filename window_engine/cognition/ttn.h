@@ -48,4 +48,10 @@ namespace wz::engine::cognition
     // surface as the mean-field and exact backends.
     std::vector<double> decisions(TtnChain& g);
     double decision_z(TtnChain& g, uint32_t agent);
+
+    // Collapse agent `agent`'s site onto `bit`: zero the opposite physical
+    // component of the MPS site. No renormalize -- tree_bp_sigma_z normalizes by
+    // trace -- so subsequent reads reflect the committed value and the rest of the
+    // chain is conditioned through the bonds.
+    void collapse(TtnChain& g, uint32_t agent, bool bit);
 }

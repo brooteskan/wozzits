@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 #include <utility>
 
 namespace wz::engine::cognition
@@ -76,8 +77,12 @@ namespace wz::engine::cognition
         agent.coordination = std::move(*coordination);
         agent.clock = spec.clock;
         agent.commit = spec.commit;
-        agent.spec = spec;  // structure kept so rearm can rebuild a fresh register
-        agent.rng = wz::engine::cognition::qstate::Rng{ spec.seed };
+        // Structure kept so rearm can rebuild a fresh register (goals come from
+        // goal_fields, so we deliberately do NOT store spec.goals).
+        agent.bonds = spec.bonds;
+        agent.chi = spec.chi;
+        agent.seed = spec.seed;
+        agent.rng = qstate::Rng{ spec.seed };
         agent.latched.assign(spec.agent_count, std::nullopt);
         agent.marginal_cache.assign(spec.agent_count, 0.0);
         // Mirror the goals baked into the backend so set_goal() can re-bias one
@@ -98,6 +103,21 @@ namespace wz::engine::cognition
         return agents_.erase(h) != 0;
     }
 
+    std::size_t AgentCognitionStore::retain(const std::vector<AgentHandle>& live)
+    {
+        const std::unordered_set<AgentHandle> keep(live.begin(), live.end());
+        std::size_t dropped = 0;
+        for (auto it = agents_.begin(); it != agents_.end();) {
+            if (keep.find(it->first) == keep.end()) {
+                it = agents_.erase(it);
+                ++dropped;
+            } else {
+                ++it;
+            }
+        }
+        return dropped;
+    }
+
     bool AgentCognitionStore::start(AgentHandle h, double now)
     {
         Agent* a = find(h);
@@ -116,23 +136,38 @@ namespace wz::engine::cognition
         }
 
         // Capture the elapsed sim-time BEFORE tick advances the clock -- the
-        // decoherence collapse probability is decoherence_rate * elapsed.
+        // decoherence collapse probability is 1 - e^{-rate * elapsed}.
         const bool was_started = a->clock.started;
         const double prev = a->clock.last_tick;
         const double dtau = tick(a->coordination, a->clock, now);
         const double dt = was_started ? std::max(0.0, now - prev) : 0.0;
 
-        // One BP read per think (the expensive part) -> cache, so the frame-path
-        // readers are O(1). Commit each still-undecided disposition.
+        // A committed decision is a COLLAPSED branch, but relaxation re-mixes it
+        // each step -- re-project every latched qubit so the still-undecided
+        // decisions keep deliberating CONDITIONED on the ones already made (a
+        // coupled decision respects the bond instead of drifting free).
         for (uint32_t i = 0; i < a->agent_count; ++i) {
-            const double z = decision_z(a->coordination, i);
-            a->marginal_cache[i] = z;
+            if (a->latched[i].has_value()) {
+                collapse(a->coordination, i, *a->latched[i]);
+            }
+        }
+
+        // One bulk BP read -> cache (frame-path readers are O(1)); re-read after
+        // any NEW commit so a later decision this tick sees the conditioned state.
+        std::vector<double> z = decisions(a->coordination);
+        for (uint32_t i = 0; i < a->agent_count && i < z.size(); ++i) {
+            a->marginal_cache[i] = z[i];
             if (a->latched[i].has_value()) {
                 continue;
             }
             if (std::optional<bool> bit =
-                    try_commit_marginal(z, a->commit, dt, a->rng)) {
+                    try_commit_marginal(z[i], a->commit, dt, a->rng)) {
                 a->latched[i] = bit;
+                // Collapse NOW: condition the remaining decisions this tick on it,
+                // so coupled outcomes stay jointly consistent (no zero-probability
+                // joint like 01 from an entangled 00/11 pair).
+                collapse(a->coordination, i, *bit);
+                z = decisions(a->coordination);
             }
         }
         return dtau;
@@ -169,8 +204,11 @@ namespace wz::engine::cognition
         // the kept structure + the CURRENT goals, so re-deliberation genuinely
         // re-explores instead of nudging the already-collapsed state. Then clear
         // the latches and restart the anneal clock.
-        AgentSpec spec = a->spec;
-        spec.goals.clear();
+        AgentSpec spec;
+        spec.agent_count = a->agent_count;
+        spec.bonds = a->bonds;
+        spec.chi = a->chi;
+        spec.seed = a->seed;
         spec.goals.reserve(a->agent_count);
         for (uint32_t i = 0; i < a->agent_count; ++i) {
             spec.goals.push_back(Goal{ .agent = i, .field = a->goal_fields[i] });

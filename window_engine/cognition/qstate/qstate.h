@@ -145,4 +145,11 @@ namespace wz::engine::cognition::qstate
     bool measure(Register& reg, uint32_t q, Rng& rng);
     // Measures every qubit, returning the collapsed basis index.
     uint64_t measure_all(Register& reg, Rng& rng);
+
+    // Project qubit q onto a KNOWN outcome `value`, then renormalize -- the
+    // counterpart to measure() when the outcome is already decided (e.g. latching
+    // a deliberated decision). Zeros the branches where qubit q != value, so the
+    // OTHER qubits are left coherent and CONDITIONED on this outcome (a coupled
+    // decision read after this reflects the committed one). Idempotent.
+    void project(Register& reg, uint32_t q, bool value);
 }

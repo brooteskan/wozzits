@@ -32,6 +32,17 @@ namespace wz::engine::cognition
     // Read an agent's decision marginal <sigma_z> in [-1, 1].
     double decision_z(Coordination& c, uint32_t agent);
 
+    // Read EVERY agent's decision marginal in one pass (dispatches to the backend;
+    // the TTN backend does a single BP sweep instead of one per agent).
+    std::vector<double> decisions(Coordination& c);
+
+    // Collapse agent `agent`'s decision onto `bit` -- project + renormalize so the
+    // OTHER agents are conditioned on the committed outcome (a coupled decision now
+    // respects the bond instead of being sampled independently). Called when a
+    // decision latches; re-applied each think while it stays latched (relaxation
+    // re-mixes a projected qubit).
+    void collapse(Coordination& c, uint32_t agent, bool bit);
+
     // Replace the per-agent longitudinal goal fields live (dispatches to the held
     // backend). Lets a running agent re-bias its decisions -- e.g. from changed
     // world state -- ahead of a re-anneal. Mean-field goals are not wired yet, so

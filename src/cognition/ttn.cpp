@@ -9,7 +9,7 @@ namespace wz::engine::cognition
 {
     namespace
     {
-        using wz::engine::cognition::qstate::Complex;
+        using qstate::Complex;
         using wz::core::graph::add_edge;
         using wz::core::graph::add_node;
         using wz::core::graph::build;
@@ -109,5 +109,18 @@ namespace wz::engine::cognition
     double decision_z(TtnChain& g, uint32_t agent)
     {
         return tree_bp_sigma_z(g.mps)[agent];
+    }
+
+    void collapse(TtnChain& g, uint32_t agent, bool bit)
+    {
+        // Zero the OPPOSITE physical component of the site (layout A[(s*L+l)*R+r]).
+        MpsSite& A = node_data(g.mps, static_cast<NodeHandle>(agent));
+        const uint32_t s_zero = bit ? 0u : 1u;
+        for (uint32_t l = 0; l < A.left; ++l) {
+            for (uint32_t r = 0; r < A.right; ++r) {
+                A.a[(static_cast<std::size_t>(s_zero) * A.left + l) * A.right + r] =
+                    Complex{ 0, 0 };
+            }
+        }
     }
 }

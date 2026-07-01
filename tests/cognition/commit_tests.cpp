@@ -97,10 +97,11 @@ TEST(Commit, DecoherenceRateControlsCommitLatency)
     }
 
     int high = 0;
-    const CommitPolicy fast{ .confidence = 1.1, .decoherence_rate = 20.0 };
+    const CommitPolicy fast{ .confidence = 1.1, .decoherence_rate = 50.0 };
     for (int t = 0; t < trials; ++t) {
         Register reg = wz::engine::cognition::qstate::uniform(1);
-        if (try_commit(reg, 0, fast, /*dt=*/0.1, rng).has_value()) {  // p = 1
+        // Poisson survival: p = 1 - e^{-rate*dt} = 1 - e^{-5} ~= 0.993.
+        if (try_commit(reg, 0, fast, /*dt=*/0.1, rng).has_value()) {
             ++high;
         }
     }

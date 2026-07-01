@@ -30,8 +30,12 @@ namespace wz::engine::cognition
 
     void set_goals(MeanFieldNetwork&, const std::vector<Goal>&)
     {
-        // Mean-field (chi == 1) goal support is a follow-up; create() rejects it,
-        // so a live agent is never this backend.
+        // NOT a silent success behind the seam: mean-field has no goal-field
+        // storage (its coordination is a bare node/bond polytree), so per-node
+        // goals are a deferred follow-up. This is unreachable for a LIVE agent --
+        // AgentCognitionStore::create() rejects chi == 1, so no Coordination ever
+        // holds a MeanFieldNetwork; this overload exists only so std::visit
+        // resolves over the whole variant.
     }
 
     void relax(Coordination& c, double gamma, double dtau, uint32_t iterations)
@@ -44,6 +48,17 @@ namespace wz::engine::cognition
     {
         return std::visit(
             [&](auto& backend) { return decision_z(backend, agent); }, c);
+    }
+
+    std::vector<double> decisions(Coordination& c)
+    {
+        return std::visit(
+            [&](auto& backend) { return decisions(backend); }, c);
+    }
+
+    void collapse(Coordination& c, uint32_t agent, bool bit)
+    {
+        std::visit([&](auto& backend) { collapse(backend, agent, bit); }, c);
     }
 
     void set_goals(Coordination& c, const std::vector<Goal>& goals)

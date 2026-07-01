@@ -58,4 +58,14 @@ namespace wz::engine::cognition
     // backends are interchangeable behind the contract.
     double decision_z(
         const MeanFieldNetwork& net, wz::core::graph::NodeHandle node);
+
+    // Every node's decision marginal (seam parity with the exact/TTN bulk read).
+    std::vector<double> decisions(const MeanFieldNetwork& net);
+
+    // Pin node `node`'s qubit to `bit` (project its product-state register). NB:
+    // mean-field has no goal storage, so a subsequent relax_step re-relaxes it --
+    // holding a commit needs a re-pin each step (the store does this). Mean-field
+    // is not a LIVE coordination backend anyway (create() rejects chi == 1).
+    void collapse(
+        MeanFieldNetwork& net, wz::core::graph::NodeHandle node, bool bit);
 }

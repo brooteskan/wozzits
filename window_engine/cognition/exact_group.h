@@ -74,6 +74,15 @@ namespace wz::engine::cognition
     // the mean-field backend.
     double decision_z(const ExactGroup& g, uint32_t agent);
 
+    // Every agent's decision marginal in one pass (cheap here; the seam mirror of
+    // the TTN bulk read that avoids re-running BP per agent).
+    std::vector<double> decisions(const ExactGroup& g);
+
+    // Collapse agent `agent`'s qubit onto `bit` (project + renormalize the joint
+    // register). The other agents stay coherent but are now CONDITIONED on this
+    // outcome -- a coupled decision read after this respects the committed one.
+    void collapse(ExactGroup& g, uint32_t agent, bool bit);
+
     // Connected correlation <sz_a sz_b> - <sz_a><sz_b> -- the entanglement
     // witness, nonzero exactly when the two agents are correlated beyond a
     // product state.

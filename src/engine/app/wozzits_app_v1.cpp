@@ -18,6 +18,7 @@
 #include <engine/behavior/behavior_command_apply.h>
 #include <engine/behavior/behavior_dispatch.h>
 #include <engine/behavior/builtin_behaviors.h>
+#include <engine/behavior/quantum_agent_behaviors.h>
 #include <engine/collision/collision_frame.h>
 #include <engine/input_events.h>
 
@@ -1345,6 +1346,33 @@ namespace wz::app
                     ++it;
                 }
             }
+        }
+
+        // Release cognition wave functions whose quantum_agent binding vanished
+        // this rebuild (a despawned NPC, a removed node, a scene swap). The store
+        // outlives the scene and keys agents by an opaque handle the binding's POD
+        // state carries, so sweep it against the surviving quantum_agent handles.
+        {
+            std::vector<wz::engine::cognition::AgentHandle> live_agents;
+            for (const auto& record : behavior_scene_->behaviors) {
+                if (record.component.module
+                    != wz::engine::behavior::kQuantumAgentModule)
+                {
+                    continue;
+                }
+                const auto* block =
+                    behavior_scene_->behavior_state.find_instance_state(
+                        record.component.binding_id);
+                if (block && block->data) {
+                    const auto* state = static_cast<
+                        const wz::engine::behavior::QuantumAgentState*>(
+                            block->data);
+                    if (state->handle != 0u) {
+                        live_agents.push_back(state->handle);
+                    }
+                }
+            }
+            wz::engine::behavior::quantum_agent_store().retain(live_agents);
         }
 
         ctx_.logger.info(

@@ -103,6 +103,81 @@ TEST(AgentCognition, SetGoalPlusRearmFlipsACommittedDecision)
     EXPECT_FALSE(store.rearm(kInvalidAgent, 0.0));
 }
 
+// Committing a decision PROJECTS the joint register, so a coupled partner is
+// conditioned on the committed outcome. For a ferromagnetic cat (|00>+|11>)/sqrt2
+// -- both marginals ~0, the hard case -- decoherence-forced commits must come out
+// JOINTLY CONSISTENT (both 0 or both 1). Without projection the two would be
+// sampled independently and land on the probability-zero joint 01/10 half the time.
+TEST(AgentCognition, CoupledCommitsStayJointlyConsistent)
+{
+    const int trials = 100;
+    int consistent = 0;
+    for (int t = 0; t < trials; ++t) {
+        AgentCognitionStore store;
+        AgentSpec spec;
+        spec.agent_count = 2;
+        spec.bonds = { ExactBond{ 0, 1, 1.5 } };  // ferro -> cat, no goals
+        spec.clock = anneal_clock();               // Gamma -> 0: cat purifies
+        // Only decoherence commits (confidence unreachable), so both draw from the
+        // undecided marginal -- the case that exposes the joint inconsistency.
+        spec.commit = CommitPolicy{ .confidence = 1.1, .decoherence_rate = 1.0 };
+        spec.chi = 0;
+        spec.seed = 0x1234u + static_cast<uint64_t>(t);  // vary per trial
+
+        const AgentHandle h = store.create(spec);
+        ASSERT_NE(h, kInvalidAgent);
+        store.start(h, 0.0);
+
+        std::optional<bool> d0, d1;
+        for (int i = 1; i <= 300 && !(d0 && d1); ++i) {
+            store.think(h, 0.1 * i);
+            d0 = store.committed(h, 0);
+            d1 = store.committed(h, 1);
+        }
+        ASSERT_TRUE(d0.has_value());
+        ASSERT_TRUE(d1.has_value());
+        if (*d0 == *d1) {
+            ++consistent;
+        }
+    }
+    // With projection the coupled outcomes agree the large majority of the time;
+    // WITHOUT it they would be independent samples off ~0 marginals => ~0.5. (Not
+    // 1.0 here: decoherence can fire mid-anneal while Gamma is still high and the
+    // state genuinely carries 01/10 amplitude -- the pure-cat "probability zero"
+    // guarantee is tested surgically in ExactGroup.CollapseConditionsEntangledPartner.)
+    EXPECT_GT(static_cast<double>(consistent) / trials, 0.7);
+}
+
+// retain() sweeps agents whose handle isn't in the live set -- the store hygiene
+// the host runs after a rebuild so despawned NPCs' wave functions are released.
+TEST(AgentCognition, RetainDropsAgentsNotInLiveSet)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 1;
+    spec.goals = { Goal{ .agent = 0, .field = 0.5 } };
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.9 };
+    spec.chi = 0;
+
+    const AgentHandle a = store.create(spec);
+    const AgentHandle b = store.create(spec);
+    const AgentHandle c = store.create(spec);
+    ASSERT_EQ(store.size(), 3u);
+
+    // Keep a and c; b's binding vanished.
+    const std::size_t dropped = store.retain({ a, c });
+    EXPECT_EQ(dropped, 1u);
+    EXPECT_EQ(store.size(), 2u);
+    EXPECT_TRUE(store.alive(a));
+    EXPECT_FALSE(store.alive(b));
+    EXPECT_TRUE(store.alive(c));
+
+    // Retaining nothing clears the store; an empty live set is valid.
+    EXPECT_EQ(store.retain({}), 2u);
+    EXPECT_EQ(store.size(), 0u);
+}
+
 // The same group on the chi-truncated TTN chain backend reaches the same decision
 // -- chi selects the backend behind one store interface.
 TEST(AgentCognition, TtnChainCommitsToTheGoal)
