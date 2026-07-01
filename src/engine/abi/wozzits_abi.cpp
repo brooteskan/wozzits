@@ -1374,17 +1374,15 @@ extern "C"
         if (!runtime) {
             return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
         }
-        if (!scene_path_utf8 || scene_path_utf8[0] == '\0') {
-            return result(
-                WZ_RESULT_INVALID_ARGUMENT, "scene_path_utf8 must not be empty");
-        }
 
         try {
             // Blocking handshake (mirrors export_subtree): the engine thread swaps
             // its working scene to scene_path on its next frame, then hands back
-            // success/failure. The editor re-snapshots the scene afterward.
-            const bool ok =
-                runtime->control.open_scene(wz::fs::Path{ scene_path_utf8 });
+            // success/failure. The editor re-snapshots the scene afterward. An
+            // empty/null path means "reopen the project's main scene" (switch back
+            // from a scenelet) -- open_scene resolves it.
+            const bool ok = runtime->control.open_scene(
+                wz::fs::Path{ scene_path_utf8 ? scene_path_utf8 : "" });
             return ok
                 ? result(WZ_RESULT_OK, "")
                 : result(

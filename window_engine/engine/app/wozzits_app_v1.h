@@ -830,6 +830,11 @@ namespace wz::app
         wz::fs::Path  asset_graph_path_{};
         wz::fs::Path  behavior_module_folder_{};
 
+        // The project's MAIN scene (the first one load_scene loaded). Preserved when
+        // open_scene swaps to a scenelet, so open_scene("") reopens it -- the prefab
+        // editor's "back to the scene" without the caller tracking the path.
+        wz::fs::Path  main_scene_path_{};
+
         // Behavior runtime. This is the same load -> register -> initialize ->
         // per-frame dispatch -> apply-command-buffer sequence the standalone
         // game_app runs, hosted inside this shared runtime so a scene's behavior

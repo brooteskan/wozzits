@@ -953,8 +953,9 @@ WZ_ABI_API WzResult wz_host_runtime_save_scene(WzHostRuntime* runtime);
 // graph + modules, so the scenelet renders against the same graph. Blocks until
 // the engine thread has loaded it. After it returns OK the editor should
 // re-snapshot the scene (its nodes are now the scenelet's); save_scene then
-// persists edits back to that file, and opening the main scene again switches
-// back. WZ_RESULT_INVALID_ARGUMENT for a null runtime / empty path.
+// persists edits back to that file. An EMPTY/null path reopens the project's MAIN
+// scene (switch back from a scenelet) without the caller tracking its path.
+// WZ_RESULT_INVALID_ARGUMENT for a null runtime.
 WZ_ABI_API WzResult wz_host_runtime_open_scene(
     WzHostRuntime* runtime,
     const char* scene_path_utf8);

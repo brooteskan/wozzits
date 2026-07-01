@@ -311,6 +311,11 @@ namespace wz::app
         // (prefab editing) while reusing this same project asset graph.
         asset_graph_path_ = desc.asset_graph;
         behavior_module_folder_ = desc.behavior_module_folder;
+        // The FIRST scene loaded is the project's main scene; keep it so open_scene
+        // can return to it (a scenelet swap via open_scene must not clobber this).
+        if (main_scene_path_.empty()) {
+            main_scene_path_ = desc.scene;
+        }
 
         graph_draft_ = wz::asset::AssetGraphDraft{};
         std::string error;
@@ -2978,20 +2983,24 @@ namespace wz::app
                 "open_scene: no scene loaded yet (no asset graph to reuse)");
             return false;
         }
-        if (scene_path.empty()) {
-            ctx_.logger.error("open_scene: scene path is empty");
+        // An empty path means "reopen the project's main scene" (switch back from a
+        // scenelet). Otherwise open the named scene.
+        const wz::fs::Path target =
+            scene_path.empty() ? main_scene_path_ : scene_path;
+        if (target.empty()) {
+            ctx_.logger.error("open_scene: no scene to open");
             return false;
         }
 
         ctx_.logger.info(
-            "open_scene: swapping working scene to '" + scene_path + "'");
+            "open_scene: swapping working scene to '" + target + "'");
         // Reuse the current project asset graph + module folder; only the scene
         // changes. load_scene re-binds the graph (a v2 optimization can skip that
         // when unchanged), materializes the new scene, and rebuilds the behavior
         // runtime -- so the editor's next snapshot sees the scenelet's nodes.
         return load_scene(WozzitsAppSceneLoadDesc{
             .asset_graph = asset_graph_path_,
-            .scene = scene_path,
+            .scene = target,
             .behavior_module_folder = behavior_module_folder_,
         });
     }

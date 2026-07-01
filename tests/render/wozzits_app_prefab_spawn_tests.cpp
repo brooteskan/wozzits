@@ -280,8 +280,8 @@ TEST_F(WozzitsAppPrefabFixture, OpenSceneSwapsWorkingSceneAndBack)
     EXPECT_TRUE(has_node(swapped_nodes, "spawnling_root"));
     EXPECT_FALSE(has_node(swapped_nodes, "spawner"));
 
-    // Switch back to the main scene.
-    ASSERT_TRUE(app.open_scene(desc.scene));
+    // Switch back to the main scene -- an empty path reopens it (no need to track).
+    ASSERT_TRUE(app.open_scene({}));
     EXPECT_TRUE(app.node_local_translation("spawner").has_value());
     EXPECT_FALSE(app.node_local_translation("spawnling_root").has_value());
 }
