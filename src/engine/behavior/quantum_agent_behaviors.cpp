@@ -120,6 +120,26 @@ namespace wz::engine::behavior
         }
 
         static const char* channels[] = { "self.start", "cognition.tick" };
+
+        // Declared tunables, so the editor can show knobs with defaults instead of
+        // the author guessing config keys.
+        static const WzBehaviorParamDesc params[] = {
+            { kQuantumAgentGoalKey, "Goal bias",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
+            { kQuantumAgentGammaStartKey, "Exploration (gamma start)",
+                WZ_BEHAVIOR_PARAM_FLOAT, 2.0, nullptr },
+            { kQuantumAgentAnnealSecondsKey, "Deliberation seconds",
+                WZ_BEHAVIOR_PARAM_FLOAT, 4.0, nullptr },
+            { kQuantumAgentRelaxRateKey, "Relax rate",
+                WZ_BEHAVIOR_PARAM_FLOAT, 1.0, nullptr },
+            { kQuantumAgentConfidenceKey, "Commit confidence",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.8, nullptr },
+            { kQuantumAgentDecoherenceKey, "Decoherence rate",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
+            { kQuantumAgentThinkIntervalKey, "Think interval (s)",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.25, nullptr },
+        };
+
         WzBehaviorModuleDesc desc{};
         desc.size = sizeof(desc);
         desc.module = kQuantumAgentModule;
@@ -128,6 +148,9 @@ namespace wz::engine::behavior
         desc.event_channels = channels;
         desc.event_channel_count = 2u;
         desc.module_user_data = nullptr;
+        desc.params = params;
+        desc.param_count = static_cast<uint32_t>(
+            sizeof(params) / sizeof(params[0]));
         return api->register_module_desc(api->user, &desc);
     }
 }

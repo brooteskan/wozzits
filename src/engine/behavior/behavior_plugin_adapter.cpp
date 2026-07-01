@@ -2050,6 +2050,11 @@ namespace wz::engine::behavior
                 && desc->size
                     >= offsetof(WzBehaviorModuleDesc, module_user_data)
                         + sizeof(desc->module_user_data);
+            const bool has_params =
+                desc
+                && desc->size
+                    >= offsetof(WzBehaviorModuleDesc, param_count)
+                        + sizeof(desc->param_count);
             auto* context = static_cast<RegisterContext*>(user);
             const WzBehaviorInitFn on_init =
                 has_on_init ? desc->on_init : nullptr;
@@ -2092,6 +2097,28 @@ namespace wz::engine::behavior
                     + std::to_string(compiled.redundant_count)
                     + " redundant channel token(s)");
             }
+            // Declared config params (size-gated; mirrors register_behavior_desc).
+            std::vector<BehaviorParamSpec> params;
+            const uint32_t param_count =
+                has_params ? desc->param_count : 0u;
+            params.reserve(param_count);
+            for (uint32_t i = 0; i < param_count; ++i) {
+                if (!desc->params || !desc->params[i].key
+                    || desc->params[i].key[0] == '\0')
+                {
+                    continue;
+                }
+                const WzBehaviorParamDesc& param = desc->params[i];
+                params.push_back(BehaviorParamSpec{
+                    .key = param.key,
+                    .label = param.label ? param.label : "",
+                    .type = from_abi_param_type(param.type),
+                    .default_number = param.default_number,
+                    .default_string =
+                        param.default_string ? param.default_string : "",
+                });
+            }
+
             auto* binding_ptr = context->host->add_module_binding(
                 desc->on_event,
                 on_init,
@@ -2104,6 +2131,7 @@ namespace wz::engine::behavior
                     on_init ? dispatch_abi_module_init : nullptr,
                     std::move(default_events),
                     compiled.mask,
+                    std::move(params),
                     binding_ptr);
             return handle.valid() ? uint8_t{ 1 } : uint8_t{ 0 };
         }

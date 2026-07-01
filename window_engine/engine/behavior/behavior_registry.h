@@ -149,6 +149,7 @@ namespace wz::engine::behavior
         std::vector<std::string> default_events;
         EventChannelMask default_channel_mask = 0u;
         void* user_data = nullptr;
+        std::vector<BehaviorParamSpec> params;  // declared config tunables
     };
 
     struct BehaviorGpuKernelPortContract
@@ -199,6 +200,16 @@ namespace wz::engine::behavior
             BehaviorModuleInitFn on_init,
             std::vector<std::string> default_events,
             EventChannelMask default_channel_mask,
+            void* user_data = nullptr);
+
+        // As above, carrying the module's declared config params.
+        BehaviorModuleHandle register_module(
+            std::string module,
+            BehaviorModuleEventFn on_event,
+            BehaviorModuleInitFn on_init,
+            std::vector<std::string> default_events,
+            EventChannelMask default_channel_mask,
+            std::vector<BehaviorParamSpec> params,
             void* user_data = nullptr);
 
         BehaviorModuleHandle register_module(

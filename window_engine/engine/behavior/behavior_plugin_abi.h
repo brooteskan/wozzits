@@ -1018,6 +1018,17 @@ typedef struct WzBehaviorModuleDesc
     const char* const* event_channels;
     uint32_t event_channel_count;
     void* module_user_data;
+    /*
+     * Declared config params the module reads (the "expose params globally" surface,
+     * now for MODULES too -- terrain_align, quantum_agent, etc. read config keys but
+     * previously could not advertise them). Same WzBehaviorParamDesc a function
+     * behavior uses, so the host/editor can enumerate a module's tunables with types
+     * + authoring defaults instead of guessing magic strings. APPEND-ONLY and
+     * size-gated like the fields above (`size` covering them opts in), so this needs
+     * no ABI version bump. `params` may be NULL when `param_count` is 0.
+     */
+    const WzBehaviorParamDesc* params;
+    uint32_t param_count;
 } WzBehaviorModuleDesc;
 
 typedef uint8_t (*WzRegisterBehaviorModuleDescFn)(

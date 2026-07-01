@@ -42,6 +42,10 @@ namespace wz::engine::behavior
         }
 
         const char* channels[] = { "self.start" };
+        const WzBehaviorParamDesc params[] = {
+            { kTerrainAlignRateConfigKey, "Alignment rate (deg/s)",
+                WZ_BEHAVIOR_PARAM_FLOAT, kTerrainAlignDefaultRateDeg, nullptr },
+        };
         WzBehaviorModuleDesc desc{};
         desc.size = sizeof(desc);
         desc.module = kTerrainAlignModule;
@@ -50,6 +54,9 @@ namespace wz::engine::behavior
         desc.event_channels = channels;
         desc.event_channel_count = 1u;
         desc.module_user_data = nullptr;
+        desc.params = params;
+        desc.param_count = static_cast<uint32_t>(
+            sizeof(params) / sizeof(params[0]));
         return api->register_module_desc(api->user, &desc);
     }
 }
