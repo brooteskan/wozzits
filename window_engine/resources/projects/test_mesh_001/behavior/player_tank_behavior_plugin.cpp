@@ -1,61 +1,21 @@
-#include <engine/behavior/behavior_module_api.h>
+#include "player_tank.h"
+#include "tank_drive.h"
 
 namespace
 {
     static const char* kTankEvents[] = {
-    "input.*","self.start","frame.update"
+    "input.*","self.start"
     };
 
-    struct TankState {
-        float throttle = 0.0f;
-        float turn = 0.0f;
-        float left_tread_speed = 0.0f;
-        float right_tread_speed = 0.0f;
-
-        uint8_t ammo = 10;
-        WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
-        WzBehaviorEntityId canon_audio = WZ_INVALID_BEHAVIOR_ENTITY;
-
-        // Last committed disposition of the co-located quantum_agent (if any):
-        // -2 = never read, -1 = deliberating, 0/1 = the chosen outcome. We react
-        // only on a CHANGE, so the announcement fires once per collapse.
-        int8_t last_decision = -2;
-    };
 
     static constexpr float movement_factor = 0.1;
-
-    static void drive_heading_speed(
-        const WzBehaviorFrameFacts* facts,
-        const WzBehaviorEvent* event,
-        float heading,
-        float speed)
-    {
-        wz_self_set_motion_space(
-            facts,
-            event,
-            WZ_BEHAVIOR_MOTION_SPACE_LOCAL);
-
-        wz_self_set_linear_velocity(
-            facts,
-            event,
-            speed,
-            0.0f,
-            0.0f);
-
-        wz_self_set_angular_velocity(
-            facts,
-            event,
-            0.0f,
-            heading,
-            0.0f);
-    }
 
     void tank_init(
         const WzBehaviorInitFacts* facts,
         WzBehaviorEntityId,
         void*)
     {
-        TankState* state = wz_instance_state<TankState>(facts);
+        PlayerTankState* state = wz_instance_state<PlayerTankState>(facts);
 
         if (state) {
             uint8_t result = wz_find_entity_by_authored_id(facts, "empty_2", &state->terrain);
@@ -74,7 +34,7 @@ namespace
     static void try_fire_canon(
         const WzBehaviorFrameFacts* facts,
         const WzBehaviorEvent* event,
-        TankState* state)
+        PlayerTankState* state)
     {
         (void)event;
         if (state->ammo > 0) {
@@ -87,23 +47,6 @@ namespace
         }
     }
 
-    static void apply_tank_motion(
-        const WzBehaviorFrameFacts* facts,
-        const WzBehaviorEvent* event,
-        const TankState* state)
-    {
-        constexpr float kMoveSpeed = 6.0f;
-        constexpr float kTurnSpeed = 1.8f;
-
-
-
-        drive_heading_speed(
-            facts,
-            event,
-            state->turn * kTurnSpeed,
-            state->throttle * kMoveSpeed);
-    }
-
     void on_event(
         const WzBehaviorFrameFacts* facts,
         const WzBehaviorEvent* event,
@@ -114,7 +57,7 @@ namespace
             return;
         }
 
-        auto* state = static_cast<TankState*>(
+        auto* state = static_cast<PlayerTankState*>(
             wz_get_instance_state(facts));
         if (!state) {
             return;
@@ -208,9 +151,7 @@ namespace
             break;
         }
 
-        state->turn = -0.2f * (state->right_tread_speed - state->left_tread_speed);
-        state->throttle = -0.2f * (state->left_tread_speed + state->right_tread_speed);
-        apply_tank_motion(facts, event, state);
+        tank_drive::drive_treads(facts, event, state->left_tread_speed, state->right_tread_speed);
 
     }
 }

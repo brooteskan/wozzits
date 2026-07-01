@@ -40,5 +40,9 @@ add_terrain_collision_behavior_module(
     sample_behavior_plugin.cpp)
 
 add_terrain_collision_behavior_module(
-    test_behavior
-    test_behavior_plugin.cpp)
+    player_tank_behavior
+    player_tank_behavior_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    quantum_tank_agent
+    quantum_tank_agent_plugin.cpp)
