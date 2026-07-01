@@ -832,6 +832,51 @@ namespace wz::app
         cv_.notify_all();
     }
 
+    std::vector<wz::engine::assets::SceneNodeAsset>
+    EditorRuntimeControl::request_scene_nodes()
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this] { return !has_scene_nodes_request_ || finished_; });
+        if (finished_) {
+            return {};
+        }
+
+        has_scene_nodes_request_ = true;
+        has_scene_nodes_result_ = false;
+        cv_.notify_all();
+
+        cv_.wait(lock, [this] { return has_scene_nodes_result_ || finished_; });
+        if (!has_scene_nodes_result_) {
+            has_scene_nodes_request_ = false;
+            return {};
+        }
+
+        has_scene_nodes_result_ = false;
+        return std::move(scene_nodes_result_);
+    }
+
+    void EditorRuntimeControl::service_pending_scene_nodes(
+        const std::function<
+            std::vector<wz::engine::assets::SceneNodeAsset>()>& provider)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!has_scene_nodes_request_) {
+                return;
+            }
+            has_scene_nodes_request_ = false;
+        }
+
+        std::vector<wz::engine::assets::SceneNodeAsset> nodes = provider();
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            scene_nodes_result_ = std::move(nodes);
+            has_scene_nodes_result_ = true;
+        }
+        cv_.notify_all();
+    }
+
     void EditorRuntimeControl::mark_finished()
     {
         {
@@ -1180,6 +1225,12 @@ namespace wz::app
                             // so the editor can merge them under their hosts
                             // (#213); the host node only stores the reference.
                             return app.grafted_scene_nodes();
+                        });
+                    control->service_pending_scene_nodes(
+                        [&app]() {
+                            // The authored scene (for the editor's tree refresh
+                            // after open_scene swaps the working scene).
+                            return app.authored_scene_nodes();
                         });
                     if (control->take_save_request()) {
                         app.save_scene();

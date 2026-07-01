@@ -504,6 +504,17 @@ namespace wz::app
             const std::function<
                 std::vector<wz::engine::assets::SceneNodeAsset>()>& provider);
 
+        // Owner thread: blocking fetch of the running scene's AUTHORED nodes, so
+        // the editor can rebuild its tree after open_scene swaps the scene. Empty
+        // vector when the runtime is not running.
+        std::vector<wz::engine::assets::SceneNodeAsset> request_scene_nodes();
+
+        // Engine thread: if a scene-nodes request is pending, run `provider` (copies
+        // the authored scene nodes) and publish the result. Called once per frame.
+        void service_pending_scene_nodes(
+            const std::function<
+                std::vector<wz::engine::assets::SceneNodeAsset>()>& provider);
+
         // Engine thread: mark the runtime done so a blocked bind fails instead
         // of hanging. Called after run_project_runtime returns (incl. the init-
         // failure path where the loop never ran).
@@ -572,6 +583,12 @@ namespace wz::app
         bool has_grafted_request_ = false;
         bool has_grafted_result_ = false;
         std::vector<wz::engine::assets::SceneNodeAsset> grafted_result_;
+
+        // Blocking authored-scene-nodes request/response (prefab editor: rebuild the
+        // tree after a scene swap). Same shape as the grafted handshake.
+        bool has_scene_nodes_request_ = false;
+        bool has_scene_nodes_result_ = false;
+        std::vector<wz::engine::assets::SceneNodeAsset> scene_nodes_result_;
 
         // Blocking export-subtree request/response (the prefab milestone, mirrors
         // the add-child handshake): the owner posts a root node id + output path

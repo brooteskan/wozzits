@@ -265,6 +265,21 @@ TEST_F(WozzitsAppPrefabFixture, OpenSceneSwapsWorkingSceneAndBack)
     EXPECT_TRUE(app.node_local_translation("spawnling_root").has_value());
     EXPECT_FALSE(app.node_local_translation("spawner").has_value());
 
+    // authored_scene_nodes() (what wz_host_runtime_scene_snapshot serializes so the
+    // editor rebuilds its tree) now reports the SCENELET's authored node, not the
+    // main scene's.
+    const auto has_node = [](const auto& nodes, std::string_view id) {
+        for (const auto& n : nodes) {
+            if (n.id == id) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto swapped_nodes = app.authored_scene_nodes();
+    EXPECT_TRUE(has_node(swapped_nodes, "spawnling_root"));
+    EXPECT_FALSE(has_node(swapped_nodes, "spawner"));
+
     // Switch back to the main scene.
     ASSERT_TRUE(app.open_scene(desc.scene));
     EXPECT_TRUE(app.node_local_translation("spawner").has_value());

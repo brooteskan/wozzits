@@ -1361,6 +1361,16 @@ WZ_ABI_API WzResult wz_host_runtime_clear_node_behavior_config(
 WZ_ABI_API WzBuffer wz_host_runtime_grafted_scene_snapshot(
     WzHostRuntime* runtime);
 
+// A snapshot of the RUNNING scene's authored nodes, in the SAME project-snapshot
+// blob layout the editor already decodes. Use it after wz_host_runtime_open_scene
+// swaps the working scene (to a scenelet, or back to the main scene) to rebuild the
+// editor's tree from the live scene rather than the on-disk project scene. Blocking
+// (the engine thread copies its authored nodes on its next frame); a null/not-
+// running runtime yields an ok blob with an EMPTY scene. Caller frees with
+// wz_free_buffer. Additive; WZ_ABI_VERSION unchanged.
+WZ_ABI_API WzBuffer wz_host_runtime_scene_snapshot(
+    WzHostRuntime* runtime);
+
 WZ_ABI_API void wz_free_buffer(WzBuffer* buffer);
 
 #ifdef __cplusplus

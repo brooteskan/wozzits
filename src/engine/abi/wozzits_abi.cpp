@@ -2412,6 +2412,45 @@ extern "C"
         }
     }
 
+    WzBuffer wz_host_runtime_scene_snapshot(WzHostRuntime* runtime)
+    {
+        // A snapshot of the RUNNING scene's authored nodes, in the same blob the
+        // editor's project-snapshot reader already decodes -- so after open_scene
+        // swaps the working scene, the editor rebuilds its tree from the live scene
+        // (the scenelet) instead of the on-disk project scene. Mirrors
+        // wz_host_runtime_grafted_scene_snapshot, but over the whole authored scene.
+        const auto build_blob =
+            [](wz::engine::editor::SceneSnapshot scene_snapshot) {
+                wz::engine::editor::ProjectSnapshotLoadResult snapshot{};
+                snapshot.ok = true;
+                snapshot.status =
+                    wz::engine::project::ProjectManifestProbeStatus::Valid;
+                snapshot.asset_graph.ok = true;
+                snapshot.scene.ok = true;
+                snapshot.scene.snapshot = std::move(scene_snapshot);
+                return make_buffer(
+                    wz::engine::editor::project_snapshot_abi_blob(snapshot));
+            };
+
+        try {
+            if (!runtime) {
+                return build_blob(wz::engine::editor::SceneSnapshot{});
+            }
+            const std::vector<wz::engine::assets::SceneNodeAsset> nodes =
+                runtime->control.request_scene_nodes();
+            return build_blob(
+                wz::engine::editor::build_scene_snapshot_from_nodes(nodes));
+        }
+        catch (...) {
+            try {
+                return build_blob(wz::engine::editor::SceneSnapshot{});
+            }
+            catch (...) {
+                return WzBuffer{ nullptr, 0u };
+            }
+        }
+    }
+
     void wz_free_buffer(WzBuffer* buffer)
     {
         if (!buffer) {

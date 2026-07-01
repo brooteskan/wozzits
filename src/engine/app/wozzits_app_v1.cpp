@@ -2953,6 +2953,24 @@ namespace wz::app
         return out;
     }
 
+    std::vector<wz::engine::assets::SceneNodeAsset>
+    WozzitsApp_v1::authored_scene_nodes() const
+    {
+        // Same filter as save_scene: drop runtime-only grafted (#213) + "spawn:"
+        // prefab-instance nodes, leaving the authored scene the editor edits.
+        const std::unordered_set<std::string> grafted(
+            grafted_node_ids_.begin(), grafted_node_ids_.end());
+        std::vector<wz::engine::assets::SceneNodeAsset> authored;
+        authored.reserve(scene_nodes_.size());
+        for (const wz::engine::assets::SceneNodeAsset& n : scene_nodes_) {
+            if (grafted.count(n.id) != 0 || n.id.rfind("spawn:", 0) == 0) {
+                continue;
+            }
+            authored.push_back(n);
+        }
+        return authored;
+    }
+
     bool WozzitsApp_v1::open_scene(const wz::fs::Path& scene_path)
     {
         if (asset_graph_path_.empty()) {

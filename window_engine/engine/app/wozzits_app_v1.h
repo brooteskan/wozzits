@@ -436,6 +436,14 @@ namespace wz::app
         [[nodiscard]] std::vector<wz::engine::assets::SceneNodeAsset>
         grafted_scene_nodes() const;
 
+        // The AUTHORED scene nodes (scene_nodes_ minus the runtime-only grafted +
+        // "spawn:" nodes, the same set save_scene persists) -- a snapshot of the
+        // working scene for the editor to reload its tree after open_scene swaps the
+        // scene. Engine-thread only; the editor reaches it through the blocking
+        // request_scene_nodes handshake.
+        [[nodiscard]] std::vector<wz::engine::assets::SceneNodeAsset>
+        authored_scene_nodes() const;
+
         // Persist the current scene back to its source file: the nodes are
         // re-emitted, all other scene data preserved. No-op (returns true) when
         // no live edit happened since load/last save; false on write failure.
