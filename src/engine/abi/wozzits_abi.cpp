@@ -1458,6 +1458,48 @@ extern "C"
         }
     }
 
+    WzResult wz_host_runtime_scenelet_catalog(
+        WzHostRuntime* runtime,
+        WzBuffer* out_scenelets)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (const WzResult target =
+                prepare_output_buffer(out_scenelets, "out_scenelets");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            // Newline-delimited "name\tpath" per scenelet (the editor splits on
+            // '\n' then '\t'), from the control's published snapshot -- lock-guarded,
+            // never touching the engine-thread state directly. Mirrors
+            // behavior_module_catalog.
+            std::string joined;
+            const std::vector<wz::app::SceneletCatalogEntry> scenelets =
+                runtime->control.scenelets();
+            for (const wz::app::SceneletCatalogEntry& entry : scenelets) {
+                if (!joined.empty()) {
+                    joined.push_back('\n');
+                }
+                joined += entry.name;
+                joined.push_back('\t');
+                joined += entry.path;
+            }
+            const std::vector<uint8_t> bytes(joined.begin(), joined.end());
+            return copy_bytes_to_buffer(bytes, out_scenelets);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR, "scenelet catalog failed");
+        }
+    }
+
     WzResult wz_host_runtime_add_child_node(
         WzHostRuntime* runtime,
         const char* parent_id_utf8,

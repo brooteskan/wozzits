@@ -222,6 +222,14 @@ TEST_F(WozzitsAppPrefabFixture, AutoRegistersSceneletsAsPrefabsOnLoad)
     // folder is the only source of the "spawnling" prefab.
     ASSERT_TRUE(app.load_scene(scene_load_desc()));
 
+    // The scenelet catalog (backing the editor's scenelet menu) enumerates the
+    // auto-registered prefab with its name + resource-relative scene-file path.
+    const auto catalog = app.scenelet_catalog();
+    ASSERT_EQ(catalog.size(), 1u);
+    EXPECT_EQ(catalog[0].name, "spawnling");
+    EXPECT_NE(
+        catalog[0].path.find("spawnling.scene.json"), std::string::npos);
+
     EXPECT_EQ(app.spawned_prefab_node_count(), 0u);
 
     app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);

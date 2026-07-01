@@ -598,8 +598,16 @@ namespace wz::app
             + " behavior module DLL(s) from " + resolved);
     }
 
+    std::vector<SceneletCatalogEntry> WozzitsApp_v1::scenelet_catalog() const
+    {
+        return scenelet_catalog_;
+    }
+
     std::size_t WozzitsApp_v1::register_scenelet_prefabs()
     {
+        // Rebuilt from scratch on every (re)load, so a reload reflects added/removed
+        // scenelet files.
+        scenelet_catalog_.clear();
         if (!ctx_.assets) {
             return 0;
         }
@@ -672,6 +680,12 @@ namespace wz::app
             }
 
             register_prefab(name, std::move(scene_data->nodes));
+            // Record it for the editor's scenelet menu (name + resource-relative
+            // path, so the editor can open the file directly).
+            scenelet_catalog_.push_back(SceneletCatalogEntry{
+                .name = name,
+                .path = wz::fs::join(scenelets_rel, entry.name),
+            });
             ++registered;
         }
 

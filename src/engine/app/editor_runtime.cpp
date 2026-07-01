@@ -101,6 +101,19 @@ namespace wz::app
         return behavior_modules_;
     }
 
+    void EditorRuntimeControl::set_scenelets(
+        std::vector<SceneletCatalogEntry> scenelets)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        scenelets_ = std::move(scenelets);
+    }
+
+    std::vector<SceneletCatalogEntry> EditorRuntimeControl::scenelets() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return scenelets_;
+    }
+
     AssetGraphCompileResult EditorRuntimeControl::bind(
         wz::asset::AssetGraphDraft& draft)
     {
@@ -859,6 +872,7 @@ namespace wz::app
             // them for binding (the registry is engine-thread-owned).
             if (control) {
                 control->set_behavior_modules(app.behavior_module_names());
+                control->set_scenelets(app.scenelet_catalog());
             }
 
             // Free-fly camera input: raw keyboard/mouse feed the global input

@@ -982,6 +982,15 @@ WZ_ABI_API WzResult wz_host_runtime_behavior_module_catalog(
     WzHostRuntime* runtime,
     WzBuffer* out_modules);
 
+// The project's scenelets (prefabs), for the editor's scenelet menu. Returns a
+// newline-delimited UTF-8 list in out_scenelets (free with wz_free_buffer); each
+// line is "name\tpath" (the prefab name and its resource-relative scene-file path,
+// tab-separated). An empty buffer means the project has no scenelets. Gathered when
+// the scene loaded. WZ_RESULT_INVALID_ARGUMENT for a null runtime.
+WZ_ABI_API WzResult wz_host_runtime_scenelet_catalog(
+    WzHostRuntime* runtime,
+    WzBuffer* out_scenelets);
+
 // Add a child node under `parent_id_utf8` (NULL/empty => top level) in the
 // running scene, blocking until the engine thread applies it, and return the
 // minted counter id in out_new_id (UTF-8; free with wz_free_buffer).

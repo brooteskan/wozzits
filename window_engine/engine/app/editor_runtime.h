@@ -300,6 +300,12 @@ namespace wz::app
         void set_behavior_modules(std::vector<std::string> modules);
         [[nodiscard]] std::vector<std::string> behavior_modules() const;
 
+        // Published scenelet (prefab) catalog for the editor's scenelet menu (set
+        // after load_scene). Same published-snapshot pattern as behavior_modules:
+        // owner thread reads a copy any time; guarded by mutex_.
+        void set_scenelets(std::vector<SceneletCatalogEntry> scenelets);
+        [[nodiscard]] std::vector<SceneletCatalogEntry> scenelets() const;
+
         // Owner thread: submit a draft to bind; blocks until the engine thread
         // binds it (or the engine stops). The draft is moved to the engine and
         // the bound draft (with resolved keys + validation) is moved back into
@@ -506,6 +512,7 @@ namespace wz::app
         std::atomic_bool save_requested_{ false };
         std::atomic_bool reload_behaviors_requested_{ false };
         std::vector<std::string> behavior_modules_;  // guarded by mutex_
+        std::vector<SceneletCatalogEntry> scenelets_;  // guarded by mutex_
         bool has_request_ = false;
         bool has_result_ = false;
         bool finished_ = false;

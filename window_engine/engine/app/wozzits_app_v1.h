@@ -73,6 +73,16 @@ namespace wz::app
         wz::fs::Path behavior_module_folder;
     };
 
+    // One entry in the project's scenelet (prefab) catalog: the prefab NAME (the
+    // filename stem, e.g. "enemy_tank") + the scene file PATH (resource-root-
+    // relative). The editor lists these so an author can pick a prefab to spawn --
+    // and, ahead, to open for editing.
+    struct SceneletCatalogEntry
+    {
+        std::string name;
+        std::string path;
+    };
+
     class WozzitsApp_v1
     {
     public:
@@ -492,6 +502,12 @@ namespace wz::app
         // from the imported modules. Order follows registration.
         [[nodiscard]] std::vector<std::string> behavior_module_names() const;
 
+        // The project's scenelets (prefabs), gathered when the scene loaded: each is
+        // a spawnable/editable prefab (name + resource-relative path). The editor
+        // lists these for its scenelet menu. Empty until load_scene has scanned the
+        // scenelets folder.
+        [[nodiscard]] std::vector<SceneletCatalogEntry> scenelet_catalog() const;
+
         // Per-frame operations. The caller owns the loop and the device-frame
         // boundaries (begin_frame/clear/end_frame/present). simulation_tick takes
         // the frame's input + dt so the app drives its own free-fly camera (the
@@ -825,6 +841,10 @@ namespace wz::app
             uint32_t,
             std::vector<wz::engine::assets::SceneNodeAsset>> prefab_by_hash_{};
         uint32_t                                 spawn_counter_ = 0;
+
+        // Name + path of each scenelet found by register_scenelet_prefabs, for the
+        // editor's scenelet menu (the read-only catalog behind scenelet_catalog()).
+        std::vector<SceneletCatalogEntry>        scenelet_catalog_{};
 
         // Play-mode audio runtime: owns the realtime scheduler and (when started)
         // the output device. Started lazily on the first play-mode scene load and
