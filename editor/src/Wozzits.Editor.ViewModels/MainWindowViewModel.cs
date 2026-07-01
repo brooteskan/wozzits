@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
@@ -49,6 +51,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         LaunchStandaloneCommand = new RelayCommand(
             LaunchStandalone,
             () => !string.IsNullOrWhiteSpace(_projectDirectory));
+        OpenSceneletCommand = new RelayCommand<SceneletInfo?>(
+            OpenScenelet, _ => _editorSession is not null);
+        BackToSceneCommand = new RelayCommand(
+            BackToScene, () => _editorSession is not null && IsEditingPrefab);
+        RefreshSceneletsCommand = new RelayCommand(
+            RefreshScenelets, () => _editorSession is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
         AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(
@@ -74,13 +82,24 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // engine thread until the runtime has loaded + grafted (seconds during a
         // cold start), so posting it lets the window paint first. Falls back to a
         // direct call when there is no dispatcher (design-time / tests).
+        // Merge grafted nodes, then populate the scenelet (prefab) menu -- in ONE
+        // deferred step so the menu refresh runs AFTER the graft merge (which blocks
+        // on the engine thread until the viewport has loaded + published its
+        // scenelet catalog). A separate post could race the still-loading runtime
+        // and read an empty catalog.
+        void InitializeAfterViewportReady()
+        {
+            SceneTree.MergeGraftedNodes();
+            RefreshScenelets();
+        }
+
         if (_dispatch is not null)
         {
-            _dispatch(() => SceneTree.MergeGraftedNodes());
+            _dispatch(InitializeAfterViewportReady);
         }
         else
         {
-            SceneTree.MergeGraftedNodes();
+            InitializeAfterViewportReady();
         }
     }
 
@@ -97,6 +116,30 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IRelayCommand RestartViewportCommand { get; }
     public IAsyncRelayCommand RebuildBehaviorsCommand { get; }
     public IRelayCommand LaunchStandaloneCommand { get; }
+
+    // Prefab (scenelet) editing: the project's scenelets for the menu, the
+    // currently-open prefab (null => editing the main scene), and the commands to
+    // open a prefab in the viewport / switch back.
+    public ObservableCollection<SceneletInfo> Scenelets { get; } = new();
+    public IRelayCommand<SceneletInfo?> OpenSceneletCommand { get; }
+    public IRelayCommand BackToSceneCommand { get; }
+    public IRelayCommand RefreshSceneletsCommand { get; }
+
+    private string? _editingPrefabName;
+    public string? EditingPrefabName
+    {
+        get => _editingPrefabName;
+        private set
+        {
+            if (SetProperty(ref _editingPrefabName, value))
+            {
+                OnPropertyChanged(nameof(IsEditingPrefab));
+                BackToSceneCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool IsEditingPrefab => !string.IsNullOrEmpty(_editingPrefabName);
 
     public string EngineLogText => Console.LogText;
 
@@ -116,6 +159,76 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         _editorSession?.SaveAssetGraph();
         _editorSession?.SaveScene();
+    }
+
+    // Prefab (scenelet) editing (same-window round-trip): open a scenelet as the
+    // viewport's working scene, edit it with the normal tools, SaveAll persists it,
+    // and "Back to Scene" returns to the main scene.
+    private void RefreshScenelets()
+    {
+        if (_editorSession is null)
+        {
+            AppendEditorLog("[editor] Prefab list: no engine session.");
+            return;
+        }
+        Scenelets.Clear();
+        foreach (var scenelet in _editorSession.GetSceneletCatalog())
+        {
+            Scenelets.Add(scenelet);
+        }
+        // Diagnostic: tells us whether the engine handed back scenelets (a non-zero
+        // count with an empty menu = a XAML binding problem, not an ABI/engine one).
+        AppendEditorLog(
+            $"[editor] Prefab list: {Scenelets.Count} scenelet(s) "
+            + $"[{string.Join(", ", Scenelets.Select(s => s.Name))}].");
+    }
+
+    private void OpenScenelet(SceneletInfo? scenelet)
+    {
+        if (_editorSession is null || scenelet is null)
+        {
+            return;
+        }
+        var result = _editorSession.OpenScene(scenelet.Path);
+        if (!result.Ok)
+        {
+            AppendEditorLog(
+                $"[editor] Open prefab '{scenelet.Name}' failed: {result.Error}");
+            return;
+        }
+        EditingPrefabName = scenelet.Name;
+        AppendEditorLog($"[editor] Editing prefab '{scenelet.Name}'.");
+        ReloadSceneFromRuntime();
+    }
+
+    private void BackToScene()
+    {
+        if (_editorSession is null)
+        {
+            return;
+        }
+        // Empty path reopens the project's main scene (the engine tracks it).
+        var result = _editorSession.OpenScene(string.Empty);
+        if (!result.Ok)
+        {
+            AppendEditorLog($"[editor] Back to scene failed: {result.Error}");
+            return;
+        }
+        EditingPrefabName = null;
+        AppendEditorLog("[editor] Back to the main scene.");
+        ReloadSceneFromRuntime();
+    }
+
+    // Rebuild the tree/inspector from the engine's LIVE scene after a swap (the
+    // running scene is now the scenelet, or the main scene again).
+    private void ReloadSceneFromRuntime()
+    {
+        if (_editorSession is null)
+        {
+            return;
+        }
+        SceneTree.LoadSnapshot(_editorSession.LoadRuntimeSceneSnapshot());
+        SceneTree.MergeGraftedNodes();
     }
 
     // Reopen the in-process engine viewport. Stops the current runtime if one is

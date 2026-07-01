@@ -30,6 +30,33 @@ public partial class MainWindow : Window
         }
     }
 
+    // Re-query the engine for its scenelets whenever the Prefabs menu opens, so the
+    // list is current even if the viewport was still loading at construction (the
+    // catalog is published once the runtime finishes its first load) or was
+    // restarted. Scenelets is an ObservableCollection, so the bound submenu updates.
+    private void OnPrefabsMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+        viewModel.RefreshSceneletsCommand.Execute(null);
+
+        // Build the "Open Prefab" submenu items in code (like the inspector's
+        // behavior "+" flyout): a bound ItemsSource populated late renders an empty
+        // submenu, so set the items directly, before the submenu is shown.
+        OpenPrefabMenu.Items.Clear();
+        foreach (var scenelet in viewModel.Scenelets)
+        {
+            OpenPrefabMenu.Items.Add(new MenuItem
+            {
+                Header = scenelet.Name,
+                Command = viewModel.OpenSceneletCommand,
+                CommandParameter = scenelet,
+            });
+        }
+    }
+
     private void OnSelectBlueTheme(object? sender, RoutedEventArgs e)
         => SetTheme(EditorTheme.Variant.Blue);
 

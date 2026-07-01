@@ -2,6 +2,10 @@ using Wozzits.Editor.Protocol;
 
 namespace Wozzits.Editor.HostClient;
 
+// One entry in the project's scenelet (prefab) catalog: the prefab NAME (filename
+// stem, e.g. "enemy_tank") + the resource-relative scene-file PATH used to open it.
+public sealed record SceneletInfo(string Name, string Path);
+
 public interface IWozzitsEngineEditorSession
 {
     EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot();
@@ -109,6 +113,18 @@ public interface IWozzitsEngineEditorSession
     // behavior" from the imported modules.
     IReadOnlyList<string> GetBehaviorModuleCatalog();
 
+    // The project's scenelets (prefabs) for the scenelet menu: each is a name +
+    // resource-relative scene-file path. Empty when no viewport is running. The
+    // path feeds OpenScene to edit that prefab in place.
+    IReadOnlyList<SceneletInfo> GetSceneletCatalog();
+
+    // Swap the running viewport's WORKING SCENE to `scenePath` -- open a scenelet
+    // (from GetSceneletCatalog) to edit it with the normal tools, or pass an EMPTY
+    // string to switch back to the project's main scene. Reuses the project asset
+    // graph. Blocks until the engine loads it; the caller should reload the scene
+    // via LoadRuntimeSceneSnapshot afterward. Errors when no viewport is running.
+    EngineMutationResponse OpenScene(string scenePath);
+
     // Add a child node under parentId (empty => top level) in the running scene
     // and return the engine-minted id. Errors if no viewport is running.
     EngineAddSceneNodeResponse AddChildNode(string parentId);
@@ -120,6 +136,11 @@ public interface IWozzitsEngineEditorSession
     // sub-tree under that host in the JSON-sourced tree. An empty snapshot (no
     // roots) when no viewport is running or nothing is grafted.
     EngineSceneSnapshot LoadGraftedSceneNodes();
+
+    // The running scene's authored nodes as a full scene snapshot -- used to
+    // rebuild the tree after OpenScene swaps the working scene (open a scenelet, or
+    // switch back). Empty response when no viewport is running.
+    EngineSceneSnapshotResponse LoadRuntimeSceneSnapshot();
 
     EngineMutationResponse SetSceneNodeCamera(
         string nodeId,

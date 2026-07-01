@@ -391,6 +391,54 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    // The running scene's authored nodes as a full scene snapshot (the SAME blob
+    // the project snapshot uses), so the editor rebuilds its tree after OpenScene
+    // swaps the working scene. Empty response when no viewport is running.
+    internal EngineSceneSnapshotResponse LoadRuntimeSceneSnapshot(IntPtr runtime)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineSceneSnapshotResponse();
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            buffer = WozzitsEngineAbi.WzEditorRuntimeSceneSnapshot(runtime);
+            if (buffer.Data == IntPtr.Zero)
+            {
+                return new EngineSceneSnapshotResponse();
+            }
+
+            return ReadProjectSnapshot(buffer).Scene;
+        }
+        catch (DllNotFoundException)
+        {
+            return new EngineSceneSnapshotResponse();
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return new EngineSceneSnapshotResponse();
+        }
+        catch (BadImageFormatException)
+        {
+            return new EngineSceneSnapshotResponse();
+        }
+        catch (InvalidOperationException)
+        {
+            return new EngineSceneSnapshotResponse();
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     internal EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot(IntPtr session)
     {
         if (session == IntPtr.Zero)
@@ -1334,6 +1382,95 @@ public sealed partial class WozzitsEngineNativeClient
 
         return InvokeMutation(
             () => WozzitsEngineAbi.WzEditorRuntimeReloadBehaviorModules(runtime));
+    }
+
+    internal EngineMutationResponse OpenScene(IntPtr runtime, string scenePath)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return InvalidMutation("Engine viewport is not running.");
+        }
+
+        // An empty path is intentional: it reopens the project's main scene (switch
+        // back from a scenelet). Coalesce null to "" for the marshaller.
+        return InvokeMutation(
+            () => WozzitsEngineAbi.WzEditorRuntimeOpenScene(
+                runtime,
+                scenePath ?? string.Empty));
+    }
+
+    internal IReadOnlyList<SceneletInfo> GetSceneletCatalog(IntPtr runtime)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return [];
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorRuntimeSceneletCatalog(
+                runtime,
+                out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return [];
+            }
+
+            var text = buffer.Data != IntPtr.Zero && buffer.Size != 0
+                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
+                    buffer.Data,
+                    checked((int)buffer.Size)) ?? string.Empty
+                : string.Empty;
+            if (string.IsNullOrEmpty(text))
+            {
+                return [];
+            }
+
+            // Each line is "name\tpath" (see wz_host_runtime_scenelet_catalog).
+            var lines = text.Split(
+                '\n',
+                StringSplitOptions.RemoveEmptyEntries
+                    | StringSplitOptions.TrimEntries);
+            var scenelets = new List<SceneletInfo>(lines.Length);
+            foreach (var line in lines)
+            {
+                var tab = line.IndexOf('\t');
+                if (tab <= 0 || tab >= line.Length - 1)
+                {
+                    continue;  // malformed / missing name or path
+                }
+                scenelets.Add(new SceneletInfo(
+                    line[..tab],
+                    line[(tab + 1)..]));
+            }
+            return scenelets;
+        }
+        catch (DllNotFoundException)
+        {
+            return [];
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return [];
+        }
+        catch (BadImageFormatException)
+        {
+            return [];
+        }
+        catch (InvalidOperationException)
+        {
+            return [];
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
     }
 
     internal IReadOnlyList<string> GetBehaviorModuleCatalog(IntPtr runtime)

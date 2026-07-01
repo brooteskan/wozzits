@@ -290,6 +290,27 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.GetBehaviorModuleCatalog(runtime.Handle);
     }
 
+    public IReadOnlyList<SceneletInfo> GetSceneletCatalog()
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return [];
+        }
+        return _client.GetSceneletCatalog(runtime.Handle);
+    }
+
+    public EngineMutationResponse OpenScene(string scenePath)
+    {
+        // Opening a scenelet (or switching back to the main scene) is meaningless
+        // without a live engine -- surface that, like ExportSubtreeAsScene.
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return WozzitsEngineNativeClient.InvalidMutation(
+                "Engine viewport is not running; cannot open scene.");
+        }
+        return _client.OpenScene(runtime.Handle, scenePath);
+    }
+
     public EngineAddSceneNodeResponse AddChildNode(string parentId)
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)
@@ -310,6 +331,15 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             return new EngineSceneSnapshot();
         }
         return _client.LoadRuntimeGraftedSceneNodes(runtime.Handle);
+    }
+
+    public EngineSceneSnapshotResponse LoadRuntimeSceneSnapshot()
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineSceneSnapshotResponse();
+        }
+        return _client.LoadRuntimeSceneSnapshot(runtime.Handle);
     }
 
     public EngineMutationResponse SetSceneNodeCamera(

@@ -3585,6 +3585,17 @@ public sealed partial class ProjectOpeningTests
             return GraftedScene;
         }
 
+        public EngineSceneSnapshotResponse RuntimeSceneSnapshot { get; set; } =
+            new EngineSceneSnapshotResponse();
+
+        public int LoadRuntimeSceneSnapshotCount { get; private set; }
+
+        public EngineSceneSnapshotResponse LoadRuntimeSceneSnapshot()
+        {
+            LoadRuntimeSceneSnapshotCount++;
+            return RuntimeSceneSnapshot;
+        }
+
         public EngineMutationResponse ReparentNode(string nodeId, string newParentId)
         {
             Reparents.Add((nodeId, newParentId));
@@ -3635,6 +3646,24 @@ public sealed partial class ProjectOpeningTests
         public IReadOnlyList<string> GetBehaviorModuleCatalog()
         {
             return BehaviorModuleCatalog;
+        }
+
+        public IReadOnlyList<SceneletInfo> SceneletCatalog { get; set; } = [];
+
+        public IReadOnlyList<SceneletInfo> GetSceneletCatalog()
+        {
+            return SceneletCatalog;
+        }
+
+        public List<string> OpenedScenes { get; } = [];
+
+        public EngineMutationResponse OpenSceneResponse { get; set; } =
+            new EngineMutationResponse { Ok = true };
+
+        public EngineMutationResponse OpenScene(string scenePath)
+        {
+            OpenedScenes.Add(scenePath);
+            return OpenSceneResponse;
         }
 
         public EngineMutationResponse SetSceneNodeCamera(

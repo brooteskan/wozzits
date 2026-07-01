@@ -329,6 +329,25 @@ internal static partial class WozzitsEngineAbi
         IntPtr runtime,
         out WzBuffer outModules);
 
+    // The project's scenelets (prefabs) for the scenelet menu. Newline-delimited
+    // UTF-8 "name\tpath" lines in outScenelets (free with WzFreeBuffer).
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_scenelet_catalog")]
+    internal static partial WzResult WzEditorRuntimeSceneletCatalog(
+        IntPtr runtime,
+        out WzBuffer outScenelets);
+
+    // Swap the working scene to scenePathUtf8 (open a scenelet for editing, or
+    // switch back to the main scene). Blocks until the engine thread loads it.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_open_scene",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeOpenScene(
+        IntPtr runtime,
+        string scenePathUtf8);
+
     [LibraryImport(
         LibraryName,
         EntryPoint = "wz_host_runtime_add_child_node",
@@ -589,6 +608,15 @@ internal static partial class WozzitsEngineAbi
         LibraryName,
         EntryPoint = "wz_host_runtime_grafted_scene_snapshot")]
     internal static partial WzBuffer WzEditorRuntimeGraftedSceneSnapshot(
+        IntPtr runtime);
+
+    // Snapshot of the RUNNING scene's authored nodes (same blob layout), to rebuild
+    // the tree after OpenScene swaps the working scene. BLOCKING; free with
+    // WzFreeBuffer.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_scene_snapshot")]
+    internal static partial WzBuffer WzEditorRuntimeSceneSnapshot(
         IntPtr runtime);
 
     [LibraryImport(LibraryName, EntryPoint = "wz_free_buffer")]

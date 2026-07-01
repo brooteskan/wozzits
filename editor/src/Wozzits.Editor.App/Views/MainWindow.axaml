@@ -33,6 +33,14 @@
                 <MenuItem Header="Launch _Standalone Play"
                           Command="{Binding LaunchStandaloneCommand}"/>
             </MenuItem>
+            <MenuItem Header="_Prefabs" SubmenuOpened="OnPrefabsMenuOpened">
+                <MenuItem Header="_Open Prefab" x:Name="OpenPrefabMenu"/>
+                <MenuItem Header="_Back to Scene"
+                          Command="{Binding BackToSceneCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Refresh Prefab List"
+                          Command="{Binding RefreshSceneletsCommand}"/>
+            </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Theme">
                     <MenuItem Header="_Blue (Daylight)"
