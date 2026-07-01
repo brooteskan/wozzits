@@ -223,6 +223,59 @@
         "auto_play": false,
         "enabled": true
       }
+    },
+    {
+      "id": "2",
+      "parent": "root",
+      "name": "command",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "behaviors": [
+        {
+          "id": "command.behavior.1",
+          "module": "quantum_agent",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "config": {
+            "decisions": 1,
+            "goal": 0,
+            "gamma_start": 2,
+            "anneal_seconds": 2,
+            "confidence": 0.7,
+            "decoherence": 0.3,
+            "think_interval": 0.25
+          }
+        },
+        {
+          "id": "command.behavior.2",
+          "module": "tank_commander",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ]
+        }
+      ]
     }
   ],
   "defaults": {

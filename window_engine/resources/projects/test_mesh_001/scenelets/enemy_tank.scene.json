@@ -58,10 +58,14 @@
           "enabled": true,
           "apply_in_editor": false,
           "config": {
+            "decisions": 3,
             "goal": 0.6,
+            "posture_goal": -0.5,
+            "coupling": 0.3,
             "gamma_start": 3,
-            "anneal_seconds": 4,
-            "confidence": 0.9,
+            "anneal_seconds": 3,
+            "confidence": 0.75,
+            "decoherence": 0.3,
             "think_interval": 0.25
           }
         },

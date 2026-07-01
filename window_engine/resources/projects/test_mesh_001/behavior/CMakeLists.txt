@@ -46,3 +46,7 @@ add_terrain_collision_behavior_module(
 add_terrain_collision_behavior_module(
     quantum_tank_agent
     quantum_tank_agent_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    tank_commander
+    tank_commander_plugin.cpp)

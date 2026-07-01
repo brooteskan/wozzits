@@ -1,5 +1,6 @@
 #include "agent_tank.h"
 #include "tank_drive.h"
+#include "agent_tank_config.h"
 
 // quantum_tank_agent -- the ACTUATOR half of a quantum NPC tank.
 //
@@ -25,14 +26,22 @@ namespace
     };
 
 
+    // Hands out a small stable id per tank instance. Only bumped on a tank's FIRST
+    // init (re-init returns preserved state whose id is already set), so ids are
+    // 0,1,2... in spawn order and stay put across rebuilds.
+    static int g_next_tank_id = 0;
+
     void quantum_tank_init(
         const WzBehaviorInitFacts* facts,
-        WzBehaviorEntityId,
+        WzBehaviorEntityId self,
         void*)
     {
         QuantumTankState* state = wz_instance_state<QuantumTankState>(facts);
         if (!state) {
             return;
+        }
+        if (state->tank_id < 0) {
+            state->tank_id = g_next_tank_id++;
         }
         // Authorable knob: how fast the tank advances when it commits to ENGAGE.
         (void)wz_config_float(facts, "drive_speed", &state->drive_speed);
@@ -45,6 +54,70 @@ namespace
 
         result = wz_find_entity_by_authored_id(facts, "empty_1", &state->player);
         wz_log_infof(facts, "[agent tank init] find player: %u", result);
+
+        // For now the engagement target IS the player tank. Steering, turret aim,
+        // and distance sensing all key off `target`, so switching who we engage
+        // later is a one-line change.
+        state->target = state->player;
+
+        result = wz_find_descendant_by_name(facts, self,"turret", &state->chassis.turret);
+        wz_log_infof(facts, "[agent tank init] find turret: %u", result);
+
+        // The squad commander (hidden top-level node). Optional -- the tank fights
+        // solo if it isn't present.
+        (void)wz_find_entity_by_authored_id(facts, "2:command", &state->command);
+    }
+
+    // sense_world lives in agent_tank.h now -- SHARED with the commander.
+
+    // Map the world snapshot to the agent's per-decision goal biases and push them
+    // -- CONTINUOUS, no thresholds:
+    //   qubit 0 PURSUE   -- leans harder when the target flees;
+    //   qubit 1 POSTURE  -- slides CLOSE (far) <-> CIRCLE (near) across a standoff;
+    //   qubit 2 RECONSIDER (meta) -- how VOLATILE the situation is, which decides
+    //     how soon to re-think (see the cadence logic in on_event).
+    void push_goals_from_world(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        const QuantumTankState* state)
+    {
+        using namespace agent_tank_config;
+
+        float pursue_goal = kPursueBaseGoal
+            + tank_drive::clampf(
+                state->target_speed * kPursueFleeGain, 0.0f, kPursueFleeMax);
+
+        float posture_goal = tank_drive::clampf(
+            (state->distance_to_target - kStandoff) / kStandoff, -1.0f, 1.0f)
+            * kPostureGoalGain;
+
+        // OBEY the group order from the commander node (if any): PRESS shifts the
+        // squad toward engage + close, HARASS toward keeping distance (circle). The
+        // tank's own cognition still deliberates; this just biases it.
+        if (state->command != WZ_INVALID_BEHAVIOR_ENTITY) {
+            WzAgentDecision order{};
+            if (wz_agent_decision(facts, state->command, &order)) {
+                const Command c = command_from(order.committed);
+                if (c == Command::Press) {
+                    pursue_goal += kObeyPressPursue;
+                    posture_goal += kObeyPressClose;    // + = CLOSE (|0>)
+                } else if (c == Command::Harass) {
+                    posture_goal -= kObeyHarassCircle;  // - = CIRCLE (|1>)
+                }
+            }
+        }
+
+        // Meta: > 0 when the target is moving / range is changing fast.
+        const float volatility =
+            state->target_speed * kVolSpeedGain
+            + fabsf(state->closing_rate) * kVolCloseGain
+            - kVolBias;
+        const float reconsider_goal =
+            tank_drive::clampf(volatility, -1.0f, 1.0f) * kReconsiderGoalGain;
+
+        wz_self_set_agent_goal(facts, event, 0u, pursue_goal);      // pursue vs hold
+        wz_self_set_agent_goal(facts, event, 1u, posture_goal);     // close vs circle
+        wz_self_set_agent_goal(facts, event, 2u, reconsider_goal);  // volatile vs stable
     }
 
     void quantum_tank_on_event(
@@ -60,38 +133,115 @@ namespace
             return;
         }
 
-        // Read the co-located quantum_agent's committed disposition. If this node
-        // has no quantum_agent, there is nothing to actuate -- leave the tank be.
-        WzAgentDecision decision{};
-        if (!wz_self_agent_decision(facts, event, &decision)) {
-            return;
+        // Sense the world every frame, then RE-ANNEAL the stance on a cadence the
+        // COGNITION picks -- the "reconsider" meta-qubit (2): its committed VOLATILE
+        // (|0>) vs STABLE (|1>) verdict, driven by how much the world is changing,
+        // sets how soon to re-open the tactical decisions. So the tank re-thinks
+        // often when things are dynamic and holds steady when they're calm -- no
+        // fixed timer, no dead zone. (The coupling is structural, surviving the
+        // re-anneal.)
+        if (wz_event_kind(event) == WZ_EVENT_FRAME_UPDATE) {
+            sense_world(facts, event, state);
+
+            // Once the meta-qubit commits, it chooses the interval to the next
+            // re-anneal, measured from the last one.
+            WzAgentDecision reconsider{};
+            if (wz_self_agent_decision_at(facts, event, 2u, &reconsider)
+                && reconsider.committed != -1)
+            {
+                state->next_reanneal_time = state->last_reanneal_time
+                    + (reconsider.committed == 0
+                        ? agent_tank_config::kReannealVolatile   // |0> volatile
+                        : agent_tank_config::kReannealStable);   // |1> stable
+            }
+
+            const double now = wz_sim_time(facts);
+            if (now >= state->next_reanneal_time) {
+                push_goals_from_world(facts, event, state);
+                wz_self_rearm_agent(facts, event);
+                state->last_reanneal_time = now;
+                // Provisional cadence until the meta-qubit commits this cycle.
+                state->next_reanneal_time =
+                    now + agent_tank_config::kReannealUntilDecided;
+                wz_log_infof(facts,
+                    "[qtank:%d] re-anneal dist=%.1f close=%.1f tgt_spd=%.1f meta=%d",
+                    state->tank_id,
+                    (double)state->distance_to_target,
+                    (double)state->closing_rate,
+                    (double)state->target_speed,
+                    (int)reconsider.committed);
+            }
         }
 
-        // Step-1 mapping: ENGAGE (committed |0>) advances in local +X; HOLD (|1>)
-        // and still-deliberating (-1) hold position. Motion is issued in the
-        // entity's local frame, like the player tank's drive.
-        const float speed =
-            (decision.committed == 0) ? 1.0f : 0.0f;
+        // Coupled decisions from the co-located quantum_agent:
+        //   decision 0 = PURSUE (|0>) vs HOLD (|1>)   -> gates our SPEED
+        //   decision 1 = CLOSE  (|0>) vs CIRCLE (|1>) -> picks our APPROACH
+        //   decision 2 = RECONSIDER (meta)            -> sets the re-think cadence
+        // If this node has no quantum_agent there is nothing to actuate.
+        WzAgentDecision pursue{};
+        if (!wz_self_agent_decision(facts, event, &pursue)) {
+            return;
+        }
+        WzAgentDecision posture{};
+        const uint8_t has_posture =
+            wz_self_agent_decision_at(facts, event, 1u, &posture);
 
-        state->left_tread_speed = speed*0.5;
-        state->right_tread_speed = speed*0.5;
+        // SPEED from PURSUE. Committed ENGAGE -> full; HOLD -> stop; still
+        // deliberating -> CREEP forward in proportion to how far it leans toward
+        // engaging (marginal > 0), so you can SEE the wave function wavering
+        // before it collapses.
+        float speed_factor = 0.0f;
+        if (pursue.committed == 0) {
+            speed_factor = 1.0f;                       // ENGAGE
+        } else if (pursue.committed == -1) {
+            speed_factor = agent_tank_config::kWaveringSpeed
+                * (pursue.marginal > 0.0f ? pursue.marginal : 0.0f);  // wavering
+        }
+        state->speed = agent_tank_config::kBaseSpeed * speed_factor;
 
-        if (decision.committed != state->last_decision) {
-            state->last_decision = decision.committed;
+        // HEADING from POSTURE. CIRCLE (|1>) orbits the player at a standoff;
+        // CLOSE (|0>) or undecided drives the nose straight at the player.
+        if (has_posture && posture.committed == 1) {
+            state->heading = tank_drive::orbit_yaw_rate(
+                facts, event, state->target, agent_tank_config::kStandoff,
+                agent_tank_config::kSteerGain, tank_drive::kTurnSpeed);
+        } else {
+            state->heading = tank_drive::face_yaw_rate(
+                facts, event, state->target,
+                agent_tank_config::kSteerGain, tank_drive::kTurnSpeed);
+        }
+
+        // Turret always tracks the target, within the frontal arc.
+        state->chassis.turret_yaw = tank_drive::clampf(
+            tank_drive::face_bearing_to(facts, event, state->target),
+            -tank_drive::kTurretHalfArc,
+            tank_drive::kTurretHalfArc);
+        tank_drive::aim_turret(facts, state->chassis.turret, state->chassis.turret_yaw);
+
+        // How far off the gun is from the target (0 = on target; nonzero when the
+        // target is beyond the frontal arc so the hull must reposition).
+        state->aim_error = tank_drive::aim_error(
+            facts, event, state->target, state->chassis.turret_yaw);
+
+        // Announce each collapse of the joint decision (once per change).
+        if (pursue.committed != state->last_decision) {
+            state->last_decision = pursue.committed;
             wz_log_infof(
                 facts,
-                "[qtank] decision=%d z=%.2f speed=%.1f",
-                (int)decision.committed,
-                decision.marginal,
-                speed);
+                "[qtank:%d] pursue=%d (z=%.2f)  posture=%d",
+                state->tank_id,
+                (int)pursue.committed,
+                pursue.marginal,
+                (int)(has_posture ? posture.committed : -2));
         }
 
         switch (wz_event_kind(event)) {
 
         case WZ_EVENT_SELF_START:
         {
-            constexpr float kAlignRate = 0.618f;  // keep it low: tanks suddenly lurching looks weird
-            wz_self_set_terrain_alignment_rate(facts, event, kAlignRate);
+            // Keep it low: tanks suddenly lurching to the surface looks weird.
+            wz_self_set_terrain_alignment_rate(
+                facts, event, agent_tank_config::kTerrainAlignRate);
             return;   // set once; skip the motion code below on this event
         }
 
@@ -99,7 +249,7 @@ namespace
             break;
         }
 
-        tank_drive::drive_treads(facts, event, state->left_tread_speed, state->right_tread_speed);
+        tank_drive::drive_facing(facts, event, state->heading, state->speed);
 
     }
 }

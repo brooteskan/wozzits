@@ -1,12 +1,15 @@
 #pragma once
 // behavior/player_tank.h
 #include <engine/behavior/behavior_module_api.h>
+#include "tank_drive.h"
 
 struct PlayerTankState {
     float throttle = 0.0f;
     float turn = 0.0f;
     float left_tread_speed = 0.0f;
     float right_tread_speed = 0.0f;
+
+    tank_drive::Chassis chassis;  // turret handle + turret aim
 
     uint8_t ammo = 10;
     WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
