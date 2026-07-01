@@ -70,6 +70,13 @@ namespace wz::engine::behavior
     inline constexpr const char* kQuantumAgentPostureGoalKey = "posture_goal";
     inline constexpr const char* kQuantumAgentCouplingKey = "coupling";
 
+    // Number of coupled decisions (qubits) this agent deliberates. Default 2
+    // (pursue + posture); an actuator that drives extra decisions (e.g. a "when to
+    // reconsider" meta-qubit) via the write seam raises it. Clamped to
+    // [1, kQuantumAgentMaxDecisions]. The `coupling` bond stays on qubits 0<->1;
+    // extra qubits start uncoupled and their goals come from the write seam.
+    inline constexpr const char* kQuantumAgentDecisionsKey = "decisions";
+
     // Cap on coupled decisions a single agent exposes (keeps the POD state fixed-
     // size + trivially copyable). Bump if a richer NPC needs more qubits.
     inline constexpr uint32_t kQuantumAgentMaxDecisions = 4;

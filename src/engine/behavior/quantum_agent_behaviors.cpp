@@ -59,7 +59,16 @@ namespace wz::engine::behavior
                 // (a second disposition), entangled by an optional bond so they
                 // resolve together and can frustrate each other into wavering.
                 wz::engine::cognition::AgentSpec spec;
-                spec.agent_count = 2;
+                float decisions_f = 2.0f;
+                (void)wz_config_float(
+                    facts, kQuantumAgentDecisionsKey, &decisions_f);
+                uint32_t decisions = decisions_f < 1.0f
+                    ? 1u
+                    : static_cast<uint32_t>(decisions_f);
+                if (decisions > kQuantumAgentMaxDecisions) {
+                    decisions = kQuantumAgentMaxDecisions;
+                }
+                spec.agent_count = decisions;
                 spec.goals = {
                     wz::engine::cognition::Goal{
                         .agent = 0u,
@@ -93,6 +102,18 @@ namespace wz::engine::behavior
                 spec.commit.decoherence_rate =
                     config_float(facts, kQuantumAgentDecoherenceKey, 0.0f);
                 spec.chi = 0;  // exact joint state: genuine entanglement, 2 qubits
+
+                // Per-instance RNG seed so identically-configured NPCs do NOT
+                // decohere in lockstep (the default seed gives every agent the same
+                // sequence). Derive from the self entity -- distinct per concurrent
+                // instance -- via a splitmix64 mix, kept non-zero for the xorshift*.
+                uint64_t seed = 0x9e3779b97f4a7c15ull
+                    + (static_cast<uint64_t>(wz_self(event)) + 1ull)
+                        * 0x9e3779b97f4a7c15ull;
+                seed ^= seed >> 30; seed *= 0xbf58476d1ce4e5b9ull;
+                seed ^= seed >> 27; seed *= 0x94d049bb133111ebull;
+                seed ^= seed >> 31;
+                spec.seed = seed ? seed : 0x9e3779b97f4a7c15ull;
 
                 const wz::engine::cognition::AgentHandle handle = quantum_agent_store().create(spec);
                 if (handle == wz::engine::cognition::kInvalidAgent) {
@@ -158,6 +179,8 @@ namespace wz::engine::behavior
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
             { kQuantumAgentCouplingKey, "Decision coupling (bond j)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
+            { kQuantumAgentDecisionsKey, "Decision count (qubits)",
+                WZ_BEHAVIOR_PARAM_FLOAT, 2.0, nullptr },
             { kQuantumAgentGammaStartKey, "Exploration (gamma start)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 2.0, nullptr },
             { kQuantumAgentAnnealSecondsKey, "Deliberation seconds",
