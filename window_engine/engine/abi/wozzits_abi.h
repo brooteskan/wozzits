@@ -948,6 +948,17 @@ WZ_ABI_API WzResult wz_host_runtime_remove_node(
 // runtime.
 WZ_ABI_API WzResult wz_host_runtime_save_scene(WzHostRuntime* runtime);
 
+// Swap the working scene to `scene_path_utf8` -- the prefab editor's "open a
+// scenelet" (from wz_host_runtime_scenelet_catalog). Reuses the project asset
+// graph + modules, so the scenelet renders against the same graph. Blocks until
+// the engine thread has loaded it. After it returns OK the editor should
+// re-snapshot the scene (its nodes are now the scenelet's); save_scene then
+// persists edits back to that file, and opening the main scene again switches
+// back. WZ_RESULT_INVALID_ARGUMENT for a null runtime / empty path.
+WZ_ABI_API WzResult wz_host_runtime_open_scene(
+    WzHostRuntime* runtime,
+    const char* scene_path_utf8);
+
 // Carve the subtree rooted at `root_node_id_utf8` out of the running scene and
 // write it to `out_path_utf8` as a standalone prefab scene.json (the prefab-
 // system milestone): the root node + its transitive descendants become the new

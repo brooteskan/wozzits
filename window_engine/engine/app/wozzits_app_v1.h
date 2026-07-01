@@ -441,6 +441,14 @@ namespace wz::app
         // no live edit happened since load/last save; false on write failure.
         bool save_scene();
 
+        // Swap the WORKING SCENE to a different scene file (the prefab-editor's
+        // open: point the editor at a scenelet, edit it with the normal tools, then
+        // save_scene() writes back to it; open_scene the main scene again to switch
+        // back). Reuses the asset graph + module folder from the last load_scene, so
+        // the scenelet renders against the SAME project asset graph. Fails if no
+        // scene was loaded yet (no asset-graph path to reuse) or the load fails.
+        bool open_scene(const wz::fs::Path& scene_path);
+
         // Carve the subtree rooted at `root_node_id` out of the live scene and
         // write it to `out_path` as a fresh, self-contained scene.json (the
         // prefab-system milestone): the root node + its transitive descendants
@@ -807,6 +815,12 @@ namespace wz::app
         // Source scene file + a dirty flag, for save_scene (persist live edits).
         wz::fs::Path  scene_source_path_{};
         bool          scene_dirty_ = false;
+
+        // The asset-graph + behavior-module paths the last load_scene used, so
+        // open_scene can swap the WORKING SCENE (e.g. to a scenelet for in-editor
+        // prefab editing) while reusing the same project asset graph + modules.
+        wz::fs::Path  asset_graph_path_{};
+        wz::fs::Path  behavior_module_folder_{};
 
         // Behavior runtime. This is the same load -> register -> initialize ->
         // per-frame dispatch -> apply-command-buffer sequence the standalone

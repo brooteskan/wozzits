@@ -1367,6 +1367,38 @@ extern "C"
         return result(WZ_RESULT_OK, "");
     }
 
+    WzResult wz_host_runtime_open_scene(
+        WzHostRuntime* runtime,
+        const char* scene_path_utf8)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (!scene_path_utf8 || scene_path_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "scene_path_utf8 must not be empty");
+        }
+
+        try {
+            // Blocking handshake (mirrors export_subtree): the engine thread swaps
+            // its working scene to scene_path on its next frame, then hands back
+            // success/failure. The editor re-snapshots the scene afterward.
+            const bool ok =
+                runtime->control.open_scene(wz::fs::Path{ scene_path_utf8 });
+            return ok
+                ? result(WZ_RESULT_OK, "")
+                : result(
+                    WZ_RESULT_INTERNAL_ERROR,
+                    "open scene failed (load error or runtime stopped)");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(WZ_RESULT_INTERNAL_ERROR, "open scene failed");
+        }
+    }
+
     WzResult wz_host_export_subtree_as_scene(
         WzHostRuntime* runtime,
         const char* root_node_id_utf8,

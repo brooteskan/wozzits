@@ -285,6 +285,16 @@ namespace wz::app
                 const wz::scene::AuthoredEntityId&, const wz::fs::Path&)>&
                 exporter);
 
+        // Owner thread: swap the working scene to `scene_path` (the prefab editor's
+        // "open a scenelet"). Blocks until the engine thread has loaded it; returns
+        // whether it loaded. Reuses the project asset graph + modules.
+        [[nodiscard]] bool open_scene(const wz::fs::Path& scene_path);
+
+        // Engine thread: if an open-scene is pending, run `opener` and publish the
+        // result. Called once per frame from run_project_runtime.
+        void service_pending_open_scene(
+            const std::function<bool(const wz::fs::Path&)>& opener);
+
         // Owner thread: request the engine to reload the project's behavior-
         // module DLLs (after the editor recompiled them) on its next frame.
         // Non-blocking and coalescing (a flag): per-module results are logged.
@@ -568,6 +578,10 @@ namespace wz::app
         // and blocks for the bool the engine thread produces.
         bool has_export_request_ = false;
         bool has_export_result_ = false;
+        bool has_open_scene_request_ = false;
+        bool has_open_scene_result_ = false;
+        wz::fs::Path pending_open_scene_path_;
+        bool open_scene_result_ = false;
         wz::scene::AuthoredEntityId pending_export_root_;
         wz::fs::Path pending_export_path_;
         bool export_result_ = false;

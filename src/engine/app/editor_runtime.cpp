@@ -675,6 +675,52 @@ namespace wz::app
         cv_.notify_all();
     }
 
+    bool EditorRuntimeControl::open_scene(const wz::fs::Path& scene_path)
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this] { return !has_open_scene_request_ || finished_; });
+        if (finished_) {
+            return false;  // runtime is not running
+        }
+
+        pending_open_scene_path_ = scene_path;
+        has_open_scene_request_ = true;
+        has_open_scene_result_ = false;
+        cv_.notify_all();
+
+        cv_.wait(lock, [this] { return has_open_scene_result_ || finished_; });
+        if (!has_open_scene_result_) {
+            has_open_scene_request_ = false;
+            return false;  // stopped before the open completed
+        }
+
+        has_open_scene_result_ = false;
+        return open_scene_result_;
+    }
+
+    void EditorRuntimeControl::service_pending_open_scene(
+        const std::function<bool(const wz::fs::Path&)>& opener)
+    {
+        wz::fs::Path path;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!has_open_scene_request_) {
+                return;
+            }
+            path = std::move(pending_open_scene_path_);
+            has_open_scene_request_ = false;
+        }
+
+        const bool loaded = opener(path);
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            open_scene_result_ = loaded;
+            has_open_scene_result_ = true;
+        }
+        cv_.notify_all();
+    }
+
     wz::engine::assets::SceneAddBehaviorResult
     EditorRuntimeControl::add_node_behavior(
         const wz::scene::AuthoredEntityId& node_id,
@@ -1144,6 +1190,16 @@ namespace wz::app
                             const wz::fs::Path& out_path) {
                             return app.export_subtree_as_scene(
                                 root_node_id, out_path);
+                        });
+                    control->service_pending_open_scene(
+                        [&app, control](const wz::fs::Path& scene_path) {
+                            const bool ok = app.open_scene(scene_path);
+                            // Republish the module + scenelet catalogs for the
+                            // swapped-in scene (same project, so usually identical).
+                            control->set_behavior_modules(
+                                app.behavior_module_names());
+                            control->set_scenelets(app.scenelet_catalog());
+                            return ok;
                         });
                     if (control->take_reload_behavior_modules_request()) {
                         app.reload_behavior_modules(behavior_module_folder);

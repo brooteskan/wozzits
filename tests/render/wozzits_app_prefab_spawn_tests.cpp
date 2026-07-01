@@ -246,6 +246,31 @@ TEST_F(WozzitsAppPrefabFixture, AutoRegistersSceneletsAsPrefabsOnLoad)
     EXPECT_FLOAT_EQ(spawned_pos->z, 5.0f);
 }
 
+// Prefab-editor round-trip (seam 2): open a scenelet AS the working scene, then
+// switch back to the main scene -- both reuse the same project asset graph.
+TEST_F(WozzitsAppPrefabFixture, OpenSceneSwapsWorkingSceneAndBack)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    const auto desc = scene_load_desc();
+    ASSERT_TRUE(app.load_scene(desc));
+
+    // Main scene is loaded: its authored node exists, the scenelet's does not.
+    EXPECT_TRUE(app.node_local_translation("spawner").has_value());
+    EXPECT_FALSE(app.node_local_translation("spawnling_root").has_value());
+
+    // Open the scenelet as the working scene (the prefab editor's "open").
+    const auto catalog = app.scenelet_catalog();
+    ASSERT_EQ(catalog.size(), 1u);
+    ASSERT_TRUE(app.open_scene(catalog[0].path));
+    EXPECT_TRUE(app.node_local_translation("spawnling_root").has_value());
+    EXPECT_FALSE(app.node_local_translation("spawner").has_value());
+
+    // Switch back to the main scene.
+    ASSERT_TRUE(app.open_scene(desc.scene));
+    EXPECT_TRUE(app.node_local_translation("spawner").has_value());
+    EXPECT_FALSE(app.node_local_translation("spawnling_root").has_value());
+}
+
 // A spawn while the scene camera is active (play mode) must NOT flip the active
 // camera off its anchor (#219). The fixture's scene_camera behavior selects "cam"
 // on load; after a spawn-induced rebuild the anchor is unchanged.
