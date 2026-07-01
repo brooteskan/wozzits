@@ -1451,6 +1451,87 @@ static inline uint8_t wz_self_agent_decision(
         out);
 }
 
+// Read one of a quantum_agent's several coupled decisions by index (0 matches
+// wz_agent_decision). Returns 0 if the node has no quantum_agent or the index is
+// out of range / the host wires no reader.
+static inline uint8_t wz_agent_decision_at(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t agent_index,
+    WzAgentDecision* out)
+{
+    if (!facts || !facts->get_agent_decision_at || !out) {
+        return 0;
+    }
+    return facts->get_agent_decision_at(
+        facts->cognition_reader_user, entity, agent_index, out);
+}
+
+// Convenience: read decision `agent_index` of the agent co-located on self.
+static inline uint8_t wz_self_agent_decision_at(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint32_t agent_index,
+    WzAgentDecision* out)
+{
+    return wz_agent_decision_at(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        agent_index,
+        out);
+}
+
+// Re-bias one of a quantum_agent's decisions (write surface). Takes effect on the
+// agent's next think; pair with wz_rearm_agent to re-open an already-committed
+// decision. Returns 0 if the node has no quantum_agent / the index is out of range.
+static inline uint8_t wz_set_agent_goal(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t agent_index,
+    float field)
+{
+    if (!facts || !facts->set_agent_goal) {
+        return 0;
+    }
+    return facts->set_agent_goal(
+        facts->cognition_reader_user, entity, agent_index, field);
+}
+
+// Re-open (re-deliberate) all of a quantum_agent's decisions: clear the latches +
+// restart the anneal. Returns 0 if the node has no quantum_agent.
+static inline uint8_t wz_rearm_agent(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity)
+{
+    if (!facts || !facts->rearm_agent) {
+        return 0;
+    }
+    return facts->rearm_agent(facts->cognition_reader_user, entity);
+}
+
+// Convenience: re-bias / re-arm the agent co-located on self.
+static inline uint8_t wz_self_set_agent_goal(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint32_t agent_index,
+    float field)
+{
+    return wz_set_agent_goal(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        agent_index,
+        field);
+}
+
+static inline uint8_t wz_self_rearm_agent(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event)
+{
+    return wz_rearm_agent(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY);
+}
+
 static inline void wz_log_info(
     const WzBehaviorFrameFacts* facts,
     const char* message)
@@ -2483,6 +2564,35 @@ static inline uint8_t wz_find_entity_by_authored_id(
         out_entity);
 }
 
+// Find a descendant of `ancestor` by node name, scoped to `ancestor`'s subtree
+// (instance-safe -- see WzFindBehaviorDescendantByNameFn).
+static inline uint8_t wz_find_descendant_by_name(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId ancestor,
+    const char* name,
+    WzBehaviorEntityId* out_entity)
+{
+    if (!facts || !facts->find_descendant_by_name) {
+        return 0;
+    }
+    return facts->find_descendant_by_name(
+        facts->scene_query_user,
+        ancestor,
+        name,
+        out_entity);
+}
+
+// Convenience: find a descendant of SELF (the bound entity) by name.
+static inline uint8_t wz_self_find_descendant_by_name(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    const char* name,
+    WzBehaviorEntityId* out_entity)
+{
+    return wz_find_descendant_by_name(
+        facts, wz_self(event), name, out_entity);
+}
+
 static inline uint8_t wz_config_bool(
     const WzBehaviorFrameFacts* facts,
     const char* key,
@@ -2572,6 +2682,26 @@ static inline uint8_t wz_find_entity_by_authored_id(
     return facts->find_entity_by_authored_id(
         facts->scene_query_user,
         authored_id,
+        out_entity);
+}
+
+// Find a descendant of `ancestor` by node name, scoped to `ancestor`'s subtree
+// (instance-safe -- see WzFindBehaviorDescendantByNameFn). In on_init, pass the
+// behavior's own entity (the init function's entity argument) as `ancestor` to
+// resolve + cache a child handle, e.g. a spawned tank's grafted "turret".
+static inline uint8_t wz_find_descendant_by_name(
+    const WzBehaviorInitFacts* facts,
+    WzBehaviorEntityId ancestor,
+    const char* name,
+    WzBehaviorEntityId* out_entity)
+{
+    if (!facts || !facts->find_descendant_by_name) {
+        return 0;
+    }
+    return facts->find_descendant_by_name(
+        facts->scene_query_user,
+        ancestor,
+        name,
         out_entity);
 }
 

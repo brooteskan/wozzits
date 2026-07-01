@@ -7,18 +7,18 @@
 
 namespace wz::engine::behavior
 {
+    // The engine-side owner of every quantum_agent's wave function. A single
+    // process-wide store keyed by the POD handle each binding holds in its instance
+    // state; it outlives scene rebuilds (the handle in the preserved instance state
+    // stays valid). Exposed via the header for the host read/write seams.
+    wz::engine::cognition::AgentCognitionStore& quantum_agent_store()
+    {
+        static wz::engine::cognition::AgentCognitionStore instance;
+        return instance;
+    }
+
     namespace
     {
-        // The engine-side owner of every quantum_agent's wave function. A single
-        // process-wide store keyed by the POD handle each binding holds in its
-        // instance state; it outlives scene rebuilds (the handle in the preserved
-        // instance state stays valid).
-        wz::engine::cognition::AgentCognitionStore& store()
-        {
-            static wz::engine::cognition::AgentCognitionStore instance;
-            return instance;
-        }
-
         float config_float(
             const WzBehaviorFrameFacts* facts,
             const char* key,
@@ -54,15 +54,33 @@ namespace wz::engine::behavior
 
             if (event->kind == WZ_EVENT_SELF_START) {
                 // Build the agent's coordination state from this binding's config
-                // and zero its deliberation clock at the current sim-time.
+                // and zero its deliberation clock at the current sim-time. TWO
+                // coupled decisions: qubit 0 (the primary disposition) + qubit 1
+                // (a second disposition), entangled by an optional bond so they
+                // resolve together and can frustrate each other into wavering.
                 wz::engine::cognition::AgentSpec spec;
-                spec.agent_count = 1;
+                spec.agent_count = 2;
                 spec.goals = {
                     wz::engine::cognition::Goal{
                         .agent = 0u,
                         .field = config_float(facts, kQuantumAgentGoalKey, 0.0f),
                     },
+                    wz::engine::cognition::Goal{
+                        .agent = 1u,
+                        .field =
+                            config_float(facts, kQuantumAgentPostureGoalKey, 0.0f),
+                    },
                 };
+                const float coupling =
+                    config_float(facts, kQuantumAgentCouplingKey, 0.0f);
+                if (coupling != 0.0f) {
+                    spec.bonds = {
+                        wz::engine::cognition::ExactBond{
+                            .a = 0u, .b = 1u,
+                            .j = static_cast<double>(coupling),
+                        },
+                    };
+                }
                 spec.clock.gamma_start =
                     config_float(facts, kQuantumAgentGammaStartKey, 2.0f);
                 spec.clock.gamma_end = 0.0;
@@ -74,20 +92,24 @@ namespace wz::engine::behavior
                     config_float(facts, kQuantumAgentConfidenceKey, 0.8f);
                 spec.commit.decoherence_rate =
                     config_float(facts, kQuantumAgentDecoherenceKey, 0.0f);
-                spec.chi = 0;  // exact single-agent backend
+                spec.chi = 0;  // exact joint state: genuine entanglement, 2 qubits
 
-                const wz::engine::cognition::AgentHandle handle = store().create(spec);
+                const wz::engine::cognition::AgentHandle handle = quantum_agent_store().create(spec);
                 if (handle == wz::engine::cognition::kInvalidAgent) {
                     return;
                 }
-                store().start(handle, wz_sim_time(facts));
+                quantum_agent_store().start(handle, wz_sim_time(facts));
 
                 const float interval =
                     config_float(facts, kQuantumAgentThinkIntervalKey, 0.25f);
                 state->handle = handle;
                 state->think_interval = interval > 0.0f ? interval : 0.25f;
-                state->committed = -1;
-                state->marginal = 0.0f;
+                state->agent_count =
+                    static_cast<uint8_t>(spec.agent_count);
+                for (uint32_t i = 0; i < kQuantumAgentMaxDecisions; ++i) {
+                    state->committed[i] = -1;
+                    state->marginal[i] = 0.0f;
+                }
                 state->started = 1;
                 return;
             }
@@ -96,16 +118,22 @@ namespace wz::engine::behavior
                 if (!state->started || state->handle == 0u) {
                     return;
                 }
-                // One self-paced deliberation step, then cache the decision for the
-                // frame-path readers and schedule the next wake.
-                store().think(state->handle, wz_sim_time(facts));
-                const std::optional<bool> decided =
-                    store().committed(state->handle, 0u);
-                state->committed = decided.has_value()
-                    ? static_cast<int8_t>(*decided ? 1 : 0)
-                    : static_cast<int8_t>(-1);
-                state->marginal =
-                    static_cast<float>(store().marginal(state->handle, 0u));
+                // One self-paced deliberation step, then cache EVERY qubit's
+                // decision for the frame-path readers and schedule the next wake.
+                quantum_agent_store().think(state->handle, wz_sim_time(facts));
+                const uint32_t count =
+                    state->agent_count < kQuantumAgentMaxDecisions
+                        ? state->agent_count
+                        : kQuantumAgentMaxDecisions;
+                for (uint32_t i = 0; i < count; ++i) {
+                    const std::optional<bool> decided =
+                        quantum_agent_store().committed(state->handle, i);
+                    state->committed[i] = decided.has_value()
+                        ? static_cast<int8_t>(*decided ? 1 : 0)
+                        : static_cast<int8_t>(-1);
+                    state->marginal[i] =
+                        static_cast<float>(quantum_agent_store().marginal(state->handle, i));
+                }
                 wz_set_next_wake(facts, state->think_interval);
             }
         }
@@ -125,6 +153,10 @@ namespace wz::engine::behavior
         // the author guessing config keys.
         static const WzBehaviorParamDesc params[] = {
             { kQuantumAgentGoalKey, "Goal bias",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
+            { kQuantumAgentPostureGoalKey, "Posture goal bias",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
+            { kQuantumAgentCouplingKey, "Decision coupling (bond j)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
             { kQuantumAgentGammaStartKey, "Exploration (gamma start)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 2.0, nullptr },

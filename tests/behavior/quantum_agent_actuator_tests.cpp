@@ -18,6 +18,9 @@ namespace
         uint8_t read_ok = 0;
         int seen_committed = -2;
         float seen_marginal = -99.0f;
+        // Second coupled decision, read via the indexed seam.
+        uint8_t read_ok_1 = 0;
+        int seen_committed_1 = -2;
     };
 
     ActuatorProbe* g_actuator_probe = nullptr;
@@ -36,11 +39,17 @@ namespace
 
         WzAgentDecision decision{};
         const uint8_t ok = wz_self_agent_decision(facts, event, &decision);
+        WzAgentDecision posture{};
+        const uint8_t ok1 = wz_self_agent_decision_at(facts, event, 1u, &posture);
         if (g_actuator_probe) {
             g_actuator_probe->read_ok = ok;
             if (ok) {
                 g_actuator_probe->seen_committed = decision.committed;
                 g_actuator_probe->seen_marginal = decision.marginal;
+            }
+            g_actuator_probe->read_ok_1 = ok1;
+            if (ok1) {
+                g_actuator_probe->seen_committed_1 = posture.committed;
             }
         }
         if (!ok) {
@@ -67,6 +76,54 @@ namespace
             .size = sizeof(WzBehaviorModuleDesc),
             .module = "decision_actuator",
             .on_event = decision_actuator_on_event,
+            .event_channels = channels,
+            .event_channel_count = 1u,
+            .module_user_data = nullptr,
+        };
+        return api->register_module_desc(api->user, &desc);
+    }
+
+    // A one-shot behavior that RE-BIASES + RE-ARMS the co-located agent through the
+    // write seam (wz_self_set_agent_goal / wz_self_rearm_agent) -- the sense->think
+    // half of the loop. Fires once, then latches g_rearm_done so it doesn't re-arm
+    // every frame.
+    struct RearmProbe
+    {
+        uint8_t set_ok = 0;
+        uint8_t rearm_ok = 0;
+        bool done = false;
+    };
+    RearmProbe* g_rearm_probe = nullptr;
+
+    void rearm_probe_on_event(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event || event->kind != WZ_EVENT_FRAME_UPDATE) {
+            return;
+        }
+        if (!g_rearm_probe || g_rearm_probe->done) {
+            return;
+        }
+        // Flip qubit 0's goal to favor |1>, then re-open the decision.
+        g_rearm_probe->set_ok = wz_self_set_agent_goal(facts, event, 0u, -0.8f);
+        g_rearm_probe->rearm_ok = wz_self_rearm_agent(facts, event);
+        g_rearm_probe->done = true;
+    }
+
+    uint8_t register_rearm_probe(WzBehaviorPluginApi* api)
+    {
+        if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION
+            || !api->register_module_desc)
+        {
+            return 0;
+        }
+        static const char* channels[] = { "frame.update" };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "rearm_probe",
+            .on_event = rearm_probe_on_event,
             .event_channels = channels,
             .event_channel_count = 1u,
             .module_user_data = nullptr,
@@ -107,6 +164,40 @@ namespace
                 },
             });
         }
+        npc.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+            .id = "npc_actuator",
+            .module = "decision_actuator",
+        });
+        asset.nodes.push_back(std::move(npc));
+
+        auto result = wz::engine::assets::instantiate_scene(asset);
+        EXPECT_TRUE(result.ok()) << result.error_detail;
+        return std::move(result.instance);
+    }
+
+    // A node whose quantum_agent runs TWO coupled decisions, plus the actuator.
+    SceneInstance instantiate_coupled_decider_actuator(
+        double goal, double posture_goal, double coupling)
+    {
+        wz::engine::assets::SceneAssetData asset{};
+        asset.name = "quantum_agent_coupled_actuator";
+
+        wz::engine::assets::SceneNodeAsset npc{};
+        npc.id = "npc";
+        npc.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+            .id = "npc_brain",
+            .module = kQuantumAgentModule,
+            .config = {
+                cfg("goal", goal),
+                cfg("posture_goal", posture_goal),
+                cfg("coupling", coupling),
+                cfg("gamma_start", 3.0),
+                cfg("anneal_seconds", 4.0),
+                cfg("relax_rate", 1.0),
+                cfg("confidence", 0.9),
+                cfg("think_interval", 0.25),
+            },
+        });
         npc.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
             .id = "npc_actuator",
             .module = "decision_actuator",
@@ -185,6 +276,128 @@ TEST(QuantumAgentActuator, ActuatorDrivesFromCommittedDecision)
     EXPECT_FLOAT_EQ(commands[0].values[0], 5.0f);  // advance
 
     g_actuator_probe = nullptr;
+}
+
+// The actuator can read a SECOND coupled decision through the indexed seam
+// (wz_self_agent_decision_at). Both dispositions surface after the agent commits.
+TEST(QuantumAgentActuator, ActuatorReadsCoupledSecondDecision)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_quantum_agent_behaviors));
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_decision_actuator));
+
+    ActuatorProbe probe{};
+    g_actuator_probe = &probe;
+
+    // Both qubits biased to |0>, mildly coupled: both should commit to 0.
+    SceneInstance scene = instantiate_coupled_decider_actuator(
+        /*goal=*/0.8, /*posture_goal=*/0.8, /*coupling=*/0.5);
+    initialize_behaviors(scene, registry);
+    self_start(scene, registry);
+    for (int i = 1; i <= 40; ++i) {
+        cognition_tick(scene, registry, 0.25 * i);
+    }
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .behavior_state = &scene.behavior_state,
+        .commands = &frame_storage.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, context);
+
+    EXPECT_EQ(probe.read_ok, 1u);
+    EXPECT_EQ(probe.seen_committed, 0);      // decision 0
+    EXPECT_EQ(probe.read_ok_1, 1u);          // indexed read succeeded
+    EXPECT_EQ(probe.seen_committed_1, 0);    // decision 1 (posture)
+
+    g_actuator_probe = nullptr;
+}
+
+// The write seam end-to-end: a behavior re-biases + re-arms the co-located agent
+// through the ABI, and after a fresh anneal the decision the actuator reads has
+// FLIPPED to the new goal -- the NPC changing its mind, driven from a behavior.
+TEST(QuantumAgentActuator, RearmThroughWriteSeamFlipsTheDecision)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_quantum_agent_behaviors));
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_decision_actuator));
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_rearm_probe));
+
+    ActuatorProbe actuator{};
+    RearmProbe rearm{};
+    g_actuator_probe = &actuator;
+    g_rearm_probe = &rearm;
+
+    // Build a node with the agent (goal favors |0>), the rearm probe, and the
+    // actuator.
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "quantum_agent_rearmable";
+    wz::engine::assets::SceneNodeAsset npc{};
+    npc.id = "npc";
+    npc.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+        .id = "npc_brain",
+        .module = kQuantumAgentModule,
+        .config = {
+            cfg("goal", 0.8),
+            cfg("gamma_start", 3.0),
+            cfg("anneal_seconds", 4.0),
+            cfg("relax_rate", 1.0),
+            cfg("confidence", 0.9),
+            cfg("think_interval", 0.25),
+        },
+    });
+    npc.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+        .id = "npc_rearm", .module = "rearm_probe" });
+    npc.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+        .id = "npc_actuator", .module = "decision_actuator" });
+    asset.nodes.push_back(std::move(npc));
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+
+    initialize_behaviors(scene, registry);
+    self_start(scene, registry);
+    for (int i = 1; i <= 40; ++i) {
+        cognition_tick(scene, registry, 0.25 * i);
+    }
+
+    auto dispatch_frame = [&]() {
+        wz::engine::FrameStorage fs{};
+        BehaviorFrameContext ctx{
+            .frame_storage = &fs,
+            .scene = &scene,
+            .behavior_state = &scene.behavior_state,
+            .commands = &fs.behavior_commands,
+        };
+        dispatch_behaviors(scene, registry, ctx);
+    };
+
+    dispatch_frame();
+    EXPECT_EQ(actuator.seen_committed, 0);   // committed to the original goal |0>
+
+    // Next frame the rearm probe re-biases (goal -> |1>) + re-arms via the ABI.
+    dispatch_frame();
+    EXPECT_EQ(rearm.set_ok, 1u);             // write seam resolved the agent
+    EXPECT_EQ(rearm.rearm_ok, 1u);
+
+    // Fresh anneal from the new goal, then the actuator reads the FLIPPED decision.
+    for (int i = 41; i <= 90; ++i) {
+        cognition_tick(scene, registry, 0.25 * i);
+    }
+    dispatch_frame();
+    EXPECT_EQ(actuator.seen_committed, 1);   // changed its mind: |1>
+
+    g_actuator_probe = nullptr;
+    g_rearm_probe = nullptr;
 }
 
 // Before the agent commits, the actuator sees "deliberating" and issues no command.

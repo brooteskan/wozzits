@@ -1144,6 +1144,45 @@ namespace wz::engine::behavior
             return 0;
         }
 
+        uint8_t find_descendant_by_name(
+            void* user,
+            WzBehaviorEntityId ancestor,
+            const char* name,
+            WzBehaviorEntityId* out_entity)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->scene || !name || !out_entity
+                || !entity_valid(context->scene, ancestor))
+            {
+                return 0;
+            }
+
+            const auto& names = context->scene->runtime_names;
+            const auto& graph = context->scene->storage.polytree;
+
+            // First node in `ancestor`'s subtree whose name matches. Scoping to
+            // the subtree (walk each candidate's parent chain up to `ancestor`)
+            // is what makes this instance-safe: every spawned tank has a child
+            // named "turret", but only THIS tank's turret descends from THIS
+            // entity. `ancestor` itself is excluded (strict descendant).
+            for (uint32_t i = 0; i < names.size(); ++i) {
+                if (i == ancestor || names[i] != name) {
+                    continue;
+                }
+                for (wz::scene::RuntimeEntityId cur =
+                         wz::core::graph::parent(graph, i);
+                     cur != wz::scene::INVALID_RUNTIME_ENTITY;
+                     cur = wz::core::graph::parent(graph, cur))
+                {
+                    if (cur == ancestor) {
+                        *out_entity = i;
+                        return 1;
+                    }
+                }
+            }
+            return 0;
+        }
+
         const wz::engine::assets::SceneBehaviorConfigValue*
         find_config_value(BehaviorFrameContext* context, const char* key)
         {
@@ -1417,19 +1456,16 @@ namespace wz::engine::behavior
             return 1;
         }
 
-        uint8_t get_agent_decision_query(
-            void* user,
-            WzBehaviorEntityId entity,
-            WzAgentDecision* out)
+        // Find the quantum_agent binding on `entity` and return the POD state it
+        // cached -- decoupled from the cognition store (an actuator reads the POD,
+        // not the wave function). Null if the node hosts no quantum_agent.
+        const QuantumAgentState* find_quantum_agent_state(
+            BehaviorFrameContext* context,
+            WzBehaviorEntityId entity)
         {
-            auto* context = static_cast<BehaviorFrameContext*>(user);
-            if (!context || !context->scene || !context->behavior_state || !out) {
-                return 0;
+            if (!context || !context->scene || !context->behavior_state) {
+                return nullptr;
             }
-
-            // Find the quantum_agent binding on `entity` and read the decision it
-            // cached into its instance state -- decoupled from the cognition store
-            // (an actuator reads the POD, not the wave function).
             for (const auto& record : context->scene->behaviors) {
                 if (record.node != entity) {
                     continue;
@@ -1445,13 +1481,73 @@ namespace wz::engine::behavior
                 if (!block || !block->data) {
                     continue;
                 }
-                const auto* state =
-                    static_cast<const QuantumAgentState*>(block->data);
-                out->committed = state->committed;
-                out->marginal = state->marginal;
-                return 1;
+                return static_cast<const QuantumAgentState*>(block->data);
             }
-            return 0;
+            return nullptr;
+        }
+
+        uint8_t get_agent_decision_at_query(
+            void* user,
+            WzBehaviorEntityId entity,
+            uint32_t agent_index,
+            WzAgentDecision* out)
+        {
+            if (!out) {
+                return 0;
+            }
+            const QuantumAgentState* state = find_quantum_agent_state(
+                static_cast<BehaviorFrameContext*>(user), entity);
+            if (!state
+                || agent_index >= state->agent_count
+                || agent_index >= kQuantumAgentMaxDecisions)
+            {
+                return 0;
+            }
+            out->committed = state->committed[agent_index];
+            out->marginal = state->marginal[agent_index];
+            return 1;
+        }
+
+        uint8_t get_agent_decision_query(
+            void* user,
+            WzBehaviorEntityId entity,
+            WzAgentDecision* out)
+        {
+            // Decision 0 -- the primary disposition.
+            return get_agent_decision_at_query(user, entity, 0u, out);
+        }
+
+        uint8_t set_agent_goal_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            uint32_t agent_index,
+            float field)
+        {
+            const QuantumAgentState* state = find_quantum_agent_state(
+                static_cast<BehaviorFrameContext*>(user), entity);
+            if (!state || state->handle == 0u) {
+                return 0;
+            }
+            return quantum_agent_store().set_goal(
+                       state->handle, agent_index, static_cast<double>(field))
+                ? 1u
+                : 0u;
+        }
+
+        uint8_t rearm_agent_request(
+            void* user,
+            WzBehaviorEntityId entity)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            const QuantumAgentState* state =
+                find_quantum_agent_state(context, entity);
+            if (!context || !state || state->handle == 0u) {
+                return 0;
+            }
+            // Re-anneal from the current sim-time (the clock is sim-time based).
+            return quantum_agent_store().rearm(state->handle, context->sim_time)
+                ? 1u
+                : 0u;
         }
 
         uint8_t set_next_wake_request(
@@ -1742,6 +1838,10 @@ namespace wz::engine::behavior
                 .set_next_wake = set_next_wake_request,
                 .cognition_reader_user = &context,
                 .get_agent_decision = get_agent_decision_query,
+                .find_descendant_by_name = find_descendant_by_name,
+                .get_agent_decision_at = get_agent_decision_at_query,
+                .set_agent_goal = set_agent_goal_request,
+                .rearm_agent = rearm_agent_request,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1820,6 +1920,10 @@ namespace wz::engine::behavior
                 .set_next_wake = set_next_wake_request,
                 .cognition_reader_user = &context,
                 .get_agent_decision = get_agent_decision_query,
+                .find_descendant_by_name = find_descendant_by_name,
+                .get_agent_decision_at = get_agent_decision_at_query,
+                .set_agent_goal = set_agent_goal_request,
+                .rearm_agent = rearm_agent_request,
             };
         }
 
@@ -1849,6 +1953,7 @@ namespace wz::engine::behavior
                 .find_shared_state = find_shared_state,
                 .alloc_instance_state_desc = alloc_instance_state_desc,
                 .create_shared_state_desc = create_shared_state_desc,
+                .find_descendant_by_name = find_descendant_by_name,
             };
         }
 

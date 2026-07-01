@@ -63,6 +63,46 @@ TEST(AgentCognition, ExactFireteamCommitsToTheGoal)
     }
 }
 
+// Re-biasing a goal and re-arming re-opens a latched decision and lets it commit
+// the OTHER way -- the mechanism behind an NPC changing its mind as the world
+// changes. Without rearm the latch would hold the first decision forever.
+TEST(AgentCognition, SetGoalPlusRearmFlipsACommittedDecision)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 1;
+    spec.goals = { Goal{ .agent = 0, .field = 0.8 } };  // favors |0>
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.9, .decoherence_rate = 0.0 };
+    spec.chi = 0;
+
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    run_anneal(store, h);
+    ASSERT_TRUE(store.committed(h, 0).has_value());
+    EXPECT_FALSE(*store.committed(h, 0));   // |0>
+
+    // A stale set_goal alone must NOT change the latched decision.
+    ASSERT_TRUE(store.set_goal(h, 0, -0.8));   // now favors |1>
+    store.think(h, 8.1);
+    EXPECT_FALSE(*store.committed(h, 0));       // still latched to |0>
+
+    // Re-arm: clear the latch + restart the clock, then anneal again.
+    ASSERT_TRUE(store.rearm(h, 8.2));
+    EXPECT_FALSE(store.committed(h, 0).has_value());  // re-opened (deliberating)
+    for (int i = 1; i <= 80; ++i) {
+        store.think(h, 8.2 + 0.1 * i);
+    }
+    ASSERT_TRUE(store.committed(h, 0).has_value());
+    EXPECT_TRUE(*store.committed(h, 0));    // flipped to |1>, the new goal
+    EXPECT_LT(store.marginal(h, 0), -0.8);  // polarized -z
+
+    // Unknown handle / out-of-range agent are rejected.
+    EXPECT_FALSE(store.set_goal(h, 5u, 0.0));
+    EXPECT_FALSE(store.rearm(kInvalidAgent, 0.0));
+}
+
 // The same group on the chi-truncated TTN chain backend reaches the same decision
 // -- chi selects the backend behind one store interface.
 TEST(AgentCognition, TtnChainCommitsToTheGoal)

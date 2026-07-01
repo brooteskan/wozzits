@@ -25,12 +25,18 @@
 // store level and are a follow-up in the authoring surface.
 
 #include <engine/behavior/behavior_plugin_abi.h>
+#include <cognition/agent_cognition.h>
 
 #include <cstdint>
 
 namespace wz::engine::behavior
 {
     inline constexpr const char* kQuantumAgentModule = "quantum_agent";
+
+    // The process-wide owner of every quantum_agent's wave function. Exposed so the
+    // host-side read/write seams (behavior_plugin_adapter) can push goal re-biases
+    // and re-arm an agent by the handle its POD state carries.
+    wz::engine::cognition::AgentCognitionStore& quantum_agent_store();
 
     // Config keys (all Number) read once on self.start:
     //   goal            - longitudinal goal bias on the disposition. > 0 favors the
@@ -54,17 +60,34 @@ namespace wz::engine::behavior
     inline constexpr const char* kQuantumAgentDecoherenceKey = "decoherence";
     inline constexpr const char* kQuantumAgentThinkIntervalKey = "think_interval";
 
+    // Second coupled decision (qubit 1): a SECOND longitudinal goal + a bond that
+    // couples it to qubit 0, so the two dispositions entangle and resolve together.
+    //   posture_goal - bias on qubit 1 (> 0 favors |0>, < 0 favors |1>). Default 0.
+    //   coupling     - bond j between qubit 0 and 1: > 0 ferromagnetic (they lean
+    //                  to AGREE in sign), < 0 anti (disagree), 0 independent. When
+    //                  the two goals fight the coupling the agent is frustrated and
+    //                  WAVERS before committing. Default 0 (no second decision).
+    inline constexpr const char* kQuantumAgentPostureGoalKey = "posture_goal";
+    inline constexpr const char* kQuantumAgentCouplingKey = "coupling";
+
+    // Cap on coupled decisions a single agent exposes (keeps the POD state fixed-
+    // size + trivially copyable). Bump if a richer NPC needs more qubits.
+    inline constexpr uint32_t kQuantumAgentMaxDecisions = 4;
+
     // Per-binding instance state (POD; trivially copyable, preserved across scene
     // rebuilds). Public so an actuator / read surface -- and tests -- can read the
-    // agent's committed decision and live marginal without reaching into the
-    // engine-internal store. The module caches both here on each think.
+    // agent's committed decisions and live marginals without reaching into the
+    // engine-internal store. The module caches every qubit here on each think.
     struct QuantumAgentState
     {
         uint64_t handle = 0;           // AgentCognitionStore handle (0 = not built)
-        float marginal = 0.0f;         // last think()'s <sigma_z> in [-1, 1]
         float think_interval = 0.25f;  // self-paced cadence (sim-seconds)
-        int8_t committed = -1;         // -1 deliberating, 0 = |0>, 1 = |1>
         uint8_t started = 0;           // agent created on self.start?
+        uint8_t agent_count = 1;       // number of coupled decisions built
+        // Per-qubit cache. [i] = decision i; -1 committed = deliberating, else
+        // 0 (|0>) / 1 (|1>); marginal = live <sigma_z> in [-1, 1].
+        int8_t committed[kQuantumAgentMaxDecisions] = { -1, -1, -1, -1 };
+        float marginal[kQuantumAgentMaxDecisions] = { 0.0f, 0.0f, 0.0f, 0.0f };
     };
 
     uint8_t register_quantum_agent_behaviors(WzBehaviorPluginApi* api);

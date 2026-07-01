@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <variant>
+#include <vector>
 
 namespace wz::engine::cognition
 {
@@ -30,4 +31,10 @@ namespace wz::engine::cognition
 
     // Read an agent's decision marginal <sigma_z> in [-1, 1].
     double decision_z(Coordination& c, uint32_t agent);
+
+    // Replace the per-agent longitudinal goal fields live (dispatches to the held
+    // backend). Lets a running agent re-bias its decisions -- e.g. from changed
+    // world state -- ahead of a re-anneal. Mean-field goals are not wired yet, so
+    // that backend is a no-op.
+    void set_goals(Coordination& c, const std::vector<Goal>& goals);
 }

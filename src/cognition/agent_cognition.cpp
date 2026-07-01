@@ -44,6 +44,20 @@ namespace wz::engine::cognition
             }
             return Coordination{ std::move(t) };
         }
+
+        // Build the backend the spec selects (chi == 0 exact / chi >= 2 TTN; chi ==
+        // 1 mean-field is rejected). A FRESH register in equal superposition, which
+        // is why rearm can reuse this to genuinely re-open a collapsed decision.
+        std::optional<Coordination> build_coordination(const AgentSpec& spec)
+        {
+            if (spec.chi == 0) {
+                return build_exact(spec);
+            }
+            if (spec.chi >= 2) {
+                return build_ttn(spec);
+            }
+            return std::nullopt;  // chi == 1 (mean-field goals) not wired yet
+        }
     }
 
     AgentHandle AgentCognitionStore::create(const AgentSpec& spec)
@@ -52,14 +66,7 @@ namespace wz::engine::cognition
             return kInvalidAgent;
         }
 
-        std::optional<Coordination> coordination;
-        if (spec.chi == 0) {
-            coordination = build_exact(spec);
-        } else if (spec.chi >= 2) {
-            coordination = build_ttn(spec);
-        } else {
-            return kInvalidAgent;  // chi == 1 (mean-field goals) not wired yet
-        }
+        std::optional<Coordination> coordination = build_coordination(spec);
         if (!coordination) {
             return kInvalidAgent;
         }
@@ -69,9 +76,18 @@ namespace wz::engine::cognition
         agent.coordination = std::move(*coordination);
         agent.clock = spec.clock;
         agent.commit = spec.commit;
+        agent.spec = spec;  // structure kept so rearm can rebuild a fresh register
         agent.rng = wz::engine::cognition::qstate::Rng{ spec.seed };
         agent.latched.assign(spec.agent_count, std::nullopt);
         agent.marginal_cache.assign(spec.agent_count, 0.0);
+        // Mirror the goals baked into the backend so set_goal() can re-bias one
+        // decision without needing the others re-supplied.
+        agent.goal_fields.assign(spec.agent_count, 0.0);
+        for (const Goal& goal : spec.goals) {
+            if (goal.agent < spec.agent_count) {
+                agent.goal_fields[goal.agent] += goal.field;
+            }
+        }
         agent.agent_count = spec.agent_count;
         agents_.emplace(h, std::move(agent));
         return h;
@@ -120,6 +136,54 @@ namespace wz::engine::cognition
             }
         }
         return dtau;
+    }
+
+    bool AgentCognitionStore::set_goal(
+        AgentHandle h, uint32_t agent, double field)
+    {
+        Agent* a = find(h);
+        if (!a || agent >= a->agent_count) {
+            return false;
+        }
+        a->goal_fields[agent] = field;
+
+        // Re-apply the FULL goal set to the backend (set_goals resets the field
+        // vector, so a per-index push must carry the others).
+        std::vector<Goal> goals;
+        goals.reserve(a->agent_count);
+        for (uint32_t i = 0; i < a->agent_count; ++i) {
+            goals.push_back(Goal{ .agent = i, .field = a->goal_fields[i] });
+        }
+        wz::engine::cognition::set_goals(a->coordination, goals);
+        return true;
+    }
+
+    bool AgentCognitionStore::rearm(AgentHandle h, double now)
+    {
+        Agent* a = find(h);
+        if (!a) {
+            return false;
+        }
+
+        // Rebuild a FRESH coordination (register back in equal superposition) from
+        // the kept structure + the CURRENT goals, so re-deliberation genuinely
+        // re-explores instead of nudging the already-collapsed state. Then clear
+        // the latches and restart the anneal clock.
+        AgentSpec spec = a->spec;
+        spec.goals.clear();
+        spec.goals.reserve(a->agent_count);
+        for (uint32_t i = 0; i < a->agent_count; ++i) {
+            spec.goals.push_back(Goal{ .agent = i, .field = a->goal_fields[i] });
+        }
+        std::optional<Coordination> coordination = build_coordination(spec);
+        if (!coordination) {
+            return false;
+        }
+        a->coordination = std::move(*coordination);
+
+        std::fill(a->latched.begin(), a->latched.end(), std::nullopt);
+        wz::engine::cognition::start(a->clock, now);
+        return true;
     }
 
     double AgentCognitionStore::marginal(AgentHandle h, uint32_t agent) const

@@ -455,6 +455,39 @@ typedef uint8_t (*WzGetAgentDecisionFn)(
     WzBehaviorEntityId entity,
     WzAgentDecision* out);
 
+/*
+ * A quantum_agent may deliberate SEVERAL coupled decisions (qubits) at once --
+ * e.g. qubit 0 = pursue/hold, qubit 1 = close/circle -- entangled by bonds so
+ * they resolve together. get_agent_decision_at reads the disposition at
+ * `agent_index` (0 == the same decision get_agent_decision returns). Returns 0
+ * if the node has no quantum_agent or the index is out of range.
+ */
+typedef uint8_t (*WzGetAgentDecisionAtFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    uint32_t agent_index,
+    WzAgentDecision* out);
+
+/*
+ * Cognition WRITE surface (closes the sense->think loop). An actuator that has
+ * sensed the world re-biases the co-located quantum_agent's decisions and re-opens
+ * them:
+ *   set_agent_goal(entity, agent_index, field) -- set one decision's longitudinal
+ *     goal bias (> 0 favors |0>, < 0 favors |1>); takes effect on the next think.
+ *   rearm_agent(entity) -- clear the latched decisions + restart the anneal clock,
+ *     so the agent re-deliberates from the fresh goals (a fresh Gamma sweep).
+ * Both return 0 if the node has no quantum_agent (or the index is out of range).
+ */
+typedef uint8_t (*WzSetAgentGoalFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    uint32_t agent_index,
+    float field);
+
+typedef uint8_t (*WzRearmAgentFn)(
+    void* user,
+    WzBehaviorEntityId entity);
+
 typedef struct WzGpuWorkId
 {
     uint64_t value;
@@ -758,6 +791,20 @@ typedef uint8_t (*WzFindBehaviorEntityByAuthoredIdFn)(
     const char* authored_id,
     WzBehaviorEntityId* out_entity);
 
+/*
+ * Resolve the first STRICT DESCENDANT of `ancestor` whose node name matches
+ * `name` (recursive over the subtree; `ancestor` itself is excluded). Unlike
+ * find_entity_by_name (a global name search), this is scoped to one entity's
+ * subtree, which makes it instance-safe: every spawned prefab instance may carry
+ * a child with the same name (e.g. a grafted GLB "turret"), but only THIS
+ * entity's descendant is returned. Returns 1 + out_entity on a match, else 0.
+ */
+typedef uint8_t (*WzFindBehaviorDescendantByNameFn)(
+    void* user,
+    WzBehaviorEntityId ancestor,
+    const char* name,
+    WzBehaviorEntityId* out_entity);
+
 typedef uint8_t (*WzGetBehaviorConfigBoolFn)(
     void* user,
     const char* key,
@@ -902,6 +949,29 @@ typedef struct WzBehaviorFrameFacts
      */
     void* cognition_reader_user;
     WzGetAgentDecisionFn get_agent_decision;
+
+    /*
+     * Subtree-scoped, instance-safe descendant lookup by name (APPEND-ONLY;
+     * shares scene_query_user). Finds a child/grandchild of an entity by name
+     * without a global search -- e.g. an agent resolving ITS OWN grafted GLB
+     * turret among many identically-named turrets. Null when unwired.
+     */
+    WzFindBehaviorDescendantByNameFn find_descendant_by_name;
+
+    /*
+     * Multi-decision cognition read (APPEND-ONLY; shares cognition_reader_user).
+     * Reads one of a quantum_agent's several coupled dispositions by index; index
+     * 0 matches get_agent_decision. Null when the host wires no cognition reader.
+     */
+    WzGetAgentDecisionAtFn get_agent_decision_at;
+
+    /*
+     * Cognition WRITE surface (APPEND-ONLY; shares cognition_reader_user). Lets an
+     * actuator re-bias + re-arm the co-located quantum_agent from sensed world
+     * state, closing the sense->think->act loop. Null when no cognition host.
+     */
+    WzSetAgentGoalFn set_agent_goal;
+    WzRearmAgentFn rearm_agent;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts
@@ -931,6 +1001,14 @@ typedef struct WzBehaviorInitFacts
     WzFindSharedBehaviorStateFn find_shared_state;
     WzAllocBehaviorStateDescFn alloc_instance_state_desc;
     WzCreateSharedBehaviorStateDescFn create_shared_state_desc;
+
+    /*
+     * Subtree-scoped, instance-safe descendant lookup by name (APPEND-ONLY;
+     * shares scene_query_user). The init-facts twin of the frame-facts field, so
+     * a spawned behavior can resolve + cache its own child handles (e.g. a
+     * turret) in on_init. Null when unwired.
+     */
+    WzFindBehaviorDescendantByNameFn find_descendant_by_name;
 } WzBehaviorInitFacts;
 
 typedef void (*WzBehaviorFn)(

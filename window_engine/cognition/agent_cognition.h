@@ -72,6 +72,18 @@ namespace wz::engine::cognition
         // time advanced (0 for an unknown handle or no elapsed sim-time).
         double think(AgentHandle h, double now);
 
+        // Re-bias one decision's goal field live (e.g. from changed world state).
+        // Takes effect on the next think(); pair with rearm() to actually re-open a
+        // decision that has already latched. Returns false for an unknown handle /
+        // out-of-range agent.
+        bool set_goal(AgentHandle h, uint32_t agent, double field);
+
+        // Re-open EVERY decision: clear the latches and restart the anneal clock at
+        // sim-time `now`, so Gamma ramps up again and the agent re-deliberates from
+        // its current (possibly re-biased) goals. Returns false for an unknown
+        // handle.
+        bool rearm(AgentHandle h, double now);
+
         // ---- read surface (marginal-oriented; uniform across backends) ----
 
         // Agent's live decision marginal <sigma_z> in [-1, 1] (0 if unknown).
@@ -94,6 +106,8 @@ namespace wz::engine::cognition
             wz::engine::cognition::qstate::Rng rng;
             std::vector<std::optional<bool>> latched;  // per-agent committed bit
             std::vector<double> marginal_cache;        // last think()'s <sigma_z>
+            std::vector<double> goal_fields;           // live per-agent goal bias
+            AgentSpec spec;                            // structure, to rebuild on rearm
             uint32_t agent_count = 0;
         };
 
