@@ -1,22 +1,22 @@
-#include <engine/cognition/tree_tn.h>
+#include <cognition/tree_tn.h>
 
-#include <engine/cognition/tree_bp.h>
+#include <cognition/tree_bp.h>
 #include <graph/shared_edge_polytree.h>
-#include <engine/qstate/qstate.h>
+#include <cognition/qstate/qstate.h>
 
 #include <gtest/gtest.h>
 
 #include <utility>
 #include <vector>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 using wz::core::graph::add_edge;
 using wz::core::graph::add_node;
 using wz::core::graph::build;
 using wz::core::graph::NodeHandle;
 using wz::core::graph::SharedEdgePolytreeBuilder;
-using wz::qstate::Complex;
-using wz::qstate::Rng;
+using wz::engine::cognition::qstate::Complex;
+using wz::engine::cognition::qstate::Rng;
 
 namespace
 {

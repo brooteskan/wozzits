@@ -1,10 +1,10 @@
-#include <engine/cognition/exact_group.h>
+#include <cognition/exact_group.h>
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 // Ferromagnetic group relaxes to the entangled cat state: each agent is
 // UNPOLARIZED (<sigma_z> ~ 0) yet the pair is PERFECTLY CORRELATED (connected

@@ -1,21 +1,21 @@
-#include <engine/cognition/commit.h>
+#include <cognition/commit.h>
 
-#include <engine/qstate/qstate.h>
+#include <cognition/qstate/qstate.h>
 
 #include <gtest/gtest.h>
 
-using namespace wz::cognition;
-using wz::qstate::Register;
-using wz::qstate::Rng;
+using namespace wz::engine::cognition;
+using wz::engine::cognition::qstate::Register;
+using wz::engine::cognition::qstate::Rng;
 
 namespace
 {
     // A register relaxed to a confident |0> (P0 -> 1).
     Register decided_zero()
     {
-        Register reg = wz::qstate::uniform(1);
+        Register reg = wz::engine::cognition::qstate::uniform(1);
         for (int i = 0; i < 200; ++i) {
-            wz::qstate::apply_imag_time_field(reg, 0, /*gamma=*/0.0, /*h=*/0.5, 0.05);
+            wz::engine::cognition::qstate::apply_imag_time_field(reg, 0, /*gamma=*/0.0, /*h=*/0.5, 0.05);
         }
         return reg;
     }
@@ -23,7 +23,7 @@ namespace
 
 TEST(Commit, ConfidentReflectsLeadingProbability)
 {
-    Register undecided = wz::qstate::uniform(1);  // P0 = P1 = 0.5
+    Register undecided = wz::engine::cognition::qstate::uniform(1);  // P0 = P1 = 0.5
     EXPECT_FALSE(confident(undecided, 0, 0.8));
 
     Register sure = decided_zero();               // P0 ~ 1
@@ -40,20 +40,20 @@ TEST(Commit, CommitsWhenConfident)
         /*dt=*/0.1, rng);
     ASSERT_TRUE(decision.has_value());
     EXPECT_FALSE(*decision);                       // decided 0
-    EXPECT_NEAR(wz::qstate::marginal(reg, 0), 0.0, 1e-9);  // collapsed
+    EXPECT_NEAR(wz::engine::cognition::qstate::marginal(reg, 0), 0.0, 1e-9);  // collapsed
 }
 
 // An undecided agent with no environmental pressure keeps deliberating -- it
 // never commits and stays in superposition.
 TEST(Commit, DeliberatesWhenUndecidedAndNoDecoherence)
 {
-    Register reg = wz::qstate::uniform(1);
+    Register reg = wz::engine::cognition::qstate::uniform(1);
     Rng rng{ 2u };
     const CommitPolicy policy{ .confidence = 0.8, .decoherence_rate = 0.0 };
     for (int i = 0; i < 200; ++i) {
         EXPECT_FALSE(try_commit(reg, 0, policy, 0.1, rng).has_value());
     }
-    EXPECT_NEAR(wz::qstate::marginal(reg, 0), 0.5, 1e-9);  // still superposed
+    EXPECT_NEAR(wz::engine::cognition::qstate::marginal(reg, 0), 0.5, 1e-9);  // still superposed
 }
 
 // Decoherence (environmental pressure) forces a snap decision on an undecided
@@ -67,7 +67,7 @@ TEST(Commit, DecoherenceForcesCommitmentWithBornOutcome)
     int committed = 0;
     int ones = 0;
     for (int t = 0; t < trials; ++t) {
-        Register reg = wz::qstate::uniform(1);
+        Register reg = wz::engine::cognition::qstate::uniform(1);
         const auto d = try_commit(reg, 0, policy, /*dt=*/1.0, rng);
         if (d.has_value()) {
             ++committed;
@@ -90,7 +90,7 @@ TEST(Commit, DecoherenceRateControlsCommitLatency)
     int low = 0;
     const CommitPolicy slow{ .confidence = 1.1, .decoherence_rate = 0.5 };
     for (int t = 0; t < trials; ++t) {
-        Register reg = wz::qstate::uniform(1);
+        Register reg = wz::engine::cognition::qstate::uniform(1);
         if (try_commit(reg, 0, slow, /*dt=*/0.1, rng).has_value()) {  // p = 0.05
             ++low;
         }
@@ -99,7 +99,7 @@ TEST(Commit, DecoherenceRateControlsCommitLatency)
     int high = 0;
     const CommitPolicy fast{ .confidence = 1.1, .decoherence_rate = 20.0 };
     for (int t = 0; t < trials; ++t) {
-        Register reg = wz::qstate::uniform(1);
+        Register reg = wz::engine::cognition::qstate::uniform(1);
         if (try_commit(reg, 0, fast, /*dt=*/0.1, rng).has_value()) {  // p = 1
             ++high;
         }

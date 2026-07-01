@@ -1,7 +1,7 @@
 #include <engine/behavior/quantum_agent_behaviors.h>
 
 #include <engine/behavior/behavior_module_api.h>
-#include <engine/cognition/agent_cognition.h>
+#include <cognition/agent_cognition.h>
 
 #include <optional>
 
@@ -13,9 +13,9 @@ namespace wz::engine::behavior
         // process-wide store keyed by the POD handle each binding holds in its
         // instance state; it outlives scene rebuilds (the handle in the preserved
         // instance state stays valid).
-        wz::cognition::AgentCognitionStore& store()
+        wz::engine::cognition::AgentCognitionStore& store()
         {
-            static wz::cognition::AgentCognitionStore instance;
+            static wz::engine::cognition::AgentCognitionStore instance;
             return instance;
         }
 
@@ -55,10 +55,10 @@ namespace wz::engine::behavior
             if (event->kind == WZ_EVENT_SELF_START) {
                 // Build the agent's coordination state from this binding's config
                 // and zero its deliberation clock at the current sim-time.
-                wz::cognition::AgentSpec spec;
+                wz::engine::cognition::AgentSpec spec;
                 spec.agent_count = 1;
                 spec.goals = {
-                    wz::cognition::Goal{
+                    wz::engine::cognition::Goal{
                         .agent = 0u,
                         .field = config_float(facts, kQuantumAgentGoalKey, 0.0f),
                     },
@@ -76,8 +76,8 @@ namespace wz::engine::behavior
                     config_float(facts, kQuantumAgentDecoherenceKey, 0.0f);
                 spec.chi = 0;  // exact single-agent backend
 
-                const wz::cognition::AgentHandle handle = store().create(spec);
-                if (handle == wz::cognition::kInvalidAgent) {
+                const wz::engine::cognition::AgentHandle handle = store().create(spec);
+                if (handle == wz::engine::cognition::kInvalidAgent) {
                     return;
                 }
                 store().start(handle, wz_sim_time(facts));

@@ -1,17 +1,17 @@
-#include <engine/cognition/sequential_goals.h>
+#include <cognition/sequential_goals.h>
 
-#include <engine/cognition/exact_group.h>
-#include <engine/qstate/qstate.h>
+#include <cognition/exact_group.h>
+#include <cognition/qstate/qstate.h>
 
 #include <gtest/gtest.h>
 
 #include <vector>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 TEST(SequentialGoals, PhaseAdvancesAndWraps)
 {
-    wz::qstate::Register phase = make_phase_register(2);  // 4 phases
+    wz::engine::cognition::qstate::Register phase = make_phase_register(2);  // 4 phases
     EXPECT_EQ(current_phase(phase), 0u);
     advance_phase(phase);
     EXPECT_EQ(current_phase(phase), 1u);
@@ -32,7 +32,7 @@ TEST(SequentialGoals, DecisionFollowsTheStagedPlan)
         Stage{ .phase = 1, .qubit = 0, .field = -0.5 },
         Stage{ .phase = 2, .qubit = 0, .field = 0.5 },
     };
-    wz::qstate::Register phase = make_phase_register(2);
+    wz::engine::cognition::qstate::Register phase = make_phase_register(2);
 
     const double expected_sign[3] = { +1.0, -1.0, +1.0 };
     for (int stage_i = 0; stage_i < 3; ++stage_i) {
@@ -57,7 +57,7 @@ TEST(SequentialGoals, AStageCanDriveMultipleDispositions)
         Stage{ .phase = 0, .qubit = 1, .field = -0.5 },
         Stage{ .phase = 1, .qubit = 0, .field = -0.5 },
     };
-    wz::qstate::Register phase = make_phase_register(1);  // 2 phases
+    wz::engine::cognition::qstate::Register phase = make_phase_register(1);  // 2 phases
 
     const auto goals0 = active_goals(plan, current_phase(phase));
     ASSERT_EQ(goals0.size(), 2u);

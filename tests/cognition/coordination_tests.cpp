@@ -1,7 +1,7 @@
-#include <engine/cognition/coordination.h>
+#include <cognition/coordination.h>
 
 #include <graph/shared_edge_polytree.h>
-#include <engine/qstate/qstate.h>
+#include <cognition/qstate/qstate.h>
 
 #include <gtest/gtest.h>
 
@@ -9,7 +9,7 @@
 #include <cmath>
 #include <utility>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 // The exact backend drives through the contract: a ferromagnetic pair with a goal
 // commits, read uniformly via decision_z(Coordination&, agent).
@@ -47,12 +47,12 @@ TEST(Coordination, MeanFieldBackendThroughTheContract)
     using wz::core::graph::SharedEdgePolytreeBuilder;
 
     SharedEdgePolytreeBuilder<Node, MeanFieldBond> b;
-    add_node(b, wz::qstate::uniform(1));
-    add_node(b, wz::qstate::uniform(1));
+    add_node(b, wz::engine::cognition::qstate::uniform(1));
+    add_node(b, wz::engine::cognition::qstate::uniform(1));
     ASSERT_TRUE(add_edge(b, 0u, 1u, MeanFieldBond{ .j = 0.6 }));
     auto net = build(std::move(b));
     ASSERT_TRUE(net.has_value());
-    wz::qstate::apply_imag_time_field(node_data(*net, 1), 0u, 0.0, 0.5, 0.05);
+    wz::engine::cognition::qstate::apply_imag_time_field(node_data(*net, 1), 0u, 0.0, 0.5, 0.05);
 
     Coordination c = std::move(*net);
     relax(c, 0.05, 0.05, 400);

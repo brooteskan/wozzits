@@ -1,8 +1,8 @@
-#include <engine/cognition/cognition_clock.h>
+#include <cognition/cognition_clock.h>
 
-#include <engine/cognition/coordination.h>
-#include <engine/cognition/exact_group.h>
-#include <engine/cognition/ttn.h>
+#include <cognition/coordination.h>
+#include <cognition/exact_group.h>
+#include <cognition/ttn.h>
 
 #include <gtest/gtest.h>
 
@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 namespace
 {

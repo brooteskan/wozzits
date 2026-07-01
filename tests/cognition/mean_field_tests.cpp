@@ -1,7 +1,7 @@
-#include <engine/cognition/mean_field.h>
+#include <cognition/mean_field.h>
 
 #include <graph/shared_edge_polytree.h>
-#include <engine/qstate/qstate.h>
+#include <cognition/qstate/qstate.h>
 
 #include <gtest/gtest.h>
 
@@ -10,7 +10,7 @@
 #include <optional>
 #include <utility>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 using wz::core::graph::add_edge;
 using wz::core::graph::add_node;
 using wz::core::graph::build;
@@ -26,8 +26,8 @@ namespace
     std::optional<MeanFieldNetwork> make_pair(double j)
     {
         SharedEdgePolytreeBuilder<Node, MeanFieldBond> b;
-        add_node(b, wz::qstate::uniform(1));
-        add_node(b, wz::qstate::uniform(1));
+        add_node(b, wz::engine::cognition::qstate::uniform(1));
+        add_node(b, wz::engine::cognition::qstate::uniform(1));
         if (!add_edge(b, 0u, 1u,
                 MeanFieldBond{ .child_qubit = 0, .parent_qubit = 0, .j = j })) {
             return std::nullopt;
@@ -37,13 +37,13 @@ namespace
 
     double zof(MeanFieldNetwork& net, uint32_t node)
     {
-        return wz::qstate::expectation_z(node_data(net, node), 0u);
+        return wz::engine::cognition::qstate::expectation_z(node_data(net, node), 0u);
     }
 
     void seed_plus_z(MeanFieldNetwork& net, uint32_t node)
     {
         // One weak imaginary-time nudge toward +z -- a small symmetry-breaking bias.
-        wz::qstate::apply_imag_time_field(
+        wz::engine::cognition::qstate::apply_imag_time_field(
             node_data(net, node), 0u, /*gamma=*/0.0, /*h=*/0.5, /*dtau=*/0.05);
     }
 }
@@ -96,9 +96,9 @@ TEST(MeanField, StrongTransverseFieldDisorders)
 TEST(MeanField, OrderPropagatesAlongAChain)
 {
     SharedEdgePolytreeBuilder<Node, MeanFieldBond> b;
-    add_node(b, wz::qstate::uniform(1));
-    add_node(b, wz::qstate::uniform(1));
-    add_node(b, wz::qstate::uniform(1));
+    add_node(b, wz::engine::cognition::qstate::uniform(1));
+    add_node(b, wz::engine::cognition::qstate::uniform(1));
+    add_node(b, wz::engine::cognition::qstate::uniform(1));
     ASSERT_TRUE(add_edge(b, 0u, 1u, MeanFieldBond{ .j = 0.6 }));
     ASSERT_TRUE(add_edge(b, 1u, 2u, MeanFieldBond{ .j = 0.6 }));
     auto net = build(std::move(b));

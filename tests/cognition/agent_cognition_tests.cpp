@@ -1,15 +1,15 @@
-#include <engine/cognition/agent_cognition.h>
+#include <cognition/agent_cognition.h>
 
-#include <engine/cognition/commit.h>
-#include <engine/cognition/exact_group.h>
-#include <engine/qstate/qstate.h>
+#include <cognition/commit.h>
+#include <cognition/exact_group.h>
+#include <cognition/qstate/qstate.h>
 
 #include <gtest/gtest.h>
 
 #include <optional>
 #include <vector>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 namespace
 {
@@ -204,7 +204,7 @@ TEST(AgentCognition, MarginalCommitPolicy)
     EXPECT_TRUE(confident_marginal(0.9, 0.8));
     EXPECT_FALSE(confident_marginal(0.0, 0.8));
 
-    wz::qstate::Rng rng{ 1234u };
+    wz::engine::cognition::qstate::Rng rng{ 1234u };
     const CommitPolicy threshold{ .confidence = 0.8, .decoherence_rate = 0.0 };
 
     EXPECT_EQ(try_commit_marginal(0.95, threshold, 0.1, rng), std::optional<bool>(false));   // |0>

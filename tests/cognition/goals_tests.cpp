@@ -1,10 +1,10 @@
-#include <engine/cognition/exact_group.h>
+#include <cognition/exact_group.h>
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 // A goal field commits an otherwise-undecided agent: pursuit is just the
 // relaxation toward the goal-biased ground state. Positive field -> +z.

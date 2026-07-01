@@ -1,10 +1,10 @@
-#include <engine/cognition/exclusivity.h>
+#include <cognition/exclusivity.h>
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 namespace
 {

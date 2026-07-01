@@ -1,14 +1,14 @@
-#include <engine/cognition/learning.h>
+#include <cognition/learning.h>
 
-#include <engine/cognition/exact_group.h>
-#include <engine/qstate/qstate.h>
+#include <cognition/exact_group.h>
+#include <cognition/qstate/qstate.h>
 
 #include <gtest/gtest.h>
 
 #include <complex>
 
-using namespace wz::cognition;
-using wz::qstate::Register;
+using namespace wz::engine::cognition;
+using wz::engine::cognition::qstate::Register;
 
 namespace
 {
@@ -23,7 +23,7 @@ namespace
 // learning curve toward probability 1.
 TEST(Learning, RewardConcentratesMemory)
 {
-    Register memory = wz::qstate::uniform(2);  // four branches, 0.25 each
+    Register memory = wz::engine::cognition::qstate::uniform(2);  // four branches, 0.25 each
     double last = prob(memory, 0b11);
     for (int i = 0; i < 40; ++i) {
         reward(memory, /*mask=*/0b11, /*match=*/0b11, /*strength=*/0.5);
@@ -32,14 +32,14 @@ TEST(Learning, RewardConcentratesMemory)
         last = p;
     }
     EXPECT_GT(prob(memory, 0b11), 0.99);
-    EXPECT_NEAR(wz::qstate::norm(memory), 1.0, 1e-9);
+    EXPECT_NEAR(wz::engine::cognition::qstate::norm(memory), 1.0, 1e-9);
 }
 
 // Switching which branch is rewarded re-concentrates the memory: the agent
 // unlearns the old preference and learns the new one.
 TEST(Learning, SwitchingRewardRelearns)
 {
-    Register memory = wz::qstate::uniform(2);
+    Register memory = wz::engine::cognition::qstate::uniform(2);
     for (int i = 0; i < 40; ++i) {
         reward(memory, 0b11, 0b11, 0.5);  // learn |11>
     }
@@ -57,15 +57,15 @@ TEST(Learning, SwitchingRewardRelearns)
 TEST(Learning, MemoryPersistsAcrossDecisionMeasurement)
 {
     // qubit 0 = decision (stays |+>), qubit 1 = memory.
-    Register reg = wz::qstate::uniform(2);
+    Register reg = wz::engine::cognition::qstate::uniform(2);
     for (int i = 0; i < 20; ++i) {
         reward(reg, /*mask=*/0b10, /*match=*/0b10, 0.4);  // bias memory bit 1 -> 1
     }
     const double mem_before = memory_preference(reg, 1);
     ASSERT_LT(mem_before, -0.5);  // learned toward |1> (<sigma_z> negative)
 
-    wz::qstate::Rng rng{ 5u };
-    (void)wz::qstate::measure(reg, 0, rng);  // commit the decision qubit only
+    wz::engine::cognition::qstate::Rng rng{ 5u };
+    (void)wz::engine::cognition::qstate::measure(reg, 0, rng);  // commit the decision qubit only
     EXPECT_NEAR(memory_preference(reg, 1), mem_before, 1e-9);  // memory intact
 }
 
@@ -82,7 +82,7 @@ TEST(Learning, MemoryBiasesTheDecision)
         return decision_z(decision, 0);
     };
 
-    Register memory = wz::qstate::uniform(1);
+    Register memory = wz::engine::cognition::qstate::uniform(1);
     for (int i = 0; i < 20; ++i) {
         reward(memory, /*mask=*/0b1, /*match=*/0b0, 0.4);  // prefer |0> (+z)
     }

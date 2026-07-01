@@ -1,14 +1,14 @@
-#include <engine/cognition/anneal.h>
+#include <cognition/anneal.h>
 
 #include <graph/shared_edge_polytree.h>
-#include <engine/qstate/qstate.h>
+#include <cognition/qstate/qstate.h>
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <utility>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 TEST(Anneal, GammaRampIsLinear)
 {
@@ -50,14 +50,14 @@ TEST(Anneal, MeanFieldGroupCommitsUnderAnnealing)
     using wz::core::graph::SharedEdgePolytreeBuilder;
 
     SharedEdgePolytreeBuilder<Node, MeanFieldBond> b;
-    add_node(b, wz::qstate::uniform(1));
-    add_node(b, wz::qstate::uniform(1));
+    add_node(b, wz::engine::cognition::qstate::uniform(1));
+    add_node(b, wz::engine::cognition::qstate::uniform(1));
     ASSERT_TRUE(add_edge(b, 0u, 1u, MeanFieldBond{ .j = 0.6 }));
     auto net = build(std::move(b));
     ASSERT_TRUE(net.has_value());
 
     // Tiny symmetry-breaking +z seed on one agent.
-    wz::qstate::apply_imag_time_field(node_data(*net, 1), 0u, 0.0, 0.5, 0.05);
+    wz::engine::cognition::qstate::apply_imag_time_field(node_data(*net, 1), 0u, 0.0, 0.5, 0.05);
 
     anneal(*net, AnnealSchedule{ .gamma_start = 0.8, .gamma_end = 0.02,
         .dtau = 0.05, .steps = 400 });

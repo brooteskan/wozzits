@@ -1,12 +1,12 @@
-#include <engine/cognition/agent_layout.h>
+#include <cognition/agent_layout.h>
 
-#include <engine/cognition/exact_group.h>
+#include <cognition/exact_group.h>
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 TEST(AgentLayout, AddressesDispositionsToQubits)
 {

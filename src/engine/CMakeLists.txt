@@ -25,22 +25,6 @@ target_sources(window_engine PRIVATE
     behavior/drive_forward_behaviors.cpp
     behavior/terrain_align_behaviors.cpp
     behavior/quantum_agent_behaviors.cpp
-    qstate/qstate.cpp
-    cognition/mean_field.cpp
-    cognition/exact_group.cpp
-    cognition/anneal.cpp
-    cognition/commit.cpp
-    cognition/agent_layout.cpp
-    cognition/learning.cpp
-    cognition/exclusivity.cpp
-    cognition/sequential_goals.cpp
-    cognition/conditional_policy.cpp
-    cognition/tree_bp.cpp
-    cognition/ttn.cpp
-    cognition/tree_tn.cpp
-    cognition/coordination.cpp
-    cognition/cognition_clock.cpp
-    cognition/agent_cognition.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp

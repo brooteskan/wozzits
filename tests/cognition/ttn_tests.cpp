@@ -1,13 +1,13 @@
-#include <engine/cognition/ttn.h>
+#include <cognition/ttn.h>
 
-#include <engine/cognition/exact_group.h>
+#include <cognition/exact_group.h>
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <vector>
 
-using namespace wz::cognition;
+using namespace wz::engine::cognition;
 
 // At a bond cap large enough that no truncation occurs, the TTN backend
 // reproduces the exact joint-state backend's marginals for the same

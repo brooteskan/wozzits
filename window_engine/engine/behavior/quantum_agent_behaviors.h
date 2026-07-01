@@ -3,7 +3,7 @@
 // engine/behavior/quantum_agent_behaviors.h
 //
 // Built-in "quantum_agent" decider MODULE: the actuator-facing front end of the
-// cognition stack (wz::cognition). It gives an NPC a deliberating wave function
+// cognition stack (wz::engine::cognition). It gives an NPC a deliberating wave function
 // whose committed decision other behaviors can act on. It is the consumer of the
 // two engine seams below it:
 //   * self.start    -> build the agent's coordination state in the engine-side
