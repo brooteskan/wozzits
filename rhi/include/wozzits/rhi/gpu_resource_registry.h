@@ -101,6 +101,30 @@ namespace wz::rhi
             return backend_->write(entry->resource.backend, data, size, offset);
         }
 
+        // Per-mip content upload for a texture resource. Same door as update(),
+        // but targets one mip level (0 == full-res) instead of a byte offset:
+        // the coarse levels of a resident mip chain are populated by calling
+        // this for each level. `data` is tightly packed for that level's
+        // dimensions (see GpuBackend::write_texture_mip). Returns false for a
+        // stale handle, a GPU-only resource (cpu_access None), or a backend
+        // that does not support the level — a checkable error, never a silent
+        // no-op.
+        bool update_mip(GpuResourceHandle handle,
+                        uint32_t mip_level,
+                        const void* data,
+                        uint64_t size)
+        {
+            Entry* entry = slots_.get(handle);
+            if (!entry) {
+                return false;
+            }
+            if (entry->resource.desc.cpu_access == ResourceCpuAccess::None) {
+                return false;
+            }
+            return backend_->write_texture_mip(
+                entry->resource.backend, mip_level, data, size);
+        }
+
         // Record the GPU timeline value of the most recent submission that
         // referenced this resource. collect() uses it for precise reclamation.
         void touch(GpuResourceHandle handle, uint64_t timeline_value)

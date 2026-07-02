@@ -165,6 +165,27 @@ namespace wz::rhi
                           const void* data,
                           uint64_t size,
                           uint64_t offset) = 0;
+
+        // Write CPU data into one mip level of a texture resource. `mip_level`
+        // is 0-based (0 == the full-resolution surface). `data` is tightly
+        // packed for that mip's dimensions — width>>mip and height>>mip, each
+        // clamped to a minimum of 1 — with no row padding; the backend owns any
+        // device row-pitch alignment for the upload. `size` is the exact
+        // tightly-packed byte count (mip_width * mip_height * mip_depth *
+        // texel_bytes). Returns false for a stale resource, a non-texture
+        // resource, an out-of-range mip level, or a size that does not match the
+        // level's tightly-packed footprint.
+        //
+        // Non-pure with a failing default so existing backends and test fakes
+        // stay source-compatible; a backend that supports mip chains overrides
+        // it. The registry mediates it via GpuResourceRegistry::update_mip.
+        virtual bool write_texture_mip(BackendResource /*resource*/,
+                                       uint32_t /*mip_level*/,
+                                       const void* /*data*/,
+                                       uint64_t /*size*/)
+        {
+            return false;
+        }
     };
 
     // The registry's public view of a resident resource.

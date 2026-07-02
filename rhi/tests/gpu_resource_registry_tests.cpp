@@ -13,6 +13,8 @@ namespace
         int creates = 0;
         int destroys = 0;
         int writes = 0;
+        int mip_writes = 0;
+        uint32_t last_mip_level = 0;
         GpuResourceDesc last_desc{};
 
         BackendResource create(const GpuResourceDesc& desc) override
@@ -27,6 +29,13 @@ namespace
             ++writes;
             return true;
         }
+        bool write_texture_mip(BackendResource, uint32_t mip_level,
+                               const void*, uint64_t) override
+        {
+            ++mip_writes;
+            last_mip_level = mip_level;
+            return true;
+        }
     };
 
     GpuResourceDesc persistent_buffer(uint64_t asset_id, Tag variant = {})
@@ -37,6 +46,16 @@ namespace
         desc.usage = ResourceUsage_Vertex;
         desc.cpu_access = ResourceCpuAccess::None;
         desc.residency = ResourceResidency::Persistent;
+        return desc;
+    }
+
+    GpuResourceDesc writable_texture(uint64_t asset_id)
+    {
+        GpuResourceDesc desc = GpuResourceDesc::texture_2d(
+            8, 8, TextureFormat::R32Float, ResourceUsage_Sampled);
+        desc.identity = ResourceIdentity{ asset_id, {} };
+        desc.mip_levels = 4;
+        desc.cpu_access = ResourceCpuAccess::WriteFrequent;
         return desc;
     }
 }
@@ -125,6 +144,71 @@ static void update_respects_cpu_access()
     const GpuResourceHandle gpu_only = registry.acquire(persistent_buffer(0x4005));
     WZ_CHECK_FALSE(registry.update(gpu_only, &payload, sizeof(payload)));
     WZ_CHECK_EQ(backend.writes, 1);
+}
+
+// Per-mip upload (#209) routes through the backend's write_texture_mip for a
+// CPU-writable resource, carrying the target level; a GPU-only resource fails
+// without touching the backend, exactly like update().
+static void update_mip_routes_to_backend()
+{
+    FakeBackend backend;
+    GpuResourceRegistry registry(backend);
+
+    const GpuResourceHandle t = registry.acquire(writable_texture(0x4104));
+    const float payload[1] = { 1.0f };
+
+    WZ_CHECK(registry.update_mip(t, /*mip*/ 0, payload, sizeof(payload)));
+    WZ_CHECK_EQ(backend.mip_writes, 1);
+    WZ_CHECK_EQ(backend.last_mip_level, 0u);
+
+    WZ_CHECK(registry.update_mip(t, /*mip*/ 2, payload, sizeof(payload)));
+    WZ_CHECK_EQ(backend.mip_writes, 2);
+    WZ_CHECK_EQ(backend.last_mip_level, 2u);
+
+    // GPU-only resource: update_mip must fail without touching the backend.
+    GpuResourceDesc gpu_only_desc = writable_texture(0x4105);
+    gpu_only_desc.cpu_access = ResourceCpuAccess::None;
+    const GpuResourceHandle gpu_only = registry.acquire(gpu_only_desc);
+    WZ_CHECK_FALSE(registry.update_mip(gpu_only, 0, payload, sizeof(payload)));
+    WZ_CHECK_EQ(backend.mip_writes, 2);
+
+    // Stale handle: also a checkable failure.
+    registry.release(t);
+    registry.touch(t, 1);
+    registry.collect(1);
+    WZ_CHECK_FALSE(registry.update_mip(t, 0, payload, sizeof(payload)));
+    WZ_CHECK_EQ(backend.mip_writes, 2);
+}
+
+// The default GpuBackend::write_texture_mip fails, so a backend that has not
+// opted into mip chains reports a checkable miss rather than a silent success.
+static void default_write_texture_mip_fails()
+{
+    struct MinimalBackend final : GpuBackend
+    {
+        uint64_t next_id = 1;
+        BackendResource create(const GpuResourceDesc&) override
+        {
+            return BackendResource{ next_id++ };
+        }
+        void destroy(BackendResource) override {}
+        bool write(BackendResource, const void*, uint64_t, uint64_t) override
+        {
+            return true;
+        }
+        // write_texture_mip intentionally NOT overridden -> default (false).
+    };
+
+    MinimalBackend backend;
+    GpuResourceRegistry registry(backend);
+
+    GpuResourceDesc desc = GpuResourceDesc::texture_2d(
+        8, 8, TextureFormat::R32Float, ResourceUsage_Sampled);
+    desc.cpu_access = ResourceCpuAccess::WriteFrequent;
+    const GpuResourceHandle t = registry.acquire(desc);
+
+    const float payload[1] = { 2.0f };
+    WZ_CHECK_FALSE(registry.update_mip(t, 0, payload, sizeof(payload)));
 }
 
 // Deferred release is PRECISE: a resource is destroyed exactly when the GPU has
@@ -220,6 +304,8 @@ int main()
     WZ_RUN(anonymous_always_creates);
     WZ_RUN(variant_distinguishes_identity);
     WZ_RUN(update_respects_cpu_access);
+    WZ_RUN(update_mip_routes_to_backend);
+    WZ_RUN(default_write_texture_mip_fails);
     WZ_RUN(deferred_release_is_timeline_precise);
     WZ_RUN(released_identity_is_rebuilt_on_reacquire);
     WZ_RUN(device_loss_is_one_sweep);
