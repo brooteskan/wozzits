@@ -114,48 +114,50 @@ namespace wz::app
         return scenelets_;
     }
 
-    AssetGraphCompileResult EditorRuntimeControl::bind(
+    AssetGraphCompileResult EditorRuntimeControl::bind_asset_graph(
         wz::asset::AssetGraphDraft& draft)
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !has_request_ || finished_; });
+        cv_.wait(lock,
+            [this] { return !has_asset_graph_request_ || finished_; });
         if (finished_) {
             return bind_failed("engine runtime is not running");
         }
 
-        pending_draft_ = std::move(draft);
-        has_request_ = true;
-        has_result_ = false;
+        pending_asset_graph_draft_ = std::move(draft);
+        has_asset_graph_request_ = true;
+        has_asset_graph_result_ = false;
         cv_.notify_all();
 
-        cv_.wait(lock, [this] { return has_result_ || finished_; });
-        if (!has_result_) {
+        cv_.wait(lock,
+            [this] { return has_asset_graph_result_ || finished_; });
+        if (!has_asset_graph_result_) {
             // The engine stopped. If it had not yet taken the request, hand the
             // draft back intact so the caller's authoring state survives.
-            if (has_request_) {
-                draft = std::move(pending_draft_);
-                has_request_ = false;
+            if (has_asset_graph_request_) {
+                draft = std::move(pending_asset_graph_draft_);
+                has_asset_graph_request_ = false;
             }
             return bind_failed("engine runtime stopped before bind completed");
         }
 
-        has_result_ = false;
-        draft = std::move(result_draft_);
-        return std::move(result_);
+        has_asset_graph_result_ = false;
+        draft = std::move(result_asset_graph_draft_);
+        return std::move(asset_graph_result_);
     }
 
-    void EditorRuntimeControl::service_pending_bind(
+    void EditorRuntimeControl::service_pending_asset_graph_bind(
         const std::function<
             AssetGraphCompileResult(wz::asset::AssetGraphDraft&)>& binder)
     {
         wz::asset::AssetGraphDraft draft;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (!has_request_) {
+            if (!has_asset_graph_request_) {
                 return;
             }
-            draft = std::move(pending_draft_);
-            has_request_ = false;
+            draft = std::move(pending_asset_graph_draft_);
+            has_asset_graph_request_ = false;
         }
 
         // Bind outside the lock - it can take seconds (GPU resolve). binder
@@ -164,9 +166,9 @@ namespace wz::app
 
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            result_ = std::move(bound);
-            result_draft_ = std::move(draft);
-            has_result_ = true;
+            asset_graph_result_ = std::move(bound);
+            result_asset_graph_draft_ = std::move(draft);
+            has_asset_graph_result_ = true;
         }
         cv_.notify_all();
     }
@@ -1017,7 +1019,7 @@ namespace wz::app
                 // Service editor edits (compile/swap, then live scene-node
                 // transforms) before sim + render so this frame reflects them.
                 if (control) {
-                    control->service_pending_bind(binder);
+                    control->service_pending_asset_graph_bind(binder);
                     control->service_pending_scene_node_transforms(
                         [&app](const SceneNodeTransformEdit& edit) {
                             app.set_node_transform(edit.id, edit.transform);

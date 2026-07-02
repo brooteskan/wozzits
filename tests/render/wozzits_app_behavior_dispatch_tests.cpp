@@ -171,6 +171,83 @@ TEST_F(WozzitsAppBehaviorFixture, SimMovementVisibleInRenderWithoutMutatingScene
         << "scene_nodes_ was mutated by the sim — the write-back should be gone";
 }
 
+// #221: set_node_motion_terrain_fields on a node that ALREADY has a live Motion
+// record must patch the record IN PLACE — NOT rebuild the whole behavior runtime
+// (a rebuild would reset behavior/sim state for a mere field tweak). The proof:
+// the "mover" behavior advances +1 y per frame and accrues that pose in the live
+// polytree; after adding a Motion component (the rebuild-once ADD path) and
+// ticking to accumulate a pose, a SECOND set_node_motion_terrain_fields (the
+// in-place path) must (a) take effect — the field is observably updated — and
+// (b) leave the accrued pose + dispatch cadence intact: the next tick advances
+// the mover from where it was, not from a reset. A full rebuild is not needed
+// for a field change, so the mover keeps counting up unbroken.
+TEST_F(WozzitsAppBehaviorFixture, MotionTerrainFieldsInPlaceKeepsSimState)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+
+    // First call ADDS the Motion component to "mover" (no live record yet), so it
+    // takes the rebuild-once path. The behavior survives the rebuild.
+    ASSERT_TRUE(app.set_node_motion_terrain_fields(
+        "mover",
+        /*terrain_constrained*/ false,
+        /*ride_height*/ 1.0f,
+        /*footprint_radius*/ 2.0f,
+        /*align_to_surface*/ false,
+        /*alignment_strength*/ 0.5f));
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u)
+        << "adding a Motion component must not drop the behavior binding";
+
+    // Tick twice: the mover accrues +2 y in the live polytree.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> mid =
+        app.node_local_translation("mover");
+    ASSERT_TRUE(mid.has_value());
+    EXPECT_FLOAT_EQ(mid->y, 2.0f)
+        << "the mover did not accumulate its per-frame movement";
+
+    // Second call — now the Motion record EXISTS both authored and live, so this
+    // is the in-place patch path. It must NOT rebuild (which would re-run init and
+    // could disturb the accrued pose the preservation map would otherwise have to
+    // restore). The edit takes effect: the authored field is updated.
+    ASSERT_TRUE(app.set_node_motion_terrain_fields(
+        "mover",
+        /*terrain_constrained*/ true,
+        /*ride_height*/ 3.5f,
+        /*footprint_radius*/ 4.0f,
+        /*align_to_surface*/ true,
+        /*alignment_strength*/ 0.25f));
+    const wz::engine::assets::SceneMotionAsset* motion =
+        app.node_motion("mover");
+    ASSERT_NE(motion, nullptr);
+    EXPECT_TRUE(motion->terrain_constrained);
+    EXPECT_FLOAT_EQ(motion->terrain_ride_height, 3.5f)
+        << "the in-place motion field edit did not take effect";
+
+    // The accrued pose is intact right after the field edit (no reset to 0).
+    const std::optional<wz::math::Vec3> after_edit =
+        app.node_local_translation("mover");
+    ASSERT_TRUE(after_edit.has_value());
+    EXPECT_FLOAT_EQ(after_edit->y, 2.0f)
+        << "the field edit reset the accrued sim pose — a rebuild leaked through";
+
+    // And dispatch continues seamlessly from where it was: the next tick advances
+    // the mover to 3, not back to 1 (which a re-init would produce). The behavior
+    // was not reset — proving no full rebuild happened for the field tweak.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    const std::optional<wz::math::Vec3> after_tick =
+        app.node_local_translation("mover");
+    ASSERT_TRUE(after_tick.has_value());
+    EXPECT_FLOAT_EQ(after_tick->y, 3.0f)
+        << "dispatch did not continue from the accrued pose after the in-place "
+           "motion field edit";
+}
+
 // An input-driven behavior ("input.*") must fire only when WozzitsApp_v1 builds
 // and routes input events in its tick. A controller-axis InputState moves the
 // bound node; an empty InputState does not. This proves the new runtime's

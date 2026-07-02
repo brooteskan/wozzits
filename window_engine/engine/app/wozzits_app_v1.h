@@ -110,11 +110,12 @@ namespace wz::app
         bool load_scene(const WozzitsAppSceneLoadDesc& desc);
 
         // Live scene-node edit: overwrite the local transform of the node with
-        // `id` in the in-memory scene, returning false if no node has that id.
-        // This is the apply behind the editor's live transform preview — the
-        // next render_scene() draws the node at the new transform with no GPU
-        // rebuild (scene_nodes_ is consumed fresh each frame). Persisting the
-        // edit to the scene file on disk is a separate path.
+        // `id`, returning false if no node has that id. #221: the edit lands in
+        // the live simulation polytree through the single apply_node_local_-
+        // transform seam (NOT scene_nodes_) — the polytree is the source of truth
+        // the next render_scene() draws from and save_scene derives from, so one
+        // write covers render, save, and editor read-back with no GPU rebuild.
+        // Persisting the edit to the scene file on disk is a separate path.
         bool set_node_transform(
             const wz::scene::AuthoredEntityId& id,
             const wz::engine::assets::AuthoredTransform& transform);
@@ -292,9 +293,13 @@ namespace wz::app
         // #216/#217). Set the terrain-stick fields of the node's Motion
         // component (creating it if absent): whether the actor is constrained to
         // the terrain surface, its ride height + footprint radius, and whether/
-        // how strongly it aligns to the surface normal. Rebuilds the runtime
-        // scene so integrate_motion + apply_terrain_constraints see the change;
-        // marks the scene dirty. False (logged no-op) if the node is missing.
+        // how strongly it aligns to the surface normal. #221: when the node
+        // already has a live Motion record, the fields are patched in place on
+        // that record (preserving the runtime-only terrain_alignment_rate a
+        // behavior set) so a per-frame field tweak does NOT rebuild the runtime
+        // (which would reset behavior/sim state); only ADDING the Motion component
+        // (no live record yet) falls back to a full rebuild_behavior_scene. Marks
+        // the scene dirty. False (logged no-op) if the node is missing.
         bool set_node_motion_terrain_fields(
             const wz::scene::AuthoredEntityId& node_id,
             bool terrain_constrained,
@@ -637,6 +642,22 @@ namespace wz::app
         // transient invalid handle cannot flip the camera. No per-frame branch
         // or validity guard survives into the render path.
         void update_active_view();
+
+        // #221 single edit seam for transforms: write `transform` as the LOCAL
+        // pose of node `id` into the live simulation polytree (the same const_cast
+        // idiom the constraint pipeline / behavior_command_apply use), then set
+        // scene_dirty_. The polytree is now the single source of truth for the
+        // drawn + saved pose (scene_world_transforms / derived_authored_transform
+        // read it), so this ONE write covers render, save, and editor read-back —
+        // no scene_nodes_ transform mutation. DEGENERATE fallback: if there is no
+        // live polytree at all (a failed instantiate left behavior_scene_ null, so
+        // the editor must still recover), the seam writes scene_nodes_.local
+        // directly so the authored transform is not lost. set_node_transform and
+        // the future authoring pokes route through here so there is one place a
+        // transform edit lands. Assumes the node exists (the caller resolved it).
+        void apply_node_local_transform(
+            const wz::scene::AuthoredEntityId& id,
+            const wz::engine::assets::AuthoredTransform& transform);
 
         // The authored LOCAL transform of node `id` as it should be reported /
         // saved. #221: with a live behavior scene the transform is derived from

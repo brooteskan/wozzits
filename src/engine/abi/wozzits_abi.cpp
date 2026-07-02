@@ -1163,7 +1163,7 @@ extern "C"
             // back into the session in place (AssetGraphDraft is move-only).
             wz::asset::AssetGraphDraft& draft = session->editor->draft();
             const wz::app::AssetGraphCompileResult report =
-                runtime->control.bind(draft);
+                runtime->control.bind_asset_graph(draft);
             if (report.ok) {
                 return result(WZ_RESULT_OK, "");
             }

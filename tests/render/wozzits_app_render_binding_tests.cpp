@@ -107,18 +107,21 @@ TEST_F(WozzitsAppRenderBindingFixture, SetNodeBindingLiveReassembles)
         "no_such_node", static_cast<wz::asset::AssetGraphDraftNodeId>(9)));
 }
 
-// #221 no-sim path: this scene has no behaviors/motion/terrain/constraints, so
-// there is no live behavior_scene_. scene_world_transforms() must then be
-// exactly the authored composition (compute_scene_node_world_transforms) — same
-// hierarchical result the renderer used to compute internally. 'inherited' sits
-// at local origin under 'group' (translation +150 x), so its world X is 150;
-// 'solo' is a root at -150. Proves the fallback composes the parent chain.
+// #221: this scene has no behaviors/motion/terrain/constraints. It now DOES get
+// a live polytree (rebuild_behavior_scene materializes one for every loaded
+// scene so a transform edit has somewhere to land) but ZERO behavior bindings,
+// and scene_world_transforms() must still be exactly the authored composition
+// (compute_scene_node_world_transforms → the polytree's own composed world) —
+// same hierarchical result the renderer used to compute internally. 'inherited'
+// sits at local origin under 'group' (translation +150 x), so its world X is
+// 150; 'solo' is a root at -150. Proves the parent chain composes.
 TEST_F(WozzitsAppRenderBindingFixture, NoSimSceneWorldTransformsAreAuthoredComposition)
 {
     wz::app::WozzitsApp_v1 app(ctx);
     ASSERT_TRUE(app.load_scene(binding_load_desc()));
 
-    // No simulation was materialized for this static scene.
+    // A static scene carries no behavior bindings (even though it now has a
+    // polytree). The count reads behaviors.size(), so it is still 0.
     ASSERT_EQ(app.active_behavior_binding_count(), 0u);
 
     // Root 'solo' draws at its own local translation.
@@ -132,4 +135,55 @@ TEST_F(WozzitsAppRenderBindingFixture, NoSimSceneWorldTransformsAreAuthoredCompo
         app.node_world_transform("inherited");
     ASSERT_TRUE(inherited.has_value());
     EXPECT_FLOAT_EQ(inherited->m[12], 150.0f);
+}
+
+// #221 single edit seam on a STATIC scene: a scene with no behaviors/motion/
+// terrain now still comes up with a live polytree (active_behavior_binding_count
+// stays 0), renders the authored composition, and set_node_transform lands in
+// the polytree — NOT scene_nodes_. Proof: after editing 'solo', its render world
+// transform reflects the edit while its stored_node_local_translation (read
+// straight from scene_nodes_, never derived) is unchanged. This is the seam
+// writing the polytree, which the derivation persistence (Phase 1) then covers.
+TEST_F(WozzitsAppRenderBindingFixture, StaticSceneEditLandsInPolytreeNotSceneNodes)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(binding_load_desc()));
+
+    // No behavior bindings — this is the static path — but a polytree exists, so
+    // the edit has somewhere to land.
+    ASSERT_EQ(app.active_behavior_binding_count(), 0u);
+
+    // 'solo' is a root authored at X = -150.
+    const auto stored_before = app.stored_node_local_translation("solo");
+    ASSERT_TRUE(stored_before.has_value());
+    EXPECT_FLOAT_EQ(stored_before->x, -150.0f);
+
+    // Edit 'solo' to a new pose.
+    wz::engine::assets::AuthoredTransform edited{};
+    edited.translation[0] = 42.0f;
+    edited.translation[1] = 7.0f;
+    edited.translation[2] = -3.0f;
+    edited.rotation_quat[3] = 1.0f;
+    edited.scale[0] = 1.0f;
+    edited.scale[1] = 1.0f;
+    edited.scale[2] = 1.0f;
+    ASSERT_TRUE(app.set_node_transform("solo", edited));
+
+    // The edit is visible in the RENDER world transform (read from the polytree).
+    const std::optional<wz::math::Mat4> world = app.node_world_transform("solo");
+    ASSERT_TRUE(world.has_value());
+    EXPECT_FLOAT_EQ(world->m[12], 42.0f);
+    EXPECT_FLOAT_EQ(world->m[13], 7.0f);
+    EXPECT_FLOAT_EQ(world->m[14], -3.0f);
+
+    // But the STORED authored transform in scene_nodes_ is UNCHANGED — the seam
+    // wrote the polytree, not scene_nodes_ (Phase 1's derive-on-save covers
+    // persistence). This is the core Phase-2 contract.
+    const auto stored_after = app.stored_node_local_translation("solo");
+    ASSERT_TRUE(stored_after.has_value());
+    EXPECT_FLOAT_EQ(stored_after->x, -150.0f)
+        << "set_node_transform mutated scene_nodes_ instead of the polytree";
+
+    // A missing node is still rejected (existence is resolved before the seam).
+    EXPECT_FALSE(app.set_node_transform("no_such_node", edited));
 }

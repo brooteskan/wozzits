@@ -34,8 +34,8 @@ namespace wz::app
 {
     // A live scene edit posted from the owner thread (editor UI) to the engine
     // thread. Only a node transform today; this is the seam future live edits
-    // (visibility, add/delete/reparent) will extend. Unlike bind() it is
-    // fire-and-forget and coalescing — no result crosses back.
+    // (visibility, add/delete/reparent) will extend. Unlike bind_asset_graph() it
+    // is fire-and-forget and coalescing — no result crosses back.
     struct SceneNodeTransformEdit
     {
         wz::scene::AuthoredEntityId id;
@@ -316,15 +316,21 @@ namespace wz::app
         void set_scenelets(std::vector<SceneletCatalogEntry> scenelets);
         [[nodiscard]] std::vector<SceneletCatalogEntry> scenelets() const;
 
-        // Owner thread: submit a draft to bind; blocks until the engine thread
-        // binds it (or the engine stops). The draft is moved to the engine and
-        // the bound draft (with resolved keys + validation) is moved back into
-        // `draft` in place - AssetGraphDraft is move-only. Returns the result.
-        AssetGraphCompileResult bind(wz::asset::AssetGraphDraft& draft);
+        // Owner thread: submit an ASSET-GRAPH draft to bind; blocks until the
+        // engine thread binds it (or the engine stops). The draft is moved to the
+        // engine and the bound draft (with resolved keys + validation) is moved
+        // back into `draft` in place - AssetGraphDraft is move-only. Returns the
+        // result. #194: this binds the asset GRAPH — it is NOT a scene-edit verb.
+        // The scene-editing seams are the post_scene_node_* queues + the blocking
+        // add_child / add_node_behavior handshakes below; this one crossing is the
+        // graph draft (see the class-level note). The ABI export that reaches it
+        // (wz_host_runtime_bind_draft) keeps its C name.
+        AssetGraphCompileResult bind_asset_graph(wz::asset::AssetGraphDraft& draft);
 
-        // Engine thread: if a bind is pending, run `binder` on the draft and
-        // publish the result. Called once per frame from run_project_runtime.
-        void service_pending_bind(
+        // Engine thread: if an asset-graph bind is pending, run `binder` on the
+        // draft and publish the result. Called once per frame from
+        // run_project_runtime.
+        void service_pending_asset_graph_bind(
             const std::function<
                 AssetGraphCompileResult(wz::asset::AssetGraphDraft&)>& binder);
 
@@ -534,12 +540,15 @@ namespace wz::app
         std::atomic_bool reload_behaviors_requested_{ false };
         std::vector<std::string> behavior_modules_;  // guarded by mutex_
         std::vector<SceneletCatalogEntry> scenelets_;  // guarded by mutex_
-        bool has_request_ = false;
-        bool has_result_ = false;
+        // #194: the asset-GRAPH bind handshake (bind_asset_graph /
+        // service_pending_asset_graph_bind). Named for the graph so they read
+        // distinctly from the scene-edit queues + handshakes below.
+        bool has_asset_graph_request_ = false;
+        bool has_asset_graph_result_ = false;
         bool finished_ = false;
-        wz::asset::AssetGraphDraft pending_draft_;
-        wz::asset::AssetGraphDraft result_draft_;
-        AssetGraphCompileResult result_;
+        wz::asset::AssetGraphDraft pending_asset_graph_draft_;
+        wz::asset::AssetGraphDraft result_asset_graph_draft_;
+        AssetGraphCompileResult asset_graph_result_;
 
         // Live scene edits queued for the engine thread (guarded by mutex_,
         // independent of the bind handshake above). Coalesced by node id.

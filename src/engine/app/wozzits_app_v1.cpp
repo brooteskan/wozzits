@@ -1277,27 +1277,17 @@ namespace wz::app
 
         behavior_scene_.reset();
 
-        // Build the runtime SceneInstance whenever ANY node carries something the
-        // per-frame simulation touches: a behavior binding, a motion (integrate_
-        // motion / terrain-stick), a terrain, or a constrain_movement collision
-        // (build_collision_frame + apply_terrain_constraints). A motion-only or
-        // constraint-only actor must still come up so it can stick to a surface
-        // even with no behaviors authored.
-        const bool needs_simulation = std::any_of(
-            scene_nodes_.begin(),
-            scene_nodes_.end(),
-            [](const wz::engine::assets::SceneNodeAsset& node) {
-                return node.behavior.has_value()
-                    || !node.behaviors.empty()
-                    || node.motion.has_value()
-                    || node.terrain.has_value()
-                    || (node.collision.has_value()
-                        && node.collision->constrain_movement);
-            });
-        if (!needs_simulation) {
-            refresh_active_camera_entity();
-            return;
-        }
+        // #221: materialize the runtime SceneInstance for EVERY loaded scene, not
+        // just ones that carry a behavior/motion/terrain/constraint. The polytree
+        // is now the single source of truth for the drawn + saved + edited world
+        // transforms (see scene_world_transforms / apply_node_local_transform), so
+        // even a fully static scene needs its polytree live — a transform edit
+        // lands there and the renderer reads it. A static scene simply comes up
+        // with empty behavior/motion/terrain tables; simulation_tick's sub-passes
+        // iterate those tables, so they are cheap no-ops (nothing to integrate or
+        // constrain). behavior_scene_-null tolerance survives in every consumer as
+        // a DEFENSIVE fallback for the one path that still leaves it null: a
+        // FAILED instantiate_scene (a malformed scene), below.
 
         // Materialize a runtime SceneInstance from the authored scene. The
         // renderable resolver is intentionally null: WozzitsApp_v1 renders from
@@ -2238,57 +2228,86 @@ namespace wz::app
         };
     }
 
-    bool WozzitsApp_v1::set_node_transform(
+    void WozzitsApp_v1::apply_node_local_transform(
         const wz::scene::AuthoredEntityId& id,
         const wz::engine::assets::AuthoredTransform& transform)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, id);
-        if (!node) {
-            return false;
-        }
-        wz::engine::assets::set_transform(*node, transform);
-        scene_dirty_ = true;
+        // #221: the ONE place a transform edit lands. The polytree is the single
+        // source of truth for the drawn + saved pose (scene_world_transforms /
+        // derived_authored_transform read it, and rebuild_behavior_scene restores
+        // a surviving node's live local by authored id), so write the LOCAL there
+        // and do NOT touch scene_nodes_'s stored transform. For a sim-driven node
+        // (e.g. a terrain_constrained actor) the next tick's propagate_all settles
+        // world matrices and the scale-preserving constraint keeps the authored
+        // scale — an edit is no longer reverted by any per-frame write-back
+        // (there is none now). The polytree always exists for a loaded scene, so
+        // this is the taken path.
+        wz::math::Transform trs{};
+        trs.position = {
+            transform.translation[0],
+            transform.translation[1],
+            transform.translation[2],
+        };
+        trs.rotation = {
+            transform.rotation_quat[0],
+            transform.rotation_quat[1],
+            transform.rotation_quat[2],
+            transform.rotation_quat[3],
+        };
+        trs.scale = {
+            transform.scale[0],
+            transform.scale[1],
+            transform.scale[2],
+        };
 
-        // Mirror the edit into the LIVE simulation graph (#218 follow-up).
-        // scene_nodes_ is the render/authoring copy; behavior_scene_ is the
-        // separate sim copy. For a node the sim drives each frame (e.g. a
-        // terrain_constrained actor), simulation_tick writes the sim node's full
-        // TRS back into scene_nodes_ — so an edit that only touched scene_nodes_
-        // is reverted next frame to the sim node's stale value. The constraint
-        // only controls translation+rotation, so it's the SCALE the user can't
-        // change. Push the authored transform into the sim node in place (not a
-        // full rebuild, so a per-keystroke drag doesn't reset motion/behavior
-        // state); the next tick's propagate_all settles world matrices, and the
-        // scale-preserving constraint keeps the authored scale.
         if (behavior_scene_) {
             const auto it = behavior_scene_->authored_to_runtime.find(id);
-            if (it != behavior_scene_->authored_to_runtime.end()) {
-                wz::math::Transform trs{};
-                trs.position = {
-                    transform.translation[0],
-                    transform.translation[1],
-                    transform.translation[2],
-                };
-                trs.rotation = {
-                    transform.rotation_quat[0],
-                    transform.rotation_quat[1],
-                    transform.rotation_quat[2],
-                    transform.rotation_quat[3],
-                };
-                trs.scale = {
-                    transform.scale[0],
-                    transform.scale[1],
-                    transform.scale[2],
-                };
-                // node_data is const-only; the constraint pipeline mutates the
-                // polytree the same way (const_cast in apply_terrain_constraints).
+            if (it != behavior_scene_->authored_to_runtime.end()
+                && it->second < wz::core::graph::node_count(
+                       behavior_scene_->storage.polytree)) {
+                // node_data is const-only; the constraint pipeline / behavior
+                // command apply mutate the polytree the same way (const_cast).
                 const_cast<wz::scene::TransformNode&>(
                     wz::core::graph::node_data(
                         behavior_scene_->storage.polytree, it->second))
                     .local = wz::math::transform(trs);
+                // Re-propagate so the world matrices reflect the edited local
+                // immediately: the editor renders (scene_world_transforms reads
+                // node_data().world) without necessarily ticking the sim between
+                // an edit and the next draw, so the edit must be visible now, not
+                // only after the next simulation_tick's propagate_all. Cheap for a
+                // single edit; a sim-driven node re-settles on the next tick.
+                wz::scene::propagate_all(behavior_scene_->storage.polytree);
+                scene_dirty_ = true;
+                return;
             }
         }
+
+        // DEGENERATE fallback: no live polytree entry for this node (a failed
+        // instantiate_scene left behavior_scene_ null, or the node is absent from
+        // the runtime map). scene_world_transforms / derived_authored_transform
+        // fall back to scene_nodes_ in exactly that case, so write the stored
+        // transform here so the edit still takes effect and the editor recovers.
+        if (wz::engine::assets::SceneNodeAsset* node =
+                wz::engine::assets::find_scene_node(scene_nodes_, id)) {
+            wz::engine::assets::set_transform(*node, transform);
+            scene_dirty_ = true;
+        }
+    }
+
+    bool WozzitsApp_v1::set_node_transform(
+        const wz::scene::AuthoredEntityId& id,
+        const wz::engine::assets::AuthoredTransform& transform)
+    {
+        // Resolve existence, then route through the single #221 edit seam. The
+        // scene_nodes_ transform write is gone from the edit path: Phase 1's
+        // derivation covers persistence (save_scene + authored_scene_nodes derive
+        // from the polytree) and rebuilds restore live locals via the
+        // preservation map, so the polytree write the seam does is sufficient.
+        if (!wz::engine::assets::find_scene_node(scene_nodes_, id)) {
+            return false;
+        }
+        apply_node_local_transform(id, transform);
         return true;
     }
 
@@ -2682,7 +2701,8 @@ namespace wz::app
                 + "' missing)");
             return false;
         }
-        if (!node->motion) {
+        const bool adding_component = !node->motion.has_value();
+        if (adding_component) {
             node->motion.emplace();
         }
         node->motion->terrain_constrained = terrain_constrained;
@@ -2691,8 +2711,40 @@ namespace wz::app
         node->motion->terrain_align_to_surface = align_to_surface;
         node->motion->terrain_alignment_strength = alignment_strength;
         scene_dirty_ = true;
-        // The Motion record participates in the runtime scene (integrate_motion
-        // + apply_terrain_constraints); rebuild so the change takes effect.
+
+        // #221: patch the LIVE Motion record in place instead of rebuilding the
+        // whole runtime for a field tweak (a full rebuild_behavior_scene would
+        // reset behavior/sim state — and snap sim-driven actors, which the
+        // preservation map then has to restore — for what is just a component
+        // field change). Only ADDING the Motion component (no live record yet)
+        // needs a rebuild so the record is materialized. Crucially, the in-place
+        // path leaves terrain_alignment_rate ALONE — it is a runtime-only field a
+        // behavior set (SetTerrainAlignmentRate) that does NOT live on the
+        // authored asset, and it rides the SAME MotionComponent record; wiping it
+        // here would reset a self.start-configured actor to instant alignment.
+        if (!adding_component && behavior_scene_) {
+            const auto it = behavior_scene_->authored_to_runtime.find(node_id);
+            if (it != behavior_scene_->authored_to_runtime.end()) {
+                for (auto& record : behavior_scene_->motions) {
+                    if (record.node != it->second) {
+                        continue;
+                    }
+                    // Only the authored terrain-stick fields; terrain_alignment_-
+                    // rate (runtime-only) and velocities are untouched.
+                    record.component.terrain_constrained = terrain_constrained;
+                    record.component.terrain_ride_height = ride_height;
+                    record.component.terrain_footprint_radius = footprint_radius;
+                    record.component.terrain_align_to_surface = align_to_surface;
+                    record.component.terrain_alignment_strength =
+                        alignment_strength;
+                    return true;
+                }
+            }
+        }
+
+        // Adding the component (or, defensively, no matching live record) needs a
+        // rebuild so the Motion record participates in integrate_motion +
+        // apply_terrain_constraints.
         rebuild_behavior_scene();
         return true;
     }
