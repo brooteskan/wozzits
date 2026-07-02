@@ -140,6 +140,47 @@ TEST(CognitionClock, TimeDrivenAnnealCommits)
     EXPECT_GT(decision_z(c, 2), 0.8);
 }
 
+// The substep count is bounded: max_substep caps the per-step error, max_substeps
+// caps the WORK, so a huge elapsed span can't demand unbounded relax() calls.
+TEST(CognitionClock, SubstepCountIsBounded)
+{
+    // A pathologically long span hits the cap exactly, not the raw ceil (~2e7 here).
+    EXPECT_EQ(clock_substep_count(/*dtau_total=*/1e6, /*max_substep=*/0.05, /*max_substeps=*/1024),
+              1024u);
+
+    // A span that fits inside one max_substep needs a single step.
+    EXPECT_EQ(clock_substep_count(/*dtau_total=*/0.01, /*max_substep=*/0.05, /*max_substeps=*/1024),
+              1u);
+    EXPECT_EQ(clock_substep_count(/*dtau_total=*/0.05, /*max_substep=*/0.05, /*max_substeps=*/1024),
+              1u);
+
+    // max_substep == 0 disables substepping entirely -> one step regardless of span.
+    EXPECT_EQ(clock_substep_count(/*dtau_total=*/1e6, /*max_substep=*/0.0, /*max_substeps=*/1024),
+              1u);
+
+    // max_substeps == 0 means uncapped -> the raw ceil is returned.
+    EXPECT_EQ(clock_substep_count(/*dtau_total=*/4.0, /*max_substep=*/0.05, /*max_substeps=*/0),
+              80u);
+    EXPECT_EQ(clock_substep_count(/*dtau_total=*/1.0, /*max_substep=*/0.05, /*max_substeps=*/0),
+              20u);
+}
+
+// A single enormous wake is bounded (does not spin on ~2e7 substeps) and stays
+// numerically stable: the decision remains finite, never NaN/inf.
+TEST(CognitionClock, PathologicallyLongTickIsBoundedAndStable)
+{
+    Coordination c = make_goal_pair();
+    CognitionClock clock = make_clock();  // gamma 3 -> 0 over [0, 4], max_substep 0.05
+    start(clock, 0.0);
+
+    // Without the cap this would request ceil(1e6 / 0.05) = 2e7 relax() calls.
+    const double dtau = tick(c, clock, 1e6);
+
+    EXPECT_TRUE(std::isfinite(dtau));
+    EXPECT_DOUBLE_EQ(dtau, 1e6);  // the full elapsed span is still consumed
+    EXPECT_TRUE(std::isfinite(decision_z(c, 0)));
+}
+
 // The first tick only stamps the origin (no elapsed time to relax across), and a
 // wake that doesn't advance sim-time does no work.
 TEST(CognitionClock, FirstTickAndStaleWakeAreNoOps)

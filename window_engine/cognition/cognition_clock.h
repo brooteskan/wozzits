@@ -19,6 +19,8 @@
 
 #include <cognition/coordination.h>
 
+#include <cstdint>
+
 namespace wz::engine::cognition
 {
     // A self-contained continuous-time annealing schedule + relaxation clock. The
@@ -31,11 +33,21 @@ namespace wz::engine::cognition
         double anneal_seconds = 0.0;  // sim-seconds the Gamma sweep spans (0 -> hold gamma_end)
         double relax_rate = 1.0;      // imaginary-time per sim-second: dtau = relax_rate * elapsed
         double max_substep = 0.05;    // cap on a single imaginary-time step (0 -> no substepping)
+        uint32_t max_substeps = 1024; // hard cap on substeps per tick (bounds WORK on a
+                                      // pathologically long sleep -- max_substep bounds
+                                      // the per-step ERROR, not the count; 0 -> uncapped)
 
         double started_at = 0.0;      // sim-time the sweep was zeroed (self.start)
         double last_tick = 0.0;       // sim-time of the previous wake
         bool started = false;         // has the origin been stamped yet?
     };
+
+    // How many substeps a tick spanning `dtau_total` imaginary-time takes: ceil(
+    // dtau_total / max_substep) so no step exceeds max_substep, clamped to max_substeps
+    // so the WORK stays bounded on a pathologically long sleep. max_substep <= 0 (no
+    // substepping) or dtau_total <= max_substep -> 1; max_substeps == 0 -> uncapped.
+    // Pure and header-visible so it can be unit-tested directly.
+    uint32_t clock_substep_count(double dtau_total, double max_substep, uint32_t max_substeps);
 
     // Zero the clock at sim-time `now`: this is the self.start moment, before the
     // first relaxation. After this, gamma_at_time(now) == gamma_start.

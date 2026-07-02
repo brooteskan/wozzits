@@ -5,6 +5,21 @@
 
 namespace wz::engine::cognition
 {
+    uint32_t clock_substep_count(double dtau_total, double max_substep, uint32_t max_substeps)
+    {
+        uint32_t substeps = 1;
+        if (max_substep > 0.0 && dtau_total > max_substep) {
+            substeps = static_cast<uint32_t>(std::ceil(dtau_total / max_substep));
+        }
+        // Hard cap the WORK: max_substep bounds the per-step error, not the count, so a
+        // long sleep can otherwise demand thousands of relax() calls. Clamping still
+        // consumes the full elapsed span (dt_sim = elapsed / substeps) -- just coarser.
+        if (max_substeps > 0 && substeps > max_substeps) {
+            substeps = max_substeps;
+        }
+        return substeps;
+    }
+
     void start(CognitionClock& clock, double now)
     {
         clock.started_at = now;
@@ -43,12 +58,10 @@ namespace wz::engine::cognition
         // Substep so a long sleep relaxes the same as many short wakes: split the
         // elapsed sim-time into chunks whose imaginary-time step is <= max_substep,
         // and sample Gamma at each chunk's midpoint so the anneal sweep is honored
-        // at sub-tick resolution.
-        uint32_t substeps = 1;
-        if (clock.max_substep > 0.0 && dtau_total > clock.max_substep) {
-            substeps = static_cast<uint32_t>(
-                std::ceil(dtau_total / clock.max_substep));
-        }
+        // at sub-tick resolution. The count is capped (max_substeps) so a pathologically
+        // long wake does bounded WORK; the full elapsed span is still consumed.
+        const uint32_t substeps =
+            clock_substep_count(dtau_total, clock.max_substep, clock.max_substeps);
 
         const double dt_sim = elapsed / static_cast<double>(substeps);
         const double dtau = clock.relax_rate * dt_sim;
