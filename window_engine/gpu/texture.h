@@ -20,10 +20,19 @@ namespace wz::gpu
     // Physical texture family. Mirrors the rhi ResourceDimension texture cases.
     enum class TextureDimension : uint8_t { Texture2D, Texture3D };
 
-    // Minimal texture format set the engine texture creator supports. Extend as
-    // new field / texture asset types come onto the rhi registry (vector field,
-    // texture, environment map). Scalar field needs only R32Float.
-    enum class TextureFormat : uint8_t { R32Float };
+    // Texture format set the engine texture creator supports. Extend as new
+    // field / texture asset types come onto the rhi registry. Scalar field needs
+    // only R32Float; vector field / texture / environment-map residency (#201)
+    // needs the RGBA formats (float32 for HDR / precise vector data, float16 and
+    // unorm8 for compact image data). Each entry pairs a DXGI format and a texel
+    // byte count in dx12_texture.cpp.
+    enum class TextureFormat : uint8_t
+    {
+        R32Float,
+        RGBA8Unorm,
+        RGBA16Float,
+        RGBA32Float,
+    };
 
     // Full mip count for a texture of the given 2D dimensions:
     // floor(log2(max(w,h))) + 1. The value mip_levels may not exceed.

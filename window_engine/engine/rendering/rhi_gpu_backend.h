@@ -62,6 +62,15 @@ namespace wz::engine::rendering
         case wz::rhi::TextureFormat::R32Float:
             out = wz::gpu::TextureFormat::R32Float;
             return true;
+        case wz::rhi::TextureFormat::RGBA8Unorm:
+            out = wz::gpu::TextureFormat::RGBA8Unorm;
+            return true;
+        case wz::rhi::TextureFormat::RGBA16Float:
+            out = wz::gpu::TextureFormat::RGBA16Float;
+            return true;
+        case wz::rhi::TextureFormat::RGBA32Float:
+            out = wz::gpu::TextureFormat::RGBA32Float;
+            return true;
         default:
             return false;
         }

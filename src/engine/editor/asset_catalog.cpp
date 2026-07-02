@@ -76,23 +76,29 @@ namespace wz::engine::editor
     bool asset_type_needs_rhi_migration(wz::asset::AssetType type)
     {
         // Output types whose GPU residency still lives on the legacy
-        // gpu_resident_* tables (issue #186): fields, sparse operators, sparse
-        // meshes, cluster hierarchies, and the GPU textures the rhi backend
-        // cannot create yet. Everything else either has no GPU residency or is
-        // already realized through the rhi path.
+        // gpu_resident_* tables (issue #186): sparse operators, sparse
+        // meshes, and cluster hierarchies. Everything else either has no GPU
+        // residency or is already realized through the rhi path.
         //
         // Scalar field is OFF this list (#197): its residency is now published
         // onto the wozzits-rhi GpuResourceRegistry as an R32F texture at compile
         // time, so it qualifies as migrated and is authorable in the browser.
         // (Its rhi *render* path is still pending in #195; until then it draws
         // through the legacy path.)
-        return type == ea::kAssetTypeVectorField
-            || type == ea::kAssetTypeMeshDerivedField
+        //
+        // Vector field and environment map are OFF this list (#201): their
+        // residency is now published onto the same registry as an RGBA32F
+        // texture at compile time (first vector channel / decoded HDRI image).
+        // Their rhi render paths are likewise #195. kAssetTypeTexture is not
+        // listed because it has no compiler/schema/runtime table yet — it is an
+        // unimplemented reservation (type_extensions.h), so it never enters the
+        // catalog regardless of this predicate; implementing the Texture asset
+        // (a new CPU data layout + image loader) is its own future task, not a
+        // residency migration.
+        return type == ea::kAssetTypeMeshDerivedField
             || type == ea::kAssetTypeMeshSparseOperator
             || type == ea::kAssetTypeGpuSparseMesh
-            || type == ea::kAssetTypeMeshClusterHierarchy
-            || type == ea::kAssetTypeTexture
-            || type == ea::kAssetTypeEnvironmentMap;
+            || type == ea::kAssetTypeMeshClusterHierarchy;
     }
 
     std::vector<AssetCatalogEntry> build_asset_catalog()

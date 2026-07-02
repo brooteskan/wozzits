@@ -70,17 +70,49 @@ TEST(RhiGpuBackend, Texture3dDimensionRoutes)
     EXPECT_TRUE(out.valid());
 }
 
+// #201: the RGBA formats vector-field / texture / environment-map residency needs
+// now map onto the engine texture format; unsupported formats (Undefined, depth)
+// still reject cleanly so create() can fail rather than mis-create.
+TEST(RhiGpuBackend, RgbaTextureFormatsMap)
+{
+    wz::gpu::TextureFormat fmt{};
+
+    EXPECT_TRUE(rr::to_gpu_texture_format(wz::rhi::TextureFormat::R32Float, fmt));
+    EXPECT_EQ(fmt, wz::gpu::TextureFormat::R32Float);
+
+    EXPECT_TRUE(
+        rr::to_gpu_texture_format(wz::rhi::TextureFormat::RGBA8Unorm, fmt));
+    EXPECT_EQ(fmt, wz::gpu::TextureFormat::RGBA8Unorm);
+
+    EXPECT_TRUE(
+        rr::to_gpu_texture_format(wz::rhi::TextureFormat::RGBA16Float, fmt));
+    EXPECT_EQ(fmt, wz::gpu::TextureFormat::RGBA16Float);
+
+    EXPECT_TRUE(
+        rr::to_gpu_texture_format(wz::rhi::TextureFormat::RGBA32Float, fmt));
+    EXPECT_EQ(fmt, wz::gpu::TextureFormat::RGBA32Float);
+
+    // The RGBA32F desc a vector field / HDRI publishes maps end to end.
+    const wz::rhi::GpuResourceDesc d = wz::rhi::GpuResourceDesc::texture_2d(
+        8, 8, wz::rhi::TextureFormat::RGBA32Float,
+        wz::rhi::ResourceUsage_Sampled);
+    wz::gpu::TextureDesc out{};
+    EXPECT_TRUE(rr::to_texture_desc(d, out));
+    EXPECT_EQ(out.format, wz::gpu::TextureFormat::RGBA32Float);
+    EXPECT_TRUE(out.valid());
+}
+
 TEST(RhiGpuBackend, UnsupportedTextureFormatRejected)
 {
     wz::rhi::GpuResourceDesc d = wz::rhi::GpuResourceDesc::texture_2d(
-        8, 8, wz::rhi::TextureFormat::RGBA8Unorm);
+        8, 8, wz::rhi::TextureFormat::Undefined);
 
     wz::gpu::TextureDesc out{};
     EXPECT_FALSE(rr::to_texture_desc(d, out));
 
     wz::gpu::TextureFormat fmt{};
-    EXPECT_TRUE(rr::to_gpu_texture_format(wz::rhi::TextureFormat::R32Float, fmt));
-    EXPECT_EQ(fmt, wz::gpu::TextureFormat::R32Float);
     EXPECT_FALSE(
         rr::to_gpu_texture_format(wz::rhi::TextureFormat::Undefined, fmt));
+    EXPECT_FALSE(
+        rr::to_gpu_texture_format(wz::rhi::TextureFormat::D32Float, fmt));
 }

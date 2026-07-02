@@ -66,7 +66,6 @@ namespace wz::gpu::dx12::internal
 namespace wz::engine::assets {
     struct ScalarFieldData;
     struct VectorFieldData;
-    struct HDRImageData;
 }
 
 namespace wz::gpu::dx12::internal {
@@ -110,11 +109,6 @@ namespace wz::gpu::dx12::internal {
     GPUHandle upload_vector_field_texture_dx12(
         Device& device,
         const wz::engine::assets::VectorFieldData& field
-    );
-
-    GPUHandle upload_hdr_image_texture_dx12(
-        Device& device,
-        const wz::engine::assets::HDRImageData& image
     );
 
     const DX12ScalarFieldTexture* get_scalar_field_texture(

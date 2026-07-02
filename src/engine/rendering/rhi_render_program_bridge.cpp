@@ -166,6 +166,8 @@ namespace wz::engine::rendering
             switch (k) {
             case ea::StaticSamplerKind::LinearClamp:
                 return wz::rhi::StaticSamplerKind::LinearClamp;
+            case ea::StaticSamplerKind::LinearWrap:
+                return wz::rhi::StaticSamplerKind::LinearWrap;
             }
             return wz::rhi::StaticSamplerKind::LinearClamp;
         }

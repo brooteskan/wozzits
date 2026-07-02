@@ -173,6 +173,46 @@ TEST(RhiDx12Pipeline, StaticSamplerFlowsThroughBridgeOntoObjectSrg)
     EXPECT_EQ(plan->descriptor_tables[0].descriptor_count, 3u);
 }
 
+// #201 step 4: the filtered-wrap sampler recipe an equirect environment map /
+// tiling texture needs rides the SAME generic static-sampler seam as the
+// clipmap's LinearClamp, mapping 1:1 through the bridge onto the rhi SRG.
+TEST(RhiDx12Pipeline, LinearWrapStaticSamplerFlowsThroughBridge)
+{
+    ea::CustomRenderProgramDesc desc = make_pull_cube_program();
+    desc.name = "environment_like_with_wrap_sampler";
+    desc.descriptor_bindings.push_back(ea::DescriptorBinding{
+        ea::DescriptorKind::TextureSRV,
+        ea::ShaderVisibility::Pixel,
+        ea::DescriptorSemantic::ScalarFieldTexture,
+        /*shader_register*/ 2,
+        /*register_space*/ 2,
+        /*descriptor_count*/ 1 });
+    desc.static_samplers.push_back(ea::StaticSamplerBinding{
+        ea::StaticSamplerKind::LinearWrap,
+        ea::ShaderVisibility::Pixel,
+        /*shader_register*/ 0,
+        /*register_space*/ 2 });
+
+    wz::rhi::DescriptorSemanticRegistry descriptors;
+    wz::rhi::ConstantSemanticRegistry constants;
+    const auto converted =
+        wz::engine::rendering::to_rhi_render_program_desc(
+            desc, descriptors, constants);
+    ASSERT_TRUE(converted.has_value());
+
+    const wz::rhi::ShaderResourceGroupLayout* object =
+        wz::rhi::find_shader_resource_group_layout(
+            converted->shader_resource_groups, 2);
+    ASSERT_NE(object, nullptr);
+    ASSERT_EQ(object->static_samplers.size(), 1u);
+    EXPECT_EQ(
+        object->static_samplers[0].kind,
+        wz::rhi::StaticSamplerKind::LinearWrap);
+    EXPECT_EQ(
+        object->static_samplers[0].visibility,
+        wz::rhi::ShaderStage::Pixel);
+}
+
 TEST(RhiDx12Pipeline, ComputeLayoutMatchesRenderLayoutForIdenticalSrgs)
 {
     wz::rhi::TagRegistry<8> tags;

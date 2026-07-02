@@ -119,6 +119,7 @@ namespace wz::engine::assets
     enum class StaticSamplerKind : uint8_t
     {
         LinearClamp,
+        LinearWrap,
     };
 
     // A static sampler declared on a program. It occupies a sampler register

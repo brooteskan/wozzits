@@ -1,16 +1,22 @@
 #include <engine/assets/vector_field/vector_field_compilers.h>
 
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <wozzits/rhi/gpu_resource.h>
+#include <wozzits/rhi/gpu_resource_registry.h>
+
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace wz::engine::assets::internal
 {
@@ -124,12 +130,132 @@ namespace wz::engine::assets::internal
 
             return true;
         }
+
+        // #201: publish the field's GPU residency onto the shared wozzits-rhi
+        // registry as an RGBA32Float Texture2D resource (the surrogate pattern —
+        // the registry owns the GPU texture, the asset is its surrogate). Mirrors
+        // publish_resident_scalar_field. The first channel's components are packed
+        // into RGBA (alpha defaults to 1.0 when the channel has < 4 components),
+        // matching the retired legacy upload_vector_field_texture layout; a
+        // filtered consumer (a later #195 render path) declares its own static
+        // sampler on the SRG. Best-effort: a failure is logged and does not fail
+        // the compile (the field still resolves on the CPU table).
+        void publish_resident_vector_field(
+            const wz::asset::AssetKey& key,
+            const VectorFieldData& field,
+            wz::rhi::GpuResourceRegistry& gpu_resources,
+            const RhiResourceTracker& rhi_resource_tracker,
+            wz::Logger& logger)
+        {
+            // V1: 2D RGBA32F only (depth == 1), matching the texture residency
+            // path and the retired legacy uploader. 3D vector fields wait for a
+            // volumetric consumer (Texture3D SRV binding is a #201-out-of-scope
+            // follow-up).
+            if (!field.valid()
+                || field.depth != 1u
+                || field.format != VectorFieldFormat::Float32
+                || field.channel_count() == 0u)
+            {
+                return;
+            }
+
+            const auto started = std::chrono::steady_clock::now();
+
+            const uint64_t sample_count =
+                static_cast<uint64_t>(field.width)
+                * static_cast<uint64_t>(field.height);
+            const uint32_t component_count =
+                (std::min)(field.components_per_channel, 4u);
+
+            std::vector<float> rgba(
+                static_cast<size_t>(sample_count) * 4u, 0.0f);
+            for (uint32_t y = 0; y < field.height; ++y) {
+                for (uint32_t x = 0; x < field.width; ++x) {
+                    const size_t dst =
+                        (static_cast<size_t>(y) * field.width + x) * 4u;
+                    for (uint32_t c = 0; c < component_count; ++c) {
+                        rgba[dst + c] = field.at(x, y, 0, 0, c);
+                    }
+                    if (component_count < 4u) {
+                        rgba[dst + 3] = 1.0f;
+                    }
+                }
+            }
+
+            wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::texture_2d(
+                field.width,
+                field.height,
+                wz::rhi::TextureFormat::RGBA32Float,
+                wz::rhi::ResourceUsage_Sampled);
+            desc.cpu_access = wz::rhi::ResourceCpuAccess::WriteOnce;
+            desc.identity = wz::rhi::ResourceIdentity{
+                rhi_asset_identity(key, "vector_field_texture"),
+                {},
+            };
+
+            const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
+            const uint64_t byte_count =
+                static_cast<uint64_t>(rgba.size()) * sizeof(float);
+            const bool uploaded =
+                handle.valid()
+                && gpu_resources.update(handle, rgba.data(), byte_count);
+            if (!uploaded) {
+                if (handle.valid()) {
+                    gpu_resources.release(handle);
+                }
+                logger.warn("vector field RHI resident upload failed");
+                return;
+            }
+
+            if (rhi_resource_tracker) {
+                rhi_resource_tracker(key, { desc.identity });
+            }
+
+            const auto elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+            logger.info(
+                "asset compile: vector field RHI resident upload "
+                + std::to_string(field.width) + "x"
+                + std::to_string(field.height)
+                + " upload_ms=" + std::to_string(elapsed_ms));
+        }
+
+        // Shared tail: publish rhi residency when a registry is present, store the
+        // field in the CPU table, and return the compiled node.
+        wz::asset::AssetNode finalize_vector_field(
+            const wz::asset::AssetNode& input,
+            VectorFieldData data,
+            VectorFieldTable& vector_field_table,
+            wz::rhi::GpuResourceRegistry* gpu_resources,
+            const RhiResourceTracker& rhi_resource_tracker,
+            wz::Logger& logger)
+        {
+            if (gpu_resources) {
+                publish_resident_vector_field(
+                    input.key,
+                    data,
+                    *gpu_resources,
+                    rhi_resource_tracker,
+                    logger);
+            }
+
+            const wz::asset::ResourceHandle handle =
+                vector_field_table.add(std::move(data));
+
+            wz::asset::AssetNode out = input;
+            out.stage = wz::asset::AssetStage::Compiled;
+            out.payload = handle;
+            return out;
+        }
     }
 
     void register_vector_field_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
-        VectorFieldTable& vector_field_table)
+        VectorFieldTable& vector_field_table,
+        wz::rhi::GpuResourceRegistry* gpu_resources,
+        RhiResourceTracker rhi_resource_tracker)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kVectorFieldFromRawF32Schema,
@@ -236,7 +362,8 @@ namespace wz::engine::assets::internal
                     .options = kVectorFieldDomainOptions,
                 },
             },
-            .compile = [&logger, &vector_field_table](
+            .compile = [&logger, &vector_field_table,
+                        gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>)
@@ -343,13 +470,13 @@ namespace wz::engine::assets::internal
                 data.max_values = std::move(max_values);
                 data.values = std::move(values);
 
-                wz::asset::ResourceHandle handle =
-                    vector_field_table.add(std::move(data));
-
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
+                return finalize_vector_field(
+                    input,
+                    std::move(data),
+                    vector_field_table,
+                    gpu_resources,
+                    rhi_resource_tracker,
+                    logger);
             },
         });
     }

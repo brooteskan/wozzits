@@ -29,7 +29,12 @@ namespace wz::engine::assets::internal
             ctx.cache_settings,
             ctx.gpu_resources,
             ctx.rhi_resource_tracker);
-        register_vector_field_compilers(registry, ctx.logger, ctx.vector_fields_table);
+        register_vector_field_compilers(
+            registry,
+            ctx.logger,
+            ctx.vector_fields_table,
+            ctx.gpu_resources,
+            ctx.rhi_resource_tracker);
         register_csv_compilers(registry, ctx.logger, ctx.csv_table);
         register_json_compilers(registry, ctx.logger, ctx.json_table);
         register_toml_compilers(registry, ctx.logger, ctx.toml_table);
@@ -116,7 +121,9 @@ namespace wz::engine::assets::internal
             ctx.logger,
             ctx.direct_light_table,
             ctx.ambient_lighting_table,
-            ctx.hdri_environment_table);
+            ctx.hdri_environment_table,
+            ctx.gpu_resources,
+            ctx.rhi_resource_tracker);
         register_scene_compilers(
             registry,
             ctx.logger,

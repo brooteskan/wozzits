@@ -3,7 +3,6 @@ target_sources(window_engine PRIVATE
     texture.cpp
     scalar_field_texture.cpp
     vector_field_texture.cpp
-    hdr_image_texture.cpp
     mesh.cpp
     mesh_field_visualization.cpp
     gaussian_splat.cpp
@@ -20,7 +19,6 @@ target_sources(window_engine PRIVATE
     dx12/dx12_texture.cpp
     dx12/dx12_scalar_field_texture.cpp
     dx12/dx12_vector_field_texture.cpp
-    dx12/dx12_hdr_image_texture.cpp
     dx12/dx12_scalar_field_debug.cpp
     dx12/dx12_mesh.cpp
     dx12/dx12_mesh_field_visualization.cpp

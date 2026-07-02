@@ -3,14 +3,21 @@
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/hdri/hdri_image_loader.h>
 #include <engine/assets/hdri/hdri_lighting_metadata.h>
+#include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
+#include <wozzits/rhi/gpu_resource.h>
+#include <wozzits/rhi/gpu_resource_registry.h>
+
+#include <chrono>
+#include <cstdint>
 #include <mutex>
 #include <array>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace wz::engine::assets::internal
 {
@@ -199,6 +206,83 @@ namespace wz::engine::assets::internal
                     desc.dominant_light_confidence);
             return desc;
         }
+
+        // #201: publish the HDRI environment image onto the shared wozzits-rhi
+        // registry as an RGBA32Float Texture2D resource (the surrogate pattern —
+        // the registry owns the GPU texture, the asset is its surrogate). Mirrors
+        // publish_resident_scalar_field and replaces the retired legacy
+        // upload_hdr_image_texture; the 3/4-channel float image is expanded to
+        // RGBA (alpha 1.0 when the source is RGB). Best-effort: a failure is
+        // logged and does not fail the compile (the environment's lighting
+        // metadata still resolves). A filtered/equirect consumer (a later #195
+        // render path) declares its own LinearWrap static sampler on the SRG.
+        void publish_resident_hdri_environment(
+            const wz::asset::AssetKey& key,
+            const HDRImageData& image,
+            wz::rhi::GpuResourceRegistry& gpu_resources,
+            const RhiResourceTracker& rhi_resource_tracker,
+            wz::Logger& logger)
+        {
+            if (!image.valid() || image.channels < 3u) {
+                return;
+            }
+
+            const auto started = std::chrono::steady_clock::now();
+
+            const uint64_t pixel_count =
+                static_cast<uint64_t>(image.width)
+                * static_cast<uint64_t>(image.height);
+            std::vector<float> rgba(
+                static_cast<size_t>(pixel_count) * 4u, 1.0f);
+            for (uint64_t p = 0; p < pixel_count; ++p) {
+                const size_t src =
+                    static_cast<size_t>(p) * image.channels;
+                const size_t dst = static_cast<size_t>(p) * 4u;
+                rgba[dst + 0] = image.pixels[src + 0];
+                rgba[dst + 1] = image.pixels[src + 1];
+                rgba[dst + 2] = image.pixels[src + 2];
+                rgba[dst + 3] =
+                    image.channels >= 4u ? image.pixels[src + 3] : 1.0f;
+            }
+
+            wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::texture_2d(
+                image.width,
+                image.height,
+                wz::rhi::TextureFormat::RGBA32Float,
+                wz::rhi::ResourceUsage_Sampled);
+            desc.cpu_access = wz::rhi::ResourceCpuAccess::WriteOnce;
+            desc.identity = wz::rhi::ResourceIdentity{
+                rhi_asset_identity(key, "environment_map_texture"),
+                {},
+            };
+
+            const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
+            const uint64_t byte_count =
+                static_cast<uint64_t>(rgba.size()) * sizeof(float);
+            const bool uploaded =
+                handle.valid()
+                && gpu_resources.update(handle, rgba.data(), byte_count);
+            if (!uploaded) {
+                if (handle.valid()) {
+                    gpu_resources.release(handle);
+                }
+                logger.warn("HDRI environment RHI resident upload failed");
+                return;
+            }
+
+            if (rhi_resource_tracker) {
+                rhi_resource_tracker(key, { desc.identity });
+            }
+
+            const auto elapsed_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+            logger.info(
+                "asset compile: HDRI environment RHI resident upload "
+                + std::to_string(image.width) + "x"
+                + std::to_string(image.height)
+                + " upload_ms=" + std::to_string(elapsed_ms));
+        }
     }
 
     void register_light_compilers(
@@ -206,7 +290,9 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         DirectLightTable& direct_light_table,
         AmbientLightingTable& ambient_lighting_table,
-        HDRIEnvironmentTable& hdri_environment_table)
+        HDRIEnvironmentTable& hdri_environment_table,
+        wz::rhi::GpuResourceRegistry* gpu_resources,
+        RhiResourceTracker rhi_resource_tracker)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kDirectLightSchema,
@@ -486,7 +572,8 @@ namespace wz::engine::assets::internal
                     .max = 1.0,
                 },
             },
-            .compile = [&logger, &hdri_environment_table](
+            .compile = [&logger, &hdri_environment_table,
+                        gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>)
@@ -633,6 +720,33 @@ namespace wz::engine::assets::internal
                             metadata.dominant_light_intensity;
                         environment.dominant_light_confidence =
                             metadata.dominant_light_confidence;
+                    }
+                }
+
+                // #201: publish GPU residency for the environment image. Only
+                // OpenEXR is decodable at this boundary today; a RadianceHDR
+                // decoder would slot in here the same way. Residency is
+                // best-effort and independent of the lighting-metadata path
+                // above; a decode failure for a non-EXR source is not fatal
+                // (the environment still resolves for its lighting scalars).
+                if (gpu_resources != nullptr
+                    && (desc->format == HDRIEnvironmentFormat::Auto
+                        || desc->format == HDRIEnvironmentFormat::OpenEXR))
+                {
+                    HDRImageData image{};
+                    std::string error;
+                    if (load_openexr_image_from_memory(*bytes, image, error)) {
+                        publish_resident_hdri_environment(
+                            input.key,
+                            image,
+                            *gpu_resources,
+                            rhi_resource_tracker,
+                            logger);
+                    }
+                    else if (desc->format == HDRIEnvironmentFormat::OpenEXR) {
+                        logger.warn(
+                            "HDRI environment residency skipped: OpenEXR "
+                            "decode failed: " + error);
                     }
                 }
 
