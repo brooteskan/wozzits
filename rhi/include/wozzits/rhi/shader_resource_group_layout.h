@@ -20,6 +20,14 @@ namespace wz::rhi
     enum class ShaderStage : uint8_t { All, Vertex, Pixel, Compute };
     enum class DescriptorKind : uint8_t { StructuredBufferSRV, TextureSRV, Sampler, UAV };
 
+    // Baked-into-the-root-signature sampler. A static sampler needs no descriptor
+    // heap or per-draw binding — the backend serializes it into the root
+    // signature — so it is the right tool for a fixed filtering rule (e.g. a
+    // linear-clamp height tap) rather than a Sampler descriptor table. A small
+    // closed set of well-known filter/address recipes; a new recipe adds a member
+    // and breaks the backend switch, matching how pipeline-state enums are kept.
+    enum class StaticSamplerKind : uint8_t { LinearClamp };
+
     // Descriptor semantics are registered by name, exactly like render
     // programs. The adapter acquires a Tag per semantic and stamps it into the
     // SRG-local DescriptorBinding::semantic.
@@ -50,6 +58,20 @@ namespace wz::rhi
                                const RootConstantsBinding&) = default;
     };
 
+    // A static sampler declared on an SRG. It occupies a sampler register
+    // (s#) in the SRG's register_space but consumes no descriptor-table slot;
+    // the backend bakes it into the root signature.
+    struct StaticSamplerBinding
+    {
+        StaticSamplerKind kind = StaticSamplerKind::LinearClamp;
+        ShaderStage visibility = ShaderStage::Pixel;
+        uint32_t shader_register = 0;
+        uint32_t register_space = 0;
+
+        friend bool operator==(const StaticSamplerBinding&,
+                               const StaticSamplerBinding&) = default;
+    };
+
     struct ShaderResourceGroupLayout
     {
         // Frequency/register-space slot. Convention: view=0, material=1,
@@ -57,6 +79,7 @@ namespace wz::rhi
         uint32_t binding_slot = 0;
 
         std::vector<DescriptorBinding> descriptors;
+        std::vector<StaticSamplerBinding> static_samplers;
         ConstantsLayout constants;
         RootConstantsBinding constants_binding{};
 
@@ -76,6 +99,13 @@ namespace wz::rhi
                 hash_combine(h, static_cast<uint64_t>(descriptor.shader_register));
                 hash_combine(h, static_cast<uint64_t>(descriptor.register_space));
                 hash_combine(h, static_cast<uint64_t>(descriptor.descriptor_count));
+            }
+            hash_combine(h, static_cast<uint64_t>(static_samplers.size()));
+            for (const StaticSamplerBinding& sampler : static_samplers) {
+                hash_combine(h, static_cast<uint64_t>(sampler.kind));
+                hash_combine(h, static_cast<uint64_t>(sampler.visibility));
+                hash_combine(h, static_cast<uint64_t>(sampler.shader_register));
+                hash_combine(h, static_cast<uint64_t>(sampler.register_space));
             }
             return h;
         }
