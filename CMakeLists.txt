@@ -280,17 +280,28 @@ endif()
 #     at once (on Windows: a "Permission denied" sharing violation), and
 #   - re-copying the whole resources tree (multiple GB: HDRIs + committed asset
 #     caches) on every relink of every resource target.
-# A stamp gates the copy so it runs once, not on every build. The committed
-# resources tree is large and effectively static; to force a re-stage after
-# editing it, delete ${CMAKE_BINARY_DIR}/wz_resources.stamp (or reconfigure).
+# A stamp gates the copy so it runs only when a source resource actually
+# changed: the stamp DEPENDS on every file under window_engine/resources
+# (globbed with CONFIGURE_DEPENDS, so added/removed files re-run the glob),
+# and the copy skips up-to-date files where the running CMake supports it.
+# Deleting a source resource does not delete the staged copy; nuke
+# ${CMAKE_BINARY_DIR}/resources if that ever matters.
+file(GLOB_RECURSE WZ_RESOURCE_FILES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources/*")
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.26")
+    set(WZ_RESOURCE_COPY_MODE copy_directory_if_different)
+else()
+    set(WZ_RESOURCE_COPY_MODE copy_directory)
+endif()
 set(WZ_RESOURCE_STAMP "${CMAKE_BINARY_DIR}/wz_resources.stamp")
 add_custom_command(
     OUTPUT "${WZ_RESOURCE_STAMP}"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    COMMAND ${CMAKE_COMMAND} -E ${WZ_RESOURCE_COPY_MODE}
         "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources"
         "${CMAKE_BINARY_DIR}/resources"
     COMMAND ${CMAKE_COMMAND} -E touch "${WZ_RESOURCE_STAMP}"
-    COMMENT "Staging window_engine resources (shared, once)"
+    DEPENDS ${WZ_RESOURCE_FILES}
+    COMMENT "Staging window_engine resources (shared, changed files only)"
     VERBATIM
 )
 add_custom_target(wz_stage_resources DEPENDS "${WZ_RESOURCE_STAMP}")
