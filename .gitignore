@@ -46,6 +46,9 @@ x86/
 # VS template above matches build-output Win32 dirs; exempt our platform source tree
 !src/platform/win32/
 !src/platform/win32/**
+!window_engine/platform/win32/
+!window_engine/platform/win32/**
+
 [Aa][Rr][Mm]/
 [Aa][Rr][Mm]64/
 bld/
