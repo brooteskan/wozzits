@@ -51,6 +51,31 @@ TEST(ConditionalPolicy, DecisionIsUndecidedButPolicyIsDefinite)
     EXPECT_GT(policy_correlation(reg, kCtx, kDec), 0.95);          // but entangled
 }
 
+// conditional_preference reads the learned action for a given context WITHOUT
+// measuring: for the diagonal policy, context 0 leans to action |0> (+1) and
+// context 1 leans to action |1> (-1), while the UNconditioned decision stays ~0.
+TEST(ConditionalPolicy, ConditionalPreferenceReadsTheContextAction)
+{
+    Register reg = learn_diagonal();
+    // Marginally undecided...
+    EXPECT_NEAR(wz::engine::cognition::qstate::expectation_z(reg, kDec), 0.0, 0.05);
+    // ...but conditionally definite, oppositely per context.
+    EXPECT_GT(conditional_preference(reg, kCtx, 0, kDec), 0.9);   // ctx 0 -> |0>
+    EXPECT_LT(conditional_preference(reg, kCtx, 1, kDec), -0.9);  // ctx 1 -> |1>
+
+    // The read is non-destructive: the policy is still entangled afterwards.
+    EXPECT_GT(policy_correlation(reg, kCtx, kDec), 0.95);
+}
+
+// A fresh (uniform) memory has no learned action in any context: the conditional
+// read is ~0 both ways.
+TEST(ConditionalPolicy, ConditionalPreferenceIsFlatBeforeLearning)
+{
+    Register reg = wz::engine::cognition::qstate::uniform(2);
+    EXPECT_NEAR(conditional_preference(reg, kCtx, 0, kDec), 0.0, 1e-6);
+    EXPECT_NEAR(conditional_preference(reg, kCtx, 1, kDec), 0.0, 1e-6);
+}
+
 // Observing the context collapses the decision to the learned action for that
 // context -- conditioning through entanglement, not a classical readout.
 TEST(ConditionalPolicy, ObservingContextSelectsTheLearnedAction)

@@ -1612,6 +1612,44 @@ namespace wz::engine::behavior
                 state->handle, memory_qubit));
         }
 
+        uint8_t reward_agent_pair_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            uint32_t ctx_qubit,
+            uint8_t ctx_value,
+            uint32_t dec_qubit,
+            uint8_t dec_value,
+            float strength)
+        {
+            const QuantumAgentState* state = find_quantum_agent_state(
+                static_cast<BehaviorFrameContext*>(user), entity);
+            if (!state || state->handle == 0u) {
+                return 0;
+            }
+            return quantum_agent_store().reward_pair(
+                       state->handle, ctx_qubit, ctx_value != 0,
+                       dec_qubit, dec_value != 0,
+                       static_cast<double>(strength))
+                ? 1u
+                : 0u;
+        }
+
+        float agent_conditional_pref_query(
+            void* user,
+            WzBehaviorEntityId entity,
+            uint32_t ctx_qubit,
+            uint8_t ctx_value,
+            uint32_t dec_qubit)
+        {
+            const QuantumAgentState* state = find_quantum_agent_state(
+                static_cast<BehaviorFrameContext*>(user), entity);
+            if (!state || state->handle == 0u) {
+                return 0.0f;
+            }
+            return static_cast<float>(quantum_agent_store().conditional_preference(
+                state->handle, ctx_qubit, ctx_value != 0, dec_qubit));
+        }
+
         uint8_t set_next_wake_request(
             void* user,
             double delay_seconds)
@@ -1907,6 +1945,8 @@ namespace wz::engine::behavior
                 .reshape_group = reshape_group_request,
                 .reward_agent = reward_agent_request,
                 .agent_memory = agent_memory_query,
+                .reward_agent_pair = reward_agent_pair_request,
+                .agent_conditional_pref = agent_conditional_pref_query,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1992,6 +2032,8 @@ namespace wz::engine::behavior
                 .reshape_group = reshape_group_request,
                 .reward_agent = reward_agent_request,
                 .agent_memory = agent_memory_query,
+                .reward_agent_pair = reward_agent_pair_request,
+                .agent_conditional_pref = agent_conditional_pref_query,
             };
         }
 

@@ -1,5 +1,6 @@
 #include <cognition/agent_cognition.h>
 
+#include <cognition/conditional_policy.h>
 #include <cognition/learning.h>
 #include <cognition/ttn.h>
 
@@ -226,6 +227,35 @@ namespace wz::engine::cognition
             return 0.0;
         }
         return wz::engine::cognition::memory_preference(a->memory, memory_qubit);
+    }
+
+    bool AgentCognitionStore::reward_pair(
+        AgentHandle h,
+        uint32_t ctx_qubit, bool ctx_value,
+        uint32_t dec_qubit, bool dec_value,
+        double strength)
+    {
+        Agent* a = find(h);
+        if (!a || ctx_qubit >= a->memory_qubits || dec_qubit >= a->memory_qubits) {
+            return false;
+        }
+        wz::engine::cognition::reward_pair(
+            a->memory, ctx_qubit, ctx_value ? 1u : 0u,
+            dec_qubit, dec_value ? 1u : 0u, strength);
+        return true;
+    }
+
+    double AgentCognitionStore::conditional_preference(
+        AgentHandle h,
+        uint32_t ctx_qubit, bool ctx_value,
+        uint32_t dec_qubit) const
+    {
+        const Agent* a = find(h);
+        if (!a || ctx_qubit >= a->memory_qubits || dec_qubit >= a->memory_qubits) {
+            return 0.0;
+        }
+        return wz::engine::cognition::conditional_preference(
+            a->memory, ctx_qubit, ctx_value ? 1u : 0u, dec_qubit);
     }
 
     bool AgentCognitionStore::rearm(AgentHandle h, double now)

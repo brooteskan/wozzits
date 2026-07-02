@@ -38,4 +38,18 @@ namespace wz::engine::cognition
     // dependent. Zero for a separable memory.
     double policy_correlation(
         const wz::engine::cognition::qstate::Register& reg, uint32_t ctx_qubit, uint32_t dec_qubit);
+
+    // NON-DESTRUCTIVE conditional read: <sigma_z> of the DECISION qubit GIVEN the
+    // context qubit == ctx_value, in [-1, 1] (+1 => the learned action for this
+    // context is |0>). This is the classical projection of the entangled policy --
+    // fold it into the decision's goal field each frame WITHOUT measuring, so the
+    // memory stays coherent and keeps learning. Derived from the one- and two-body
+    // z-expectations alone: <sz_dec | ctx=v> = (z_dec + s*zz) / (1 + s*z_ctx) with
+    // s = +1 for ctx_value 0, -1 for 1 (denominator = 2*P(ctx==ctx_value)). Returns
+    // 0 when that context has ~zero probability.
+    double conditional_preference(
+        const wz::engine::cognition::qstate::Register& reg,
+        uint32_t ctx_qubit,
+        uint8_t ctx_value,
+        uint32_t dec_qubit);
 }

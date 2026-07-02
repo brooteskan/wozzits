@@ -405,6 +405,69 @@ TEST(AgentCognition, MemoryLearnsAndSurvivesRearm)
     EXPECT_LT(store.memory_preference(h, 0), learned);
 }
 
+// Contextual learning through the store: a 2-qubit memory learns the diagonal
+// policy (ctx 0 -> act 0, ctx 1 -> act 1). The conditional read then returns the
+// learned action PER context (opposite signs), it survives a rearm, and an
+// out-of-range qubit is rejected.
+TEST(AgentCognition, ContextualPolicyLearnsAndConditions)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 1;
+    spec.clock = anneal_clock();
+    spec.memory_qubits = 2;   // qubit 0 = context, qubit 1 = action
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    // Fresh: no context-dependence either way.
+    EXPECT_NEAR(store.conditional_preference(h, 0, false, 1), 0.0, 1e-6);
+
+    // Reward the diagonal.
+    for (int i = 0; i < 40; ++i) {
+        EXPECT_TRUE(store.reward_pair(h, 0, false, 1, false, 0.5));  // ctx0 -> act0
+        EXPECT_TRUE(store.reward_pair(h, 0, true, 1, true, 0.5));    // ctx1 -> act1
+    }
+    // Marginally undecided, but conditionally definite and opposite per context.
+    EXPECT_NEAR(store.memory_preference(h, 1), 0.0, 0.1);
+    EXPECT_GT(store.conditional_preference(h, 0, false, 1), 0.9);  // ctx0 -> |0>
+    EXPECT_LT(store.conditional_preference(h, 0, true, 1), -0.9);  // ctx1 -> |1>
+
+    // Learned policy survives a rearm (memory is outside the coordination).
+    const double ctx0 = store.conditional_preference(h, 0, false, 1);
+    ASSERT_TRUE(store.rearm(h, 10.0));
+    EXPECT_NEAR(store.conditional_preference(h, 0, false, 1), ctx0, 1e-9);
+
+    // Out-of-range memory qubit rejected.
+    EXPECT_FALSE(store.reward_pair(h, 0, false, 5, false, 0.5));
+    EXPECT_EQ(store.conditional_preference(h, 5, false, 1), 0.0);
+}
+
+// Doctrine learning relies on a group hub's memory surviving the per-frame
+// reshape() the commander runs as squad size changes -- reshape rebuilds the
+// COORDINATION but must leave the (unmeasured) memory register untouched.
+TEST(AgentCognition, MemorySurvivesReshape)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 1;   // a lone hub to start
+    spec.clock = anneal_clock();
+    spec.memory_qubits = 1;
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    for (int i = 0; i < 8; ++i) {
+        store.reward(h, 0, /*toward=*/true, 0.5);
+    }
+    const double learned = store.memory_preference(h, 0);
+    EXPECT_GT(learned, 0.5);
+
+    // Grow into a 3-qubit star group (hub + 2 members), as the commander does.
+    const std::vector<ExactBond> star{ { 0u, 1u, 1.0 }, { 0u, 2u, 1.0 } };
+    ASSERT_TRUE(store.reshape(h, 3u, star, 10.0));
+    EXPECT_EQ(store.agent_count(h), 3u);
+    EXPECT_NEAR(store.memory_preference(h, 0), learned, 1e-9);  // doctrine intact
+}
+
 // An agent with no memory register rejects reward / reads back 0 (no crash, no
 // silent success).
 TEST(AgentCognition, NoMemoryRejectsLearning)

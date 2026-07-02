@@ -108,6 +108,26 @@ namespace wz::engine::cognition
         // memory / bad qubit.
         double memory_preference(AgentHandle h, uint32_t memory_qubit) const;
 
+        // CONTEXTUAL LEARNING. Reinforce the JOINT branch (ctx_qubit == ctx_value
+        // AND dec_qubit == dec_value) in the memory register -- learning the
+        // "diagonal" (reward (ctx0,act0) + (ctx1,act1)) drives an ENTANGLED
+        // conditional policy (the action depends on the context), which a product
+        // memory cannot represent. False if the agent has no memory / bad qubit.
+        bool reward_pair(
+            AgentHandle h,
+            uint32_t ctx_qubit, bool ctx_value,
+            uint32_t dec_qubit, bool dec_value,
+            double strength);
+
+        // Read the learned action for a context WITHOUT measuring: <sigma_z> of
+        // dec_qubit GIVEN ctx_qubit == ctx_value, in [-1, 1] (+1 => |0>). Feed it,
+        // scaled, as the decision's goal so the agent acts on the policy for the
+        // CURRENT context. 0 if no memory / bad qubit / that context ~never occurs.
+        double conditional_preference(
+            AgentHandle h,
+            uint32_t ctx_qubit, bool ctx_value,
+            uint32_t dec_qubit) const;
+
         // Change an agent's SIZE + bond structure live (dynamic group membership:
         // members join/leave a command's group). Rebuilds a fresh coordination of
         // `agent_count` qubits with `bonds`, preserving existing goal fields where

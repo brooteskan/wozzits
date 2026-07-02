@@ -24,7 +24,8 @@ extern "C" {
 // rebuilt at least as new as every plugin -- which a separate project-plugin build
 // + hot-reload cannot guarantee, so: bump.
 // v28: appended reward_agent / agent_memory (cognition LEARNING seam).
-#define WZ_BEHAVIOR_ABI_VERSION 28u
+// v29: appended reward_agent_pair / agent_conditional_pref (CONTEXTUAL learning).
+#define WZ_BEHAVIOR_ABI_VERSION 29u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -538,6 +539,36 @@ typedef float (*WzAgentMemoryFn)(
     WzBehaviorEntityId entity,
     uint32_t memory_qubit);
 
+/*
+ * Cognition CONTEXTUAL-LEARNING surface. Where reward_agent concentrates ONE
+ * memory qubit, these learn a context-DEPENDENT policy as entanglement between a
+ * context memory qubit and an action memory qubit (needs memory >= 2):
+ *   reward_agent_pair(entity, ctx_qubit, ctx_value, dec_qubit, dec_value, strength)
+ *     -- reinforce the joint (context, action) branch; rewarding the diagonal
+ *     ((ctx0,act0)+(ctx1,act1)) learns "different action per context".
+ *   agent_conditional_pref(entity, ctx_qubit, ctx_value, dec_qubit) -- read the
+ *     learned action for a context WITHOUT measuring: <sigma_z> of dec_qubit given
+ *     ctx_qubit == ctx_value, in [-1, 1] (+1 => |0>). Feed it, scaled, as the
+ *     decision's goal so the agent acts on the policy for the CURRENT context.
+ * reward_agent_pair returns 0 if the node has no quantum_agent / no memory / bad
+ * qubit; agent_conditional_pref returns 0 in those cases too.
+ */
+typedef uint8_t (*WzAgentRewardPairFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    uint32_t ctx_qubit,
+    uint8_t ctx_value,
+    uint32_t dec_qubit,
+    uint8_t dec_value,
+    float strength);
+
+typedef float (*WzAgentConditionalPrefFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    uint32_t ctx_qubit,
+    uint8_t ctx_value,
+    uint32_t dec_qubit);
+
 typedef struct WzGpuWorkId
 {
     uint64_t value;
@@ -1031,6 +1062,15 @@ typedef struct WzBehaviorFrameFacts
      */
     WzAgentRewardFn reward_agent;
     WzAgentMemoryFn agent_memory;
+
+    /*
+     * Cognition CONTEXTUAL-LEARNING surface (APPEND-ONLY; shares
+     * cognition_reader_user). Joint (context, action) reward + non-destructive
+     * conditional read, for a memory register of >= 2 qubits. Null when no
+     * cognition host.
+     */
+    WzAgentRewardPairFn reward_agent_pair;
+    WzAgentConditionalPrefFn agent_conditional_pref;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

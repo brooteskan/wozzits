@@ -1619,6 +1619,72 @@ static inline float wz_self_agent_memory(
         memory_qubit);
 }
 
+// CONTEXTUAL LEARNING: reinforce the joint (context, action) branch of a
+// quantum_agent's memory (needs memory >= 2). Rewarding the diagonal learns a
+// different action per context. Returns 0 if the node has no quantum_agent / no
+// memory / bad qubit.
+static inline uint8_t wz_agent_reward_pair(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t ctx_qubit,
+    uint8_t ctx_value,
+    uint32_t dec_qubit,
+    uint8_t dec_value,
+    float strength)
+{
+    if (!facts || !facts->reward_agent_pair) {
+        return 0;
+    }
+    return facts->reward_agent_pair(
+        facts->cognition_reader_user, entity,
+        ctx_qubit, ctx_value, dec_qubit, dec_value, strength);
+}
+
+// Read the learned action for a context WITHOUT measuring: <sigma_z> of dec_qubit
+// given ctx_qubit == ctx_value, in [-1, 1] (+1 => |0>). 0 if no memory.
+static inline float wz_agent_conditional_pref(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t ctx_qubit,
+    uint8_t ctx_value,
+    uint32_t dec_qubit)
+{
+    if (!facts || !facts->agent_conditional_pref) {
+        return 0.0f;
+    }
+    return facts->agent_conditional_pref(
+        facts->cognition_reader_user, entity, ctx_qubit, ctx_value, dec_qubit);
+}
+
+// Convenience: contextual reward / conditional read on the agent co-located on self.
+static inline uint8_t wz_self_agent_reward_pair(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint32_t ctx_qubit,
+    uint8_t ctx_value,
+    uint32_t dec_qubit,
+    uint8_t dec_value,
+    float strength)
+{
+    return wz_agent_reward_pair(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        ctx_qubit, ctx_value, dec_qubit, dec_value, strength);
+}
+
+static inline float wz_self_agent_conditional_pref(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint32_t ctx_qubit,
+    uint8_t ctx_value,
+    uint32_t dec_qubit)
+{
+    return wz_agent_conditional_pref(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        ctx_qubit, ctx_value, dec_qubit);
+}
+
 static inline void wz_log_info(
     const WzBehaviorFrameFacts* facts,
     const char* message)
