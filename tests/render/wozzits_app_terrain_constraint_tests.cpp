@@ -40,6 +40,10 @@
 #include <gpu/gpu.h>
 #include <input/input.h>
 
+#include <cmath>
+#include <fstream>
+#include <iterator>
+
 namespace
 {
     constexpr const char* kProjectRoot = "projects/terrain_constraint_fixture";
@@ -197,4 +201,155 @@ TEST_F(WozzitsAppTerrainConstraintFixture, ConstrainedActorKeepsEditedScaleAcros
     ASSERT_TRUE(after_t.has_value());
     EXPECT_LT(after_t->y, kStartHeight - 1.0f)
         << "constrained actor stopped sticking after a scale edit";
+}
+
+// #221: an editor-style set_node_transform edit is visible in the RENDER world
+// transforms — the sim poke set_node_transform does is what makes the edit show
+// up now that the renderer reads the polytree. Includes the 883d38d scale case:
+// a terrain-constrained actor's scale (a DOF the constraint doesn't drive) must
+// carry into the drawn world matrix.
+TEST_F(WozzitsAppTerrainConstraintFixture, EditVisibleInRenderWorldTransform)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(load_desc()));
+
+    const auto start_t = app.node_local_translation("actor");
+    ASSERT_TRUE(start_t.has_value());
+
+    // Edit: move the actor and scale it 3x. Keep rotation identity (the constraint
+    // sets rotation each frame). The XZ move should show in the world transform.
+    wz::engine::assets::AuthoredTransform edited{};
+    edited.translation[0] = start_t->x + 7.0f;
+    edited.translation[1] = start_t->y;
+    edited.translation[2] = start_t->z - 4.0f;
+    edited.rotation_quat[0] = 0.0f;
+    edited.rotation_quat[1] = 0.0f;
+    edited.rotation_quat[2] = 0.0f;
+    edited.rotation_quat[3] = 1.0f;
+    edited.scale[0] = 3.0f;
+    edited.scale[1] = 3.0f;
+    edited.scale[2] = 3.0f;
+    ASSERT_TRUE(app.set_node_transform("actor", edited));
+
+    const wz::input::InputState input{};
+    app.simulation_tick(input, 1.0f / 60.0f);
+
+    // The render world matrix reflects the edited translation (XZ) and scale. The
+    // actor is a root, so its world == local. Column 3 = translation; the basis
+    // column lengths = scale (the constraint keeps rotation orthonormal + scale).
+    const std::optional<wz::math::Mat4> world = app.node_world_transform("actor");
+    ASSERT_TRUE(world.has_value());
+    EXPECT_NEAR(world->m[12], start_t->x + 7.0f, 1e-2f)
+        << "edited X translation not visible in the render world transform";
+    EXPECT_NEAR(world->m[14], start_t->z - 4.0f, 1e-2f)
+        << "edited Z translation not visible in the render world transform";
+
+    const float basis_x = std::sqrt(
+        world->m[0] * world->m[0] + world->m[1] * world->m[1]
+        + world->m[2] * world->m[2]);
+    EXPECT_NEAR(basis_x, 3.0f, 1e-2f)
+        << "edited scale not visible in the render world transform (883d38d)";
+}
+
+// #221 derive-on-save: after the sim moves an actor, save_scene persists the
+// SIM-CURRENT pose (the write-back used to keep scene_nodes_ current; now the
+// pose is decomposed from the polytree at save time). Reload proves the saved Y
+// is the settled surface Y, not the authored start height.
+TEST_F(WozzitsAppTerrainConstraintFixture, SaveScenePersistsSimCurrentPose)
+{
+    const auto project = wz::engine::project::load_project_manifest(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = kProjectRoot,
+            .resource_root = ctx.assets->resource_root(),
+        });
+    ASSERT_TRUE(project.ok) << project.error;
+
+    // Save/reload through a TEMP scene file so the staged fixture is never
+    // clobbered (procedural terrain resolves without external files, so an
+    // absolute scene path elsewhere still loads).
+    const wz::fs::Path staged_scene =
+        wz::fs::join(ctx.assets->resource_root(), project.manifest.scene_path);
+    std::string scene_text;
+    {
+        std::ifstream in(staged_scene, std::ios::binary);
+        ASSERT_TRUE(in.good()) << "could not read staged fixture scene";
+        scene_text.assign(
+            std::istreambuf_iterator<char>(in),
+            std::istreambuf_iterator<char>());
+    }
+    const wz::fs::Path temp_scene = wz::fs::join(
+        wz::fs::temp_directory_path(),
+        "wozzits_derive_on_save_test.scene.json");
+    {
+        std::ofstream out(temp_scene, std::ios::binary);
+        ASSERT_TRUE(out.good());
+        out << scene_text;
+    }
+
+    wz::app::WozzitsAppSceneLoadDesc save_desc{};
+    save_desc.asset_graph = project.manifest.asset_graph_path;
+    save_desc.scene = temp_scene;  // absolute -> save_scene writes back here
+    save_desc.behavior_module_folder = project.manifest.behavior_module_folder;
+
+    float settled_y = 0.0f;
+    {
+        wz::app::WozzitsApp_v1 app(ctx);
+        ASSERT_TRUE(app.load_scene(save_desc));
+
+        // An authored edit marks the scene dirty so save_scene actually writes
+        // (a pure sim tick no longer touches scene_nodes_, so it alone leaves the
+        // scene clean). Keep the authored start Y — the point is that the SETTLED
+        // sim Y is what gets persisted, not this authored Y.
+        const auto start_t = app.node_local_translation("actor");
+        ASSERT_TRUE(start_t.has_value());
+        wz::engine::assets::AuthoredTransform edited{};
+        edited.translation[0] = start_t->x + 1.0f;  // nudge -> scene_dirty_
+        edited.translation[1] = start_t->y;          // still the authored start Y
+        edited.translation[2] = start_t->z;
+        edited.rotation_quat[3] = 1.0f;
+        edited.scale[0] = 1.0f;
+        edited.scale[1] = 1.0f;
+        edited.scale[2] = 1.0f;
+        ASSERT_TRUE(app.set_node_transform("actor", edited));
+
+        const wz::input::InputState input{};
+        app.simulation_tick(input, 1.0f / 60.0f);
+
+        const auto after = app.node_local_translation("actor");
+        ASSERT_TRUE(after.has_value());
+        settled_y = after->y;
+        // Sanity: the actor actually snapped (settled well below the start).
+        ASSERT_LT(settled_y, kStartHeight - 1.0f);
+
+        // The STORED authored transform still carries the authored/edit Y — the
+        // sim did NOT write its settled pose back into scene_nodes_ (no write-back).
+        const auto stored = app.stored_node_local_translation("actor");
+        ASSERT_TRUE(stored.has_value());
+        EXPECT_NEAR(stored->y, kStartHeight, 1e-3f)
+            << "scene_nodes_ was mutated per frame — write-back should be gone";
+
+        // save_scene must derive the sim-current pose from the polytree.
+        ASSERT_TRUE(app.save_scene());
+    }
+
+    // Reload in a FRESH engine context so the scene is re-read from disk.
+    wz::engine::AppContext reload_ctx;
+    wz::engine::AppDesc reload_desc;
+    reload_desc.window = {
+        "wozzits_app_v1_derive_on_save_reload", 256, 256, false, false };
+    reload_desc.resource_root = "resources";
+    ASSERT_TRUE(wz::engine::init(reload_ctx, reload_desc));
+    {
+        wz::app::WozzitsApp_v1 app(reload_ctx);
+        ASSERT_TRUE(app.load_scene(save_desc));
+
+        // The reloaded authored Y is the settled surface Y saved above — proving
+        // derive-on-save captured the sim pose (matching the old write-back's
+        // saved result), not the authored start height.
+        const auto reloaded = app.stored_node_local_translation("actor");
+        ASSERT_TRUE(reloaded.has_value());
+        EXPECT_NEAR(reloaded->y, settled_y, 1e-2f)
+            << "save did not persist the sim-current pose (derive-on-save)";
+    }
+    wz::engine::shutdown(reload_ctx);
 }

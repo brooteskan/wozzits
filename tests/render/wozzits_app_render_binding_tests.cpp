@@ -106,3 +106,30 @@ TEST_F(WozzitsAppRenderBindingFixture, SetNodeBindingLiveReassembles)
     EXPECT_FALSE(app.set_node_geometry_asset(
         "no_such_node", static_cast<wz::asset::AssetGraphDraftNodeId>(9)));
 }
+
+// #221 no-sim path: this scene has no behaviors/motion/terrain/constraints, so
+// there is no live behavior_scene_. scene_world_transforms() must then be
+// exactly the authored composition (compute_scene_node_world_transforms) — same
+// hierarchical result the renderer used to compute internally. 'inherited' sits
+// at local origin under 'group' (translation +150 x), so its world X is 150;
+// 'solo' is a root at -150. Proves the fallback composes the parent chain.
+TEST_F(WozzitsAppRenderBindingFixture, NoSimSceneWorldTransformsAreAuthoredComposition)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(binding_load_desc()));
+
+    // No simulation was materialized for this static scene.
+    ASSERT_EQ(app.active_behavior_binding_count(), 0u);
+
+    // Root 'solo' draws at its own local translation.
+    const std::optional<wz::math::Mat4> solo = app.node_world_transform("solo");
+    ASSERT_TRUE(solo.has_value());
+    EXPECT_FLOAT_EQ(solo->m[12], -150.0f);  // world-space X translation
+
+    // 'inherited' (local origin) inherits 'group's +150 X — the parent-chain
+    // composition the standalone compute_scene_node_world_transforms produces.
+    const std::optional<wz::math::Mat4> inherited =
+        app.node_world_transform("inherited");
+    ASSERT_TRUE(inherited.has_value());
+    EXPECT_FLOAT_EQ(inherited->m[12], 150.0f);
+}

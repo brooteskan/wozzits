@@ -1081,7 +1081,8 @@ namespace wz::engine::rendering
         std::span<const ea::SceneNodeAsset> nodes,
         ea::EngineAssetLibrary& assets,
         const wz::math::Mat4& view_projection,
-        const wz::math::Vec3& camera_world_pos)
+        const wz::math::Vec3& camera_world_pos,
+        std::span<const wz::math::Mat4> world_transforms)
     {
         ID3D12GraphicsCommandList* cmd =
             wz::gpu::dx12::internal::get_command_list(gpu_.device);
@@ -1112,8 +1113,19 @@ namespace wz::engine::rendering
         // inheritance without resurrecting the legacy compile_scene renderer.
         // The clipmap branch ignores this by design (its lattice follows the
         // camera, not the node).
-        const std::vector<wz::math::Mat4> node_worlds =
-            compute_scene_node_world_transforms(nodes);
+        //
+        // #221: the caller may pass the per-node world matrices (drawn from the
+        // live simulation polytree, the single source of truth). Use them when
+        // they line up with `nodes`; otherwise (empty span, or size mismatch)
+        // compose from the authored nodes here, exactly as before.
+        std::vector<wz::math::Mat4> composed_node_worlds;
+        if (world_transforms.size() != nodes.size()) {
+            composed_node_worlds = compute_scene_node_world_transforms(nodes);
+        }
+        const std::span<const wz::math::Mat4> node_worlds =
+            world_transforms.size() == nodes.size()
+                ? world_transforms
+                : std::span<const wz::math::Mat4>(composed_node_worlds);
         // Inherited visibility: a hidden parent hides its whole subtree (e.g. a
         // scene-source host hiding its grafted children), not just itself.
         const std::vector<std::uint8_t> node_effective_visible =

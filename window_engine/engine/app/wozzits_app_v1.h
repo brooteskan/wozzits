@@ -537,6 +537,26 @@ namespace wz::app
             bool drive_camera = true);
         bool render_scene();      // record scene draws (between begin/end frame)
 
+        // The world transform every render-side consumer draws with, one matrix
+        // per scene_nodes_ entry (index-aligned). #221's single source of truth:
+        //   - with a live behavior scene, each node's world matrix is read from
+        //     the simulation polytree (authored id -> runtime entity ->
+        //     node_data().world), so behavior/motion/terrain-constraint movement
+        //     is visible without ever mutating scene_nodes_. A node absent from
+        //     the runtime map falls back to its authored composition.
+        //   - with no behavior scene (nothing needs simulation), it is exactly
+        //     compute_scene_node_world_transforms(scene_nodes_), as before.
+        // render_scene(), the audio spatialization, and prefab spawn anchoring
+        // all read this so they never diverge.
+        [[nodiscard]] std::vector<wz::math::Mat4> scene_world_transforms() const;
+
+        // The render-side WORLD matrix of node `id` (its entry in
+        // scene_world_transforms()), or std::nullopt if no node has that id. #221
+        // diagnostics/tests read this to observe the drawn pose — sim-current with
+        // a live behavior scene — without knowing the node's index.
+        [[nodiscard]] std::optional<wz::math::Mat4> node_world_transform(
+            const wz::scene::AuthoredEntityId& id) const;
+
         // Camera-source policy for this host. Standalone/play (no editor control)
         // passes true so a scene-authored camera, once selected on load, drives
         // the view; the editor edit viewport passes false so the free-fly camera
@@ -581,19 +601,29 @@ namespace wz::app
         // this to confirm the scene's behaviors were materialized.
         [[nodiscard]] std::size_t active_behavior_binding_count() const;
 
-        // Current authored local translation of the live scene node with `id`,
-        // or std::nullopt if no node has that id. Reflects behavior command
-        // write-back (a behavior that moves a node shows here after a
-        // simulation_tick), so diagnostics + the behavior dispatch test can
-        // observe the effect on scene_nodes_ without a render.
+        // Reported local translation of the live scene node with `id`, or
+        // std::nullopt if no node has that id. #221: with a live behavior scene
+        // this is DERIVED from the simulation polytree (a behavior/motion that
+        // moves the node shows here after a simulation_tick), so the editor
+        // read-back + the behavior dispatch test observe the sim-current pose;
+        // with no sim it is the node's stored authored translation.
         [[nodiscard]] std::optional<wz::math::Vec3> node_local_translation(
             const wz::scene::AuthoredEntityId& id) const;
 
-        // Current authored local scale of the live scene node with `id`. Like
-        // node_local_translation, reflects the per-frame sim write-back, so a
-        // test can confirm a scale edit on a sim-driven (e.g. terrain
+        // Reported local scale of the live scene node with `id`. Like
+        // node_local_translation, it is derived from the polytree when the sim is
+        // live, so a test can confirm a scale edit on a sim-driven (e.g. terrain
         // constrained) node survives a simulation_tick (#218 follow-up).
         [[nodiscard]] std::optional<wz::math::Vec3> node_local_scale(
+            const wz::scene::AuthoredEntityId& id) const;
+
+        // The STORED authored local translation of scene node `id` — read
+        // straight from scene_nodes_, never derived from the sim polytree. #221:
+        // scene_nodes_ transforms are no longer mutated per frame, so this lets a
+        // test assert the authored data stays put while the render/sim pose
+        // (node_local_translation / scene_world_transforms) moves. std::nullopt if
+        // no node has that id.
+        [[nodiscard]] std::optional<wz::math::Vec3> stored_node_local_translation(
             const wz::scene::AuthoredEntityId& id) const;
 
     private:
@@ -607,6 +637,16 @@ namespace wz::app
         // transient invalid handle cannot flip the camera. No per-frame branch
         // or validity guard survives into the render path.
         void update_active_view();
+
+        // The authored LOCAL transform of node `id` as it should be reported /
+        // saved. #221: with a live behavior scene the transform is derived from
+        // the simulation polytree's LOCAL matrix (decomposed to TRS), so the
+        // editor read-back + save capture the sim-current pose without a per-frame
+        // write-back into scene_nodes_. With no live sim (or a node absent from
+        // the runtime map, or a matrix decompose_trs rejects) it is the node's own
+        // stored authored transform. Returns std::nullopt only if no node has `id`.
+        [[nodiscard]] std::optional<wz::engine::assets::AuthoredTransform>
+        derived_authored_transform(const wz::scene::AuthoredEntityId& id) const;
 
         // Load every behavior-module DLL in `module_folder` and register its
         // modules into registry_. No-op for an empty/missing folder. Reusable

@@ -69,11 +69,21 @@ namespace wz::engine::rendering
         // gpu_sparse renderables ignore it; a clipmap-landscape renderable uses
         // its XZ to center + snap the lattice and pack the per-draw clipmap view
         // transform. Pass {0,0,0} when there is no meaningful camera.
+        //
+        // world_transforms, when non-empty, is the per-node world matrix the
+        // renderer draws with (index-aligned with `nodes`). The caller supplies
+        // it so the drawn pose can come from the live simulation polytree (the
+        // single source of truth) rather than the authored composition. When it
+        // is empty (or its size doesn't match `nodes`), the renderer falls back
+        // to composing the transforms itself via
+        // compute_scene_node_world_transforms(nodes) — the pre-#221 behavior the
+        // renderer-unit tests rely on.
         bool render_scene(
             std::span<const wz::engine::assets::SceneNodeAsset> nodes,
             wz::engine::assets::EngineAssetLibrary& assets,
             const wz::math::Mat4& view_projection,
-            const wz::math::Vec3& camera_world_pos);
+            const wz::math::Vec3& camera_world_pos,
+            std::span<const wz::math::Mat4> world_transforms = {});
 
         // Invalidate every realized cache after a wholesale asset-graph swap.
         // The caches (realized programs/renderables/registered shaders) are

@@ -108,14 +108,15 @@ TEST_F(WozzitsAppBehaviorFixture, FrameUpdateDispatchAppliesTransformCommand)
     EXPECT_FLOAT_EQ(before->y, 0.0f);
 
     // One tick: behavior writes ADD_LOCAL_TRANSLATION (0,+1,0); apply moves the
-    // node and the change is written back to the authored scene node.
+    // sim node, and node_local_translation reports it (derived from the polytree,
+    // #221 — no per-frame write-back into scene_nodes_).
     app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
 
     const std::optional<wz::math::Vec3> after_one =
         app.node_local_translation("mover");
     ASSERT_TRUE(after_one.has_value());
     EXPECT_FLOAT_EQ(after_one->y, 1.0f)
-        << "frame.update transform command did not apply to scene_nodes_";
+        << "frame.update transform command did not move the mover node";
 
     // It is per-frame: a second tick advances it again.
     app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
@@ -124,6 +125,50 @@ TEST_F(WozzitsAppBehaviorFixture, FrameUpdateDispatchAppliesTransformCommand)
     ASSERT_TRUE(after_two.has_value());
     EXPECT_FLOAT_EQ(after_two->y, 2.0f)
         << "behaviors did not dispatch on the second frame";
+}
+
+// #221 core invariant: a sim-driven transform change is visible in the render
+// world transforms WITHOUT scene_nodes_ ever being mutated. The renderer now
+// reads the live polytree (scene_world_transforms), and the per-frame Mat4->TRS
+// ->Mat4 write-back into scene_nodes_ is gone — so the STORED authored transform
+// stays put while the drawn/world transform moves.
+TEST_F(WozzitsAppBehaviorFixture, SimMovementVisibleInRenderWithoutMutatingSceneNodes)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+
+    // The stored authored transform + the render world transform agree at start.
+    const std::optional<wz::math::Vec3> stored_start =
+        app.stored_node_local_translation("mover");
+    ASSERT_TRUE(stored_start.has_value()) << "mover node missing from scene";
+    EXPECT_FLOAT_EQ(stored_start->y, 0.0f);
+
+    const std::optional<wz::math::Mat4> world_start =
+        app.node_world_transform("mover");
+    ASSERT_TRUE(world_start.has_value());
+    EXPECT_FLOAT_EQ(world_start->m[13], 0.0f);  // world-space Y translation
+
+    // Two ticks: the mover behavior raises the node by +1 y each frame.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+
+    // The render world transform moved (the renderer draws the sim-current pose).
+    const std::optional<wz::math::Mat4> world_after =
+        app.node_world_transform("mover");
+    ASSERT_TRUE(world_after.has_value());
+    EXPECT_FLOAT_EQ(world_after->m[13], 2.0f)
+        << "render world transform did not follow the sim movement";
+
+    // ...but scene_nodes_ (the STORED authored data) was never mutated.
+    const std::optional<wz::math::Vec3> stored_after =
+        app.stored_node_local_translation("mover");
+    ASSERT_TRUE(stored_after.has_value());
+    EXPECT_FLOAT_EQ(stored_after->y, 0.0f)
+        << "scene_nodes_ was mutated by the sim — the write-back should be gone";
 }
 
 // An input-driven behavior ("input.*") must fire only when WozzitsApp_v1 builds

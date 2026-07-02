@@ -63,6 +63,33 @@ namespace wz::app
             }
             return h;
         }
+
+        // Decompose a simulation-node LOCAL matrix into an authored TRS. This is
+        // the same lossy Mat4 -> TRS step the old per-frame write-back did; #221
+        // moved it off the frame path so it runs only when scene_nodes_ actually
+        // needs an authored transform (save + editor read-back). Returns false
+        // (leave the authored transform untouched) when decompose_trs rejects the
+        // matrix, matching the write-back's skip-on-failure.
+        bool authored_transform_from_local(
+            const wz::math::Mat4& local,
+            wz::engine::assets::AuthoredTransform& out)
+        {
+            wz::math::Transform trs{};
+            if (!wz::math::decompose_trs(local, trs)) {
+                return false;
+            }
+            out.translation[0] = trs.position.x;
+            out.translation[1] = trs.position.y;
+            out.translation[2] = trs.position.z;
+            out.rotation_quat[0] = trs.rotation.x;
+            out.rotation_quat[1] = trs.rotation.y;
+            out.rotation_quat[2] = trs.rotation.z;
+            out.rotation_quat[3] = trs.rotation.w;
+            out.scale[0] = trs.scale.x;
+            out.scale[1] = trs.scale.y;
+            out.scale[2] = trs.scale.z;
+            return true;
+        }
     }
 
     WozzitsApp_v1::WozzitsApp_v1(wz::engine::AppContext& ctx)
@@ -579,9 +606,11 @@ namespace wz::app
         // the runtime→authored map) and the nodes' world transforms.
         if (prefer_scene_camera_ && audio_runtime_.running() && behavior_scene_
             && ctx_.assets) {
+            // Same single source of truth the renderer reads (#221): with a live
+            // behavior scene these are the sim-current world matrices from the
+            // polytree.
             const std::vector<wz::math::Mat4> node_world =
-                wz::engine::rendering::compute_scene_node_world_transforms(
-                    scene_nodes_);
+                scene_world_transforms();
             wz::engine::audio::update_scene_audio_spatialization(
                 *ctx_.assets, *behavior_scene_, scene_nodes_, node_world,
                 dt, audio_runtime_.output_sample_rate(),
@@ -1210,8 +1239,30 @@ namespace wz::app
         // actor to instant alignment. Keyed by authored id, mirroring how
         // behavior_state survives by binding id.
         std::unordered_map<std::string, float> preserved_alignment_rate;
+        // #221: sim-accumulated LOCAL transforms don't live on the authored asset
+        // either — scene_nodes_ stays at its authored pose now that the per-frame
+        // write-back is gone. Rebuilding materializes the polytree from
+        // scene_nodes_, which would snap every actor back to its authored start
+        // (losing the motion a surviving binding accrued). Capture each live
+        // node's LOCAL matrix keyed by STABLE authored id and restore it after
+        // materialization, so a binding present in both the old and rebuilt scenes
+        // continues from where it was — the same "state survives rebuild" contract
+        // behavior_state and alignment_rate keep. A newly spawned/added node has no
+        // entry and materializes at its authored transform.
+        std::unordered_map<std::string, wz::math::Mat4> preserved_local;
         if (behavior_scene_) {
             preserved_state = std::move(behavior_scene_->behavior_state);
+            const std::size_t live_node_count =
+                wz::core::graph::node_count(behavior_scene_->storage.polytree);
+            for (std::size_t entity = 0;
+                 entity < behavior_scene_->runtime_to_authored.size()
+                     && entity < live_node_count;
+                 ++entity)
+            {
+                preserved_local[behavior_scene_->runtime_to_authored[entity]] =
+                    wz::core::graph::node_data(
+                        behavior_scene_->storage.polytree, entity).local;
+            }
             for (const auto& record : behavior_scene_->motions) {
                 if (record.component.terrain_alignment_rate != 0.0f
                     && record.node
@@ -1305,6 +1356,33 @@ namespace wz::app
                     record.component.terrain_alignment_rate = it->second;
                 }
             }
+        }
+
+        // #221: restore the captured sim-accumulated LOCAL transforms onto the
+        // rebuilt polytree (matched by authored id), then re-propagate so the
+        // world matrices reflect them. A node not in the map (newly added/spawned)
+        // keeps the authored local it just materialized with. This preserves the
+        // pre-#221 semantic that a surviving actor continues from its accrued pose
+        // across a rebuild — the write-back used to achieve it by keeping
+        // scene_nodes_ sim-current; now the transform is carried directly.
+        if (!preserved_local.empty()) {
+            const std::size_t live_node_count =
+                wz::core::graph::node_count(behavior_scene_->storage.polytree);
+            for (std::size_t entity = 0;
+                 entity < behavior_scene_->runtime_to_authored.size()
+                     && entity < live_node_count;
+                 ++entity)
+            {
+                const auto it = preserved_local.find(
+                    behavior_scene_->runtime_to_authored[entity]);
+                if (it != preserved_local.end()) {
+                    const_cast<wz::scene::TransformNode&>(
+                        wz::core::graph::node_data(
+                            behavior_scene_->storage.polytree, entity))
+                        .local = it->second;
+                }
+            }
+            wz::scene::propagate_all(behavior_scene_->storage.polytree);
         }
 
         // Initialize behaviors (init callbacks + per-binding/shared state) once
@@ -1513,13 +1591,14 @@ namespace wz::app
         }
 
         // Resolve the spawner's stable authored id -> its index in scene_nodes_ so
-        // the spawn anchor is the spawner's live world transform. compute_scene_-
-        // node_world_transforms is index-aligned with scene_nodes_. Addressing by
-        // authored id (not runtime entity) keeps this valid across the rebuild a
-        // prior spawn in this drain may have done.
+        // the spawn anchor is the spawner's live world transform. #221:
+        // scene_world_transforms() is index-aligned with scene_nodes_ and, with a
+        // live behavior scene, reads the sim-current pose from the polytree (this
+        // drain runs after propagate_all). Addressing by authored id (not runtime
+        // entity) keeps this valid across the rebuild a prior spawn in this drain
+        // may have done.
         const std::vector<wz::math::Mat4> world_transforms =
-            wz::engine::rendering::compute_scene_node_world_transforms(
-                scene_nodes_);
+            scene_world_transforms();
         wz::math::Mat4 spawner_world = wz::math::Mat4::identity();
         bool found_spawner = false;
         for (std::size_t i = 0; i < scene_nodes_.size(); ++i) {
@@ -1958,46 +2037,14 @@ namespace wz::app
 
         if (!changed_entities.empty()) {
             // Re-propagate so world matrices (and any next-frame world-space
-            // reads) reflect the applied local changes.
+            // reads) reflect the applied local changes. #221: the polytree is now
+            // the single source of truth for render/audio/spawn world transforms
+            // (see scene_world_transforms()), so there is no per-frame write-back
+            // into scene_nodes_ any more -- scene_nodes_ transforms are derived
+            // from the polytree only when actually needed (save + editor
+            // read-back). The lossy Mat4->TRS->Mat4 round trip is gone from the
+            // frame path.
             wz::scene::propagate_all(behavior_scene_->storage.polytree);
-
-            // Write the changed local transforms back into scene_nodes_ so the
-            // next render_scene() (which draws from scene_nodes_, not the
-            // instance) shows the behavior result. Decompose each changed
-            // node's instance-local matrix to TRS and overwrite the matching
-            // authored node's transform.
-            for (const wz::scene::RuntimeEntityId entity : changed_entities) {
-                if (entity >= behavior_scene_->runtime_to_authored.size()) {
-                    continue;
-                }
-                const wz::math::Mat4& local = wz::core::graph::node_data(
-                    behavior_scene_->storage.polytree, entity).local;
-
-                wz::math::Transform trs{};
-                if (!wz::math::decompose_trs(local, trs)) {
-                    continue;
-                }
-
-                wz::engine::assets::AuthoredTransform authored{};
-                authored.translation[0] = trs.position.x;
-                authored.translation[1] = trs.position.y;
-                authored.translation[2] = trs.position.z;
-                authored.rotation_quat[0] = trs.rotation.x;
-                authored.rotation_quat[1] = trs.rotation.y;
-                authored.rotation_quat[2] = trs.rotation.z;
-                authored.rotation_quat[3] = trs.rotation.w;
-                authored.scale[0] = trs.scale.x;
-                authored.scale[1] = trs.scale.y;
-                authored.scale[2] = trs.scale.z;
-
-                wz::engine::assets::SceneNodeAsset* node =
-                    wz::engine::assets::find_scene_node(
-                        scene_nodes_,
-                        behavior_scene_->runtime_to_authored[entity]);
-                if (node) {
-                    node->local = authored;
-                }
-            }
         }
 
         // Frame-boundary drain of behavior-issued deferred authoring (#204).
@@ -2113,7 +2160,8 @@ namespace wz::app
         return behavior_scene_ ? behavior_scene_->behaviors.size() : 0u;
     }
 
-    std::optional<wz::math::Vec3> WozzitsApp_v1::node_local_translation(
+    std::optional<wz::engine::assets::AuthoredTransform>
+    WozzitsApp_v1::derived_authored_transform(
         const wz::scene::AuthoredEntityId& id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
@@ -2121,25 +2169,72 @@ namespace wz::app
         if (!node) {
             return std::nullopt;
         }
+
+        // Default: the node's own stored authored transform.
+        wz::engine::assets::AuthoredTransform out = node->local;
+
+        // With a live behavior scene, derive from the polytree's LOCAL matrix so
+        // sim-driven movement is reported/saved -- the #221 replacement for the
+        // old per-frame write-back. A node missing from the runtime map, or a
+        // matrix decompose_trs rejects, keeps the stored authored transform.
+        if (behavior_scene_) {
+            const auto it = behavior_scene_->authored_to_runtime.find(id);
+            if (it != behavior_scene_->authored_to_runtime.end()
+                && it->second < wz::core::graph::node_count(
+                       behavior_scene_->storage.polytree)) {
+                const wz::math::Mat4& local = wz::core::graph::node_data(
+                    behavior_scene_->storage.polytree, it->second).local;
+                (void)authored_transform_from_local(local, out);
+            }
+        }
+        return out;
+    }
+
+    std::optional<wz::math::Vec3> WozzitsApp_v1::node_local_translation(
+        const wz::scene::AuthoredEntityId& id) const
+    {
+        const std::optional<wz::engine::assets::AuthoredTransform> local =
+            derived_authored_transform(id);
+        if (!local) {
+            return std::nullopt;
+        }
         return wz::math::Vec3{
-            node->local.translation[0],
-            node->local.translation[1],
-            node->local.translation[2],
+            local->translation[0],
+            local->translation[1],
+            local->translation[2],
         };
     }
 
     std::optional<wz::math::Vec3> WozzitsApp_v1::node_local_scale(
         const wz::scene::AuthoredEntityId& id) const
     {
+        const std::optional<wz::engine::assets::AuthoredTransform> local =
+            derived_authored_transform(id);
+        if (!local) {
+            return std::nullopt;
+        }
+        return wz::math::Vec3{
+            local->scale[0],
+            local->scale[1],
+            local->scale[2],
+        };
+    }
+
+    std::optional<wz::math::Vec3> WozzitsApp_v1::stored_node_local_translation(
+        const wz::scene::AuthoredEntityId& id) const
+    {
         const wz::engine::assets::SceneNodeAsset* node =
             wz::engine::assets::find_scene_node(scene_nodes_, id);
         if (!node) {
             return std::nullopt;
         }
+        // The raw stored authored transform — deliberately NOT derived from the
+        // sim polytree (#221), so a test can prove scene_nodes_ stays put while
+        // the sim moves the node.
         return wz::math::Vec3{
-            node->local.scale[0],
-            node->local.scale[1],
-            node->local.scale[2],
+            node->local.translation[0],
+            node->local.translation[1],
+            node->local.translation[2],
         };
     }
 
@@ -3009,6 +3104,14 @@ namespace wz::app
                 continue;
             }
             authored.push_back(n);
+            // #221: report the sim-current pose. With a live behavior scene the
+            // node's transform is derived from the polytree (the old write-back
+            // used to keep scene_nodes_ current); with no sim this is the stored
+            // authored transform unchanged.
+            if (const std::optional<wz::engine::assets::AuthoredTransform>
+                    derived = derived_authored_transform(n.id)) {
+                authored.back().local = *derived;
+            }
         }
         return authored;
     }
@@ -3076,6 +3179,14 @@ namespace wz::app
                     continue;
                 }
                 persisted_nodes.push_back(n);
+                // #221: derive-on-save. The per-frame write-back that used to keep
+                // scene_nodes_ transforms sim-current is gone, so decompose the
+                // live polytree pose into the saved node here (one lossy decompose
+                // at save, not per frame). No sim => the stored authored transform.
+                if (const std::optional<wz::engine::assets::AuthoredTransform>
+                        derived = derived_authored_transform(n.id)) {
+                    persisted_nodes.back().local = *derived;
+                }
             }
         }
 
@@ -3184,6 +3295,51 @@ namespace wz::app
         return true;
     }
 
+    std::vector<wz::math::Mat4> WozzitsApp_v1::scene_world_transforms() const
+    {
+        // No live simulation: the authored composition IS the truth (nothing
+        // moves scene_nodes_'s transforms), so compose from the nodes exactly as
+        // the renderer used to.
+        if (!behavior_scene_) {
+            return wz::engine::rendering::compute_scene_node_world_transforms(
+                scene_nodes_);
+        }
+
+        // Live simulation: the polytree carries the composed world matrices the
+        // sim advanced this frame (propagate_all runs in simulation_tick). Read
+        // each node's world straight from it, mapped by stable authored id. Seed
+        // from the authored composition so any node missing from the runtime map
+        // (defensive — the instance mirrors scene_nodes_ 1:1, so this should not
+        // happen) still gets a sensible transform rather than identity.
+        std::vector<wz::math::Mat4> world =
+            wz::engine::rendering::compute_scene_node_world_transforms(
+                scene_nodes_);
+        const std::size_t node_count =
+            wz::core::graph::node_count(behavior_scene_->storage.polytree);
+        for (std::size_t i = 0; i < scene_nodes_.size(); ++i) {
+            const auto it =
+                behavior_scene_->authored_to_runtime.find(scene_nodes_[i].id);
+            if (it == behavior_scene_->authored_to_runtime.end()
+                || it->second >= node_count) {
+                continue;
+            }
+            world[i] = wz::core::graph::node_data(
+                behavior_scene_->storage.polytree, it->second).world;
+        }
+        return world;
+    }
+
+    std::optional<wz::math::Mat4> WozzitsApp_v1::node_world_transform(
+        const wz::scene::AuthoredEntityId& id) const
+    {
+        for (std::size_t i = 0; i < scene_nodes_.size(); ++i) {
+            if (scene_nodes_[i].id == id) {
+                return scene_world_transforms()[i];
+            }
+        }
+        return std::nullopt;
+    }
+
     bool WozzitsApp_v1::render_scene()
     {
         if (!ctx_.assets) {
@@ -3193,9 +3349,16 @@ namespace wz::app
         // simulation_tick. render_scene just reads it -- no branch, no scene-tree
         // lookup, no fallback. world_position drives the clipmap lattice snap and
         // tracks whichever camera (free-fly or scene) is active.
+        //
+        // #221: hand the renderer the world transforms from the single source of
+        // truth (the live polytree when simulating, the authored composition
+        // otherwise) so the drawn pose is the sim-current one -- the per-frame
+        // Mat4->TRS->Mat4 write-back into scene_nodes_ is gone.
+        const std::vector<wz::math::Mat4> world_transforms =
+            scene_world_transforms();
         return renderer_.render_scene(
             scene_nodes_, *ctx_.assets, active_view_.view_projection,
-            active_view_.world_position);
+            active_view_.world_position, world_transforms);
     }
 
     void WozzitsApp_v1::set_prefer_scene_camera(bool prefer)
