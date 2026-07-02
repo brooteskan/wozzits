@@ -346,7 +346,8 @@ namespace wz::engine::rendering
         //     96     texel_and_vertical   (xy = texel world size,
         //                                   z = vertical_scale, w = base height)
         //    112     texel_dims_extent    (xy = texel dims as float,
-        //                                   z = base_resolution, w = reserved)
+        //                                   z = base_resolution,
+        //                                   w = height mip count (#210))
         //   ------
         //    128 bytes = 32 dwords.
         struct ClipmapDrawConstants
@@ -360,6 +361,21 @@ namespace wz::engine::rendering
         static_assert(sizeof(ClipmapDrawConstants) == 128,
             "clipmap root constants must be 128 bytes (32 dwords) to match the "
             "binding_layout==2 SRG and the HLSL Clipmap cbuffer");
+
+        // Full mip count for the resident height texture (#210):
+        // floor(log2(max(w,h)))+1. Kept in lock-step with
+        // wz::gpu::max_mip_levels / full_mip_count in scalar_field_compilers.cpp
+        // and the rhi #209 creation rule so the VS never samples past the chain.
+        uint32_t height_texture_mip_count(uint32_t width, uint32_t height) noexcept
+        {
+            uint32_t largest = width > height ? width : height;
+            uint32_t levels = 1u;
+            while (largest > 1u) {
+                largest >>= 1u;
+                ++levels;
+            }
+            return levels;
+        }
 
         // Build the clipmap draw constants from the view-projection, the camera
         // world position, the realized renderable's authored settings, the
@@ -414,7 +430,15 @@ namespace wz::engine::rendering
             out.texel_dims_extent[0] = static_cast<float>(heightmap_width);
             out.texel_dims_extent[1] = static_cast<float>(heightmap_height);
             out.texel_dims_extent[2] = view.base_resolution;
-            out.texel_dims_extent[3] = 0.0f;
+            // #210: the resident height texture carries its full mip chain
+            // (floor(log2(max(w,h)))+1). The VS samples mip == LOD level for
+            // box-filtered coarse rings, clamped to this count. Matches
+            // full_mip_count in scalar_field_compilers.cpp and the rhi #209
+            // creation rule, so the sampled mip is always in range.
+            out.texel_dims_extent[3] =
+                static_cast<float>(
+                    height_texture_mip_count(
+                        heightmap_width, heightmap_height));
             return out;
         }
 

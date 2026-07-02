@@ -32,4 +32,31 @@ namespace wz::engine::assets::internal {
         wz::Logger& logger,
         ScalarFieldData& field);
 
+    // ── Height mip pyramid (#210) ─────────────────────────────────────────────
+    //
+    // One level of a CPU-built box-filter mip pyramid for the resident height
+    // texture. `values` is row-major (index x + y*width), R32Float, tightly
+    // packed for `width` x `height`. Level 0 == the field itself.
+    struct ScalarFieldMipLevel
+    {
+        uint32_t           width  = 0;
+        uint32_t           height = 0;
+        std::vector<float> values;
+    };
+
+    // Build the full box-filter mip pyramid from a field's mip-0 samples. Level 0
+    // is a copy of the input; each coarser level is the 2x2 box-filter of the one
+    // above (mip k texel = average of the 2x2 mip k-1 texels it covers). The chain
+    // length is floor(log2(max(width,height)))+1 -- the same count the resident
+    // texture is created with (#209) and the clipmap VS clamps its sampled mip to.
+    //
+    // Non-power-of-two / odd / 1xN edges: a destination dimension is
+    // max(src>>1, 1), so an odd source dimension leaves a single leftover
+    // column/row whose 2x2 block is clamped to the texels that exist -- only the
+    // covered texels are averaged, never out of bounds.
+    std::vector<ScalarFieldMipLevel> build_scalar_field_mip_pyramid(
+        const std::vector<float>& mip0,
+        uint32_t width,
+        uint32_t height);
+
 }

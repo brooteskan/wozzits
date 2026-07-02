@@ -414,12 +414,79 @@ namespace wz::engine::assets::internal
             return true;
         }
 
+        // Box-filter one mip level down (#210). Produces mip level `dst` from the
+        // already-built level `src`, given src's dimensions. Each destination
+        // texel is the average of the 2x2 block of source texels it covers.
+        //
+        // Non-power-of-two edges: the destination dimension is max(src>>1, 1), so
+        // when a source dimension is odd the last destination texel maps to a
+        // single leftover source column/row (its 2x2 block is clamped to the
+        // texels that actually exist) — average only the covered texels, never
+        // read out of bounds. This is the standard "round-down + clamp" box
+        // reduction; it matches how the hardware would generate these mips, so
+        // GPU trilinear across levels stays consistent with our CPU chain.
+        //
+        // Row-major, index x + y*width, R32Float throughout.
+        std::vector<float> box_filter_down(
+            const std::vector<float>& src,
+            uint32_t src_width,
+            uint32_t src_height,
+            uint32_t& dst_width,
+            uint32_t& dst_height)
+        {
+            dst_width  = src_width  > 1u ? (src_width  >> 1u) : 1u;
+            dst_height = src_height > 1u ? (src_height >> 1u) : 1u;
+
+            std::vector<float> dst(
+                static_cast<size_t>(dst_width) * dst_height);
+
+            for (uint32_t dy = 0; dy < dst_height; ++dy) {
+                const uint32_t sy0 = dy * 2u;
+                const uint32_t sy1 = sy0 + 1u;
+                const bool have_y1 = sy1 < src_height;
+                for (uint32_t dx = 0; dx < dst_width; ++dx) {
+                    const uint32_t sx0 = dx * 2u;
+                    const uint32_t sx1 = sx0 + 1u;
+                    const bool have_x1 = sx1 < src_width;
+
+                    float sum = src[sx0 + sy0 * src_width];
+                    uint32_t taps = 1u;
+                    if (have_x1) {
+                        sum += src[sx1 + sy0 * src_width];
+                        ++taps;
+                    }
+                    if (have_y1) {
+                        sum += src[sx0 + sy1 * src_width];
+                        ++taps;
+                        if (have_x1) {
+                            sum += src[sx1 + sy1 * src_width];
+                            ++taps;
+                        }
+                    }
+                    dst[dx + dy * dst_width] =
+                        sum / static_cast<float>(taps);
+                }
+            }
+            return dst;
+        }
+
         // #197: publish the field's GPU residency onto the shared wozzits-rhi
         // registry as an R32F Texture2D resource (the surrogate pattern — the
         // registry owns the GPU texture, the asset is its surrogate). Mirrors
         // publish_resident_gpu_sparse_mesh. Best-effort: a failure is logged and
         // does not fail the compile (the field still resolves on the CPU table,
         // and the legacy render path remains until #195 repoints it).
+        //
+        // #210: the resident texture is created with its FULL mip chain and each
+        // level is uploaded from a CPU box-filter pyramid (mip k = 2^k box-filter
+        // of the field). The clipmap VS samples mip == LOD level so coarse rings
+        // read a box-filtered height instead of one texel of the full-res field
+        // (anti-aliasing the far rings). Level-0 samplers (splat cloud, etc.) read
+        // mip 0 and are byte-identical to the single-mip path. Built for every
+        // resident scalar field: the residency is published at field-compile time
+        // with no consumer information, so there is no clean seam to build the
+        // chain only for clipmap-consumed fields; the extra ~33% memory is the
+        // accepted cost of the uniform pyramid.
         void publish_resident_scalar_field(
             const wz::asset::AssetKey& key,
             const ScalarFieldData& field,
@@ -437,11 +504,18 @@ namespace wz::engine::assets::internal
 
             const auto started = std::chrono::steady_clock::now();
 
+            const std::vector<ScalarFieldMipLevel> pyramid =
+                build_scalar_field_mip_pyramid(
+                    field.values, field.width, field.height);
+            const uint32_t mip_levels =
+                static_cast<uint32_t>(pyramid.size());
+
             wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::texture_2d(
                 field.width,
                 field.height,
                 wz::rhi::TextureFormat::R32Float,
                 wz::rhi::ResourceUsage_Sampled);
+            desc.mip_levels = mip_levels;
             desc.cpu_access = wz::rhi::ResourceCpuAccess::WriteOnce;
             desc.identity = wz::rhi::ResourceIdentity{
                 rhi_asset_identity(key, "field_texture"),
@@ -449,11 +523,18 @@ namespace wz::engine::assets::internal
             };
 
             const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
-            const uint64_t byte_count =
-                static_cast<uint64_t>(field.values.size()) * sizeof(float);
-            const bool uploaded =
-                handle.valid()
-                && gpu_resources.update(handle, field.values.data(), byte_count);
+            bool uploaded = handle.valid();
+
+            // Mip 0 is the field itself; each coarser level is a 2x2 box-filter of
+            // the level above. Upload every level through the #209 per-mip door.
+            for (uint32_t mip = 0u; uploaded && mip < mip_levels; ++mip) {
+                const ScalarFieldMipLevel& level = pyramid[mip];
+                const uint64_t bytes =
+                    static_cast<uint64_t>(level.values.size()) * sizeof(float);
+                uploaded =
+                    gpu_resources.update_mip(handle, mip, level.values.data(), bytes);
+            }
+
             if (!uploaded) {
                 if (handle.valid()) {
                     gpu_resources.release(handle);
@@ -473,6 +554,7 @@ namespace wz::engine::assets::internal
                 "asset compile: scalar field RHI resident upload "
                 + std::to_string(field.width) + "x"
                 + std::to_string(field.height)
+                + " mips=" + std::to_string(mip_levels)
                 + " upload_ms=" + std::to_string(elapsed_ms));
         }
 
@@ -1124,6 +1206,39 @@ namespace wz::engine::assets::internal
         ScalarFieldData& field)
     {
         return load_cached_scalar_field_impl(cache, key, logger, field);
+    }
+
+    std::vector<ScalarFieldMipLevel> build_scalar_field_mip_pyramid(
+        const std::vector<float>& mip0,
+        uint32_t width,
+        uint32_t height)
+    {
+        std::vector<ScalarFieldMipLevel> pyramid;
+        if (width == 0u || height == 0u
+            || mip0.size()
+                != static_cast<size_t>(width) * height)
+        {
+            return pyramid;
+        }
+
+        // Level 0 is the field itself.
+        pyramid.push_back(ScalarFieldMipLevel{ width, height, mip0 });
+
+        // Each coarser level is the 2x2 box-filter of the level above, until a
+        // 1x1 level is produced (floor(log2(max(w,h)))+1 levels total).
+        uint32_t w = width;
+        uint32_t h = height;
+        while (w > 1u || h > 1u) {
+            uint32_t dw = 0u;
+            uint32_t dh = 0u;
+            std::vector<float> down =
+                box_filter_down(pyramid.back().values, w, h, dw, dh);
+            pyramid.push_back(
+                ScalarFieldMipLevel{ dw, dh, std::move(down) });
+            w = dw;
+            h = dh;
+        }
+        return pyramid;
     }
 
 } // namespace wz::engine::assets::internal

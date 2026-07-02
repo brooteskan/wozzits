@@ -96,6 +96,11 @@ TEST(ScalarFieldRhiResidency, ResolvePublishesTextureIntoRhiRegistry)
         EXPECT_EQ(resource->desc.width, 8u);
         EXPECT_EQ(resource->desc.height, 4u);
         EXPECT_EQ(resource->desc.depth, 1u);
+        // #210: the resident height texture now carries its full box-filter mip
+        // chain (floor(log2(max(w,h)))+1). For 8x4 that is 4 levels
+        // (8x4 -> 4x2 -> 2x1 -> 1x1). A resolvable resource here proves every
+        // level uploaded (publish releases the handle if any update_mip fails).
+        EXPECT_EQ(resource->desc.mip_levels, 4u);
 
         // A valid backend GPUHandle (texture-typed) means create_texture_dx12
         // actually minted the texture for this resident resource.

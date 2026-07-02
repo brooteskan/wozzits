@@ -41,7 +41,7 @@
 //                                                  w=base_height)
 //    112      16   float4   texel_dims_extent    (xy=heightmap texel dims as
 //                                                  float, z=base_resolution,
-//                                                  w=reserved)
+//                                                  w=height mip count (#210))
 //   ------
 //    128 bytes total = 32 dwords.
 
@@ -51,7 +51,8 @@ cbuffer Clipmap : register(b0, space2)
     float4   snap_params;         // xy = camera world XZ, z = c0, w = snapped?
     float4   world_to_uv;         // xy = uv scale, zw = uv offset
     float4   texel_and_vertical;  // xy = texel world size, z = vscale, w = base
-    float4   texel_dims_extent;   // xy = texel dims (float), z = m, w = reserved
+    float4   texel_dims_extent;   // xy = texel dims (float), z = m,
+                                  // w = height mip count (#210)
 };
 
 StructuredBuffer<float3> positions : register(t0, space2);
@@ -80,11 +81,19 @@ struct VSOut
     float3 normal     : NORMAL;     // finite-difference height normal
 };
 
-// Sample the heightmap at a world XZ position by BILINEAR filtering (#211,
-// was point Load). uv is in [0,1] over the heightmap footprint; the sampler's
-// clamp addressing samples the border texel for vertices that reach past the
-// footprint edge (replacing the old manual texel clamp), so no wrap/error.
-float sample_height_world(float2 world_xz)
+// Sample the heightmap at a world XZ position by BILINEAR filtering (#211, was
+// point Load) from a chosen mip LEVEL (#210). uv is in [0,1] over the heightmap
+// footprint; the sampler's clamp addressing samples the border texel for
+// vertices that reach past the footprint edge (replacing the old manual texel
+// clamp), so no wrap/error.
+//
+// Mip selection (#210): a level-k clipmap ring covers 2^k texels per lattice
+// step, so point-sampling the full-res field there skips 2^k-1 texels and the
+// far rings shimmer. Sampling mip k -- a 2^k box-filter of the field, built CPU
+// -side and uploaded per level -- reads the averaged height for that footprint,
+// anti-aliasing the coarse rings. mip is clamped by the caller to the resident
+// chain length. Level 0 passes mip 0 and is bit-identical to the #211 path.
+float sample_height_world(float2 world_xz, float mip)
 {
     float2 uv = world_to_uv.xy * world_xz + world_to_uv.zw;
 
@@ -99,26 +108,46 @@ float sample_height_world(float2 world_xz)
     // across the cell it blends h[i] -> h[i+1] -- the standard texel-center
     // bilinear the collision bicubic field tracks. The clamp addressing on the
     // sampler handles vertices that reach past the [0,1] footprint edge.
-    float2 dims       = max(texel_dims_extent.xy, 1.0f);
-    float2 sample_uv  = uv + 0.5f / dims;
-    return heightTex.SampleLevel(linearSampler, sample_uv, 0.0f);
+    //
+    // The footprint uv is mip-INDEPENDENT (it maps world XZ to [0,1] over the
+    // whole texture). Only the half-texel center shift scales with the mip,
+    // since mip m's dimensions are dims >> m: shift by 0.5 / (dims >> m).
+    float2 mip_dims   = max(floor(texel_dims_extent.xy / exp2(mip)), 1.0f);
+    float2 sample_uv  = uv + 0.5f / mip_dims;
+    return heightTex.SampleLevel(linearSampler, sample_uv, mip);
 }
 
-// Bilinear interpolation of the height field on the coarser level's grid
-// (spacing two_cL = 2*c_L). This yields the COARSE mesh's surface height at
-// world_xz -- the linear blend between coarse vertices -- which is the correct
-// geomorph target: a fully-morphed finer boundary vertex then lands exactly on
-// the coarse edge (crack-free). A nearest coarse-vertex sample (round) would
-// instead drop it onto a coarse vertex, leaving a T-junction gap on slopes.
-float sample_height_coarse(float2 world_xz, float two_cL)
+// The geomorph target: the coarser ring's (level L+1) TRIANGULATED surface
+// height at world_xz. The L+1 ring is a mesh: at its vertices (spacing
+// two_cL = 2*c_L = c_{L+1}) it samples the height at mip L+1, but BETWEEN
+// vertices the rasterizer interpolates those vertex heights linearly along the
+// triangle edge (the chord). So the correct target is the bilinear blend of the
+// FOUR surrounding L+1 VERTEX samples -- linear-between-vertices -- and a fully
+// -morphed level-L boundary vertex then lands exactly on the L+1 triangle edge
+// (the same linear blend of the same two vertex samples): crack-free.
+//
+// #210 changes only WHAT each corner tap reads: mip L+1 (the box-filtered field
+// the L+1 ring actually samples at its vertices) instead of the full-res field.
+// The 4-tap structure must STAY: a single mip-(L+1) texture tap at world_xz is
+// NOT equivalent, because an L+1 lattice cell spans ~4 mip-(L+1) texels
+// (dims/extent), so the texture bilinear has knots at texel centers BETWEEN the
+// vertices and differs from the chord on curved terrain -- that mismatch is a
+// hairline T-junction crack at the seam.
+//
+// Corner uv math: each corner is an L+1 lattice vertex position, which lands on
+// a texel-cell LEFT edge at mip L+1 (uv = i/mip_dims); sample_height_world's
+// per-mip half-texel shift (#211/#210) maps that to texel i's center, returning
+// exactly h[i] -- the same value the L+1 ring's own vertex sample produces,
+// which is what makes the blend land on its edge.
+float sample_height_coarse(float2 world_xz, float two_cL, float coarse_mip)
 {
     float2 cg = world_xz / two_cL;
     float2 cf = floor(cg);
     float2 fr = cg - cf;
-    float h00 = sample_height_world((cf + float2(0.0f, 0.0f)) * two_cL);
-    float h10 = sample_height_world((cf + float2(1.0f, 0.0f)) * two_cL);
-    float h01 = sample_height_world((cf + float2(0.0f, 1.0f)) * two_cL);
-    float h11 = sample_height_world((cf + float2(1.0f, 1.0f)) * two_cL);
+    float h00 = sample_height_world((cf + float2(0.0f, 0.0f)) * two_cL, coarse_mip);
+    float h10 = sample_height_world((cf + float2(1.0f, 0.0f)) * two_cL, coarse_mip);
+    float h01 = sample_height_world((cf + float2(0.0f, 1.0f)) * two_cL, coarse_mip);
+    float h11 = sample_height_world((cf + float2(1.0f, 1.0f)) * two_cL, coarse_mip);
     return lerp(lerp(h00, h10, fr.x), lerp(h01, h11, fr.x), fr.y);
 }
 
@@ -134,8 +163,14 @@ VSOut main(uint vid : SV_VertexID)
     float vertical_scale = texel_and_vertical.z;
     float base_height    = texel_and_vertical.w;
 
+    // #210: highest mip index available in the resident height chain (count-1).
+    // Every sampled mip is clamped to this so a lattice with more LOD levels than
+    // the texture has mips just reuses the coarsest box-filtered level.
+    float max_mip = max(texel_dims_extent.w - 1.0f, 0.0f);
+
     float2 world_xz;
     float  height;
+    float  height_mip;   // mip this vertex samples for shading-normal taps
 
     if (view_snapped)
     {
@@ -181,20 +216,28 @@ VSOut main(uint vid : SV_VertexID)
         // longer to scale g.
         world_xz        = T + g.xz;
 
-        // HEIGHT geomorph: blend this level's per-vertex height to the COARSE
-        // mesh's surface height (bilinear on the 2*c_L grid) over the same band,
-        // so finer boundary vertices that fall between coarse vertices land on
-        // the coarse edge (no T-junction, no pop).
-        float h_fine   = sample_height_world(world_xz);
-        float h_coarse = sample_height_coarse(world_xz, twoCL);
+        // HEIGHT geomorph (#210): blend this level's box-filtered height (mip L)
+        // to the coarser ring's TRIANGULATED surface (bilinear between the four
+        // surrounding L+1 vertices, each sampled at mip L+1) over the same band,
+        // so finer boundary vertices land on the L+1 triangle edge by the
+        // hand-off (no T-junction, no pop). Both mips are clamped to the resident
+        // chain; when L is already the coarsest mip the corner taps read the same
+        // level as h_fine, but the 4-tap blend still targets the coarser GRID.
+        float mip_fine   = min(level, max_mip);
+        float mip_coarse = min(level + 1.0f, max_mip);
+        height_mip       = mip_fine;
+        float h_fine   = sample_height_world(world_xz, mip_fine);
+        float h_coarse = sample_height_coarse(world_xz, twoCL, mip_coarse);
         height = lerp(h_fine, h_coarse, a);
     }
     else
     {
         // Non-view-snapped: the supplied mesh is already in world space and g.y
         // is real geometry — ignore the level tag, no per-level snap, no morph.
-        world_xz = g.xz;
-        height   = sample_height_world(world_xz);
+        // Sample the full-res field (mip 0), as before.
+        world_xz   = g.xz;
+        height_mip = 0.0f;
+        height     = sample_height_world(world_xz, 0.0f);
     }
 
     float world_y = base_height + vertical_scale * height;
@@ -203,12 +246,14 @@ VSOut main(uint vid : SV_VertexID)
     // world space, so the PS can do simple lambertian-style shading. dh/dx and
     // dh/dz are scaled by vertical_scale to match the displaced surface. The
     // taps read the (un-morphed) field gradient at the morphed vertex position;
-    // good enough for shading, and avoids re-deriving the morph per tap.
+    // good enough for shading, and avoids re-deriving the morph per tap. They
+    // sample this vertex's height_mip (#210) so a coarse ring's shading tracks
+    // its box-filtered surface rather than the full-res field's fine gradient.
     float2 step_xz = texel_and_vertical.xy;  // one texel in world units
-    float hx0 = sample_height_world(world_xz - float2(step_xz.x, 0.0f));
-    float hx1 = sample_height_world(world_xz + float2(step_xz.x, 0.0f));
-    float hz0 = sample_height_world(world_xz - float2(0.0f, step_xz.y));
-    float hz1 = sample_height_world(world_xz + float2(0.0f, step_xz.y));
+    float hx0 = sample_height_world(world_xz - float2(step_xz.x, 0.0f), height_mip);
+    float hx1 = sample_height_world(world_xz + float2(step_xz.x, 0.0f), height_mip);
+    float hz0 = sample_height_world(world_xz - float2(0.0f, step_xz.y), height_mip);
+    float hz1 = sample_height_world(world_xz + float2(0.0f, step_xz.y), height_mip);
     float dhdx = vertical_scale * (hx1 - hx0) / max(2.0f * step_xz.x, 1e-6f);
     float dhdz = vertical_scale * (hz1 - hz0) / max(2.0f * step_xz.y, 1e-6f);
     float3 normal = normalize(float3(-dhdx, 1.0f, -dhdz));
