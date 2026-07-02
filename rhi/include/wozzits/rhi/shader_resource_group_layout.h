@@ -26,7 +26,14 @@ namespace wz::rhi
     // linear-clamp height tap) rather than a Sampler descriptor table. A small
     // closed set of well-known filter/address recipes; a new recipe adds a member
     // and breaks the backend switch, matching how pipeline-state enums are kept.
-    enum class StaticSamplerKind : uint8_t { LinearClamp };
+    //
+    // LinearClamp: bilinear filter, clamp addressing (height taps, general
+    //   clamped image sampling).
+    // LinearWrap: bilinear filter, wrap addressing — the filtered recipe an
+    //   equirectangular environment map / tiling material texture needs, which
+    //   the vector-field / texture / environment-map residency (#201) unblocks
+    //   for its future render-path consumers (#195).
+    enum class StaticSamplerKind : uint8_t { LinearClamp, LinearWrap };
 
     // Descriptor semantics are registered by name, exactly like render
     // programs. The adapter acquires a Tag per semantic and stamps it into the
