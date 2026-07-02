@@ -16,7 +16,7 @@ namespace agent_tank_config
     inline constexpr float kTerrainAlignRate = 0.618f;  // rad/s hull-to-surface align
 
     // --- Speed ---
-    inline constexpr float kBaseSpeed = 0.5f;         // engaged forward-speed scale
+    inline constexpr float kBaseSpeed = 1.0f;         // engaged forward-speed scale
     inline constexpr float kWaveringSpeed = 0.35f;    // creep factor while deliberating
 
     // --- Pursue-goal mapping (distance / flee -> engage bias) ---
@@ -100,9 +100,23 @@ namespace agent_tank_config
     inline constexpr float kContextArc = 0.8f;    // rad, ~46 deg hull-on-us
 
     // "Shot" geometry: a hit is credibly landed / taken when the gun (or hull) is
-    // within this arc of the line to the other tank AND within this range.
+    // within this arc of the line to the other tank AND within this range AND has
+    // clear LINE OF SIGHT (no terrain between us -- see kEyeHeight/kLosMargin).
     inline constexpr float kFireArc = 0.12f;      // rad, ~7 deg gun-on-target
     inline constexpr float kFireRange = 90.0f;    // world u, effective gun range
+
+    // Line-of-sight test: march kLosSamples points along the gun->player segment
+    // and sample terrain HEIGHT at each; if the ground pokes above the straight
+    // sightline (by more than kLosClearance) a hill/ridge blocks the shot. Uses
+    // height sampling (works for ANY terrain collision representation, unlike the
+    // mesh-only ray query), with both ends lifted to gun height so the line clears
+    // the hull/ground.
+    // Kept low so the sightline hugs the terrain -- on gentle ground a high ray
+    // clears every modest rise and LOS never blocks. Lower kEyeHeight = more
+    // sensitive to hills; raise it if tanks start "seeing" through small bumps.
+    inline constexpr float kEyeHeight = 1.5f;     // world u above tank origin
+    inline constexpr int   kLosSamples = 12;      // points along the sightline
+    inline constexpr float kLosClearance = 0.3f;  // world u the ground may graze
 
     // Cannon reload: the tank fires whenever it has a shot lined up, at most once
     // per this interval (seconds). Unlimited ammo.

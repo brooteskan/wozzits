@@ -30,6 +30,8 @@ struct QuantumTankState {
     
     uint32_t ammo = 1000;  // effectively unlimited; enemy firing isn't ammo-gated
 
+    // The clipmap landscape node (its Heightfield Collision component is what we
+    // sample -- for line of sight now, and ground height later). Same node for both.
     WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
     WzBehaviorEntityId canon_audio = WZ_INVALID_BEHAVIOR_ENTITY;
     WzBehaviorEntityId player = WZ_INVALID_BEHAVIOR_ENTITY;
@@ -77,6 +79,10 @@ struct QuantumTankState {
     // Observation-forced decoherence: whether the player is currently looking at us
     // (last frame), so we log only when it flips.
     uint8_t observed = 0;
+
+    // Line of sight to the player last frame (1 = clear); starts clear so the first
+    // occlusion logs a LOST edge.
+    uint8_t has_los = 1;
 
     // Cannon reload gate: sim_time the tank may next fire (fires whenever it has a
     // shot lined up, at most once per kFireCooldown). Unlimited ammo.

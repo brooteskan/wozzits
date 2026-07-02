@@ -53,8 +53,11 @@ namespace
         // Authorable knob: how fast the tank advances when it commits to ENGAGE.
         (void)wz_config_float(facts, "drive_speed", &state->drive_speed);
 
-        uint8_t result = wz_find_entity_by_authored_id(facts, "empty_2", &state->terrain);
-        wz_log_infof(facts, "[agent tank init] find terrain: %u", result);
+        // The clipmap landscape node -- its Heightfield collision is what we sample
+        // for line of sight (and ground height later).
+        uint8_t result = wz_find_entity_by_authored_id(
+            facts, "clipmap_landscape", &state->terrain);
+        wz_log_infof(facts, "[agent tank init] find landscape: %u", result);
 
         // The cannon audio source lives on the enemy tank's OWN root node (self),
         // so each tank's shot is emitted + spatialized from ITS position -- not the
@@ -150,6 +153,49 @@ namespace
         wz_self_set_agent_goal(facts, event, 0u, pursue_goal);      // pursue vs hold
         wz_self_set_agent_goal(facts, event, 1u, posture_goal);     // close vs circle
         wz_self_set_agent_goal(facts, event, 2u, reconsider_goal);  // volatile vs stable
+    }
+
+    // Clear line of sight from our gun to the player? March points along the
+    // gun->player segment and sample terrain height at each; if the ground rises
+    // above the straight sightline, a hill or ridge blocks the shot. Height
+    // sampling works for any terrain collision representation (a clipmap is a
+    // heightmap surface, no overhangs). Assumes clear when there's nothing to test
+    // against so a tank without a resolved landscape still fights.
+    bool has_line_of_sight(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        const QuantumTankState* state)
+    {
+        if (state->terrain == WZ_INVALID_BEHAVIOR_ENTITY
+            || state->target == WZ_INVALID_BEHAVIOR_ENTITY)
+        {
+            return true;
+        }
+        WzMat4 self_w{};
+        WzVec3 tpos{};
+        if (!wz_self_world_transform(facts, event, &self_w)
+            || !wz_read_world_position(facts, state->target, &tpos))
+        {
+            return true;
+        }
+        using namespace agent_tank_config;
+        const float ox = self_w.m[12], oy = self_w.m[13] + kEyeHeight,
+                    oz = self_w.m[14];
+        const float px = tpos.x, py = tpos.y + kEyeHeight, pz = tpos.z;
+        for (int i = 1; i < kLosSamples; ++i) {
+            const float t = static_cast<float>(i) / static_cast<float>(kLosSamples);
+            const float sx = ox + (px - ox) * t;
+            const float sz = oz + (pz - oz) * t;
+            const float sightline_y = oy + (py - oy) * t;
+            WzSurfaceSample ground{};
+            if (wz_sample_terrain_surface(facts, state->terrain, sx, sz, &ground)
+                && ground.hit
+                && ground.position.y > sightline_y + kLosClearance)
+            {
+                return false;   // the ground pokes above the sightline here
+            }
+        }
+        return true;
     }
 
     void quantum_tank_on_event(
@@ -312,7 +358,23 @@ namespace
             SquadRoster* roster = static_cast<SquadRoster*>(
                 wz_find_shared_state(facts, kSquadRosterKey));
 
-            const bool shot = in_range && fabsf(state->aim_error) < kFireArc;
+            // LINE OF SIGHT: a shot also needs a clear line to the player -- a hill
+            // or ridge between us blocks it. Log when sight is lost / regained.
+            const bool los = has_line_of_sight(facts, event, state);
+            if (!los && state->has_los) {
+                wz_log_infof(
+                    facts, "[qtank:%d] LOST line of sight (terrain blocks the shot)",
+                    state->tank_id);
+            } else if (los && !state->has_los) {
+                wz_log_infof(
+                    facts, "[qtank:%d] regained line of sight", state->tank_id);
+            }
+            state->has_los = los ? 1u : 0u;
+
+            // A shot requires aim + range + LOS (so we never fire through a hill,
+            // and never reward aggression for a blocked shot).
+            const bool shot =
+                in_range && fabsf(state->aim_error) < kFireArc && los;
             if (shot) {
                 wz_self_agent_reward_pair(
                     facts, event,

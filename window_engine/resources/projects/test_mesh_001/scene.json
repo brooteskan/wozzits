@@ -181,7 +181,7 @@
           1
         ]
       },
-      "visible": true,
+      "visible": false,
       "renderable": {
         "asset_graph_node_id": 27
       }
@@ -259,8 +259,8 @@
             "goal": 0,
             "gamma_start": 2,
             "anneal_seconds": 2,
-            "confidence": 0.7,
-            "decoherence": 0.3,
+            "confidence": 0.69999999999999996,
+            "decoherence": 0.29999999999999999,
             "think_interval": 0.25,
             "memory": 1
           }
