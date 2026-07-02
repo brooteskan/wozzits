@@ -261,7 +261,8 @@
             "anneal_seconds": 2,
             "confidence": 0.7,
             "decoherence": 0.3,
-            "think_interval": 0.25
+            "think_interval": 0.25,
+            "memory": 1
           }
         },
         {

@@ -57,6 +57,16 @@ namespace agent_tank_config
     inline constexpr float kCommandBias = 0.3f;        // subtracted: passive -> press
     inline constexpr double kCommandReanneal = 6.0;    // commander re-think interval (s)
 
+    // --- DOCTRINE LEARNING: the commander's own quantum_agent carries a memory
+    // qubit (|0> = pressing pays off vs THIS player, |1> = caution does). Each
+    // re-anneal it rewards the doctrine from the squad's net shot-exchange delta
+    // (shots_landed - fire_taken since last time) and folds the learned preference
+    // into its PRESS/HARASS order -- the design's "director node learns", squad-
+    // level credit assignment on top of the tactical rule above. ---
+    inline constexpr uint32_t kDoctrineMemoryQubit = 0u;
+    inline constexpr float kDoctrineReward = 0.3f;  // per winning re-anneal window
+    inline constexpr float kDoctrineGain = 0.6f;    // learned doctrine -> order bias
+
     // How a tank folds the group command into its own goals.
     inline constexpr float kObeyPressPursue = 0.3f;    // PRESS: engage harder
     inline constexpr float kObeyPressClose = 0.5f;     //        + bias toward CLOSE
@@ -69,23 +79,34 @@ namespace agent_tank_config
     // size (dynamic membership) with this bond strength.
     inline constexpr float kSquadStarCoupling = 1.5f;  // hub<->member ferro bond
 
-    // --- LEARNING: a per-tank 1-qubit AGGRESSION memory (|0> = aggressive,
-    // |1> = cautious), held in the co-located quantum_agent's memory register
-    // (outside the coordination, so it accumulates across every re-anneal). The
-    // tank reinforces it from OUTCOMES each frame:
-    //   * LANDING shots (our gun on the target + in range) -> reward toward
-    //     aggressive; being effective pays off.
-    //   * TAKING fire (the target's hull pointed at us + in range) -> reward
-    //     toward cautious; getting shot at teaches restraint.
-    // Then it reads <sigma_z> back and folds it into pursue/posture, so a tank
-    // that keeps landing hits presses harder and one that keeps getting shot
-    // learns to circle. Memory qubit index is 0. ---
-    inline constexpr uint32_t kAggressionMemoryQubit = 0u;
+    // --- CONTEXTUAL LEARNING: a per-tank 2-qubit memory holding an ENTANGLED
+    // conditional policy, so aggression depends on the SITUATION instead of being
+    // one global mood. Qubit 0 = CONTEXT (is the player engaging us?), qubit 1 =
+    // ACTION (|0> aggressive, |1> cautious). The tank reinforces the joint
+    // (context, action) branch from OUTCOMES each frame:
+    //   * LANDING shots (our gun on the target + in range) -> reward (this context,
+    //     AGGRESSIVE): pressing paid off HERE.
+    //   * TAKING fire (the target's hull pointed at us + in range) -> reward (this
+    //     context, CAUTIOUS): getting shot at teaches restraint HERE.
+    // Then it reads conditional_preference(action | CURRENT context) WITHOUT
+    // measuring and folds it into pursue/posture -- so it can learn e.g. aggressive
+    // when the player is fleeing but cautious when the player is braced. ---
+    inline constexpr uint32_t kContextMemoryQubit = 0u;     // player-engaging bucket
+    inline constexpr uint32_t kAggressionMemoryQubit = 1u;  // aggressive|0> / cautious|1>
+
+    // Context bucket boundary: the player is "engaging/braced" (context 1) when its
+    // hull points within this arc of us, else "fleeing/passive" (context 0). Wider
+    // than kFireArc -- context is a coarse situation, not a precise shot.
+    inline constexpr float kContextArc = 0.8f;    // rad, ~46 deg hull-on-us
 
     // "Shot" geometry: a hit is credibly landed / taken when the gun (or hull) is
     // within this arc of the line to the other tank AND within this range.
     inline constexpr float kFireArc = 0.12f;      // rad, ~7 deg gun-on-target
     inline constexpr float kFireRange = 90.0f;    // world u, effective gun range
+
+    // Cannon reload: the tank fires whenever it has a shot lined up, at most once
+    // per this interval (seconds). Unlimited ammo.
+    inline constexpr double kFireCooldown = 1.1;
 
     // Reinforcement RATES, per SECOND of sustained advantage (scaled by frame dt
     // at the call site so learning speed is frame-rate INVARIANT -- same Poisson-

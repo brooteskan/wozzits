@@ -11,6 +11,14 @@
 // isn't wired, so it never shrinks yet.)
 struct SquadRoster {
     int member_count = 0;
+
+    // DOCTRINE-LEARNING squad tally (grow-only counters; the commander rewards on
+    // the DELTA between re-anneals): times a squad member acquired a shot on the
+    // player vs. times a member came under the player's fire. Their running
+    // difference is the squad's net exchange -- the signal the commander's doctrine
+    // memory learns from ("is pressing paying off against THIS player?").
+    int shots_landed = 0;
+    int fire_taken = 0;
 };
 inline constexpr const char* kSquadRosterKey = "squad";
 
@@ -20,7 +28,7 @@ struct QuantumTankState {
     float speed = 0.0f;
     tank_drive::Chassis chassis;  // turret handle + turret aim
     
-    uint8_t ammo = 10;
+    uint32_t ammo = 1000;  // effectively unlimited; enemy firing isn't ammo-gated
 
     WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
     WzBehaviorEntityId canon_audio = WZ_INVALID_BEHAVIOR_ENTITY;
@@ -53,6 +61,23 @@ struct QuantumTankState {
     // How far off the turret's gun is from the target (rad); 0 = on target.
     float aim_error = 0.0f;
 
+    // Current CONTEXT bucket for contextual learning (recomputed each frame):
+    // 1 = the target's hull is pointed at us (it is ENGAGING/braced), 0 = it is
+    // not (fleeing/passive). Both the reward (which (context,action) branch to
+    // reinforce) and the conditional read (which context to act on) key off this,
+    // so they must agree within a frame.
+    uint8_t context_engaging = 0;
+
+    // Edge-tracking for the learning logs: last frame's "gun on target in range"
+    // (had_shot) and "player's hull on us in range" (under_fire), so we log only on
+    // the RISING edge -- acquiring a shot / starting to take fire -- not every frame.
+    uint8_t had_shot = 0;
+    uint8_t under_fire = 0;
+
+    // Cannon reload gate: sim_time the tank may next fire (fires whenever it has a
+    // shot lined up, at most once per kFireCooldown). Unlimited ammo.
+    double next_fire_time = 0.0;
+
     // Last committed disposition of the co-located quantum_agent (if any):
     // -2 = never read, -1 = deliberating, 0/1 = the chosen outcome. We react
     // only on a CHANGE, so the announcement fires once per collapse.
@@ -68,6 +93,11 @@ struct QuantumTankState {
     // Commander-only: the squad size it last reshaped its group agent to (-1 =
     // never), so it reshapes only when the roster count changes.
     int squad_size = -1;
+
+    // Commander-only doctrine learning: the squad tallies last seen, so the
+    // commander rewards its doctrine memory on the DELTA each re-anneal.
+    int prev_shots_landed = 0;
+    int prev_fire_taken = 0;
 };
 
 // Populate the world snapshot the cognition goals read: distance + bearing to the

@@ -73,15 +73,41 @@ namespace
             return;
         }
 
-        // Command goal: PRESS (|0>, goal > 0) when the player is slow/passive,
-        // HARASS (|1>) when the player is fast/aggressive.
+        using namespace agent_tank_config;
+
+        // DOCTRINE LEARNING: reward the commander's doctrine memory from the squad's
+        // net shot-exchange since the last order (shots_landed - fire_taken delta),
+        // then fold what it has learned into the order. Beyond the reactive rule
+        // (press slow players), the commander LEARNS whether pressing actually pays
+        // off against THIS player and leans that way -- the "director node learns".
+        if (roster) {
+            const int d_landed = roster->shots_landed - state->prev_shots_landed;
+            const int d_taken = roster->fire_taken - state->prev_fire_taken;
+            state->prev_shots_landed = roster->shots_landed;
+            state->prev_fire_taken = roster->fire_taken;
+            const int net = d_landed - d_taken;
+            if (net != 0) {
+                // net > 0: squad won the exchange -> pressing paid off (|0>).
+                // net < 0: squad got the worse of it -> caution paid off (|1>).
+                wz_self_agent_reward(
+                    facts, event, kDoctrineMemoryQubit,
+                    /*toward=*/ net > 0 ? 1u : 0u, kDoctrineReward);
+            }
+        }
+        // +1 => memory leans |0> (pressing pays); fold into the PRESS/HARASS order.
+        const float doctrine =
+            wz_self_agent_memory(facts, event, kDoctrineMemoryQubit);
+
+        // Command goal: reactive rule (PRESS when the player is slow/passive) PLUS
+        // the learned doctrine bias.
         const float order_goal = tank_drive::clampf(
-            agent_tank_config::kCommandBias
-                - state->target_speed * agent_tank_config::kCommandSpeedGain,
+            kCommandBias
+                - state->target_speed * kCommandSpeedGain
+                + doctrine * kDoctrineGain,
             -1.0f, 1.0f);
         wz_self_set_agent_goal(facts, event, 0u, order_goal);
         wz_self_rearm_agent(facts, event);
-        state->next_reanneal_time = now + agent_tank_config::kCommandReanneal;
+        state->next_reanneal_time = now + kCommandReanneal;
 
         WzAgentDecision order{};
         (void)wz_self_agent_decision(facts, event, &order);
@@ -89,10 +115,11 @@ namespace
             state->last_decision = order.committed;
             wz_log_infof(
                 facts,
-                "[commander] order=%s (player_spd=%.1f)",
+                "[commander] order=%s (player_spd=%.1f doctrine=%.2f)",
                 order.committed == 0 ? "PRESS"
                     : (order.committed == 1 ? "HARASS" : "deliberating"),
-                (double)state->target_speed);
+                (double)state->target_speed,
+                (double)doctrine);
         }
     }
 }

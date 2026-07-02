@@ -56,8 +56,11 @@ namespace
         uint8_t result = wz_find_entity_by_authored_id(facts, "empty_2", &state->terrain);
         wz_log_infof(facts, "[agent tank init] find terrain: %u", result);
 
-        result = wz_find_entity_by_authored_id(facts, "1", &state->canon_audio);
-        wz_log_infof(facts, "[agent tank init] find audio: %u", result);
+        // The cannon audio source lives on the enemy tank's OWN root node (self),
+        // so each tank's shot is emitted + spatialized from ITS position -- not the
+        // player's camera. The enemy_tank scenelet authors an AudioSource on the
+        // root (cannon bank); we play "Canon_a" on it when a shot is lined up.
+        state->canon_audio = self;
 
         result = wz_find_entity_by_authored_id(facts, "empty_1", &state->player);
         wz_log_infof(facts, "[agent tank init] find player: %u", result);
@@ -121,13 +124,18 @@ namespace
             }
         }
 
-        // LEARNED aggression: read what this tank's memory has settled on (+1 =
-        // aggressive, -1 = cautious; reinforced from outcomes in sense_and_learn)
-        // and fold it into the tactical goals -- an effective tank presses/closes
-        // harder, a battered one holds/circles. Survives every re-anneal because
-        // the memory lives outside the coordination.
+        // LEARNED aggression, CONDITIONED on the current context: read the entangled
+        // policy for "the situation we're actually in" (context_engaging) WITHOUT
+        // measuring -- +1 = the memory learned aggression pays off in THIS context,
+        // -1 = caution does. Fold it into the tactical goals. So a tank can press
+        // when the player is fleeing yet circle when the player is braced, instead
+        // of one global mood. Survives every re-anneal (memory is outside the
+        // coordination).
         const float aggression =
-            wz_self_agent_memory(facts, event, kAggressionMemoryQubit);
+            wz_self_agent_conditional_pref(
+                facts, event,
+                kContextMemoryQubit, state->context_engaging,
+                kAggressionMemoryQubit);
         pursue_goal += aggression * kMemoryPursueGain;
         posture_goal += aggression * kMemoryPostureGain;   // + = CLOSE (|0>)
 
@@ -166,6 +174,16 @@ namespace
         // re-anneal.)
         if (wz_event_kind(event) == WZ_EVENT_FRAME_UPDATE) {
             sense_world(facts, event, state);
+
+            // Classify the CURRENT context ONCE per frame (both the reward and the
+            // conditional read must agree within a frame): the player is
+            // "engaging/braced" when its hull points within kContextArc of us.
+            if (state->target != WZ_INVALID_BEHAVIOR_ENTITY) {
+                const float incoming = tank_drive::hull_aim_error(
+                    facts, state->target, wz_self(event));
+                state->context_engaging =
+                    fabsf(incoming) < agent_tank_config::kContextArc ? 1u : 0u;
+            }
 
             // Once the meta-qubit commits, it chooses the interval to the next
             // re-anneal, measured from the last one.
@@ -247,14 +265,18 @@ namespace
         state->aim_error = tank_drive::aim_error(
             facts, event, state->target, state->chassis.turret_yaw);
 
-        // LEARN from outcomes (frame.update only -- continuous reinforcement). Two
-        // aim proxies, each gated on range, nudge the aggression memory:
-        //   * OUR gun on the target + in range  -> we're LANDING shots -> reward
-        //     toward aggressive (|0>): being effective pays off.
-        //   * the target's HULL pointed at us + in range -> we're TAKING fire ->
-        //     reward toward cautious (|1>): getting shot at teaches restraint.
-        // (Later, "landing / taking fire" can key off real projectile geometry;
-        // for now the pointed-gun / pointed-hull proxies stand in.)
+        // LEARN a CONTEXT-DEPENDENT policy from outcomes (frame.update only --
+        // continuous reinforcement). Two aim proxies, each gated on range, reinforce
+        // the JOINT (context, action) branch of the memory:
+        //   * OUR gun on the target + in range  -> LANDING shots -> reward
+        //     (this context, AGGRESSIVE |0>): pressing paid off in this situation.
+        //   * the target's HULL pointed at us + in range -> TAKING fire -> reward
+        //     (this context, CAUTIOUS |1>): getting shot at here teaches restraint.
+        // Because the reward is bucketed by context_engaging, the tank learns
+        // different dispositions per situation (an entangled conditional policy),
+        // not one global mood. (Later, landing/taking-fire can key off real
+        // projectile geometry; for now the pointed-gun / pointed-hull proxies stand
+        // in.)
         if (wz_event_kind(event) == WZ_EVENT_FRAME_UPDATE
             && state->target != WZ_INVALID_BEHAVIOR_ENTITY)
         {
@@ -263,19 +285,78 @@ namespace
             // frame-rate invariant (amplifying by e^{rate*dt} each frame integrates
             // to e^{rate} per second regardless of fps).
             const float dt = wz_delta_seconds(facts);
+            const uint8_t ctx = state->context_engaging;
             const bool in_range = state->distance_to_target < kFireRange;
-            if (in_range && fabsf(state->aim_error) < kFireArc) {
-                wz_self_agent_reward(
-                    facts, event, kAggressionMemoryQubit,
-                    /*toward=*/1u, kRewardLanding * dt);   // |0> aggressive
+
+            // Shared squad tally the COMMANDER learns its doctrine from: bump it on
+            // the acquisition edges below (get-or-create; may be null very early).
+            SquadRoster* roster = static_cast<SquadRoster*>(
+                wz_find_shared_state(facts, kSquadRosterKey));
+
+            const bool shot = in_range && fabsf(state->aim_error) < kFireArc;
+            if (shot) {
+                wz_self_agent_reward_pair(
+                    facts, event,
+                    kContextMemoryQubit, ctx,
+                    kAggressionMemoryQubit, /*dec_value=*/0u,  // |0> aggressive
+                    kRewardLanding * dt);
+
+                // FIRE the cannon on a reload cadence whenever the gun is on target
+                // (unlimited ammo). Sound is emitted from this tank's own audio
+                // source so it spatializes from the tank's position.
+                const double now = wz_sim_time(facts);
+                if (now >= state->next_fire_time
+                    && state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY)
+                {
+                    wz_write_play_sound_named(facts, state->canon_audio, "Canon_a");
+                    state->next_fire_time = now + kFireCooldown;
+                    wz_log_infof(
+                        facts, "[qtank:%d] FIRE  ctx=%s dist=%.1f",
+                        state->tank_id, ctx ? "braced" : "fleeing",
+                        (double)state->distance_to_target);
+                }
             }
+            // Log only on the RISING edge (acquiring the shot), with the learned
+            // aggression lean for THIS context so you can watch the policy form:
+            // pref -> +1 aggressive, -1 cautious.
+            if (shot && !state->had_shot) {
+                if (roster) { roster->shots_landed++; }   // squad exchange tally
+                wz_log_infof(
+                    facts,
+                    "[qtank:%d] SHOT lined up  ctx=%s dist=%.1f aim=%.2f  pref=%.2f",
+                    state->tank_id,
+                    ctx ? "braced" : "fleeing",
+                    (double)state->distance_to_target,
+                    (double)state->aim_error,
+                    (double)wz_self_agent_conditional_pref(
+                        facts, event, kContextMemoryQubit, ctx,
+                        kAggressionMemoryQubit));
+            }
+            state->had_shot = shot ? 1u : 0u;
+
             const float incoming =
                 tank_drive::hull_aim_error(facts, state->target, wz_self(event));
-            if (in_range && fabsf(incoming) < kFireArc) {
-                wz_self_agent_reward(
-                    facts, event, kAggressionMemoryQubit,
-                    /*toward=*/0u, kRewardTakingFire * dt);  // |1> cautious
+            const bool fire = in_range && fabsf(incoming) < kFireArc;
+            if (fire) {
+                wz_self_agent_reward_pair(
+                    facts, event,
+                    kContextMemoryQubit, ctx,
+                    kAggressionMemoryQubit, /*dec_value=*/1u,  // |1> cautious
+                    kRewardTakingFire * dt);
             }
+            if (fire && !state->under_fire) {
+                if (roster) { roster->fire_taken++; }   // squad exchange tally
+                wz_log_infof(
+                    facts,
+                    "[qtank:%d] TAKING fire  ctx=%s dist=%.1f  pref=%.2f",
+                    state->tank_id,
+                    ctx ? "braced" : "fleeing",
+                    (double)state->distance_to_target,
+                    (double)wz_self_agent_conditional_pref(
+                        facts, event, kContextMemoryQubit, ctx,
+                        kAggressionMemoryQubit));
+            }
+            state->under_fire = fire ? 1u : 0u;
         }
 
         // Announce each collapse of the joint decision (once per change).
