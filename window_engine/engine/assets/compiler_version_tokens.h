@@ -90,7 +90,10 @@ namespace wz::engine::assets {
     // Bumped 2 -> 3: the collision-from-height-field recipe now accepts an
     // optional Placement input port that overrides its origin/size/vertical/
     // base when connected (issue #218 Phase 1). Bump invalidates stale caches.
-    inline constexpr uint64_t kCollisionCompilerVersion = 3;
+    // Bumped 3 -> 4: placement-driven collision now records a placement_driven
+    // flag in its compiled data so the runtime skips the carrying node's
+    // transform (issue #224); compiled-output semantics changed.
+    inline constexpr uint64_t kCollisionCompilerVersion = 4;
     inline constexpr uint64_t kSceneFromJSONCompilerVersion = 5;
     inline constexpr uint64_t kSceneFromGLBCompilerVersion = 1;
     inline constexpr uint64_t kDirectLightCompilerVersion = 1;

@@ -99,6 +99,13 @@ namespace wz::engine::assets
         float max_height = 0.0f;
         std::vector<float> height_samples;
 
+        // True when origin/size/vertical_scale/base_height were baked from a
+        // Placement asset (issue #218) and are therefore WORLD-frame values.
+        // The collision runtime must NOT compose the carrying scene node's
+        // world_from_local on top of them (issue #224); doing so would
+        // double-apply a non-unit node scale.
+        bool placement_driven = false;
+
         uint32_t source_triangle_count = 0;
         uint32_t accepted_triangle_count = 0;
 

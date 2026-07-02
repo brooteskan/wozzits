@@ -30,7 +30,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kCollisionTerrainDiskCacheMagic = 0x43435a57u;
-        constexpr uint32_t kCollisionTerrainDiskCacheVersion = 2u;
+        constexpr uint32_t kCollisionTerrainDiskCacheVersion = 3u;
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -301,6 +301,7 @@ namespace wz::engine::assets::internal
             append_scalar(out, static_cast<uint8_t>(data.supports_height_query));
             append_scalar(out, static_cast<uint8_t>(data.supports_ray_query));
             append_scalar(out, static_cast<uint8_t>(data.supports_overlap_query));
+            append_scalar(out, static_cast<uint8_t>(data.placement_driven));
             return out;
         }
 
@@ -476,12 +477,14 @@ namespace wz::engine::assets::internal
             uint8_t supports_height = 0;
             uint8_t supports_ray = 0;
             uint8_t supports_overlap = 0;
+            uint8_t placement_driven = 0;
             if (!read_scalar(bytes, offset, data.source_triangle_count)
                 || !read_scalar(bytes, offset, data.accepted_triangle_count)
                 || !read_scalar(bytes, offset, supports_bounds)
                 || !read_scalar(bytes, offset, supports_height)
                 || !read_scalar(bytes, offset, supports_ray)
-                || !read_scalar(bytes, offset, supports_overlap))
+                || !read_scalar(bytes, offset, supports_overlap)
+                || !read_scalar(bytes, offset, placement_driven))
             {
                 return false;
             }
@@ -489,6 +492,7 @@ namespace wz::engine::assets::internal
             data.supports_height_query = supports_height != 0u;
             data.supports_ray_query = supports_ray != 0u;
             data.supports_overlap_query = supports_overlap != 0u;
+            data.placement_driven = placement_driven != 0u;
             return offset == bytes.size();
         }
 
@@ -1984,6 +1988,10 @@ namespace wz::engine::assets::internal
 
                 CollisionAssetData data =
                     collision_from_height_field(*desc, *field);
+                // A connected placement bakes world-frame mapping values into
+                // the compiled data; flag it so the runtime does not compose
+                // the carrying node's transform on top (issue #224).
+                data.placement_driven = (placement != nullptr);
                 if (!data.valid()) {
                     logger.error(
                         "compiled height field collision asset is invalid "

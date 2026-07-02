@@ -917,13 +917,21 @@ namespace wz::engine::collision
                 },
             };
 
+            // Placement-driven collision bakes world-frame bounds/mapping at
+            // compile time (issue #218), so the carrying node's transform must
+            // NOT be composed on top (issue #224); use identity instead.
+            const wz::math::Mat4 collision_from_local =
+                data->placement_driven
+                    ? wz::math::Mat4::identity()
+                    : node.world;
+
             storage.world.push_back(CollisionWorldEntry{
                 .entity = record.node,
                 .collision_asset = component.collision_asset,
-                .world_from_local = node.world,
+                .world_from_local = collision_from_local,
                 .world_bounds = wz::scene::transform_aabb(
                     local_bounds,
-                    node.world),
+                    collision_from_local),
                 .layer_mask = component.layer_mask,
                 .collides_with_mask = component.collides_with_mask,
                 .is_trigger = component.is_trigger,
@@ -959,7 +967,11 @@ namespace wz::engine::collision
                     .entity = record.node,
                     .collision_asset =
                         component.constraint_surface_asset,
-                    .world_from_local = node.world,
+                    // Placement-driven data is already world-frame (issue
+                    // #224); skip the carrying node transform.
+                    .world_from_local = data->placement_driven
+                        ? wz::math::Mat4::identity()
+                        : node.world,
                     .enabled = true,
                     .resolved = data,
                 });
@@ -994,7 +1006,11 @@ namespace wz::engine::collision
                 TerrainConstraintSurfaceEntry{
                     .entity = record.node,
                     .collision_asset = component.collision_asset,
-                    .world_from_local = node.world,
+                    // Placement-driven data is already world-frame (issue
+                    // #224); skip the carrying node transform.
+                    .world_from_local = data->placement_driven
+                        ? wz::math::Mat4::identity()
+                        : node.world,
                     .enabled = true,
                     .resolved = data,
                 });

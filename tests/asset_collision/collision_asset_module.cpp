@@ -642,6 +642,10 @@ TEST(CollisionAssetModule, HeightFieldHonoursConnectedPlacement)
     EXPECT_TRUE(data->valid());
     EXPECT_EQ(data->shape_kind, CollisionShapeKind::TerrainHeightField);
 
+    // A connected placement flags the data world-frame so the runtime skips
+    // the carrying node transform (issue #224).
+    EXPECT_TRUE(data->placement_driven);
+
     // The PLACEMENT's values win over the node's own params.
     EXPECT_FLOAT_EQ(data->origin[0], 10.0f);   // placement origin.x
     EXPECT_FLOAT_EQ(data->origin[1], 20.0f);   // placement origin.z (size mapping)
@@ -712,6 +716,10 @@ TEST(CollisionAssetModule, HeightFieldWithoutPlacementUsesOwnParams)
     EXPECT_TRUE(data->valid());
     EXPECT_EQ(data->shape_kind, CollisionShapeKind::TerrainHeightField);
 
+    // With no placement connected the data is NOT placement-driven, so the
+    // runtime still composes the carrying node transform (#216 behaviour).
+    EXPECT_FALSE(data->placement_driven);
+
     // The node's OWN params are used (unchanged from pre-#218 behaviour).
     EXPECT_FLOAT_EQ(data->origin[0], -2.0f);
     EXPECT_FLOAT_EQ(data->origin[1], -3.0f);
@@ -719,4 +727,88 @@ TEST(CollisionAssetModule, HeightFieldWithoutPlacementUsesOwnParams)
     EXPECT_FLOAT_EQ(data->size[1], 12.0f);
     EXPECT_FLOAT_EQ(data->min_height, kBaseHeight);
     EXPECT_FLOAT_EQ(data->max_height, kBaseHeight + kVerticalScale);
+}
+
+// The placement_driven flag (issue #224) survives the terrain-collision disk
+// cache save/load round-trip.
+TEST(CollisionAssetModule, PlacementDrivenFlagSurvivesDiskCache)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_collision_placement_disk_cache_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    const wz::fs::Path cache_root =
+        wz::fs::join(root, ".wozzits/cache");
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    using namespace wz::engine::assets;
+
+    auto resolve_collision = [&]() -> CollisionAssetData {
+        EngineAssetLibrary assets{
+            device,
+            logger,
+            root,
+            EngineAssetCacheSettings{
+                .root = cache_root,
+                .enabled = true,
+            },
+        };
+
+        const auto field =
+            assets.scalar_fields().create_procedural_scalar_field({
+                .name = "collision/placement_cache_height_field",
+                .width = 4,
+                .height = 4,
+                .depth = 1,
+                .generator = ScalarFieldGenerator::GradientX,
+            });
+        EXPECT_TRUE(field.valid());
+
+        const auto placement = assets.placements().create_placement({
+            .name = "collision/placement_cache_frame",
+            .origin = { 10.0f, 0.0f, 20.0f },
+            .extent = { 500.0f, 30.0f, 600.0f },
+            .base_height = 5.0f,
+        });
+        EXPECT_TRUE(placement.valid());
+
+        const auto collision = assets.collisions().create_from_height_field({
+            .name = "collision/placement_cache_constraint",
+            .height_field = field,
+            .placement = placement,
+            .origin = { -2.0f, -3.0f },
+            .size = { 10.0f, 12.0f },
+            .vertical_scale = 1.0f,
+            .base_height = -1.0f,
+        });
+        EXPECT_TRUE(collision.valid());
+
+        EXPECT_TRUE(assets.commit());
+        const auto report = assets.resolve_all();
+        EXPECT_TRUE(report.ok());
+
+        const CollisionAssetData* data =
+            assets.collisions().get_collision_data(
+                assets.collisions().get_collision(collision));
+        EXPECT_NE(data, nullptr);
+        return data ? *data : CollisionAssetData{};
+    };
+
+    const CollisionAssetData first = resolve_collision();
+    ASSERT_TRUE(first.valid());
+    EXPECT_TRUE(first.placement_driven);
+
+    // Second resolve hits the disk cache written by the first; the flag must
+    // survive the serialize / deserialize round-trip.
+    const CollisionAssetData second = resolve_collision();
+    ASSERT_TRUE(second.valid());
+    EXPECT_TRUE(second.placement_driven);
+    EXPECT_FLOAT_EQ(second.origin[0], first.origin[0]);
+    EXPECT_FLOAT_EQ(second.origin[1], first.origin[1]);
+    EXPECT_FLOAT_EQ(second.size[0], first.size[0]);
+    EXPECT_FLOAT_EQ(second.size[1], first.size[1]);
+    EXPECT_FLOAT_EQ(second.vertical_scale, first.vertical_scale);
+    EXPECT_FLOAT_EQ(second.base_height, first.base_height);
 }

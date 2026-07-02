@@ -1,5 +1,7 @@
 ﻿#include "collision_frame_test_support.h"
 
+#include <engine/collision/collision_surface_sampling.h>
+
 TEST(CollisionFrameWorldBuilder, ResolvesAssetsAndTransformsLocalBounds)
 {
     using namespace wz::engine::assets;
@@ -398,5 +400,205 @@ TEST(CollisionFrameWorldBuilder, UnresolvedEntryEmitsExitWhenItDisappears)
     EXPECT_EQ(frame.events[0].a, result.instance.authored_to_runtime["a"]);
     EXPECT_EQ(frame.events[0].b, result.instance.authored_to_runtime["b"]);
     EXPECT_EQ(frame.events[0].kind, CollisionEventKind::Exit);
+}
+
+// Placement-driven collision (issue #218/#224): the compiled data is already
+// world-frame, so a non-unit carrying-node scale must NOT be composed on top.
+// The entry's world_from_local is identity, and the collision footprint equals
+// the placement extent regardless of node scale.
+TEST(CollisionFrameWorldBuilder, PlacementDrivenSurfaceIgnoresNodeTransform)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        test_root("wz_collision_world_placement_ignores_node_transform");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto field =
+        assets.scalar_fields().create_procedural_scalar_field({
+            .name = "collision/placement_frame_height",
+            .width = 4,
+            .height = 4,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientX,
+        });
+    ASSERT_TRUE(field.valid());
+
+    // Placement footprint 4096 x 4096 at the origin, vertical 300, base 0.
+    const auto placement = assets.placements().create_placement({
+        .name = "collision/placement_frame",
+        .origin = { 0.0f, 0.0f, 0.0f },
+        .extent = { 4096.0f, 300.0f, 4096.0f },
+        .base_height = 0.0f,
+    });
+    ASSERT_TRUE(placement.valid());
+
+    const auto constraint_surface =
+        assets.collisions().create_from_height_field({
+            .name = "collision/placement_constraint_surface",
+            .height_field = field,
+            .placement = placement,
+        });
+    ASSERT_TRUE(constraint_surface.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto collision_handle =
+        assets.collisions().get_collision(constraint_surface);
+    ASSERT_TRUE(collision_handle.valid());
+    const auto* collision_data =
+        assets.collisions().get_collision_data(collision_handle);
+    ASSERT_NE(collision_data, nullptr);
+    ASSERT_TRUE(collision_data->placement_driven);
+
+    // Carrying node with a large non-unit scale, which pre-#224 would have
+    // double-applied on top of the world-frame placement mapping.
+    SceneAssetData scene{};
+    scene.name = "placement_driven_scale_scene";
+    SceneNodeAsset node{};
+    node.id = "ground";
+    node.local.scale[0] = 512.0f;
+    node.local.scale[1] = 512.0f;
+    node.local.scale[2] = 512.0f;
+    node.collision = SceneCollisionAsset{
+        .collision_asset = constraint_surface.output,
+        .constrain_movement = true,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_TRUE(result.instance.authored_to_runtime.contains("ground"));
+    const auto node_h = result.instance.authored_to_runtime["ground"];
+
+    CollisionFrameStorage frame{};
+    build_collision_world(result.instance, assets.collisions(), frame);
+
+    ASSERT_EQ(frame.terrain_constraint_surfaces.size(), 1u);
+    const auto& surface = frame.terrain_constraint_surfaces[0];
+    EXPECT_EQ(surface.entity, node_h);
+    EXPECT_EQ(surface.resolved, collision_data);
+
+    // The carrying node's scale is discarded: world_from_local is identity.
+    const wz::math::Mat4 identity = wz::math::Mat4::identity();
+    for (int i = 0; i < 16; ++i) {
+        EXPECT_FLOAT_EQ(surface.world_from_local.m[i], identity.m[i])
+            << "world_from_local element " << i
+            << " must be identity for placement-driven collision";
+    }
+
+    // A probe near the placement extent's edge (world x ~= 0.9 * 4096) hits at
+    // the placement-mapped footprint -- proving the footprint == placement
+    // extent (4096), NOT the node-scale-inflated 512 * 4096.
+    const CollisionWorldEntry entry{
+        .entity = surface.entity,
+        .collision_asset = surface.collision_asset,
+        .world_from_local = surface.world_from_local,
+        .enabled = surface.enabled,
+        .resolved = surface.resolved,
+    };
+    CollisionSurfaceSample sample{};
+    const float edge_x = 0.9f * 4096.0f;
+    const float edge_z = 0.9f * 4096.0f;
+    EXPECT_TRUE(sample_terrain_surface(entry, edge_x, edge_z, sample));
+    EXPECT_TRUE(sample.hit);
+    EXPECT_NEAR(sample.position.x, edge_x, 1e-2f);
+    EXPECT_NEAR(sample.position.z, edge_z, 1e-2f);
+
+    // Just past the placement extent (world x > 4096) there is no surface.
+    CollisionSurfaceSample outside{};
+    EXPECT_FALSE(
+        sample_terrain_surface(entry, 4096.0f + 100.0f, edge_z, outside));
+}
+
+// Mirror of the above protecting #216: a NON-placement heightfield collision
+// still composes the carrying node's transform (world_from_local == node.world),
+// so a non-unit node scale still scales the footprint.
+TEST(CollisionFrameWorldBuilder, NonPlacementSurfaceComposesNodeTransform)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root =
+        test_root("wz_collision_world_non_placement_composes_transform");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto field =
+        assets.scalar_fields().create_procedural_scalar_field({
+            .name = "collision/non_placement_frame_height",
+            .width = 4,
+            .height = 4,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::GradientX,
+        });
+    ASSERT_TRUE(field.valid());
+
+    // No placement connected: the collision uses its own world mapping.
+    const auto constraint_surface =
+        assets.collisions().create_from_height_field({
+            .name = "collision/non_placement_constraint_surface",
+            .height_field = field,
+            .origin = { 0.0f, 0.0f },
+            .size = { 16.0f, 16.0f },
+            .vertical_scale = 2.0f,
+            .base_height = 0.0f,
+        });
+    ASSERT_TRUE(constraint_surface.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto collision_handle =
+        assets.collisions().get_collision(constraint_surface);
+    ASSERT_TRUE(collision_handle.valid());
+    const auto* collision_data =
+        assets.collisions().get_collision_data(collision_handle);
+    ASSERT_NE(collision_data, nullptr);
+    ASSERT_FALSE(collision_data->placement_driven);
+
+    SceneAssetData scene{};
+    scene.name = "non_placement_scale_scene";
+    SceneNodeAsset node{};
+    node.id = "ground";
+    node.local.scale[0] = 512.0f;
+    node.local.scale[1] = 512.0f;
+    node.local.scale[2] = 512.0f;
+    node.collision = SceneCollisionAsset{
+        .collision_asset = constraint_surface.output,
+        .constrain_movement = true,
+    };
+    scene.nodes.push_back(std::move(node));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_TRUE(result.instance.authored_to_runtime.contains("ground"));
+    const auto node_h = result.instance.authored_to_runtime["ground"];
+
+    CollisionFrameStorage frame{};
+    build_collision_world(result.instance, assets.collisions(), frame);
+
+    ASSERT_EQ(frame.terrain_constraint_surfaces.size(), 1u);
+    const auto& surface = frame.terrain_constraint_surfaces[0];
+    EXPECT_EQ(surface.entity, node_h);
+
+    // #216 behaviour preserved: the node transform IS composed, so the scale
+    // shows up on world_from_local's diagonal.
+    const auto& runtime_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        node_h);
+    EXPECT_FLOAT_EQ(
+        surface.world_from_local.m[0],
+        runtime_node.world.m[0]);
+    EXPECT_FLOAT_EQ(surface.world_from_local.m[0], 512.0f);
+    EXPECT_FLOAT_EQ(surface.world_from_local.m[5], 512.0f);
+    EXPECT_FLOAT_EQ(surface.world_from_local.m[10], 512.0f);
 }
 
