@@ -1166,6 +1166,33 @@ namespace wz::engine::rendering
                 // ONE place (the placement never governs the lattice geometry
                 // snap). With no placement, the override is null and the
                 // node-transform path is used, exactly as before.
+                // #221: source the terrain's placing transform (translation +
+                // vertical scale) from the caller's world_transforms span — the
+                // single source of truth (the sim polytree) — index-aligned with
+                // `nodes`, NOT from node.local. For the placement-authoritative
+                // case (test_mesh_001) these are IGNORED by
+                // compute_clipmap_placement (the connected Placement is the
+                // footprint), so this changes nothing there; for the no-placement
+                // legacy path the world transform is the correct read (world ==
+                // local for a top-level clipmap node) and it now tracks a
+                // sim-driven move instead of the stale authored pose. World
+                // matrices are column-major: translation = column 3; column i
+                // length = axis-i scale.
+                const wz::math::Mat4& clipmap_world =
+                    node_worlds[node_index];
+                const float world_translation[3] = {
+                    clipmap_world.m[12], clipmap_world.m[13],
+                    clipmap_world.m[14] };
+                const auto column_length = [&](int col) noexcept -> float {
+                    const int b = col * 4;
+                    return std::sqrt(
+                        clipmap_world.m[b + 0] * clipmap_world.m[b + 0]
+                        + clipmap_world.m[b + 1] * clipmap_world.m[b + 1]
+                        + clipmap_world.m[b + 2] * clipmap_world.m[b + 2]);
+                };
+                const float world_scale[3] = {
+                    column_length(0), column_length(1), column_length(2) };
+
                 const bool placement_authoritative =
                     realized->clipmap_settings.placement_authoritative;
                 ea::ClipmapLandscapeRenderSettings placement =
@@ -1179,8 +1206,8 @@ namespace wz::engine::rendering
                         },
                         realized->heightmap_width,
                         realized->heightmap_height,
-                        node.local.translation,
-                        node.local.scale,
+                        world_translation,
+                        world_scale,
                         realized->clipmap_settings.view_snapped,
                         placement_authoritative
                             ? &realized->clipmap_settings

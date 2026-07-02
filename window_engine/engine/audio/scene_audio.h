@@ -15,13 +15,11 @@
 
 #include <cstdint>
 #include <deque>
-#include <span>
 #include <unordered_map>
 
 namespace wz::engine::assets {
     class EngineAssetLibrary;
     struct SceneInstance;
-    struct SceneNodeAsset;
 }
 
 namespace wz::audio {
@@ -150,21 +148,23 @@ namespace wz::engine::audio {
     // retunes ones already playing; posting to a finished one-shot's client_id is
     // a harmless no-op. With no active listener it does nothing (sources stay 2D).
     //
-    //   nodes                  the authored scene nodes (the app's scene_nodes_).
-    //   node_world_transforms  one world matrix per node, index-aligned with
-    //                          `nodes` (from compute_scene_node_world_transforms).
-    //   instance               the runtime scene (audio_sources / audio_listeners
-    //                          + runtime_to_authored, to map a record's node →
-    //                          authored id → index into `nodes`).
-    //   dt                     seconds since the last tick (for velocity/Doppler).
-    //   sample_rate            the device sample rate (for ITD + ramp-frame math).
+    // #221: the source/listener world poses are read straight from the instance's
+    // simulation polytree (instance.storage.polytree, indexed by the record's
+    // runtime node) — the SAME single source of truth scene_world_transforms()
+    // draws + saves from — so this pass no longer takes (nor scans) the authored
+    // scene_nodes_ span. A record whose node is out of the polytree's range is
+    // skipped (defensive; the tables are built from the same instance).
+    //
+    //   instance     the runtime scene: audio_sources / audio_listeners (each
+    //                record's `node` is the polytree handle) + storage.polytree
+    //                (the world matrices the sim advanced this tick).
+    //   dt           seconds since the last tick (for velocity/Doppler).
+    //   sample_rate  the device sample rate (for ITD + ramp-frame math).
     //
     // Returns the number of SetSpatial commands posted (diagnostics/tests).
     uint32_t update_scene_audio_spatialization(
         const wz::engine::assets::EngineAssetLibrary& assets,
         const wz::engine::assets::SceneInstance& instance,
-        std::span<const wz::engine::assets::SceneNodeAsset> nodes,
-        std::span<const wz::math::Mat4> node_world_transforms,
         float dt,
         uint32_t sample_rate,
         wz::audio::AudioScheduler& scheduler,

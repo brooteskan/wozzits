@@ -606,13 +606,12 @@ namespace wz::app
         // the runtime→authored map) and the nodes' world transforms.
         if (prefer_scene_camera_ && audio_runtime_.running() && behavior_scene_
             && ctx_.assets) {
-            // Same single source of truth the renderer reads (#221): with a live
-            // behavior scene these are the sim-current world matrices from the
-            // polytree.
-            const std::vector<wz::math::Mat4> node_world =
-                scene_world_transforms();
+            // #221: the pass reads source/listener world poses straight from the
+            // behavior scene's polytree (the same single source of truth
+            // scene_world_transforms() draws from), so it needs neither the
+            // scene_nodes_ span nor a precomputed world-transform vector here.
             wz::engine::audio::update_scene_audio_spatialization(
-                *ctx_.assets, *behavior_scene_, scene_nodes_, node_world,
+                *ctx_.assets, *behavior_scene_,
                 dt, audio_runtime_.output_sample_rate(),
                 audio_runtime_.scheduler(), audio_spatialization_);
         }

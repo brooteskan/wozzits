@@ -382,34 +382,26 @@ namespace wz::engine::audio {
             return a.x * b.x + a.y * b.y + a.z * b.z;
         }
 
-        // Map a RuntimeEntityId (a record's `node`) to an index into `nodes`
-        // (index-aligned with node_world_transforms), reusing the same chain the
-        // app uses for the active camera: runtime entity → authored id → the node
-        // in `nodes` with that id. Returns -1 if it can't be resolved.
-        int node_index_for_entity(
+        // The world matrix of a record's runtime node, straight from the sim
+        // polytree (the #221 single source of truth) — nullptr if the handle is
+        // out of range. The record's `node` IS the polytree handle, so this is the
+        // same read scene_world_transforms() does, without an id→index scan.
+        const wz::math::Mat4* node_world(
             const wz::engine::assets::SceneInstance& instance,
-            std::span<const wz::engine::assets::SceneNodeAsset> nodes,
-            wz::scene::RuntimeEntityId entity)
+            wz::scene::RuntimeEntityId entity) noexcept
         {
-            if (entity >= instance.runtime_to_authored.size()) {
-                return -1;
+            if (entity >= wz::core::graph::node_count(instance.storage.polytree)) {
+                return nullptr;
             }
-            const wz::scene::AuthoredEntityId& authored =
-                instance.runtime_to_authored[entity];
-            for (size_t i = 0; i < nodes.size(); ++i) {
-                if (nodes[i].id == authored) {
-                    return static_cast<int>(i);
-                }
-            }
-            return -1;
+            return &wz::core::graph::node_data(
+                       instance.storage.polytree, entity)
+                        .world;
         }
     }
 
     uint32_t update_scene_audio_spatialization(
         const wz::engine::assets::EngineAssetLibrary& assets,
         const wz::engine::assets::SceneInstance& instance,
-        std::span<const wz::engine::assets::SceneNodeAsset> nodes,
-        std::span<const wz::math::Mat4> node_world_transforms,
         float dt,
         uint32_t sample_rate,
         wz::audio::AudioScheduler& scheduler,
@@ -417,7 +409,7 @@ namespace wz::engine::audio {
     {
         using namespace wz::engine::assets;
 
-        if (nodes.size() != node_world_transforms.size() || sample_rate == 0) {
+        if (sample_rate == 0) {
             return 0;
         }
 
@@ -430,11 +422,11 @@ namespace wz::engine::audio {
             if (!record.component.active) {
                 continue;
             }
-            const int idx = node_index_for_entity(instance, nodes, record.node);
-            if (idx < 0) {
+            const wz::math::Mat4* world = node_world(instance, record.node);
+            if (world == nullptr) {
                 continue;
             }
-            listener_world = &node_world_transforms[static_cast<size_t>(idx)];
+            listener_world = world;
             listener_entity = record.node;
             break;
         }
@@ -487,12 +479,12 @@ namespace wz::engine::audio {
                 continue;
             }
 
-            const int idx = node_index_for_entity(instance, nodes, record.node);
-            if (idx < 0) {
+            const wz::math::Mat4* source_world =
+                node_world(instance, record.node);
+            if (source_world == nullptr) {
                 continue;
             }
-            const Vec3 source_pos =
-                mat_translation(node_world_transforms[static_cast<size_t>(idx)]);
+            const Vec3 source_pos = mat_translation(*source_world);
 
             // Relative vector listener→source, and distance.
             const Vec3 rel = {

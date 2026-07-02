@@ -16,6 +16,7 @@
 #include <audio/audio_scheduler.h>
 
 #include <file/filesystem.h>
+#include <graph/static_polytree.h>
 #include <logging/logger.h>
 #include <math/math_types.h>
 
@@ -681,6 +682,29 @@ namespace wz::engine::assets::test {
             return m;
         }
 
+        // #221: the spatialization pass now reads source/listener world poses from
+        // the instance's polytree (the single source of truth), NOT from a passed
+        // scene_nodes_ span. These test scenes are flat (top-level nodes), so a
+        // node's world == its local; seat the desired world matrix straight into
+        // the polytree node for authored node `id`, addressed via the same
+        // authored→runtime map the engine uses. Returns false if the id is unknown.
+        bool seat_world(
+            wz::engine::assets::SceneInstance& instance,
+            const wz::scene::AuthoredEntityId& id,
+            const wz::math::Mat4& world)
+        {
+            const auto it = instance.authored_to_runtime.find(id);
+            if (it == instance.authored_to_runtime.end()) {
+                return false;
+            }
+            auto& node = const_cast<wz::scene::TransformNode&>(
+                wz::core::graph::node_data(
+                    instance.storage.polytree, it->second));
+            node.local = world;
+            node.world = world;
+            return true;
+        }
+
         struct ChannelEnergy { double l = 0.0, r = 0.0; };
         ChannelEnergy stereo_energy(const std::vector<float>& interleaved)
         {
@@ -717,12 +741,12 @@ namespace wz::engine::assets::test {
         auto result = instantiate_scene(authored);
         ASSERT_TRUE(result.ok());
 
-        // World transforms index-aligned with authored.nodes: listener at origin,
-        // speaker 100 units to the +X (right) side, close enough for full level.
-        std::vector<wz::math::Mat4> world = {
-            translate(0.0f, 0.0f, 0.0f),    // listener
-            translate(40.0f, 0.0f, 0.0f),   // speaker (right, within ref dist)
-        };
+        // Seat world poses in the polytree (the pass's source of truth): listener
+        // at origin, speaker 40 units to the +X (right) side, within ref dist.
+        ASSERT_TRUE(seat_world(result.instance, "listener",
+                               translate(0.0f, 0.0f, 0.0f)));
+        ASSERT_TRUE(seat_world(result.instance, "speaker",
+                               translate(40.0f, 0.0f, 0.0f)));
 
         wz::audio::AudioScheduler scheduler(16, 64);
         ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
@@ -731,7 +755,7 @@ namespace wz::engine::assets::test {
 
         const uint32_t posted =
             wz::engine::audio::update_scene_audio_spatialization(
-                *library_, result.instance, authored.nodes, world,
+                *library_, result.instance,
                 /*dt*/ 1.0f / 60.0f, /*sample_rate*/ 48000, scheduler,
                 spat_state_);
         EXPECT_EQ(posted, 1u);
@@ -740,6 +764,54 @@ namespace wz::engine::assets::test {
         scheduler.process(out.data(), 256, 2, 48000);
         const ChannelEnergy e = stereo_energy(out);
         EXPECT_GT(e.r, e.l); // panned right
+    }
+
+    // #221 rework: the pass sources source/listener poses ONLY from the instance
+    // polytree, with NO scene_nodes_ span in its signature. Re-seating the speaker
+    // to the LEFT in the polytree (nothing else touched — no authored-node span
+    // exists in the call) must flip the pan, proving the pose read is the polytree.
+    TEST_F(SceneAudioPlayerTest, SpatializationPoseComesFromPolytreeNotSceneNodes)
+    {
+        const wz::asset::AssetKey renderable =
+            make_resolved_renderable(0.5f, /*looping*/ true);
+
+        SceneAssetData authored{};
+        SceneNodeAsset listener{};
+        listener.id = "listener";
+        listener.audio_listener = SceneAudioListenerAsset{ .active = true };
+        authored.nodes.push_back(std::move(listener));
+        SceneNodeAsset speaker{};
+        speaker.id = "speaker";
+        speaker.audio_source = SceneAudioSourceAsset{
+            .audio_renderable = renderable,
+            .auto_play = true,
+            .enabled = true,
+        };
+        authored.nodes.push_back(std::move(speaker));
+
+        auto result = instantiate_scene(authored);
+        ASSERT_TRUE(result.ok());
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        ASSERT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, result.instance, scheduler, grain_store_).played,
+                  1u);
+
+        // Seat the speaker to the LEFT of the listener in the polytree only.
+        ASSERT_TRUE(seat_world(result.instance, "listener",
+                               translate(0.0f, 0.0f, 0.0f)));
+        ASSERT_TRUE(seat_world(result.instance, "speaker",
+                               translate(-40.0f, 0.0f, 0.0f)));
+
+        EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
+                      *library_, result.instance,
+                      1.0f / 60.0f, 48000, scheduler, spat_state_),
+                  1u);
+
+        std::vector<float> out(2 * 256, 0.0f);
+        scheduler.process(out.data(), 256, 2, 48000);
+        const ChannelEnergy e = stereo_energy(out);
+        EXPECT_GT(e.l, e.r); // panned left, driven purely by the polytree pose
     }
 
     // A far source is quieter than a near one (distance attenuation).
@@ -767,10 +839,10 @@ namespace wz::engine::assets::test {
             EXPECT_TRUE(result.ok());
 
             // Straight ahead (+Z) at the given distance: no pan, pure attenuation.
-            std::vector<wz::math::Mat4> world = {
-                translate(0.0f, 0.0f, 0.0f),
-                translate(0.0f, 0.0f, dist),
-            };
+            EXPECT_TRUE(seat_world(result.instance, "listener",
+                                   translate(0.0f, 0.0f, 0.0f)));
+            EXPECT_TRUE(seat_world(result.instance, "speaker",
+                                   translate(0.0f, 0.0f, dist)));
 
             wz::audio::AudioScheduler scheduler(16, 64);
             wz::engine::audio::GrainCloudDescStore store;
@@ -779,7 +851,7 @@ namespace wz::engine::assets::test {
                       1u);
             wz::engine::audio::AudioSpatializationState st;
             wz::engine::audio::update_scene_audio_spatialization(
-                *library_, result.instance, authored.nodes, world,
+                *library_, result.instance,
                 1.0f / 60.0f, 48000, scheduler, st);
 
             std::vector<float> out(2 * 256, 0.0f);
@@ -830,22 +902,20 @@ namespace wz::engine::assets::test {
                   1u);
 
         // Tick 1: source ahead at z=100 (no prev => Doppler skipped).
-        std::vector<wz::math::Mat4> w1 = {
-            translate(0.0f, 0.0f, 0.0f),
-            translate(0.0f, 0.0f, 100.0f),
-        };
+        EXPECT_TRUE(seat_world(result.instance, "listener",
+                               translate(0.0f, 0.0f, 0.0f)));
+        EXPECT_TRUE(seat_world(result.instance, "speaker",
+                               translate(0.0f, 0.0f, 100.0f)));
         EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
-                      *library_, result.instance, authored.nodes, w1,
+                      *library_, result.instance,
                       1.0f / 60.0f, 48000, scheduler, spat_state_),
                   1u);
 
         // Tick 2: source receded to z=200 over the tick => v_r > 0 => pitch < 1.
-        std::vector<wz::math::Mat4> w2 = {
-            translate(0.0f, 0.0f, 0.0f),
-            translate(0.0f, 0.0f, 200.0f),
-        };
+        EXPECT_TRUE(seat_world(result.instance, "speaker",
+                               translate(0.0f, 0.0f, 200.0f)));
         EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
-                      *library_, result.instance, authored.nodes, w2,
+                      *library_, result.instance,
                       1.0f / 60.0f, 48000, scheduler, spat_state_),
                   1u);
 
@@ -878,10 +948,10 @@ namespace wz::engine::assets::test {
         auto result = instantiate_scene(authored);
         ASSERT_TRUE(result.ok());
 
-        std::vector<wz::math::Mat4> world = {
-            translate(0.0f, 0.0f, 0.0f),
-            translate(40.0f, 0.0f, 0.0f),
-        };
+        EXPECT_TRUE(seat_world(result.instance, "listener",
+                               translate(0.0f, 0.0f, 0.0f)));
+        EXPECT_TRUE(seat_world(result.instance, "ambience",
+                               translate(40.0f, 0.0f, 0.0f)));
 
         wz::audio::AudioScheduler scheduler(16, 64);
         wz::engine::audio::play_scene_audio_sources(
@@ -889,7 +959,7 @@ namespace wz::engine::assets::test {
 
         // GrainCloud kind is skipped => zero SetSpatial posted.
         EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
-                      *library_, result.instance, authored.nodes, world,
+                      *library_, result.instance,
                       1.0f / 60.0f, 48000, scheduler, spat_state_),
                   0u);
     }
@@ -913,14 +983,15 @@ namespace wz::engine::assets::test {
         auto result = instantiate_scene(authored);
         ASSERT_TRUE(result.ok());
 
-        std::vector<wz::math::Mat4> world = { translate(40.0f, 0.0f, 0.0f) };
+        EXPECT_TRUE(seat_world(result.instance, "speaker",
+                               translate(40.0f, 0.0f, 0.0f)));
 
         wz::audio::AudioScheduler scheduler(16, 64);
         wz::engine::audio::play_scene_audio_sources(
             *library_, result.instance, scheduler, grain_store_);
 
         EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
-                      *library_, result.instance, authored.nodes, world,
+                      *library_, result.instance,
                       1.0f / 60.0f, 48000, scheduler, spat_state_),
                   0u);
     }

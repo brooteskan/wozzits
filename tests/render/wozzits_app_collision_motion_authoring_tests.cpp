@@ -130,6 +130,28 @@ TEST_F(WozzitsAppCollisionMotionFixture, AuthorAndPersistCollisionRefAndMotion)
         EXPECT_FALSE(app.set_node_motion_terrain_fields(
             "no_such_node", true, 0.0f, 0.0f, false, 1.0f));
 
+        // #221: a SECOND edit now hits the phase-2 IN-PLACE patch path (the tank
+        // has a live Motion record after the first call), which patches the
+        // runtime record without a rebuild. This must STILL write the authored
+        // scene_nodes_.motion fields so save_scene persists the edit — assert the
+        // new values land in the authored node (read back via node_motion), and
+        // the reload block below proves they survived the save.
+        EXPECT_TRUE(app.set_node_motion_terrain_fields(
+            "tank",
+            /*terrain_constrained=*/true,
+            /*ride_height=*/2.0f,
+            /*footprint_radius=*/3.5f,
+            /*align_to_surface=*/false,
+            /*alignment_strength=*/0.4f));
+
+        const auto* patched = app.node_motion("tank");
+        ASSERT_NE(patched, nullptr);
+        EXPECT_TRUE(patched->terrain_constrained);
+        EXPECT_FLOAT_EQ(patched->terrain_ride_height, 2.0f);
+        EXPECT_FLOAT_EQ(patched->terrain_footprint_radius, 3.5f);
+        EXPECT_FALSE(patched->terrain_align_to_surface);
+        EXPECT_FLOAT_EQ(patched->terrain_alignment_strength, 0.4f);
+
         ASSERT_TRUE(app.save_scene());
     }
 
@@ -156,13 +178,16 @@ TEST_F(WozzitsAppCollisionMotionFixture, AuthorAndPersistCollisionRefAndMotion)
         // The key is re-bridged from the graph on load (not read from JSON).
         EXPECT_NE(collision->collision_asset, wz::asset::AssetKey{});
 
+        // The persisted values are the SECOND edit's (applied via the #221
+        // in-place patch path) — proving that path still writes the authored
+        // scene_nodes_.motion fields save_scene emits.
         const auto* motion = reloaded.node_motion("tank");
         ASSERT_NE(motion, nullptr);
         EXPECT_TRUE(motion->terrain_constrained);
-        EXPECT_FLOAT_EQ(motion->terrain_ride_height, 1.25f);
-        EXPECT_FLOAT_EQ(motion->terrain_footprint_radius, 2.5f);
-        EXPECT_TRUE(motion->terrain_align_to_surface);
-        EXPECT_FLOAT_EQ(motion->terrain_alignment_strength, 0.75f);
+        EXPECT_FLOAT_EQ(motion->terrain_ride_height, 2.0f);
+        EXPECT_FLOAT_EQ(motion->terrain_footprint_radius, 3.5f);
+        EXPECT_FALSE(motion->terrain_align_to_surface);
+        EXPECT_FLOAT_EQ(motion->terrain_alignment_strength, 0.4f);
     }
 
     wz::engine::shutdown(reload_ctx);

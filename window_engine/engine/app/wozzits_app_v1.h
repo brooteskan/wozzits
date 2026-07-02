@@ -871,6 +871,28 @@ namespace wz::app
         // The current graph draft (kept for the renderable_asset_node_id -> key
         // bridge) and the loaded scene's nodes (with the bridged renderable_asset).
         wz::asset::AssetGraphDraft                       graph_draft_{};
+
+        // #221 OWNERSHIP CONTRACT — scene_nodes_ is the AUTHORED / SERIALIZED
+        // DOCUMENT of the scene, and the settled single source of truth for its
+        // NON-transform authoring data:
+        //   - SINGLE WRITER: the edit verbs (set_node_*, add/remove_node_*,
+        //     graft/spawn, load). The simulation NEVER mutates scene_nodes_. There
+        //     are no parallel per-frame runtime copies of these fields — that is
+        //     what keeps them sync-free.
+        //   - TRANSFORM / HIERARCHY are NOT owned here: their live truth is the
+        //     simulation polytree (behavior_scene_->storage.polytree). Reads go
+        //     through scene_world_transforms() / node_world_transform(); the ONE
+        //     edit seam is apply_node_local_transform(); the authored .local /
+        //     .parent_id fields are refreshed from the polytree only on demand
+        //     (derived_authored_transform, i.e. derive-on-save), never per frame.
+        //   - NON-transform fields (visible, renderable_asset keys, camera params,
+        //     scene_source, audio anchors) are read per-frame BY DESIGN as document
+        //     data — the renderer consumes visible + renderable_asset fresh each
+        //     frame; the sim never writes them, so scene_nodes_ IS their truth.
+        //   - COMPONENTS (collision/motion/audio/…) are PROJECTED into the
+        //     SceneInstance at rebuild_behavior_scene; a per-frame field tweak that
+        //     already has a live record patches BOTH the authored field here (so
+        //     save persists) AND the runtime record in place (so no rebuild).
         std::vector<wz::engine::assets::SceneNodeAsset>  scene_nodes_{};
 
         // Ids of scene nodes currently grafted from a scene_source reference
