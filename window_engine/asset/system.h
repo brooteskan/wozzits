@@ -32,6 +32,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -50,6 +51,21 @@ namespace wz::asset {
         ExternalCacheLoadFailed, // external cache entry was invalid or failed to load
     };
 
+    // Stable, human-readable name for a ResolveError (for logs / diagnostics).
+    [[nodiscard]] constexpr std::string_view resolve_error_name(
+        ResolveError error) noexcept
+    {
+        switch (error) {
+        case ResolveError::NodeNotFound:            return "NodeNotFound";
+        case ResolveError::CompilerNotFound:        return "CompilerNotFound";
+        case ResolveError::CompileFailed:           return "CompileFailed";
+        case ResolveError::DependencyFailed:        return "DependencyFailed";
+        case ResolveError::ExternalCacheMiss:       return "ExternalCacheMiss";
+        case ResolveError::ExternalCacheLoadFailed: return "ExternalCacheLoadFailed";
+        }
+        return "Unknown";
+    }
+
     // Structured event emitted once per node visited by resolve() (compiled /
     // cache hit / failed), so a host (e.g. the engine library) can log every
     // compiler run. Optional — only fires when a sink is installed.
@@ -61,6 +77,10 @@ namespace wz::asset {
         AssetKey     key{};
         uint64_t     duration_us = 0;
         ResolveError error = ResolveError::NodeNotFound;
+        // Human-readable failure reason for Phase::Failed, borrowed from the
+        // failed node's error_detail. Empty otherwise. A view is safe because the
+        // sink is invoked synchronously within resolve(), while the node is alive.
+        std::string_view detail;
     };
     using ResolveLogFn = std::function<void(const ResolveLogEvent&)>;
 
@@ -85,6 +105,9 @@ namespace wz::asset {
         NodeResolveStatus status = NodeResolveStatus::Pending;
         std::optional<ResolveError> error{};
         std::optional<uint64_t> compile_duration_us{};
+        // Human-readable compile-failure reason, captured from the failed node's
+        // error_detail. Empty unless status == Failed with a reason.
+        std::string detail;
     };
 
     template<typename T>
@@ -346,7 +369,8 @@ namespace wz::asset {
             ResolveLogEvent::Phase phase,
             const AssetNode& node,
             uint64_t duration_us = 0,
-            ResolveError error = ResolveError::NodeNotFound) const;
+            ResolveError error = ResolveError::NodeNotFound,
+            std::string_view detail = {}) const;
 
         // ── Registered source graph state ─────────────────────────────────────────
 
@@ -381,7 +405,8 @@ namespace wz::asset {
         void set_node_resolve_failed(
             const AssetKey& key,
             ResolveError error,
-            std::optional<uint64_t> compile_duration_us = std::nullopt);
+            std::optional<uint64_t> compile_duration_us = std::nullopt,
+            std::string detail = {});
 
         // Scratch buffer for find_compiled() — avoids allocating a CompiledAsset
         // on the heap for single-key lookups.

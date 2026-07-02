@@ -157,6 +157,12 @@ namespace wz::app
                  resolve_report.failures)
             {
                 const auto node = draft.node_by_key.find(failure.key);
+                std::string message = "asset resolve failed: "
+                    + std::string(
+                        wz::asset::resolve_error_name(failure.error));
+                if (!failure.detail.empty()) {
+                    message += ": " + failure.detail;
+                }
                 draft.validation_messages.push_back(
                     wz::asset::AssetGraphDraftValidationMessage{
                         .severity =
@@ -165,9 +171,7 @@ namespace wz::app
                             node == draft.node_by_key.end()
                                 ? wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE
                                 : node->second,
-                        .message = "asset resolve failed (ResolveError "
-                            + std::to_string(
-                                static_cast<int>(failure.error)) + ")",
+                        .message = std::move(message),
                     });
             }
             result.diagnostics = draft.validation_messages;

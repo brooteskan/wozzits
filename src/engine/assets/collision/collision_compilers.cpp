@@ -1620,30 +1620,35 @@ namespace wz::engine::assets::internal
                 }
                 if (!desc) {
                     logger.error("collision mesh missing compile desc");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "collision mesh missing compile desc");
                 }
                 if (dep_handles.size() != 1) {
                     logger.error("collision mesh requires one mesh dependency");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "collision mesh requires one mesh dependency");
                 }
 
                 const MeshData* mesh = mesh_table.get(dep_handles[0]);
                 if (!mesh || !mesh->valid()) {
                     logger.error("collision mesh source is invalid");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "collision mesh source is invalid");
                 }
 
                 CollisionAssetData data = collision_from_mesh(*desc, *mesh);
                 if (!data.valid()) {
                     logger.error("compiled mesh collision asset is invalid");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "compiled mesh collision asset is invalid");
                 }
 
                 wz::asset::ResourceHandle handle =
                     collision_table.add(std::move(data));
                 if (!handle.valid()) {
                     logger.error("failed to store mesh collision asset");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "failed to store mesh collision asset");
                 }
 
                 return compiled_collision_node(input, handle);
@@ -1726,19 +1731,23 @@ namespace wz::engine::assets::internal
                 }
                 if (!desc) {
                     logger.error("collision terrain missing compile desc");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "collision terrain missing compile desc");
                 }
                 if (dep_handles.size() != 1) {
                     logger.error(
                         "collision terrain requires one terrain dependency");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "collision terrain requires one terrain dependency");
                 }
 
                 const TerrainAssetData* terrain =
                     terrain_table.get(dep_handles[0]);
                 if (!terrain || !terrain->valid()) {
                     logger.error("collision terrain source is invalid");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "collision terrain source is invalid");
                 }
 
                 CollisionAssetData cached_data{};
@@ -1753,7 +1762,9 @@ namespace wz::engine::assets::internal
                     if (!handle.valid()) {
                         logger.error(
                             "failed to store cached terrain collision asset");
-                        return compile_failed_node(input);
+                        return compile_failed_node(
+                            input,
+                            "failed to store cached terrain collision asset");
                     }
                     return compiled_collision_node(input, handle);
                 }
@@ -1762,7 +1773,8 @@ namespace wz::engine::assets::internal
                     collision_from_terrain(*desc, *terrain);
                 if (!data.valid()) {
                     logger.error("compiled terrain collision asset is invalid");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "compiled terrain collision asset is invalid");
                 }
 
                 store_cached_terrain_collision(
@@ -1775,7 +1787,8 @@ namespace wz::engine::assets::internal
                     collision_table.add(std::move(data));
                 if (!handle.valid()) {
                     logger.error("failed to store terrain collision asset");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "failed to store terrain collision asset");
                 }
 
                 return compiled_collision_node(input, handle);
@@ -1908,7 +1921,8 @@ namespace wz::engine::assets::internal
                 if (!desc) {
                     logger.error(
                         "collision height field missing compile desc");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "collision height field missing compile desc");
                 }
 
                 // Locate dependencies by asset TYPE, not positional index: the
@@ -1938,7 +1952,10 @@ namespace wz::engine::assets::internal
                     logger.error(
                         "collision height field requires a valid scalar field "
                         "dependency");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "collision height field requires a valid scalar field "
+                        "dependency");
                 }
 
                 // A placement DEP overrides the recipe's own world mapping. The
@@ -1952,7 +1969,9 @@ namespace wz::engine::assets::internal
                     if (!placement->valid()) {
                         logger.error(
                             "collision height field placement is invalid");
-                        return compile_failed_node(input);
+                        return compile_failed_node(
+                            input,
+                            "collision height field placement is invalid");
                     }
                     resolved_desc.origin[0] = placement->origin[0];
                     resolved_desc.origin[1] = placement->origin[2];
@@ -1965,7 +1984,8 @@ namespace wz::engine::assets::internal
                 if (field->depth != 1) {
                     logger.error(
                         "collision height field source must be 2D");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "collision height field source must be 2D");
                 }
 
                 CollisionAssetData cached_data{};
@@ -1981,7 +2001,10 @@ namespace wz::engine::assets::internal
                         logger.error(
                             "failed to store cached height field "
                             "collision asset");
-                        return compile_failed_node(input);
+                        return compile_failed_node(
+                            input,
+                            "failed to store cached height field "
+                            "collision asset");
                     }
                     return compiled_collision_node(input, handle);
                 }
@@ -1993,13 +2016,14 @@ namespace wz::engine::assets::internal
                 // the carrying node's transform on top (issue #224).
                 data.placement_driven = (placement != nullptr);
                 if (!data.valid()) {
-                    logger.error(
+                    const std::string reason =
                         "compiled height field collision asset is invalid "
                         "(source field "
                         + std::to_string(field->width) + "x"
                         + std::to_string(field->height)
-                        + "; the height field must be at least 2x2)");
-                    return compile_failed_node(input);
+                        + "; the height field must be at least 2x2)";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 store_cached_terrain_collision(
@@ -2013,7 +2037,8 @@ namespace wz::engine::assets::internal
                 if (!handle.valid()) {
                     logger.error(
                         "failed to store height field collision asset");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "failed to store height field collision asset");
                 }
 
                 return compiled_collision_node(input, handle);

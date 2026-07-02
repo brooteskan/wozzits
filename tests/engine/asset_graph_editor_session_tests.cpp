@@ -413,6 +413,60 @@ TEST(AssetGraphEditorSession, SnapshotMarksDiagnosticNodesError)
     EXPECT_FALSE(diagnostic->message.empty());
 }
 
+// Issue #212: a draft carrying a resolve-failure validation message (the kind
+// WozzitsApp_v1::bind_asset_graph appends after a failed resolve) must surface
+// on the failing node as an Error diagnostic with the detailed message, and
+// mark the node's compile_status "error". This is the snapshot half of the
+// round trip; the message text is produced by the bind path from the
+// ResolveFailure detail.
+TEST(AssetGraphEditorSession, SnapshotSurfacesResolveFailureMessage)
+{
+    wz::asset::AssetGraphDraft draft;
+    wz::asset::AssetGraphDraftNode node;
+    node.id = 7u;
+    node.state = wz::asset::AssetGraphDraftNodeState::Existing;
+    node.node.type = wz::engine::assets::kAssetTypeMesh;
+    node.node.schema =
+        wz::engine::assets::kProceduralClipmapLatticeMeshSchema;
+    node.node.key = make_key(0x70u);
+    draft.nodes.push_back(node);
+    wz::asset::rebuild_asset_graph_draft_indexes(draft);
+
+    const std::string message =
+        "asset resolve failed: CompileFailed: mesh source is invalid";
+    draft.validation_messages.push_back(
+        wz::asset::AssetGraphDraftValidationMessage{
+            .severity = wz::asset::AssetGraphDraftValidationSeverity::Error,
+            .node = 7u,
+            .message = message,
+        });
+
+    const auto parsed = wz::json::parse_json_string("{}");
+    ASSERT_TRUE(parsed.ok);
+    ASSERT_NE(parsed.document.root, nullptr);
+
+    const wz::engine::editor::AssetGraphSnapshot snapshot =
+        wz::engine::editor::build_asset_graph_snapshot(
+            *parsed.document.root, draft, nullptr);
+
+    const auto* out = find_snapshot_node(snapshot, 7u);
+    ASSERT_NE(out, nullptr);
+    EXPECT_EQ(out->compile_status, "error");
+
+    ASSERT_FALSE(out->diagnostics.empty());
+    const auto diagnostic = std::ranges::find_if(
+        out->diagnostics,
+        [&message](const wz::engine::editor::AssetGraphSnapshotDiagnostic& item)
+        {
+            return item.message == message;
+        });
+    ASSERT_NE(diagnostic, out->diagnostics.end());
+    EXPECT_EQ(
+        diagnostic->severity,
+        wz::asset::AssetGraphDraftValidationSeverity::Error);
+    EXPECT_EQ(diagnostic->severity_name, "error");
+}
+
 TEST(AssetGraphEditorSession, ConnectionCheckRejectsTypeMismatchWithoutMutation)
 {
     TempProjectRoot temp;

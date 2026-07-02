@@ -546,6 +546,22 @@ TEST(SceneAssetModule, MeshFromGLBSceneUnknownNodeFails)
     // The bad extractor produced no usable mesh.
     const auto handle = assets.meshes().get_mesh(bad_mesh);
     EXPECT_FALSE(handle.valid());
+
+    // Issue #212: the failure carries the compiler's human-readable reason so
+    // the editor can surface it on the failing node. The extractor reports the
+    // missing node id verbatim.
+    bool saw_detail = false;
+    for (const auto& failure : report.failures) {
+        if (failure.detail.find("does_not_exist") != std::string::npos) {
+            EXPECT_NE(
+                failure.detail.find("not found in source scene"),
+                std::string::npos)
+                << "detail was: " << failure.detail;
+            saw_detail = true;
+        }
+    }
+    EXPECT_TRUE(saw_detail)
+        << "no resolve failure carried the extractor's reason detail";
 }
 
 // Negative: a group/structure node (no mesh) cannot be extracted. Uses an

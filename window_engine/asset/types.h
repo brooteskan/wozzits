@@ -10,6 +10,7 @@
 #include <variant>
 #include <span>
 #include <any>
+#include <string>
 
 namespace wz::asset {
 
@@ -233,6 +234,11 @@ namespace wz::asset {
         > payload;
 
         std::any meta;   // optional compiler descriptor — not interpreted by the system
+
+        // Human-readable reason a compiler rejected this node. Set by a compiler
+        // via compile_failed_node(input, reason); empty when there is no failure.
+        // resolve() lifts it into NodeResolveState::detail so hosts can surface it.
+        std::string error_detail;
     };
 
 } // namespace wz::asset

@@ -5337,15 +5337,19 @@ namespace wz::engine::assets::internal
                     -> wz::asset::AssetNode
             {
                 if (dep_handles.empty()) {
-                    logger.error("scene node has no JSON document dependency");
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "scene node has no JSON document dependency";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 const JSONData* json_data = json_table.get(dep_handles[0]);
 
                 if (!json_data) {
-                    logger.error("scene JSON document dependency is invalid");
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "scene JSON document dependency is invalid";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 SceneAssetReferenceMap renderable_asset_references;
@@ -5423,7 +5427,8 @@ namespace wz::engine::assets::internal
                     scalar_field_asset_references,
                     vector_field_asset_references);
                 if (!scene) {
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input, "failed to parse scene JSON (see log for detail)");
                 }
 
                 wz::asset::ResourceHandle handle =
@@ -5459,15 +5464,19 @@ namespace wz::engine::assets::internal
                     -> wz::asset::AssetNode
             {
                 if (dep_nodes.empty()) {
-                    logger.error("GLB scene node has no file dependency");
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "GLB scene node has no file dependency";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 const auto* bytes =
                     std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
                 if (!bytes || bytes->empty()) {
-                    logger.error("GLB scene file dependency is invalid");
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "GLB scene file dependency is invalid";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 SceneFromGLBCompileDesc editor_desc{};
@@ -5481,9 +5490,10 @@ namespace wz::engine::assets::internal
                         desc = &editor_desc;
                     }
                     else {
-                        logger.error(
-                            "GLB scene node missing compile descriptor");
-                        return compile_failed_node(input);
+                        const std::string reason =
+                            "GLB scene node missing compile descriptor";
+                        logger.error(reason);
+                        return compile_failed_node(input, reason);
                     }
                 }
 
@@ -5496,8 +5506,10 @@ namespace wz::engine::assets::internal
                         imported,
                         &import_error))
                 {
-                    logger.error("failed to import GLB scene: " + import_error);
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "failed to import GLB scene: " + import_error;
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 // Also import the per-mesh geometry from the same bytes so the
@@ -5527,7 +5539,10 @@ namespace wz::engine::assets::internal
                     logger,
                     &imported_meshes);
                 if (!scene)
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "failed to build scene from imported GLB "
+                        "(see log for detail)");
 
                 wz::asset::ResourceHandle handle =
                     scene_table.add(std::move(*scene));
@@ -5568,16 +5583,18 @@ namespace wz::engine::assets::internal
                     -> wz::asset::AssetNode
             {
                 if (dep_handles.empty()) {
-                    logger.error(
-                        "Mesh from GLB scene node has no scene dependency");
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "Mesh from GLB scene node has no scene dependency";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 const SceneAssetData* scene = scene_table.get(dep_handles[0]);
                 if (!scene) {
-                    logger.error(
-                        "Mesh from GLB scene: scene dependency is invalid");
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "Mesh from GLB scene: scene dependency is invalid";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 MeshFromGLBSceneDesc param_desc{};
@@ -5593,14 +5610,16 @@ namespace wz::engine::assets::internal
                     }
                 }
                 if (!desc) {
-                    logger.error(
-                        "Mesh from GLB scene node missing compile descriptor");
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "Mesh from GLB scene node missing compile descriptor";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
                 if (desc->node_id.empty()) {
-                    logger.error(
-                        "Mesh from GLB scene: node_id parameter is empty");
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "Mesh from GLB scene: node_id parameter is empty";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 const SceneNodeAsset* node = nullptr;
@@ -5611,45 +5630,50 @@ namespace wz::engine::assets::internal
                     }
                 }
                 if (!node) {
-                    logger.error(
+                    const std::string reason =
                         "Mesh from GLB scene: node '" + desc->node_id
-                        + "' not found in source scene");
-                    return compile_failed_node(input);
+                        + "' not found in source scene";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 if (!node->mesh_index) {
-                    logger.error(
+                    const std::string reason =
                         "Mesh from GLB scene: node '" + desc->node_id
-                        + "' has no mesh (group/structure node)");
-                    return compile_failed_node(input);
+                        + "' has no mesh (group/structure node)";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 const auto mesh_it = scene->glb_meshes.find(*node->mesh_index);
                 if (mesh_it == scene->glb_meshes.end()) {
-                    logger.error(
+                    const std::string reason =
                         "Mesh from GLB scene: source scene has no embedded "
                         "geometry for node '" + desc->node_id + "' (mesh_index "
                         + std::to_string(*node->mesh_index)
                         + "); the scene must come from a graph-compiled "
-                        "'Scene from GLB' node");
-                    return compile_failed_node(input);
+                        "'Scene from GLB' node";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 // Copy the raw object-space mesh verbatim — no transform baked.
                 MeshData data = mesh_it->second;
                 if (!data.valid()) {
-                    logger.error(
+                    const std::string reason =
                         "Mesh from GLB scene: embedded geometry for node '"
-                        + desc->node_id + "' is invalid");
-                    return compile_failed_node(input);
+                        + desc->node_id + "' is invalid";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 wz::asset::ResourceHandle handle =
                     mesh_table.add(std::move(data));
                 if (!handle.valid()) {
-                    logger.error(
-                        "Mesh from GLB scene: failed to store extracted mesh");
-                    return compile_failed_node(input);
+                    const std::string reason =
+                        "Mesh from GLB scene: failed to store extracted mesh";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
                 }
 
                 wz::asset::AssetNode out = input;

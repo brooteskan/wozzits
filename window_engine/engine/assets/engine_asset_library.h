@@ -113,6 +113,9 @@ namespace wz::engine::assets
     {
         wz::asset::AssetKey     key;
         wz::asset::ResolveError error;
+        // Human-readable failure reason (empty when the compiler supplied none),
+        // captured from the failing node's resolve state.
+        std::string             detail;
     };
 
     struct ResolveReport

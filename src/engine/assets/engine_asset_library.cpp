@@ -53,23 +53,18 @@ namespace wz::engine::assets
             return input;
         }
 
-        const char* resolve_error_name(wz::asset::ResolveError error) noexcept
+        wz::asset::AssetNode compile_failed_node(
+            const wz::asset::AssetNode& input,
+            std::string reason)
         {
-            switch (error) {
-            case wz::asset::ResolveError::NodeNotFound:
-                return "NodeNotFound";
-            case wz::asset::ResolveError::CompilerNotFound:
-                return "CompilerNotFound";
-            case wz::asset::ResolveError::CompileFailed:
-                return "CompileFailed";
-            case wz::asset::ResolveError::DependencyFailed:
-                return "DependencyFailed";
-            case wz::asset::ResolveError::ExternalCacheMiss:
-                return "ExternalCacheMiss";
-            case wz::asset::ResolveError::ExternalCacheLoadFailed:
-                return "ExternalCacheLoadFailed";
-            }
-            return "Unknown";
+            wz::asset::AssetNode out = input;
+            out.error_detail = std::move(reason);
+            return out;
+        }
+
+        std::string resolve_error_name(wz::asset::ResolveError error)
+        {
+            return std::string(wz::asset::resolve_error_name(error));
         }
 
         std::string short_asset_key_hex(const wz::asset::AssetKey& key)
@@ -416,7 +411,10 @@ namespace wz::engine::assets
                 case wz::asset::ResolveLogEvent::Phase::Failed:
                     logger_.error(
                         "compile " + name + " key=" + key + " FAILED: "
-                        + internal::resolve_error_name(event.error));
+                        + internal::resolve_error_name(event.error)
+                        + (event.detail.empty()
+                            ? std::string{}
+                            : ": " + std::string(event.detail)));
                     break;
                 }
             });
@@ -731,12 +729,17 @@ namespace wz::engine::assets
             + std::to_string(elapsed));
 
         for (auto& [key, err] : raw_errors) {
+            std::string detail;
+            if (const auto state = system_.node_resolve_state(key)) {
+                detail = state->detail;
+            }
             logger_.error(
                 "asset resolve_all failed key="
                 + internal::short_asset_key_hex(key)
                 + " error="
-                + internal::resolve_error_name(err));
-            report.failures.push_back({ key, err });
+                + internal::resolve_error_name(err)
+                + (detail.empty() ? std::string{} : ": " + detail));
+            report.failures.push_back({ key, err, std::move(detail) });
         }
 
         return report;
@@ -861,14 +864,19 @@ namespace wz::engine::assets
             + std::to_string(elapsed));
 
         for (auto& [key, err] : raw_errors) {
+            std::string detail;
+            if (const auto state = system_.node_resolve_state(key)) {
+                detail = state->detail;
+            }
             logger_.error(
                 std::string("asset ")
                 + label
                 + " failed key="
                 + internal::short_asset_key_hex(key)
                 + " error="
-                + internal::resolve_error_name(err));
-            report.failures.push_back({ key, err });
+                + internal::resolve_error_name(err)
+                + (detail.empty() ? std::string{} : ": " + detail));
+            report.failures.push_back({ key, err, std::move(detail) });
         }
 
         return report;

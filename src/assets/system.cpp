@@ -295,14 +295,16 @@ namespace wz::asset
     void AssetSystem::set_node_resolve_failed(
         const AssetKey& key,
         ResolveError error,
-        std::optional<uint64_t> compile_duration_us)
+        std::optional<uint64_t> compile_duration_us,
+        std::string detail)
     {
         node_resolve_states_.insert_or_assign(
             key,
             NodeResolveState{
                 NodeResolveStatus::Failed,
                 error,
-                compile_duration_us });
+                compile_duration_us,
+                std::move(detail) });
     }
 
 
@@ -310,7 +312,8 @@ namespace wz::asset
         ResolveLogEvent::Phase phase,
         const AssetNode& node,
         uint64_t duration_us,
-        ResolveError error) const
+        ResolveError error,
+        std::string_view detail) const
     {
         if (resolve_log_) {
             resolve_log_(ResolveLogEvent{
@@ -320,6 +323,7 @@ namespace wz::asset
                 .key = node.key,
                 .duration_us = duration_us,
                 .error = error,
+                .detail = detail,
             });
         }
     }
@@ -425,9 +429,13 @@ namespace wz::asset
         auto fail_after_compile =
             [&](ResolveError error) -> Result<ResourceHandle>
         {
+            // The reason lives on the node the compiler returned (compile_failed_node
+            // carries error_detail through), not the original source-stage `node`.
             emit_resolve_log(
-                ResolveLogEvent::Phase::Failed, node, compile_duration_us, error);
-            set_node_resolve_failed(key, error, compile_duration_us);
+                ResolveLogEvent::Phase::Failed, node, compile_duration_us, error,
+                compiled.error_detail);
+            set_node_resolve_failed(
+                key, error, compile_duration_us, compiled.error_detail);
             return error;
         };
 

@@ -68,6 +68,7 @@
 #include <wozzits/rhi/shader_resource_group_layout.h>
 
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace wz::rhi
@@ -149,6 +150,14 @@ namespace wz::engine::assets::internal {
 
     wz::asset::AssetNode compile_failed_node(
         const wz::asset::AssetNode& input
+    );
+
+    // Overload carrying a human-readable failure reason. The reason rides back on
+    // the returned node's error_detail; resolve() lifts it into NodeResolveState
+    // and the ResolveReport so the editor can surface it on the failing node.
+    wz::asset::AssetNode compile_failed_node(
+        const wz::asset::AssetNode& input,
+        std::string reason
     );
 
     wz::asset::CompilerRegistry make_engine_compiler_registry(

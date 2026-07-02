@@ -625,6 +625,55 @@ TEST_F(AssetSystemTest, FailedNodesKeepQueryableResolveState)
     EXPECT_EQ(*dependent_state->error, ResolveError::DependencyFailed);
 }
 
+TEST_F(AssetSystemTest, FailedNodeCapturesCompilerReasonDetail)
+{
+    // A compiler that fails by returning the input node unchanged but tagged
+    // with a human-readable error_detail — exactly what the engine library's
+    // compile_failed_node(input, reason) overload produces. resolve() must lift
+    // that reason into NodeResolveState::detail and the resolve-log event.
+    CompilerRegistry reg2;
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kMeshSchema,
+        .output_type = AssetType::Mesh,
+        .compile = [](const AssetNode& input,
+                      std::span<const AssetNode>,
+                      std::span<const ResourceHandle>) -> AssetNode {
+            AssetNode out = input;
+            out.error_detail = "mesh source is invalid";
+            return out;   // still Source stage → CompileFailed
+        }
+    });
+
+    AssetSystem sys2(std::move(reg2));
+
+    std::optional<std::string> logged_detail;
+    ResolveError logged_error = ResolveError::NodeNotFound;
+    sys2.set_resolve_logger([&](const ResolveLogEvent& event) {
+        if (event.phase == ResolveLogEvent::Phase::Failed) {
+            logged_detail = std::string(event.detail);
+            logged_error = event.error;
+        }
+    });
+
+    ASSERT_TRUE(sys2.register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys2.commit());
+
+    auto failed = sys2.resolve(kKeyA);
+    ASSERT_TRUE(std::holds_alternative<ResolveError>(failed));
+    EXPECT_EQ(std::get<ResolveError>(failed), ResolveError::CompileFailed);
+
+    const auto state = sys2.node_resolve_state(kKeyA);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_EQ(state->status, NodeResolveStatus::Failed);
+    ASSERT_TRUE(state->error.has_value());
+    EXPECT_EQ(*state->error, ResolveError::CompileFailed);
+    EXPECT_EQ(state->detail, "mesh source is invalid");
+
+    ASSERT_TRUE(logged_detail.has_value());
+    EXPECT_EQ(*logged_detail, "mesh source is invalid");
+    EXPECT_EQ(logged_error, ResolveError::CompileFailed);
+}
+
 TEST_F(AssetSystemTest, SuccessfulReresolveClearsPreviousError)
 {
     bool fail_compile = true;
