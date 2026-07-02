@@ -130,13 +130,18 @@ namespace wz::gpu::dx12
         srv_desc.Format = format;
         srv_desc.Shader4ComponentMapping =
             D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        // MipLevels = -1 (0xFFFFFFFF) views the full chain from MostDetailedMip
+        // (0), so this covers both single-mip and multi-mip (#209) textures
+        // without threading the level count through the bind path.
         if (is_3d) {
-            srv_desc.ViewDimension       = D3D12_SRV_DIMENSION_TEXTURE3D;
-            srv_desc.Texture3D.MipLevels = 1;
+            srv_desc.ViewDimension              = D3D12_SRV_DIMENSION_TEXTURE3D;
+            srv_desc.Texture3D.MostDetailedMip  = 0;
+            srv_desc.Texture3D.MipLevels        = static_cast<UINT>(-1);
         }
         else {
-            srv_desc.ViewDimension       = D3D12_SRV_DIMENSION_TEXTURE2D;
-            srv_desc.Texture2D.MipLevels = 1;
+            srv_desc.ViewDimension              = D3D12_SRV_DIMENSION_TEXTURE2D;
+            srv_desc.Texture2D.MostDetailedMip  = 0;
+            srv_desc.Texture2D.MipLevels        = static_cast<UINT>(-1);
         }
 
         device_->CreateShaderResourceView(

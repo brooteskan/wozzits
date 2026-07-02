@@ -25,12 +25,30 @@ namespace wz::gpu
     // texture, environment map). Scalar field needs only R32Float.
     enum class TextureFormat : uint8_t { R32Float };
 
+    // Full mip count for a texture of the given 2D dimensions:
+    // floor(log2(max(w,h))) + 1. The value mip_levels may not exceed.
+    [[nodiscard]] inline uint32_t max_mip_levels(uint32_t width, uint32_t height) noexcept
+    {
+        uint32_t largest = width > height ? width : height;
+        uint32_t levels = 1u;
+        while (largest > 1u) {
+            largest >>= 1u;
+            ++levels;
+        }
+        return levels;
+    }
+
     struct TextureDesc
     {
         TextureDimension dimension = TextureDimension::Texture2D;
         uint32_t         width  = 0;
         uint32_t         height = 0;
         uint32_t         depth  = 1;
+        // Number of mip levels in the chain. 1 == single full-res surface (the
+        // pre-#209 default). Must be within [1, max_mip_levels(width,height)];
+        // an out-of-range value is a validation failure (see valid()). Texture3D
+        // supports only mip_levels == 1 for now (rejected otherwise).
+        uint32_t         mip_levels = 1;
         TextureFormat    format = TextureFormat::R32Float;
 
         bool valid() const noexcept
@@ -39,6 +57,17 @@ namespace wz::gpu
                 return false;
             }
             if (dimension == TextureDimension::Texture2D && depth != 1u) {
+                return false;
+            }
+            if (mip_levels == 0u) {
+                return false;
+            }
+            // Texture3D mip chains are not supported yet: reject rather than
+            // silently create wrong state.
+            if (dimension == TextureDimension::Texture3D && mip_levels != 1u) {
+                return false;
+            }
+            if (mip_levels > max_mip_levels(width, height)) {
                 return false;
             }
             return true;
@@ -50,14 +79,29 @@ namespace wz::gpu
     [[nodiscard]] GPUHandle create_texture(Device& device, const TextureDesc& desc);
 
     // Upload CPU bytes into a texture created by create_texture, transitioning it
-    // to a shader-resource state. v1 expects a full-resource write at offset 0;
-    // offset is reserved for future sub-resource writes.
+    // to a shader-resource state. Expects a full-resolution (mip 0) write at
+    // offset 0; offset is reserved for future sub-resource writes. Equivalent to
+    // update_texture_mip(device, handle, 0, data, size).
     bool update_texture(
         Device& device,
         GPUHandle handle,
         const void* data,
         uint64_t size,
         uint64_t offset = 0);
+
+    // Upload CPU bytes into one mip level of a texture. `mip_level` is 0-based
+    // (0 == the full-resolution surface). `data` is tightly packed for that
+    // level's dimensions — max(width>>mip, 1) x max(height>>mip, 1) x depth —
+    // with no row padding; this honors the device row pitch internally.
+    // `size` must equal the level's tightly-packed footprint. Returns false for
+    // an out-of-range mip level or a mismatched size. The texture is left in a
+    // shader-resource state.
+    bool update_texture_mip(
+        Device& device,
+        GPUHandle handle,
+        uint32_t mip_level,
+        const void* data,
+        uint64_t size);
 
     bool release_texture(Device& device, GPUHandle handle);
 }

@@ -85,6 +85,7 @@ namespace wz::engine::rendering
         out.width = desc.width;
         out.height = desc.height;
         out.depth = desc.depth;
+        out.mip_levels = desc.mip_levels;
         out.format = format;
         return true;
     }
@@ -102,6 +103,10 @@ namespace wz::engine::rendering
                    const void* data,
                    uint64_t size,
                    uint64_t offset) override;
+        bool write_texture_mip(wz::rhi::BackendResource resource,
+                               uint32_t mip_level,
+                               const void* data,
+                               uint64_t size) override;
 
         [[nodiscard]] wz::gpu::GPUHandle gpu_handle_for(
             wz::rhi::BackendResource resource) const;

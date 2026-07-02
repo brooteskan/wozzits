@@ -63,7 +63,7 @@ namespace wz::gpu::dx12::internal
             desc.Width = tex.width;
             desc.Height = tex.height;
             desc.DepthOrArraySize = static_cast<UINT16>(tex.depth);
-            desc.MipLevels = 1;
+            desc.MipLevels = static_cast<UINT16>(tex.mip_levels);
             desc.Format = tex.format;
             desc.SampleDesc.Count = 1;
             desc.SampleDesc.Quality = 0;
@@ -235,6 +235,7 @@ namespace wz::gpu::dx12::internal
         tex.width = desc.width;
         tex.height = desc.height;
         tex.depth = desc.depth;
+        tex.mip_levels = desc.mip_levels;
         tex.format = format;
         // Created ready to receive its first upload.
         tex.state = D3D12_RESOURCE_STATE_COPY_DEST;
@@ -270,13 +271,27 @@ namespace wz::gpu::dx12::internal
         uint64_t byte_count,
         uint64_t byte_offset)
     {
+        // Full-resolution (mip 0) upload; offset must be 0.
+        if (byte_offset != 0u) {
+            return false;
+        }
+        return update_texture_mip_dx12(device, handle, 0u, data, byte_count);
+    }
+
+    bool update_texture_mip_dx12(
+        Device& device,
+        GPUHandle handle,
+        uint32_t mip_level,
+        const void* data,
+        uint64_t byte_count)
+    {
         auto* impl = static_cast<DX12Device*>(device.impl);
         if (!impl || !impl->device || !impl->queue || !impl->fence
             || !impl->fence_event)
         {
             return false;
         }
-        if (!data || byte_count == 0u || byte_offset != 0u) {
+        if (!data || byte_count == 0u) {
             return false;
         }
 
@@ -284,14 +299,22 @@ namespace wz::gpu::dx12::internal
         if (!tex || !tex->valid()) {
             return false;
         }
+        if (mip_level >= tex->mip_levels) {
+            return false;
+        }
 
         const uint32_t bpp = texel_bytes(tex->format);
         if (bpp == 0u) {
             return false;
         }
+        // Dimensions of this mip level (each halved per level, clamped to 1).
+        const uint32_t mip_w = (tex->width  >> mip_level) > 0u
+            ? (tex->width  >> mip_level) : 1u;
+        const uint32_t mip_h = (tex->height >> mip_level) > 0u
+            ? (tex->height >> mip_level) : 1u;
         const uint64_t expected =
-            static_cast<uint64_t>(tex->width)
-            * static_cast<uint64_t>(tex->height)
+            static_cast<uint64_t>(mip_w)
+            * static_cast<uint64_t>(mip_h)
             * static_cast<uint64_t>(tex->depth)
             * static_cast<uint64_t>(bpp);
         if (byte_count != expected) {
@@ -301,12 +324,16 @@ namespace wz::gpu::dx12::internal
         ID3D12Device* d3d = impl->device;
         const D3D12_RESOURCE_DESC tex_desc = tex->texture->GetDesc();
 
+        // Footprint for THIS subresource (mip_level). For a Texture2D array /
+        // Texture3D the subresource index of mip m, array slice 0 is m.
+        const UINT subresource = static_cast<UINT>(mip_level);
         D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
         UINT num_rows = 0;
         UINT64 row_size = 0;
         UINT64 total_bytes = 0;
         d3d->GetCopyableFootprints(
-            &tex_desc, 0, 1, 0, &footprint, &num_rows, &row_size, &total_bytes);
+            &tex_desc, subresource, 1, 0,
+            &footprint, &num_rows, &row_size, &total_bytes);
 
         D3D12_HEAP_PROPERTIES upload_heap{};
         upload_heap.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -341,7 +368,7 @@ namespace wz::gpu::dx12::internal
         // both Texture2D (depth == 1) and Texture3D upload correctly.
         const auto* src = static_cast<const uint8_t*>(data);
         const uint64_t src_row_bytes =
-            static_cast<uint64_t>(tex->width) * static_cast<uint64_t>(bpp);
+            static_cast<uint64_t>(mip_w) * static_cast<uint64_t>(bpp);
         const uint64_t dst_slice_pitch =
             static_cast<uint64_t>(footprint.Footprint.RowPitch)
             * static_cast<uint64_t>(num_rows);
@@ -389,7 +416,7 @@ namespace wz::gpu::dx12::internal
         D3D12_TEXTURE_COPY_LOCATION dst{};
         dst.pResource = tex->texture;
         dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-        dst.SubresourceIndex = 0;
+        dst.SubresourceIndex = subresource;
 
         D3D12_TEXTURE_COPY_LOCATION src_loc{};
         src_loc.pResource = upload;
@@ -436,5 +463,14 @@ namespace wz::gpu::dx12::internal
             return false;
         }
         return impl->textures.release(handle);
+    }
+
+    const DX12Texture* get_dx12_texture(Device& device, GPUHandle handle)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl) {
+            return nullptr;
+        }
+        return impl->textures.get(handle);
     }
 }

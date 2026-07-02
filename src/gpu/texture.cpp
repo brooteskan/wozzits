@@ -27,6 +27,20 @@ namespace wz::gpu
             device, handle, data, size, offset);
     }
 
+    bool update_texture_mip(
+        Device& device,
+        GPUHandle handle,
+        uint32_t mip_level,
+        const void* data,
+        uint64_t size)
+    {
+        if (!device_ok(device)) {
+            return false;
+        }
+        return dx12::internal::update_texture_mip_dx12(
+            device, handle, mip_level, data, size);
+    }
+
     bool release_texture(Device& device, GPUHandle handle)
     {
         if (!device_ok(device)) {

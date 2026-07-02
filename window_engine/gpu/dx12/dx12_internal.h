@@ -140,12 +140,13 @@ namespace wz::gpu::dx12::internal {
 
     struct DX12Texture
     {
-        ID3D12Resource*       texture = nullptr;
-        uint32_t              width  = 0;
-        uint32_t              height = 0;
-        uint32_t              depth  = 1;
-        DXGI_FORMAT           format = DXGI_FORMAT_UNKNOWN;
-        D3D12_RESOURCE_STATES state  = D3D12_RESOURCE_STATE_COMMON;
+        ID3D12Resource*       texture    = nullptr;
+        uint32_t              width      = 0;
+        uint32_t              height     = 0;
+        uint32_t              depth      = 1;
+        uint32_t              mip_levels = 1;
+        DXGI_FORMAT           format     = DXGI_FORMAT_UNKNOWN;
+        D3D12_RESOURCE_STATES state      = D3D12_RESOURCE_STATE_COMMON;
 
         bool valid() const noexcept
         {
@@ -186,7 +187,23 @@ namespace wz::gpu::dx12::internal {
         uint64_t byte_count,
         uint64_t byte_offset = 0);
 
+    // Upload tightly-packed bytes into one mip level (subresource = mip_level)
+    // of a texture, honoring the device upload row pitch. byte_count must equal
+    // the level's tightly-packed footprint (max(w>>mip,1) * max(h>>mip,1) *
+    // depth * texel_bytes). Leaves the texture in a shader-resource state.
+    bool update_texture_mip_dx12(
+        Device& device,
+        GPUHandle handle,
+        uint32_t mip_level,
+        const void* data,
+        uint64_t byte_count);
+
     bool release_texture_dx12(Device& device, GPUHandle handle);
+
+    // Test/diagnostic accessor: the backing DX12Texture for a handle minted by
+    // create_texture_dx12, or nullptr for a stale/foreign handle. Exposes the
+    // resolved mip count + resource for coverage of the #209 mip path.
+    const DX12Texture* get_dx12_texture(Device& device, GPUHandle handle);
 }
 
 

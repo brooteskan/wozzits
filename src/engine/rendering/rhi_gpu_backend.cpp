@@ -78,6 +78,28 @@ namespace wz::engine::rendering
             offset);
     }
 
+    bool EngineGpuBackend::write_texture_mip(
+        wz::rhi::BackendResource resource,
+        uint32_t mip_level,
+        const void* data,
+        uint64_t size)
+    {
+        const auto it = resources_.find(resource.id);
+        if (it == resources_.end() || !it->second.handle.valid()) {
+            return false;
+        }
+        // Textures only; a buffer resource has no mip concept.
+        if (it->second.dimension == wz::rhi::ResourceDimension::Buffer) {
+            return false;
+        }
+        return wz::gpu::update_texture_mip(
+            *device_,
+            it->second.handle,
+            mip_level,
+            data,
+            size);
+    }
+
     wz::gpu::GPUHandle EngineGpuBackend::gpu_handle_for(
         wz::rhi::BackendResource resource) const
     {

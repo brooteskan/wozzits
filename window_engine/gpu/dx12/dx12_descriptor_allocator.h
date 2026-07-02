@@ -73,9 +73,11 @@ namespace wz::gpu::dx12
         // Write a texture SRV for `resource` into slot `offset` of `table`.
         // Generic over the texture family: `is_3d` selects TEXTURE3D, otherwise
         // TEXTURE2D; `format` is the typed view format (e.g. DXGI_FORMAT_R32_FLOAT).
-        // Single mip (MipLevels = 1). Sibling to create_structured_buffer_srv:
-        // the buffer creator hardcodes SRV_DIMENSION_BUFFER, this one the texture
-        // dimensions, so the SRG bind path can pick per-descriptor.
+        // Views the full mip chain (MipLevels = -1 from MostDetailedMip 0), so
+        // a filtered level is sampleable when the resource has one (#209).
+        // Sibling to create_structured_buffer_srv: the buffer creator hardcodes
+        // SRV_DIMENSION_BUFFER, this one the texture dimensions, so the SRG bind
+        // path can pick per-descriptor.
         void create_texture_srv(
             const DX12DescriptorTable& table,
             uint32_t                   offset,
