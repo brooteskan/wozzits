@@ -224,6 +224,44 @@ namespace wz::engine::cognition
         return true;
     }
 
+    bool AgentCognitionStore::reshape(
+        AgentHandle h,
+        uint32_t agent_count,
+        const std::vector<ExactBond>& bonds,
+        double now)
+    {
+        Agent* a = find(h);
+        if (!a || agent_count == 0) {
+            return false;
+        }
+
+        // Resize the bookkeeping (existing goal fields survive where the count
+        // overlaps; new qubits start unbiased). Latches + marginals reset -- the
+        // reshaped group re-deliberates.
+        a->goal_fields.resize(agent_count, 0.0);
+        a->bonds = bonds;
+        a->latched.assign(agent_count, std::nullopt);
+        a->marginal_cache.assign(agent_count, 0.0);
+
+        AgentSpec spec;
+        spec.agent_count = agent_count;
+        spec.bonds = bonds;
+        spec.chi = a->chi;
+        spec.seed = a->seed;
+        spec.goals.reserve(agent_count);
+        for (uint32_t i = 0; i < agent_count; ++i) {
+            spec.goals.push_back(Goal{ .agent = i, .field = a->goal_fields[i] });
+        }
+        std::optional<Coordination> coordination = build_coordination(spec);
+        if (!coordination) {
+            return false;
+        }
+        a->coordination = std::move(*coordination);
+        a->agent_count = agent_count;
+        wz::engine::cognition::start(a->clock, now);
+        return true;
+    }
+
     double AgentCognitionStore::marginal(AgentHandle h, uint32_t agent) const
     {
         const Agent* a = find(h);

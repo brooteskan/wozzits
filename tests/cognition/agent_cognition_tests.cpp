@@ -178,6 +178,44 @@ TEST(AgentCognition, RetainDropsAgentsNotInLiveSet)
     EXPECT_EQ(store.size(), 0u);
 }
 
+// reshape() grows a hub agent to include new members, star-bonded, and the hub's
+// goal drags them in -- dynamic squad membership as one entangled coordination.
+TEST(AgentCognition, ReshapeGrowsAStarGroupThatEntanglesNewMembers)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 1;                                 // start: just the hub
+    spec.goals = { Goal{ .agent = 0, .field = 0.7 } };    // hub biased to |0>
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.9 };
+    spec.chi = 0;
+
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    ASSERT_EQ(store.agent_count(h), 1u);
+
+    // Two members join: hub + 2, star-bonded ferro.
+    const std::vector<ExactBond> star = {
+        ExactBond{ .a = 0, .b = 1, .j = 1.5 },
+        ExactBond{ .a = 0, .b = 2, .j = 1.5 },
+    };
+    ASSERT_TRUE(store.reshape(h, /*agent_count=*/3, star, /*now=*/0.0));
+    EXPECT_EQ(store.agent_count(h), 3u);
+
+    for (int i = 1; i <= 80; ++i) {
+        store.think(h, 0.1 * i);
+    }
+
+    // Hub keeps its |0> disposition (goal preserved across reshape), and both new
+    // members were dragged to agree through the star.
+    ASSERT_TRUE(store.committed(h, 0).has_value());
+    EXPECT_FALSE(*store.committed(h, 0));   // |0>
+    ASSERT_TRUE(store.committed(h, 1).has_value());
+    EXPECT_FALSE(*store.committed(h, 1));
+    ASSERT_TRUE(store.committed(h, 2).has_value());
+    EXPECT_FALSE(*store.committed(h, 2));
+}
+
 // The same group on the chi-truncated TTN chain backend reaches the same decision
 // -- chi selects the backend behind one store interface.
 TEST(AgentCognition, TtnChainCommitsToTheGoal)

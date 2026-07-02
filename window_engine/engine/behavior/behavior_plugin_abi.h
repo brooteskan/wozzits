@@ -488,6 +488,20 @@ typedef uint8_t (*WzRearmAgentFn)(
     void* user,
     WzBehaviorEntityId entity);
 
+/*
+ * Resize a HUB/group agent to `member_count` members (dynamic squad membership).
+ * Rebuilds the agent on `entity` to 1 + member_count qubits -- qubit 0 the hub
+ * plus one qubit per member -- star-bonded (0<->i, strength `star_coupling`), so
+ * a growing/shrinking squad stays one entangled coordination. Preserves the hub's
+ * goal; members start unbiased; re-anneals. Returns 0 if the node has no
+ * quantum_agent (or the rebuild fails).
+ */
+typedef uint8_t (*WzReshapeGroupFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    uint32_t member_count,
+    float star_coupling);
+
 typedef struct WzGpuWorkId
 {
     uint64_t value;
@@ -972,6 +986,7 @@ typedef struct WzBehaviorFrameFacts
      */
     WzSetAgentGoalFn set_agent_goal;
     WzRearmAgentFn rearm_agent;
+    WzReshapeGroupFn reshape_group;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

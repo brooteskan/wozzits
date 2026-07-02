@@ -1532,6 +1532,34 @@ static inline uint8_t wz_self_rearm_agent(
         event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY);
 }
 
+// Resize a hub/group agent to `member_count` star-bonded members (dynamic squad
+// membership). Returns 0 if the node has no quantum_agent / the rebuild fails.
+static inline uint8_t wz_reshape_group(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t member_count,
+    float star_coupling)
+{
+    if (!facts || !facts->reshape_group) {
+        return 0;
+    }
+    return facts->reshape_group(
+        facts->cognition_reader_user, entity, member_count, star_coupling);
+}
+
+static inline uint8_t wz_self_reshape_group(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint32_t member_count,
+    float star_coupling)
+{
+    return wz_reshape_group(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        member_count,
+        star_coupling);
+}
+
 static inline void wz_log_info(
     const WzBehaviorFrameFacts* facts,
     const char* message)

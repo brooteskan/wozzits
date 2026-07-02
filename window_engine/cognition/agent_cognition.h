@@ -91,6 +91,17 @@ namespace wz::engine::cognition
         // handle.
         bool rearm(AgentHandle h, double now);
 
+        // Change an agent's SIZE + bond structure live (dynamic group membership:
+        // members join/leave a command's group). Rebuilds a fresh coordination of
+        // `agent_count` qubits with `bonds`, preserving existing goal fields where
+        // the count overlaps, and restarts the anneal clock. Returns false for an
+        // unknown handle / zero count / unbuildable structure.
+        bool reshape(
+            AgentHandle h,
+            uint32_t agent_count,
+            const std::vector<ExactBond>& bonds,
+            double now);
+
         // ---- read surface (marginal-oriented; uniform across backends) ----
 
         // Agent's live decision marginal <sigma_z> in [-1, 1] (0 if unknown).

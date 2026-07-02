@@ -1550,6 +1550,35 @@ namespace wz::engine::behavior
                 : 0u;
         }
 
+        uint8_t reshape_group_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            uint32_t member_count,
+            float star_coupling)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            const QuantumAgentState* state =
+                find_quantum_agent_state(context, entity);
+            if (!context || !state || state->handle == 0u) {
+                return 0;
+            }
+            // 1 hub qubit + one per member; a star of bonds from the hub (0) to
+            // every member so the whole group stays one entangled coordination.
+            const uint32_t agent_count = 1u + member_count;
+            std::vector<wz::engine::cognition::ExactBond> bonds;
+            bonds.reserve(member_count);
+            for (uint32_t i = 1; i < agent_count; ++i) {
+                bonds.push_back(wz::engine::cognition::ExactBond{
+                    .a = 0u, .b = i,
+                    .j = static_cast<double>(star_coupling),
+                });
+            }
+            return quantum_agent_store().reshape(
+                       state->handle, agent_count, bonds, context->sim_time)
+                ? 1u
+                : 0u;
+        }
+
         uint8_t set_next_wake_request(
             void* user,
             double delay_seconds)
@@ -1842,6 +1871,7 @@ namespace wz::engine::behavior
                 .get_agent_decision_at = get_agent_decision_at_query,
                 .set_agent_goal = set_agent_goal_request,
                 .rearm_agent = rearm_agent_request,
+                .reshape_group = reshape_group_request,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1924,6 +1954,7 @@ namespace wz::engine::behavior
                 .get_agent_decision_at = get_agent_decision_at_query,
                 .set_agent_goal = set_agent_goal_request,
                 .rearm_agent = rearm_agent_request,
+                .reshape_group = reshape_group_request,
             };
         }
 
