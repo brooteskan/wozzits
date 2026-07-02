@@ -108,6 +108,16 @@ namespace agent_tank_config
     // per this interval (seconds). Unlimited ammo.
     inline constexpr double kFireCooldown = 1.1;
 
+    // --- OBSERVATION-FORCED DECOHERENCE (quantum Zeno): when the player is looking
+    // at the tank, its decisions collapse fast -> it commits early and acts
+    // PREDICTABLY; unobserved, near-zero decoherence keeps it in superposition
+    // (wavering / creeping) so it surprises you when you turn back. "Observed" is a
+    // hull-facing proxy for line-of-sight (the chase camera aligns with the player's
+    // hull forward) -- upgradeable to a true view frustum + occlusion later. ---
+    inline constexpr float kObservedArc = 1.0f;          // rad (~57 deg) view cone
+    inline constexpr float kObservedDecoherence = 2.5f;  // watched -> snap commit
+    inline constexpr float kUnobservedDecoherence = 0.02f; // unwatched -> stays coherent
+
     // Reinforcement RATES, per SECOND of sustained advantage (scaled by frame dt
     // at the call site so learning speed is frame-rate INVARIANT -- same Poisson-
     // style cadence-invariance as the decoherence rate; a 144Hz machine must not

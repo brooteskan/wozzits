@@ -178,11 +178,30 @@ namespace
             // Classify the CURRENT context ONCE per frame (both the reward and the
             // conditional read must agree within a frame): the player is
             // "engaging/braced" when its hull points within kContextArc of us.
+            // The same hull-facing read drives OBSERVATION-FORCED DECOHERENCE: if
+            // the player is looking at us (a wider view cone), crank decoherence so
+            // our decisions snap-commit (quantum Zeno -> predictable); unobserved,
+            // near-zero decoherence keeps us coherent (wavering) so we surprise the
+            // player when they look back.
             if (state->target != WZ_INVALID_BEHAVIOR_ENTITY) {
-                const float incoming = tank_drive::hull_aim_error(
-                    facts, state->target, wz_self(event));
-                state->context_engaging =
-                    fabsf(incoming) < agent_tank_config::kContextArc ? 1u : 0u;
+                using namespace agent_tank_config;
+                const float facing = fabsf(tank_drive::hull_aim_error(
+                    facts, state->target, wz_self(event)));
+                state->context_engaging = facing < kContextArc ? 1u : 0u;
+
+                const uint8_t observed = facing < kObservedArc ? 1u : 0u;
+                wz_self_set_agent_decoherence(
+                    facts, event,
+                    observed ? kObservedDecoherence : kUnobservedDecoherence);
+                if (observed != state->observed) {
+                    state->observed = observed;
+                    wz_log_infof(
+                        facts, "[qtank:%d] %s  (decoherence %s)",
+                        state->tank_id,
+                        observed ? "OBSERVED" : "unobserved",
+                        observed ? "high -> snap-commit"
+                                 : "low -> stays coherent");
+                }
             }
 
             // Once the meta-qubit commits, it chooses the interval to the next

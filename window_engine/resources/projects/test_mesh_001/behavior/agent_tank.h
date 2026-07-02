@@ -74,6 +74,10 @@ struct QuantumTankState {
     uint8_t had_shot = 0;
     uint8_t under_fire = 0;
 
+    // Observation-forced decoherence: whether the player is currently looking at us
+    // (last frame), so we log only when it flips.
+    uint8_t observed = 0;
+
     // Cannon reload gate: sim_time the tank may next fire (fires whenever it has a
     // shot lined up, at most once per kFireCooldown). Unlimited ammo.
     double next_fire_time = 0.0;
