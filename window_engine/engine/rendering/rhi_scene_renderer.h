@@ -190,6 +190,15 @@ namespace wz::engine::rendering
             // per-frame SplatCloudDrawConstants packing in render_scene.
             bool is_splat_cloud = false;
             wz::engine::assets::GaussianSplatCloudRenderSettings splat_settings{};
+
+            // Baked mesh-render-style shading (issue #195 slice A). When
+            // has_style is set, render_scene packs MeshStyleDrawConstants (MVP +
+            // 12 floats of style) into this renderable's root constants instead of
+            // the plain 16-float MVP, and the program declares the "mesh_style"
+            // root constant (binding_layout preset 4). Only the CPU pull-mesh path
+            // sets it; clipmap/splat/gpu_sparse take their own pack branches.
+            bool has_style = false;
+            wz::engine::assets::MeshRenderStyleShading style{};
         };
 
         const RealizedProgram* realize_program(

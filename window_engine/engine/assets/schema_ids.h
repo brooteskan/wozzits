@@ -575,17 +575,18 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000600ull
     };
 
-    inline constexpr wz::asset::SchemaID kMeshWireframeRenderableSchema{
-    0xF11E'CA55'E7'000700ull
-    };
+    // 0x700 (mesh wireframe renderable), 0x701 (gaussian splat debug
+    // renderable), and 0x705 (mesh styled renderable) were DELETED by the issue
+    // #195 scrap-and-rebuild: a mesh renderable is ONE recipe — the 0x706 RHI
+    // pull mesh below — where the wireframe/solid look is a render-program
+    // property (RasterMode) and the style flows as data (an optional
+    // MeshRenderStyle dependency baked into the recipe); the splat debug
+    // renderable's replacement is 0x709 below (#208). Do not reuse these ids.
 
-    inline constexpr wz::asset::SchemaID kMeshStyledRenderableSchema{
-        0xF11E'CA55'E7'000705ull
-    };
-
-    // RHI-native mesh renderable recipe. Compiled from one mesh dependency
-    // and one render-program dependency; produces kAssetTypeRenderable output
-    // containing an RhiRenderableRecipe in the RHI renderable table.
+    // RHI-native mesh renderable recipe. Compiled from one mesh dependency,
+    // one render-program dependency, and an OPTIONAL MeshRenderStyle dependency
+    // (issue #195); produces kAssetTypeRenderable output containing an
+    // RhiRenderableRecipe in the RHI renderable table.
     inline constexpr wz::asset::SchemaID kRhiPullMeshRenderableSchema{
         0xF11E'CA55'E7'000706ull
     };
@@ -611,16 +612,12 @@ namespace wz::engine::assets {
 
     // RHI renderable recipe (issue #208): a GaussianSplatCloud (resident as a
     // decoded splat StructuredBuffer) + a SplatPull render program, rendered as
-    // a camera-facing splat cloud through RhiSceneRenderer. Distinct from the
-    // legacy kGaussianSplatDebugRenderableSchema (0x701), which produces a
+    // a camera-facing splat cloud through RhiSceneRenderer. Replaced the legacy
+    // 0x701 gaussian splat debug renderable (deleted by #195), which produced a
     // RenderableAssetData on the legacy DX12 splat path; this produces an
     // RhiRenderableRecipe carrying gaussian_splat_cloud_key.
     inline constexpr wz::asset::SchemaID kGaussianSplatCloudRhiRenderableSchema{
         0xF11E'CA55'E7'000709ull
-    };
-
-    inline constexpr wz::asset::SchemaID kGaussianSplatDebugRenderableSchema{
-        0xF11E'CA55'E7'000701ull
     };
 
     inline constexpr wz::asset::SchemaID kScalarFieldDebugRenderableSchema{

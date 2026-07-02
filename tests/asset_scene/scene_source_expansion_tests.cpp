@@ -123,20 +123,21 @@ TEST(SceneSourceExpansion, ExpandGraftsGlbNamedChildren)
         return nullptr;
     };
 
+    // Issue #195: deviceless GLB import attaches no renderables (the 0x706
+    // replacement's program needs a GPU device); the graft contract under test
+    // is the id namespacing + reparenting.
     const SceneNodeAsset* graft_body = find("tank/body");
     ASSERT_NE(graft_body, nullptr) << "expected GLB-named, host-namespaced id";
     ASSERT_TRUE(graft_body->parent_id.has_value());
     EXPECT_EQ(*graft_body->parent_id, "tank")
         << "a sub-scene root must reparent to the host";
-    ASSERT_TRUE(graft_body->renderable_asset.has_value());
-    EXPECT_FALSE(*graft_body->renderable_asset == wz::asset::AssetKey{});
+    EXPECT_FALSE(graft_body->renderable_asset.has_value());
 
     const SceneNodeAsset* graft_turret = find("tank/turret");
     ASSERT_NE(graft_turret, nullptr);
     ASSERT_TRUE(graft_turret->parent_id.has_value());
     EXPECT_EQ(*graft_turret->parent_id, "tank/body")
         << "non-root parenting must be preserved in the host namespace";
-    ASSERT_TRUE(graft_turret->renderable_asset.has_value());
 
     const SceneNodeAsset* graft_gun = find("tank/gun");
     ASSERT_NE(graft_gun, nullptr);
@@ -473,11 +474,12 @@ TEST(SceneSourceExpansion, PerComponentStyleOverrideProducesDistinctRenderable)
     ASSERT_NE(sub_base, nullptr);
     ASSERT_EQ(sub_base->nodes.size(), 3u);
 
-    std::unordered_map<std::string, wz::asset::AssetKey> base_keys;
+    // Issue #195: deviceless the GLB import carries the style mapping in the
+    // Scene IDENTITY (the scene key folds each binding's style asset key), not
+    // in per-node renderables (none can be provisioned without a GPU device).
+    // The selectivity contract is asserted below via the scene key.
     for (const SceneNodeAsset& n : sub_base->nodes) {
-        ASSERT_TRUE(n.renderable_asset.has_value())
-            << "every GLB mesh node should carry a styled renderable";
-        base_keys.emplace(n.id, *n.renderable_asset);
+        EXPECT_FALSE(n.renderable_asset.has_value());
     }
 
     // Build B: same base + an override on mesh index 0 with a clearly different
@@ -499,27 +501,30 @@ TEST(SceneSourceExpansion, PerComponentStyleOverrideProducesDistinctRenderable)
     ASSERT_NE(sub_override, nullptr);
     ASSERT_EQ(sub_override->nodes.size(), 3u);
 
-    // The override changed the overall Scene (different content => different key).
+    // The override changed the overall Scene (different content => different
+    // key). Post-#195 this is the observable style-mapping contract deviceless:
+    // the scene key folds each binding's STYLE asset key (see
+    // glb_scene_bindings_hash), so overriding one mesh index re-keys the Scene
+    // while an identical style set reproduces the same key. The per-node
+    // renderable-key selectivity that used to be asserted here is a with-device
+    // property now (the renderable recipe folds the style dep) — covered by the
+    // wozzits_app GLB style suites.
     EXPECT_FALSE(asset_override.output == asset_base.output)
         << "a per-component style override must change the Scene asset";
 
-    std::size_t changed = 0;
-    std::size_t unchanged = 0;
     for (const SceneNodeAsset& n : sub_override->nodes) {
-        ASSERT_TRUE(n.renderable_asset.has_value());
-        const auto it = base_keys.find(n.id);
-        ASSERT_NE(it, base_keys.end());
-        if (*n.renderable_asset == it->second) {
-            ++unchanged;
-        } else {
-            ++changed;
-        }
+        EXPECT_FALSE(n.renderable_asset.has_value());
     }
 
-    // Selective: at least one node re-styled (the overridden mesh is used), and
-    // at least one node left on the base style (the override is not global).
-    EXPECT_GE(changed, 1u)
-        << "the per-mesh override did not re-style any component";
-    EXPECT_GE(unchanged, 1u)
-        << "the per-mesh override changed every component (not selective)";
+    // Idempotency: re-building with the SAME override reproduces the same key.
+    SceneAsset asset_override_again{};
+    const SceneAssetData* sub_override_again =
+        build_tank_subscene_styled(
+            assets,
+            asset_override_again,
+            base,
+            { SceneFromGLBStyleOverride{ .mesh_index = 0u, .style = steel } });
+    ASSERT_NE(sub_override_again, nullptr);
+    EXPECT_TRUE(asset_override_again.output == asset_override.output)
+        << "identical style mapping must reproduce the same Scene asset";
 }

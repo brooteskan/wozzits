@@ -461,76 +461,31 @@ namespace wz::engine::rendering
             return out;
         }
 
+        // ScalarField / VectorField now fall through to the shared `return {}`
+        // below — their realize_data bodies were removed (issue #139, via #195
+        // slice E). Kept as explicit empty cases so the switch stays exhaustive
+        // over RenderableKind (no -Wswitch warning) while documenting that these
+        // kinds are intentionally not realized here.
+        //
+        // These were the ONLY reachable callers of upload_scalar_field_texture /
+        // These were the ONLY reachable callers of upload_scalar_field_texture /
+        // upload_vector_field_texture, but they were themselves DEAD: the sole
+        // caller of realize_data (GpuSceneRenderResourceResolver::
+        // realize_renderable_descriptor) only ever passes RenderableKind::Mesh
+        // here — a ScalarField renderable is diverted to the resolver's own
+        // preview-mesh branch (make_heightfield_preview_mesh) and a VectorField
+        // renderable hits the resolver's `return false`, so neither ScalarField
+        // nor VectorField ever reaches this switch. Deleting these two cases
+        // removes the last live references to the field-texture upload path. The
+        // upload functions + DX12ScalarFieldTextureTable are NOT deleted here:
+        // the table is still a compile-time dependency of the live sky-render
+        // path (dx12_submit.cpp) and the test asset_scalar_field_texture_test,
+        // so that removal belongs to a broader field-texture subsystem retirement
+        // (see the #195 report). The Mesh case (below) is untouched — it is the
+        // only live realize_data path.
         case wz::engine::assets::RenderableKind::ScalarField:
-        {
-            const wz::engine::assets::ScalarFieldAsset scalar_field_asset{
-                .output = renderable.source_asset,
-            };
-
-            const wz::engine::assets::ScalarFieldHandle scalar_field_handle =
-                assets.scalar_fields().get_scalar_field(scalar_field_asset);
-
-            if (!scalar_field_handle.valid())
-                return {};
-
-            const wz::engine::assets::ScalarFieldData* scalar_field_data =
-                assets.scalar_fields().get_scalar_field_data(scalar_field_handle);
-
-            if (!scalar_field_data || !scalar_field_data->valid())
-                return {};
-
-            wz::gpu::ScopedGPUHandle gpu_scalar_field(
-                release_queue_,
-                wz::gpu::upload_scalar_field_texture(
-                    device,
-                    *scalar_field_data));
-
-            if (!gpu_scalar_field.valid())
-                return {};
-
-            out.gpu_resource = gpu_scalar_field.get();
-            add(
-                renderable.source_asset,
-                renderable.kind,
-                std::move(gpu_scalar_field));
-            return out;
-        }
-
         case wz::engine::assets::RenderableKind::VectorField:
-        {
-            const wz::engine::assets::VectorFieldAsset vector_field_asset{
-                .output = renderable.source_asset,
-            };
-
-            const wz::engine::assets::VectorFieldHandle vector_field_handle =
-                assets.vector_fields().get_vector_field(vector_field_asset);
-
-            if (!vector_field_handle.valid())
-                return {};
-
-            const wz::engine::assets::VectorFieldData* vector_field_data =
-                assets.vector_fields().get_vector_field_data(
-                    vector_field_handle);
-
-            if (!vector_field_data || !vector_field_data->valid())
-                return {};
-
-            wz::gpu::ScopedGPUHandle gpu_vector_field(
-                release_queue_,
-                wz::gpu::upload_vector_field_texture(
-                    device,
-                    *vector_field_data));
-
-            if (!gpu_vector_field.valid())
-                return {};
-
-            out.gpu_resource = gpu_vector_field.get();
-            add(
-                renderable.source_asset,
-                renderable.kind,
-                std::move(gpu_vector_field));
-            return out;
-        }
+            return {};
 
         case wz::engine::assets::RenderableKind::GaussianSplatCloud:
         {

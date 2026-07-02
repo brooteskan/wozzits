@@ -672,6 +672,85 @@ namespace
     private:
         wz::engine::assets::RenderableAssetModule& module_;
     };
+
+    // Issue #195: the legacy 0x700 mesh-wireframe renderable — the old
+    // universal "some renderable asset" test stand-in — was deleted (the 0x706
+    // RHI pull mesh replaced it, but it requires a render program whose
+    // shaders cannot compile deviceless). Tests that need a REGISTERED,
+    // deviceless-RESOLVABLE, MESH-KIND renderable asset (instantiate_scene
+    // without a resource resolver only placeholders mesh-kind renderables) use
+    // the terrain debug renderable (0x703) — the surviving deviceless producer
+    // of Mesh-kind RenderableAssetData. It rides the #222 TerrainAsset
+    // deprecation; when it goes, these stand-ins move to the rhi path (#179).
+    inline wz::engine::assets::RenderableAsset create_test_preview_renderable(
+        wz::engine::assets::EngineAssetLibrary& assets,
+        const std::string& name)
+    {
+        // A MESH-representation terrain: its debug renderable compiles to
+        // RenderableKind::Mesh (a heightfield terrain would compile to
+        // ScalarField-kind, which instantiate_scene only accepts with a
+        // resource resolver).
+        const auto mesh = assets.meshes().create_procedural_mesh({
+            .name = name + "_standin_mesh",
+            .kind = wz::engine::assets::ProceduralMeshKind::Cube,
+        });
+        if (!mesh.valid()) {
+            return {};
+        }
+        const auto terrain = assets.terrains().create_from_mesh({
+            .name = name + "_terrain",
+            .mesh = mesh,
+        });
+        if (!terrain.valid()) {
+            return {};
+        }
+        return assets.renderables().create_terrain_debug({
+            .name = name,
+            .terrain = terrain,
+        });
+    }
+
+    // Issue #195: serves directly-constructed RenderableAssetData for
+    // fabricated keys, so the legacy resolver pipeline (instantiate_scene +
+    // MeshSceneRenderResourceResolver, which realizes RenderableAssetData)
+    // keeps its coverage without any legacy renderable SCHEMA producing that
+    // data. The legacy resolver machinery itself survives until #179; when it
+    // goes, the tests riding this resolver go with it.
+    class DirectRenderableResolver final
+        : public wz::engine::assets::SceneRenderableResolver
+    {
+    public:
+        void add(
+            const wz::asset::AssetKey& key,
+            wz::engine::assets::RenderableAssetData data)
+        {
+            entries_[key] = std::move(data);
+        }
+
+        const wz::engine::assets::RenderableAssetData* get(
+            wz::asset::AssetKey key) const override
+        {
+            const auto it = entries_.find(key);
+            return it != entries_.end() ? &it->second : nullptr;
+        }
+
+    private:
+        std::unordered_map<
+            wz::asset::AssetKey,
+            wz::engine::assets::RenderableAssetData,
+            wz::asset::AssetKeyHash> entries_;
+    };
+
+    // A distinct, stable fabricated key for DirectRenderableResolver entries.
+    inline wz::asset::AssetKey direct_renderable_key(uint64_t id)
+    {
+        return wz::asset::AssetKey{
+            .content_hash = { id, 0x195195195ull },
+            .schema_hash = { id ^ 0x1000ull, 0x195195196ull },
+            .compiler_hash = { id ^ 0x2000ull, 0x195195197ull },
+            .deps_hash = { id ^ 0x3000ull, 0x195195198ull },
+        };
+    }
 }
 
 

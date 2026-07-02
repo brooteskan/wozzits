@@ -152,20 +152,16 @@ TEST(GpuSceneRenderResourceResolver, CacheBackedRealizeFailsOnInvalidDevice)
     });
     ASSERT_TRUE(mesh.valid());
 
-    const auto renderable = fx.assets_.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
-    ASSERT_TRUE(renderable.valid());
-
     ASSERT_TRUE(fx.assets_.commit());
     ASSERT_TRUE(fx.assets_.resolve_all().ok());
 
-    const auto handle = fx.assets_.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-    const RenderableAssetData* data =
-        fx.assets_.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
+    // Issue #195: the legacy 0x700 wireframe schema (this resolver's old
+    // Mesh-kind data producer) is gone; the data is constructed directly,
+    // pointing at the REAL resolved procedural mesh, exactly what the deleted
+    // schema compiled to. The resolver machinery under test survives to #179.
+    RenderableAssetData data{};
+    data.kind = RenderableKind::Mesh;
+    data.source_asset = mesh.output;
 
     wz::gpu::DeferredReleaseQueue release_queue{};
     wz::engine::rendering::RenderableGpuCache cache(release_queue);
@@ -175,7 +171,7 @@ TEST(GpuSceneRenderResourceResolver, CacheBackedRealizeFailsOnInvalidDevice)
     // The asset side is fully resolvable, but the null device must stop the
     // realize path without fabricating a descriptor handle.
     wz::scene::RenderableDescriptor descriptor{};
-    EXPECT_FALSE(resolver.realize_renderable_descriptor(*data, descriptor));
+    EXPECT_FALSE(resolver.realize_renderable_descriptor(data, descriptor));
 }
 
 TEST(GpuSceneRenderResourceResolver, InstantiationFailsRealizeOnNullDevice)
@@ -188,48 +184,54 @@ TEST(GpuSceneRenderResourceResolver, InstantiationFailsRealizeOnNullDevice)
         .name = "debug/cube",
         .kind = ProceduralMeshKind::Cube,
     });
-    const auto renderable = fx.assets_.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
 
     ASSERT_TRUE(fx.assets_.commit());
     ASSERT_TRUE(fx.assets_.resolve_all().ok());
 
-    class LibraryRenderableResolver final : public SceneRenderableResolver
+    // Issue #195: directly-constructed Mesh-kind data replaces the deleted
+    // 0x700 wireframe schema (see CacheBackedRealizeFailsOnInvalidDevice).
+    class DirectRenderableResolver final : public SceneRenderableResolver
     {
     public:
-        explicit LibraryRenderableResolver(RenderableAssetModule& module)
-            : module_(module)
+        DirectRenderableResolver(
+            wz::asset::AssetKey key,
+            RenderableAssetData data)
+            : key_(key)
+            , data_(std::move(data))
         {
         }
 
         const RenderableAssetData* get(
             wz::asset::AssetKey key) const override
         {
-            const auto handle =
-                module_.get_renderable(RenderableAsset{ .output = key });
-            return handle.valid()
-                ? module_.get_renderable_data(handle)
-                : nullptr;
+            return key == key_ ? &data_ : nullptr;
         }
 
     private:
-        RenderableAssetModule& module_;
+        wz::asset::AssetKey key_;
+        RenderableAssetData data_;
     };
+
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::Mesh;
+    renderable_data.source_asset = mesh.output;
+
+    wz::asset::AssetKey renderable_key{};
+    renderable_key.content_hash = { 0x195u, 0x195u };
 
     wz::gpu::DeferredReleaseQueue release_queue{};
     wz::engine::rendering::RenderableGpuCache cache(release_queue);
     wz::engine::rendering::GpuSceneRenderResourceResolver resource_resolver(
         fx.device_, fx.assets_, fx.render_resolver_, &cache);
-    LibraryRenderableResolver renderable_resolver(fx.assets_.renderables());
+    DirectRenderableResolver renderable_resolver(
+        renderable_key, renderable_data);
 
     SceneAssetData scene{};
     scene.name = "gpu_resolver_null_device";
 
     SceneNodeAsset node{};
     node.id = "cube";
-    node.renderable_asset = renderable.output;
+    node.renderable_asset = renderable_key;
     scene.nodes.push_back(std::move(node));
 
     SceneInstantiateContext context{

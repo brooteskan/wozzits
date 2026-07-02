@@ -247,22 +247,26 @@ TEST_F(
     }
     ASSERT_TRUE(resolve_report.ok());
 
-    const RenderableHandle renderable =
-        assets.renderables().get_renderable(
+    // Issue #195: the styled mesh materializes as a 0x706 RHI pull-mesh
+    // recipe. The authored render_shader program is the recipe's program dep
+    // (the same precedence the deleted 0x705 compiler had), and the style's
+    // shading is baked into the recipe as data.
+    const RhiRenderableRecipe* recipe =
+        assets.renderables().get_rhi_renderable_recipe(
             RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-
-    const RenderableAssetData* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    ASSERT_TRUE(renderable_data->render_program.valid());
-    EXPECT_EQ(renderable_data->program, BuiltinRenderProgram::MeshSurface);
-    EXPECT_TRUE(renderable_data->mesh_style.surface.enabled);
-    EXPECT_FALSE(renderable_data->mesh_style.wireframe.enabled);
+    ASSERT_NE(recipe, nullptr);
+    EXPECT_EQ(
+        recipe->program_key,
+        scene.nodes[0].render_shader->render_program_asset);
+    EXPECT_TRUE(recipe->style.has_style);
+    EXPECT_TRUE(recipe->style.surface_enabled);
+    EXPECT_FALSE(recipe->style.wireframe_enabled);
 
     const RenderProgramData* program_data =
         assets.render_programs().get_render_program_data(
-            renderable_data->render_program);
+            assets.render_programs().get_render_program(
+                RenderProgramAsset{
+                    scene.nodes[0].render_shader->render_program_asset }));
     ASSERT_NE(program_data, nullptr);
     EXPECT_EQ(program_data->binding_model, RenderBindingModel::MeshIA);
     EXPECT_EQ(program_data->topology, RenderPrimitiveTopology::TriangleList);
@@ -366,24 +370,28 @@ TEST_F(
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
 
-    const RenderableHandle renderable =
-        assets.renderables().get_renderable(
+    // Issue #195: the styled mesh materializes as a 0x706 RHI pull-mesh
+    // recipe with the authored render_shader program as its program dep. The
+    // recipe deliberately does NOT consume the field-visualization asset (the
+    // geometry-generating style parts stay on the style/wavelet assets,
+    // asserted above); the field flows to the shader via the program's
+    // MeshFieldVisualization descriptor binding below.
+    const RhiRenderableRecipe* recipe =
+        assets.renderables().get_rhi_renderable_recipe(
             RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-
-    const RenderableAssetData* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
+    ASSERT_NE(recipe, nullptr);
     EXPECT_EQ(
-        renderable_data->mesh_field_visualization_asset,
-        scene.nodes[0].mesh_render_style->field_visualization_asset);
-    ASSERT_TRUE(renderable_data->render_program.valid());
-    EXPECT_EQ(renderable_data->program, BuiltinRenderProgram::MeshFieldHeatmap);
-    EXPECT_TRUE(renderable_data->mesh_style.field_visualization.enabled);
+        recipe->program_key,
+        scene.nodes[0].render_shader->render_program_asset);
+    EXPECT_TRUE(recipe->style.has_style);
 
+    const wz::asset::ResourceHandle render_program_handle =
+        assets.render_programs().get_render_program(
+            RenderProgramAsset{
+                scene.nodes[0].render_shader->render_program_asset });
     const RenderProgramData* program_data =
         assets.render_programs().get_render_program_data(
-            renderable_data->render_program);
+            render_program_handle);
     ASSERT_NE(program_data, nullptr);
     EXPECT_EQ(program_data->binding_model, RenderBindingModel::MeshIA);
     EXPECT_EQ(
@@ -408,9 +416,9 @@ TEST_F(
         pipeline_cache.realize(
             device,
             assets.render_programs().table(),
-            renderable_data->render_program));
+            render_program_handle));
     const auto* layout =
-        pipeline_cache.get_binding_layout(renderable_data->render_program);
+        pipeline_cache.get_binding_layout(render_program_handle);
     ASSERT_NE(layout, nullptr);
     ASSERT_EQ(layout->root_constants.size(), 1u);
     EXPECT_EQ(layout->root_constants[0].root_parameter_index, 0u);

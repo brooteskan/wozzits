@@ -47,54 +47,6 @@ namespace wz::engine::assets
         return h;
     }
 
-    [[nodiscard]] inline wz::asset::AssetKey make_mesh_wireframe_renderable_key(
-        std::string_view name,
-        const wz::asset::AssetKey& mesh_key,
-        BuiltinRenderProgram program = BuiltinRenderProgram::MeshWireframeDebug,
-        uint32_t policy_flags = RenderPolicy_Wireframe,
-        RenderDomain domain = RenderDomain::Debug) noexcept
-    {
-        uint64_t h = detail::fnv1a_64(name);
-        h = detail::mix64(h, static_cast<uint64_t>(program));
-        h = detail::mix64(h, static_cast<uint64_t>(policy_flags));
-        h = detail::mix64(h, static_cast<uint64_t>(domain));
-
-        return wz::asset::AssetKey{
-            .content_hash = detail::hash_u64(h),
-            .schema_hash = detail::hash_u64(kMeshWireframeRenderableSchema.value),
-            .compiler_hash = detail::hash_u64(kMeshWireframeRenderableCompilerVersion),
-            .deps_hash = detail::key_to_dep_hash(mesh_key),
-        };
-    }
-
-    [[nodiscard]] inline wz::asset::AssetKey make_gaussian_splat_debug_renderable_key(
-        std::string_view name,
-        const wz::asset::AssetKey& splat_cloud_key,
-        const wz::asset::AssetKey& color_lod_key = {}) noexcept
-    {
-        const uint64_t h = detail::fnv1a_64(name);
-
-        // deps_hash combines the source cloud and optional color-LOD keys
-        // so renderables with different LOD attachments produce distinct
-        // identities.  An empty color_lod_key collapses to zero and matches
-        // the pre-LOD behaviour bit-for-bit.
-        const wz::asset::Hash cloud_dep = detail::key_to_dep_hash(splat_cloud_key);
-        const wz::asset::Hash lod_dep =
-            (color_lod_key == wz::asset::AssetKey{})
-                ? wz::asset::Hash{}
-                : detail::key_to_dep_hash(color_lod_key);
-
-        return wz::asset::AssetKey{
-            .content_hash = detail::hash_u64(h),
-            .schema_hash = detail::hash_u64(kGaussianSplatDebugRenderableSchema.value),
-            .compiler_hash = detail::hash_u64(kGaussianSplatDebugRenderableCompilerVersion),
-            .deps_hash = wz::asset::Hash{
-                detail::mix64(cloud_dep.lo, lod_dep.lo),
-                detail::mix64(cloud_dep.hi, lod_dep.hi),
-            },
-        };
-    }
-
     [[nodiscard]] inline wz::asset::AssetKey make_scalar_field_debug_renderable_key(
         std::string_view name,
         const wz::asset::AssetKey& scalar_field_key) noexcept
@@ -109,53 +61,29 @@ namespace wz::engine::assets
         };
     }
 
-    [[nodiscard]] inline wz::asset::AssetKey make_mesh_styled_renderable_key(
-        std::string_view name,
-        const wz::asset::AssetKey& mesh_key,
-        const wz::asset::AssetKey& style_key,
-        const wz::asset::AssetKey& mesh_field_visualization_key = {},
-        const wz::asset::AssetKey& render_program_key = {}) noexcept
-    {
-        const uint64_t h = detail::fnv1a_64(name);
-        const wz::asset::Hash mesh_dep = detail::key_to_dep_hash(mesh_key);
-        const wz::asset::Hash style_dep = detail::key_to_dep_hash(style_key);
-        const wz::asset::Hash field_dep =
-            (mesh_field_visualization_key == wz::asset::AssetKey{})
-                ? wz::asset::Hash{}
-                : detail::key_to_dep_hash(mesh_field_visualization_key);
-        const wz::asset::Hash program_dep =
-            (render_program_key == wz::asset::AssetKey{})
-                ? wz::asset::Hash{}
-                : detail::key_to_dep_hash(render_program_key);
-
-        return wz::asset::AssetKey{
-            .content_hash = detail::hash_u64(h),
-            .schema_hash = detail::hash_u64(kMeshStyledRenderableSchema.value),
-            .compiler_hash = detail::hash_u64(kMeshStyledRenderableCompilerVersion),
-            .deps_hash = wz::asset::Hash{
-                detail::mix64(
-                    detail::mix64(
-                        detail::mix64(mesh_dep.lo, style_dep.lo),
-                        field_dep.lo),
-                    program_dep.lo),
-                detail::mix64(
-                    detail::mix64(
-                        detail::mix64(mesh_dep.hi, style_dep.hi),
-                        field_dep.hi),
-                    program_dep.hi),
-            },
-        };
-    }
-
+    // The optional style_key (issue #195 slice A) folds into deps_hash in graph
+    // registration order (mesh, program, style). An empty style_key collapses to
+    // zero and reproduces the pre-slice-A 2-dep key bit-for-bit, so unstyled pull
+    // meshes keep their identity.
     [[nodiscard]] inline wz::asset::AssetKey make_rhi_pull_mesh_renderable_key(
         std::string_view name,
         const wz::asset::AssetKey& mesh_key,
-        const wz::asset::AssetKey& render_program_key) noexcept
+        const wz::asset::AssetKey& render_program_key,
+        const wz::asset::AssetKey& style_key = {}) noexcept
     {
         const uint64_t h = detail::fnv1a_64(name);
         const wz::asset::Hash mesh_dep = detail::key_to_dep_hash(mesh_key);
         const wz::asset::Hash program_dep =
             detail::key_to_dep_hash(render_program_key);
+
+        wz::asset::Hash deps_hash = wz::asset::Hash{
+            detail::mix64(mesh_dep.lo, program_dep.lo),
+            detail::mix64(mesh_dep.hi, program_dep.hi),
+        };
+        if (!(style_key == wz::asset::AssetKey{})) {
+            deps_hash = detail::combine_dep_hashes(
+                deps_hash, detail::key_to_dep_hash(style_key));
+        }
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),
@@ -163,10 +91,7 @@ namespace wz::engine::assets
                 detail::hash_u64(kRhiPullMeshRenderableSchema.value),
             .compiler_hash =
                 detail::hash_u64(kRhiPullMeshRenderableCompilerVersion),
-            .deps_hash = wz::asset::Hash{
-                detail::mix64(mesh_dep.lo, program_dep.lo),
-                detail::mix64(mesh_dep.hi, program_dep.hi),
-            },
+            .deps_hash = deps_hash,
         };
     }
 

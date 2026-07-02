@@ -402,11 +402,15 @@ renderables.
 V1 styles carry two authored layers: `wireframe` and `surface`. Each layer has an
 enabled flag, RGBA color, and emissive strength. Shared flags carry depth
 test/write, double-sided intent, and a hidden-line prepass hint for wireframe
-rendering. `RenderableAssetModule::create_mesh_styled()` chooses the surface
-shader when the surface layer is enabled and the mesh has normals; otherwise it
-uses the wireframe path and logs a normals-specific fallback when needed. Scene
-mesh authoring materialization creates the style asset from the node component
-before creating the renderable.
+rendering. Since issue #195, a style is consumed as an optional dependency of the
+RHI pull-mesh renderable (`0x000706`): the style's shading constants bake into the
+`RhiRenderableRecipe` and flow to shaders as the 28-dword `mesh_style` root-constant
+block, while the style's pipeline-state intent (wireframe/solid raster, depth,
+blend) derives the render program via
+`ensure_mesh_style_pull_program()` (engine/assets/mesh_style_pull_program.h) —
+styles sharing pipeline state dedup to one program asset. Scene mesh authoring
+materialization creates the style asset from the node component before creating
+the renderable (device required; deviceless materialize attaches no renderable).
 
 ---
 
@@ -415,26 +419,32 @@ before creating the renderable.
 Renderables bind a source data asset (mesh, splat cloud, scalar field, terrain)
 to a render program and domain, producing an entry in `RenderableAssetTable`.
 
+RHI-native renderables (the live path — each produces an `RhiRenderableRecipe`
+drawn by `RhiSceneRenderer`):
+
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
 |---|---|---|---|---|
-| Mesh wireframe debug | `kMeshWireframeRenderableSchema` | `0x000700` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_mesh_wireframe()` |
-| Gaussian splat debug | `kGaussianSplatDebugRenderableSchema` | `0x000701` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_gaussian_splat_debug()` |
-| Scalar field debug | `kScalarFieldDebugRenderableSchema` | `0x000702` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_scalar_field_debug()` |
-| Terrain debug | `kTerrainDebugRenderableSchema` | `0x000703` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_debug()` |
-| Terrain mesh surface | `kTerrainSurfaceRenderableSchema` | `0x000704` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_surface()` |
-| Mesh styled | `kMeshStyledRenderableSchema` | `0x000705` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_mesh_styled()` |
+| RHI pull mesh (+ optional style) | `kRhiPullMeshRenderableSchema` | `0x000706` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_rhi_pull_mesh()` |
+| GPU sparse mesh | `kGpuSparseMeshRenderableSchema` | `0x000707` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_gpu_sparse_mesh_renderable()` |
+| Clipmap landscape | `kClipmapLandscapeRenderableSchema` | `0x000708` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_clipmap_landscape()` |
+| Gaussian splat cloud (RHI) | `kGaussianSplatCloudRhiRenderableSchema` | `0x000709` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_gaussian_splat_cloud_rhi()` |
 
-All six produce `RenderableAssetData` in `RenderableAssetTable`.
-`RenderableAssetData` carries `RenderableKind`, `RenderDomain`, `BuiltinRenderProgram`,
-policy flags, spatial bounds, and an optional `companion_asset` key (used to attach
-a `GaussianSplatColorLOD` to a splat renderable).
+Legacy renderables (produce `RenderableAssetData`; consumed only by the editor
+field preview and the deprecated terrain path — retirement tracked by #222/#179):
 
-`GaussianSplatDebugRenderableDesc` accepts an optional `color_lod` field
-(`GaussianSplatColorLODAsset`). When set, the renderable's `companion_asset` is
-populated, and the GPU upload path packs per-splat neighborhood color + confidence
-into the structured buffer alongside the base splat data. When unset, the LOD
-slot falls back to base color with confidence = 0 (no behavioral change versus the
-pre-LOD renderer).
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| Scalar field preview | `kScalarFieldDebugRenderableSchema` | `0x000702` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_scalar_field_debug()` |
+| Terrain debug (deprecated, #222) | `kTerrainDebugRenderableSchema` | `0x000703` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_debug()` |
+| Terrain mesh surface (deprecated, #222) | `kTerrainSurfaceRenderableSchema` | `0x000704` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_surface()` |
+
+Schemas `0x000700` (mesh wireframe), `0x000701` (gaussian splat debug), and
+`0x000705` (mesh styled) were deleted by issue #195: a mesh renderable is one
+recipe (`0x000706`) — mesh + render program + optional `MeshRenderStyle` — where
+wireframe-vs-solid is a program `RasterMode` and style shading flows as data.
+The splat-debug capability lives on as the RHI splat renderable (`0x000709`).
+Splat color-LOD attachment (`companion_asset` + `color_lod`) was a `0x000701`
+feature and currently has no RHI-path equivalent.
 
 `BuiltinRenderProgram` is an enum in `engine/assets/renderable/renderable.h`:
 - `MeshWireframeDebug` -> `RenderDomain::Debug`

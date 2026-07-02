@@ -300,6 +300,43 @@ namespace wz::engine::assets::internal
                     .descriptor_count = 1,
                 });
             }
+            else if (binding_layout == 4) {
+                // Styled RHI pull mesh (issue #195 slice A). Identical object-SRG
+                // (space2) shape to binding_layout==1, except the single root-
+                // constant block is 28 dwords instead of 16: the 16-float MVP the
+                // VS uses, followed by the 12-float mesh-style shading the PS
+                // reads (wireframe_color[4], surface_color[4], params[4] where
+                // params = (wireframe_emissive, surface_emissive, alpha, mode)).
+                // Packed BYTE-FOR-BYTE by MeshStyleDrawConstants in
+                // rhi_scene_renderer.cpp and mirrored by the MeshStyle cbuffer in
+                // mesh_style_pull_vs/ps.hlsl. Visibility All: the block is one b0
+                // cbuffer bound to both stages (the VS ignores the trailing style
+                // fields; the PS ignores the leading MVP). The "mesh_style"
+                // semantic is registered by NAME (open vocabulary) — no enum.
+                desc.root_constants.push_back(RootConstantBinding{
+                    .visibility = ShaderVisibility::All,
+                    .shader_register = 0,
+                    .register_space = 2,
+                    .value_count = 28,
+                    .semantic = "mesh_style",
+                });
+                desc.descriptor_bindings.push_back(DescriptorBinding{
+                    .kind = DescriptorKind::StructuredBufferSRV,
+                    .visibility = ShaderVisibility::Vertex,
+                    .semantic = DescriptorSemantic::PulledMeshPositions,
+                    .shader_register = 0,
+                    .register_space = 2,
+                    .descriptor_count = 1,
+                });
+                desc.descriptor_bindings.push_back(DescriptorBinding{
+                    .kind = DescriptorKind::StructuredBufferSRV,
+                    .visibility = ShaderVisibility::Vertex,
+                    .semantic = DescriptorSemantic::PulledMeshIndices,
+                    .shader_register = 1,
+                    .register_space = 2,
+                    .descriptor_count = 1,
+                });
+            }
             return desc;
         }
 

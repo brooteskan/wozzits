@@ -152,8 +152,11 @@ TEST(SceneAssetModule, ResolvesGLBSceneMeshAsRenderableAsset)
 
     ASSERT_EQ(data->nodes.size(), 1u);
     EXPECT_EQ(data->nodes[0].id, "Cube");
-    ASSERT_TRUE(data->nodes[0].renderable_asset.has_value());
-    EXPECT_FALSE(*data->nodes[0].renderable_asset == wz::asset::AssetKey{});
+    // Issue #195: deviceless GLB import attaches NO renderable — the 0x706
+    // replacement needs a provisioned render program whose shaders cannot
+    // compile without a GPU device. The node comes through as structure; the
+    // with-device renderable flow is covered by the wozzits_app GLB suites.
+    EXPECT_FALSE(data->nodes[0].renderable_asset.has_value());
     EXPECT_FALSE(data->nodes[0].renderable.has_value());
 }
 
@@ -258,52 +261,31 @@ TEST(SceneAssetModule, ResolvesTankGLBHierarchyFixture)
 
     ASSERT_EQ(data->nodes.size(), 3u);
 
+    // Issue #195: deviceless GLB import attaches NO renderables (the 0x706
+    // replacement needs a provisioned render program, whose shaders cannot
+    // compile without a GPU device). Hierarchy + transforms are the contract.
     const auto* body = find_scene_node(*data, "body");
     ASSERT_NE(body, nullptr);
     EXPECT_FALSE(body->parent_id.has_value());
-    ASSERT_TRUE(body->renderable_asset.has_value());
-    EXPECT_FALSE(*body->renderable_asset == wz::asset::AssetKey{});
+    EXPECT_FALSE(body->renderable_asset.has_value());
 
     const auto* turret = find_scene_node(*data, "turret");
     ASSERT_NE(turret, nullptr);
     ASSERT_TRUE(turret->parent_id.has_value());
     EXPECT_EQ(*turret->parent_id, "body");
-    ASSERT_TRUE(turret->renderable_asset.has_value());
-    EXPECT_FALSE(*turret->renderable_asset == wz::asset::AssetKey{});
-    EXPECT_NE(*turret->renderable_asset, *body->renderable_asset);
+    EXPECT_FALSE(turret->renderable_asset.has_value());
 
     const auto* gun = find_scene_node(*data, "gun");
     ASSERT_NE(gun, nullptr);
     ASSERT_TRUE(gun->parent_id.has_value());
     EXPECT_EQ(*gun->parent_id, "turret");
-    ASSERT_TRUE(gun->renderable_asset.has_value());
-    EXPECT_FALSE(*gun->renderable_asset == wz::asset::AssetKey{});
-    EXPECT_NE(*gun->renderable_asset, *turret->renderable_asset);
+    EXPECT_FALSE(gun->renderable_asset.has_value());
 
     EXPECT_FLOAT_EQ(body->local.scale[0], 1.6399999856948853f);
     EXPECT_FLOAT_EQ(turret->local.translation[1], 1.6363635063171387f);
     EXPECT_FLOAT_EQ(gun->local.rotation_quat[2], 0.5323767066001892f);
 }
 
-namespace
-{
-    // Resolve the mesh-render style a GLB scene node's renderable was built with.
-    const wz::engine::assets::MeshRenderStyleData* node_style(
-        wz::engine::assets::EngineAssetLibrary& assets,
-        const wz::engine::assets::SceneAssetData& scene,
-        const std::string& node_id)
-    {
-        using namespace wz::engine::assets;
-        const SceneNodeAsset* node = find_scene_node(scene, node_id);
-        if (!node || !node->renderable_asset.has_value()) return nullptr;
-        const RenderableAsset asset{ .output = *node->renderable_asset };
-        const auto handle = assets.renderables().get_renderable(asset);
-        if (!handle.valid()) return nullptr;
-        const RenderableAssetData* data =
-            assets.renderables().get_renderable_data(handle);
-        return data ? &data->mesh_style : nullptr;
-    }
-}
 
 // Issue #213 (Phase 1): per-component style mapping. Two distinct overrides on
 // two different mesh indices produce renderables whose styles differ from each
@@ -355,45 +337,60 @@ TEST(SceneAssetModule, GLBPerComponentStyleOverrides)
     ASSERT_NE(data, nullptr);
     ASSERT_EQ(data->nodes.size(), 3u);
 
-    // Renderable keys stay distinct (distinct meshes => distinct renderables).
+    // Issue #195: deviceless GLB import attaches NO renderables (the 0x706
+    // replacement's program cannot be provisioned without a GPU device), so
+    // the per-NODE style mapping is only observable with a device (the
+    // renderable recipe bakes the style there; see the wozzits_app GLB style
+    // suites). What remains observable — and asserted — deviceless: the import
+    // registered and resolved the base + both override style ASSETS with the
+    // authored contents. create_mesh_render_style is idempotent on
+    // (name, style), so re-creating returns the import's keys.
     const auto* body = find_scene_node(*data, "body");
     const auto* turret = find_scene_node(*data, "turret");
     const auto* gun = find_scene_node(*data, "gun");
     ASSERT_NE(body, nullptr);
     ASSERT_NE(turret, nullptr);
     ASSERT_NE(gun, nullptr);
-    ASSERT_TRUE(body->renderable_asset && turret->renderable_asset
-        && gun->renderable_asset);
-    EXPECT_NE(*body->renderable_asset, *turret->renderable_asset);
-    EXPECT_NE(*turret->renderable_asset, *gun->renderable_asset);
-    EXPECT_NE(*body->renderable_asset, *gun->renderable_asset);
+    EXPECT_FALSE(body->renderable_asset.has_value());
+    EXPECT_FALSE(turret->renderable_asset.has_value());
+    EXPECT_FALSE(gun->renderable_asset.has_value());
 
-    // Collect the three resolved styles and classify them by surface color.
-    const MeshRenderStyleData* styles[3] = {
-        node_style(assets, *data, "body"),
-        node_style(assets, *data, "turret"),
-        node_style(assets, *data, "gun"),
-    };
+    const auto base_asset =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "tank1_styled/default_mesh_style",
+            .style = base,
+        });
+    const auto style_a_asset =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "tank1_styled/mesh_style_0",
+            .style = style_a,
+        });
+    const auto style_b_asset =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "tank1_styled/mesh_style_1",
+            .style = style_b,
+        });
+    ASSERT_TRUE(base_asset.valid());
+    ASSERT_TRUE(style_a_asset.valid());
+    ASSERT_TRUE(style_b_asset.valid());
 
-    int count_a = 0, count_b = 0, count_base = 0;
-    for (const MeshRenderStyleData* s : styles) {
-        ASSERT_NE(s, nullptr);
-        if (s->surface.enabled && s->surface.color[0] > 0.5f) {
-            ++count_a;  // reddish => style_a (mesh 0)
-        }
-        else if (s->surface.enabled && s->surface.color[2] > 0.5f) {
-            ++count_b;  // bluish => style_b (mesh 1)
-        }
-        else if (!s->surface.enabled) {
-            ++count_base;  // surface off => base (un-overridden)
-        }
-    }
-
-    // Exactly the two overrides appear (distinct), and the remaining mesh keeps
-    // the base. If tank1's mesh indices were not {0,1,...}, these would fail.
-    EXPECT_EQ(count_a, 1) << "style override for mesh 0 must apply to one mesh";
-    EXPECT_EQ(count_b, 1) << "style override for mesh 1 must apply to one mesh";
-    EXPECT_EQ(count_base, 1) << "un-overridden mesh must keep the base style";
+    const MeshRenderStyleData* base_data =
+        assets.mesh_render_styles().get_mesh_render_style_data(
+            assets.mesh_render_styles().get_mesh_render_style(base_asset));
+    const MeshRenderStyleData* a_data =
+        assets.mesh_render_styles().get_mesh_render_style_data(
+            assets.mesh_render_styles().get_mesh_render_style(style_a_asset));
+    const MeshRenderStyleData* b_data =
+        assets.mesh_render_styles().get_mesh_render_style_data(
+            assets.mesh_render_styles().get_mesh_render_style(style_b_asset));
+    ASSERT_NE(base_data, nullptr);
+    ASSERT_NE(a_data, nullptr);
+    ASSERT_NE(b_data, nullptr);
+    EXPECT_FALSE(base_data->surface.enabled);
+    EXPECT_TRUE(a_data->surface.enabled);
+    EXPECT_GT(a_data->surface.color[0], 0.5f);   // reddish (mesh 0)
+    EXPECT_TRUE(b_data->surface.enabled);
+    EXPECT_GT(b_data->surface.color[2], 0.5f);   // bluish (mesh 1)
 }
 
 // Issue #213 (Phase 1): the no-override default reproduces prior behavior — a
@@ -422,13 +419,28 @@ TEST(SceneAssetModule, GLBNoOverrideDefaultIsUniform)
     ASSERT_NE(data, nullptr);
     ASSERT_EQ(data->nodes.size(), 3u);
 
-    // Every mesh resolves to the same (default) style: the built-in
-    // MeshRenderStyleData has surface disabled and wireframe enabled.
+    // Issue #195: deviceless the nodes carry no renderables (see the styled
+    // test above); the no-override default contract is that ONE default style
+    // asset was registered with the built-in style: surface disabled and
+    // wireframe enabled. create_mesh_render_style is idempotent on
+    // (name, style), so re-creating returns the import's key.
+    const auto default_asset =
+        assets.mesh_render_styles().create_mesh_render_style({
+            .name = "tank1_uniform/default_mesh_style",
+            .style = MeshRenderStyleData{},
+        });
+    ASSERT_TRUE(default_asset.valid());
+    const MeshRenderStyleData* s =
+        assets.mesh_render_styles().get_mesh_render_style_data(
+            assets.mesh_render_styles().get_mesh_render_style(default_asset));
+    ASSERT_NE(s, nullptr) << "default style did not resolve";
+    EXPECT_FALSE(s->surface.enabled);
+    EXPECT_TRUE(s->wireframe.enabled);
+
     for (const char* id : { "body", "turret", "gun" }) {
-        const MeshRenderStyleData* s = node_style(assets, *data, id);
-        ASSERT_NE(s, nullptr) << "node " << id << " has no resolved style";
-        EXPECT_FALSE(s->surface.enabled);
-        EXPECT_TRUE(s->wireframe.enabled);
+        const SceneNodeAsset* node = find_scene_node(*data, id);
+        ASSERT_NE(node, nullptr);
+        EXPECT_FALSE(node->renderable_asset.has_value());
     }
 }
 

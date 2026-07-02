@@ -514,10 +514,7 @@ TEST(SceneECSBoundary, RuntimeReadySceneUsesAssetReferencesWithoutRecipes)
     });
     ASSERT_TRUE(mesh.valid());
 
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "runtime_ready/cube_wireframe",
-        .mesh = mesh,
-    });
+    const auto renderable = create_test_preview_renderable(assets, "runtime_ready/cube_wireframe");
     ASSERT_TRUE(renderable.valid());
 
     ASSERT_TRUE(assets.commit());
@@ -597,10 +594,7 @@ TEST(SceneECSBoundary, AssetReferenceResolvesAssignedRenderableWhenAvailable)
     });
     ASSERT_TRUE(mesh.valid());
 
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "asset_reference/cube_wireframe",
-        .mesh = mesh,
-    });
+    const auto renderable = create_test_preview_renderable(assets, "asset_reference/cube_wireframe");
     ASSERT_TRUE(renderable.valid());
 
     ASSERT_TRUE(assets.commit());
@@ -742,10 +736,7 @@ TEST(SceneECSBoundary, AssetReferenceRenderableRealizeFailureResolvesToNull)
     });
     ASSERT_TRUE(mesh.valid());
 
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "asset_reference_realize/cube_wireframe",
-        .mesh = mesh,
-    });
+    const auto renderable = create_test_preview_renderable(assets, "asset_reference_realize/cube_wireframe");
     ASSERT_TRUE(renderable.valid());
 
     ASSERT_TRUE(assets.commit());

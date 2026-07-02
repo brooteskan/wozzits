@@ -23,37 +23,6 @@
 
 namespace wz::engine::assets
 {
-    struct MeshWireframeRenderableDesc
-    {
-        std::string name;
-        MeshAsset mesh{};
-        BuiltinRenderProgram program = BuiltinRenderProgram::MeshWireframeDebug;
-        RenderDomain domain = RenderDomain::Debug;
-        uint32_t policy_flags = RenderPolicy_Wireframe;
-    };
-
-    struct MeshStyledRenderableDesc
-    {
-        std::string name;
-        MeshAsset mesh{};
-        MeshRenderStyleAsset style{};
-        MeshDerivedFieldAsset mesh_field_visualization{};
-        wz::asset::AssetKey render_program_asset{};
-    };
-
-    struct GaussianSplatDebugRenderableDesc
-    {
-        std::string name;
-        GaussianSplatCloudAsset splat_cloud{};
-
-        // Optional derived color-LOD product.  When set, the upload path
-        // packs per-splat neighborhood color + confidence into the GPU
-        // vertex.  When unset, the GPU vertex's LOD slot falls back to the
-        // base color with confidence = 0 — no behavioural change versus the
-        // pre-LOD renderer.
-        GaussianSplatColorLODAsset color_lod{};
-    };
-
     struct ScalarFieldDebugRenderableDesc
     {
         std::string name;
@@ -93,6 +62,9 @@ namespace wz::engine::assets
         std::string name;
         MeshAsset mesh{};
         RenderProgramAsset program{};
+        // Optional MeshRenderStyle whose SHADING constants are baked into the
+        // recipe (issue #195 slice A). Default (invalid) = no style.
+        MeshRenderStyleAsset style{};
     };
 
     struct GpuSparseMeshRenderableDesc
@@ -159,15 +131,6 @@ namespace wz::engine::assets
             wz::Logger& logger,
             RenderableAssetTable& table,
             RhiRenderableTable& rhi_table);
-
-        RenderableAsset create_mesh_wireframe(
-            const MeshWireframeRenderableDesc& desc);
-
-        RenderableAsset create_mesh_styled(
-            const MeshStyledRenderableDesc& desc);
-
-        RenderableAsset create_gaussian_splat_debug(
-            const GaussianSplatDebugRenderableDesc& desc);
 
         RenderableAsset create_scalar_field_debug(
             const ScalarFieldDebugRenderableDesc& desc);

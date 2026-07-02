@@ -13,8 +13,12 @@
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/mesh_render_style_asset_module.h>
 #include <engine/assets/renderable_asset_module.h>
+#include <engine/assets/render_program/render_program_asset_module.h>
+#include <engine/assets/shader_asset_module.h>
 #include <engine/assets/scene/scene.h>
 #include <engine/assets/scene/scene_asset_data.h>
+
+#include <gpu/gpu.h>
 
 #include <optional>
 #include <string>
@@ -85,11 +89,14 @@ namespace wz::engine::assets
         SceneAssetModule(
             wz::asset::AssetSystem& system,
             wz::Logger& logger,
+            wz::gpu::Device& device,
             FileCarrierAssetModule& files,
             JSONAssetModule& json,
             MeshAssetModule& meshes,
             MeshRenderStyleAssetModule& mesh_render_styles,
             RenderableAssetModule& renderables,
+            ShaderAssetModule& shaders,
+            RenderProgramAssetModule& render_programs,
             SceneAssetTable& table);
 
         SceneAsset create_scene_from_json(const SceneFromJSONDesc& desc);
@@ -103,11 +110,19 @@ namespace wz::engine::assets
     private:
         wz::asset::AssetSystem& system_;
         wz::Logger& logger_;
+        // GPU device (validity gate): shader assets cannot compile without a
+        // device, so the GLB import only provisions the mesh_style render
+        // program + 0x706 renderable when the device is valid. Deviceless, a
+        // GLB part gets no renderable — matching the app model where a node
+        // with geometry but no program does not draw.
+        wz::gpu::Device& device_;
         FileCarrierAssetModule& files_;
         JSONAssetModule& json_;
         MeshAssetModule& meshes_;
         MeshRenderStyleAssetModule& mesh_render_styles_;
         RenderableAssetModule& renderables_;
+        ShaderAssetModule& shaders_;
+        RenderProgramAssetModule& render_programs_;
         SceneAssetTable& table_;
     };
 

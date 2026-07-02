@@ -65,12 +65,14 @@ blend/depth/raster state, input layout, and vertex/pixel shader dependencies.
 They still produce the same `kAssetTypeRenderProgram` and remain CPU-side
 declarations rather than backend PSOs.
 
-Renderable assets also carry a `BuiltinRenderProgram` enum directly. Each
-`create_*_renderable()` call on `RenderableAssetModule` implicitly selects the
-appropriate enum value and stores it on the resulting `RenderableAssetData`.
+LEGACY renderable assets also carry a `BuiltinRenderProgram` enum directly (the
+enum is being retired with the legacy draw path, #179; RHI renderables reference
+a render-program ASSET by key instead). Historical example — the splat-debug
+schema below was deleted by issue #195 (replaced by the RHI splat renderable
+`0x000709`, which carries a `program_key`):
 
 ```
-kGaussianSplatDebugRenderableSchema
+kGaussianSplatDebugRenderableSchema   (deleted, #195)
     └─ compiler ──► RenderableAssetData {
            kind    = GaussianSplatCloud
            program = BuiltinRenderProgram::GaussianSplatDebug   ← this
@@ -153,8 +155,13 @@ strings instead of a `BuiltinRenderProgram` enum.
 
 ## Usage Example
 
-Renderable creation still works without an explicit `RenderProgramAsset`; the
-module stores the built-in enum value directly:
+HISTORICAL (issue #195): the splat-debug renderable and
+`create_gaussian_splat_debug()` were deleted. The current pattern is the RHI
+splat renderable, which takes an explicit render-program asset:
+`create_gaussian_splat_cloud_rhi({.splat_cloud = ..., .render_program = ...})`.
+The example below is kept to document the retired enum-selection model
+(remaining users: the legacy scalar-field preview and terrain renderables,
+#222/#179):
 
 ```cpp
 // Create a Gaussian splat debug renderable.

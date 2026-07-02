@@ -23,10 +23,7 @@ TEST(SceneAssetModule, RenderableAssetReferenceRoundTripsThroughSceneJSON)
     });
     ASSERT_TRUE(mesh.valid());
 
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
+    const auto renderable = create_test_preview_renderable(assets, "debug/cube_wireframe");
     ASSERT_TRUE(renderable.valid());
 
     SceneAssetData authored{};
@@ -108,10 +105,7 @@ TEST(SceneAssetModule, SymbolicRenderableReferenceResolvesDuringSceneCompile)
     });
     ASSERT_TRUE(mesh.valid());
 
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
+    const auto renderable = create_test_preview_renderable(assets, "debug/cube_wireframe");
     ASSERT_TRUE(renderable.valid());
 
     const char* json = R"({
@@ -200,10 +194,7 @@ TEST(SceneAssetModule, SceneCanReferenceRenderableRegisteredAfterInitialCommit)
     });
     ASSERT_TRUE(mesh.valid());
 
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "debug/incremental_cube_wireframe",
-        .mesh = mesh,
-    });
+    const auto renderable = create_test_preview_renderable(assets, "debug/incremental_cube_wireframe");
     ASSERT_TRUE(renderable.valid());
 
     const char* json = R"({
@@ -632,10 +623,7 @@ TEST(SceneAssetModule, MeshWireframeRenderableInScene)
     });
     ASSERT_TRUE(mesh.valid());
 
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
+    const auto renderable = create_test_preview_renderable(assets, "debug/cube_wireframe");
     ASSERT_TRUE(renderable.valid());
 
     ASSERT_TRUE(assets.commit());
@@ -746,10 +734,7 @@ TEST(SceneAssetModule, RenderableAssetWithNonRenderableNode)
         .name = "debug/cube",
         .kind = ProceduralMeshKind::Cube,
     });
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
+    const auto renderable = create_test_preview_renderable(assets, "debug/cube_wireframe");
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());

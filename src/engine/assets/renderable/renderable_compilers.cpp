@@ -106,63 +106,39 @@ namespace wz::engine::assets::internal
             values[2] = xyz[2];
         }
 
-        MeshWireframeRenderableCompileDesc
-        mesh_wireframe_renderable_desc_from_editor(
-            const wz::asset::ParamBlock* params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
-        {
-            MeshWireframeRenderableCompileDesc desc{};
-            desc.mesh_asset = dep_key(dep_nodes, 0);
-            if (params) {
-                desc.program =
-                    enum_param(
-                        *params,
-                        "program",
-                        desc.program,
-                        kBuiltinRenderProgramOptions);
-                desc.domain =
-                    enum_param(
-                        *params,
-                        "domain",
-                        desc.domain,
-                        kRenderDomainOptions);
-                desc.policy_flags =
-                    params->get<uint32_t>(
-                        "policy_flags",
-                        desc.policy_flags);
-            }
-            return desc;
-        }
-
-        MeshStyledRenderableCompileDesc mesh_styled_renderable_desc_from_deps(
-            std::span<const wz::asset::AssetNode> dep_nodes)
-        {
-            MeshStyledRenderableCompileDesc desc{};
-            desc.mesh_asset = dep_key(dep_nodes, 0);
-            desc.style_asset = dep_key(dep_nodes, 1);
-            for (size_t i = 2u; i < dep_nodes.size(); ++i) {
-                if (dep_nodes[i].type == kAssetTypeMeshDerivedField
-                    && desc.mesh_field_visualization_asset
-                        == wz::asset::AssetKey{})
-                {
-                    desc.mesh_field_visualization_asset = dep_nodes[i].key;
-                }
-                else if (dep_nodes[i].type == kAssetTypeRenderProgram
-                    && desc.render_program_asset == wz::asset::AssetKey{})
-                {
-                    desc.render_program_asset = dep_nodes[i].key;
-                }
-            }
-            return desc;
-        }
-
         RhiPullMeshRenderableCompileDesc rhi_pull_mesh_renderable_desc_from_deps(
             std::span<const wz::asset::AssetNode> dep_nodes)
         {
             RhiPullMeshRenderableCompileDesc desc{};
             desc.mesh_asset = dep_key(dep_nodes, 0);
             desc.render_program_asset = dep_key(dep_nodes, 1);
+            // Optional style dependency (issue #195 slice A) at index 2; empty
+            // when the port is unconnected (dep_key returns a zero key).
+            desc.style_asset = dep_key(dep_nodes, 2);
             return desc;
+        }
+
+        // Bake the SHADING subset of a MeshRenderStyle into the recipe's style
+        // POD (issue #195 slice A). Only colours / emissive / alpha / layer-enable
+        // flow — the style's depth/blend/raster properties are program properties
+        // now, and its field_visualization + mask (geometry-generating) parts are
+        // OUT OF SCOPE: they are intentionally ignored here (the style asset keeps
+        // them; the rhi mesh recipe does not consume them).
+        MeshRenderStyleShading bake_mesh_render_style_shading(
+            const MeshRenderStyleData& style) noexcept
+        {
+            MeshRenderStyleShading out{};
+            out.has_style = true;
+            for (int i = 0; i < 4; ++i) {
+                out.wireframe_color[i] = style.wireframe.color[i];
+                out.surface_color[i] = style.surface.color[i];
+            }
+            out.wireframe_emissive = style.wireframe.emissive_strength;
+            out.surface_emissive = style.surface.emissive_strength;
+            out.alpha = style.alpha;
+            out.wireframe_enabled = style.wireframe.enabled;
+            out.surface_enabled = style.surface.enabled;
+            return out;
         }
 
         GpuSparseMeshRenderableCompileDesc
@@ -245,22 +221,6 @@ namespace wz::engine::assets::internal
                 params.get<bool>("view_snapped", s.view_snapped);
             return s;
         }
-
-        GaussianSplatDebugRenderableCompileDesc
-        gaussian_splat_debug_renderable_desc_from_deps(
-            std::span<const wz::asset::AssetNode> dep_nodes)
-        {
-            GaussianSplatDebugRenderableCompileDesc desc{};
-            desc.splat_cloud_asset = dep_key(dep_nodes, 0);
-            for (size_t i = 1u; i < dep_nodes.size(); ++i) {
-                if (dep_nodes[i].type == kAssetTypeGaussianSplatColorLOD) {
-                    desc.color_lod_asset = dep_nodes[i].key;
-                    break;
-                }
-            }
-            return desc;
-        }
-
         ScalarFieldDebugRenderableCompileDesc
         scalar_field_debug_renderable_desc_from_deps(
             std::span<const wz::asset::AssetNode> dep_nodes)
@@ -572,108 +532,13 @@ namespace wz::engine::assets::internal
         auto* gpu_sparse_mesh_table = &ctx.gpu_sparse_mesh_table;
         auto* placement_table = &ctx.placement_table;
 
-        registry.register_compiler(wz::asset::AssetCompiler{
-            .input_schema = kMeshWireframeRenderableSchema,
-            .output_type = kAssetTypeRenderable,
-            .input_ports = {
-                { "mesh", kAssetTypeMesh },
-            },
-            .parameters = {
-                {
-                    .name = "program",
-                    .type = wz::asset::ParamType::Enum,
-                    .label = "Program",
-                    .default_num = static_cast<double>(
-                        BuiltinRenderProgram::MeshWireframeDebug),
-                    .options = kBuiltinRenderProgramOptions,
-                },
-                {
-                    .name = "domain",
-                    .type = wz::asset::ParamType::Enum,
-                    .label = "Domain",
-                    .default_num = static_cast<double>(RenderDomain::Debug),
-                    .options = kRenderDomainOptions,
-                },
-                {
-                    .name = "policy_flags",
-                    .type = wz::asset::ParamType::Int,
-                    .label = "Policy flags",
-                    .default_num = RenderPolicy_Wireframe,
-                },
-            },
-            .compile = [logger, mesh_table, renderable_table](
-                const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
-                std::span<const wz::asset::ResourceHandle> dep_handles)
-                    -> wz::asset::AssetNode
-            {
-                MeshWireframeRenderableCompileDesc editor_desc{};
-                const auto* desc =
-                    std::any_cast<MeshWireframeRenderableCompileDesc>(&input.meta);
 
-                if (!desc) {
-                    const auto* params =
-                        std::any_cast<wz::asset::ParamBlock>(&input.meta);
-                    editor_desc =
-                        mesh_wireframe_renderable_desc_from_editor(
-                            params,
-                            dep_nodes);
-                    desc = &editor_desc;
-
-                    if (dep_handles.size() != 1) {
-                        logger->error("mesh wireframe renderable missing compile desc");
-                        return compile_failed_node(input);
-                    }
-                }
-
-                if (dep_handles.size() != 1) {
-                    logger->error("mesh wireframe renderable requires one mesh dependency");
-                    return compile_failed_node(input);
-                }
-
-                const MeshData* mesh = mesh_table->get(dep_handles[0]);
-
-                if (!mesh || !mesh->valid()) {
-                    logger->error("mesh wireframe renderable source mesh is invalid");
-                    return compile_failed_node(input);
-                }
-
-                RenderableAssetData data{};
-                data.kind = RenderableKind::Mesh;
-                data.source_asset = desc->mesh_asset;
-                data.program = desc->program;
-                data.domain = desc->domain;
-                data.policy_flags = desc->policy_flags;
-
-                const auto bounds_started = std::chrono::steady_clock::now();
-                copy_mesh_bounds(data.bounds_min, data.bounds_max, *mesh);
-                const auto bounds_elapsed =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - bounds_started)
-                        .count();
-                if (bounds_elapsed >= 25) {
-                    logger->info(
-                        "asset compile: mesh wireframe renderable bounds vertices="
-                        + std::to_string(mesh->vertices.size())
-                        + " ms="
-                        + std::to_string(bounds_elapsed));
-                }
-
-                wz::asset::ResourceHandle handle =
-                    renderable_table->add(std::move(data));
-
-                if (!handle.valid()) {
-                    logger->error("failed to store mesh wireframe renderable");
-                    return compile_failed_node(input);
-                }
-
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
-            }
-            });
-
+        // DEPRECATED (issue #222): the terrain debug renderable (0x703) stands on
+        // TerrainAsset, which #222 retires in favour of the shipped clipmap stack
+        // (0x708 landscape renderable + a ScalarField height texture + a
+        // Placement world frame). It is intentionally NOT ported by the #195
+        // scrap-and-rebuild — it dies with #222's TerrainAsset deprecation, not
+        // here. Kept alive only so existing terrain content/tests keep resolving.
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainDebugRenderableSchema,
             .output_type = kAssetTypeRenderable,
@@ -807,9 +672,20 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "geometry", kAssetTypeMesh },
                 { "program", kAssetTypeRenderProgram },
+                // Optional MeshRenderStyle (issue #195 slice A). When connected,
+                // its SHADING constants are baked into the recipe and flow to the
+                // shader as space2 root constants (the program must declare the
+                // "mesh_style" root constant, binding_layout preset 4). Absent =
+                // the recipe's zero "no style" default, rendered as a plain MVP
+                // pull mesh exactly as before.
+                {
+                    "style",
+                    kAssetTypeMeshRenderStyle,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .compile = [logger, mesh_table, render_program_table,
-                        rhi_renderable_table](
+                        mesh_render_style_table, rhi_renderable_table](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -820,21 +696,24 @@ namespace wz::engine::assets::internal
                     std::any_cast<RhiPullMeshRenderableCompileDesc>(
                         &input.meta);
 
+                // Geometry + program are required (indices 0, 1); style is an
+                // optional 3rd dep. So 2 or 3 handles are valid.
                 if (!desc) {
                     editor_desc =
                         rhi_pull_mesh_renderable_desc_from_deps(dep_nodes);
                     desc = &editor_desc;
 
-                    if (dep_handles.size() != 2) {
+                    if (dep_handles.size() < 2 || dep_handles.size() > 3) {
                         logger->error(
                             "RHI pull mesh renderable missing compile desc");
                         return compile_failed_node(input);
                     }
                 }
 
-                if (dep_handles.size() != 2) {
+                if (dep_handles.size() < 2 || dep_handles.size() > 3) {
                     logger->error(
-                        "RHI pull mesh renderable requires geometry and program dependencies");
+                        "RHI pull mesh renderable requires geometry and program "
+                        "dependencies, with an optional style dependency");
                     return compile_failed_node(input);
                 }
 
@@ -853,10 +732,33 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                // Bake the optional style's shading constants. The style dep, when
+                // present, is index 2 (matching the input-port order). A recipe
+                // with no style dep keeps the default zero "no style" POD.
+                MeshRenderStyleShading style_shading{};
+                const bool has_style_dep =
+                    !(desc->style_asset == wz::asset::AssetKey{});
+                if (has_style_dep) {
+                    if (dep_handles.size() < 3) {
+                        logger->error(
+                            "RHI pull mesh renderable style dependency missing");
+                        return compile_failed_node(input);
+                    }
+                    const MeshRenderStyleData* style =
+                        mesh_render_style_table->get(dep_handles[2]);
+                    if (!style || !style->valid()) {
+                        logger->error(
+                            "RHI pull mesh renderable style is invalid");
+                        return compile_failed_node(input);
+                    }
+                    style_shading = bake_mesh_render_style_shading(*style);
+                }
+
                 const wz::asset::ResourceHandle handle =
                     rhi_renderable_table->add(RhiRenderableRecipe{
                         .mesh_key = desc->mesh_asset,
                         .program_key = desc->render_program_asset,
+                        .style = style_shading,
                     });
                 if (!handle.valid()) {
                     logger->error(
@@ -1252,495 +1154,11 @@ namespace wz::engine::assets::internal
             },
         });
 
-        registry.register_compiler(wz::asset::AssetCompiler{
-            .input_schema = kMeshStyledRenderableSchema,
-            .output_type = kAssetTypeRenderable,
-            .input_ports = {
-                { "mesh", kAssetTypeMesh },
-                { "style", kAssetTypeMeshRenderStyle },
-                {
-                    "mesh_field",
-                    kAssetTypeMeshDerivedField,
-                    wz::asset::InputPortRequirement::Optional,
-                },
-                {
-                    "render_program",
-                    kAssetTypeRenderProgram,
-                    wz::asset::InputPortRequirement::Optional,
-                },
-            },
-            .compile = [logger,
-                         mesh_table,
-                         mesh_render_style_table,
-                         mesh_derived_field_table,
-                         renderable_table](
-                const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
-                std::span<const wz::asset::ResourceHandle> dep_handles)
-                    -> wz::asset::AssetNode
-            {
-                MeshStyledRenderableCompileDesc editor_desc{};
-                const auto* desc =
-                    std::any_cast<MeshStyledRenderableCompileDesc>(
-                        &input.meta);
-
-                if (!desc) {
-                    editor_desc =
-                        mesh_styled_renderable_desc_from_deps(dep_nodes);
-                    desc = &editor_desc;
-
-                    if (dep_handles.size() < 2 || dep_handles.size() > 4) {
-                        logger->error("mesh styled renderable missing compile desc");
-                        return compile_failed_node(input);
-                    }
-                }
-
-                if (dep_handles.size() < 2 || dep_handles.size() > 4) {
-                    logger->error(
-                        "mesh styled renderable requires mesh and style dependencies, with optional mesh field and render program dependencies");
-                    return compile_failed_node(input);
-                }
-
-                const MeshData* mesh = mesh_table->get(dep_handles[0]);
-                if (!mesh || !mesh->valid()) {
-                    logger->error("mesh styled renderable source mesh is invalid");
-                    return compile_failed_node(input);
-                }
-
-                const MeshRenderStyleData* style =
-                    mesh_render_style_table->get(dep_handles[1]);
-                if (!style || !style->valid()) {
-                    logger->error("mesh styled renderable style is invalid");
-                    return compile_failed_node(input);
-                }
-
-                MeshRenderStyleData effective_style = *style;
-                if (!is_mesh_render_style_drawable(effective_style)) {
-                    logger->warn(
-                        "mesh styled renderable has no enabled render layers; "
-                        "compiling as non-drawing renderable");
-
-                    RenderableAssetData data{};
-                    data.kind = RenderableKind::Mesh;
-                    data.source_asset = desc->mesh_asset;
-                    data.companion_asset = desc->style_asset;
-                    data.mesh_field_visualization_asset = {};
-                    data.program = BuiltinRenderProgram::MeshWireframeDebug;
-                    data.domain = RenderDomain::Opaque;
-                    data.policy_flags = RenderPolicy_None;
-                    data.mesh_style = effective_style;
-                    copy_mesh_bounds(data.bounds_min, data.bounds_max, *mesh);
-
-                    wz::asset::ResourceHandle handle =
-                        renderable_table->add(std::move(data));
-
-                    if (!handle.valid()) {
-                        logger->error("failed to store mesh styled renderable");
-                        return compile_failed_node(input);
-                    }
-
-                    wz::asset::AssetNode out = input;
-                    out.stage = wz::asset::AssetStage::Compiled;
-                    out.payload = handle;
-                    return out;
-                }
-
-                const bool wants_field_visualization =
-                    effective_style.field_visualization.enabled;
-                bool field_visualization_active = wants_field_visualization;
-                const bool wants_mask = effective_style.mask.enabled;
-                bool mask_active = wants_mask;
-                const bool allow_custom_face_mask_field =
-                    !(desc->render_program_asset == wz::asset::AssetKey{})
-                    && effective_style.mask.domain == MeshMaskDomain::Face;
-
-                if (wants_field_visualization) {
-                    auto disable_field_visualization =
-                        [&](std::string_view reason)
-                    {
-                        logger->warn(
-                            "mesh styled renderable field visualization disabled: "
-                            + std::string(reason));
-                        field_visualization_active = false;
-                        effective_style.field_visualization.enabled = false;
-                    };
-
-                    if (desc->mesh_field_visualization_asset
-                        == wz::asset::AssetKey{})
-                    {
-                        disable_field_visualization("no field asset");
-                    }
-                    else if (dep_handles.size() < 3) {
-                        disable_field_visualization(
-                            "missing mesh field dependency");
-                    }
-                    else {
-                        const MeshDerivedFieldData* field =
-                            mesh_derived_field_table->get(dep_handles[2]);
-                        if (!field || !field->valid()) {
-                            disable_field_visualization(
-                                "field data is invalid");
-                        }
-                        else if (field->source_mesh_key != desc->mesh_asset) {
-                            disable_field_visualization(
-                                "field source mesh mismatch");
-                        }
-                        else if (field->domain
-                            != MeshDerivedFieldDomain::Vertex
-                            && field->domain != MeshDerivedFieldDomain::Face)
-                        {
-                            disable_field_visualization(
-                                "field is not vertex- or face-domain");
-                        }
-                        else if (field->domain
-                                == MeshDerivedFieldDomain::Vertex
-                            && field->element_count != mesh->vertex_count())
-                        {
-                            disable_field_visualization(
-                                "field vertex count mismatch");
-                        }
-                        else if (field->domain
-                                == MeshDerivedFieldDomain::Face
-                            && field->element_count
-                                != mesh->index_count() / 3u)
-                        {
-                            disable_field_visualization(
-                                "field face count mismatch");
-                        }
-                        else {
-                            const auto channel_found = std::find_if(
-                                field->channels.begin(),
-                                field->channels.end(),
-                                [&](const MeshDerivedFieldChannel& channel)
-                                {
-                                    return channel.channel_id
-                                        == effective_style
-                                            .field_visualization.channel_id;
-                                });
-
-                            if (channel_found == field->channels.end()) {
-                                disable_field_visualization(
-                                    "channel not found");
-                            }
-                            else if (channel_found->value_type
-                                    != MeshDerivedFieldValueType::Float1
-                                && channel_found->value_type
-                                    != MeshDerivedFieldValueType::UInt1)
-                            {
-                                disable_field_visualization(
-                                    "channel is not Float1 or UInt1");
-                            }
-                            else {
-                                const uint32_t expected_bytes =
-                                    field->element_count
-                                    * mesh_derived_field_value_stride(
-                                        channel_found->value_type);
-                                if (channel_found->byte_count
-                                    != expected_bytes)
-                                {
-                                    disable_field_visualization(
-                                        "channel byte count mismatch");
-                                }
-                            }
-                        }
-                    }
-                }
-                if (wants_mask) {
-                    auto disable_mask = [&](std::string_view reason)
-                    {
-                        logger->warn(
-                            "mesh styled renderable mask disabled: "
-                            + std::string(reason));
-                        mask_active = false;
-                        effective_style.mask.enabled = false;
-                    };
-                    auto disable_mask_or_show_unmatched =
-                        [&](std::string_view reason)
-                    {
-                        if (effective_style.mask.show_unmatched) {
-                            logger->warn(
-                                "mesh styled renderable mask field unavailable; "
-                                "drawing unmatched color: "
-                                + std::string(reason));
-                            for (MeshMaskRule& rule :
-                                 effective_style.mask.rules)
-                            {
-                                rule.enabled = false;
-                            }
-                            return;
-                        }
-                        disable_mask(reason);
-                    };
-
-                    if (field_visualization_active) {
-                        disable_mask("field visualization already active");
-                    }
-                    else if (desc->mesh_field_visualization_asset
-                        == wz::asset::AssetKey{})
-                    {
-                        disable_mask_or_show_unmatched("no field asset");
-                    }
-                    else if (dep_handles.size() < 3) {
-                        disable_mask_or_show_unmatched(
-                            "missing mesh field dependency");
-                    }
-                    else if (effective_style.mask.domain
-                            != MeshMaskDomain::Face
-                        && effective_style.mask.domain
-                            != MeshMaskDomain::Vertex)
-                    {
-                        disable_mask("only face- or vertex-domain masks are supported");
-                    }
-                    else if (effective_style.mask.projection_mode
-                        != MeshMaskProjectionMode::Direct)
-                    {
-                        disable_mask("only direct masks are supported");
-                    }
-                    else {
-                        const MeshDerivedFieldData* field =
-                            mesh_derived_field_table->get(dep_handles[2]);
-                        if (!field || !field->valid()) {
-                            disable_mask_or_show_unmatched(
-                                "field data is invalid");
-                        }
-                        else if (field->source_mesh_key != desc->mesh_asset
-                            && !allow_custom_face_mask_field)
-                        {
-                            disable_mask_or_show_unmatched(
-                                "field source mesh mismatch");
-                        }
-                        else {
-                            const MeshDerivedFieldDomain required_domain =
-                                effective_style.mask.domain
-                                    == MeshMaskDomain::Vertex
-                                ? MeshDerivedFieldDomain::Vertex
-                                : MeshDerivedFieldDomain::Face;
-                            const uint32_t required_count =
-                                required_domain == MeshDerivedFieldDomain::Vertex
-                                    ? mesh->vertex_count()
-                                    : mesh->index_count() / 3u;
-                            if (field->domain != required_domain) {
-                                disable_mask_or_show_unmatched(
-                                    required_domain
-                                            == MeshDerivedFieldDomain::Vertex
-                                        ? "field is not vertex-domain"
-                                        : "field is not face-domain");
-                            }
-                            else if (field->element_count != required_count
-                                && !(allow_custom_face_mask_field
-                                    && required_domain
-                                        == MeshDerivedFieldDomain::Face
-                                    && field->element_count >= required_count))
-                            {
-                                disable_mask_or_show_unmatched(
-                                    required_domain
-                                            == MeshDerivedFieldDomain::Vertex
-                                        ? "field vertex count mismatch"
-                                        : "field face count mismatch");
-                            }
-                            else {
-                                for (const MeshMaskRule& rule :
-                                     effective_style.mask.rules)
-                                {
-                                    if (!rule.enabled) {
-                                        continue;
-                                    }
-                                    const auto channel_found = std::find_if(
-                                        field->channels.begin(),
-                                        field->channels.end(),
-                                        [&](const MeshDerivedFieldChannel& channel)
-                                        {
-                                            return channel.channel_id
-                                                == rule.input_channel_id;
-                                        });
-
-                                    if (channel_found == field->channels.end()) {
-                                        disable_mask_or_show_unmatched(
-                                            "rule channel not found");
-                                        break;
-                                    }
-                                    if (channel_found->value_type
-                                            != MeshDerivedFieldValueType::Float1
-                                        && channel_found->value_type
-                                            != MeshDerivedFieldValueType::UInt1)
-                                    {
-                                        disable_mask_or_show_unmatched(
-                                            "rule channel is not Float1 or UInt1");
-                                        break;
-                                    }
-
-                                    const uint32_t expected_bytes =
-                                        field->element_count
-                                        * mesh_derived_field_value_stride(
-                                            channel_found->value_type);
-                                    if (channel_found->byte_count
-                                        != expected_bytes)
-                                    {
-                                        disable_mask_or_show_unmatched(
-                                            "rule channel byte count mismatch");
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                else if (!wants_field_visualization
-                         && !(desc->mesh_field_visualization_asset
-                         == wz::asset::AssetKey{}))
-                {
-                    if (!field_visualization_active) {
-                        logger->error(
-                            "mesh styled renderable has field asset but style field visualization and mask are disabled");
-                        return compile_failed_node(input);
-                    }
-                }
-
-                RenderableAssetData data{};
-                data.kind = RenderableKind::Mesh;
-                data.source_asset = desc->mesh_asset;
-                data.companion_asset = desc->style_asset;
-                data.mesh_field_visualization_asset =
-                    field_visualization_active || mask_active
-                        ? desc->mesh_field_visualization_asset
-                        : wz::asset::AssetKey{};
-                data.program = BuiltinRenderProgram::MeshWireframeDebug;
-                data.domain = RenderDomain::Opaque;
-                data.policy_flags = RenderPolicy_Wireframe;
-                if (!(desc->render_program_asset == wz::asset::AssetKey{})) {
-                    const size_t program_dep_index =
-                        desc->mesh_field_visualization_asset
-                            == wz::asset::AssetKey{}
-                            ? 2u
-                            : 3u;
-                    if (dep_handles.size() <= program_dep_index) {
-                        logger->error(
-                            "mesh styled renderable render program dependency is missing");
-                        return compile_failed_node(input);
-                    }
-                    data.render_program = dep_handles[program_dep_index];
-                    if (!data.render_program.valid()) {
-                        logger->error(
-                            "mesh styled renderable render program dependency is invalid");
-                        return compile_failed_node(input);
-                    }
-                }
-                const bool transparent = is_mesh_render_style_transparent(*style);
-                if (!transparent) {
-                    effective_style.alpha = 1.0f;
-                }
-                effective_style.hidden_line_prepass = false;
-
-                auto apply_depth_policy = [&]()
-                {
-                    if (effective_style.depth_test) {
-                        data.policy_flags |= RenderPolicy_DepthTest;
-                    }
-                    if (effective_style.depth_write) {
-                        data.policy_flags |= RenderPolicy_DepthWrite;
-                    }
-                };
-
-                if (style->surface.enabled) {
-                    if (!mesh->has_normals) {
-                        logger->warn(
-                            "mesh surface layer requires normals; falling back to wireframe layer");
-                        if (!effective_style.wireframe.enabled) {
-                            effective_style.wireframe.enabled = true;
-                            for (int i = 0; i < 4; ++i) {
-                                effective_style.wireframe.color[i] =
-                                    style->surface.color[i];
-                            }
-                            effective_style.wireframe.emissive_strength =
-                                style->surface.emissive_strength;
-                        }
-                        effective_style.surface.enabled = false;
-                    }
-                    else {
-                        if (!style->double_sided) {
-                            logger->warn(
-                                "mesh surface renderables are currently two-sided; treating style as double-sided");
-                            effective_style.double_sided = true;
-                        }
-                        data.program = field_visualization_active
-                            ? BuiltinRenderProgram::MeshFieldHeatmap
-                            : mask_active
-                            ? BuiltinRenderProgram::MeshMaskStyle
-                            : transparent
-                                ? BuiltinRenderProgram::MeshSurfaceAlpha
-                                : BuiltinRenderProgram::MeshSurface;
-                        data.domain =
-                            (field_visualization_active || mask_active)
-                            ? RenderDomain::Opaque
-                            : transparent
-                            ? RenderDomain::Transparent
-                            : RenderDomain::Opaque;
-                        data.policy_flags =
-                            (field_visualization_active || mask_active)
-                            ? RenderPolicy_None
-                            : transparent
-                            ? RenderPolicy_AlphaBlend
-                            : RenderPolicy_None;
-                        apply_depth_policy();
-                    }
-                }
-
-                if (data.program != BuiltinRenderProgram::MeshSurface
-                    && data.program != BuiltinRenderProgram::MeshSurfaceAlpha)
-                {
-                    data.program = field_visualization_active
-                        ? BuiltinRenderProgram::MeshFieldHeatmap
-                        : mask_active
-                        ? BuiltinRenderProgram::MeshMaskStyle
-                        : transparent
-                        ? BuiltinRenderProgram::MeshWireframeAlpha
-                        : BuiltinRenderProgram::MeshWireframeDepthDebug;
-                    data.domain = field_visualization_active
-                        ? RenderDomain::Opaque
-                        : mask_active
-                        ? RenderDomain::Opaque
-                        : transparent
-                        ? RenderDomain::Transparent
-                        : RenderDomain::Opaque;
-                    data.policy_flags = field_visualization_active
-                        ? RenderPolicy_None
-                        : mask_active
-                        ? RenderPolicy_None
-                        : transparent
-                        ? RenderPolicy_Wireframe | RenderPolicy_AlphaBlend
-                        : RenderPolicy_Wireframe;
-                    apply_depth_policy();
-                }
-                data.mesh_style = effective_style;
-                const auto bounds_started = std::chrono::steady_clock::now();
-                copy_mesh_bounds(data.bounds_min, data.bounds_max, *mesh);
-                const auto bounds_elapsed =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - bounds_started)
-                        .count();
-                if (bounds_elapsed >= 25) {
-                    logger->info(
-                        "asset compile: mesh styled renderable bounds vertices="
-                        + std::to_string(mesh->vertices.size())
-                        + " ms="
-                        + std::to_string(bounds_elapsed));
-                }
-
-                wz::asset::ResourceHandle handle =
-                    renderable_table->add(std::move(data));
-
-                if (!handle.valid()) {
-                    logger->error("failed to store mesh styled renderable");
-                    return compile_failed_node(input);
-                }
-
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
-            }
-        });
-
+        // DEPRECATED (issue #222): the terrain surface renderable (0x704) also
+        // stands on TerrainAsset and is retired by #222 in favour of the shipped
+        // clipmap stack (0x708 landscape renderable + ScalarField height +
+        // Placement). Intentionally NOT ported by the #195 scrap-and-rebuild;
+        // dies with #222. Kept alive only for existing terrain content/tests.
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kTerrainSurfaceRenderableSchema,
             .output_type = kAssetTypeRenderable,
@@ -2002,86 +1420,6 @@ namespace wz::engine::assets::internal
 
                 if (!handle.valid()) {
                     logger->error("failed to store scalar field debug renderable");
-                    return compile_failed_node(input);
-                }
-
-                wz::asset::AssetNode out = input;
-                out.stage = wz::asset::AssetStage::Compiled;
-                out.payload = handle;
-                return out;
-            }
-            });
-
-        registry.register_compiler(wz::asset::AssetCompiler{
-            .input_schema = kGaussianSplatDebugRenderableSchema,
-            .output_type = kAssetTypeRenderable,
-            .input_ports = {
-                { "splat_cloud", kAssetTypeGaussianSplatCloud },
-                {
-                    "color_lod",
-                    kAssetTypeGaussianSplatColorLOD,
-                    wz::asset::InputPortRequirement::Optional,
-                },
-            },
-            .compile = [logger, gaussian_splat_cloud_table, renderable_table](
-                const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
-                std::span<const wz::asset::ResourceHandle> dep_handles)
-                    -> wz::asset::AssetNode
-            {
-                GaussianSplatDebugRenderableCompileDesc editor_desc{};
-                const auto* desc =
-                    std::any_cast<GaussianSplatDebugRenderableCompileDesc>(&input.meta);
-
-                if (!desc) {
-                    editor_desc =
-                        gaussian_splat_debug_renderable_desc_from_deps(
-                            dep_nodes);
-                    desc = &editor_desc;
-
-                    if (dep_handles.size() < 1 || dep_handles.size() > 2) {
-                        logger->error("gaussian splat debug renderable missing compile desc");
-                        return compile_failed_node(input);
-                    }
-                }
-
-                // Accept 1 (cloud only) or 2 (cloud + optional LOD) deps.
-                // dep_handles[0] is always the cloud; dep_handles[1], if
-                // present, is the derived color-LOD asset.
-                if (dep_handles.size() < 1 || dep_handles.size() > 2) {
-                    logger->error(
-                        "gaussian splat debug renderable requires 1 or 2 dependencies "
-                        "(cloud, optionally + color LOD)");
-                    return compile_failed_node(input);
-                }
-
-                const GaussianSplatCloudData* cloud =
-                    gaussian_splat_cloud_table->get(dep_handles[0]);
-
-                if (!cloud || !cloud->valid()) {
-                    logger->error("gaussian splat debug renderable source cloud is invalid");
-                    return compile_failed_node(input);
-                }
-
-                RenderableAssetData data{};
-                data.kind = RenderableKind::GaussianSplatCloud;
-                data.source_asset = desc->splat_cloud_asset;
-                data.companion_asset = desc->color_lod_asset;
-                data.program = BuiltinRenderProgram::GaussianSplatDebug;
-                data.domain = RenderDomain::Splat;
-                data.policy_flags = RenderPolicy_AlphaBlend;
-
-                copy_bounds(
-                    data.bounds_min,
-                    data.bounds_max,
-                    cloud->bounds.min,
-                    cloud->bounds.max);
-
-                wz::asset::ResourceHandle handle =
-                    renderable_table->add(std::move(data));
-
-                if (!handle.valid()) {
-                    logger->error("failed to store gaussian splat debug renderable");
                     return compile_failed_node(input);
                 }
 

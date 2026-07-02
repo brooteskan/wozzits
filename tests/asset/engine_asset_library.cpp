@@ -196,12 +196,12 @@ float4 main(PSIn input) : SV_TARGET
             },
 
             { kMeshRenderStyleSchema, kAssetTypeMeshRenderStyle },
-            { kMeshWireframeRenderableSchema, kAssetTypeRenderable },
-            { kGaussianSplatDebugRenderableSchema, kAssetTypeRenderable },
+            // 0x700 wireframe, 0x701 splat debug, and 0x705 styled renderable
+            // schema rows removed by the issue #195 scrap-and-rebuild (the
+            // 0x706 RHI pull mesh + 0x709 rhi splat cloud are the replacements).
             { kScalarFieldDebugRenderableSchema, kAssetTypeRenderable },
             { kTerrainDebugRenderableSchema, kAssetTypeRenderable },
             { kTerrainSurfaceRenderableSchema, kAssetTypeRenderable },
-            { kMeshStyledRenderableSchema, kAssetTypeRenderable },
             { kRhiPullMeshRenderableSchema, kAssetTypeRenderable },
             { kGpuSparseMeshRenderableSchema, kAssetTypeRenderable },
             { kClipmapLandscapeRenderableSchema, kAssetTypeRenderable },

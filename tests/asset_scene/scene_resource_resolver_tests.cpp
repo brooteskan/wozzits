@@ -82,20 +82,12 @@ TEST(SceneAssetModule, RealizedMeshHandlesFlowToDrawCommand)
 
     using namespace wz::engine::assets;
 
-    const auto mesh = assets.meshes().create_procedural_mesh({
-        .name = "debug/cube",
-        .kind = ProceduralMeshKind::Cube,
-    });
-    ASSERT_TRUE(mesh.valid());
-
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-    ASSERT_TRUE(assets.resolve_all().ok());
+    // Issue #195: the legacy 0x700 wireframe schema (the old Mesh-kind data
+    // producer) is gone; the resolver pipeline under test consumes directly-
+    // constructed RenderableAssetData (the legacy machinery survives to #179).
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::Mesh;
+    const wz::asset::AssetKey renderable_key = direct_renderable_key(1);
 
     SceneAssetData scene{};
     scene.name = "realize_mesh_scene";
@@ -104,13 +96,14 @@ TEST(SceneAssetModule, RealizedMeshHandlesFlowToDrawCommand)
     node.id = "cube_node";
     node.local.translation[0] = 2.0f;
     node.local.translation[2] = 3.0f;
-    node.renderable_asset = renderable.output;
+    node.renderable_asset = renderable_key;
     scene.nodes.push_back(std::move(node));
 
     constexpr wz::scene::MeshHandle expected_mesh = 7;
     constexpr wz::scene::MaterialHandle expected_material = 3;
 
-    TestRenderableResolver renderable_resolver(assets.renderables());
+    DirectRenderableResolver renderable_resolver;
+    renderable_resolver.add(renderable_key, renderable_data);
     TestRenderResourceResolver resource_resolver(expected_mesh, expected_material);
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
@@ -184,17 +177,10 @@ TEST(SceneAssetModule, RealizedHandlesWithMixedNodes)
 
     using namespace wz::engine::assets;
 
-    const auto mesh = assets.meshes().create_procedural_mesh({
-        .name = "debug/cube",
-        .kind = ProceduralMeshKind::Cube,
-    });
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
-
-    ASSERT_TRUE(assets.commit());
-    ASSERT_TRUE(assets.resolve_all().ok());
+    // Issue #195: directly-constructed Mesh-kind data (see the first test).
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::Mesh;
+    const wz::asset::AssetKey renderable_key = direct_renderable_key(1);
 
     SceneAssetData scene{};
     scene.name = "mixed_realize_scene";
@@ -202,7 +188,7 @@ TEST(SceneAssetModule, RealizedHandlesWithMixedNodes)
     SceneNodeAsset render_node{};
     render_node.id = "cube";
     render_node.local.translation[0] = 5.0f;
-    render_node.renderable_asset = renderable.output;
+    render_node.renderable_asset = renderable_key;
     scene.nodes.push_back(std::move(render_node));
 
     SceneNodeAsset camera_node{};
@@ -213,7 +199,8 @@ TEST(SceneAssetModule, RealizedHandlesWithMixedNodes)
     constexpr wz::scene::MeshHandle expected_mesh = 42;
     constexpr wz::scene::MaterialHandle expected_material = 11;
 
-    TestRenderableResolver renderable_resolver(assets.renderables());
+    DirectRenderableResolver renderable_resolver;
+    renderable_resolver.add(renderable_key, renderable_data);
     TestRenderResourceResolver resource_resolver(expected_mesh, expected_material);
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
@@ -250,33 +237,23 @@ TEST(SceneInstantiate, DelaysResourceRealizationUntilDescriptorsArePopulated)
 
     EngineAssetLibrary assets{ device, logger, root };
 
-    const auto mesh = assets.meshes().create_procedural_mesh({
-        .name = "debug/cube",
-        .kind = ProceduralMeshKind::Cube,
-    });
-    const auto first = assets.renderables().create_mesh_wireframe({
-        .name = "debug/first",
-        .mesh = mesh,
-    });
-    const auto second = assets.renderables().create_mesh_wireframe({
-        .name = "debug/second",
-        .mesh = mesh,
-    });
-
-    ASSERT_TRUE(assets.commit());
-    ASSERT_TRUE(assets.resolve_all().ok());
+    // Issue #195: directly-constructed Mesh-kind data (see the first test).
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::Mesh;
+    const wz::asset::AssetKey first_key = direct_renderable_key(1);
+    const wz::asset::AssetKey second_key = direct_renderable_key(2);
 
     SceneAssetData scene{};
     scene.name = "realize_order";
 
     SceneNodeAsset first_node{};
     first_node.id = "first";
-    first_node.renderable_asset = first.output;
+    first_node.renderable_asset = first_key;
     scene.nodes.push_back(std::move(first_node));
 
     SceneNodeAsset second_node{};
     second_node.id = "second";
-    second_node.renderable_asset = second.output;
+    second_node.renderable_asset = second_key;
     scene.nodes.push_back(std::move(second_node));
 
     class OrderingResourceResolver final
@@ -303,7 +280,9 @@ TEST(SceneInstantiate, DelaysResourceRealizationUntilDescriptorsArePopulated)
         mutable bool saw_next_descriptor_populated = false;
     };
 
-    TestRenderableResolver renderable_resolver(assets.renderables());
+    DirectRenderableResolver renderable_resolver;
+    renderable_resolver.add(first_key, renderable_data);
+    renderable_resolver.add(second_key, renderable_data);
     OrderingResourceResolver resource_resolver;
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
@@ -479,24 +458,17 @@ TEST(SceneInstantiate, RejectsFailedRealization)
 
     EngineAssetLibrary assets{ device, logger, root };
 
-    const auto mesh = assets.meshes().create_procedural_mesh({
-        .name = "debug/cube",
-        .kind = ProceduralMeshKind::Cube,
-    });
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
-
-    ASSERT_TRUE(assets.commit());
-    ASSERT_TRUE(assets.resolve_all().ok());
+    // Issue #195: directly-constructed Mesh-kind data (see the first test).
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::Mesh;
+    const wz::asset::AssetKey renderable_key = direct_renderable_key(1);
 
     SceneAssetData scene{};
     scene.name = "fail_realize";
 
     SceneNodeAsset node{};
     node.id = "obj";
-    node.renderable_asset = renderable.output;
+    node.renderable_asset = renderable_key;
     scene.nodes.push_back(std::move(node));
 
     // Resolver that always fails
@@ -512,7 +484,8 @@ TEST(SceneInstantiate, RejectsFailedRealization)
         }
     };
 
-    TestRenderableResolver renderable_resolver(assets.renderables());
+    DirectRenderableResolver renderable_resolver;
+    renderable_resolver.add(renderable_key, renderable_data);
     FailingResourceResolver resource_resolver;
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
@@ -540,27 +513,21 @@ TEST(SceneInstantiate, MeshWithoutResourceResolverUsesPlaceholder)
 
     EngineAssetLibrary assets{ device, logger, root };
 
-    const auto mesh = assets.meshes().create_procedural_mesh({
-        .name = "debug/cube",
-        .kind = ProceduralMeshKind::Cube,
-    });
-    const auto renderable = assets.renderables().create_mesh_wireframe({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-    });
-
-    ASSERT_TRUE(assets.commit());
-    ASSERT_TRUE(assets.resolve_all().ok());
+    // Issue #195: directly-constructed Mesh-kind data (see the first test).
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::Mesh;
+    const wz::asset::AssetKey renderable_key = direct_renderable_key(1);
 
     SceneAssetData scene{};
     scene.name = "mesh_placeholder";
 
     SceneNodeAsset node{};
     node.id = "cube";
-    node.renderable_asset = renderable.output;
+    node.renderable_asset = renderable_key;
     scene.nodes.push_back(std::move(node));
 
-    TestRenderableResolver renderable_resolver(assets.renderables());
+    DirectRenderableResolver renderable_resolver;
+    renderable_resolver.add(renderable_key, renderable_data);
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
     };
@@ -605,33 +572,18 @@ TEST(SceneAssetModule, ConcreteMeshResolverFlowsHandlesToDrawCommand)
     style.wireframe.color[3] = 1.0f;
     style.wireframe.emissive_strength = 1.5f;
 
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/orange_wire",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable = assets.renderables().create_mesh_styled({
-        .name = "debug/cube_wireframe",
-        .mesh = mesh,
-        .style = render_style,
-    });
-    ASSERT_TRUE(renderable.valid());
-
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
-    const auto renderable_handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(renderable_handle.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable_handle);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_FLOAT_EQ(renderable_data->mesh_style.wireframe.color[0], 1.0f);
-    EXPECT_FLOAT_EQ(renderable_data->mesh_style.wireframe.color[1], 0.25f);
-    EXPECT_FLOAT_EQ(
-        renderable_data->mesh_style.wireframe.emissive_strength,
-        1.5f);
+
+    // Issue #195: the 0x705 styled schema is gone; the styled Mesh-kind data
+    // the concrete resolver realizes is constructed directly. source_asset
+    // points at the REAL resolved procedural mesh — the concrete resolver
+    // fetches its mesh data through assets.meshes().
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::Mesh;
+    renderable_data.source_asset = mesh.output;
+    renderable_data.mesh_style = style;
+    const wz::asset::AssetKey renderable_key = direct_renderable_key(1);
 
     // The concrete resolver uses RenderResourceResolver::register_mesh()
     // to allocate a scene-render MeshHandle.
@@ -646,10 +598,11 @@ TEST(SceneAssetModule, ConcreteMeshResolverFlowsHandlesToDrawCommand)
     node.id = "cube_node";
     node.local.translation[0] = 4.0f;
     node.local.translation[2] = 6.0f;
-    node.renderable_asset = renderable.output;
+    node.renderable_asset = renderable_key;
     scene.nodes.push_back(std::move(node));
 
-    TestRenderableResolver renderable_resolver(assets.renderables());
+    DirectRenderableResolver renderable_resolver;
+    renderable_resolver.add(renderable_key, renderable_data);
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
         .resource_resolver = &resource_resolver,
@@ -743,22 +696,18 @@ TEST(SceneAssetModule, StyledMeshWithNoEnabledLayersCompilesToNoDraws)
     style.wireframe.enabled = false;
     style.surface.enabled = false;
 
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/none",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable = assets.renderables().create_mesh_styled({
-        .name = "debug/cube_none",
-        .mesh = mesh,
-        .style = render_style,
-    });
-    ASSERT_TRUE(renderable.valid());
-
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
+
+    // Issue #195: the 0x705 styled schema is gone; the no-enabled-layers
+    // styled data is constructed directly. The intent under test is the
+    // RESOLVER/compile side: a mesh whose style draws nothing yields no draw
+    // commands.
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::Mesh;
+    renderable_data.source_asset = mesh.output;
+    renderable_data.mesh_style = style;
+    const wz::asset::AssetKey renderable_key = direct_renderable_key(1);
 
     wz::engine::rendering::RenderResourceResolver render_resolver;
     wz::engine::rendering::MeshSceneRenderResourceResolver resource_resolver(
@@ -770,10 +719,11 @@ TEST(SceneAssetModule, StyledMeshWithNoEnabledLayersCompilesToNoDraws)
 
     SceneNodeAsset node{};
     node.id = "cube_node";
-    node.renderable_asset = renderable.output;
+    node.renderable_asset = renderable_key;
     scene.nodes.push_back(std::move(node));
 
-    TestRenderableResolver renderable_resolver(assets.renderables());
+    DirectRenderableResolver renderable_resolver;
+    renderable_resolver.add(renderable_key, renderable_data);
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
         .resource_resolver = &resource_resolver,
@@ -877,23 +827,29 @@ TEST(SceneAssetModule, StyledMeshMaskOnlyCompilesToOpaqueDraw)
         },
     };
 
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/mask_only",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable = assets.renderables().create_mesh_styled({
-        .name = "debug/mask_cube_renderable",
-        .mesh = mesh,
-        .style = render_style,
-        .mesh_field_visualization = field,
-    });
-    ASSERT_TRUE(renderable.valid());
-
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
+
+    // Issue #195: the 0x705 styled schema is gone; the mask-only styled data
+    // is constructed directly (mesh + face field resolved above are real —
+    // the concrete resolver realizes the mesh and binds the mask source
+    // field). The intent under test is the resolver/compile side: a mask-only
+    // style still draws opaque.
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::Mesh;
+    renderable_data.source_asset = mesh.output;
+    renderable_data.mesh_style = style;
+    renderable_data.mesh_field_visualization_asset = field.output;
+    // Cube bounds: the IR stage frustum-culls on the data's baked bounds (the
+    // 0x705 compiler used to bake them from the mesh); a zero AABB at the
+    // origin sits behind the near plane and would be culled.
+    renderable_data.bounds_min[0] = -1.0f;
+    renderable_data.bounds_min[1] = -1.0f;
+    renderable_data.bounds_min[2] = -1.0f;
+    renderable_data.bounds_max[0] = 1.0f;
+    renderable_data.bounds_max[1] = 1.0f;
+    renderable_data.bounds_max[2] = 1.0f;
+    const wz::asset::AssetKey renderable_key = direct_renderable_key(1);
 
     wz::engine::rendering::RenderResourceResolver render_resolver;
     wz::engine::rendering::MeshSceneRenderResourceResolver resource_resolver(
@@ -905,10 +861,11 @@ TEST(SceneAssetModule, StyledMeshMaskOnlyCompilesToOpaqueDraw)
 
     SceneNodeAsset node{};
     node.id = "mask_cube_node";
-    node.renderable_asset = renderable.output;
+    node.renderable_asset = renderable_key;
     scene.nodes.push_back(std::move(node));
 
-    TestRenderableResolver renderable_resolver(assets.renderables());
+    DirectRenderableResolver renderable_resolver;
+    renderable_resolver.add(renderable_key, renderable_data);
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
         .resource_resolver = &resource_resolver,
@@ -1484,24 +1441,13 @@ TEST(SceneInstantiate, ConcreteMeshResolverRejectsSplatRenderableDuringInstantia
 
     EngineAssetLibrary assets{ device, logger, root };
 
-    const auto cloud =
-        assets.gaussian_splats().create_procedural_cloud({
-            .name = "debug/splat_sphere",
-            .count = 64,
-            .radius = 2.0f,
-            .splat_scale = 1.0f,
-        });
-    ASSERT_TRUE(cloud.valid());
-
-    const auto renderable =
-        assets.renderables().create_gaussian_splat_debug({
-            .name = "debug/splat_sphere_debug",
-            .splat_cloud = cloud,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-    ASSERT_TRUE(assets.resolve_all().ok());
+    // Issue #195: the legacy 0x701 splat debug schema is gone (0x709 rhi splat
+    // replaced it, rendered by RhiSceneRenderer, never this resolver). The
+    // intent under test — the concrete MESH resolver rejects a splat-kind
+    // renderable — survives with directly-constructed splat-kind data.
+    RenderableAssetData renderable_data{};
+    renderable_data.kind = RenderableKind::GaussianSplatCloud;
+    const wz::asset::AssetKey renderable_key = direct_renderable_key(1);
 
     wz::engine::rendering::RenderResourceResolver render_resolver;
     wz::engine::rendering::MeshSceneRenderResourceResolver resource_resolver(
@@ -1512,10 +1458,11 @@ TEST(SceneInstantiate, ConcreteMeshResolverRejectsSplatRenderableDuringInstantia
 
     SceneNodeAsset node{};
     node.id = "splat_node";
-    node.renderable_asset = renderable.output;
+    node.renderable_asset = renderable_key;
     scene.nodes.push_back(std::move(node));
 
-    TestRenderableResolver renderable_resolver(assets.renderables());
+    DirectRenderableResolver renderable_resolver;
+    renderable_resolver.add(renderable_key, renderable_data);
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
         .resource_resolver = &resource_resolver,

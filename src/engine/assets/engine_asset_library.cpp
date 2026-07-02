@@ -362,11 +362,14 @@ namespace wz::engine::assets
         , scenes_(
             system_,
             logger_,
+            device_,
             files_,
             json_,
             meshes_,
             mesh_render_styles_,
             renderables_,
+            shaders_,
+            render_programs_,
             scene_table_)
     {
         if (!cache_settings_.enabled) {

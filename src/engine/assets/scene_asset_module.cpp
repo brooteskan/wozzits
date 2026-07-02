@@ -3,6 +3,7 @@
 #include <engine/assets/scene_asset_module.h>
 
 #include <engine/assets/gltf/gltf_importer.h>
+#include <engine/assets/mesh_style_pull_program.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/assets/key_factories/scene.h>
@@ -85,23 +86,38 @@ namespace wz::engine::assets
                 append_unique_dependency(deps, ref.key);
         }
 
+        // Folds the per-mesh bindings AND the per-mesh style asset keys into the
+        // Scene identity. The styles are folded EXPLICITLY (issue #195): with a
+        // GPU device the renderable key already folds its style dep, but the
+        // deviceless import registers NO renderables (the 0x706 replacement's
+        // program cannot be provisioned without a device), and a differently-
+        // styled import must still produce a different Scene asset.
+        // style_keys is index-aligned with bindings.
         wz::asset::Hash glb_scene_bindings_hash(
-            const std::vector<SceneGLBMeshRenderableBinding>& bindings)
+            const std::vector<SceneGLBMeshRenderableBinding>& bindings,
+            const std::vector<wz::asset::AssetKey>& style_keys)
         {
             uint64_t lo = 0;
             uint64_t hi = 0;
 
-            for (const auto& binding : bindings) {
+            for (std::size_t i = 0; i < bindings.size(); ++i) {
+                const auto& binding = bindings[i];
                 const auto mesh_hash =
                     detail::key_to_dep_hash(binding.mesh_asset);
                 const auto renderable_hash =
                     detail::key_to_dep_hash(binding.renderable_asset);
+                const auto style_hash =
+                    i < style_keys.size()
+                        ? detail::key_to_dep_hash(style_keys[i])
+                        : wz::asset::Hash{};
 
                 lo = detail::mix64(lo, binding.mesh_index);
                 lo = detail::mix64(lo, mesh_hash.lo);
                 lo = detail::mix64(lo, renderable_hash.lo);
+                lo = detail::mix64(lo, style_hash.lo);
                 hi = detail::mix64(hi, mesh_hash.hi);
                 hi = detail::mix64(hi, renderable_hash.hi);
+                hi = detail::mix64(hi, style_hash.hi);
             }
 
             return { lo, hi };
@@ -111,19 +127,25 @@ namespace wz::engine::assets
     SceneAssetModule::SceneAssetModule(
         wz::asset::AssetSystem& system,
         wz::Logger& logger,
+        wz::gpu::Device& device,
         FileCarrierAssetModule& files,
         JSONAssetModule& json,
         MeshAssetModule& meshes,
         MeshRenderStyleAssetModule& mesh_render_styles,
         RenderableAssetModule& renderables,
+        ShaderAssetModule& shaders,
+        RenderProgramAssetModule& render_programs,
         SceneAssetTable& table)
         : system_(system)
         , logger_(logger)
+        , device_(device)
         , files_(files)
         , json_(json)
         , meshes_(meshes)
         , mesh_render_styles_(mesh_render_styles)
         , renderables_(renderables)
+        , shaders_(shaders)
+        , render_programs_(render_programs)
         , table_(table)
     {
     }
@@ -262,7 +284,11 @@ namespace wz::engine::assets
         // Resolve the override style asset for each overridden mesh index. Built
         // lazily so unreferenced overrides cost nothing; an override naming a mesh
         // index absent from the import is simply never looked up (ignored).
+        // The raw style DATA is kept alongside the asset: the render-program
+        // provisioning below derives its pipeline state (raster/depth/blend)
+        // from the style values, which the asset key alone cannot supply.
         std::unordered_map<uint32_t, MeshRenderStyleAsset> override_styles;
+        std::unordered_map<uint32_t, MeshRenderStyleData> override_style_data;
         for (const auto& style_override : desc.style_overrides) {
             if (override_styles.count(style_override.mesh_index)) {
                 // Last writer wins for a repeated mesh index; warn and continue.
@@ -285,10 +311,18 @@ namespace wz::engine::assets
                 return {};
             }
             override_styles[style_override.mesh_index] = style;
+            override_style_data[style_override.mesh_index] =
+                style_override.style;
         }
+        const MeshRenderStyleData base_style_data =
+            desc.base_style.value_or(MeshRenderStyleData{});
 
         std::vector<SceneGLBMeshRenderableBinding> bindings;
         bindings.reserve(imported.mesh_indices.size());
+        // Per-binding style asset keys, index-aligned with `bindings` — folded
+        // into the Scene identity (see glb_scene_bindings_hash).
+        std::vector<wz::asset::AssetKey> binding_style_keys;
+        binding_style_keys.reserve(imported.mesh_indices.size());
 
         for (const uint32_t mesh_index : imported.mesh_indices) {
             MeshAsset mesh = meshes_.create_glb_mesh({
@@ -309,16 +343,47 @@ namespace wz::engine::assets
                 override_it != override_styles.end()
                     ? override_it->second
                     : base_style;
+            const auto override_data_it = override_style_data.find(mesh_index);
+            const MeshRenderStyleData& mesh_style_data =
+                override_data_it != override_style_data.end()
+                    ? override_data_it->second
+                    : base_style_data;
 
-            RenderableAsset renderable = renderables_.create_mesh_styled({
-                .name = desc.name + "/renderable_" + std::to_string(mesh_index),
-                .mesh = mesh,
-                .style = mesh_style,
-            });
-            if (!renderable.valid()) {
-                logger_.error("failed to register GLB renderable for scene: "
-                    + desc.name);
-                return {};
+            // Issue #195: the legacy 0x705 styled renderable is gone; a GLB part
+            // is an RHI pull-mesh renderable (0x706) = mesh + provisioned
+            // mesh_style program + the style as data. Device-gated: shader
+            // assets cannot compile without a GPU device, so deviceless the
+            // part gets no renderable — the scene compiler already tolerates an
+            // empty binding (find_glb_renderable_binding filters it), matching
+            // the app model where a node without a program does not draw.
+            RenderableAsset renderable{};
+            if (device_.valid()) {
+                const RenderProgramAsset program =
+                    ensure_mesh_style_pull_program(
+                        logger_,
+                        files_,
+                        shaders_,
+                        render_programs_,
+                        mesh_style_data);
+                if (!program.valid()) {
+                    logger_.error(
+                        "failed to provision GLB mesh style program for scene: "
+                        + desc.name);
+                    return {};
+                }
+                renderable = renderables_.create_rhi_pull_mesh({
+                    .name = desc.name + "/renderable_"
+                        + std::to_string(mesh_index),
+                    .mesh = mesh,
+                    .program = program,
+                    .style = mesh_style,
+                });
+                if (!renderable.valid()) {
+                    logger_.error(
+                        "failed to register GLB renderable for scene: "
+                        + desc.name);
+                    return {};
+                }
             }
 
             bindings.push_back(SceneGLBMeshRenderableBinding{
@@ -326,13 +391,14 @@ namespace wz::engine::assets
                 .mesh_asset = mesh.output,
                 .renderable_asset = renderable.output,
             });
+            binding_style_keys.push_back(mesh_style.output);
         }
 
         const wz::asset::AssetKey scene_key =
             make_scene_from_glb_key(
                 file_key,
                 imported.scene_index,
-                glb_scene_bindings_hash(bindings));
+                glb_scene_bindings_hash(bindings, binding_style_keys));
 
         // Content-addressed idempotency: the Scene key folds the GLB file +
         // scene index + per-mesh bindings, so identical inputs produce the same

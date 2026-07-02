@@ -22,95 +22,6 @@ namespace wz::engine::assets
     {
     }
 
-    RenderableAsset RenderableAssetModule::create_mesh_wireframe(
-        const MeshWireframeRenderableDesc& desc)
-    {
-        if (desc.name.empty()) {
-            logger_.error("mesh wireframe renderable has empty name");
-            return {};
-        }
-
-        if (!desc.mesh.valid()) {
-            logger_.error("mesh wireframe renderable has invalid mesh: " + desc.name);
-            return {};
-        }
-
-        const wz::asset::AssetKey key =
-            make_mesh_wireframe_renderable_key(
-                desc.name,
-                desc.mesh.output,
-                desc.program,
-                desc.policy_flags,
-                desc.domain);
-
-        wz::asset::AssetNode node;
-        node.key = key;
-        node.type = kAssetTypeRenderable;
-        node.schema = kMeshWireframeRenderableSchema;
-        node.stage = wz::asset::AssetStage::Source;
-        node.payload = std::vector<uint8_t>{};
-        node.meta = MeshWireframeRenderableCompileDesc{
-            .mesh_asset = desc.mesh.output,
-            .program = desc.program,
-            .domain = desc.domain,
-            .policy_flags = desc.policy_flags,
-        };
-
-        if (!system_.register_asset(std::move(node), { desc.mesh.output }))
-            return RenderableAsset{ .output = key };
-
-        return RenderableAsset{
-            .output = key,
-        };
-    }
-
-    RenderableAsset RenderableAssetModule::create_gaussian_splat_debug(
-        const GaussianSplatDebugRenderableDesc& desc)
-    {
-        if (desc.name.empty()) {
-            logger_.error("gaussian splat debug renderable has empty name");
-            return {};
-        }
-
-        if (!desc.splat_cloud.valid()) {
-            logger_.error("gaussian splat debug renderable has invalid splat cloud: " + desc.name);
-            return {};
-        }
-
-        const wz::asset::AssetKey color_lod_key =
-            desc.color_lod.valid() ? desc.color_lod.output : wz::asset::AssetKey{};
-
-        const wz::asset::AssetKey key =
-            make_gaussian_splat_debug_renderable_key(
-                desc.name,
-                desc.splat_cloud.output,
-                color_lod_key);
-
-        wz::asset::AssetNode node;
-        node.key = key;
-        node.type = kAssetTypeRenderable;
-        node.schema = kGaussianSplatDebugRenderableSchema;
-        node.stage = wz::asset::AssetStage::Source;
-        node.payload = std::vector<uint8_t>{};
-        node.meta = GaussianSplatDebugRenderableCompileDesc{
-            .splat_cloud_asset = desc.splat_cloud.output,
-            .color_lod_asset   = color_lod_key,
-        };
-
-        // Cloud is always a dep; the second slot is an explicit optional LOD.
-        const std::vector<wz::asset::AssetKey> deps{
-            desc.splat_cloud.output,
-            color_lod_key,
-        };
-
-        if (!system_.register_asset(std::move(node), deps))
-            return RenderableAsset{ .output = key };
-
-        return RenderableAsset{
-            .output = key,
-        };
-    }
-
     RenderableAsset RenderableAssetModule::create_scalar_field_debug(
         const ScalarFieldDebugRenderableDesc& desc)
     {
@@ -145,70 +56,6 @@ namespace wz::engine::assets
         return RenderableAsset{
             .output = key,
         };
-    }
-
-    RenderableAsset RenderableAssetModule::create_mesh_styled(
-        const MeshStyledRenderableDesc& desc)
-    {
-        if (desc.name.empty()) {
-            logger_.error("mesh styled renderable has empty name");
-            return {};
-        }
-
-        if (!desc.mesh.valid()) {
-            logger_.error("mesh styled renderable has invalid mesh: "
-                + desc.name);
-            return {};
-        }
-
-        if (!desc.style.valid()) {
-            logger_.error("mesh styled renderable has invalid style: "
-                + desc.name);
-            return {};
-        }
-
-        const wz::asset::AssetKey mesh_field_visualization_key =
-            desc.mesh_field_visualization.valid()
-                ? desc.mesh_field_visualization.output
-                : wz::asset::AssetKey{};
-
-        const wz::asset::AssetKey key =
-            make_mesh_styled_renderable_key(
-                desc.name,
-                desc.mesh.output,
-                desc.style.output,
-                mesh_field_visualization_key,
-                desc.render_program_asset);
-
-        wz::asset::AssetNode node;
-        node.key = key;
-        node.type = kAssetTypeRenderable;
-        node.schema = kMeshStyledRenderableSchema;
-        node.stage = wz::asset::AssetStage::Source;
-        node.payload = std::vector<uint8_t>{};
-        node.meta = MeshStyledRenderableCompileDesc{
-            .mesh_asset = desc.mesh.output,
-            .style_asset = desc.style.output,
-            .mesh_field_visualization_asset =
-                mesh_field_visualization_key,
-            .render_program_asset = desc.render_program_asset,
-        };
-
-        // Keep this order in sync with the mesh styled compiler's optional
-        // dependency indexing: mesh, style, field visualization, render program.
-        std::vector<wz::asset::AssetKey> deps{
-            desc.mesh.output,
-            desc.style.output,
-            mesh_field_visualization_key,
-            desc.render_program_asset,
-        };
-
-        if (!system_.register_asset(std::move(node), std::move(deps)))
-        {
-            return RenderableAsset{ .output = key };
-        }
-
-        return RenderableAsset{ .output = key };
     }
 
     RenderableAsset RenderableAssetModule::create_terrain_debug(
@@ -334,11 +181,17 @@ namespace wz::engine::assets
             return {};
         }
 
+        // Optional style (issue #195 slice A): folds into the key + is appended
+        // as a 3rd graph dep in input-port order (geometry, program, style).
+        const wz::asset::AssetKey style_key =
+            desc.style.valid() ? desc.style.output : wz::asset::AssetKey{};
+
         const wz::asset::AssetKey key =
             make_rhi_pull_mesh_renderable_key(
                 desc.name,
                 desc.mesh.output,
-                desc.program.key);
+                desc.program.key,
+                style_key);
 
         wz::asset::AssetNode node;
         node.key = key;
@@ -349,11 +202,18 @@ namespace wz::engine::assets
         node.meta = RhiPullMeshRenderableCompileDesc{
             .mesh_asset = desc.mesh.output,
             .render_program_asset = desc.program.key,
+            .style_asset = style_key,
         };
 
-        (void)system_.register_asset(
-            std::move(node),
-            { desc.mesh.output, desc.program.key });
+        // Keep dep order in sync with the compiler's input ports:
+        // geometry, program, then the optional style.
+        std::vector<wz::asset::AssetKey> deps{
+            desc.mesh.output, desc.program.key };
+        if (!(style_key == wz::asset::AssetKey{})) {
+            deps.push_back(style_key);
+        }
+
+        (void)system_.register_asset(std::move(node), std::move(deps));
 
         return RenderableAsset{ .output = key };
     }

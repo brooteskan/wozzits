@@ -6,6 +6,7 @@
 #include <engine/assets/hdri/hdri_image_loader.h>
 #include <engine/assets/hdri/hdri_lighting_metadata.h>
 #include <engine/assets/mesh_cluster_hierarchy_asset_module.h>
+#include <engine/assets/mesh_style_pull_program.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <asset/draft.h>
@@ -3436,31 +3437,60 @@ namespace wz::engine::assets
                 }
             }
 
-            RenderableAsset renderable =
-                assets.renderables().create_mesh_styled({
+            // Issue #195: the legacy 0x705 styled renderable is gone; a styled
+            // mesh node is an RHI pull-mesh renderable (0x706) = mesh + program
+            // + the style as data. Program precedence is unchanged from the
+            // 0x705 path: an authored render_shader program wins, then the
+            // mesh_vertex_pull override, else a provisioned mesh_style program
+            // whose raster/depth/blend derive from the style. The style's
+            // geometry-generating parts (field_visualization, mask) are NOT
+            // renderable inputs any more — the field/wavelet assets above are
+            // still created and registered exactly as before (they feed the
+            // authoring/inspector paths), but the recipe does not consume them.
+            //
+            // Device gate: shader assets cannot compile without a GPU device,
+            // so deviceless (and with no authored program) the node gets NO
+            // renderable — mirroring the app model where a node without a
+            // program does not draw. That is a success, not an error: `out`
+            // stays invalid and the caller skips the attach.
+            const wz::asset::AssetKey authored_program =
+                render_shader
+                    ? render_shader->render_program_asset
+                    : render_program_asset_override;
+
+            RenderableAsset renderable{};
+            if (!(authored_program == wz::asset::AssetKey{})) {
+                renderable = assets.renderables().create_rhi_pull_mesh({
                     .name = name,
                     .mesh = mesh,
+                    .program = RenderProgramAsset{ .key = authored_program },
                     .style = style_asset,
-                    .mesh_field_visualization =
-                        effective_style.field_visualization_enabled
-                            ? MeshDerivedFieldAsset{
-                                .output =
-                                    effective_style.field_visualization_asset,
-                            }
-                            : effective_style.mask.enabled
-                            ? MeshDerivedFieldAsset{
-                                .output =
-                                    effective_style.mask_source_field_asset,
-                            }
-                            : MeshDerivedFieldAsset{},
-                    .render_program_asset =
-                        render_shader
-                            ? render_shader->render_program_asset
-                            : render_program_asset_override,
                 });
-
-            if (!renderable.valid()) {
-                return false;
+                if (!renderable.valid()) {
+                    return false;
+                }
+            }
+            else if (assets.gpu_device_valid()) {
+                const RenderProgramAsset program =
+                    ensure_mesh_style_pull_program(
+                        assets.logger(),
+                        assets.files(),
+                        assets.shaders(),
+                        assets.render_programs(),
+                        mesh_render_style_data_for_scene_style(
+                            effective_style));
+                if (!program.valid()) {
+                    return false;
+                }
+                renderable = assets.renderables().create_rhi_pull_mesh({
+                    .name = name,
+                    .mesh = mesh,
+                    .program = program,
+                    .style = style_asset,
+                });
+                if (!renderable.valid()) {
+                    return false;
+                }
             }
 
             renderables.emplace(key, renderable);
@@ -4812,7 +4842,16 @@ namespace wz::engine::assets
                 }
 
                 node.renderable.reset();
-                attach_renderable_asset(node, renderable.output);
+                // Deviceless with no authored program the mesh gets NO
+                // renderable (issue #195: shader assets need a GPU device to
+                // compile, so the mesh_style program cannot be provisioned) —
+                // leave renderable_asset unset instead of attaching a zero key.
+                if (renderable.valid()) {
+                    attach_renderable_asset(node, renderable.output);
+                }
+                else {
+                    node.renderable_asset.reset();
+                }
                 if (has_authored_render_style)
                 {
                     SceneMeshRenderStyleAsset materialized_style =
@@ -4822,7 +4861,9 @@ namespace wz::engine::assets
                     materialized_style.mask_source_field_asset = {};
                     node.mesh_render_style = materialized_style;
                 }
-                append_unique_renderable(report, renderable.output);
+                if (renderable.valid()) {
+                    append_unique_renderable(report, renderable.output);
+                }
             }
             else if (options.create_preview_renderables && !node.visible) {
                 if (!ensure_source_mesh()) {

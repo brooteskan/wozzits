@@ -90,32 +90,22 @@ TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
     const auto report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    // Issue #195: deviceless materialize attaches NO renderable — the 0x706
+    // replacement needs a provisioned render program, whose shaders cannot
+    // compile without a GPU device. The style ASSET is still authored and
+    // registered; the with-device renderable flow (recipe + baked shading +
+    // style-derived program state) is covered by
+    // scene_materialize_render_shader_tests and the RenderableAssetModule
+    // mesh-style suites.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_render_style.has_value());
     EXPECT_NE(
         scene.nodes[0].mesh_render_style->style_asset,
         wz::asset::AssetKey{});
-    ASSERT_EQ(report.renderables_to_realize.size(), 1u);
-    EXPECT_EQ(report.renderables_to_realize[0], *scene.nodes[0].renderable_asset);
+    EXPECT_TRUE(report.renderables_to_realize.empty());
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
-
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(renderable_data->kind, RenderableKind::Mesh);
-    EXPECT_EQ(
-        renderable_data->companion_asset,
-        scene.nodes[0].mesh_render_style->style_asset);
-    EXPECT_EQ(
-        renderable_data->program,
-        BuiltinRenderProgram::MeshWireframeDepthDebug);
-    EXPECT_TRUE(renderable_data->mesh_style.depth_test);
-    EXPECT_TRUE(renderable_data->mesh_style.depth_write);
 }
 
 TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
@@ -153,7 +143,10 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
     const auto report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    // Issue #195: deviceless materialize attaches no renderable (see
+    // MeshSourceCreatesRenderableAsset); the preview-hierarchy contract is
+    // carried by the processing assets below.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
     const auto& processing = *scene.nodes[0].mesh_processing;
     EXPECT_NE(processing.source_mesh_asset, wz::asset::AssetKey{});
@@ -168,18 +161,6 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewClusterHierarchyLevel)
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
-
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(renderable_data->kind, RenderableKind::Mesh);
-    EXPECT_EQ(
-        renderable_data->source_asset.schema_hash,
-        detail::hash_u64(kMeshClusterHierarchyPreviewMeshSchema.value));
-    EXPECT_EQ(renderable_data->source_asset, processing.processed_mesh_asset);
 
     const auto source_handle = assets.meshes().get_mesh(
         MeshAsset{ .output = processing.source_mesh_asset });
@@ -253,14 +234,17 @@ TEST(SceneAuthoringMaterialize, InvisibleMeshProcessingSkipsPreviewHierarchy)
     const auto visible_report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(visible_report.ok) << visible_report.error;
-    EXPECT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    // Issue #195: deviceless even a VISIBLE node gets no renderable; the
+    // visible/invisible contrast under test survives in the preview-hierarchy
+    // processing assets (built only for the visible node).
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
     const auto& visible_processing = *scene.nodes[0].mesh_processing;
     EXPECT_NE(
         visible_processing.processed_mesh_asset,
         wz::asset::AssetKey{});
     EXPECT_NE(visible_processing.hierarchy_asset, wz::asset::AssetKey{});
-    EXPECT_FALSE(visible_report.renderables_to_realize.empty());
+    EXPECT_TRUE(visible_report.renderables_to_realize.empty());
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
@@ -392,7 +376,10 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewDebugTriangleStride)
     const auto report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    // Issue #195: deviceless materialize attaches no renderable (see
+    // MeshSourceCreatesRenderableAsset); the stride-preview contract is the
+    // processed mesh below.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
     const auto& processing = *scene.nodes[0].mesh_processing;
     EXPECT_NE(processing.source_mesh_asset, wz::asset::AssetKey{});
@@ -420,14 +407,6 @@ TEST(SceneAuthoringMaterialize, MeshProcessingCanPreviewDebugTriangleStride)
     EXPECT_EQ(source_data->index_count(), 6u);
     EXPECT_EQ(processed_data->index_count(), 3u);
     EXPECT_EQ(processed_data->vertex_count(), 3u);
-
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(renderable_data->source_asset, processing.processed_mesh_asset);
 }
 
 TEST(SceneAuthoringMaterialize, MeshProcessingDoesNotFeedFieldOrOperatorSources)
@@ -488,7 +467,10 @@ TEST(SceneAuthoringMaterialize, MeshProcessingDoesNotFeedFieldOrOperatorSources)
     const auto report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    // Issue #195: deviceless materialize attaches no renderable (see
+    // MeshSourceCreatesRenderableAsset); the field/operator-vs-processing
+    // separation under test is asserted on the source assets below.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_derived_field_source.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_sparse_operator_source.has_value());
@@ -531,15 +513,6 @@ TEST(SceneAuthoringMaterialize, MeshProcessingDoesNotFeedFieldOrOperatorSources)
     ASSERT_NE(operator_data, nullptr);
     EXPECT_EQ(operator_data->source_mesh_key, processing.source_mesh_asset);
     EXPECT_NE(operator_data->source_mesh_key, processing.processed_mesh_asset);
-
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(renderable_data->source_asset, processing.source_mesh_asset);
-    EXPECT_EQ(renderable_data->mesh_field_visualization_asset, field_key);
 }
 
 TEST(SceneAuthoringMaterialize, MeshSourceRegeneratesStaleStyleAsset)
@@ -632,7 +605,10 @@ TEST(SceneAuthoringMaterialize, MeshWaveletAnalysisFeedsHeatmapRenderable)
     const auto report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    // Issue #195: deviceless materialize attaches no renderable (see
+    // MeshSourceCreatesRenderableAsset); the wavelet-field wiring under test
+    // is carried by the style/wavelet/field assets below.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_render_style.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_wavelet_analysis.has_value());
     EXPECT_NE(
@@ -667,17 +643,6 @@ TEST(SceneAuthoringMaterialize, MeshWaveletAnalysisFeedsHeatmapRenderable)
         });
     ASSERT_NE(detail_channel, field_data->channels.end());
     EXPECT_EQ(detail_channel->value_type, MeshDerivedFieldValueType::Float1);
-
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(
-        renderable_data->mesh_field_visualization_asset,
-        field.output);
-    EXPECT_TRUE(renderable_data->mesh_style.field_visualization.enabled);
 }
 
 TEST(SceneAuthoringMaterialize, StaleComputeVisualizationChannelFallsBackToWaveletChannel)
@@ -779,7 +744,10 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceFeedsExplicitHeatmapRender
     const auto report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    // Issue #195: deviceless materialize attaches no renderable (see
+    // MeshSourceCreatesRenderableAsset); the explicit-field wiring under test
+    // is carried by the style/field-source assets below.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_render_style.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_derived_field_source.has_value());
 
@@ -809,24 +777,6 @@ TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceFeedsExplicitHeatmapRender
     ASSERT_EQ(values.size(), field_data->element_count);
     EXPECT_NE(std::find(values.begin(), values.end(), 0.0f), values.end());
     EXPECT_NE(std::find(values.begin(), values.end(), 1.0f), values.end());
-
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(renderable_data->mesh_field_visualization_asset, field_key);
-    EXPECT_TRUE(renderable_data->mesh_style.field_visualization.enabled);
-    EXPECT_EQ(
-        renderable_data->mesh_style.field_visualization.channel_id,
-        0x2000u);
-    EXPECT_FLOAT_EQ(
-        renderable_data->mesh_style.field_visualization.gamma,
-        0.8f);
-    EXPECT_EQ(
-        renderable_data->mesh_style.field_visualization.palette,
-        MeshFieldVisualizationPalette::Diverging);
 }
 
 TEST(SceneAuthoringMaterialize, MeshDerivedFieldSourceBuildsScalarRecipes)
@@ -1281,20 +1231,10 @@ TEST(SceneAuthoringMaterialize, MeshSparseDiffusionBandsBuildsRenderableBands)
         }
     }
 
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(renderable_data->mesh_field_visualization_asset, field_key);
-    EXPECT_EQ(
-        renderable_data->mesh_style.field_visualization.channel_id,
-        0x2200u);
-    EXPECT_EQ(
-        renderable_data->mesh_style.field_visualization.palette,
-        MeshFieldVisualizationPalette::Diverging);
+    // Issue #195: deviceless materialize attaches no renderable (see
+    // MeshSourceCreatesRenderableAsset); the diffusion-band field wiring under
+    // test is fully asserted on the field data above.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
 }
 
 TEST(SceneAuthoringMaterialize, MeshSparseDiffusionBandsWrongInputChannelFallsBack)
@@ -1622,26 +1562,13 @@ TEST(SceneAuthoringMaterialize, MeshMaskRenderStyleDoesNotReattachBaseStyle)
     ASSERT_NE(
         scene.nodes[0].mesh_mask_render_style->source_field_asset,
         wz::asset::AssetKey{});
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    // Issue #195: deviceless materialize attaches no renderable (see
+    // MeshSourceCreatesRenderableAsset); the mask component + source-field
+    // wiring above is the contract under test.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
-
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(renderable_data->program, BuiltinRenderProgram::MeshMaskStyle);
-    EXPECT_TRUE(renderable_data->mesh_style.wireframe.enabled);
-    EXPECT_FLOAT_EQ(renderable_data->mesh_style.wireframe.color[3], 0.5f);
-    EXPECT_FALSE(renderable_data->mesh_style.surface.enabled);
-    EXPECT_TRUE(renderable_data->mesh_style.mask.enabled);
-    ASSERT_EQ(renderable_data->mesh_style.mask.rules.size(), 1u);
-    EXPECT_EQ(
-        renderable_data->mesh_style.mask.rules[0].input_channel_id,
-        0x2200u);
 }
 
 TEST(SceneAuthoringMaterialize, MeshMaskRenderStyleCanPreviewProcessedMesh)
@@ -1707,7 +1634,10 @@ TEST(SceneAuthoringMaterialize, MeshMaskRenderStyleCanPreviewProcessedMesh)
     const auto report =
         materialize_scene_authoring_components(scene, assets);
     ASSERT_TRUE(report.ok) << report.error;
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
+    // Issue #195: deviceless materialize attaches no renderable (see
+    // MeshSourceCreatesRenderableAsset); the processed-mesh + mask source-
+    // field wiring below is the contract under test.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_processing.has_value());
     const auto& processing = *scene.nodes[0].mesh_processing;
     ASSERT_NE(processing.source_mesh_asset, wz::asset::AssetKey{});
@@ -1720,20 +1650,6 @@ TEST(SceneAuthoringMaterialize, MeshMaskRenderStyleCanPreviewProcessedMesh)
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
-
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(renderable_data->program, BuiltinRenderProgram::MeshMaskStyle);
-    EXPECT_EQ(renderable_data->source_asset, processing.processed_mesh_asset);
-    EXPECT_EQ(
-        renderable_data->mesh_field_visualization_asset,
-        scene.nodes[0].mesh_mask_render_style->source_field_asset);
-    ASSERT_EQ(renderable_data->mesh_style.mask.rules.size(), 1u);
-    EXPECT_FALSE(renderable_data->mesh_style.mask.rules[0].enabled);
 }
 
 TEST(SceneAuthoringMaterialize, MeshLevelMaskSourceDomainFollowsInputField)
@@ -1881,18 +1797,12 @@ TEST(SceneAuthoringMaterialize, MeshFieldVisualizationWrongChannelFallsBack)
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());
 
-    ASSERT_TRUE(scene.nodes[0].renderable_asset.has_value());
-    const auto renderable = assets.renderables().get_renderable(
-        RenderableAsset{ .output = *scene.nodes[0].renderable_asset });
-    ASSERT_TRUE(renderable.valid());
-    const auto* renderable_data =
-        assets.renderables().get_renderable_data(renderable);
-    ASSERT_NE(renderable_data, nullptr);
-    EXPECT_EQ(
-        renderable_data->mesh_field_visualization_asset,
-        wz::asset::AssetKey{});
-    EXPECT_FALSE(renderable_data->mesh_style.field_visualization.enabled);
-    EXPECT_NE(renderable_data->program, BuiltinRenderProgram::MeshFieldHeatmap);
+    // Issue #195: deviceless materialize attaches no renderable (see
+    // MeshSourceCreatesRenderableAsset). The wrong-channel fallback under test
+    // is that the style's field visualization was disabled during materialize
+    // (the field asset stays authored but the style no longer points a live
+    // channel at it) — asserted on the node's style component.
+    EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
 }
 
 TEST(SceneAuthoringMaterialize, SceneImportSourceAppendsGLBHierarchy)
@@ -1926,7 +1836,10 @@ TEST(SceneAuthoringMaterialize, SceneImportSourceAppendsGLBHierarchy)
     ASSERT_TRUE(body->mesh_source.has_value());
     EXPECT_EQ(body->mesh_source->kind, SceneMeshSourceKind::GLB);
     EXPECT_EQ(body->mesh_source->mesh_index, 2u);
-    ASSERT_TRUE(body->renderable_asset.has_value());
+    // Issue #195: deviceless materialize attaches no renderables (see
+    // MeshSourceCreatesRenderableAsset); the import hierarchy + mesh sources
+    // are the contract under test.
+    EXPECT_FALSE(body->renderable_asset.has_value());
     ASSERT_TRUE(body->imported_node.has_value());
     EXPECT_FALSE(body->imported_node->missing_source);
 
@@ -1937,7 +1850,7 @@ TEST(SceneAuthoringMaterialize, SceneImportSourceAppendsGLBHierarchy)
     EXPECT_EQ(*turret->parent_id, "tank_anchor/tank1/body");
     ASSERT_TRUE(turret->mesh_source.has_value());
     EXPECT_EQ(turret->mesh_source->mesh_index, 1u);
-    ASSERT_TRUE(turret->renderable_asset.has_value());
+    EXPECT_FALSE(turret->renderable_asset.has_value());
 
     const SceneNodeAsset* gun =
         find_scene_node(scene, "tank_anchor/tank1/gun");
@@ -1946,7 +1859,7 @@ TEST(SceneAuthoringMaterialize, SceneImportSourceAppendsGLBHierarchy)
     EXPECT_EQ(*gun->parent_id, "tank_anchor/tank1/turret");
     ASSERT_TRUE(gun->mesh_source.has_value());
     EXPECT_EQ(gun->mesh_source->mesh_index, 0u);
-    ASSERT_TRUE(gun->renderable_asset.has_value());
+    EXPECT_FALSE(gun->renderable_asset.has_value());
 
     ASSERT_TRUE(assets.commit());
     ASSERT_TRUE(assets.resolve_all().ok());

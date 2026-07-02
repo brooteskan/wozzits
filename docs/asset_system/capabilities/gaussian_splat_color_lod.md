@@ -117,6 +117,11 @@ GaussianSplatColorLODFromCloudDesc lod_desc{
 auto lod = lod_module.create_from_cloud(lod_desc);
 
 // 3. Create a renderable that uses both cloud + LOD.
+// HISTORICAL (issue #195): the splat-debug renderable (0x000701) and
+// create_gaussian_splat_debug() were deleted; splats render via the RHI splat
+// renderable (0x000709, create_gaussian_splat_cloud_rhi), which does not yet
+// consume a color LOD. The LOD asset type and its compilers remain (steps 1-2
+// and 4 are current); renderable attachment awaits an RHI-path consumer.
 GaussianSplatDebugRenderableWithLODDesc render_desc{
     .name       = "my_cloud_renderable",
     .splat_cloud = cloud,

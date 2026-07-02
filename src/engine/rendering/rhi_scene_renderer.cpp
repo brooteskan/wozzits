@@ -191,6 +191,13 @@ namespace wz::engine::rendering
             // source has NO pull mesh — mesh_key is empty — and ensure_renderable
             // takes the splat branch instead of the mesh-pull SRG/geometry.
             std::optional<SplatCloudBinding> splat{};
+
+            // Baked mesh-style shading (issue #195 slice A). Carried from the
+            // recipe; when style.has_style is set the renderer packs the 28-dword
+            // MeshStyleDrawConstants (MVP + style) instead of the plain 16-float
+            // MVP, and the program is expected to declare the "mesh_style" root
+            // constant (binding_layout preset 4). Default = no style.
+            ea::MeshRenderStyleShading style{};
         };
 
         std::optional<PullMeshSource> pull_mesh_source_for_renderable(
@@ -280,11 +287,14 @@ namespace wz::engine::rendering
             }
 
             // CPU pull-mesh geometry: the renderer uploads and owns the buffers.
+            // Carry any baked mesh-style shading (issue #195 slice A) so the pack
+            // path can emit the MVP + style root-constant block.
             return PullMeshSource{
                 .mesh_key = recipe->mesh_key,
                 .program_key = recipe->program_key,
                 .buffer_identity = ea::rhi_asset_identity(recipe->mesh_key),
                 .clipmap = clipmap,
+                .style = recipe->style,
             };
         }
 
@@ -474,6 +484,45 @@ namespace wz::engine::rendering
             out.camera_and_diameter[1] = camera_world_pos.y;
             out.camera_and_diameter[2] = camera_world_pos.z;
             out.camera_and_diameter[3] = diameter;
+            return out;
+        }
+
+        // Per-draw root constants for a styled RHI pull mesh (issue #195 slice A).
+        // Packed BYTE-FOR-BYTE to match the MeshStyle cbuffer in
+        // mesh_style_pull_vs/ps.hlsl and the binding_layout==4 "mesh_style"
+        // value_count (28 dwords / 112 bytes): the MVP the VS consumes, then the
+        // 12 floats of baked shading the PS reads. style_params packs
+        // (wireframe_emissive, surface_emissive, alpha, mode) where mode == 1
+        // selects the wireframe layer, 0 the surface layer.
+        struct MeshStyleDrawConstants
+        {
+            float mvp[16];
+            float wireframe_color[4];
+            float surface_color[4];
+            float style_params[4];
+        };
+        static_assert(sizeof(MeshStyleDrawConstants) == 112,
+            "mesh-style root constants must be 112 bytes (28 dwords) to match the "
+            "binding_layout==4 SRG and the HLSL MeshStyle cbuffer");
+
+        MeshStyleDrawConstants make_mesh_style_draw_constants(
+            const wz::math::Mat4& mvp,
+            const ea::MeshRenderStyleShading& style)
+        {
+            MeshStyleDrawConstants out{};
+            std::memcpy(out.mvp, mvp.m, sizeof(out.mvp));
+            for (int i = 0; i < 4; ++i) {
+                out.wireframe_color[i] = style.wireframe_color[i];
+                out.surface_color[i] = style.surface_color[i];
+            }
+            out.style_params[0] = style.wireframe_emissive;
+            out.style_params[1] = style.surface_emissive;
+            out.style_params[2] = style.alpha;
+            // Prefer the wireframe layer's colour when it is the enabled layer;
+            // otherwise shade with the surface layer. If both/neither are enabled
+            // the surface layer wins (mode 0) — a deliberate, stable default.
+            out.style_params[3] =
+                (style.wireframe_enabled && !style.surface_enabled) ? 1.0f : 0.0f;
             return out;
         }
     }
@@ -1002,6 +1051,12 @@ namespace wz::engine::rendering
         realized.positions = positions_handle;
         realized.indices = indices_handle;
         realized.owns_buffers = owns_buffers;
+        // Baked mesh-style shading (issue #195 slice A): mutually exclusive with
+        // the clipmap pack branch below (a clipmap recipe never carries a style).
+        if (source->style.has_style && !source->clipmap) {
+            realized.has_style = true;
+            realized.style = source->style;
+        }
         if (source->clipmap) {
             realized.is_clipmap = true;
             realized.clipmap_settings = source->clipmap->settings;
@@ -1066,14 +1121,21 @@ namespace wz::engine::rendering
         // internally consistent (a size mismatch would make the recorder reject).
         const wz::math::Mat4 initial_mvp = wz::math::Mat4::identity();
         const ClipmapDrawConstants initial_clipmap{};
-        const std::span<const uint8_t> initial_constants =
-            realized.is_clipmap
-                ? std::span<const uint8_t>{
-                      reinterpret_cast<const uint8_t*>(&initial_clipmap),
-                      sizeof(initial_clipmap) }
-                : std::span<const uint8_t>{
-                      reinterpret_cast<const uint8_t*>(initial_mvp.m),
-                      sizeof(initial_mvp.m) };
+        const MeshStyleDrawConstants initial_style{};
+        std::span<const uint8_t> initial_constants =
+            std::span<const uint8_t>{
+                reinterpret_cast<const uint8_t*>(initial_mvp.m),
+                sizeof(initial_mvp.m) };
+        if (realized.is_clipmap) {
+            initial_constants = std::span<const uint8_t>{
+                reinterpret_cast<const uint8_t*>(&initial_clipmap),
+                sizeof(initial_clipmap) };
+        }
+        else if (realized.has_style) {
+            initial_constants = std::span<const uint8_t>{
+                reinterpret_cast<const uint8_t*>(&initial_style),
+                sizeof(initial_style) };
+        }
         wz::rhi::DrawPacketAllocator allocator;
         wz::rhi::DrawPacketBuilder builder =
             wz::rhi::DrawPacketBuilder::begin(allocator);
@@ -1290,6 +1352,20 @@ namespace wz::engine::rendering
                     make_splat_cloud_draw_constants(
                         world, view_projection, camera_world_pos,
                         realized->splat_settings.splat_size);
+                const auto* bytes =
+                    reinterpret_cast<const uint8_t*>(&constants);
+                realized->packet.root_constants.assign(
+                    bytes, bytes + sizeof(constants));
+            }
+            else if (realized->has_style) {
+                // Styled pull mesh (issue #195 slice A): MVP + baked shading in
+                // one 28-dword block. Same MVP the plain path computes, followed
+                // by the recipe's style colours/alpha so the PS can shade.
+                const wz::math::Mat4& world =
+                    node_worlds[static_cast<std::size_t>(&node - nodes.data())];
+                const wz::math::Mat4 mvp = wz::math::mul(view_projection, world);
+                const MeshStyleDrawConstants constants =
+                    make_mesh_style_draw_constants(mvp, realized->style);
                 const auto* bytes =
                     reinterpret_cast<const uint8_t*>(&constants);
                 realized->packet.root_constants.assign(

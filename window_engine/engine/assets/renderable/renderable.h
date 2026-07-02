@@ -189,6 +189,32 @@ namespace wz::engine::assets
         float splat_size = 1.0f;
     };
 
+    // The SHADING constants baked from an (optional) MeshRenderStyle dependency
+    // into an rhi mesh renderable recipe (issue #195 slice A). This is the
+    // absorbed subset of MeshRenderStyleData that the RHI pull-mesh path flows to
+    // the shader as space2 root constants — the wireframe/surface layer colours,
+    // their emissive strengths, and the overall alpha. It carries NEITHER the
+    // style's depth/blend/raster properties (those are now PROGRAM properties:
+    // DepthMode/BlendMode/RasterMode on the render_program asset) NOR its
+    // geometry-generating parts (field_visualization, mask — deliberately out of
+    // scope; the style asset keeps those fields, the recipe ignores them).
+    //
+    // Default-constructed = "no style": a fully-zero POD (has_style false). The
+    // renderer treats a no-style recipe exactly as before slice A (plain 16-float
+    // MVP root constants), so a program that never declares the "mesh_style"
+    // root constant keeps working untouched.
+    struct MeshRenderStyleShading
+    {
+        bool has_style = false;
+        float wireframe_color[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
+        float surface_color[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
+        float wireframe_emissive = 0.0f;
+        float surface_emissive = 0.0f;
+        float alpha = 1.0f;
+        bool wireframe_enabled = false;
+        bool surface_enabled = false;
+    };
+
     struct RhiRenderableRecipe
     {
         // Exactly one geometry source is set:
@@ -215,6 +241,14 @@ namespace wz::engine::assets
         wz::asset::AssetKey gaussian_splat_cloud_key{};
         GaussianSplatCloudRenderSettings splat{};
 
+        // Optional baked mesh-render-style shading (issue #195 slice A). Only the
+        // CPU pull-mesh path (mesh_key) consumes it: when style.has_style is set
+        // AND the recipe's program declares the "mesh_style" root constant
+        // (binding_layout preset 4), the renderer packs these colours/alpha after
+        // the MVP so the pixel shader can read them. Default (has_style false)
+        // leaves the recipe's rendering identical to the pre-slice-A pull mesh.
+        MeshRenderStyleShading style{};
+
         bool valid() const noexcept
         {
             const bool has_geometry =
@@ -240,30 +274,6 @@ namespace wz::engine::assets
     private:
         std::vector<RhiRenderableRecipe> recipes_;
         std::vector<uint32_t> epochs_;
-    };
-
-    struct MeshWireframeRenderableCompileDesc
-    {
-        wz::asset::AssetKey mesh_asset{};
-        BuiltinRenderProgram program = BuiltinRenderProgram::MeshWireframeDebug;
-        RenderDomain domain = RenderDomain::Debug;
-        uint32_t policy_flags = RenderPolicy_Wireframe;
-    };
-
-    struct MeshStyledRenderableCompileDesc
-    {
-        wz::asset::AssetKey mesh_asset{};
-        wz::asset::AssetKey style_asset{};
-        wz::asset::AssetKey mesh_field_visualization_asset{};
-        wz::asset::AssetKey render_program_asset{};
-    };
-
-    struct GaussianSplatDebugRenderableCompileDesc
-    {
-        wz::asset::AssetKey splat_cloud_asset{};
-
-        // Optional derived color-LOD asset key.  Empty if not used.
-        wz::asset::AssetKey color_lod_asset{};
     };
 
     struct ScalarFieldDebugRenderableCompileDesc
@@ -301,6 +311,11 @@ namespace wz::engine::assets
     {
         wz::asset::AssetKey mesh_asset{};
         wz::asset::AssetKey render_program_asset{};
+        // Optional MeshRenderStyle dependency (issue #195 slice A). When valid it
+        // is connected as a 3rd graph dep; the compiler bakes the style's SHADING
+        // constants into the recipe (RhiRenderableRecipe::style). Empty leaves the
+        // recipe style at its zero "no style" default.
+        wz::asset::AssetKey style_asset{};
     };
 
     struct GpuSparseMeshRenderableCompileDesc

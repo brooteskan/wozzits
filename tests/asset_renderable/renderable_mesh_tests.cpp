@@ -5,6 +5,7 @@
 #include <asset/system.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/key_factories/renderable.h>
+#include <engine/assets/mesh_style_pull_program.h>
 #include <engine/assets/schema_ids.h>
 #include <cstring>
 #include <vector>
@@ -31,6 +32,10 @@ namespace
 
     constexpr wz::asset::SchemaID kRhiRenderableTestProgramSchema{
         0x7111'0000'0000'0002ull
+    };
+
+    constexpr wz::asset::SchemaID kRhiRenderableTestStyleSchema{
+        0x7111'0000'0000'0004ull
     };
 
     wz::asset::AssetKey test_asset_key(uint64_t id)
@@ -497,73 +502,347 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     EXPECT_EQ(sparse_recipe->mesh_key, AssetKey{});
 }
 
-TEST(RenderableAssetModule, ResolvesMeshWireframeRenderable)
+// Issue #195 slice A: an optional MeshRenderStyle dependency on the 0x706 pull
+// mesh renderable bakes the style's SHADING constants (colours / emissive /
+// alpha / layer-enable) into the recipe. This covers (a) styled compile lands
+// the constants, (b) the no-style default is preserved when the port is absent.
+TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
 {
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_mesh_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+    using namespace wz::asset;
+    using namespace wz::engine::assets;
 
     wz::Logger logger;
     wz::gpu::Device device{};
+    NullMeshFieldComputeBackend mesh_field_compute;
 
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
+    ScalarFieldTable scalar_fields_table;
+    VectorFieldTable vector_fields_table;
+    CSVTable csv_table;
+    JSONTable json_table;
+    TOMLTable toml_table;
+    MeshTable mesh_table;
+    MeshDerivedFieldTable mesh_derived_field_table;
+    MeshSparseOperatorTable mesh_sparse_operator_table;
+    GpuSparseMeshTable gpu_sparse_mesh_table;
+    MeshClusterHierarchyTable mesh_cluster_hierarchy_table;
+    GpuResidentFieldTable gpu_resident_field_table;
+    GpuResidentMeshDataTable gpu_resident_mesh_data_table;
+    GpuResidentSparseOperatorTable gpu_resident_sparse_operator_table;
+    GpuResidentSparseMeshTable gpu_resident_sparse_mesh_table;
+    GpuResidentMeshClusterHierarchyTable
+        gpu_resident_mesh_cluster_hierarchy_table;
+    TerrainAssetTable terrain_table;
+    TerrainVisualProxyTable terrain_visual_proxy_table;
+    CollisionAssetTable collision_table;
+    PlacementTable placement_table;
+    AudioClipTable audio_clip_table;
+    AudioClipBankTable audio_clip_bank_table;
+    AudioRenderableTable audio_renderable_table;
+    GaussianSplatCloudTable gaussian_splat_cloud_table;
+    GaussianSplatColorLODTable gaussian_splat_color_lod_table;
+    DataTable data_table;
+    DiagnosticResampledTimeSeriesTable diagnostic_resampled_time_series_table;
+    DiagnosticTimeframeSummaryTable diagnostic_timeframe_summary_table;
+    CSVExportTable csv_export_table;
+    MeshRenderStyleTable mesh_render_style_table;
+    RenderableAssetTable renderable_table;
+    RhiRenderableTable rhi_renderable_table;
+    RenderProgramTable render_program_table;
+    ComputePipelineTable compute_pipeline_table;
+    DirectLightTable direct_light_table;
+    AmbientLightingTable ambient_lighting_table;
+    HDRIEnvironmentTable hdri_environment_table;
+    SceneAssetTable scene_table;
+    EngineAssetCacheSettings cache_settings{};
+
+    // Distinctive style values so we can assert each baked field individually.
+    MeshRenderStyleData authored_style{};
+    authored_style.wireframe.enabled = true;
+    authored_style.wireframe.color[0] = 0.1f;
+    authored_style.wireframe.color[1] = 0.2f;
+    authored_style.wireframe.color[2] = 0.3f;
+    authored_style.wireframe.color[3] = 0.4f;
+    authored_style.wireframe.emissive_strength = 0.5f;
+    authored_style.surface.enabled = false;
+    authored_style.surface.color[0] = 0.6f;
+    authored_style.surface.color[1] = 0.7f;
+    authored_style.surface.color[2] = 0.8f;
+    authored_style.surface.color[3] = 0.9f;
+    authored_style.surface.emissive_strength = 0.25f;
+    authored_style.alpha = 0.75f;
+
+    CompilerRegistry registry;
+    registry.register_compiler(AssetCompiler{
+        .input_schema = kRhiRenderableTestMeshSchema,
+        .output_type = kAssetTypeMesh,
+        .compile = [&mesh_table](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode
+        {
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = mesh_table.add(test_triangle_mesh());
+            return out;
+        },
+    });
+    registry.register_compiler(AssetCompiler{
+        .input_schema = kRhiRenderableTestProgramSchema,
+        .output_type = kAssetTypeRenderProgram,
+        .compile = [&render_program_table](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode
+        {
+            RenderProgramData data{};
+            data.binding_model = RenderBindingModel::MeshVertexPull;
+            data.input_layout = InputLayoutKind::None;
+            data.vertex_shader = ResourceHandle{
+                .id = 1, .epoch = 1, .type = AssetType::Shader };
+            data.pixel_shader = ResourceHandle{
+                .id = 2, .epoch = 1, .type = AssetType::Shader };
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = render_program_table.add(std::move(data));
+            return out;
+        },
+    });
+    registry.register_compiler(AssetCompiler{
+        .input_schema = kRhiRenderableTestStyleSchema,
+        .output_type = kAssetTypeMeshRenderStyle,
+        .compile = [&mesh_render_style_table, authored_style](
+            const AssetNode& input,
+            std::span<const AssetNode>,
+            std::span<const ResourceHandle>) -> AssetNode
+        {
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = mesh_render_style_table.add(authored_style);
+            return out;
+        },
+    });
+
+    const internal::EngineAssetContext ctx{
+        .device = device,
+        .logger = logger,
+        .mesh_field_compute = mesh_field_compute,
+        .scalar_fields_table = scalar_fields_table,
+        .vector_fields_table = vector_fields_table,
+        .csv_table = csv_table,
+        .json_table = json_table,
+        .toml_table = toml_table,
+        .mesh_table = mesh_table,
+        .mesh_derived_field_table = mesh_derived_field_table,
+        .mesh_sparse_operator_table = mesh_sparse_operator_table,
+        .gpu_sparse_mesh_table = gpu_sparse_mesh_table,
+        .mesh_cluster_hierarchy_table = mesh_cluster_hierarchy_table,
+        .gpu_resident_field_table = gpu_resident_field_table,
+        .gpu_resident_mesh_data_table = gpu_resident_mesh_data_table,
+        .gpu_resident_sparse_operator_table =
+            gpu_resident_sparse_operator_table,
+        .gpu_resident_sparse_mesh_table = gpu_resident_sparse_mesh_table,
+        .gpu_resident_mesh_cluster_hierarchy_table =
+            gpu_resident_mesh_cluster_hierarchy_table,
+        .terrain_table = terrain_table,
+        .terrain_visual_proxy_table = terrain_visual_proxy_table,
+        .collision_table = collision_table,
+        .placement_table = placement_table,
+        .audio_clip_table = audio_clip_table,
+        .audio_clip_bank_table = audio_clip_bank_table,
+        .audio_renderable_table = audio_renderable_table,
+        .gaussian_splat_cloud_table = gaussian_splat_cloud_table,
+        .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table,
+        .data_table = data_table,
+        .diagnostic_resampled_time_series_table =
+            diagnostic_resampled_time_series_table,
+        .diagnostic_timeframe_summary_table =
+            diagnostic_timeframe_summary_table,
+        .csv_export_table = csv_export_table,
+        .mesh_render_style_table = mesh_render_style_table,
+        .renderable_table = renderable_table,
+        .rhi_renderable_table = rhi_renderable_table,
+        .render_program_table = render_program_table,
+        .compute_pipeline_table = compute_pipeline_table,
+        .direct_light_table = direct_light_table,
+        .ambient_lighting_table = ambient_lighting_table,
+        .hdri_environment_table = hdri_environment_table,
+        .scene_table = scene_table,
+        .cache_settings = cache_settings,
     };
+    internal::register_renderable_compilers(registry, ctx);
 
-    using namespace wz::engine::assets;
+    const AssetKey mesh_key = test_asset_key(11);
+    const AssetKey program_key = test_asset_key(12);
+    const AssetKey style_key = test_asset_key(13);
 
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/cube",
-            .kind = ProceduralMeshKind::Cube,
-            });
+    // ── (a) styled compile: mesh + program + style ──────────────────────────
+    const AssetKey styled_key =
+        make_rhi_pull_mesh_renderable_key(
+            "test/rhi_pull_mesh_styled", mesh_key, program_key, style_key);
 
-    ASSERT_TRUE(mesh.valid());
+    AssetGraphDraft draft{};
+    const AssetGraphDraftNodeId mesh_node = add_asset_graph_draft_node(
+        draft,
+        test_source_node(mesh_key, kAssetTypeMesh, kRhiRenderableTestMeshSchema),
+        AssetGraphDraftNodeState::Existing);
+    const AssetGraphDraftNodeId program_node = add_asset_graph_draft_node(
+        draft,
+        test_source_node(
+            program_key, kAssetTypeRenderProgram, kRhiRenderableTestProgramSchema),
+        AssetGraphDraftNodeState::Existing);
+    const AssetGraphDraftNodeId style_node = add_asset_graph_draft_node(
+        draft,
+        test_source_node(
+            style_key, kAssetTypeMeshRenderStyle, kRhiRenderableTestStyleSchema),
+        AssetGraphDraftNodeState::Existing);
 
-    const auto renderable =
-        assets.renderables().create_mesh_wireframe({
-            .name = "debug/cube_wireframe",
-            .mesh = mesh,
-            });
+    AssetNode styled_node =
+        test_source_node(styled_key, kAssetTypeRenderable, kRhiPullMeshRenderableSchema);
+    styled_node.meta = RhiPullMeshRenderableCompileDesc{
+        .mesh_asset = mesh_key,
+        .render_program_asset = program_key,
+        .style_asset = style_key,
+    };
+    const AssetGraphDraftNodeId styled_draft_node = add_asset_graph_draft_node(
+        draft, std::move(styled_node), AssetGraphDraftNodeState::Existing);
 
-    ASSERT_TRUE(renderable.valid());
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft, mesh_node, styled_draft_node, 0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft, program_node, styled_draft_node, 1),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft, style_node, styled_draft_node, 2),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
 
-    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(validate_asset_graph_draft(draft, registry));
 
-    const auto report = assets.resolve_all();
+    const std::vector<AssetGraphDraftRegistration> registrations =
+        asset_graph_draft_to_registrations(draft, &registry);
+    std::vector<AssetSystem::RegistrationEntry> entries;
+    entries.reserve(registrations.size());
+    for (const AssetGraphDraftRegistration& registration : registrations) {
+        entries.push_back(AssetSystem::RegistrationEntry{
+            .node = registration.node, .dep_keys = registration.dep_keys });
+    }
 
-    EXPECT_TRUE(report.ok());
-    EXPECT_EQ(report.resolved_count, 2u);
+    // ── (b) no-style default draft: mesh + program only, style unconnected.
+    // Built + validated here (before the registry is moved into the system).
+    const AssetKey unstyled_key =
+        make_rhi_pull_mesh_renderable_key(
+            "test/rhi_pull_mesh_unstyled", mesh_key, program_key);
 
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
+    AssetGraphDraft draft2{};
+    const AssetGraphDraftNodeId mesh_node2 = add_asset_graph_draft_node(
+        draft2,
+        test_source_node(mesh_key, kAssetTypeMesh, kRhiRenderableTestMeshSchema),
+        AssetGraphDraftNodeState::Existing);
+    const AssetGraphDraftNodeId program_node2 = add_asset_graph_draft_node(
+        draft2,
+        test_source_node(
+            program_key, kAssetTypeRenderProgram, kRhiRenderableTestProgramSchema),
+        AssetGraphDraftNodeState::Existing);
+    AssetNode unstyled_node =
+        test_source_node(unstyled_key, kAssetTypeRenderable, kRhiPullMeshRenderableSchema);
+    unstyled_node.meta = RhiPullMeshRenderableCompileDesc{
+        .mesh_asset = mesh_key,
+        .render_program_asset = program_key,
+    };
+    const AssetGraphDraftNodeId unstyled_draft_node = add_asset_graph_draft_node(
+        draft2, std::move(unstyled_node), AssetGraphDraftNodeState::Existing);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft2, mesh_node2, unstyled_draft_node, 0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft2, program_node2, unstyled_draft_node, 1),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_TRUE(validate_asset_graph_draft(draft2, registry));
 
-    ASSERT_TRUE(handle.valid());
-    EXPECT_EQ(handle.handle.type, kAssetTypeRenderable);
+    const std::vector<AssetGraphDraftRegistration> registrations2 =
+        asset_graph_draft_to_registrations(draft2, &registry);
+    std::vector<AssetSystem::RegistrationEntry> entries2;
+    entries2.reserve(registrations2.size());
+    for (const AssetGraphDraftRegistration& registration : registrations2) {
+        entries2.push_back(AssetSystem::RegistrationEntry{
+            .node = registration.node, .dep_keys = registration.dep_keys });
+    }
 
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
+    // Registry is consumed by the system from here on; all validation above is
+    // complete.
+    AssetSystem system(std::move(registry));
+    ASSERT_TRUE(system.replace_registered_assets(std::move(entries)));
 
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->kind, RenderableKind::Mesh);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshWireframeDebug);
-    EXPECT_EQ(data->domain, RenderDomain::Debug);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
-    EXPECT_FLOAT_EQ(data->bounds_min[0], -1.0f);
-    EXPECT_FLOAT_EQ(data->bounds_min[1], -1.0f);
-    EXPECT_FLOAT_EQ(data->bounds_min[2], -1.0f);
-    EXPECT_FLOAT_EQ(data->bounds_max[0], 1.0f);
-    EXPECT_FLOAT_EQ(data->bounds_max[1], 1.0f);
-    EXPECT_FLOAT_EQ(data->bounds_max[2], 1.0f);
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(system.resolve_all(&errors), 4u);
+    EXPECT_TRUE(errors.empty());
+
+    const AssetSystem::CompiledAsset* compiled =
+        system.find_compiled(styled_key);
+    ASSERT_NE(compiled, nullptr);
+    ASSERT_TRUE(compiled->handle.valid());
+    const RhiRenderableRecipe* recipe =
+        rhi_renderable_table.get(compiled->handle);
+    ASSERT_NE(recipe, nullptr);
+    EXPECT_EQ(recipe->mesh_key, mesh_key);
+    EXPECT_EQ(recipe->program_key, program_key);
+    EXPECT_TRUE(recipe->style.has_style);
+    EXPECT_TRUE(recipe->style.wireframe_enabled);
+    EXPECT_FALSE(recipe->style.surface_enabled);
+    EXPECT_FLOAT_EQ(recipe->style.wireframe_color[0], 0.1f);
+    EXPECT_FLOAT_EQ(recipe->style.wireframe_color[3], 0.4f);
+    EXPECT_FLOAT_EQ(recipe->style.wireframe_emissive, 0.5f);
+    EXPECT_FLOAT_EQ(recipe->style.surface_color[1], 0.7f);
+    EXPECT_FLOAT_EQ(recipe->style.surface_emissive, 0.25f);
+    EXPECT_FLOAT_EQ(recipe->style.alpha, 0.75f);
+
+    ASSERT_TRUE(system.replace_registered_assets(std::move(entries2)));
+    errors.clear();
+    EXPECT_EQ(system.resolve_all(&errors), 3u);
+    EXPECT_TRUE(errors.empty());
+
+    compiled = system.find_compiled(unstyled_key);
+    ASSERT_NE(compiled, nullptr);
+    ASSERT_TRUE(compiled->handle.valid());
+    const RhiRenderableRecipe* unstyled_recipe =
+        rhi_renderable_table.get(compiled->handle);
+    ASSERT_NE(unstyled_recipe, nullptr);
+    EXPECT_EQ(unstyled_recipe->mesh_key, mesh_key);
+    EXPECT_EQ(unstyled_recipe->program_key, program_key);
+    EXPECT_FALSE(unstyled_recipe->style.has_style);
 }
 
-TEST(RenderableAssetModule, DuplicateMeshWireframeRegistrationReturnsSameAsset)
+
+// ── Issue #195 rewrites of the deleted 0x700/0x705 legacy tests ─────────────
+//
+// The legacy suite that followed this point asserted 0x700 (mesh wireframe)
+// and 0x705 (mesh styled) behaviors. Those schemas were deleted; the SAME
+// intents are covered on the 0x706 path where representable:
+//   - module create + resolve            -> the two draft-based 0x706 tests above
+//   - duplicate-registration dedup       -> DuplicateRhiPullMeshRegistrationReturnsSameAsset
+//   - identity folding (domain/style)    -> RhiPullMeshRenderableStyleParticipatesInIdentity
+//   - depth/raster/blend program select  -> MeshStylePullProgramDerivesPipelineStateIdentity
+//     (depth behavior is a PROGRAM property now: DepthMode/RasterMode/BlendMode
+//     on the provisioned program asset, derived from the style)
+//   - styled shading compile             -> RhiPullMeshRenderableBakesOptionalStyleShading
+// Intents NOT representable on the new path were deleted with these reasons:
+//   - BuiltinRenderProgram enum selection (ResolvesMeshWireframeRenderable,
+//     ResolvesDepthTestedMeshWireframeRenderable, ResolvesStyledMeshWireframe-
+//     Renderable, StyledMeshWireframeDepthTestSelectsDepthProgram, Transparent/
+//     Opaque/NearOpaqueSurface* trio): the enum is retired; the equivalent
+//     contract (pipeline state folds into program identity) is asserted below.
+//   - field_visualization / mask compile behaviors (StyledMeshCanBindVertex-
+//     DerivedFieldVisualization, StyledMeshIgnoresMissingVisualizationChannel,
+//     StyledMeshAcceptsFace*/*Vertex* mask quintet, StyledMeshMaskOnlyKeeps-
+//     ShowUnmatchedForVertexField, StyledMeshWithNoEnabledLayersResolvesAs-
+//     NonDrawing): geometry-generating style parts are deliberately NOT ported
+//     to the 0x706 recipe (#195 scope) — the style asset keeps the fields, the
+//     recipe ignores them.
+//   - RenderableAssetData bounds (MeshWireframeRenderableBoundsComeFromMesh-
+//     Vertices): the rhi recipe carries no baked bounds; the renderer derives
+//     geometry from the mesh asset directly.
+
+TEST(RenderableAssetModule, DuplicateRhiPullMeshRegistrationReturnsSameAsset)
 {
     const wz::fs::Path root =
         wz::fs::join(
@@ -590,250 +869,101 @@ TEST(RenderableAssetModule, DuplicateMeshWireframeRegistrationReturnsSameAsset)
         });
     ASSERT_TRUE(mesh.valid());
 
+    // Registration-only (no resolve): the program dep is a fabricated key —
+    // create_rhi_pull_mesh keys and dedups purely on (name, mesh, program,
+    // style) identity.
+    const RenderProgramAsset program{ .key = test_asset_key(77) };
+
     const auto first =
-        assets.renderables().create_mesh_wireframe({
-            .name = "debug/cube_wireframe",
+        assets.renderables().create_rhi_pull_mesh({
+            .name = "debug/cube_pull",
             .mesh = mesh,
+            .program = program,
         });
     const auto second =
-        assets.renderables().create_mesh_wireframe({
-            .name = "debug/cube_wireframe",
+        assets.renderables().create_rhi_pull_mesh({
+            .name = "debug/cube_pull",
             .mesh = mesh,
+            .program = program,
         });
 
     ASSERT_TRUE(first.valid());
     ASSERT_TRUE(second.valid());
     EXPECT_EQ(second.output, first.output);
-}
 
-TEST(RenderableAssetModule, ResolvesDepthTestedMeshWireframeRenderable)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_depth_mesh_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/depth_cube",
-            .kind = ProceduralMeshKind::Cube,
-            });
-
-    ASSERT_TRUE(mesh.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_wireframe({
-            .name = "debug/depth_cube_wireframe",
-            .mesh = mesh,
-            .program = BuiltinRenderProgram::MeshWireframeDepthDebug,
-            .domain = RenderDomain::Debug,
-            .policy_flags =
-                RenderPolicy_Wireframe
-                | RenderPolicy_DepthTest
-                | RenderPolicy_DepthWrite,
-            });
-
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-
-    EXPECT_TRUE(report.ok());
-    EXPECT_EQ(report.resolved_count, 2u);
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->kind, RenderableKind::Mesh);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshWireframeDepthDebug);
-    EXPECT_EQ(data->domain, RenderDomain::Debug);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
-}
-
-TEST(RenderableAssetModule, ResolvesStyledMeshWireframeRenderable)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_styled_mesh_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/styled_cube",
-            .kind = ProceduralMeshKind::Cube,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.color[0] = 0.05f;
-    style.wireframe.color[1] = 0.9f;
-    style.wireframe.color[2] = 0.2f;
-    style.wireframe.color[3] = 0.75f;
-    style.wireframe.emissive_strength = 3.0f;
-    style.depth_test = true;
-    style.depth_write = true;
-    style.double_sided = false;
-    style.hidden_line_prepass = true;
-
-    const auto render_style =
+    // A styled registration is a DISTINCT asset from the unstyled one, and
+    // dedups against itself the same way.
+    const auto style =
         assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/battlezone_green",
+            .name = "debug/cube_style",
+            .style = MeshRenderStyleData{},
+        });
+    ASSERT_TRUE(style.valid());
+
+    const auto styled_first =
+        assets.renderables().create_rhi_pull_mesh({
+            .name = "debug/cube_pull",
+            .mesh = mesh,
+            .program = program,
             .style = style,
         });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/styled_cube_renderable",
+    const auto styled_second =
+        assets.renderables().create_rhi_pull_mesh({
+            .name = "debug/cube_pull",
             .mesh = mesh,
-            .style = render_style,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-    EXPECT_EQ(report.resolved_count, 3u);
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const MeshHandle mesh_handle = assets.meshes().get_mesh(mesh);
-    ASSERT_TRUE(mesh_handle.valid());
-    const MeshData* mesh_data = assets.meshes().get_mesh_data(mesh_handle);
-    ASSERT_NE(mesh_data, nullptr);
-    EXPECT_TRUE(mesh_data->has_normals);
-    EXPECT_FALSE(mesh_data->has_uv0);
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->kind, RenderableKind::Mesh);
-    EXPECT_EQ(data->source_asset, mesh.output);
-    EXPECT_EQ(data->companion_asset, render_style.output);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshWireframeDepthDebug);
-    EXPECT_EQ(data->domain, RenderDomain::Opaque);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_Wireframe) != 0);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
-    EXPECT_TRUE(data->mesh_style.wireframe.enabled);
-    EXPECT_FALSE(data->mesh_style.surface.enabled);
-    EXPECT_FLOAT_EQ(data->mesh_style.wireframe.color[1], 0.9f);
-    EXPECT_FLOAT_EQ(data->mesh_style.wireframe.emissive_strength, 3.0f);
-    EXPECT_FALSE(data->mesh_style.double_sided);
-}
-
-TEST(RenderableAssetModule, StyledMeshWireframeDepthTestSelectsDepthProgram)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_hidden_line_mesh_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/hidden_line_cube",
-            .kind = ProceduralMeshKind::Cube,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    MeshRenderStyleData style{};
-    style.depth_test = true;
-    style.depth_write = false;
-    style.hidden_line_prepass = true;
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/hidden_line",
+            .program = program,
             .style = style,
         });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/hidden_line_cube_renderable",
-            .mesh = mesh,
-            .style = render_style,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshWireframeDepthDebug);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
-    EXPECT_FALSE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
-    EXPECT_FALSE(data->mesh_style.hidden_line_prepass);
+    ASSERT_TRUE(styled_first.valid());
+    EXPECT_EQ(styled_second.output, styled_first.output);
+    EXPECT_NE(styled_first.output, first.output);
 }
 
-TEST(RenderableAssetModule, TransparentSurfaceLayerResolvesSurfaceRenderable)
+TEST(RenderableAssetModule, RhiPullMeshRenderableStyleParticipatesInIdentity)
+{
+    using namespace wz::asset;
+    using namespace wz::engine::assets;
+
+    const AssetKey mesh_key = test_asset_key(21);
+    const AssetKey program_key = test_asset_key(22);
+    const AssetKey other_program_key = test_asset_key(23);
+    const AssetKey style_key = test_asset_key(24);
+
+    const AssetKey base =
+        make_rhi_pull_mesh_renderable_key("r", mesh_key, program_key);
+
+    // The program folds into identity (the 0x700-era "domain participates in
+    // identity" contract, restated for the program-property world).
+    EXPECT_FALSE(
+        make_rhi_pull_mesh_renderable_key("r", mesh_key, other_program_key)
+        == base);
+
+    // The optional style folds into identity...
+    EXPECT_FALSE(
+        make_rhi_pull_mesh_renderable_key("r", mesh_key, program_key, style_key)
+        == base);
+
+    // ...and an EMPTY style reproduces the styleless key bit-for-bit, so
+    // pre-#195 unstyled pull meshes keep their identity.
+    EXPECT_TRUE(
+        make_rhi_pull_mesh_renderable_key(
+            "r", mesh_key, program_key, AssetKey{})
+        == base);
+}
+
+// Depth/raster/blend are PROGRAM properties now: the provisioning helper
+// derives them from the style and folds them into the program's identity, so
+// styles that need different pipeline state get different program assets while
+// identical state dedups to one. This is the 0x705 program-selection matrix
+// (wireframe vs depth-tested vs transparent vs opaque surface) restated as the
+// recipe-level contract. Deviceless on purpose: provisioning only REGISTERS
+// assets (staging shader files + shader pair + program), it never resolves.
+TEST(RenderableAssetModule, MeshStylePullProgramDerivesPipelineStateIdentity)
 {
     const wz::fs::Path root =
         wz::fs::join(
             wz::fs::temp_directory_path(),
-            "wozzits_renderable_surface_style_fallback_tests");
+            "wozzits_mesh_style_pull_program_tests");
 
     ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
 
@@ -848,1107 +978,59 @@ TEST(RenderableAssetModule, TransparentSurfaceLayerResolvesSurfaceRenderable)
 
     using namespace wz::engine::assets;
 
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/surface_style_cube",
-            .kind = ProceduralMeshKind::Cube,
-        });
-    ASSERT_TRUE(mesh.valid());
+    MeshRenderStyleData wireframe_style{};
+    wireframe_style.wireframe.enabled = true;
+    wireframe_style.surface.enabled = false;
+    wireframe_style.depth_test = true;
+    wireframe_style.depth_write = false;
 
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = true;
-    style.surface.color[0] = 0.2f;
-    style.surface.color[1] = 0.6f;
-    style.surface.color[2] = 1.0f;
-    style.alpha = 0.35f;
-    style.depth_test = true;
-    style.depth_write = false;
-    style.hidden_line_prepass = false;
+    MeshRenderStyleData surface_style{};
+    surface_style.wireframe.enabled = false;
+    surface_style.surface.enabled = true;
+    surface_style.depth_test = true;
+    surface_style.depth_write = true;
 
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/transparent_surface_fallback",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
+    MeshRenderStyleData no_depth_surface = surface_style;
+    no_depth_surface.depth_test = false;
+    no_depth_surface.depth_write = false;
 
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/surface_style_cube_renderable",
-            .mesh = mesh,
-            .style = render_style,
-        });
-    ASSERT_TRUE(renderable.valid());
+    MeshRenderStyleData transparent_surface = surface_style;
+    transparent_surface.alpha = 0.5f;
 
-    ASSERT_TRUE(assets.commit());
+    const auto wire_program = ensure_mesh_style_pull_program(
+        logger, assets.files(), assets.shaders(), assets.render_programs(),
+        wireframe_style);
+    const auto surface_program = ensure_mesh_style_pull_program(
+        logger, assets.files(), assets.shaders(), assets.render_programs(),
+        surface_style);
+    const auto no_depth_program = ensure_mesh_style_pull_program(
+        logger, assets.files(), assets.shaders(), assets.render_programs(),
+        no_depth_surface);
+    const auto transparent_program = ensure_mesh_style_pull_program(
+        logger, assets.files(), assets.shaders(), assets.render_programs(),
+        transparent_surface);
+    const auto wire_again = ensure_mesh_style_pull_program(
+        logger, assets.files(), assets.shaders(), assets.render_programs(),
+        wireframe_style);
 
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
+    ASSERT_TRUE(wire_program.valid());
+    ASSERT_TRUE(surface_program.valid());
+    ASSERT_TRUE(no_depth_program.valid());
+    ASSERT_TRUE(transparent_program.valid());
 
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
+    // Wireframe raster vs solid raster -> distinct programs.
+    EXPECT_FALSE(wire_program.key == surface_program.key);
+    // Depth on vs off -> distinct programs (the 0x705 depth-test selection).
+    EXPECT_FALSE(surface_program.key == no_depth_program.key);
+    // Opaque vs alpha-blend -> distinct programs (the transparent-surface case).
+    EXPECT_FALSE(surface_program.key == transparent_program.key);
+    // Identical style-derived state dedups to ONE program asset.
+    EXPECT_TRUE(wire_again.key == wire_program.key);
 
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_EQ(data->kind, RenderableKind::Mesh);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshSurfaceAlpha);
-    EXPECT_EQ(data->domain, RenderDomain::Transparent);
-    EXPECT_FALSE((data->policy_flags & RenderPolicy_Wireframe) != 0);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_AlphaBlend) != 0);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
-    EXPECT_FALSE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
-    EXPECT_TRUE(data->mesh_style.surface.enabled);
-    EXPECT_FLOAT_EQ(data->mesh_style.alpha, 0.35f);
+    // The canonical shader source was staged into the project (write-if-
+    // missing) so the registered shader pair can resolve there.
+    EXPECT_TRUE(wz::fs::exists(
+        wz::fs::join(root, "shaders/mesh_style/mesh_style_pull_vs.hlsl")));
+    EXPECT_TRUE(wz::fs::exists(
+        wz::fs::join(root, "shaders/mesh_style/mesh_style_pull_ps.hlsl")));
 }
-
-TEST(RenderableAssetModule, OpaqueSurfaceMeshStyleResolvesSurfaceRenderable)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_opaque_surface_style_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/opaque_surface_cube",
-            .kind = ProceduralMeshKind::Cube,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = true;
-    style.surface.color[0] = 0.8f;
-    style.surface.color[1] = 0.2f;
-    style.surface.color[2] = 0.1f;
-    style.depth_test = true;
-    style.depth_write = true;
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/opaque_surface",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/opaque_surface_cube_renderable",
-            .mesh = mesh,
-            .style = render_style,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_EQ(data->kind, RenderableKind::Mesh);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshSurface);
-    EXPECT_EQ(data->domain, RenderDomain::Opaque);
-    EXPECT_FALSE((data->policy_flags & RenderPolicy_Wireframe) != 0);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthTest) != 0);
-    EXPECT_TRUE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
-    EXPECT_TRUE(data->mesh_style.surface.enabled);
-    EXPECT_FLOAT_EQ(data->mesh_style.surface.color[0], 0.8f);
-}
-
-TEST(RenderableAssetModule, NearOpaqueSurfaceAlphaResolvesOpaqueDepthWritingRenderable)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_near_opaque_surface_style_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/near_opaque_surface_cube",
-            .kind = ProceduralMeshKind::Cube,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = true;
-    style.alpha = 0.9995f;
-    style.depth_test = false;
-    style.depth_write = false;
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/near_opaque_surface",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/near_opaque_surface_cube_renderable",
-            .mesh = mesh,
-            .style = render_style,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshSurface);
-    EXPECT_EQ(data->domain, RenderDomain::Opaque);
-    EXPECT_FALSE((data->policy_flags & RenderPolicy_AlphaBlend) != 0);
-    EXPECT_FALSE((data->policy_flags & RenderPolicy_DepthTest) != 0);
-    EXPECT_FALSE((data->policy_flags & RenderPolicy_DepthWrite) != 0);
-    EXPECT_FLOAT_EQ(data->mesh_style.alpha, 1.0f);
-}
-
-TEST(RenderableAssetModule, StyledMeshCanBindVertexDerivedFieldVisualization)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_mesh_field_visualization_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/field_quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    const auto field =
-        assets.mesh_derived_fields().create_explicit_field({
-            .name = "debug/field_quad_detail",
-            .source_mesh = mesh,
-            .domain = MeshDerivedFieldDomain::Vertex,
-            .element_count = 4u,
-            .channels = {
-                MeshDerivedFieldChannelDesc{
-                    .channel_id = MeshWaveletChannelID::kDetailCost,
-                    .value_type = MeshDerivedFieldValueType::Float1,
-                    .values = float_bytes({ 0.0f, 0.25f, 0.75f, 1.0f }),
-                },
-            },
-        });
-    ASSERT_TRUE(field.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = true;
-    style.field_visualization.enabled = true;
-    style.field_visualization.channel_id = MeshWaveletChannelID::kDetailCost;
-    style.field_visualization.value_min = 0.0f;
-    style.field_visualization.value_max = 1.0f;
-    style.field_visualization.gamma = 0.8f;
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/wavelet_detail_heat",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/field_quad_renderable",
-            .mesh = mesh,
-            .style = render_style,
-            .mesh_field_visualization = field,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->kind, RenderableKind::Mesh);
-    EXPECT_EQ(data->source_asset, mesh.output);
-    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshFieldHeatmap);
-    EXPECT_TRUE(data->mesh_style.field_visualization.enabled);
-    EXPECT_EQ(
-        data->mesh_style.field_visualization.channel_id,
-        MeshWaveletChannelID::kDetailCost);
-    EXPECT_FLOAT_EQ(data->mesh_style.field_visualization.gamma, 0.8f);
-}
-
-TEST(RenderableAssetModule, StyledMeshIgnoresMissingVisualizationChannel)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_missing_mesh_field_channel_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/missing_field_channel_quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    const auto field =
-        assets.mesh_derived_fields().create_explicit_field({
-            .name = "debug/missing_field_channel_detail",
-            .source_mesh = mesh,
-            .domain = MeshDerivedFieldDomain::Vertex,
-            .element_count = 4u,
-            .channels = {
-                MeshDerivedFieldChannelDesc{
-                    .channel_id = 0x2200u,
-                    .value_type = MeshDerivedFieldValueType::Float1,
-                    .values = float_bytes({ 0.0f, 0.25f, 0.75f, 1.0f }),
-                },
-            },
-        });
-    ASSERT_TRUE(field.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = true;
-    style.field_visualization.enabled = true;
-    style.field_visualization.channel_id = 0x2300u;
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/missing_field_channel_heat",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/missing_field_channel_renderable",
-            .mesh = mesh,
-            .style = render_style,
-            .mesh_field_visualization = field,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->mesh_field_visualization_asset, wz::asset::AssetKey{});
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshSurface);
-    EXPECT_FALSE(data->mesh_style.field_visualization.enabled);
-}
-
-TEST(RenderableAssetModule, StyledMeshAcceptsFaceFieldVisualization)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_face_mesh_field_visualization_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/face_field_quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    const auto field =
-        assets.mesh_derived_fields().create_explicit_field({
-            .name = "debug/face_field_quad_detail",
-            .source_mesh = mesh,
-            .domain = MeshDerivedFieldDomain::Face,
-            .element_count = 2u,
-            .channels = {
-                MeshDerivedFieldChannelDesc{
-                    .channel_id = MeshWaveletChannelID::kDetailCost,
-                    .value_type = MeshDerivedFieldValueType::Float1,
-                    .values = float_bytes({ 0.0f, 1.0f }),
-                },
-            },
-        });
-    ASSERT_TRUE(field.valid());
-
-    MeshRenderStyleData style{};
-    style.field_visualization.enabled = true;
-    style.field_visualization.channel_id = MeshWaveletChannelID::kDetailCost;
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/bad_wavelet_detail_heat",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/face_field_quad_renderable",
-            .mesh = mesh,
-            .style = render_style,
-            .mesh_field_visualization = field,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
-    EXPECT_TRUE(data->mesh_style.field_visualization.enabled);
-}
-
-TEST(RenderableAssetModule, StyledMeshAcceptsFaceUIntMaskVisualization)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_face_mask_visualization_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/face_mask_quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    const auto field =
-        assets.mesh_derived_fields().create_explicit_field({
-            .name = "debug/face_mask_quad_masks",
-            .source_mesh = mesh,
-            .domain = MeshDerivedFieldDomain::Face,
-            .element_count = 2u,
-            .channels = {
-                MeshDerivedFieldChannelDesc{
-                    .channel_id = 0x3000u,
-                    .value_type = MeshDerivedFieldValueType::UInt1,
-                    .values = uint_bytes({ 1u, 0u }),
-                },
-            },
-        });
-    ASSERT_TRUE(field.valid());
-
-    MeshRenderStyleData style{};
-    style.field_visualization.enabled = true;
-    style.field_visualization.channel_id = 0x3000u;
-    style.field_visualization.value_min = 0.0f;
-    style.field_visualization.value_max = 1.0f;
-    style.field_visualization.gamma = 1.0f;
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/face_mask_heat",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/face_mask_quad_renderable",
-            .mesh = mesh,
-            .style = render_style,
-            .mesh_field_visualization = field,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshFieldHeatmap);
-    EXPECT_TRUE(data->mesh_style.field_visualization.enabled);
-    EXPECT_EQ(data->mesh_style.field_visualization.channel_id, 0x3000u);
-}
-
-TEST(RenderableAssetModule, StyledMeshAcceptsFaceMaskStyle)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_face_mesh_mask_style_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/face_mask_style_quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    const auto field =
-        assets.mesh_derived_fields().create_explicit_field({
-            .name = "debug/face_mask_style_field",
-            .source_mesh = mesh,
-            .domain = MeshDerivedFieldDomain::Face,
-            .element_count = 2u,
-            .channels = {
-                MeshDerivedFieldChannelDesc{
-                    .channel_id = 0x3300u,
-                    .value_type = MeshDerivedFieldValueType::UInt1,
-                    .values = uint_bytes({ 1u, 0u }),
-                },
-            },
-        });
-    ASSERT_TRUE(field.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = true;
-    style.mask.enabled = true;
-    style.mask.rules = {
-        MeshMaskRule{
-            .input_channel_id = 0x3300u,
-            .lo = 1.0f,
-            .hi = 1.0f,
-            .color = { 0.2f, 0.8f, 1.0f, 1.0f },
-            .priority = 7,
-        },
-    };
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/face_mask_style",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/face_mask_style_renderable",
-            .mesh = mesh,
-            .style = render_style,
-            .mesh_field_visualization = field,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshMaskStyle);
-    EXPECT_TRUE(data->mesh_style.mask.enabled);
-    ASSERT_EQ(data->mesh_style.mask.rules.size(), 1u);
-    EXPECT_EQ(data->mesh_style.mask.rules[0].input_channel_id, 0x3300u);
-}
-
-TEST(RenderableAssetModule, StyledMeshAcceptsVertexMaskStyle)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_vertex_mesh_mask_style_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/vertex_mask_style_quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    const auto field =
-        assets.mesh_derived_fields().create_explicit_field({
-            .name = "debug/vertex_mask_style_field",
-            .source_mesh = mesh,
-            .domain = MeshDerivedFieldDomain::Vertex,
-            .element_count = 4u,
-            .channels = {
-                MeshDerivedFieldChannelDesc{
-                    .channel_id = 0x3300u,
-                    .value_type = MeshDerivedFieldValueType::Float1,
-                    .values = float_bytes({ 0.0f, 0.25f, 0.5f, 1.0f }),
-                },
-            },
-        });
-    ASSERT_TRUE(field.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = true;
-    style.mask.enabled = true;
-    style.mask.domain = MeshMaskDomain::Vertex;
-    style.mask.rules = {
-        MeshMaskRule{
-            .input_channel_id = 0x3300u,
-            .lo = 0.25f,
-            .hi = 0.75f,
-            .color = { 0.2f, 0.8f, 1.0f, 1.0f },
-            .priority = 7,
-        },
-    };
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/vertex_mask_style",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/vertex_mask_style_renderable",
-            .mesh = mesh,
-            .style = render_style,
-            .mesh_field_visualization = field,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshMaskStyle);
-    EXPECT_TRUE(data->mesh_style.mask.enabled);
-    EXPECT_EQ(data->mesh_style.mask.domain, MeshMaskDomain::Vertex);
-    ASSERT_EQ(data->mesh_style.mask.rules.size(), 1u);
-    EXPECT_EQ(data->mesh_style.mask.rules[0].input_channel_id, 0x3300u);
-}
-
-TEST(RenderableAssetModule, StyledMeshAcceptsFaceMaskStyleWithoutBaseLayers)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_face_mesh_mask_only_style_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/face_mask_only_style_quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    const auto field =
-        assets.mesh_derived_fields().create_explicit_field({
-            .name = "debug/face_mask_only_style_field",
-            .source_mesh = mesh,
-            .domain = MeshDerivedFieldDomain::Face,
-            .element_count = 2u,
-            .channels = {
-                MeshDerivedFieldChannelDesc{
-                    .channel_id = 0x3300u,
-                    .value_type = MeshDerivedFieldValueType::UInt1,
-                    .values = uint_bytes({ 1u, 0u }),
-                },
-            },
-        });
-    ASSERT_TRUE(field.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = false;
-    style.mask.enabled = true;
-    style.mask.rules = {
-        MeshMaskRule{
-            .input_channel_id = 0x3300u,
-            .lo = 1.0f,
-            .hi = 1.0f,
-            .color = { 0.2f, 0.8f, 1.0f, 1.0f },
-            .priority = 7,
-        },
-    };
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/face_mask_only_style",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/face_mask_only_style_renderable",
-            .mesh = mesh,
-            .style = render_style,
-            .mesh_field_visualization = field,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->mesh_field_visualization_asset, field.output);
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshMaskStyle);
-    EXPECT_FALSE(data->mesh_style.wireframe.enabled);
-    EXPECT_FALSE(data->mesh_style.surface.enabled);
-    EXPECT_TRUE(data->mesh_style.mask.enabled);
-}
-
-TEST(RenderableAssetModule, StyledMeshMaskOnlyKeepsShowUnmatchedForVertexField)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_mask_unmatched_vertex_field_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/mask_unmatched_vertex_quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    const auto field =
-        assets.mesh_derived_fields().create_explicit_field({
-            .name = "debug/mask_unmatched_vertex_field",
-            .source_mesh = mesh,
-            .domain = MeshDerivedFieldDomain::Vertex,
-            .element_count = 4u,
-            .channels = {
-                MeshDerivedFieldChannelDesc{
-                    .channel_id = 0x3300u,
-                    .value_type = MeshDerivedFieldValueType::Float1,
-                    .values = float_bytes({ 0.0f, 0.25f, 0.5f, 1.0f }),
-                },
-            },
-        });
-    ASSERT_TRUE(field.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = false;
-    style.mask.enabled = true;
-    style.mask.show_unmatched = true;
-    style.mask.rules = {
-        MeshMaskRule{
-            .input_channel_id = 0x3300u,
-            .lo = 0.25f,
-            .hi = 0.75f,
-            .color = { 0.2f, 0.8f, 1.0f, 1.0f },
-            .priority = 7,
-        },
-    };
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/mask_unmatched_vertex_field",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/mask_unmatched_vertex_renderable",
-            .mesh = mesh,
-            .style = render_style,
-            .mesh_field_visualization = field,
-        });
-    ASSERT_TRUE(renderable.valid());
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_EQ(data->program, BuiltinRenderProgram::MeshMaskStyle);
-    EXPECT_FALSE(data->mesh_style.wireframe.enabled);
-    EXPECT_FALSE(data->mesh_style.surface.enabled);
-    EXPECT_TRUE(data->mesh_style.mask.enabled);
-    EXPECT_TRUE(data->mesh_style.mask.show_unmatched);
-}
-
-TEST(RenderableAssetModule, StyledMeshWithNoEnabledLayersResolvesAsNonDrawing)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_empty_mesh_style_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/empty_style_cube",
-            .kind = ProceduralMeshKind::Cube,
-        });
-    ASSERT_TRUE(mesh.valid());
-
-    MeshRenderStyleData style{};
-    style.wireframe.enabled = false;
-    style.surface.enabled = false;
-
-    const auto render_style =
-        assets.mesh_render_styles().create_mesh_render_style({
-            .name = "styles/empty",
-            .style = style,
-        });
-    ASSERT_TRUE(render_style.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_styled({
-            .name = "debug/empty_style_cube_renderable",
-            .mesh = mesh,
-            .style = render_style,
-        });
-    ASSERT_TRUE(renderable.valid());
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-
-    const auto handle = assets.renderables().get_renderable(renderable);
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data = assets.renderables().get_renderable_data(handle);
-    ASSERT_NE(data, nullptr);
-    EXPECT_TRUE(data->valid());
-    EXPECT_FALSE(data->mesh_style.wireframe.enabled);
-    EXPECT_FALSE(data->mesh_style.surface.enabled);
-    EXPECT_EQ(data->policy_flags, RenderPolicy_None);
-    EXPECT_EQ(data->mesh_field_visualization_asset, wz::asset::AssetKey{});
-}
-
-TEST(RenderableAssetModule, MeshWireframeRenderableDomainParticipatesInIdentity)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_mesh_domain_identity_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/shared_quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-
-    ASSERT_TRUE(mesh.valid());
-
-    const auto debug_renderable =
-        assets.renderables().create_mesh_wireframe({
-            .name = "debug/shared_quad_wireframe",
-            .mesh = mesh,
-            .domain = RenderDomain::Debug,
-        });
-
-    const auto opaque_renderable =
-        assets.renderables().create_mesh_wireframe({
-            .name = "debug/shared_quad_wireframe",
-            .mesh = mesh,
-            .domain = RenderDomain::Opaque,
-        });
-
-    ASSERT_TRUE(debug_renderable.valid());
-    ASSERT_TRUE(opaque_renderable.valid());
-    EXPECT_FALSE(debug_renderable.output == opaque_renderable.output);
-
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-    EXPECT_EQ(report.resolved_count, 3u);
-
-    const auto debug_handle =
-        assets.renderables().get_renderable(debug_renderable);
-    const auto opaque_handle =
-        assets.renderables().get_renderable(opaque_renderable);
-
-    ASSERT_TRUE(debug_handle.valid());
-    ASSERT_TRUE(opaque_handle.valid());
-
-    const auto* debug_data =
-        assets.renderables().get_renderable_data(debug_handle);
-    const auto* opaque_data =
-        assets.renderables().get_renderable_data(opaque_handle);
-
-    ASSERT_NE(debug_data, nullptr);
-    ASSERT_NE(opaque_data, nullptr);
-    EXPECT_EQ(debug_data->domain, RenderDomain::Debug);
-    EXPECT_EQ(opaque_data->domain, RenderDomain::Opaque);
-}
-
-TEST(RenderableAssetModule, MeshWireframeRenderableBoundsComeFromMeshVertices)
-{
-    const wz::fs::Path root =
-        wz::fs::join(
-            wz::fs::temp_directory_path(),
-            "wozzits_renderable_mesh_bounds_tests");
-
-    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
-
-    wz::Logger logger;
-    wz::gpu::Device device{};
-
-    wz::engine::assets::EngineAssetLibrary assets{
-        device,
-        logger,
-        root,
-    };
-
-    using namespace wz::engine::assets;
-
-    const auto mesh =
-        assets.meshes().create_procedural_mesh({
-            .name = "debug/quad",
-            .kind = ProceduralMeshKind::Quad,
-        });
-
-    ASSERT_TRUE(mesh.valid());
-
-    const auto renderable =
-        assets.renderables().create_mesh_wireframe({
-            .name = "debug/quad_wireframe",
-            .mesh = mesh,
-        });
-
-    ASSERT_TRUE(renderable.valid());
-    ASSERT_TRUE(assets.commit());
-
-    const auto report = assets.resolve_all();
-    EXPECT_TRUE(report.ok());
-    EXPECT_EQ(report.resolved_count, 2u);
-
-    const auto handle =
-        assets.renderables().get_renderable(renderable);
-
-    ASSERT_TRUE(handle.valid());
-
-    const auto* data =
-        assets.renderables().get_renderable_data(handle);
-
-    ASSERT_NE(data, nullptr);
-    EXPECT_FLOAT_EQ(data->bounds_min[0], -1.0f);
-    EXPECT_FLOAT_EQ(data->bounds_min[1], -1.0f);
-    EXPECT_FLOAT_EQ(data->bounds_min[2], 0.0f);
-    EXPECT_FLOAT_EQ(data->bounds_max[0], 1.0f);
-    EXPECT_FLOAT_EQ(data->bounds_max[1], 1.0f);
-    EXPECT_FLOAT_EQ(data->bounds_max[2], 0.0f);
-}
-

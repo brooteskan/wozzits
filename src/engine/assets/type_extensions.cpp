@@ -513,8 +513,6 @@ namespace wz::engine::assets
                 kDiagnosticTimeframeSummaryToDataTableSchema,
                 "Diagnostic timeframe summary to data table");
             WZ_ADD_SCHEMA(kMeshRenderStyleSchema, "Mesh render style");
-            WZ_ADD_SCHEMA(kMeshWireframeRenderableSchema, "Mesh wireframe renderable");
-            WZ_ADD_SCHEMA(kMeshStyledRenderableSchema, "Mesh styled renderable");
             WZ_ADD_SCHEMA(kRhiPullMeshRenderableSchema, "RHI pull mesh renderable");
             WZ_ADD_SCHEMA(
                 kGpuSparseMeshRenderableSchema,
@@ -522,12 +520,13 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(
                 kClipmapLandscapeRenderableSchema,
                 "Clipmap landscape renderable");
-            WZ_ADD_SCHEMA(
-                kGaussianSplatDebugRenderableSchema,
-                "Gaussian splat debug renderable");
+            // 0x702 stays alive after the #195 legacy-schema deletion: its
+            // RenderableAssetData feeds the resolver's preview-mesh branch —
+            // the editor's scalar-field visualization — not the (deleted)
+            // legacy field-texture path.
             WZ_ADD_SCHEMA(
                 kScalarFieldDebugRenderableSchema,
-                "Scalar field debug renderable");
+                "Scalar field preview renderable");
             WZ_ADD_SCHEMA(kTerrainDebugRenderableSchema, "Terrain debug renderable");
             WZ_ADD_SCHEMA(kTerrainSurfaceRenderableSchema, "Terrain surface renderable");
             WZ_ADD_SCHEMA(kSceneFromJSONSchema, "Scene from JSON");
