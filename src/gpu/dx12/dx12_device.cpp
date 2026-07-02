@@ -39,7 +39,9 @@ namespace
 
     // Create the device-shared depth buffer + DSV.  Caller must release the
     // previous resources before calling (this function only creates).
-    void create_depth_resources(
+    // Returns false on failure without leaving a null depth buffer bound to
+    // the DSV.
+    bool create_depth_resources(
         wz::gpu::dx12::DX12Device* impl,
         UINT width,
         UINT height)
@@ -55,7 +57,9 @@ namespace
             dsv_heap_desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
             hr = impl->device->CreateDescriptorHeap(
                 &dsv_heap_desc, IID_PPV_ARGS(&impl->dsv_heap));
-            assert(SUCCEEDED(hr));
+            if (!wz::gpu::dx12::dx12_check_hr(*impl, hr, "ID3D12Device::CreateDescriptorHeap (DSV)")) {
+                return false;
+            }
         }
 
         // Depth resource.
@@ -79,7 +83,9 @@ namespace
             D3D12_RESOURCE_STATE_DEPTH_WRITE,
             &clear_value,
             IID_PPV_ARGS(&impl->depth_buffer));
-        assert(SUCCEEDED(hr));
+        if (!wz::gpu::dx12::dx12_check_hr(*impl, hr, "ID3D12Device::CreateCommittedResource (depth buffer)")) {
+            return false;
+        }
 
         // DSV.
         D3D12_DEPTH_STENCIL_VIEW_DESC dsv_desc = {};
@@ -90,6 +96,7 @@ namespace
             impl->depth_buffer,
             &dsv_desc,
             impl->dsv_heap->GetCPUDescriptorHandleForHeapStart());
+        return true;
     }
 
     void release_depth_buffer(wz::gpu::dx12::DX12Device* impl)
@@ -296,7 +303,8 @@ namespace wz::gpu::dx12
         impl->rtv_stride = rtv_stride;
 
         // ────── create depth buffer + DSV ────────────────────────────────────
-        create_depth_resources(impl, impl->width, impl->height);
+        bool depth_ok = create_depth_resources(impl, impl->width, impl->height);
+        assert(depth_ok);
 
 
         // ────── return ───────────────────────────────────────────────────────
@@ -776,6 +784,12 @@ namespace wz::gpu::dx12
         if (dx12_device_lost(*impl))
             return false;
 
+        // Minimized windows deliver WM_SIZE(0,0): a non-positive extent is a
+        // benign no-op.  Leave impl->width/height and the swapchain untouched
+        // so the old swapchain stays valid until a non-zero size arrives.
+        if (w <= 0 || h <= 0)
+            return true;
+
         impl->width = w;
         impl->height = h;
 
@@ -832,7 +846,9 @@ namespace wz::gpu::dx12
             );
 
         // 5. recreate depth buffer at the new size
-        create_depth_resources(impl, static_cast<UINT>(w), static_cast<UINT>(h));
+        if (!create_depth_resources(impl, static_cast<UINT>(w), static_cast<UINT>(h))) {
+            return false;
+        }
         return !dx12_device_lost(*impl);
     }
 

@@ -194,6 +194,19 @@ TEST_F(GpuDeviceFixture, DeviceAccessorMatchesInitDevice)
     alloc.destroy();
 }
 
+TEST_F(GpuDeviceFixture, ResizeToZeroIsBenignNoOpAndSubsequentResizeSucceeds)
+{
+    // Minimized windows deliver WM_SIZE(0,0).  resize(0,0) must not crash
+    // (previously CreateCommittedResource for a 0x0 depth Tex2D asserted /
+    // aborted) and must leave the swapchain valid so a later non-zero resize
+    // still works.
+    EXPECT_TRUE(wz::gpu::resize(device, 0, 0));
+    EXPECT_TRUE(wz::gpu::resize(device, 0, 480));
+    EXPECT_TRUE(wz::gpu::resize(device, 640, 0));
+
+    EXPECT_TRUE(wz::gpu::resize(device, 128, 96));
+}
+
 TEST_F(GpuDeviceFixture, CreateStructuredBufferSrvWritesDescriptor)
 {
     wz::gpu::dx12::DX12DescriptorAllocator alloc{};
