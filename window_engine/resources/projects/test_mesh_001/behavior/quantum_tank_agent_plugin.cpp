@@ -49,6 +49,7 @@ namespace
             if (roster) {
                 roster->member_count++;
             }
+            state->ammo = agent_tank_config::kAmmoMax;  // limited magazine, no resupply yet
         }
         // Authorable knob: how fast the tank advances when it commits to ENGAGE.
         (void)wz_config_float(facts, "drive_speed", &state->drive_speed);
@@ -150,9 +151,23 @@ namespace
         const float reconsider_goal =
             tank_drive::clampf(volatility, -1.0f, 1.0f) * kReconsiderGoalGain;
 
+        // FIRE disposition (qubit 3): weapons-free (|0>, goal > 0) when we have
+        // ammo and a worthwhile shot; conserve (|1>) as ammo runs low, especially
+        // on distant targets. So a nearly-dry tank saves its rounds for close shots.
+        const float ammo_frac = tank_drive::clampf(
+            static_cast<float>(state->ammo)
+                / static_cast<float>(kAmmoMax), 0.0f, 1.0f);
+        const float range_quality =
+            0.5f - state->distance_to_target / kFireRange;   // + when close
+        const float fire_goal = tank_drive::clampf(
+            (2.0f * ammo_frac - 1.0f) * kFireAmmoWeight
+                + range_quality * kFireRangeWeight,
+            -1.0f, 1.0f);
+
         wz_self_set_agent_goal(facts, event, 0u, pursue_goal);      // pursue vs hold
         wz_self_set_agent_goal(facts, event, 1u, posture_goal);     // close vs circle
         wz_self_set_agent_goal(facts, event, 2u, reconsider_goal);  // volatile vs stable
+        wz_self_set_agent_goal(facts, event, 3u, fire_goal);        // fire vs conserve
     }
 
     // Clear line of sight from our gun to the player? March points along the
@@ -371,6 +386,21 @@ namespace
             }
             state->has_los = los ? 1u : 0u;
 
+            // The deliberated FIRE disposition (qubit 3): weapons-free (0) vs
+            // conserve (1) vs still deciding (-1). Log when it flips.
+            WzAgentDecision fire_dec{};
+            const uint8_t has_fire = wz_self_agent_decision_at(
+                facts, event, kFireDecisionQubit, &fire_dec);
+            if (has_fire && fire_dec.committed != state->fire_stance) {
+                state->fire_stance = fire_dec.committed;
+                wz_log_infof(
+                    facts, "[qtank:%d] weapons %s  (ammo=%u)",
+                    state->tank_id,
+                    fire_dec.committed == 0 ? "FREE"
+                        : (fire_dec.committed == 1 ? "HOLD (conserve)" : "deciding"),
+                    state->ammo);
+            }
+
             // A shot requires aim + range + LOS (so we never fire through a hill,
             // and never reward aggression for a blocked shot).
             const bool shot =
@@ -382,19 +412,35 @@ namespace
                     kAggressionMemoryQubit, /*dec_value=*/0u,  // |0> aggressive
                     kRewardLanding * dt);
 
-                // FIRE the cannon on a reload cadence whenever the gun is on target
-                // (unlimited ammo). Sound is emitted from this tank's own audio
-                // source so it spatializes from the tank's position.
+                // DISCHARGE only if the fire disposition is committed weapons-free
+                // AND we still have ammo -- so a low-ammo tank that has chosen to
+                // conserve holds its shot even with a clean line. Sound spatializes
+                // from this tank's own audio source.
                 const double now = wz_sim_time(facts);
-                if (now >= state->next_fire_time
+                // Fire when weapons-free -- OR merely LEANING that way while still
+                // deciding: an unobserved tank has near-zero decoherence so its fire
+                // qubit may never fully commit, and it should still shoot when it
+                // leans toward firing. Fall back to firing if the agent has no fire
+                // qubit at all. Only a committed / leaning CONSERVE holds the shot.
+                const bool weapons_free =
+                    !has_fire
+                    || fire_dec.committed == 0
+                    || (fire_dec.committed == -1 && fire_dec.marginal > 0.0f);
+                if (weapons_free && state->ammo > 0
+                    && now >= state->next_fire_time
                     && state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY)
                 {
                     wz_write_play_sound_named(facts, state->canon_audio, "Canon_a");
+                    state->ammo--;
                     state->next_fire_time = now + kFireCooldown;
                     wz_log_infof(
-                        facts, "[qtank:%d] FIRE  ctx=%s dist=%.1f",
+                        facts, "[qtank:%d] FIRE  ctx=%s dist=%.1f  ammo=%u",
                         state->tank_id, ctx ? "braced" : "fleeing",
-                        (double)state->distance_to_target);
+                        (double)state->distance_to_target, state->ammo);
+                    if (state->ammo == 0) {
+                        wz_log_infof(
+                            facts, "[qtank:%d] OUT OF AMMO", state->tank_id);
+                    }
                 }
             }
             // Log only on the RISING edge (acquiring the shot), with the learned

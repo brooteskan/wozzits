@@ -118,9 +118,22 @@ namespace agent_tank_config
     inline constexpr int   kLosSamples = 12;      // points along the sightline
     inline constexpr float kLosClearance = 0.3f;  // world u the ground may graze
 
-    // Cannon reload: the tank fires whenever it has a shot lined up, at most once
-    // per this interval (seconds). Unlimited ammo.
+    // Cannon reload: the tank fires at most once per this interval (seconds), and
+    // only while its FIRE disposition is weapons-free (see below) and it has ammo.
     inline constexpr double kFireCooldown = 1.1;
+
+    // --- LIMITED AMMO + FIRE DECISION: firing is no longer reflexive. A 4th
+    // decision qubit (index 3) is the tank's FIRE DISPOSITION -- |0> weapons-free,
+    // |1> conserve -- deliberated on the cognition's own clock like pursue/posture.
+    // Its goal is driven by ammo (full -> fire freely, low -> conserve) and shot
+    // quality (close targets are worth the round), so a low-ammo tank holds fire on
+    // marginal shots and spends its last rounds on good ones. It only discharges
+    // (and depletes ammo) when this disposition is committed weapons-free AND a
+    // shot is lined up AND ammo remains. ---
+    inline constexpr uint32_t kFireDecisionQubit = 3u;
+    inline constexpr uint32_t kAmmoMax = 15u;         // rounds per tank (no resupply yet)
+    inline constexpr float kFireAmmoWeight = 1.0f;    // full ammo -> fire, empty -> conserve
+    inline constexpr float kFireRangeWeight = 0.6f;   // close target -> worth the shot
 
     // --- OBSERVATION-FORCED DECOHERENCE (quantum Zeno): when the player is looking
     // at the tank, its decisions collapse fast -> it commits early and acts

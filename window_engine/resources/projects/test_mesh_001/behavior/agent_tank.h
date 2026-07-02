@@ -84,6 +84,10 @@ struct QuantumTankState {
     // occlusion logs a LOST edge.
     uint8_t has_los = 1;
 
+    // Last committed FIRE disposition (-2 never read, -1 deliberating, 0 weapons-
+    // free, 1 conserve), so we log only when it flips.
+    int8_t fire_stance = -2;
+
     // Cannon reload gate: sim_time the tank may next fire (fires whenever it has a
     // shot lined up, at most once per kFireCooldown). Unlimited ammo.
     double next_fire_time = 0.0;

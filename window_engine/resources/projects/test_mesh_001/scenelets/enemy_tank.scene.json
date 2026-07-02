@@ -63,7 +63,7 @@
           "enabled": true,
           "apply_in_editor": false,
           "config": {
-            "decisions": 3,
+            "decisions": 4,
             "goal": 0.6,
             "posture_goal": -0.5,
             "coupling": 0.3,
