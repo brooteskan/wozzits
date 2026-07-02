@@ -4,6 +4,16 @@
 #include <engine/behavior/behavior_module_api.h>
 #include "tank_drive.h"
 
+// Shared squad roster (behavior SHARED state, key "squad"): tanks register on
+// spawn to claim a slot in the commander's group agent, and the commander reads
+// the count to size that agent. Lives in shared state so it survives rebuilds and
+// is visible to both the tank and commander plugins. (Grow-only for now -- despawn
+// isn't wired, so it never shrinks yet.)
+struct SquadRoster {
+    int member_count = 0;
+};
+inline constexpr const char* kSquadRosterKey = "squad";
+
 struct QuantumTankState {
 
     float heading = 0.0f;
@@ -50,9 +60,14 @@ struct QuantumTankState {
 
     float drive_speed = 6.0f; // remove soon
 
-    // Small stable per-instance id for legible logging ("[qtank:0]", "[qtank:1]").
-    // Assigned once on first init; -1 = unassigned (preserved across rebuilds).
+    // Small stable per-instance id / squad slot, claimed once from the shared
+    // roster on first init ("[qtank:0]", "[qtank:1]"). -1 = unassigned (preserved
+    // across rebuilds).
     int tank_id = -1;
+
+    // Commander-only: the squad size it last reshaped its group agent to (-1 =
+    // never), so it reshapes only when the roster count changes.
+    int squad_size = -1;
 };
 
 // Populate the world snapshot the cognition goals read: distance + bearing to the

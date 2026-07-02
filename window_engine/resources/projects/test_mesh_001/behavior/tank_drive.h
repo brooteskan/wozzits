@@ -225,6 +225,29 @@ namespace tank_drive
         return wrap_pi(face_bearing_to(facts, event, target) - turret_yaw);
     }
 
+    // Signed angle (rad) from a SHOOTER's true forward (kBodyForward) to `target`,
+    // XZ plane -- like face_bearing_to but for an ARBITRARY shooter entity, not
+    // self. 0 = the shooter's nose (hence its gun, for a turretless read) points
+    // straight at the target. The learning loop uses this as the "is the PLAYER's
+    // hull pointed at ME" proxy for taking fire: hull_aim_error(player, self).
+    // Returns 0 if either transform is unreadable.
+    inline float hull_aim_error(
+        const WzBehaviorFrameFacts* facts,
+        WzBehaviorEntityId shooter,
+        WzBehaviorEntityId target)
+    {
+        WzMat4 sw{}; WzVec3 tp{};
+        if (!wz_read_world_transform(facts, shooter, &sw)
+            || !wz_read_world_position(facts, target, &tp))
+        {
+            return 0.0f;
+        }
+        const float fa = atan2f(-sw.m[2], sw.m[0]);            // shooter forward
+        const float ta = atan2f(-(tp.z - sw.m[14]),            // to-target angle
+            (tp.x - sw.m[12]));
+        return wrap_pi((ta - fa) - kBodyForward);
+    }
+
     // Yaw rate (rad/sec) that steers the hull to ORBIT `target` at roughly
     // `standoff` world units: aim the nose ~tangent to the circle around the
     // target (90 deg off the target bearing), with a radius correction that spirals

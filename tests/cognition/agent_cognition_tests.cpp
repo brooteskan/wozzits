@@ -364,3 +364,59 @@ TEST(AgentCognition, MarginalCommitPolicy)
     EXPECT_EQ(try_commit_marginal(-0.95, threshold, 0.1, rng), std::optional<bool>(true));   // |1>
     EXPECT_EQ(try_commit_marginal(0.0, threshold, 0.1, rng), std::nullopt);                  // undecided
 }
+
+// A memory register learns from rewards: it starts unbiased (<sigma_z> == 0),
+// concentrates toward the rewarded branch, and -- crucially -- keeps that learned
+// bias through a rearm (which rebuilds the DECISION coordination but must leave the
+// unmeasured memory untouched).
+TEST(AgentCognition, MemoryLearnsAndSurvivesRearm)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 1;
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.8, .decoherence_rate = 0.0 };
+    spec.memory_qubits = 1;
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    // Fresh memory is unbiased.
+    EXPECT_NEAR(store.memory_preference(h, 0), 0.0, 1e-9);
+
+    // Reward toward |0> repeatedly -> preference climbs toward +1 (monotonic).
+    double prev = store.memory_preference(h, 0);
+    for (int i = 0; i < 8; ++i) {
+        EXPECT_TRUE(store.reward(h, 0, /*toward=*/true, 0.5));
+        const double now = store.memory_preference(h, 0);
+        EXPECT_GT(now, prev - 1e-9);
+        prev = now;
+    }
+    EXPECT_GT(store.memory_preference(h, 0), 0.5);
+
+    // Rearm rebuilds the decision coordination; the learned memory must persist.
+    const double learned = store.memory_preference(h, 0);
+    ASSERT_TRUE(store.rearm(h, 10.0));
+    EXPECT_NEAR(store.memory_preference(h, 0), learned, 1e-9);
+
+    // Punishing (reward toward |1>) pulls it back -- relearning.
+    for (int i = 0; i < 12; ++i) {
+        store.reward(h, 0, /*toward=*/false, 0.5);
+    }
+    EXPECT_LT(store.memory_preference(h, 0), learned);
+}
+
+// An agent with no memory register rejects reward / reads back 0 (no crash, no
+// silent success).
+TEST(AgentCognition, NoMemoryRejectsLearning)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 2;
+    spec.clock = anneal_clock();
+    // memory_qubits left at 0.
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    EXPECT_FALSE(store.reward(h, 0, true, 1.0));
+    EXPECT_EQ(store.memory_preference(h, 0), 0.0);
+}

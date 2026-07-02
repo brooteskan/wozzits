@@ -51,6 +51,21 @@ namespace
             return;
         }
 
+        // DYNAMIC MEMBERSHIP: grow the group agent to the live squad size (a member
+        // stance qubit per registered tank, star-bonded to the command). Only when
+        // the roster count changes -- reshape re-anneals the whole group.
+        const SquadRoster* roster = static_cast<const SquadRoster*>(
+            wz_find_shared_state(facts, kSquadRosterKey));
+        const int count = roster ? roster->member_count : 0;
+        if (count != state->squad_size) {
+            wz_self_reshape_group(
+                facts, event,
+                static_cast<uint32_t>(count),
+                agent_tank_config::kSquadStarCoupling);
+            state->squad_size = count;
+            wz_log_infof(facts, "[commander] reshape squad -> %d members", count);
+        }
+
         sense_world(facts, event, state);   // gets the player's speed
 
         const double now = wz_sim_time(facts);

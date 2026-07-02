@@ -61,4 +61,40 @@ namespace agent_tank_config
     inline constexpr float kObeyPressPursue = 0.3f;    // PRESS: engage harder
     inline constexpr float kObeyPressClose = 0.5f;     //        + bias toward CLOSE
     inline constexpr float kObeyHarassCircle = 0.6f;   // HARASS: bias toward CIRCLE
+
+    // The command node's GROUP agent is qubit 0 (command) + one member "stance"
+    // qubit per live tank, star-bonded. A tank claims slot = tank_id + 1 and reads
+    // its OWN stance -- entangled with the command and its siblings -- instead of
+    // the command bit directly. The commander reshapes the group to the live squad
+    // size (dynamic membership) with this bond strength.
+    inline constexpr float kSquadStarCoupling = 1.5f;  // hub<->member ferro bond
+
+    // --- LEARNING: a per-tank 1-qubit AGGRESSION memory (|0> = aggressive,
+    // |1> = cautious), held in the co-located quantum_agent's memory register
+    // (outside the coordination, so it accumulates across every re-anneal). The
+    // tank reinforces it from OUTCOMES each frame:
+    //   * LANDING shots (our gun on the target + in range) -> reward toward
+    //     aggressive; being effective pays off.
+    //   * TAKING fire (the target's hull pointed at us + in range) -> reward
+    //     toward cautious; getting shot at teaches restraint.
+    // Then it reads <sigma_z> back and folds it into pursue/posture, so a tank
+    // that keeps landing hits presses harder and one that keeps getting shot
+    // learns to circle. Memory qubit index is 0. ---
+    inline constexpr uint32_t kAggressionMemoryQubit = 0u;
+
+    // "Shot" geometry: a hit is credibly landed / taken when the gun (or hull) is
+    // within this arc of the line to the other tank AND within this range.
+    inline constexpr float kFireArc = 0.12f;      // rad, ~7 deg gun-on-target
+    inline constexpr float kFireRange = 90.0f;    // world u, effective gun range
+
+    // Per-frame reinforcement strengths (small; the memory saturates over many
+    // frames of sustained advantage, not one lucky frame).
+    inline constexpr float kRewardLanding = 0.05f;   // toward aggressive when we hit
+    inline constexpr float kRewardTakingFire = 0.05f; // toward cautious when shot at
+
+    // How the learned aggression folds back into the tactical goals. A preference
+    // of +1 (fully aggressive) adds this much engage/close bias; -1 (cautious)
+    // subtracts it (leans hold / circle).
+    inline constexpr float kMemoryPursueGain = 0.4f;   // aggression -> pursue harder
+    inline constexpr float kMemoryPostureGain = 0.4f;  // aggression -> close in
 }

@@ -1560,6 +1560,65 @@ static inline uint8_t wz_self_reshape_group(
         star_coupling);
 }
 
+// LEARNING: reinforce a quantum_agent's memory register toward the branch
+// (memory_qubit == `toward`) by `strength` (> 0 reward, < 0 punish). Monotonic +
+// saturating; survives rearm/reshape/commit. Returns 0 if the node has no
+// quantum_agent / no memory / bad qubit.
+static inline uint8_t wz_agent_reward(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t memory_qubit,
+    uint8_t toward,
+    float strength)
+{
+    if (!facts || !facts->reward_agent) {
+        return 0;
+    }
+    return facts->reward_agent(
+        facts->cognition_reader_user, entity, memory_qubit, toward, strength);
+}
+
+// Read what a quantum_agent's memory learned about `memory_qubit`: <sigma_z> in
+// [-1, 1] (+1 leans toward the `toward == true` branch). 0 if no memory.
+static inline float wz_agent_memory(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t memory_qubit)
+{
+    if (!facts || !facts->agent_memory) {
+        return 0.0f;
+    }
+    return facts->agent_memory(
+        facts->cognition_reader_user, entity, memory_qubit);
+}
+
+// Convenience: reinforce / read the memory of the agent co-located on self.
+static inline uint8_t wz_self_agent_reward(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint32_t memory_qubit,
+    uint8_t toward,
+    float strength)
+{
+    return wz_agent_reward(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        memory_qubit,
+        toward,
+        strength);
+}
+
+static inline float wz_self_agent_memory(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint32_t memory_qubit)
+{
+    return wz_agent_memory(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        memory_qubit);
+}
+
 static inline void wz_log_info(
     const WzBehaviorFrameFacts* facts,
     const char* message)

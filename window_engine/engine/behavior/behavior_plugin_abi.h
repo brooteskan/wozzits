@@ -12,7 +12,19 @@
 extern "C" {
 #endif
 
-#define WZ_BEHAVIOR_ABI_VERSION 27u
+// Bump this WHENEVER the layout of a struct a plugin reads changes -- in
+// particular when APPENDING a field to WzBehaviorFrameFacts / WzBehaviorInitFacts.
+// The register-time check (api->version != WZ_BEHAVIOR_ABI_VERSION) then rejects a
+// plugin built against a newer header from loading into an older host (and vice
+// versa) -- failing CLOSED. Without the bump, a plugin compiled against the new
+// header reads an appended field at an offset PAST the end of the struct an older
+// host allocated: stack garbage, not null, so a `if (!facts->fn)` guard passes and
+// the plugin jumps through a garbage function pointer (access violation). Appended
+// fields are only "safe without a bump" if you can guarantee the host is always
+// rebuilt at least as new as every plugin -- which a separate project-plugin build
+// + hot-reload cannot guarantee, so: bump.
+// v28: appended reward_agent / agent_memory (cognition LEARNING seam).
+#define WZ_BEHAVIOR_ABI_VERSION 28u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -502,6 +514,30 @@ typedef uint8_t (*WzReshapeGroupFn)(
     uint32_t member_count,
     float star_coupling);
 
+/*
+ * Cognition LEARNING surface. A quantum_agent authored with a memory register
+ * carries an unmeasured MEMORY the actuator reinforces from outcomes:
+ *   reward_agent(entity, memory_qubit, toward, strength) -- concentrate the memory
+ *     toward (memory_qubit == `toward` branch) by `strength` (> 0 reward, < 0
+ *     punish); monotonic + saturating, and untouched by rearm/reshape/commit so
+ *     the learned bias accumulates across episodes.
+ *   agent_memory(entity, memory_qubit) -- read what it learned: <sigma_z> in
+ *     [-1, 1] (+1 leans toward the `toward == true` branch). Feed it, scaled, as a
+ *     decision goal to bias behavior toward what paid off.
+ * reward_agent returns 0 if the node has no quantum_agent / no memory / bad qubit.
+ */
+typedef uint8_t (*WzAgentRewardFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    uint32_t memory_qubit,
+    uint8_t toward,
+    float strength);
+
+typedef float (*WzAgentMemoryFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    uint32_t memory_qubit);
+
 typedef struct WzGpuWorkId
 {
     uint64_t value;
@@ -987,6 +1023,14 @@ typedef struct WzBehaviorFrameFacts
     WzSetAgentGoalFn set_agent_goal;
     WzRearmAgentFn rearm_agent;
     WzReshapeGroupFn reshape_group;
+
+    /*
+     * Cognition LEARNING surface (APPEND-ONLY; shares cognition_reader_user). Lets
+     * an actuator reinforce + read back the co-located quantum_agent's memory
+     * register, closing the outcome->learning loop. Null when no cognition host.
+     */
+    WzAgentRewardFn reward_agent;
+    WzAgentMemoryFn agent_memory;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

@@ -49,6 +49,11 @@ namespace wz::engine::cognition
         CommitPolicy commit;           // when a disposition collapses
         uint32_t chi = 0;              // backend selector (see above)
         uint64_t seed = 0x9e3779b97f4a7c15ull;  // rng for decoherence collapse
+        // Optional LEARNING: a memory register of this many qubits, held OUTSIDE
+        // the coordination -- never measured, so it accumulates across commits /
+        // rearms / reshapes. reward() concentrates it; memory_preference() reads
+        // it back (feed as a goal to bias decisions). 0 = no memory.
+        uint32_t memory_qubits = 0;
     };
 
     // Owns agents' cognition state. Handles are opaque, non-reused while alive, and
@@ -91,6 +96,18 @@ namespace wz::engine::cognition
         // handle.
         bool rearm(AgentHandle h, double now);
 
+        // LEARNING. Reinforce the agent's memory toward (memory_qubit == `toward`)
+        // by `strength` (> 0 reward, < 0 punish; monotonic + saturating). Untouched
+        // by rearm/reshape/commit -- the learned bias accumulates. False if the
+        // agent has no memory / bad qubit.
+        bool reward(
+            AgentHandle h, uint32_t memory_qubit, bool toward, double strength);
+
+        // Read what the memory learned about `memory_qubit`: <sigma_z> in [-1, 1]
+        // (+1 = leans toward |0>). Feed it, scaled, as a decision goal. 0 if no
+        // memory / bad qubit.
+        double memory_preference(AgentHandle h, uint32_t memory_qubit) const;
+
         // Change an agent's SIZE + bond structure live (dynamic group membership:
         // members join/leave a command's group). Rebuilds a fresh coordination of
         // `agent_count` qubits with `bonds`, preserving existing goal fields where
@@ -132,6 +149,9 @@ namespace wz::engine::cognition
             uint32_t chi = 0;
             uint64_t seed = 0;
             uint32_t agent_count = 0;
+            // Learning memory (outside the coordination; never measured).
+            wz::engine::cognition::qstate::Register memory;
+            uint32_t memory_qubits = 0;
         };
 
         const Agent* find(AgentHandle h) const;

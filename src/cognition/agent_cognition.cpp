@@ -1,5 +1,6 @@
 #include <cognition/agent_cognition.h>
 
+#include <cognition/learning.h>
 #include <cognition/ttn.h>
 
 #include <algorithm>
@@ -94,6 +95,13 @@ namespace wz::engine::cognition
             }
         }
         agent.agent_count = spec.agent_count;
+        // Optional LEARNING memory: a separate register in equal superposition,
+        // held OUTSIDE the coordination so it is never measured and its learned
+        // bias accumulates across commits / rearms / reshapes.
+        if (spec.memory_qubits > 0) {
+            agent.memory = qstate::uniform(spec.memory_qubits);
+            agent.memory_qubits = spec.memory_qubits;
+        }
         agents_.emplace(h, std::move(agent));
         return h;
     }
@@ -191,6 +199,33 @@ namespace wz::engine::cognition
         }
         wz::engine::cognition::set_goals(a->coordination, goals);
         return true;
+    }
+
+    bool AgentCognitionStore::reward(
+        AgentHandle h, uint32_t memory_qubit, bool toward, double strength)
+    {
+        Agent* a = find(h);
+        if (!a || memory_qubit >= a->memory_qubits) {
+            return false;
+        }
+        // Amplify the branch of this memory qubit selected by `toward`: mask picks
+        // the qubit, match sets which basis value (|0> toward == true, |1>
+        // otherwise) gets the e^{strength} boost. Monotonic + saturating, so
+        // repeated rewards converge toward that branch (a learning curve).
+        const uint64_t mask = 1ull << memory_qubit;
+        const uint64_t match = toward ? 0ull : mask;
+        wz::engine::cognition::reward(a->memory, mask, match, strength);
+        return true;
+    }
+
+    double AgentCognitionStore::memory_preference(
+        AgentHandle h, uint32_t memory_qubit) const
+    {
+        const Agent* a = find(h);
+        if (!a || memory_qubit >= a->memory_qubits) {
+            return 0.0;
+        }
+        return wz::engine::cognition::memory_preference(a->memory, memory_qubit);
     }
 
     bool AgentCognitionStore::rearm(AgentHandle h, double now)

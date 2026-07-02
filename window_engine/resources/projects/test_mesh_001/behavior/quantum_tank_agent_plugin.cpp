@@ -26,11 +26,6 @@ namespace
     };
 
 
-    // Hands out a small stable id per tank instance. Only bumped on a tank's FIRST
-    // init (re-init returns preserved state whose id is already set), so ids are
-    // 0,1,2... in spawn order and stay put across rebuilds.
-    static int g_next_tank_id = 0;
-
     void quantum_tank_init(
         const WzBehaviorInitFacts* facts,
         WzBehaviorEntityId self,
@@ -40,8 +35,20 @@ namespace
         if (!state) {
             return;
         }
+        // Claim a squad slot ONCE (first init only -- re-init returns preserved
+        // state whose id is already set). The slot = our index in the shared
+        // roster, and roster.member_count is the squad size the commander sizes its
+        // group agent to. Shared state is get-or-create by key, so all tanks share
+        // one roster.
         if (state->tank_id < 0) {
-            state->tank_id = g_next_tank_id++;
+            SquadRoster* roster = static_cast<SquadRoster*>(
+                wz_create_shared_state(
+                    facts, kSquadRosterKey,
+                    sizeof(SquadRoster), alignof(SquadRoster)));
+            state->tank_id = roster ? roster->member_count : 0;
+            if (roster) {
+                roster->member_count++;
+            }
         }
         // Authorable knob: how fast the tank advances when it commits to ENGAGE.
         (void)wz_config_float(facts, "drive_speed", &state->drive_speed);
@@ -91,13 +98,20 @@ namespace
             (state->distance_to_target - kStandoff) / kStandoff, -1.0f, 1.0f)
             * kPostureGoalGain;
 
-        // OBEY the group order from the commander node (if any): PRESS shifts the
-        // squad toward engage + close, HARASS toward keeping distance (circle). The
-        // tank's own cognition still deliberates; this just biases it.
-        if (state->command != WZ_INVALID_BEHAVIOR_ENTITY) {
-            WzAgentDecision order{};
-            if (wz_agent_decision(facts, state->command, &order)) {
-                const Command c = command_from(order.committed);
+        // OBEY the squad's group decision. Rather than read the command bit
+        // directly, read our OWN stance qubit in the command node's GROUP agent
+        // (slot = tank_id + 1) -- it's ENTANGLED with the command and our siblings
+        // through the star bond, so the whole squad's stance is one wave function
+        // (if a sibling collapses, ours is conditioned too). PRESS shifts us toward
+        // engage + close, HARASS toward keeping distance. Our own cognition still
+        // deliberates; this just biases it.
+        if (state->command != WZ_INVALID_BEHAVIOR_ENTITY && state->tank_id >= 0) {
+            const uint32_t slot = static_cast<uint32_t>(state->tank_id) + 1u;
+            WzAgentDecision stance{};
+            // Returns 0 if the commander hasn't grown the group to our slot yet
+            // (a brief lag after spawn) -> we fight solo until then.
+            if (wz_agent_decision_at(facts, state->command, slot, &stance)) {
+                const Command c = command_from(stance.committed);
                 if (c == Command::Press) {
                     pursue_goal += kObeyPressPursue;
                     posture_goal += kObeyPressClose;    // + = CLOSE (|0>)
@@ -106,6 +120,16 @@ namespace
                 }
             }
         }
+
+        // LEARNED aggression: read what this tank's memory has settled on (+1 =
+        // aggressive, -1 = cautious; reinforced from outcomes in sense_and_learn)
+        // and fold it into the tactical goals -- an effective tank presses/closes
+        // harder, a battered one holds/circles. Survives every re-anneal because
+        // the memory lives outside the coordination.
+        const float aggression =
+            wz_self_agent_memory(facts, event, kAggressionMemoryQubit);
+        pursue_goal += aggression * kMemoryPursueGain;
+        posture_goal += aggression * kMemoryPostureGain;   // + = CLOSE (|0>)
 
         // Meta: > 0 when the target is moving / range is changing fast.
         const float volatility =
@@ -222,6 +246,33 @@ namespace
         // target is beyond the frontal arc so the hull must reposition).
         state->aim_error = tank_drive::aim_error(
             facts, event, state->target, state->chassis.turret_yaw);
+
+        // LEARN from outcomes (frame.update only -- continuous reinforcement). Two
+        // aim proxies, each gated on range, nudge the aggression memory:
+        //   * OUR gun on the target + in range  -> we're LANDING shots -> reward
+        //     toward aggressive (|0>): being effective pays off.
+        //   * the target's HULL pointed at us + in range -> we're TAKING fire ->
+        //     reward toward cautious (|1>): getting shot at teaches restraint.
+        // (Later, "landing / taking fire" can key off real projectile geometry;
+        // for now the pointed-gun / pointed-hull proxies stand in.)
+        if (wz_event_kind(event) == WZ_EVENT_FRAME_UPDATE
+            && state->target != WZ_INVALID_BEHAVIOR_ENTITY)
+        {
+            using namespace agent_tank_config;
+            const bool in_range = state->distance_to_target < kFireRange;
+            if (in_range && fabsf(state->aim_error) < kFireArc) {
+                wz_self_agent_reward(
+                    facts, event, kAggressionMemoryQubit,
+                    /*toward=*/1u, kRewardLanding);   // |0> aggressive
+            }
+            const float incoming =
+                tank_drive::hull_aim_error(facts, state->target, wz_self(event));
+            if (in_range && fabsf(incoming) < kFireArc) {
+                wz_self_agent_reward(
+                    facts, event, kAggressionMemoryQubit,
+                    /*toward=*/0u, kRewardTakingFire);  // |1> cautious
+            }
+        }
 
         // Announce each collapse of the joint decision (once per change).
         if (pursue.committed != state->last_decision) {

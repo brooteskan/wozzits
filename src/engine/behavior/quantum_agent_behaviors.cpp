@@ -115,6 +115,12 @@ namespace wz::engine::behavior
                     config_float(facts, kQuantumAgentDecoherenceKey, 0.0f);
                 spec.chi = 0;  // exact joint state: genuine entanglement, 2 qubits
 
+                // Optional LEARNING memory register (held outside the coordination).
+                float memory_f = 0.0f;
+                (void)wz_config_float(facts, kQuantumAgentMemoryKey, &memory_f);
+                spec.memory_qubits =
+                    memory_f < 1.0f ? 0u : static_cast<uint32_t>(memory_f);
+
                 // Per-instance RNG seed so identically-configured NPCs do NOT
                 // decohere in lockstep (the default seed gives every agent the same
                 // sequence). Derive from the self entity -- distinct per concurrent
@@ -207,6 +213,8 @@ namespace wz::engine::behavior
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
             { kQuantumAgentThinkIntervalKey, "Think interval (s)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.25, nullptr },
+            { kQuantumAgentMemoryKey, "Memory qubits (learning)",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
         };
 
         WzBehaviorModuleDesc desc{};

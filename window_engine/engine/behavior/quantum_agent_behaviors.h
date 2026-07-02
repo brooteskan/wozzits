@@ -84,6 +84,13 @@ namespace wz::engine::behavior
     // correlate with the hub). Use INSTEAD of `coupling` (which is the 0<->1 pair).
     inline constexpr const char* kQuantumAgentStarCouplingKey = "star_coupling";
 
+    // LEARNING: number of MEMORY qubits held outside the coordination (never
+    // measured, so their learned bias accumulates across commits / rearms /
+    // reshapes). 0 = no memory. An actuator reinforces them via wz_agent_reward
+    // and reads them back via wz_agent_memory to bias its goals toward what paid
+    // off.
+    inline constexpr const char* kQuantumAgentMemoryKey = "memory";
+
     // Cap on coupled decisions a single agent exposes (keeps the POD state fixed-
     // size + trivially copyable). Bump if a richer NPC needs more qubits.
     inline constexpr uint32_t kQuantumAgentMaxDecisions = 4;

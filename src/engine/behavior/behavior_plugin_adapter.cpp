@@ -1579,6 +1579,39 @@ namespace wz::engine::behavior
                 : 0u;
         }
 
+        uint8_t reward_agent_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            uint32_t memory_qubit,
+            uint8_t toward,
+            float strength)
+        {
+            const QuantumAgentState* state = find_quantum_agent_state(
+                static_cast<BehaviorFrameContext*>(user), entity);
+            if (!state || state->handle == 0u) {
+                return 0;
+            }
+            return quantum_agent_store().reward(
+                       state->handle, memory_qubit, toward != 0,
+                       static_cast<double>(strength))
+                ? 1u
+                : 0u;
+        }
+
+        float agent_memory_query(
+            void* user,
+            WzBehaviorEntityId entity,
+            uint32_t memory_qubit)
+        {
+            const QuantumAgentState* state = find_quantum_agent_state(
+                static_cast<BehaviorFrameContext*>(user), entity);
+            if (!state || state->handle == 0u) {
+                return 0.0f;
+            }
+            return static_cast<float>(quantum_agent_store().memory_preference(
+                state->handle, memory_qubit));
+        }
+
         uint8_t set_next_wake_request(
             void* user,
             double delay_seconds)
@@ -1872,6 +1905,8 @@ namespace wz::engine::behavior
                 .set_agent_goal = set_agent_goal_request,
                 .rearm_agent = rearm_agent_request,
                 .reshape_group = reshape_group_request,
+                .reward_agent = reward_agent_request,
+                .agent_memory = agent_memory_query,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -1955,6 +1990,8 @@ namespace wz::engine::behavior
                 .set_agent_goal = set_agent_goal_request,
                 .rearm_agent = rearm_agent_request,
                 .reshape_group = reshape_group_request,
+                .reward_agent = reward_agent_request,
+                .agent_memory = agent_memory_query,
             };
         }
 
