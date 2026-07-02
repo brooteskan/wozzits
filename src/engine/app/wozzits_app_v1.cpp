@@ -1614,14 +1614,19 @@ namespace wz::app
             wz::engine::assets::bridge_scene_source_keys(
                 scene_nodes_, graph_draft_);
             graft_scene_sources();
+            // assemble_render_bindings resolves each spawned node's render_program
+            // + AudioSource anchors (node id -> key) on scene_nodes_. It MUST run
+            // BEFORE rebuild_behavior_scene, because the rebuild materializes the
+            // runtime AudioSource from node.audio_source->audio_renderable -- an
+            // unresolved (empty) key there makes a spawned tank's cannon silent
+            // (mirrors the load path, where assemble precedes the final rebuild).
+            assemble_render_bindings(graph_draft_);
         }
 
         rebuild_behavior_scene();
         if (ctx_.assets) {
-            // assemble_render_bindings: a directly-renderable spawned node;
             // rematerialize_render_bindings: the freshly grafted GLB children's
             // intrinsic geometry bindings (the pre-graft assemble can't see them).
-            assemble_render_bindings(graph_draft_);
             rematerialize_render_bindings();
         }
         ctx_.logger.info(
