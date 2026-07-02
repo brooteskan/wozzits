@@ -87,10 +87,12 @@ namespace agent_tank_config
     inline constexpr float kFireArc = 0.12f;      // rad, ~7 deg gun-on-target
     inline constexpr float kFireRange = 90.0f;    // world u, effective gun range
 
-    // Per-frame reinforcement strengths (small; the memory saturates over many
-    // frames of sustained advantage, not one lucky frame).
-    inline constexpr float kRewardLanding = 0.05f;   // toward aggressive when we hit
-    inline constexpr float kRewardTakingFire = 0.05f; // toward cautious when shot at
+    // Reinforcement RATES, per SECOND of sustained advantage (scaled by frame dt
+    // at the call site so learning speed is frame-rate INVARIANT -- same Poisson-
+    // style cadence-invariance as the decoherence rate; a 144Hz machine must not
+    // learn 5x faster than a 30Hz one). ~3/s matches the old 0.05/frame at 60fps.
+    inline constexpr float kRewardLanding = 3.0f;    // toward aggressive when we hit
+    inline constexpr float kRewardTakingFire = 3.0f; // toward cautious when shot at
 
     // How the learned aggression folds back into the tactical goals. A preference
     // of +1 (fully aggressive) adds this much engage/close bias; -1 (cautious)

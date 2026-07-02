@@ -259,18 +259,22 @@ namespace
             && state->target != WZ_INVALID_BEHAVIOR_ENTITY)
         {
             using namespace agent_tank_config;
+            // Scale the per-second reward RATES by frame dt so learning speed is
+            // frame-rate invariant (amplifying by e^{rate*dt} each frame integrates
+            // to e^{rate} per second regardless of fps).
+            const float dt = wz_delta_seconds(facts);
             const bool in_range = state->distance_to_target < kFireRange;
             if (in_range && fabsf(state->aim_error) < kFireArc) {
                 wz_self_agent_reward(
                     facts, event, kAggressionMemoryQubit,
-                    /*toward=*/1u, kRewardLanding);   // |0> aggressive
+                    /*toward=*/1u, kRewardLanding * dt);   // |0> aggressive
             }
             const float incoming =
                 tank_drive::hull_aim_error(facts, state->target, wz_self(event));
             if (in_range && fabsf(incoming) < kFireArc) {
                 wz_self_agent_reward(
                     facts, event, kAggressionMemoryQubit,
-                    /*toward=*/0u, kRewardTakingFire);  // |1> cautious
+                    /*toward=*/0u, kRewardTakingFire * dt);  // |1> cautious
             }
         }
 
