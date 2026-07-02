@@ -25,7 +25,8 @@ extern "C" {
 // + hot-reload cannot guarantee, so: bump.
 // v28: appended reward_agent / agent_memory (cognition LEARNING seam).
 // v29: appended reward_agent_pair / agent_conditional_pref (CONTEXTUAL learning).
-#define WZ_BEHAVIOR_ABI_VERSION 29u
+// v30: appended set_agent_decoherence (observation-forced decoherence).
+#define WZ_BEHAVIOR_ABI_VERSION 30u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -569,6 +570,18 @@ typedef float (*WzAgentConditionalPrefFn)(
     uint8_t ctx_value,
     uint32_t dec_qubit);
 
+/*
+ * Set the co-located quantum_agent's decoherence RATE live (Poisson collapse
+ * pressure in think(): p = 1 - e^{-rate*dt} per tick). High -> snap/early commit;
+ * ~0 -> stay coherent until confident. Drives "observation-forced decoherence": a
+ * watched agent collapses fast + predictably, an unobserved one keeps deliberating.
+ * Returns 0 if the node has no quantum_agent.
+ */
+typedef uint8_t (*WzSetAgentDecoherenceFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    float rate);
+
 typedef struct WzGpuWorkId
 {
     uint64_t value;
@@ -1071,6 +1084,13 @@ typedef struct WzBehaviorFrameFacts
      */
     WzAgentRewardPairFn reward_agent_pair;
     WzAgentConditionalPrefFn agent_conditional_pref;
+
+    /*
+     * Observation-forced decoherence (APPEND-ONLY; shares cognition_reader_user).
+     * Live decoherence-rate modulation on the co-located quantum_agent. Null when
+     * no cognition host.
+     */
+    WzSetAgentDecoherenceFn set_agent_decoherence;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

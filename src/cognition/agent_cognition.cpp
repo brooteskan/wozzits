@@ -258,6 +258,16 @@ namespace wz::engine::cognition
             a->memory, ctx_qubit, ctx_value ? 1u : 0u, dec_qubit);
     }
 
+    bool AgentCognitionStore::set_decoherence(AgentHandle h, double rate)
+    {
+        Agent* a = find(h);
+        if (!a) {
+            return false;
+        }
+        a->commit.decoherence_rate = rate < 0.0 ? 0.0 : rate;
+        return true;
+    }
+
     bool AgentCognitionStore::rearm(AgentHandle h, double now)
     {
         Agent* a = find(h);

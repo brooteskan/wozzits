@@ -96,6 +96,15 @@ namespace wz::engine::cognition
         // handle.
         bool rearm(AgentHandle h, double now);
 
+        // Set the agent's decoherence RATE live (the Poisson collapse pressure used
+        // by think(): p = 1 - e^{-rate*dt} per tick). A high rate forces EARLY
+        // commitment (snap decisions); ~0 lets it stay coherent until genuinely
+        // confident. Lets an actuator drive "observation-forced decoherence" -- a
+        // watched agent collapses fast/predictably, an unobserved one keeps
+        // deliberating. Survives rearm/reshape (they keep the commit policy).
+        // Returns false for an unknown handle.
+        bool set_decoherence(AgentHandle h, double rate);
+
         // LEARNING. Reinforce the agent's memory toward (memory_qubit == `toward`)
         // by `strength` (> 0 reward, < 0 punish; monotonic + saturating). Untouched
         // by rearm/reshape/commit -- the learned bias accumulates. False if the

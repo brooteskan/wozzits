@@ -290,6 +290,33 @@ TEST(AgentCognition, DecoherenceForcesAnEarlyCommit)
     EXPECT_TRUE(store.committed(h, 0).has_value());
 }
 
+// set_decoherence drives observation-forced collapse: the SAME agent + goal
+// commits early when its decoherence is set high, and stays deliberating when set
+// ~0 (only confidence could commit it, which the weak goal never reaches).
+TEST(AgentCognition, SetDecoherenceControlsCommitTiming)
+{
+    auto run = [](double rate) {
+        AgentCognitionStore store;
+        AgentSpec spec;
+        spec.agent_count = 1;
+        spec.clock = anneal_clock();
+        // High confidence so ONLY decoherence can force an early commit; a weak
+        // goal so the marginal never reaches the confidence bar on its own.
+        spec.commit = CommitPolicy{ .confidence = 0.99, .decoherence_rate = 0.0 };
+        spec.goals = { Goal{ .agent = 0u, .field = 0.05 } };
+        const AgentHandle h = store.create(spec);
+        EXPECT_NE(h, kInvalidAgent);
+        EXPECT_TRUE(store.set_decoherence(h, rate));
+        store.start(h, 0.0);
+        for (int i = 1; i <= 10; ++i) {
+            store.think(h, 0.1 * i);
+        }
+        return store.committed(h, 0).has_value();
+    };
+    EXPECT_TRUE(run(8.0));    // watched: high decoherence -> snap commit
+    EXPECT_FALSE(run(0.0));   // unobserved: stays coherent (weak goal, no pressure)
+}
+
 // think() before start() lazily zeroes the clock and does no work; nothing
 // commits at the uniform initial state with no pressure.
 TEST(AgentCognition, ThinkBeforeStartIsANoOp)

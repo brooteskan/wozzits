@@ -1650,6 +1650,22 @@ namespace wz::engine::behavior
                 state->handle, ctx_qubit, ctx_value != 0, dec_qubit));
         }
 
+        uint8_t set_agent_decoherence_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            float rate)
+        {
+            const QuantumAgentState* state = find_quantum_agent_state(
+                static_cast<BehaviorFrameContext*>(user), entity);
+            if (!state || state->handle == 0u) {
+                return 0;
+            }
+            return quantum_agent_store().set_decoherence(
+                       state->handle, static_cast<double>(rate))
+                ? 1u
+                : 0u;
+        }
+
         uint8_t set_next_wake_request(
             void* user,
             double delay_seconds)
@@ -1947,6 +1963,7 @@ namespace wz::engine::behavior
                 .agent_memory = agent_memory_query,
                 .reward_agent_pair = reward_agent_pair_request,
                 .agent_conditional_pref = agent_conditional_pref_query,
+                .set_agent_decoherence = set_agent_decoherence_request,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -2034,6 +2051,7 @@ namespace wz::engine::behavior
                 .agent_memory = agent_memory_query,
                 .reward_agent_pair = reward_agent_pair_request,
                 .agent_conditional_pref = agent_conditional_pref_query,
+                .set_agent_decoherence = set_agent_decoherence_request,
             };
         }
 

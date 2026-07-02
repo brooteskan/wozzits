@@ -1685,6 +1685,32 @@ static inline float wz_self_agent_conditional_pref(
         ctx_qubit, ctx_value, dec_qubit);
 }
 
+// Set the co-located quantum_agent's decoherence rate live (observation-forced
+// decoherence: high -> snap/predictable commit, ~0 -> stays coherent). Returns 0
+// if the node has no quantum_agent.
+static inline uint8_t wz_set_agent_decoherence(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    float rate)
+{
+    if (!facts || !facts->set_agent_decoherence) {
+        return 0;
+    }
+    return facts->set_agent_decoherence(
+        facts->cognition_reader_user, entity, rate);
+}
+
+static inline uint8_t wz_self_set_agent_decoherence(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    float rate)
+{
+    return wz_set_agent_decoherence(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        rate);
+}
+
 static inline void wz_log_info(
     const WzBehaviorFrameFacts* facts,
     const char* message)
