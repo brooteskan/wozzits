@@ -6,6 +6,8 @@
 
 #include <gtest/gtest.h>
 
+#include <complex>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -28,6 +30,122 @@ namespace
         n.child_bonds = std::move(child_bonds);
         n.t = std::move(t);
         return n;
+    }
+
+    // ─── Independent brute-force reference ────────────────────────────────────
+    //
+    // Materializes the full 2^N statevector by contracting the ENTIRE tree tensor
+    // network (a plain odometer sum over every bond-index assignment), then reads
+    // each site's <sigma_z> directly. Deliberately unrelated to the message-passing
+    // contraction under test, so it can pin its correctness.
+    //
+    // Bond convention matches tree_tn: each non-root child c owns ONE bond, of
+    // dim node[c].parent_bond, shared with its parent (which lists it in
+    // child_bonds in child order). A node's tensor is row-major over
+    // [physical(2), parent_bond, child_bonds...].
+    std::vector<double> dense_tree_sigma_z(const TreeTnNetwork& net)
+    {
+        using wz::core::graph::child_count;
+        using wz::core::graph::children;
+        using wz::core::graph::is_root;
+        using wz::core::graph::node_count;
+        using wz::core::graph::node_data;
+
+        const uint32_t N = node_count(net);
+
+        // Each non-root node's parent bond is a distinct contraction index. Give
+        // every such bond a global id (= the child node's handle) and its dim.
+        std::vector<uint32_t> bond_dim(N, 1);  // indexed by child node handle
+        std::vector<uint32_t> bond_ids;        // list of bonds to enumerate
+        for (NodeHandle n = 0; n < N; ++n) {
+            if (!is_root(net, n)) {
+                bond_dim[n] = node_data(net, n).parent_bond;
+                bond_ids.push_back(n);
+            }
+        }
+        const std::size_t num_bonds = bond_ids.size();
+
+        // For a given physical config (bit s_n per node) and bond assignment
+        // (value per bond), the amplitude is the product over nodes of that node's
+        // tensor entry, indexing its parent bond by the parent-edge value and each
+        // child bond by that child's bond value.
+        auto amp_for = [&](uint64_t phys, const std::vector<uint32_t>& bond_val)
+            -> Complex {
+            Complex a{ 1, 0 };
+            for (NodeHandle n = 0; n < N; ++n) {
+                const TreeNode& T = node_data(net, n);
+                const uint32_t s = static_cast<uint32_t>((phys >> n) & 1u);
+                const uint32_t a_bond =
+                    is_root(net, n) ? 0u : bond_val[n];  // parent bond value
+                std::vector<uint32_t> cb;
+                cb.reserve(child_count(net, n));
+                for (NodeHandle c : children(net, n)) {
+                    cb.push_back(bond_val[c]);  // child c owns bond id c
+                }
+                // Flat index for [2, parent_bond, child_bonds...].
+                std::size_t idx = s;
+                idx = idx * T.parent_bond + a_bond;
+                for (std::size_t k = 0; k < cb.size(); ++k) {
+                    idx = idx * T.child_bonds[k] + cb[k];
+                }
+                a *= T.t[idx];
+            }
+            return a;
+        };
+
+        // Full statevector amp[phys] = sum over all bond assignments of amp_for.
+        const uint64_t phys_dim = (1ull << N);
+        std::vector<Complex> psi(phys_dim, Complex{ 0, 0 });
+        std::vector<uint32_t> bond_val(N, 0);  // bond value indexed by child handle
+        for (uint64_t phys = 0; phys < phys_dim; ++phys) {
+            // odometer over the bonds
+            for (uint32_t& b : bond_val) {
+                b = 0;
+            }
+            bool more = true;
+            while (more) {
+                psi[phys] += amp_for(phys, bond_val);
+                // advance odometer over bond_ids
+                more = false;
+                for (std::size_t k = 0; k < num_bonds; ++k) {
+                    const NodeHandle id = bond_ids[k];
+                    if (++bond_val[id] < bond_dim[id]) {
+                        more = true;
+                        break;
+                    }
+                    bond_val[id] = 0;
+                }
+                if (num_bonds == 0) {
+                    break;  // no bonds: exactly one term
+                }
+            }
+        }
+
+        // Per-site <sigma_z> = (sum |amp|^2 * sign) / (sum |amp|^2), sign = +1 if
+        // bit == 0, -1 if bit == 1.
+        std::vector<double> sz(N, 0.0);
+        double total = 0.0;
+        for (uint64_t phys = 0; phys < phys_dim; ++phys) {
+            total += std::norm(psi[phys]);
+        }
+        for (NodeHandle n = 0; n < N; ++n) {
+            double num = 0.0;
+            for (uint64_t phys = 0; phys < phys_dim; ++phys) {
+                const double p = std::norm(psi[phys]);
+                const double sign = ((phys >> n) & 1u) ? -1.0 : 1.0;
+                num += p * sign;
+            }
+            sz[n] = total > 0 ? num / total : 0.0;
+        }
+        return sz;
+    }
+
+    // Fill a vector with random complex entries in [-1,1] + i[-1,1].
+    void fill_random(std::vector<Complex>& v, Rng& rng)
+    {
+        for (Complex& c : v) {
+            c = Complex{ rng.next_unit() * 2 - 1, rng.next_unit() * 2 - 1 };
+        }
     }
 }
 
@@ -132,5 +250,111 @@ TEST(TreeTn, GhzStarIsUnpolarized)
     ASSERT_EQ(z.size(), 3u);
     for (double v : z) {
         EXPECT_NEAR(v, 0.0, 1e-12);
+    }
+}
+
+// The branching contraction (the one-at-a-time message folding) must match an
+// INDEPENDENT dense reference on random branching trees with entangling centres
+// and MIXED child bond dims. Covers a degree-3 star, a degree-4 star, and a
+// small 2-level tree. Random complex tensors, unnormalized -- the reference and
+// the contractor must agree regardless.
+TEST(TreeTn, BranchingMatchesDenseReference)
+{
+    Rng rng{ 0xC0FFEEu };
+
+    auto tensor_size = [](uint32_t parent_bond,
+        const std::vector<uint32_t>& child_bonds) {
+        std::size_t sz = static_cast<std::size_t>(2) * parent_bond;
+        for (uint32_t d : child_bonds) {
+            sz *= d;
+        }
+        return sz;
+    };
+
+    // Build a star: a root centre with `leaves` leaf children, whose bonds have
+    // the given (mixed) dims. Each leaf's parent_bond == its shared bond dim, and
+    // the leaf's tensor is 2 x dim (random). The centre entangles all children.
+    auto build_star = [&](const std::vector<uint32_t>& leaf_dims) {
+        SharedEdgePolytreeBuilder<TreeNode, BondEnv> b;
+        std::vector<Complex> ct(tensor_size(1, leaf_dims));
+        fill_random(ct, rng);
+        const NodeHandle centre = add_node(b, tn_node(1, leaf_dims, ct));
+        for (uint32_t d : leaf_dims) {
+            std::vector<Complex> lt(tensor_size(d, {}));
+            fill_random(lt, rng);
+            const NodeHandle leaf = add_node(b, tn_node(d, {}, std::move(lt)));
+            add_edge(b, centre, leaf, BondEnv{});
+        }
+        return std::move(*build(std::move(b)));
+    };
+
+    // ── degree-3 star, mixed bond dims (2, 3, 2) → 4 qubits ──
+    for (int trial = 0; trial < 8; ++trial) {
+        TreeTnNetwork net = build_star({ 2, 3, 2 });
+        const auto got = tree_tn_sigma_z(net);
+        const auto ref = dense_tree_sigma_z(net);
+        ASSERT_EQ(got.size(), ref.size());
+        for (std::size_t i = 0; i < got.size(); ++i) {
+            EXPECT_NEAR(got[i], ref[i], 1e-9)
+                << "deg-3 star trial " << trial << " site " << i;
+        }
+    }
+
+    // ── degree-4 star, mixed bond dims (2, 2, 3, 2) → 5 qubits ──
+    for (int trial = 0; trial < 8; ++trial) {
+        TreeTnNetwork net = build_star({ 2, 2, 3, 2 });
+        const auto got = tree_tn_sigma_z(net);
+        const auto ref = dense_tree_sigma_z(net);
+        ASSERT_EQ(got.size(), ref.size());
+        for (std::size_t i = 0; i < got.size(); ++i) {
+            EXPECT_NEAR(got[i], ref[i], 1e-9)
+                << "deg-4 star trial " << trial << " site " << i;
+        }
+    }
+
+    // ── small 2-level tree: root with 2 children, one of which is itself a
+    //    branching centre with 2 leaf children. Mixed bond dims. 6 qubits.
+    //    Topology (bond dims in parens):
+    //        root
+    //         ├── A(2)   [leaf]
+    //         └── B(3)   [centre] ── C(2) [leaf]
+    //                              └─ D(2) [leaf]
+    //    → root: child_bonds {2, 3}; B: parent_bond 3, child_bonds {2, 2}.
+    for (int trial = 0; trial < 8; ++trial) {
+        SharedEdgePolytreeBuilder<TreeNode, BondEnv> b;
+
+        std::vector<Complex> root_t(tensor_size(1, { 2, 3 }));
+        fill_random(root_t, rng);
+        const NodeHandle root = add_node(b, tn_node(1, { 2, 3 }, root_t));
+
+        std::vector<Complex> a_t(tensor_size(2, {}));
+        fill_random(a_t, rng);
+        const NodeHandle A = add_node(b, tn_node(2, {}, a_t));
+
+        std::vector<Complex> bcentre_t(tensor_size(3, { 2, 2 }));
+        fill_random(bcentre_t, rng);
+        const NodeHandle B = add_node(b, tn_node(3, { 2, 2 }, bcentre_t));
+
+        std::vector<Complex> c_t(tensor_size(2, {}));
+        fill_random(c_t, rng);
+        const NodeHandle C = add_node(b, tn_node(2, {}, c_t));
+
+        std::vector<Complex> d_t(tensor_size(2, {}));
+        fill_random(d_t, rng);
+        const NodeHandle D = add_node(b, tn_node(2, {}, d_t));
+
+        add_edge(b, root, A, BondEnv{});
+        add_edge(b, root, B, BondEnv{});
+        add_edge(b, B, C, BondEnv{});
+        add_edge(b, B, D, BondEnv{});
+
+        TreeTnNetwork net = std::move(*build(std::move(b)));
+        const auto got = tree_tn_sigma_z(net);
+        const auto ref = dense_tree_sigma_z(net);
+        ASSERT_EQ(got.size(), ref.size());
+        for (std::size_t i = 0; i < got.size(); ++i) {
+            EXPECT_NEAR(got[i], ref[i], 1e-9)
+                << "2-level tree trial " << trial << " site " << i;
+        }
     }
 }
