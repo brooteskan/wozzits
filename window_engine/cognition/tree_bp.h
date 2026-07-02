@@ -54,6 +54,13 @@ namespace wz::engine::cognition
 
     // Each node's <sigma_z> by exact tree belief propagation (two scaffold sweeps
     // + tensor messages). No SVD; exact on a tree.
+    //
+    // CHAIN-ONLY, enforced: an MpsSite has a single right bond, so every node must
+    // have at most one child. This precondition is asserted (a debug assert) --
+    // a node with >1 child would silently drop its extra child environments and
+    // return wrong marginals. Branching trees (a node with multiple children) are
+    // NOT representable by MpsSite; use tree_tn_sigma_z (general TreeNode with a
+    // child_bonds vector) for those.
     std::vector<double> tree_bp_sigma_z(TreeBpNetwork& net);
 
     // Dense reference: contract the chain MPS into the full 2^N statevector and

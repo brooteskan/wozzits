@@ -2,6 +2,7 @@
 
 #include <graph/shared_edge_polytree_algo.h>
 
+#include <cassert>
 #include <complex>
 
 namespace wz::engine::cognition
@@ -105,6 +106,14 @@ namespace wz::engine::cognition
     std::vector<double> tree_bp_sigma_z(TreeBpNetwork& net)
     {
         using namespace wz::core::graph;
+
+        // Chain-only precondition: an MpsSite has a single right bond, so a node
+        // with >1 child cannot be represented here (its extra child environments
+        // would be silently dropped). Branching trees go through tree_tn_sigma_z.
+        for (NodeHandle n = 0; n < node_count(net); ++n)
+            assert(child_count(net, n) <= 1
+                && "tree_bp is chain-only (MpsSite has a single right bond); use "
+                   "tree_tn_sigma_z for branching trees");
 
         // bp_collect (leaf -> root): up-message = right environment, written onto
         // each non-root node's parent edge, combining its child's up-message.
@@ -270,6 +279,15 @@ namespace wz::engine::cognition
     std::vector<double> dense_sigma_z(const TreeBpNetwork& net)
     {
         using namespace wz::core::graph;
+
+        // Chain-only precondition: this contracts strictly left-to-right assuming
+        // a single right bond per site. A node with >1 child is not a chain; use
+        // tree_tn_sigma_z for branching trees.
+        for (NodeHandle n = 0; n < node_count(net); ++n)
+            assert(child_count(net, n) <= 1
+                && "tree_bp is chain-only (MpsSite has a single right bond); use "
+                   "tree_tn_sigma_z for branching trees");
+
         const auto order = topo_order(net);  // chain order: parents precede children
 
         // Contract the chain left-to-right into the full statevector. psi is

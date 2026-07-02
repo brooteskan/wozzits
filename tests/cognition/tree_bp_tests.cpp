@@ -174,6 +174,29 @@ TEST(TreeBP, EntangledCatChainIsUnpolarized)
     EXPECT_NEAR(bp[1], dense[1], 1e-12);
 }
 
+// tree_bp is chain-only (MpsSite has a single right bond). A centre site with
+// TWO children is a branching tree -- not representable here -- and must trip
+// the enforced chain-only precondition rather than silently drop an
+// environment. Branching goes through tree_tn_sigma_z.
+TEST(TreeBP, BranchingTripsChainOnlyGuard)
+{
+    SharedEdgePolytreeBuilder<MpsSite, BondEnv> b;
+    std::vector<NodeHandle> nodes;
+    for (uint32_t i = 0; i < 3; ++i) {
+        MpsSite s;
+        s.left = 1;
+        s.right = 1;
+        s.a = { Complex{ 1, 0 }, Complex{ 0, 0 } };  // |0>
+        nodes.push_back(add_node(b, std::move(s)));
+    }
+    // Centre node 0 with two leaf children 1 and 2 -> child_count(0) == 2.
+    add_edge(b, nodes[0], nodes[1], BondEnv{});
+    add_edge(b, nodes[0], nodes[2], BondEnv{});
+    TreeBpNetwork net = std::move(*build(std::move(b)));
+
+    EXPECT_DEATH(tree_bp_sigma_z(net), "");
+}
+
 // With chi large enough that no truncation happens, the two-site update
 // reproduces applying the gate to the dense two-site state exactly.
 TEST(TwoSite, UntruncatedUpdateMatchesDenseGate)
