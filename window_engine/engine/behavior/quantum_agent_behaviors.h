@@ -77,6 +77,13 @@ namespace wz::engine::behavior
     // extra qubits start uncoupled and their goals come from the write seam.
     inline constexpr const char* kQuantumAgentDecisionsKey = "decisions";
 
+    // Star coupling: if non-zero, bond qubit 0 to EVERY other qubit (0<->i for
+    // i in 1..decisions-1) with this strength -- makes qubit 0 a hub, i.e. a GROUP
+    // / command node whose decision entangles a whole squad of member qubits (each
+    // member reads its own qubit of this shared agent). > 0 ferromagnetic (members
+    // correlate with the hub). Use INSTEAD of `coupling` (which is the 0<->1 pair).
+    inline constexpr const char* kQuantumAgentStarCouplingKey = "star_coupling";
+
     // Cap on coupled decisions a single agent exposes (keeps the POD state fixed-
     // size + trivially copyable). Bump if a richer NPC needs more qubits.
     inline constexpr uint32_t kQuantumAgentMaxDecisions = 4;

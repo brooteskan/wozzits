@@ -149,6 +149,55 @@ TEST(QuantumAgentBehavior, GoalDrivenNpcCommits)
     EXPECT_GT(s->marginal[0], 0.8f);     // strongly polarized +z
 }
 
+// A GROUP agent: a hub qubit (0) star-bonded to member qubits. The hub's goal
+// drives its decision, and the ferromagnetic star drags every member to agree --
+// one entangled wave function over the whole squad (the command node's mechanism).
+TEST(QuantumAgentBehavior, StarCouplingEntanglesGroupMembersToTheHub)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_quantum_agent_behaviors));
+
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "quantum_agent_group";
+    wz::engine::assets::SceneNodeAsset npc{};
+    npc.id = "npc";
+    npc.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "npc_brain",
+        .module = kQuantumAgentModule,
+        .config = {
+            cfg("decisions", 3.0),        // hub (0) + two members (1,2)
+            cfg("goal", 0.8),             // bias the hub toward |0>
+            cfg("star_coupling", 1.5),    // hub bonded to every member
+            cfg("gamma_start", 3.0),
+            cfg("anneal_seconds", 4.0),
+            cfg("confidence", 0.9),
+            cfg("think_interval", 0.25),
+        },
+    };
+    asset.nodes.push_back(std::move(npc));
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+
+    initialize_behaviors(scene, registry);
+    run_self_start(scene, registry);
+    QuantumAgentState* s = brain(scene);
+    ASSERT_NE(s, nullptr);
+    EXPECT_EQ(s->agent_count, 3u);
+
+    for (int i = 1; i <= 40; ++i) {
+        run_tick(scene, registry, 0.25 * i);
+    }
+
+    // Hub committed to its goal, and both members were dragged to agree through
+    // the star -- the group resolved as one.
+    EXPECT_EQ(s->committed[0], 0);
+    EXPECT_EQ(s->committed[1], 0);
+    EXPECT_EQ(s->committed[2], 0);
+}
+
 // Two coupled decisions resolve together, and a ferromagnetic bond makes the
 // second qubit FOLLOW the first even though it has no goal of its own -- the
 // hallmark of coordination through the wave function (not two independent flips).

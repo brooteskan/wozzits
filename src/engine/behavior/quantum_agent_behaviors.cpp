@@ -83,12 +83,24 @@ namespace wz::engine::behavior
                 const float coupling =
                     config_float(facts, kQuantumAgentCouplingKey, 0.0f);
                 if (coupling != 0.0f) {
-                    spec.bonds = {
+                    spec.bonds.push_back(
                         wz::engine::cognition::ExactBond{
                             .a = 0u, .b = 1u,
                             .j = static_cast<double>(coupling),
-                        },
-                    };
+                        });
+                }
+                // Star coupling: qubit 0 (the hub / command) bonded to every other
+                // qubit -> a group agent whose members are entangled through the hub.
+                const float star =
+                    config_float(facts, kQuantumAgentStarCouplingKey, 0.0f);
+                if (star != 0.0f) {
+                    for (uint32_t i = 1; i < spec.agent_count; ++i) {
+                        spec.bonds.push_back(
+                            wz::engine::cognition::ExactBond{
+                                .a = 0u, .b = i,
+                                .j = static_cast<double>(star),
+                            });
+                    }
                 }
                 spec.clock.gamma_start =
                     config_float(facts, kQuantumAgentGammaStartKey, 2.0f);
@@ -181,6 +193,8 @@ namespace wz::engine::behavior
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
             { kQuantumAgentDecisionsKey, "Decision count (qubits)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 2.0, nullptr },
+            { kQuantumAgentStarCouplingKey, "Star coupling (hub bond j)",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
             { kQuantumAgentGammaStartKey, "Exploration (gamma start)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 2.0, nullptr },
             { kQuantumAgentAnnealSecondsKey, "Deliberation seconds",
