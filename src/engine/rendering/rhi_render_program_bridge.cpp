@@ -160,6 +160,16 @@ namespace wz::engine::rendering
             return wz::rhi::DescriptorKind::StructuredBufferSRV;
         }
 
+        wz::rhi::StaticSamplerKind map_static_sampler_kind(
+            ea::StaticSamplerKind k)
+        {
+            switch (k) {
+            case ea::StaticSamplerKind::LinearClamp:
+                return wz::rhi::StaticSamplerKind::LinearClamp;
+            }
+            return wz::rhi::StaticSamplerKind::LinearClamp;
+        }
+
         // The engine's DescriptorSemantic enum -> a stable name. The rhi side
         // registers that name as a Tag, dissolving the enum into an open
         // identity set that new render paths extend without editing a central
@@ -202,6 +212,7 @@ namespace wz::engine::rendering
             ea::RasterMode raster_mode{};
             std::span<const ea::RootConstantBinding> root_constants;
             std::span<const ea::DescriptorBinding> descriptor_bindings;
+            std::span<const ea::StaticSamplerBinding> static_samplers;
         };
 
         std::optional<wz::rhi::RenderProgramDesc>
@@ -230,6 +241,9 @@ namespace wz::engine::rendering
             }
             for (const ea::DescriptorBinding& db : src.descriptor_bindings) {
                 register_spaces.push_back(db.register_space);
+            }
+            for (const ea::StaticSamplerBinding& ss : src.static_samplers) {
+                register_spaces.push_back(ss.register_space);
             }
             std::sort(register_spaces.begin(), register_spaces.end());
             register_spaces.erase(
@@ -260,6 +274,18 @@ namespace wz::engine::rendering
                         db.shader_register,
                         db.register_space,
                         db.descriptor_count });
+                }
+
+                for (const ea::StaticSamplerBinding& ss : src.static_samplers) {
+                    if (ss.register_space != space) {
+                        continue;
+                    }
+                    layout.static_samplers.push_back(
+                        wz::rhi::StaticSamplerBinding{
+                            map_static_sampler_kind(ss.kind),
+                            map_visibility(ss.visibility),
+                            ss.shader_register,
+                            ss.register_space });
                 }
 
                 for (const ea::RootConstantBinding& rc : src.root_constants) {
@@ -393,7 +419,8 @@ namespace wz::engine::rendering
                 src.depth_mode,
                 src.raster_mode,
                 src.root_constants,
-                src.descriptor_bindings },
+                src.descriptor_bindings,
+                src.static_samplers },
             descriptors,
             constants);
     }
@@ -418,7 +445,8 @@ namespace wz::engine::rendering
                 data.depth_mode,
                 data.raster_mode,
                 data.root_constants,
-                data.descriptor_bindings },
+                data.descriptor_bindings,
+                data.static_samplers },
             descriptors,
             constants);
     }

@@ -73,7 +73,11 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kDiagnosticTimeframeSummaryCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTimeframeSummaryToDataTableCompilerVersion = 1;
     inline constexpr uint64_t kBuiltinRenderProgramCompilerVersion = 4;
-    inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 1;
+    // Bumped 1 -> 2: custom render programs can now declare static samplers
+    // (folded into the key + serialized into the root signature); the clipmap
+    // landscape program declares a LinearClamp VS sampler for bilinear height
+    // sampling (#211). Bump invalidates stale caches lacking the sampler.
+    inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 2;
     inline constexpr uint64_t kComputePipelineCompilerVersion = 1;
     // v2: added subsample_step + RHI residency publishing (#208).
     // v3: XZ + height normalization fixes (unit [0,1], raw height, texel-index

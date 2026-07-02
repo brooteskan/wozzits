@@ -28,6 +28,30 @@ namespace
         return D3D12_SHADER_VISIBILITY_ALL;
     }
 
+    D3D12_STATIC_SAMPLER_DESC static_sampler_desc(
+        const wz::rhi::StaticSamplerBinding& sampler)
+    {
+        D3D12_STATIC_SAMPLER_DESC desc{};
+        switch (sampler.kind) {
+        case wz::rhi::StaticSamplerKind::LinearClamp:
+            desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+            desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+            desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+            desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+            break;
+        }
+        desc.MipLODBias = 0.0f;
+        desc.MaxAnisotropy = 1;
+        desc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+        desc.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
+        desc.MinLOD = 0.0f;
+        desc.MaxLOD = D3D12_FLOAT32_MAX;
+        desc.ShaderRegister = sampler.shader_register;
+        desc.RegisterSpace = sampler.register_space;
+        desc.ShaderVisibility = shader_visibility(sampler.visibility);
+        return desc;
+    }
+
     D3D12_DESCRIPTOR_RANGE_TYPE descriptor_range_type(
         wz::rhi::DescriptorKind kind)
     {
@@ -227,11 +251,26 @@ namespace
                 layout.root_constants.register_space;
         }
 
+        // Static samplers are baked straight into the root signature — no
+        // descriptor table, no sampler heap — from whatever the SRGs declare.
+        // The register/space carried on each binding already matches the shader.
+        std::vector<D3D12_STATIC_SAMPLER_DESC> static_samplers;
+        for (const wz::rhi::ShaderResourceGroupLayout& srg
+             : shader_resource_groups)
+        {
+            for (const wz::rhi::StaticSamplerBinding& sampler
+                 : srg.static_samplers)
+            {
+                static_samplers.push_back(static_sampler_desc(sampler));
+            }
+        }
+
         D3D12_ROOT_SIGNATURE_DESC desc{};
         desc.NumParameters = static_cast<UINT>(params.size());
         desc.pParameters = params.data();
-        desc.NumStaticSamplers = 0;
-        desc.pStaticSamplers = nullptr;
+        desc.NumStaticSamplers = static_cast<UINT>(static_samplers.size());
+        desc.pStaticSamplers =
+            static_samplers.empty() ? nullptr : static_samplers.data();
         desc.Flags = allow_input_assembler
             ? D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
             : D3D12_ROOT_SIGNATURE_FLAG_NONE;

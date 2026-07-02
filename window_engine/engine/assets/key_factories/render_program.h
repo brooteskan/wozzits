@@ -86,6 +86,14 @@ namespace wz::engine::assets
             mix_enum(binding.descriptor_count);
         }
 
+        mix_enum(desc.static_samplers.size());
+        for (const StaticSamplerBinding& sampler : desc.static_samplers) {
+            mix_enum(static_cast<uint64_t>(sampler.kind));
+            mix_enum(static_cast<uint64_t>(sampler.visibility));
+            mix_enum(sampler.shader_register);
+            mix_enum(sampler.register_space);
+        }
+
         const wz::asset::Hash content = {
             lo,
             hi,

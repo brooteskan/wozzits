@@ -114,6 +114,24 @@ namespace wz::engine::assets
         uint32_t descriptor_count = 1;
     };
 
+    // A closed set of well-known sampler recipes baked into the root signature.
+    // Mirrors wz::rhi::StaticSamplerKind; the bridge maps 1:1.
+    enum class StaticSamplerKind : uint8_t
+    {
+        LinearClamp,
+    };
+
+    // A static sampler declared on a program. It occupies a sampler register
+    // (s#) in register_space but consumes no descriptor slot — the DX12 backend
+    // bakes it into the root signature. Used, e.g., for the clipmap height tap.
+    struct StaticSamplerBinding
+    {
+        StaticSamplerKind kind{};
+        ShaderVisibility  visibility{};
+        uint32_t shader_register = 0;
+        uint32_t register_space  = 0;
+    };
+
     // dep[0] = vertex_shader key, dep[1] = pixel_shader key.
     struct BuiltinRenderProgramDesc
     {
@@ -144,6 +162,7 @@ namespace wz::engine::assets
 
         std::vector<RootConstantBinding> root_constants;
         std::vector<DescriptorBinding>   descriptor_bindings;
+        std::vector<StaticSamplerBinding> static_samplers;
     };
 
     struct RenderProgramData
@@ -167,6 +186,7 @@ namespace wz::engine::assets
         // descriptor_bindings follow at indices [root_constants.size(), ...).
         std::vector<RootConstantBinding> root_constants;
         std::vector<DescriptorBinding>   descriptor_bindings;
+        std::vector<StaticSamplerBinding> static_samplers;
 
         wz::asset::ResourceHandle vertex_shader{};
         wz::asset::ResourceHandle pixel_shader{};

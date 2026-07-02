@@ -261,6 +261,16 @@ namespace wz::engine::assets::internal
                     .register_space = 2,
                     .descriptor_count = 1,
                 });
+                // Static linear-clamp sampler (s0, space2) for the VS height tap:
+                // the clipmap surface is bilinearly filtered instead of point-
+                // Load'd (#211), smoothing the stepped terrain between texels.
+                // Baked into the root signature — no sampler heap or descriptor.
+                desc.static_samplers.push_back(StaticSamplerBinding{
+                    .kind = StaticSamplerKind::LinearClamp,
+                    .visibility = ShaderVisibility::Vertex,
+                    .shader_register = 0,
+                    .register_space = 2,
+                });
             }
             else if (binding_layout == 3) {
                 // Gaussian-splat cloud (issue #208). A SplatPull program slotted

@@ -58,6 +58,13 @@ StructuredBuffer<float3> positions : register(t0, space2);
 StructuredBuffer<uint>   indices   : register(t1, space2);
 Texture2D<float>         heightTex : register(t2, space2);
 
+// Static linear-clamp sampler (baked into the root signature by the clipmap
+// program's StaticSamplerBinding; see render_program_compilers.cpp
+// binding_layout == 2). Bilinear-filters the height field so the surface no
+// longer steps between texels (#211). Clamp addressing reproduces the old
+// per-tap edge clamp for vertices that reach past the footprint.
+SamplerState linearSampler : register(s0, space2);
+
 // Geomorph band, as a fraction of each level's world half-extent (m/2)*c_L.
 // The finer level's height blends to the coarser level's over its outer
 // [MORPH_START, MORPH_END] fraction, so it has fully matched the coarse edge
@@ -73,24 +80,28 @@ struct VSOut
     float3 normal     : NORMAL;     // finite-difference height normal
 };
 
-// Sample the heightmap at a world XZ position by integer texel fetch. uv is in
-// [0,1] over the heightmap footprint; clamp so lattice vertices that reach past
-// the footprint edge sample the border texel rather than wrapping/erroring.
+// Sample the heightmap at a world XZ position by BILINEAR filtering (#211,
+// was point Load). uv is in [0,1] over the heightmap footprint; the sampler's
+// clamp addressing samples the border texel for vertices that reach past the
+// footprint edge (replacing the old manual texel clamp), so no wrap/error.
 float sample_height_world(float2 world_xz)
 {
     float2 uv = world_to_uv.xy * world_xz + world_to_uv.zw;
-    uv = clamp(uv, 0.0f, 1.0f);
 
-    // Texel-CELL convention: texel i covers uv [i/dims, (i+1)/dims), so floor
-    // maps uv to its texel. One lattice cell then spans exactly dims/extent
-    // texels (4096/1024 = 4 here), keeping the lattice grid, the heightmap
-    // texels, and the field splat cloud aligned with no sub-texel drift (the old
-    // round(uv*(dims-1)) "point" mapping drifted ~1 texel edge to edge because
-    // 4095/1024 != 4). Clamp to the last addressable texel; Load wants ints.
-    float2 dims  = max(texel_dims_extent.xy, 1.0f);
-    int2   texel = clamp(int2(floor(uv * dims)),
-                         int2(0, 0), int2(dims) - int2(1, 1));
-    return heightTex.Load(int3(texel, 0));
+    // Texel-CELL convention: texel i covers uv [i/dims, (i+1)/dims), so the old
+    // floor(uv*dims) point fetch returned texel i's value for any uv in that
+    // cell -- in particular at the cell's LEFT edge uv = i/dims (where the
+    // lattice vertices land, one cell = dims/extent = 4 texels). To reproduce
+    // that value at the vertex AND interpolate linearly across the cell, sample
+    // at the texel CENTER: hardware bilinear taps sit at (i+0.5)/dims, so shift
+    // the footprint uv by +half a texel. Then uv = i/dims maps to texel i's
+    // center -> returns exactly h[i] (matches the point path at the vertex), and
+    // across the cell it blends h[i] -> h[i+1] -- the standard texel-center
+    // bilinear the collision bicubic field tracks. The clamp addressing on the
+    // sampler handles vertices that reach past the [0,1] footprint edge.
+    float2 dims       = max(texel_dims_extent.xy, 1.0f);
+    float2 sample_uv  = uv + 0.5f / dims;
+    return heightTex.SampleLevel(linearSampler, sample_uv, 0.0f);
 }
 
 // Bilinear interpolation of the height field on the coarser level's grid

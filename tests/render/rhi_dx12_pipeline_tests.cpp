@@ -120,6 +120,59 @@ TEST(RhiDx12Pipeline, PullCubeRootPlanMatchesShaderContract)
     EXPECT_EQ(plan->root_constants.visibility, wz::rhi::ShaderStage::Vertex);
 }
 
+TEST(RhiDx12Pipeline, StaticSamplerFlowsThroughBridgeOntoObjectSrg)
+{
+    // A clipmap-style program: pull SRVs + a height texture on the object SRG
+    // (space2) PLUS a static linear-clamp sampler at s0. The sampler must ride
+    // through the bridge onto the rhi SRG (baked into the root signature by the
+    // backend; it consumes no descriptor-table slot), and the descriptor-table
+    // plan must be unaffected -- still just the two SRVs + the texture.
+    ea::CustomRenderProgramDesc desc = make_pull_cube_program();
+    desc.name = "clipmap_like_with_sampler";
+    desc.descriptor_bindings.push_back(ea::DescriptorBinding{
+        ea::DescriptorKind::TextureSRV,
+        ea::ShaderVisibility::Vertex,
+        ea::DescriptorSemantic::ScalarFieldTexture,
+        /*shader_register*/ 2,
+        /*register_space*/ 2,
+        /*descriptor_count*/ 1 });
+    desc.static_samplers.push_back(ea::StaticSamplerBinding{
+        ea::StaticSamplerKind::LinearClamp,
+        ea::ShaderVisibility::Vertex,
+        /*shader_register*/ 0,
+        /*register_space*/ 2 });
+
+    wz::rhi::DescriptorSemanticRegistry descriptors;
+    wz::rhi::ConstantSemanticRegistry constants;
+    const auto converted =
+        wz::engine::rendering::to_rhi_render_program_desc(
+            desc, descriptors, constants);
+    ASSERT_TRUE(converted.has_value());
+
+    // The object SRG (slot 2) carries the static sampler verbatim.
+    const wz::rhi::ShaderResourceGroupLayout* object =
+        wz::rhi::find_shader_resource_group_layout(
+            converted->shader_resource_groups, 2);
+    ASSERT_NE(object, nullptr);
+    ASSERT_EQ(object->static_samplers.size(), 1u);
+    EXPECT_EQ(
+        object->static_samplers[0].kind,
+        wz::rhi::StaticSamplerKind::LinearClamp);
+    EXPECT_EQ(
+        object->static_samplers[0].visibility,
+        wz::rhi::ShaderStage::Vertex);
+    EXPECT_EQ(object->static_samplers[0].shader_register, 0u);
+    EXPECT_EQ(object->static_samplers[0].register_space, 2u);
+
+    // The descriptor-table plan is unchanged by the static sampler: the object
+    // table still holds exactly the three SRV/texture descriptors.
+    const auto plan =
+        wz::engine::rendering::plan_dx12_pipeline_layout(*converted);
+    ASSERT_TRUE(plan.has_value());
+    ASSERT_EQ(plan->descriptor_tables.size(), 1u);
+    EXPECT_EQ(plan->descriptor_tables[0].descriptor_count, 3u);
+}
+
 TEST(RhiDx12Pipeline, ComputeLayoutMatchesRenderLayoutForIdenticalSrgs)
 {
     wz::rhi::TagRegistry<8> tags;
