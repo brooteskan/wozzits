@@ -275,6 +275,33 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
 
+        // Author one semantic resource binding of the node's custom-renderable
+        // ingredients (issue #229): point layout row `semantic` at the
+        // authored asset-graph source `asset_graph_node_id` (upserting the
+        // row), or remove the row when the id is 0. A binding present makes
+        // the assembled renderable the CUSTOM (0x70A) form, so this
+        // re-assembles + re-resolves like the geometry/program seams; marks
+        // the scene dirty. False (logged no-op) if the node is missing or the
+        // semantic is empty.
+        bool set_node_renderable_binding(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& semantic,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+
+        // Author one per-instance constant override of the node's
+        // custom-renderable ingredients (issue #229): upsert `name` with
+        // `value` (4 floats; a narrower declared field consumes a prefix), or
+        // remove the override when `value` is null. Instance overrides merge
+        // at PACK time over the synthesized recipe's defaults, so this
+        // mutates the node ONLY — no re-assembly, no asset-graph recompile,
+        // no re-key; the next rendered frame reflects it. Marks the scene
+        // dirty. False (logged no-op) if the node is missing or the name is
+        // empty.
+        bool set_node_renderable_constant(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& name,
+            const float* value);
+
         // Apply behind the host ABI's set_node_collision verb (issue #216/#217).
         // Author the node's Collision component by REFERENCE: point it at an
         // authored asset-graph collision node `asset_graph_node_id` (e.g.
@@ -629,6 +656,14 @@ namespace wz::app
         // (node_local_translation / scene_world_transforms) moves. std::nullopt if
         // no node has that id.
         [[nodiscard]] std::optional<wz::math::Vec3> stored_node_local_translation(
+            const wz::scene::AuthoredEntityId& id) const;
+
+        // The resolved renderable key currently assembled for scene node `id`
+        // (issue #229 test seam): what render_scene will draw for the node.
+        // std::nullopt if no node has that id OR the node has no resolved
+        // renderable. Lets a test fetch the synthesized custom renderable's
+        // recipe through the asset library without re-deriving the key.
+        [[nodiscard]] std::optional<wz::asset::AssetKey> node_renderable_asset(
             const wz::scene::AuthoredEntityId& id) const;
 
     private:

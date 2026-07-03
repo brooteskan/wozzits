@@ -81,8 +81,10 @@ namespace wz::engine::assets
 
             // Remap behavior node references + clear binding ids so each spawned
             // instance gets its own behavior state. Asset-graph node-id refs
-            // (renderable/geometry/render-program/scene-source/collision/audio)
-            // are left untouched — they point at the shared project graph.
+            // (renderable/geometry/render-program/renderable-bindings/
+            // scene-source/collision/audio) are left untouched — they point at
+            // the shared project graph. Per-instance constant overrides (#229)
+            // ride the copied node verbatim.
             if (node.behavior) {
                 remap_behavior(*node.behavior, id_remap);
             }

@@ -453,7 +453,7 @@ drawn by `RhiSceneRenderer`):
 | GPU sparse mesh | `kGpuSparseMeshRenderableSchema` | `0x000707` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_gpu_sparse_mesh_renderable()` |
 | Clipmap landscape | `kClipmapLandscapeRenderableSchema` | `0x000708` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_clipmap_landscape()` |
 | Gaussian splat cloud (RHI) | `kGaussianSplatCloudRhiRenderableSchema` | `0x000709` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_gaussian_splat_cloud_rhi()` |
-| Custom renderable (issue #228) | `kCustomRenderableSchema` | `0x00070A` | `kAssetTypeRenderable` (1048) | graph-authored (a typed create rides #229) |
+| Custom renderable (issue #228) | `kCustomRenderableSchema` | `0x00070A` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_custom_renderable()` or graph-authored |
 
 The custom renderable (`0x00070A`) is the zero-per-look-C++ form: a pull mesh +
 a custom render program whose SRG comes from an authored render binding layout
@@ -471,6 +471,19 @@ packs the root-constant block as the layout's head packer (mvp16 /
 world_viewproj_camera36) followed by the authored tail values at their baked
 offsets. The `Any` port sentinel (`wz::asset::AssetType::Any`) skips the
 edge-time provider-type check; kind validation happens at compile instead.
+
+Scene ingredients (issue #229) drive the same schema from a scene node: the
+#213 `geometry`/`render_program` cluster grows `renderable_bindings[]`
+(semantic + asset-graph anchor, key re-bridged on every bind) and
+`renderable_constants[]` (per-instance values for the layout's declared tail
+fields). When either is present on a Mesh-geometry node, the engine
+synthesizes a `0x00070A` renderable per node
+(`RenderableAssetModule::create_custom_renderable`,
+`"render_binding/<node.id>"`) instead of the bare pull mesh. The recipe
+carries EVERY declared tail field (authored default or zero), and the
+renderer merges the node's constant overrides over the packet's copy of the
+block at pack time — so editing an instance constant never re-keys or
+recompiles anything (the look analog of transform-on-node).
 
 Legacy renderables (produce `RenderableAssetData`; consumed only by the editor
 field preview and the deprecated terrain path — retirement tracked by #222/#179):

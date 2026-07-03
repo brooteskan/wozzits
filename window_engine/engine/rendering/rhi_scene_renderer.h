@@ -43,6 +43,7 @@ namespace wz::engine::assets
 {
     class EngineAssetLibrary;
     struct SceneNodeAsset;
+    struct SceneRenderableConstantOverride;
 }
 
 namespace wz::engine::rendering
@@ -213,6 +214,13 @@ namespace wz::engine::rendering
                 custom_constants_head =
                     wz::engine::assets::RenderBindingConstantsHead::None;
             std::vector<uint8_t> custom_constants;
+            // The recipe's declared tail-field table (name → baked offset /
+            // width; #229). Per-instance scene-node constant overrides merge
+            // against it by name at pack time — into the PACKET's copy of the
+            // block, never this shared template, so two nodes drawing the
+            // same recipe can carry different override values.
+            std::vector<wz::engine::assets::RhiRenderableConstant>
+                custom_fields;
         };
 
         const RealizedProgram* realize_program(
@@ -275,4 +283,20 @@ namespace wz::engine::rendering
     // dangling/cyclic parent falls back to the node's own visibility).
     std::vector<std::uint8_t> compute_scene_node_effective_visibility(
         std::span<const wz::engine::assets::SceneNodeAsset> nodes);
+
+    // Merge a scene node's per-instance constant overrides (issue #229) into a
+    // packed custom root-constant block. `fields` is the recipe's declared
+    // tail-field table (every layout field with its baked dword offset/width);
+    // each override matches a field by name and its value[0..dwords) replaces
+    // the field's bytes in `block`. An override naming no declared field is
+    // ignored (the node may momentarily disagree with a re-authored layout —
+    // authoring feedback lives at compile/bridge time, not per frame), and
+    // writes are clamped to the block. This runs against the DRAW PACKET's
+    // copy of the block each frame, which is what makes an override edit a
+    // pack-time change: no asset-graph recompile, no re-key.
+    void merge_renderable_constant_overrides(
+        std::span<uint8_t> block,
+        std::span<const wz::engine::assets::RhiRenderableConstant> fields,
+        std::span<const wz::engine::assets::SceneRenderableConstantOverride>
+            overrides) noexcept;
 }

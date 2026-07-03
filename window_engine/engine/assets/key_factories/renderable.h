@@ -234,6 +234,66 @@ namespace wz::engine::assets
         };
     }
 
+    // Custom renderable key (issue #229). Content folds the name + every
+    // authored binding ROW (semantic + its source key — the key must live in
+    // content as well as deps so a half-authored row, semantic with no wired
+    // source, keys differently from a wired one) + every authored constant
+    // (name + value bits). deps_hash folds mesh, program, then each WIRED
+    // binding source in authored order — the SAME order the module registers
+    // the graph edges (combine_dep_hashes is not commutative). Per-instance
+    // constant OVERRIDES (scene-node data) deliberately have no representation
+    // here: they merge at pack time, so editing one never re-keys the asset.
+    [[nodiscard]] inline wz::asset::AssetKey make_custom_renderable_key(
+        std::string_view name,
+        const CustomRenderableCompileDesc& desc) noexcept
+    {
+        uint64_t h = detail::fnv1a_64(name);
+        for (const CustomRenderableCompileDesc::Binding& binding :
+             desc.bindings)
+        {
+            h = detail::mix64(h, detail::fnv1a_64(binding.semantic));
+            const wz::asset::Hash source = detail::key_to_dep_hash(binding.asset);
+            h = detail::mix64(h, source.lo);
+            h = detail::mix64(h, source.hi);
+        }
+        for (const CustomRenderableCompileDesc::Constant& constant :
+             desc.constants)
+        {
+            h = detail::mix64(h, detail::fnv1a_64(constant.name));
+            for (float component : constant.value) {
+                h = detail::mix64(
+                    h, terrain_lighting_float_bits(component));
+            }
+        }
+
+        const wz::asset::Hash mesh_dep =
+            detail::key_to_dep_hash(desc.mesh_asset);
+        const wz::asset::Hash program_dep =
+            detail::key_to_dep_hash(desc.render_program_asset);
+        wz::asset::Hash deps_hash = wz::asset::Hash{
+            detail::mix64(mesh_dep.lo, program_dep.lo),
+            detail::mix64(mesh_dep.hi, program_dep.hi),
+        };
+        for (const CustomRenderableCompileDesc::Binding& binding :
+             desc.bindings)
+        {
+            if (binding.asset == wz::asset::AssetKey{}) {
+                continue;  // unwired row: no graph edge, no dep fold
+            }
+            deps_hash = detail::combine_dep_hashes(
+                deps_hash, detail::key_to_dep_hash(binding.asset));
+        }
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash =
+                detail::hash_u64(kCustomRenderableSchema.value),
+            .compiler_hash =
+                detail::hash_u64(kCustomRenderableCompilerVersion),
+            .deps_hash = deps_hash,
+        };
+    }
+
     [[nodiscard]] inline wz::asset::AssetKey make_terrain_debug_renderable_key(
         std::string_view name,
         const wz::asset::AssetKey& terrain_key,

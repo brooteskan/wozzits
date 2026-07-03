@@ -398,6 +398,62 @@ namespace wz::engine::assets
         return RenderableAsset{ .output = key };
     }
 
+    RenderableAsset RenderableAssetModule::create_custom_renderable(
+        const CustomRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("custom renderable has empty name");
+            return {};
+        }
+
+        if (!desc.mesh.valid()) {
+            logger_.error("custom renderable has invalid mesh: " + desc.name);
+            return {};
+        }
+
+        if (!desc.program.valid()) {
+            logger_.error(
+                "custom renderable has invalid render program: " + desc.name);
+            return {};
+        }
+
+        CustomRenderableCompileDesc compile_desc{};
+        compile_desc.mesh_asset = desc.mesh.output;
+        compile_desc.render_program_asset = desc.program.key;
+        compile_desc.bindings = desc.bindings;
+        compile_desc.constants = desc.constants;
+
+        const wz::asset::AssetKey key =
+            make_custom_renderable_key(desc.name, compile_desc);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kCustomRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+
+        // Dependency order must match the key factory's deps fold: mesh,
+        // program, then each WIRED binding source in authored order. An
+        // unwired row stays desc-only (no graph edge) so its compile failure
+        // names the semantic instead of tripping the dep resolver.
+        std::vector<wz::asset::AssetKey> deps{
+            desc.mesh.output, desc.program.key };
+        for (const CustomRenderableCompileDesc::Binding& binding :
+             compile_desc.bindings)
+        {
+            if (!(binding.asset == wz::asset::AssetKey{})) {
+                deps.push_back(binding.asset);
+            }
+        }
+
+        node.meta = std::move(compile_desc);
+
+        (void)system_.register_asset(std::move(node), std::move(deps));
+
+        return RenderableAsset{ .output = key };
+    }
+
     namespace
     {
         // Renderable schemas whose compiled product is an RhiRenderableRecipe in

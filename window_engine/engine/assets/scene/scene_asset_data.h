@@ -1033,6 +1033,33 @@ namespace wz::engine::assets
         std::optional<wz::asset::AssetGraphDraftNodeId> render_program_node_id;
     };
 
+    // One authored semantic resource binding on a scene node (issue #229),
+    // extending the #213 geometry/render_program ingredients cluster.
+    // `semantic` names a row of the effective render program's authored
+    // binding layout; asset_graph_node_id is the STABLE authored anchor
+    // (survives re-authoring of the source) and `asset` the current resolved
+    // key, cleared + re-bridged on every (re)bind exactly like
+    // renderable_asset (the authored-vs-resolved identity rule). An empty
+    // key means "unresolved / node-id only" — the synthesized custom
+    // renderable's compile then names the unbound row.
+    struct SceneRenderableSemanticBinding
+    {
+        std::string semantic;
+        std::optional<wz::asset::AssetGraphDraftNodeId> asset_graph_node_id;
+        wz::asset::AssetKey asset{};
+    };
+
+    // A per-instance value for one of the program layout's declared constant
+    // tail fields (issue #229). Applied at PACK time over the synthesized
+    // recipe's defaults — editing one never re-keys or recompiles anything
+    // (the look analog of transform-on-node: instance data stays on the
+    // node). Fields narrower than 4 dwords consume value[0..width).
+    struct SceneRenderableConstantOverride
+    {
+        std::string name;
+        float value[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
+    };
+
     struct SceneNodeAsset
     {
         wz::scene::AuthoredEntityId id;
@@ -1079,6 +1106,16 @@ namespace wz::engine::assets
         std::optional<std::string> geometry_glb_node_id;
         std::optional<wz::asset::AssetGraphDraftNodeId> render_program_node_id;
         std::optional<wz::asset::AssetKey> render_program_asset;
+
+        // Custom-renderable ingredients (issue #229), completing the cluster
+        // above: when either vector is non-empty (and geometry is a Mesh),
+        // the engine synthesizes a CUSTOM (0x70A) renderable from geometry +
+        // program + these bindings instead of the bare pull-mesh recipe.
+        // Constant overrides never enter the synthesized asset — they ride
+        // the node to the renderer and merge over the recipe's defaults per
+        // frame.
+        std::vector<SceneRenderableSemanticBinding> renderable_bindings;
+        std::vector<SceneRenderableConstantOverride> renderable_constants;
 
         // Preferred authored Scene-source component (issue #213): the host node
         // consumes the output of a "Scene from GLB" asset node as a sub-tree.

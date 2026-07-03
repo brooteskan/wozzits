@@ -2035,6 +2035,36 @@ namespace wz::engine::assets
                 add_member(*obj, "render_program",
                     renderable_asset_value(*node.render_program_node_id));
             }
+            // Custom-renderable ingredients (issue #229): persist the authored
+            // intent only — the bindings' semantic + asset-graph anchor and
+            // the constant overrides' name + value. Resolved binding keys are
+            // bridge products, re-derived on every (re)bind, never exported.
+            if (!node.renderable_bindings.empty()) {
+                auto bindings = array_value();
+                for (const auto& binding : node.renderable_bindings) {
+                    auto entry = object_value();
+                    add_member(*entry, "semantic",
+                        string_value(binding.semantic));
+                    if (binding.asset_graph_node_id) {
+                        add_member(*entry, "asset_graph_node_id",
+                            number_value(static_cast<double>(
+                                *binding.asset_graph_node_id)));
+                    }
+                    bindings->array_values.push_back(std::move(entry));
+                }
+                add_member(*obj, "renderable_bindings", std::move(bindings));
+            }
+            if (!node.renderable_constants.empty()) {
+                auto constants = array_value();
+                for (const auto& constant : node.renderable_constants) {
+                    auto entry = object_value();
+                    add_member(*entry, "name", string_value(constant.name));
+                    add_member(*entry, "value",
+                        float_array(constant.value, 4));
+                    constants->array_values.push_back(std::move(entry));
+                }
+                add_member(*obj, "renderable_constants", std::move(constants));
+            }
             if (node.scene_source_node_id) {
                 add_member(*obj, "scene_source",
                     scene_source_value(*node.scene_source_node_id));

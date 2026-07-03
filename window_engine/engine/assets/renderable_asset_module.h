@@ -103,6 +103,20 @@ namespace wz::engine::assets
         GaussianSplatCloudRenderSettings settings{};
     };
 
+    // Custom renderable (issue #229): the programmatic form of a 0x70A node.
+    // Bindings/constants are AUTHORED rows validated at compile against the
+    // program's layout (#228); rows pass through even half-authored so the
+    // compile can NAME a failure instead of silently dropping it. This is the
+    // desc the per-scene-node synthesis fills (assemble_render_bindings).
+    struct CustomRenderableDesc
+    {
+        std::string name;
+        MeshAsset mesh{};
+        RenderProgramAsset program{};
+        std::vector<CustomRenderableCompileDesc::Binding> bindings;
+        std::vector<CustomRenderableCompileDesc::Constant> constants;
+    };
+
     struct RenderableAsset
     {
         wz::asset::AssetKey output{};
@@ -152,6 +166,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_gaussian_splat_cloud_rhi(
             const GaussianSplatCloudRhiRenderableDesc& desc);
+
+        RenderableAsset create_custom_renderable(
+            const CustomRenderableDesc& desc);
 
         RenderableHandle get_renderable(
             const RenderableAsset& asset) const;

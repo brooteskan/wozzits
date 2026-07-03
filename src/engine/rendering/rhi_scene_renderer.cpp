@@ -677,6 +677,35 @@ namespace wz::engine::rendering
         return effective;
     }
 
+    void merge_renderable_constant_overrides(
+        std::span<uint8_t> block,
+        std::span<const ea::RhiRenderableConstant> fields,
+        std::span<const ea::SceneRenderableConstantOverride>
+            overrides) noexcept
+    {
+        for (const ea::SceneRenderableConstantOverride& override_value :
+             overrides)
+        {
+            for (const ea::RhiRenderableConstant& field : fields) {
+                if (field.name != override_value.name) {
+                    continue;
+                }
+                const size_t offset =
+                    static_cast<size_t>(field.offset_dwords) * 4u;
+                const size_t bytes =
+                    static_cast<size_t>(
+                        field.dwords > 4u ? 4u : field.dwords) * 4u;
+                if (offset + bytes <= block.size()) {
+                    std::memcpy(
+                        block.data() + offset,
+                        override_value.value,
+                        bytes);
+                }
+                break;
+            }
+        }
+    }
+
     RhiSceneRenderer::RhiSceneRenderer(EngineGpuContext& gpu, wz::Logger& logger)
         : gpu_(gpu)
         , logger_(logger)
@@ -1119,6 +1148,9 @@ namespace wz::engine::rendering
                     constant.value,
                     bytes);
             }
+            // Keep the declared-field table (#229): per-instance scene-node
+            // overrides address fields by name at pack time.
+            realized.custom_fields = source->custom_constants;
         }
         if (source->clipmap) {
             realized.is_clipmap = true;
@@ -1520,6 +1552,16 @@ namespace wz::engine::rendering
                 }
                 realized->packet.root_constants.assign(
                     block.begin(), block.end());
+                // Per-instance constant overrides (#229) land in the PACKET's
+                // copy, after the template assign: the shared template keeps
+                // only graph-authored defaults, so nodes sharing this recipe
+                // don't leak override values into each other.
+                if (!node.renderable_constants.empty()) {
+                    merge_renderable_constant_overrides(
+                        realized->packet.root_constants,
+                        realized->custom_fields,
+                        node.renderable_constants);
+                }
             }
             else if (realized->has_style) {
                 // Styled pull mesh (issue #195 slice A): MVP + baked shading in

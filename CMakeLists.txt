@@ -337,6 +337,15 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/render_binding.scene.json"
     COPYONLY)
 
+# Issue #229: a scene for the test_rebind_fixture graph that drives a CUSTOM
+# (0x70A) renderable via scene-node ingredients — geometry (node 1 cube Mesh) +
+# layout-authored custom program (node 16) + a semantic binding to the
+# procedural scalar field (node 17) + a per-instance 'tint' constant override.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/custom_binding_scene.json"
+    "${WZ_REBIND_FIXTURE_DST}/custom_binding.scene.json"
+    COPYONLY)
+
 # Issue #216/#217: a scene for the test_rebind_fixture graph that drives the
 # collision-by-reference + motion terrain-stick authoring verbs (a landscape
 # node + a tank node, both authored live by the test).
@@ -862,6 +871,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_scene scene_instantiation_transform_tests)
     rs_add_test_group(asset_scene scene_runtime_component_roundtrip_tests)
     rs_add_test_group(asset_scene scene_audio_source_roundtrip_tests)
+    rs_add_test_group(asset_scene scene_renderable_binding_roundtrip_tests)
     rs_add_test_group(asset_scene scene_audio_authoring_tests)
     rs_add_test_group(asset_scene scene_descriptor_validation_tests)
     rs_add_test_group(asset_scene scene_editor_visual_tests)

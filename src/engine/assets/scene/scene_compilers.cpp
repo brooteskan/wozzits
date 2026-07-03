@@ -1411,6 +1411,67 @@ namespace wz::engine::assets::internal
                 }
             }
 
+            // Custom-renderable ingredients (issue #229): semantic bindings +
+            // per-instance constant overrides. Only the authored intent is
+            // persisted (semantic + asset-graph anchor, name + value); the
+            // bindings' resolved keys are re-bridged on every (re)bind.
+            if (const auto* bindings =
+                    find_member(node_val, "renderable_bindings");
+                bindings
+                && bindings->kind == wz::json::JSONValueKind::Array)
+            {
+                for (const auto& entry_ptr : bindings->array_values) {
+                    if (!entry_ptr
+                        || entry_ptr->kind != wz::json::JSONValueKind::Object)
+                    {
+                        continue;
+                    }
+                    const wz::json::JSONValue& entry = *entry_ptr;
+                    const auto semantic = read_string(entry, "semantic");
+                    if (!semantic || semantic->empty()) {
+                        logger.error(
+                            "renderable_bindings on node '" + node.id
+                            + "' has an entry missing 'semantic'");
+                        return std::nullopt;
+                    }
+                    SceneRenderableSemanticBinding binding{};
+                    binding.semantic = std::string(*semantic);
+                    const auto anchor =
+                        read_number(entry, "asset_graph_node_id");
+                    if (anchor && *anchor > 0.0) {
+                        binding.asset_graph_node_id =
+                            static_cast<wz::asset::AssetGraphDraftNodeId>(
+                                *anchor);
+                    }
+                    node.renderable_bindings.push_back(std::move(binding));
+                }
+            }
+            if (const auto* constants =
+                    find_member(node_val, "renderable_constants");
+                constants
+                && constants->kind == wz::json::JSONValueKind::Array)
+            {
+                for (const auto& entry_ptr : constants->array_values) {
+                    if (!entry_ptr
+                        || entry_ptr->kind != wz::json::JSONValueKind::Object)
+                    {
+                        continue;
+                    }
+                    const wz::json::JSONValue& entry = *entry_ptr;
+                    const auto name = read_string(entry, "name");
+                    if (!name || name->empty()) {
+                        logger.error(
+                            "renderable_constants on node '" + node.id
+                            + "' has an entry missing 'name'");
+                        return std::nullopt;
+                    }
+                    SceneRenderableConstantOverride constant{};
+                    constant.name = std::string(*name);
+                    read_float4(entry, "value", constant.value);
+                    node.renderable_constants.push_back(std::move(constant));
+                }
+            }
+
             // Scene-source reference (issue #213): mirror the renderable node-id
             // read. Only the authored asset-graph node id is persisted; the
             // resolved key (scene_source) is re-bridged on (re)bind.

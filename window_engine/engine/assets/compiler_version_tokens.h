@@ -86,7 +86,11 @@ namespace wz::engine::assets {
     // Custom renderable recipe 0x70A (issue #228): semantic resource bindings
     // + declared-constant values validated against the wired program's
     // authored binding layout.
-    inline constexpr uint64_t kCustomRenderableCompilerVersion = 1;
+    // Bumped 1 -> 2 (issue #229): recipe.constants now carries EVERY declared
+    // tail field (authored value or zero default), not just the authored
+    // ones, so per-instance scene-node overrides can address any field by
+    // name at pack time.
+    inline constexpr uint64_t kCustomRenderableCompilerVersion = 2;
     inline constexpr uint64_t kComputePipelineCompilerVersion = 1;
     // v2: added subsample_step + RHI residency publishing (#208).
     // v3: XZ + height normalization fixes (unit [0,1], raw height, texel-index

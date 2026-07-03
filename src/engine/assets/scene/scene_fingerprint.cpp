@@ -222,6 +222,26 @@ namespace wz::engine::assets
                 fp.mix_value(*node.render_program_node_id);
             }
 
+            // Custom-renderable ingredients (issue #229): both the semantic
+            // bindings and the constant overrides are authored look data, so
+            // either changing re-fingerprints the scene. Only the authored
+            // intent is mixed (semantic + graph anchor, name + value) — the
+            // resolved binding keys are bridge products, not authored state.
+            fp.mix_value(static_cast<uint64_t>(node.renderable_bindings.size()));
+            for (const auto& binding : node.renderable_bindings) {
+                fp.mix_string(binding.semantic);
+                fp.mix_value(binding.asset_graph_node_id.has_value());
+                if (binding.asset_graph_node_id) {
+                    fp.mix_value(*binding.asset_graph_node_id);
+                }
+            }
+            fp.mix_value(
+                static_cast<uint64_t>(node.renderable_constants.size()));
+            for (const auto& constant : node.renderable_constants) {
+                fp.mix_string(constant.name);
+                fp.mix_bytes(constant.value, sizeof(constant.value));
+            }
+
             if (node.scene_source_node_id) {
                 fp.mix_value(*node.scene_source_node_id);
             }

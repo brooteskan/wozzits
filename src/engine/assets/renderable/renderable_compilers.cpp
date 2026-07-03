@@ -516,31 +516,25 @@ namespace wz::engine::assets::internal
                        "layout declares no root-constant block";
             }
 
-            struct FieldSlot
-            {
-                uint32_t offset = 0;
-                uint32_t dwords = 0;
-            };
-            std::unordered_map<std::string_view, FieldSlot> fields;
-            uint32_t running = render_binding_constants_head_dwords(
-                program.constants_head);
-            for (const RenderBindingConstantField& field :
-                 program.constant_fields)
-            {
-                const uint32_t dwords =
-                    render_binding_constant_type_dwords(field.type);
-                fields.emplace(
-                    std::string_view(field.name),
-                    FieldSlot{ running, dwords });
-                running += dwords;
-            }
+            const auto declared_field_of =
+                [&program](std::string_view name)
+                    -> const RenderBindingConstantField*
+                {
+                    for (const RenderBindingConstantField& field :
+                         program.constant_fields)
+                    {
+                        if (field.name == name) {
+                            return &field;
+                        }
+                    }
+                    return nullptr;
+                };
 
             std::vector<std::string_view> authored;
             for (const CustomRenderableCompileDesc::Constant& constant :
                  desc.constants)
             {
-                const auto slot = fields.find(constant.name);
-                if (slot == fields.end()) {
+                if (!declared_field_of(constant.name)) {
                     return "unknown constant name '" + constant.name
                         + "': the program's layout does not declare it";
                 }
@@ -553,15 +547,39 @@ namespace wz::engine::assets::internal
                         + "' is authored more than once";
                 }
                 authored.push_back(constant.name);
+            }
+
+            // Emit EVERY declared tail field in declaration order (issue
+            // #229), not just the authored ones: an authored value fills the
+            // entry, an unauthored one keeps the zero default. The full table
+            // is what lets a per-instance scene-node override address any
+            // declared field by name at pack time — the renderer never
+            // re-reads the layout.
+            uint32_t running = render_binding_constants_head_dwords(
+                program.constants_head);
+            for (const RenderBindingConstantField& field :
+                 program.constant_fields)
+            {
+                const uint32_t dwords =
+                    render_binding_constant_type_dwords(field.type);
 
                 RhiRenderableConstant baked{};
-                baked.name = constant.name;
-                baked.offset_dwords = slot->second.offset;
-                baked.dwords = slot->second.dwords;
-                for (uint32_t c = 0; c < slot->second.dwords && c < 4u; ++c) {
-                    baked.value[c] = constant.value[c];
+                baked.name = field.name;
+                baked.offset_dwords = running;
+                baked.dwords = dwords;
+                for (const CustomRenderableCompileDesc::Constant& constant :
+                     desc.constants)
+                {
+                    if (constant.name != field.name) {
+                        continue;
+                    }
+                    for (uint32_t c = 0; c < dwords && c < 4u; ++c) {
+                        baked.value[c] = constant.value[c];
+                    }
+                    break;
                 }
                 out.constants.push_back(std::move(baked));
+                running += dwords;
             }
 
             out.mesh_key = desc.mesh_asset;

@@ -11,6 +11,8 @@
 #include <engine/assets/scene/prefab_instantiate.h>
 #include <engine/assets/scene/scene_subtree_export.h>
 #include <engine/assets/scene_asset_module.h>
+#include <engine/assets/render_program/render_program.h>
+#include <engine/assets/renderable/render_binding_sources.h>
 #include <engine/assets/renderable_asset_module.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/audio/scene_audio.h>
@@ -872,7 +874,10 @@ namespace wz::app
         }
 
         // Resolve a graph node id to its committed output key + asset type,
-        // mirroring bridge_scene_renderable_keys.
+        // mirroring bridge_scene_renderable_keys. A DELETED draft node is
+        // unresolved (#229 bridge-reset semantics): its entry lingers in
+        // node_index, but handing out its stale key would wire the assembled
+        // renderable to an asset the bind no longer registers.
         const auto resolve_graph_node =
             [&draft](
                 wz::asset::AssetGraphDraftNodeId id,
@@ -882,8 +887,14 @@ namespace wz::app
                 if (it == draft.node_index.end()) {
                     return false;
                 }
-                out_key = draft.nodes[it->second].node.key;
-                out_type = draft.nodes[it->second].node.type;
+                const wz::asset::AssetGraphDraftNode& node =
+                    draft.nodes[it->second];
+                if (node.state == wz::asset::AssetGraphDraftNodeState::Deleted)
+                {
+                    return false;
+                }
+                out_key = node.node.key;
+                out_type = node.node.type;
                 return true;
             };
 
@@ -933,6 +944,49 @@ namespace wz::app
                               "renderable (skipped)");
                     }
                 }
+            }
+
+            // Bridge the node's custom-renderable semantic bindings (issue
+            // #229), mirroring the audio bridge: clear the stale resolved key
+            // first (a deleted source must stop feeding the synthesized
+            // renderable), resolve the stable graph anchor, and sanity-check
+            // the target — a type that PUBLISHES no GPU resource for the
+            // named semantic (render_binding_sources.h) is warned + skipped.
+            // Full kind-vs-layout validation happens at the 0x70A compile
+            // (which needs the program's layout); an unparseable semantic
+            // string passes through so that compile can name it.
+            for (wz::engine::assets::SceneRenderableSemanticBinding& binding :
+                 node.renderable_bindings)
+            {
+                binding.asset = {};  // clear stale
+                if (!binding.asset_graph_node_id) {
+                    continue;
+                }
+                wz::asset::AssetKey k{};
+                wz::asset::AssetType t{};
+                if (!resolve_graph_node(*binding.asset_graph_node_id, k, t)) {
+                    ctx_.logger.warn(
+                        "assemble_render_bindings: node '" + node.id
+                        + "' binding '" + binding.semantic
+                        + "' asset-graph node not found (skipped)");
+                    continue;
+                }
+                const std::optional<wz::engine::assets::DescriptorSemantic>
+                    semantic =
+                        wz::engine::assets::descriptor_semantic_from_name(
+                            binding.semantic);
+                if (semantic
+                    && !wz::engine::assets::render_binding_source_for(
+                        t, *semantic))
+                {
+                    ctx_.logger.warn(
+                        "assemble_render_bindings: node '" + node.id
+                        + "' binding '" + binding.semantic
+                        + "' target publishes no GPU resource for that "
+                          "semantic (skipped)");
+                    continue;
+                }
+                binding.asset = k;
             }
 
             if (!node.geometry_asset_node_id) {
@@ -1012,8 +1066,38 @@ namespace wz::app
             }
 
             // Route by the geometry asset's type to the matching RHI renderable.
+            const bool wants_custom = !node.renderable_bindings.empty()
+                || !node.renderable_constants.empty();
             wz::engine::assets::RenderableAsset renderable{};
-            if (geometry_type == wz::engine::assets::kAssetTypeMesh) {
+            if (geometry_type == wz::engine::assets::kAssetTypeMesh
+                && wants_custom)
+            {
+                // Custom-renderable ingredients present (issue #229):
+                // synthesize the CUSTOM (0x70A) recipe instead of the bare
+                // pull mesh. Rows pass through even half-resolved (semantic
+                // with no key after the bridge above) so the compile can NAME
+                // the failure. Instance constant OVERRIDES deliberately stay
+                // off the desc — they merge at pack time, so editing one
+                // never re-keys the synthesized asset.
+                wz::engine::assets::CustomRenderableDesc desc{};
+                desc.name = "render_binding/" + node.id;
+                desc.mesh = wz::engine::assets::MeshAsset{
+                    .output = geometry_key };
+                desc.program = wz::engine::assets::RenderProgramAsset{
+                    .key = program_key };
+                desc.bindings.reserve(node.renderable_bindings.size());
+                for (const auto& binding : node.renderable_bindings) {
+                    desc.bindings.push_back(
+                        wz::engine::assets::CustomRenderableCompileDesc::
+                            Binding{
+                                .semantic = binding.semantic,
+                                .asset = binding.asset,
+                            });
+                }
+                renderable =
+                    ctx_.assets->renderables().create_custom_renderable(desc);
+            }
+            else if (geometry_type == wz::engine::assets::kAssetTypeMesh) {
                 renderable = ctx_.assets->renderables().create_rhi_pull_mesh(
                     wz::engine::assets::RhiPullMeshRenderableDesc{
                         .name = "render_binding/" + node.id,
@@ -1026,6 +1110,14 @@ namespace wz::app
             else if (geometry_type
                      == wz::engine::assets::kAssetTypeGpuSparseMesh)
             {
+                if (wants_custom) {
+                    ctx_.logger.warn(
+                        "assemble_render_bindings: node '" + node.id
+                        + "' has renderable bindings/constants but its "
+                          "geometry is a gpu_sparse_mesh; the custom (0x70A) "
+                          "recipe requires Mesh geometry, so they are "
+                          "ignored");
+                }
                 renderable =
                     ctx_.assets->renderables().create_gpu_sparse_mesh_renderable(
                         wz::engine::assets::GpuSparseMeshRenderableDesc{
@@ -2292,6 +2384,17 @@ namespace wz::app
         };
     }
 
+    std::optional<wz::asset::AssetKey> WozzitsApp_v1::node_renderable_asset(
+        const wz::scene::AuthoredEntityId& id) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, id);
+        if (!node || !node->renderable_asset) {
+            return std::nullopt;
+        }
+        return *node->renderable_asset;
+    }
+
     void WozzitsApp_v1::apply_node_local_transform(
         const wz::scene::AuthoredEntityId& id,
         const wz::engine::assets::AuthoredTransform& transform)
@@ -2710,6 +2813,114 @@ namespace wz::app
         // A program change cascades to descendants via inheritance, so
         // re-assemble every binding (assemble walks ancestors per node).
         rematerialize_render_bindings();
+        return true;
+    }
+
+    bool WozzitsApp_v1::set_node_renderable_binding(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& semantic,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_renderable_binding: no-op (node '" + node_id
+                + "' missing)");
+            return false;
+        }
+        if (semantic.empty()) {
+            ctx_.logger.warn(
+                "set_node_renderable_binding: no-op (empty semantic on node '"
+                + node_id + "')");
+            return false;
+        }
+
+        auto& bindings = node->renderable_bindings;
+        const auto it = std::find_if(
+            bindings.begin(), bindings.end(),
+            [&semantic](
+                const wz::engine::assets::SceneRenderableSemanticBinding& b) {
+                return b.semantic == semantic;
+            });
+        if (asset_graph_node_id != 0) {
+            if (it != bindings.end()) {
+                it->asset_graph_node_id = asset_graph_node_id;
+                it->asset = {};  // stale until the re-assembly bridges it
+            }
+            else {
+                bindings.push_back(
+                    wz::engine::assets::SceneRenderableSemanticBinding{
+                        .semantic = semantic,
+                        .asset_graph_node_id = asset_graph_node_id,
+                    });
+            }
+        }
+        else if (it != bindings.end()) {
+            bindings.erase(it);
+        }
+
+        scene_dirty_ = true;
+        // A binding decides whether the assembled renderable is the custom
+        // (0x70A) form, so re-assemble like the geometry/program seams.
+        rematerialize_render_bindings();
+        return true;
+    }
+
+    bool WozzitsApp_v1::set_node_renderable_constant(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& name,
+        const float* value)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_renderable_constant: no-op (node '" + node_id
+                + "' missing)");
+            return false;
+        }
+        if (name.empty()) {
+            ctx_.logger.warn(
+                "set_node_renderable_constant: no-op (empty name on node '"
+                + node_id + "')");
+            return false;
+        }
+
+        auto& constants = node->renderable_constants;
+        const auto it = std::find_if(
+            constants.begin(), constants.end(),
+            [&name](
+                const wz::engine::assets::SceneRenderableConstantOverride& c) {
+                return c.name == name;
+            });
+        const bool existed = it != constants.end();
+        if (value) {
+            wz::engine::assets::SceneRenderableConstantOverride* target =
+                existed
+                    ? &*it
+                    : &constants.emplace_back(
+                          wz::engine::assets::SceneRenderableConstantOverride{
+                              .name = name });
+            std::copy(value, value + 4, target->value);
+        }
+        else if (existed) {
+            constants.erase(it);
+        }
+
+        // Instance overrides merge at PACK time from the node — no
+        // re-assembly, no recompile, no re-key. The one exception: the FIRST
+        // override on a node with no bindings flips its assembled renderable
+        // from the plain pull-mesh recipe to the custom form (and the last
+        // removal flips it back), which IS an assembly change.
+        const bool custom_form_flipped =
+            node->renderable_bindings.empty()
+            && ((value && !existed && constants.size() == 1u)
+                || (!value && existed && constants.empty()));
+        scene_dirty_ = true;
+        if (custom_form_flipped) {
+            rematerialize_render_bindings();
+        }
         return true;
     }
 

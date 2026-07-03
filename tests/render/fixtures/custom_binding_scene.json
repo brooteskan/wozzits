@@ -1,0 +1,55 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "custom_binding_scene",
+  "note": "Issue #229: drives a CUSTOM (0x70A) renderable via scene-node ingredients. Reuses test_rebind_fixture's asset graph: node 1 = cube Mesh geometry, node 16 = layout-authored custom render program (tint + scalar_field_texture), node 17 = procedural scalar field. 'bound' binds the field by SEMANTIC and overrides the 'tint' constant per instance.",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [0, 2, -8],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "bound",
+      "parent": "root",
+      "name": "bound",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [200, 200, 200]
+      },
+      "visible": true,
+      "geometry": { "asset_graph_node_id": 1 },
+      "render_program": { "asset_graph_node_id": 16 },
+      "renderable_bindings": [
+        { "semantic": "scalar_field_texture", "asset_graph_node_id": 17 }
+      ],
+      "renderable_constants": [
+        { "name": "tint", "value": [0.2, 0.7, 0.3, 1.0] }
+      ]
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  }
+}

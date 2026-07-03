@@ -230,10 +230,14 @@ namespace wz::engine::assets
         std::string variant;
     };
 
-    // One authored constant value baked into a custom renderable recipe. The
-    // compiler resolved `name` against the layout's declared tail fields and
-    // baked the field's absolute dword offset + width, so the renderer writes
-    // value[0..dwords) at offset_dwords without re-reading the layout.
+    // One declared constant tail field baked into a custom renderable recipe.
+    // The compiler resolved `name` against the layout's declared tail fields
+    // and baked the field's absolute dword offset + width, so the renderer
+    // writes value[0..dwords) at offset_dwords without re-reading the layout.
+    // Since #229 the recipe carries EVERY declared field (value = the
+    // graph-authored default, or zero when unauthored) — the full table is
+    // the name→offset map per-instance scene-node overrides merge against at
+    // pack time.
     struct RhiRenderableConstant
     {
         std::string name;
