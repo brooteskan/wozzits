@@ -15,6 +15,7 @@ target_sources(window_engine PRIVATE
     tree_bp.cpp
     ttn.cpp
     tree_tn.cpp
+    group_topology.cpp
     coordination.cpp
     cognition_clock.cpp
     agent_cognition.cpp
