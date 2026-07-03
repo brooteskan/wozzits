@@ -910,6 +910,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(graph graph_problems_tests_0)
     rs_add_test_group(graph shared_edge_polytree_tests)
     rs_add_test_group(graph shared_edge_polytree_algo_tests)
+    rs_add_test_group(graph shared_edge_graph_tests)
 
     # Scene render
     rs_add_test_group(scene_graph scene_graph_test_1)
