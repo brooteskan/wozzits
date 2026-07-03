@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace wz::engine::cognition;
@@ -77,4 +78,60 @@ TEST(ExactGroup, ChainEntanglesAllPairsIncludingNonAdjacent)
     EXPECT_GT(connected_correlation(g, 0, 1), 0.95);
     EXPECT_GT(connected_correlation(g, 1, 2), 0.95);
     EXPECT_GT(connected_correlation(g, 0, 2), 0.95);  // non-adjacent, still correlated
+}
+
+// The relaxation step is a 2nd-order symmetric (Strang) Trotter split, so the
+// Trotter error of reaching a fixed total imaginary time T scales as O(dtau^2):
+// halving dtau (doubling the step count) should cut the error by ~4x. We verify
+// this WITHOUT an eigensolver by building a near-exact reference: the same total
+// time T reached with a huge number of tiny steps (as dtau->0 the Trotter error
+// of ANY order vanishes, so this is effectively the exact e^{-H T} result).
+//
+// A 1st-order split would only give a ~2x error reduction per halving:
+// error(N)/error(2N) ~ 4 for 2nd order vs ~2 for 1st order. We compare N=8 vs
+// N=16 (dtau halved once), so the ratio distinguishes the two -- ~4 for the
+// symmetric split we just installed, ~2 for the old asymmetric one. We assert
+// the error shrinks and the ratio is comfortably above the 1st-order value and
+// near the 2nd-order value of 4 (loose band 3.0..5.0).
+//
+// The terms genuinely do not commute (transverse gamma*sigma_x, longitudinal
+// h*sigma_z, and a ZZ coupling), which is what makes the Trotter error nonzero
+// and order-dependent in the first place. The longitudinal goal field breaks the
+// z-symmetry, so no random seed is needed (the relaxation is deterministic).
+namespace
+{
+    // Relax a fresh 2-qubit non-commuting group to total imaginary time T using
+    // `steps` equal Trotter steps, and return agent 0's decision <sigma_z>.
+    double relaxed_decision(double total_time, uint32_t steps)
+    {
+        ExactGroup g = make_exact_group(2, { ExactBond{ .a = 0, .b = 1, .j = 0.5 } });
+        set_goals(g, { Goal{ .agent = 0, .field = 0.3 } });
+        relax(g, /*gamma=*/1.0, /*dtau=*/total_time / steps, /*iterations=*/steps);
+        return decision_z(g, 0);
+    }
+}
+
+TEST(ExactGroup, SymmetricTrotterStepIsSecondOrder)
+{
+    const double T = 1.0;
+
+    // Near-exact reference: many tiny steps drive the Trotter error to ~0.
+    const double ref = relaxed_decision(T, /*steps=*/2000);
+
+    const double z8 = relaxed_decision(T, /*steps=*/8);
+    const double z16 = relaxed_decision(T, /*steps=*/16);
+
+    const double err8 = std::abs(z8 - ref);
+    const double err16 = std::abs(z16 - ref);
+
+    // Error must actually shrink as dtau shrinks.
+    EXPECT_GT(err8, err16);
+    EXPECT_GT(err8, 0.0);
+
+    // 2nd order => halving dtau cuts the error ~4x. 1st order would give ~2x.
+    // Require comfortably above the 1st-order value; expect ~4 (measured ~3.98
+    // for this case: err8 ~ 1.5e-4, err16 ~ 3.7e-5).
+    const double ratio = err8 / err16;
+    EXPECT_GT(ratio, 3.0);
+    EXPECT_LT(ratio, 5.0);
 }

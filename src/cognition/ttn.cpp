@@ -80,18 +80,31 @@ namespace wz::engine::cognition
     {
         const uint32_t n = node_count(g.mps);
         g.last_truncation_error = 0.0;
-        // Single-site fields (commute across sites).
+        // 2nd-order symmetric (Strang) split: half a step of the single-site
+        // fields, a full step of the two-site couplings, then the other half of
+        // the fields. The symmetric ordering makes the local error O(dtau^3)
+        // (vs O(dtau^2) for the plain field-then-coupling split) for one extra
+        // cheap single-site half-sweep. Truncation happens ONLY on the coupling
+        // gates, so last_truncation_error is reset once at the top and then
+        // accumulated only across the full-step coupling sweep -- the single-site
+        // half-sweeps do not truncate and must not touch it.
+        // Single-site fields, first half-step (commute across sites).
         for (uint32_t i = 0; i < n; ++i) {
             apply_one_site_gate(
-                node_data(g.mps, i), site_gate(gamma, g.goal_field[i], dtau));
+                node_data(g.mps, i), site_gate(gamma, g.goal_field[i], dtau * 0.5));
         }
-        // Nearest-neighbour couplings, each truncated to chi.
+        // Nearest-neighbour couplings, full step, each truncated to chi.
         for (uint32_t i = 0; i + 1 < n; ++i) {
             g.last_truncation_error += apply_two_site_gate(
                 node_data(g.mps, i),
                 node_data(g.mps, i + 1),
                 coupling_gate(g.coupling[i], dtau),
                 g.chi);
+        }
+        // Single-site fields, second half-step.
+        for (uint32_t i = 0; i < n; ++i) {
+            apply_one_site_gate(
+                node_data(g.mps, i), site_gate(gamma, g.goal_field[i], dtau * 0.5));
         }
     }
 

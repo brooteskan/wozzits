@@ -30,13 +30,23 @@ namespace wz::engine::cognition
         //   H = -gamma sum_i sigma_x^i - sum_i h_i sigma_z^i
         //       - sum_bonds j sigma_z sigma_z,
         // where h_i is agent i's goal field.
+        //
+        // 2nd-order symmetric (Strang) split: half a step of the single-site
+        // fields, a full step of the two-site couplings, then the other half of
+        // the fields. The symmetric ordering cancels the leading commutator, so
+        // the local error is O(dtau^3) (vs O(dtau^2) for the plain field-then-
+        // coupling split) at the cost of one extra cheap single-site half-sweep.
         const uint32_t n = g.joint.qubits;
         for (uint32_t q = 0; q < n; ++q) {
             const double h = q < g.goal_field.size() ? g.goal_field[q] : 0.0;
-            qstate::apply_imag_time_field(g.joint, q, gamma, h, dtau);
+            qstate::apply_imag_time_field(g.joint, q, gamma, h, dtau * 0.5);
         }
         for (const ExactBond& b : g.bonds) {
             qstate::apply_imag_time_zz(g.joint, b.a, b.b, b.j, dtau);
+        }
+        for (uint32_t q = 0; q < n; ++q) {
+            const double h = q < g.goal_field.size() ? g.goal_field[q] : 0.0;
+            qstate::apply_imag_time_field(g.joint, q, gamma, h, dtau * 0.5);
         }
     }
 
