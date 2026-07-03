@@ -83,6 +83,10 @@ public partial class App : Application
     {
         var editorLog = new EditorLogBuffer();
         editorLog.AppendLine($"[editor] Opening project: {projectDirectory.FullPath}");
+        // Name the engine DLL actually loaded (path + build time + abi version) so a
+        // stale / wrong-config wozzits_abi.dll is obvious here rather than as a
+        // silent "my change didn't take".
+        editorLog.AppendLine(WozzitsEngineNativeClient.DescribeLoadedAbi());
 
         var projectSnapshot = engine.LoadProjectSnapshot(projectDirectory.FullPath);
 

@@ -34,11 +34,99 @@ internal static partial class WozzitsEngineAbi
             return IntPtr.Zero;
         }
 
-        var path = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
-        return File.Exists(path)
-            ? NativeLibrary.Load(path, assembly, searchPath)
-            : IntPtr.Zero;
+        var source = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        if (!File.Exists(source))
+        {
+            // Nothing at the resolved path -> let the default runtime search
+            // (app dir / PATH) try, exactly as before.
+            WozzitsEngineNativeClient.RecordAbiLoadPath(source);
+            return IntPtr.Zero;
+        }
+
+        // Load a private SHADOW COPY, never the build output itself, so a running
+        // editor never locks wozzits_abi.dll. That means you can rebuild the engine
+        // (any target/config) while the editor is open without a "permission
+        // denied" relink, and the freshest build is picked up on the next launch.
+        var loadPath = TryShadowCopy(source) ?? source;
+        WozzitsEngineNativeClient.RecordAbiLoadPath(loadPath);
+        return NativeLibrary.Load(loadPath, assembly, searchPath);
     }
+
+    // Copy the resolved DLL (+ its .pdb, best-effort for stack traces) into a
+    // per-process temp dir and return the copy's path, so the original build
+    // output stays unlocked. Returns null on any failure -> caller loads the
+    // source directly (degrading to the old locking behavior rather than failing).
+    private static string? TryShadowCopy(string source)
+    {
+        try
+        {
+            CleanupStaleShadowDirs();
+
+            var shadowDir = Path.Combine(
+                Path.GetTempPath(),
+                ShadowRootName,
+                Environment.ProcessId.ToString());
+            Directory.CreateDirectory(shadowDir);
+
+            var shadowDll = Path.Combine(shadowDir, Path.GetFileName(source));
+            File.Copy(source, shadowDll, overwrite: true);
+
+            var pdb = Path.ChangeExtension(source, ".pdb");
+            if (File.Exists(pdb))
+            {
+                try
+                {
+                    File.Copy(pdb, Path.ChangeExtension(shadowDll, ".pdb"), overwrite: true);
+                }
+                catch
+                {
+                    // Symbols are a nicety; a failure here must not block loading.
+                }
+            }
+
+            return shadowDll;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Reclaim shadow dirs left by dead editor processes. A dir held by a still-
+    // running editor has its DLL locked, so Delete throws and is skipped — only
+    // orphaned copies are removed.
+    private static void CleanupStaleShadowDirs()
+    {
+        try
+        {
+            var root = Path.Combine(Path.GetTempPath(), ShadowRootName);
+            if (!Directory.Exists(root))
+            {
+                return;
+            }
+
+            foreach (var dir in Directory.EnumerateDirectories(root))
+            {
+                try
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+                catch
+                {
+                    // In use by a live editor (locked DLL) — leave it be.
+                }
+            }
+        }
+        catch
+        {
+            // Cleanup is best-effort; never let it break loading.
+        }
+    }
+
+    private const string ShadowRootName = "wozzits-editor-abi";
+
+    [LibraryImport(LibraryName, EntryPoint = "wz_abi_version")]
+    internal static partial uint WzAbiVersion();
 
     [LibraryImport(
         LibraryName,

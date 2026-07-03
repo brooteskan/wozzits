@@ -1645,32 +1645,134 @@ public sealed partial class WozzitsEngineNativeClient
             edit.Aspect));
     }
 
+    // Diagnostics about which wozzits_abi.dll the resolver selected + loaded, for
+    // DescribeLoadedAbi() to surface at startup. Set by ResolveDefaultAbiPath
+    // (source + candidates) and RecordAbiLoadPath (the shadow copy actually loaded).
+    public static string? AbiSourcePath { get; private set; }
+    public static DateTime? AbiBuiltUtc { get; private set; }
+    public static string? AbiLoadPath { get; private set; }
+    public static IReadOnlyList<string> AbiCandidates { get; private set; } =
+        Array.Empty<string>();
+
+    internal static void RecordAbiLoadPath(string loadPath) => AbiLoadPath = loadPath;
+
     public static string ResolveDefaultAbiPath()
     {
         var configured = Environment.GetEnvironmentVariable(AbiPathEnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(configured))
         {
+            AbiSourcePath = configured;
+            AbiBuiltUtc = File.Exists(configured)
+                ? File.GetLastWriteTimeUtc(configured)
+                : null;
+            AbiCandidates = new[] { $"{configured} ({AbiPathEnvironmentVariable} override)" };
             return configured;
         }
 
+        var buildRoot = FindEngineBuildRoot();
+        if (buildRoot is not null)
+        {
+            // Pick the MOST RECENTLY BUILT wozzits_abi.dll across every build config
+            // (clang-debug, windows-debug, local-engine-v8-debug, ...), so whichever
+            // config was compiled last is the one the editor loads. This kills the
+            // recurring "I rebuilt the ABI but the editor still runs the old one"
+            // trap, which was really a config mismatch: the editor used to hardcode
+            // build/clang-debug while an engine rebuild often targeted another config.
+            var candidates = Directory
+                .EnumerateDirectories(buildRoot)
+                .Select(dir => new FileInfo(Path.Combine(dir, "wozzits_abi.dll")))
+                .Where(fi => fi.Exists)
+                .OrderByDescending(fi => fi.LastWriteTimeUtc)
+                .ToList();
+
+            AbiCandidates = candidates
+                .Select(fi =>
+                    $"{Path.GetFileName(Path.GetDirectoryName(fi.FullName))} " +
+                    $"({fi.LastWriteTimeUtc.ToLocalTime():yyyy-MM-dd HH:mm})")
+                .ToArray();
+
+            if (candidates.Count > 0)
+            {
+                var chosen = candidates[0];
+                AbiSourcePath = chosen.FullName;
+                AbiBuiltUtc = chosen.LastWriteTimeUtc;
+                return chosen.FullName;
+            }
+
+            // Build root exists but nothing is built yet -> canonical clang-debug.
+            var fallback = Path.Combine(buildRoot, "clang-debug", "wozzits_abi.dll");
+            AbiSourcePath = fallback;
+            AbiBuiltUtc = null;
+            return fallback;
+        }
+
+        AbiSourcePath = "wozzits_abi.dll";
+        AbiBuiltUtc = null;
+        AbiCandidates = Array.Empty<string>();
+        return "wozzits_abi.dll";
+    }
+
+    // The sibling engine repo's build/ directory (parent of the per-config dirs),
+    // or null if the editor isn't running from a source checkout next to it.
+    private static string? FindEngineBuildRoot()
+    {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
             if (string.Equals(directory.Name, "wozzits-editor", StringComparison.OrdinalIgnoreCase)
                 && directory.Parent is not null)
             {
-                return Path.Combine(
-                    directory.Parent.FullName,
-                    "wozzits-window-engine",
-                    "build",
-                    "clang-debug",
-                    "wozzits_abi.dll");
+                var build = Path.Combine(
+                    directory.Parent.FullName, "wozzits-window-engine", "build");
+                return Directory.Exists(build) ? build : null;
             }
 
             directory = directory.Parent;
         }
 
-        return "wozzits_abi.dll";
+        return null;
+    }
+
+    // A single console line naming the wozzits_abi.dll that was loaded, when it was
+    // built, and whether its ABI version matches what this editor was compiled
+    // against — so a stale or wrong-config engine build is obvious at a glance
+    // instead of surfacing as mystifying "my change didn't take" behavior.
+    public static string DescribeLoadedAbi()
+    {
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        uint reported;
+        try
+        {
+            // Forces the resolver to run (and populate the diagnostics above) if it
+            // hasn't already, then reports the loaded DLL's ABI version.
+            reported = WozzitsEngineAbi.WzAbiVersion();
+        }
+        catch (Exception ex)
+        {
+            return $"[editor] ABI: could not load/query '{AbiSourcePath}' " +
+                   $"({ex.GetType().Name}: {ex.Message}). Rebuild wozzits_abi.";
+        }
+
+        var built = AbiBuiltUtc is { } utc
+            ? utc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+            : "unknown";
+        var expected = WozzitsEngineAbi.AbiVersion;
+
+        var line = $"[editor] ABI loaded: {AbiSourcePath} (built {built}, abi v{reported})";
+        if (reported != expected)
+        {
+            line += $"  ⚠ MISMATCH: this editor expects abi v{expected}. " +
+                    "Rebuild wozzits_abi (the newest build across configs wins).";
+        }
+
+        if (AbiCandidates.Count > 1)
+        {
+            line += Environment.NewLine +
+                    $"[editor] ABI candidates (newest first): {string.Join(", ", AbiCandidates)}";
+        }
+
+        return line;
     }
 
     private static EngineMutationResponse InvokeMutation(Func<WzResult> invoke)
