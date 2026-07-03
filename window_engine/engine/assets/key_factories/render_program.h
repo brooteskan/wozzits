@@ -39,7 +39,11 @@ namespace wz::engine::assets
     }
 
     // Key for a custom (fully-authored) render program node.
-    // dep[0] = vertex shader key, dep[1] = pixel shader key.
+    // dep[0] = vertex shader key, dep[1] = pixel shader key. The OPTIONAL
+    // binding_layout dep (issue #227) folds into deps_hash AFTER the shader
+    // pair, matching registration order (vertex, pixel, layout); an empty
+    // layout key reproduces the 2-dep key bit-for-bit, so layout-less custom
+    // programs keep their identity (the 0x706 optional-style folding pattern).
     [[nodiscard]] inline wz::asset::AssetKey make_custom_render_program_key(
         const CustomRenderProgramDesc& desc) noexcept
     {
@@ -99,9 +103,13 @@ namespace wz::engine::assets
             hi,
         };
 
-        const wz::asset::Hash dep = detail::combine_dep_hashes(
+        wz::asset::Hash dep = detail::combine_dep_hashes(
             detail::key_to_dep_hash(desc.vertex_shader),
             detail::key_to_dep_hash(desc.pixel_shader));
+        if (!(desc.binding_layout == wz::asset::AssetKey{})) {
+            dep = detail::combine_dep_hashes(
+                dep, detail::key_to_dep_hash(desc.binding_layout));
+        }
 
         return wz::asset::AssetKey{
             .content_hash  = content,

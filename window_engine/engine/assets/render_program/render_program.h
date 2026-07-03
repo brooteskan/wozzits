@@ -5,8 +5,11 @@
 #include <asset/types.h>
 #include <engine/assets/renderable/renderable.h>
 
+#include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wz::engine::assets
@@ -104,6 +107,47 @@ namespace wz::engine::assets
         PulledMeshSourceVertices,
     };
 
+    // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
+    // both directions: the rhi bridge projects the enum to a name and registers
+    // it as a Tag (enum → name), and authored render-binding-layout rows name
+    // their semantic as a string that resolves back to the enum (name → enum).
+    // Index == enum value; a new DescriptorSemantic member extends this array.
+    inline constexpr std::array<std::string_view, 9> kDescriptorSemanticNames = {
+        "unknown",
+        "splat_cloud",
+        "sorted_splat_indices",
+        "scalar_field_texture",
+        "mesh_field_visualization",
+        "mesh_mask_rules",
+        "pulled_mesh_positions",
+        "pulled_mesh_indices",
+        "pulled_mesh_source_vertices",
+    };
+
+    [[nodiscard]] constexpr std::string_view descriptor_semantic_name(
+        DescriptorSemantic semantic) noexcept
+    {
+        const size_t index = static_cast<size_t>(semantic);
+        if (index < kDescriptorSemanticNames.size()) {
+            return kDescriptorSemanticNames[index];
+        }
+        return kDescriptorSemanticNames[0];
+    }
+
+    // "unknown" is not authorable: it names the absent state, so parsing it (or
+    // any unrecognized name) fails rather than producing a binding the renderer
+    // could never fill.
+    [[nodiscard]] constexpr std::optional<DescriptorSemantic>
+    descriptor_semantic_from_name(std::string_view name) noexcept
+    {
+        for (size_t i = 1; i < kDescriptorSemanticNames.size(); ++i) {
+            if (kDescriptorSemanticNames[i] == name) {
+                return static_cast<DescriptorSemantic>(i);
+            }
+        }
+        return std::nullopt;
+    }
+
     struct DescriptorBinding
     {
         DescriptorKind     kind{};
@@ -149,6 +193,11 @@ namespace wz::engine::assets
         std::string name;
         wz::asset::AssetKey vertex_shader{};
         wz::asset::AssetKey pixel_shader{};
+        // Optional authored binding layout (issue #227), dep[2] when non-empty.
+        // When set, the layout asset defines the whole SRG at compile time and
+        // the root_constants/descriptor_bindings/static_samplers vectors below
+        // are ignored.
+        wz::asset::AssetKey binding_layout{};
 
         RenderBindingModel    binding_model{};
         RenderPrimitiveTopology topology = RenderPrimitiveTopology::TriangleList;

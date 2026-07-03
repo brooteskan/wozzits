@@ -3,6 +3,7 @@
 // engine/assets/render_program/render_program_compilers.h
 
 #include <asset/compiler.h>
+#include <engine/assets/render_binding_layout/render_binding_layout.h>
 #include <engine/assets/render_program/render_program.h>
 #include <logging/logger.h>
 
@@ -19,10 +20,14 @@ namespace wz::engine::assets::internal
     // registers it under program_ref(program_key) so the renderer binds it by
     // find. No shader compilation here (#193). Pass nullptr registries
     // (device-only library / builtin path) to skip rhi production.
+    // binding_layouts backs the optional binding_layout port (issue #227):
+    // when a layout dep is wired, the compiler derives the program's SRG from
+    // the layout data instead of the numbered presets.
     void register_render_program_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         RenderProgramTable& table,
+        RenderBindingLayoutTable& binding_layouts,
         wz::rhi::RenderProgramRegistry* programs,
         wz::rhi::DescriptorSemanticRegistry* descriptor_semantics,
         wz::rhi::ConstantSemanticRegistry* constant_semantics);

@@ -102,6 +102,15 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000103ull
     };
 
+    // Authored render binding layout (issue #227): the SRG shape a custom
+    // render program binds — root-constant block (head packer + declared tail
+    // fields), SRV binding rows, static-sampler rows; registers derived from
+    // row order. Zero dependencies; compiled directly from indexed params.
+    // Lives in the shader/pipeline range as a root-signature-shaped recipe.
+    inline constexpr wz::asset::SchemaID kRenderBindingLayoutSchema{
+    0xF11E'CA55'E7'000104ull
+    };
+
     // Scalar field recipe: interpret a raw float32 file dependency as ScalarFieldData.
     // Compiled by the scalar field compiler; expects a kRawFileSchema dependency.
     // Multiple scalar field schemas may coexist for different recipe types

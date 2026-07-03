@@ -175,31 +175,9 @@ namespace wz::engine::rendering
         // The engine's DescriptorSemantic enum -> a stable name. The rhi side
         // registers that name as a Tag, dissolving the enum into an open
         // identity set that new render paths extend without editing a central
-        // enum that many sites switch on.
-        const char* descriptor_semantic_name(ea::DescriptorSemantic s)
-        {
-            switch (s) {
-            case ea::DescriptorSemantic::Unknown:
-                return "unknown";
-            case ea::DescriptorSemantic::SplatCloud:
-                return "splat_cloud";
-            case ea::DescriptorSemantic::SortedSplatIndices:
-                return "sorted_splat_indices";
-            case ea::DescriptorSemantic::ScalarFieldTexture:
-                return "scalar_field_texture";
-            case ea::DescriptorSemantic::MeshFieldVisualization:
-                return "mesh_field_visualization";
-            case ea::DescriptorSemantic::MeshMaskRules:
-                return "mesh_mask_rules";
-            case ea::DescriptorSemantic::PulledMeshPositions:
-                return "pulled_mesh_positions";
-            case ea::DescriptorSemantic::PulledMeshIndices:
-                return "pulled_mesh_indices";
-            case ea::DescriptorSemantic::PulledMeshSourceVertices:
-                return "pulled_mesh_source_vertices";
-            }
-            return "unknown";
-        }
+        // enum that many sites switch on. The name table itself lives with the
+        // enum (kDescriptorSemanticNames, render_program.h) so authored binding
+        // layouts parse the SAME names this bridge registers.
 
         struct RenderProgramBridgeSource
         {
@@ -265,7 +243,8 @@ namespace wz::engine::rendering
                         return std::nullopt;
                     }
                     const wz::rhi::Tag semantic =
-                        descriptors.acquire(descriptor_semantic_name(db.semantic));
+                        descriptors.acquire(
+                            ea::descriptor_semantic_name(db.semantic));
                     if (!semantic.valid()) {
                         return std::nullopt;
                     }

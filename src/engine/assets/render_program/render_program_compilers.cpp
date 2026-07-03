@@ -1,4 +1,5 @@
 #include <engine/assets/render_program/render_program_compilers.h>
+#include <engine/assets/render_binding_layout/render_binding_layout.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -89,10 +90,15 @@ namespace wz::engine::assets::internal
             "Wireframe cull none",
         };
 
-        constexpr std::array<std::string_view, 3> kBindingLayoutOptions = {
+        // One label per implemented numbered preset (values 0-4 below). These
+        // presets remain the port-less fallback; the authored path is the
+        // optional binding_layout port (issue #227).
+        constexpr std::array<std::string_view, 5> kBindingLayoutOptions = {
             "Manual",
             "RHI pull mesh MVP",
             "Clipmap landscape",
+            "Gaussian splat cloud",
+            "Styled RHI pull mesh",
         };
 
         template<class Enum, std::size_t Count>
@@ -191,8 +197,15 @@ namespace wz::engine::assets::internal
                     desc.raster_mode,
                     kRasterModeOptions);
 
+            // Range-checked like every other enum param (out-of-range authored
+            // values collapse to 0 = Manual instead of silently selecting a
+            // preset branch below).
             const int64_t binding_layout =
-                params.get<int64_t>("binding_layout", 0);
+                enum_param(
+                    params,
+                    "binding_layout",
+                    int64_t{ 0 },
+                    kBindingLayoutOptions);
             if (binding_layout == 1) {
                 desc.root_constants.push_back(RootConstantBinding{
                     .visibility = ShaderVisibility::Vertex,
@@ -783,6 +796,7 @@ namespace wz::engine::assets::internal
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         RenderProgramTable& table,
+        RenderBindingLayoutTable& binding_layouts,
         wz::rhi::RenderProgramRegistry* programs,
         wz::rhi::DescriptorSemanticRegistry* descriptor_semantics,
         wz::rhi::ConstantSemanticRegistry* constant_semantics)
@@ -878,6 +892,15 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "vertex_shader", wz::asset::AssetType::Shader },
                 { "pixel_shader", wz::asset::AssetType::Shader },
+                // Authored SRG layout (issue #227). When wired, the layout
+                // defines the program's root constants / descriptor bindings /
+                // static samplers and the numbered binding_layout presets are
+                // ignored. Unwired, presets 0-4 stay the fallback.
+                {
+                    "binding_layout",
+                    kAssetTypeRenderBindingLayout,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .parameters = {
                 {
@@ -958,7 +981,7 @@ namespace wz::engine::assets::internal
                     .options = kBindingLayoutOptions,
                 },
             },
-            .compile = [&logger, &table, programs,
+            .compile = [&logger, &table, &binding_layouts, programs,
                         descriptor_semantics, constant_semantics](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
@@ -969,8 +992,10 @@ namespace wz::engine::assets::internal
                 const auto* desc =
                     std::any_cast<CustomRenderProgramDesc>(&input.meta);
 
-                if (dep_handles.size() != 2) {
-                    logger.error("custom render program requires exactly two shader dependencies (vertex, pixel)");
+                // Two required shader deps at ports 0/1, plus at most the
+                // optional binding_layout dep.
+                if (dep_handles.size() < 2 || dep_handles.size() > 3) {
+                    logger.error("custom render program requires two shader dependencies (vertex, pixel) plus an optional binding layout");
                     return compile_failed_node(input);
                 }
 
@@ -999,6 +1024,53 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                // Optional binding-layout dep (issue #227): when wired, the
+                // authored layout defines the whole SRG — root constants,
+                // descriptor bindings, static samplers — replacing both the
+                // numbered presets and any desc-carried vectors. Located by
+                // TYPE, not position: dep ordering is not guaranteed once an
+                // optional port exists (renderable_compilers.cpp documents
+                // the hazard).
+                CustomRenderProgramDesc effective = *desc;
+                for (size_t i = 0; i < dep_nodes.size(); ++i) {
+                    if (dep_nodes[i].type != kAssetTypeRenderBindingLayout) {
+                        continue;
+                    }
+                    if (i >= dep_handles.size() || !dep_handles[i].valid()) {
+                        logger.error(
+                            "custom render program binding layout dependency "
+                            "did not resolve");
+                        return compile_failed_node(
+                            input,
+                            "binding layout dependency did not resolve");
+                    }
+                    const RenderBindingLayoutData* layout =
+                        binding_layouts.get(dep_handles[i]);
+                    if (!layout) {
+                        logger.error(
+                            "custom render program binding layout payload "
+                            "missing");
+                        return compile_failed_node(
+                            input,
+                            "binding layout payload missing");
+                    }
+                    RenderBindingLayoutSrg srg{};
+                    std::string error;
+                    if (!build_render_binding_layout_srg(
+                            *layout, srg, error))
+                    {
+                        logger.error(
+                            "custom render program binding layout: " + error);
+                        return compile_failed_node(input, std::move(error));
+                    }
+                    effective.root_constants = std::move(srg.root_constants);
+                    effective.descriptor_bindings =
+                        std::move(srg.descriptor_bindings);
+                    effective.static_samplers =
+                        std::move(srg.static_samplers);
+                    break;
+                }
+
                 // Produce the rhi program when the shared registries are present.
                 // The renderer's find-then-fallback covers the null/builtin path;
                 // the shaders are produced by the shader compiler (referenced here
@@ -1008,7 +1080,7 @@ namespace wz::engine::assets::internal
                 {
                     publish_custom_rhi_render_program(
                         input.key,
-                        *desc,
+                        effective,
                         dep_nodes[0].key,
                         dep_nodes[1].key,
                         *programs,
@@ -1018,16 +1090,17 @@ namespace wz::engine::assets::internal
                 }
 
                 RenderProgramData data{};
-                data.binding_model    = desc->binding_model;
-                data.topology         = desc->topology;
-                data.default_domain   = desc->default_domain;
-                data.default_policy_flags = desc->default_policy_flags;
-                data.input_layout     = desc->input_layout;
-                data.blend_mode       = desc->blend_mode;
-                data.depth_mode       = desc->depth_mode;
-                data.raster_mode      = desc->raster_mode;
-                data.root_constants   = desc->root_constants;
-                data.descriptor_bindings = desc->descriptor_bindings;
+                data.binding_model    = effective.binding_model;
+                data.topology         = effective.topology;
+                data.default_domain   = effective.default_domain;
+                data.default_policy_flags = effective.default_policy_flags;
+                data.input_layout     = effective.input_layout;
+                data.blend_mode       = effective.blend_mode;
+                data.depth_mode       = effective.depth_mode;
+                data.raster_mode      = effective.raster_mode;
+                data.root_constants   = effective.root_constants;
+                data.descriptor_bindings = effective.descriptor_bindings;
+                data.static_samplers  = effective.static_samplers;
                 data.vertex_shader    = dep_handles[0];
                 data.pixel_shader     = dep_handles[1];
 

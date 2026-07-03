@@ -414,6 +414,31 @@ the renderable (device required; deviceless materialize attaches no renderable).
 
 ---
 
+## Render Binding Layouts
+
+Render binding layouts (issue #227) are CPU-side authored SRG shapes for custom
+render programs — the shared layouts that the numbered `binding_layout` presets
+0–4 hard-coded, promoted to a zero-dep asset type on the mesh-render-style
+pattern.
+
+| Capability | Schema constant | Schema value | Output AssetType | Module / API |
+|---|---|---|---|---|
+| Render binding layout | `kRenderBindingLayoutSchema` | `0x000104` | `kAssetTypeRenderBindingLayout` (1052) | `RenderBindingLayoutAssetModule::create_render_binding_layout()` |
+
+A layout declares one optional root-constant block (`constants_semantic` +
+visibility + a `constants_head` enum naming an existing renderer packer —
+mvp16 / world_viewproj_camera36 / clipmap32 — plus authored tail field
+declarations, name + type only), up to eight SRV binding rows (descriptor
+semantic name, texture/structured kind, visibility), and up to two static
+sampler rows. The tables are encoded as indexed scalar params
+(`binding0_semantic`, `const0_name`, `sampler0_kind`, …). Registers are DERIVED
+from row order (b0 / t0,t1… / s0,s1… in the object space 2) — never authored.
+A custom render program (`0x000103`) consumes a layout through its optional
+`binding_layout` input port; when wired, the layout defines the program's whole
+SRG and the numbered presets are ignored.
+
+---
+
 ## Renderables
 
 Renderables bind a source data asset (mesh, splat cloud, scalar field, terrain)

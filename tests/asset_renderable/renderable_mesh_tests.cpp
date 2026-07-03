@@ -177,6 +177,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     DiagnosticTimeframeSummaryTable diagnostic_timeframe_summary_table;
     CSVExportTable csv_export_table;
     MeshRenderStyleTable mesh_render_style_table;
+    RenderBindingLayoutTable render_binding_layout_table;
     RenderableAssetTable renderable_table;
     RhiRenderableTable rhi_renderable_table;
     RenderProgramTable render_program_table;
@@ -297,6 +298,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
             diagnostic_timeframe_summary_table,
         .csv_export_table = csv_export_table,
         .mesh_render_style_table = mesh_render_style_table,
+        .render_binding_layout_table = render_binding_layout_table,
         .renderable_table = renderable_table,
         .rhi_renderable_table = rhi_renderable_table,
         .render_program_table = render_program_table,
@@ -545,6 +547,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
     DiagnosticTimeframeSummaryTable diagnostic_timeframe_summary_table;
     CSVExportTable csv_export_table;
     MeshRenderStyleTable mesh_render_style_table;
+    RenderBindingLayoutTable render_binding_layout_table;
     RenderableAssetTable renderable_table;
     RhiRenderableTable rhi_renderable_table;
     RenderProgramTable render_program_table;
@@ -659,6 +662,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
             diagnostic_timeframe_summary_table,
         .csv_export_table = csv_export_table,
         .mesh_render_style_table = mesh_render_style_table,
+        .render_binding_layout_table = render_binding_layout_table,
         .renderable_table = renderable_table,
         .rhi_renderable_table = rhi_renderable_table,
         .render_program_table = render_program_table,

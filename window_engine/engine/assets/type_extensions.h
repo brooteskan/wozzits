@@ -576,6 +576,14 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeRhiRenderableRecipe =
         static_cast<wz::asset::AssetType>(1051);
 
+    // Implemented render binding layout asset (issue #227).
+    // CPU-side authored SRG shape for custom render programs: one optional
+    // root-constant block (head packer + declared tail fields), ordered SRV
+    // binding rows, and ordered static-sampler rows; registers derive from row
+    // order. Distinct from the RESERVED generic kAssetTypeBindingLayout (1047).
+    inline constexpr wz::asset::AssetType kAssetTypeRenderBindingLayout =
+        static_cast<wz::asset::AssetType>(1052);
+
 
 
     // ─── Material asset types: 1060–1099 ─────────────────────────────────────────

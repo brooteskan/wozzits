@@ -74,7 +74,12 @@ namespace wz::engine::assets {
     // (folded into the key + serialized into the root signature); the clipmap
     // landscape program declares a LinearClamp VS sampler for bilinear height
     // sampling (#211). Bump invalidates stale caches lacking the sampler.
-    inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 2;
+    // Bumped 2 -> 3 (issue #227): the compiler now copies static_samplers into
+    // RenderProgramData (previously dropped) and accepts an optional render
+    // binding layout dependency that defines the whole SRG. Bump invalidates
+    // caches compiled without samplers/layout consumption.
+    inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 3;
+    inline constexpr uint64_t kRenderBindingLayoutCompilerVersion = 1;
     inline constexpr uint64_t kComputePipelineCompilerVersion = 1;
     // v2: added subsample_step + RHI residency publishing (#208).
     // v3: XZ + height normalization fixes (unit [0,1], raw height, texel-index

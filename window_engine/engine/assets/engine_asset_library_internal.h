@@ -50,6 +50,8 @@
 #include <engine/assets/renderable/renderable_compilers.h>
 #include <engine/assets/mesh_render_style/mesh_render_style.h>
 #include <engine/assets/mesh_render_style/mesh_render_style_compilers.h>
+#include <engine/assets/render_binding_layout/render_binding_layout.h>
+#include <engine/assets/render_binding_layout/render_binding_layout_compilers.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/render_program/render_program_compilers.h>
 #include <engine/assets/compute_pipeline/compute_pipeline.h>
@@ -122,6 +124,7 @@ namespace wz::engine::assets::internal {
         DiagnosticTimeframeSummaryTable&    diagnostic_timeframe_summary_table;
         CSVExportTable&                     csv_export_table;
         MeshRenderStyleTable&               mesh_render_style_table;
+        RenderBindingLayoutTable&           render_binding_layout_table;
         RenderableAssetTable&               renderable_table;
         RhiRenderableTable&                 rhi_renderable_table;
         RenderProgramTable&                 render_program_table;

@@ -87,10 +87,19 @@ namespace wz::engine::assets
         node.meta = std::move(desc);
 
         const auto& d = std::any_cast<const CustomRenderProgramDesc&>(node.meta);
+        // Dep order (vertex, pixel, then the optional layout) matches the
+        // compiler's input ports and the key factory's deps_hash folding.
+        std::vector<wz::asset::AssetKey> deps{
+            d.vertex_shader,
+            d.pixel_shader,
+        };
+        if (!(d.binding_layout == wz::asset::AssetKey{})) {
+            deps.push_back(d.binding_layout);
+        }
         // register_asset() returns false when the key is already registered;
         // re-materializing the same scene is expected to hit that, so the
         // existing key is returned rather than failing.
-        (void)system_->register_asset(node, { d.vertex_shader, d.pixel_shader });
+        (void)system_->register_asset(node, deps);
 
         return RenderProgramAsset{ key };
     }

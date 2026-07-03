@@ -244,6 +244,7 @@ namespace wz::engine::assets
         , diagnostic_timeframe_summary_table_{}
         , csv_export_table_{}
         , mesh_render_style_table_{}
+        , render_binding_layout_table_{}
         , renderable_table_{}
         , rhi_renderable_table_{}
         , render_program_table_{}
@@ -290,6 +291,7 @@ namespace wz::engine::assets
                 .diagnostic_timeframe_summary_table     = diagnostic_timeframe_summary_table_,
                 .csv_export_table    = csv_export_table_,
                 .mesh_render_style_table = mesh_render_style_table_,
+                .render_binding_layout_table = render_binding_layout_table_,
                 .renderable_table    = renderable_table_,
                 .rhi_renderable_table = rhi_renderable_table_,
                 .render_program_table = render_program_table_,
@@ -345,6 +347,8 @@ namespace wz::engine::assets
         , diagnostic_timeframe_summaries_(system_, logger_, diagnostic_timeframe_summary_table_)
         , csv_export_(system_, logger_, csv_export_table_)
         , mesh_render_styles_(system_, logger_, mesh_render_style_table_)
+        , render_binding_layouts_(
+            system_, logger_, render_binding_layout_table_)
         , renderables_(
             system_,
             logger_,

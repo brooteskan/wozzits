@@ -846,6 +846,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_renderable renderable_clipmap_landscape_tests)
 
     rs_add_test_group(asset_render_program render_program_asset_module)
+    rs_add_test_group(asset_render_program render_binding_layout_program_tests)
+    rs_add_test_group(asset_render_binding_layout render_binding_layout_asset_module)
     rs_add_test_group(asset_compute_pipeline compute_pipeline_asset_module)
     rs_add_test_group(asset_compute_pipeline hlsl_binding_extract)
 

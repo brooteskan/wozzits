@@ -157,6 +157,7 @@ namespace wz::engine::assets
             WZ_ADD_TYPE(kAssetTypeRenderProgram);
             WZ_ADD_TYPE(kAssetTypeComputePipeline);
             WZ_ADD_TYPE(kAssetTypeRhiRenderableRecipe);
+            WZ_ADD_TYPE(kAssetTypeRenderBindingLayout);
             WZ_ADD_TYPE(kAssetTypeMaterialDefinition);
             WZ_ADD_TYPE(kAssetTypeMaterialInstance);
             WZ_ADD_TYPE(kAssetTypeMaterialTemplate);
@@ -368,6 +369,9 @@ namespace wz::engine::assets
             WZ_SET_TYPE_NAME(
                 kAssetTypeRhiRenderableRecipe,
                 "RHI renderable recipe");
+            WZ_SET_TYPE_NAME(
+                kAssetTypeRenderBindingLayout,
+                "Render binding layout");
             WZ_SET_TYPE_NAME(kAssetTypeMeshRenderStyle, "Mesh render style");
             WZ_SET_TYPE_NAME(kAssetTypeScene, "Scene");
             WZ_SET_TYPE_NAME(kAssetTypeDirectLight, "Direct light");
@@ -420,6 +424,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kBuiltinRenderProgramSchema, "Builtin render program");
             WZ_ADD_SCHEMA(kComputePipelineSchema, "Compute pipeline");
             WZ_ADD_SCHEMA(kCustomRenderProgramSchema, "Custom render program");
+            WZ_ADD_SCHEMA(kRenderBindingLayoutSchema, "Render binding layout");
             WZ_ADD_SCHEMA(kScalarFieldFromRawF32Schema, "Scalar field from raw F32");
             WZ_ADD_SCHEMA(kScalarFieldProceduralSchema, "Procedural scalar field");
             WZ_ADD_SCHEMA(kScalarFieldFromGaeaR32Schema, "Scalar field from Gaea R32");

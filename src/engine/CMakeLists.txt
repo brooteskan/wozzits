@@ -146,6 +146,10 @@ target_sources(window_engine PRIVATE
     assets/mesh_render_style/mesh_render_style_compilers.cpp
     assets/mesh_render_style_asset_module.cpp
 
+    assets/render_binding_layout/render_binding_layout.cpp
+    assets/render_binding_layout/render_binding_layout_compilers.cpp
+    assets/render_binding_layout_asset_module.cpp
+
     assets/gltf/gltf_importer.cpp 
 
     assets/hdri/hdri_lighting_metadata.cpp
