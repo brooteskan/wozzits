@@ -4,6 +4,7 @@
 target_sources(window_engine PRIVATE
     qstate/qstate.cpp
     mean_field.cpp
+    loopy_bp.cpp
     exact_group.cpp
     anneal.cpp
     commit.cpp
