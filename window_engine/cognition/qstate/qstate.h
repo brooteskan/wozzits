@@ -130,6 +130,10 @@ namespace wz::engine::cognition::qstate
         std::vector<Complex> u;   // rows x rank
         std::vector<Real> s;      // rank
         std::vector<Complex> vh;  // rank x cols
+        // Sum of the SQUARED discarded singular values (those beyond `rank`); 0
+        // when untruncated. The absolute L2 mass dropped by the chi-cap -- the
+        // paper's gate truncation error before normalization.
+        Real discarded_weight = 0;
     };
 
     Svd svd(

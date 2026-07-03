@@ -66,3 +66,18 @@ TEST(Ttn, SmallChiRunsAndStaysBounded)
     }
     EXPECT_GT(z[0], 0.0);  // the goal still biases the chain
 }
+
+// Telemetry: a full-chi sweep drops no weight (last_truncation_error ~ 0); a
+// chi=1 sweep on an entangling ferromagnetic chain has to drop weight (> 0).
+TEST(Ttn, TruncationErrorTelemetry)
+{
+    // chi=4 = full bond for a 4-site chain: entanglement never gets capped.
+    TtnChain full = make_ttn_chain(4, { 1.0, 1.0, 1.0 }, /*chi=*/4);
+    relax_step(full, /*gamma=*/0.2, /*dtau=*/0.05);
+    EXPECT_NEAR(full.last_truncation_error, 0.0, 1e-12);
+
+    // chi=1 forces every entangling bond back to a product: weight is dropped.
+    TtnChain capped = make_ttn_chain(4, { 1.0, 1.0, 1.0 }, /*chi=*/1);
+    relax_step(capped, /*gamma=*/0.2, /*dtau=*/0.05);
+    EXPECT_GT(capped.last_truncation_error, 0.0);
+}

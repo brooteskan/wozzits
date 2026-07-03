@@ -37,6 +37,23 @@ TEST(Coordination, TtnBackendThroughTheContract)
     EXPECT_GT(decision_z(c, 2), 0.8);
 }
 
+// Fidelity telemetry through the seam: a chi-capped TTN backend reports a
+// positive truncation error after relaxing an entangling chain, while the exact
+// backend (no truncation) reports exactly 0.
+TEST(Coordination, TruncationErrorThroughTheContract)
+{
+    // chi=1 forces truncation on a ferromagnetic chain -> nonzero telemetry.
+    TtnChain t = make_ttn_chain(4, { 1.0, 1.0, 1.0 }, /*chi=*/1);
+    Coordination ct = std::move(t);
+    relax(ct, /*gamma=*/0.2, /*dtau=*/0.05, /*iterations=*/1);
+    EXPECT_GT(truncation_error(ct), 0.0);
+
+    ExactGroup g = make_exact_group(2, { ExactBond{ 0, 1, 1.0 } });
+    Coordination ce = std::move(g);
+    relax(ce, 0.2, 0.05, 1);
+    EXPECT_EQ(truncation_error(ce), 0.0);
+}
+
 // The mean-field backend drives through the same contract.
 TEST(Coordination, MeanFieldBackendThroughTheContract)
 {

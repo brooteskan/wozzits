@@ -385,6 +385,34 @@ TEST(QState, SvdTruncationKeepsLargestSingularValues)
     EXPECT_NEAR(trunc.s[1], 2.0, 1e-9);
     // Dropping the sigma=1 component leaves exactly that error.
     EXPECT_NEAR(max_diff(reconstruct(trunc), a), 1.0, 1e-9);
+
+    // The discarded weight is the dropped singular value squared: sigma=1 -> 1.0.
+    EXPECT_NEAR(trunc.discarded_weight, 1.0, 1e-9);
+    // Untruncated (full and max_rank=0) discard nothing.
+    EXPECT_NEAR(full.discarded_weight, 0.0, 1e-12);
+    EXPECT_NEAR(svd(a, 3, 3, /*max_rank=*/0).discarded_weight, 0.0, 1e-12);
+}
+
+// discarded_weight equals the summed square of the singular values the chi-cap
+// dropped -- computed against an untruncated SVD that knows every sigma.
+TEST(QState, SvdDiscardedWeightMatchesDroppedSingularValues)
+{
+    Rng rng{ 0xD15Cu };
+    const auto a = random_matrix(5, 4, rng);
+
+    const Svd full = svd(a, 5, 4);  // untruncated: every sigma
+    ASSERT_EQ(full.rank, 4u);
+    EXPECT_NEAR(full.discarded_weight, 0.0, 1e-12);
+
+    for (uint32_t keep = 1; keep < full.rank; ++keep) {
+        double expected = 0.0;
+        for (uint32_t r = keep; r < full.rank; ++r) {
+            expected += full.s[r] * full.s[r];
+        }
+        const Svd trunc = svd(a, 5, 4, keep);
+        ASSERT_EQ(trunc.rank, keep);
+        EXPECT_NEAR(trunc.discarded_weight, expected, 1e-9) << "keep " << keep;
+    }
 }
 
 TEST(QState, MeasureAllCollapsesToABasisState)

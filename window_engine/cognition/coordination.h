@@ -32,6 +32,12 @@ namespace wz::engine::cognition
     // Read an agent's decision marginal <sigma_z> in [-1, 1].
     double decision_z(Coordination& c, uint32_t agent);
 
+    // The most recent relaxation's truncation error for the held backend -- 0 for
+    // mean-field (chi=1) and exact (chi=inf, no truncation), the TTN's accumulated
+    // last_truncation_error otherwise. Live fidelity telemetry for the chi-capped
+    // backend.
+    double truncation_error(const Coordination& c);
+
     // Read EVERY agent's decision marginal in one pass (dispatches to the backend;
     // the TTN backend does a single BP sweep instead of one per agent).
     std::vector<double> decisions(Coordination& c);

@@ -315,6 +315,13 @@ namespace wz::engine::cognition::qstate
         const uint32_t rank =
             (max_rank > 0 && max_rank < full_rank) ? max_rank : full_rank;
 
+        // Gate truncation error (the paper's eps_g), orientation-independent: the
+        // L2 mass in the singular values the chi-cap drops. 0 when untruncated.
+        for (uint32_t r = rank; r < full_rank; ++r) {
+            const Real dropped = sigma[idx[r]];
+            out.discarded_weight += dropped * dropped;
+        }
+
         // U_B = normalized selected columns of B (rows x rank);
         // V_B = selected columns of the accumulated V (cols x rank).
         std::vector<Complex> ub(static_cast<std::size_t>(rows) * rank);

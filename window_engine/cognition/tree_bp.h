@@ -78,7 +78,14 @@ namespace wz::engine::cognition
     //
     // `gate` is the 4x4 matrix of the two-qubit gate, row-major and indexed
     // [out * 4 + in] with out = s_left'*2 + s_right', in = s_left*2 + s_right.
-    void apply_two_site_gate(
+    //
+    // Returns the RELATIVE truncation error of this gate =
+    // discarded / (kept + discarded), where kept is the summed square of the
+    // retained singular values and discarded is the SVD's dropped L2 mass. This
+    // equals ||theta - theta_trunc||^2 / ||theta||^2 -- the fidelity lost to the
+    // chi-cap; 0 when no truncation happened (chi >= full bond). Existing
+    // statement-style callers may ignore it.
+    double apply_two_site_gate(
         MpsSite& left,
         MpsSite& right,
         const std::vector<wz::engine::cognition::qstate::Complex>& gate,

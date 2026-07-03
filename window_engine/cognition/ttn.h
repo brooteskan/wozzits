@@ -31,6 +31,10 @@ namespace wz::engine::cognition
         std::vector<double> coupling;     // size n-1: j between agent i and i+1
         std::vector<double> goal_field;   // size n: per-agent longitudinal goal
         uint32_t chi = 4;                 // bond-dimension cap
+        // Sum of the per-bond relative truncation errors from the most recent
+        // relax_step (0 for a full-chi/untruncated sweep). Telemetry only; not
+        // part of the state.
+        double last_truncation_error = 0;
     };
 
     // A chain of `n` single-qubit agents in the product |+> state with the given

@@ -79,6 +79,7 @@ namespace wz::engine::cognition
     void relax_step(TtnChain& g, double gamma, double dtau)
     {
         const uint32_t n = node_count(g.mps);
+        g.last_truncation_error = 0.0;
         // Single-site fields (commute across sites).
         for (uint32_t i = 0; i < n; ++i) {
             apply_one_site_gate(
@@ -86,7 +87,7 @@ namespace wz::engine::cognition
         }
         // Nearest-neighbour couplings, each truncated to chi.
         for (uint32_t i = 0; i + 1 < n; ++i) {
-            apply_two_site_gate(
+            g.last_truncation_error += apply_two_site_gate(
                 node_data(g.mps, i),
                 node_data(g.mps, i + 1),
                 coupling_gate(g.coupling[i], dtau),

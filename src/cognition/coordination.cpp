@@ -1,6 +1,7 @@
 #include <cognition/coordination.h>
 
 #include <algorithm>
+#include <type_traits>
 
 namespace wz::engine::cognition
 {
@@ -48,6 +49,22 @@ namespace wz::engine::cognition
     {
         return std::visit(
             [&](auto& backend) { return decision_z(backend, agent); }, c);
+    }
+
+    double truncation_error(const Coordination& c)
+    {
+        // Only the chi-capped TTN backend truncates; mean-field (chi=1) and the
+        // exact joint state (chi=inf) never drop weight, so both report 0.
+        return std::visit(
+            [](const auto& backend) -> double {
+                using B = std::decay_t<decltype(backend)>;
+                if constexpr (std::is_same_v<B, TtnChain>) {
+                    return backend.last_truncation_error;
+                } else {
+                    return 0.0;
+                }
+            },
+            c);
     }
 
     std::vector<double> decisions(Coordination& c)

@@ -171,7 +171,7 @@ namespace wz::engine::cognition
         return sz;
     }
 
-    void apply_two_site_gate(
+    double apply_two_site_gate(
         MpsSite& A,
         MpsSite& B,
         const std::vector<Complex>& gate,
@@ -231,6 +231,17 @@ namespace wz::engine::cognition
         const wz::engine::cognition::qstate::Svd d = wz::engine::cognition::qstate::svd(mmat, rows, cols, chi);
         const uint32_t k = d.rank;
 
+        // Relative gate truncation error = discarded / (kept + discarded) =
+        // ||theta - theta_trunc||^2 / ||theta||^2. kept is the retained singular
+        // values' summed square; discarded is the chi-cap's dropped L2 mass.
+        double kept = 0.0;
+        for (uint32_t r = 0; r < k; ++r) {
+            kept += d.s[r] * d.s[r];
+        }
+        const double discarded = d.discarded_weight;
+        const double rel_error =
+            (kept + discarded) > 0.0 ? discarded / (kept + discarded) : 0.0;
+
         // New left site: A'[s0'][l][m'] = U[(l*2 + s0')][m'].  left bond L, right k.
         A.left = L;
         A.right = k;
@@ -258,6 +269,8 @@ namespace wz::engine::cognition
                 }
             }
         }
+
+        return rel_error;
     }
 
     void apply_one_site_gate(MpsSite& A, const std::vector<Complex>& g)
