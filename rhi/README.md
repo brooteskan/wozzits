@@ -69,8 +69,10 @@ built only from rhi types, so this repo stays free of any engine dependency.
 
 - **dead-pass culling** — ref-count reachability from marked outputs; passes
   whose results nobody consumes are dropped (transitively);
-- **topological ordering** — producers before consumers, independent of the
-  order passes were declared;
+- **topological ordering** — passes touching disjoint resources order
+  independently of the order they were declared, while same-resource conflicts
+  (read-after-write, write-after-read, write-after-write) serialize by
+  declaration order: declaration order defines each resource's version timeline;
 - **barrier derivation** — transitions emitted from declared per-pass resource
   state, and *only* on an actual state change (no redundant barriers);
 - **transient aliasing** — lifetime intervals per transient + greedy grouping

@@ -134,6 +134,12 @@ namespace wz::rhi
             d.usage = usage_bits;
             return d;
         }
+
+        // Structural equality over every field (all members are trivially
+        // comparable; ResourceIdentity has its own defaulted ==). The frame
+        // graph uses this to decide alias-group compatibility: two transients
+        // may share backing memory only if their descs match exactly.
+        friend bool operator==(const GpuResourceDesc&, const GpuResourceDesc&) = default;
     };
 
     // Opaque backend resource id. The backend assigns it; the registry stores
