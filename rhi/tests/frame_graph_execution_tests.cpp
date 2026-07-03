@@ -145,7 +145,7 @@ static void executes_passes_in_topological_order()
     RecordingRecorder recorder;
 
     const CompiledFrameGraph plan = fg.compile();
-    WZ_CHECK(fg.execute(plan, registry, recorder));
+    WZ_CHECK(fg.execute(plan, registry, recorder, /*frame_timeline*/ 1));
 
     WZ_CHECK_EQ(ran.size(), static_cast<size_t>(2));
     if (ran.size() == 2) {
@@ -181,7 +181,7 @@ static void issues_derived_barriers_during_execution()
     recorder.seed(GpuResourceHandle{ 1000, 0 }, ResourceState::Present);
 
     const CompiledFrameGraph plan = fg.compile();
-    WZ_CHECK(fg.execute(plan, registry, recorder));
+    WZ_CHECK(fg.execute(plan, registry, recorder, /*frame_timeline*/ 1));
 
     // geometry: color Undefined->RenderTarget.
     // post:     color RenderTarget->ShaderRead, backbuffer Present->RenderTarget.
@@ -242,7 +242,7 @@ static void aliased_transients_share_backing()
     recorder.seed(GpuResourceHandle{ 1001, 0 }, ResourceState::RenderTarget);
 
     const CompiledFrameGraph plan = fg.compile();
-    WZ_CHECK(fg.execute(plan, registry, recorder));
+    WZ_CHECK(fg.execute(plan, registry, recorder, /*frame_timeline*/ 1));
 
     WZ_CHECK(handle_a.valid());
     WZ_CHECK(handle_b.valid());
@@ -278,6 +278,44 @@ static void transients_released_after_frame()
     WZ_CHECK_EQ(backend.destroys, 0);
     // Once the GPU passes 100, collect reclaims them.
     registry.collect(/*completed*/ 100);
+    WZ_CHECK(backend.destroys > 0);
+    WZ_CHECK_EQ(registry.resident_count(), static_cast<size_t>(0));
+}
+
+// The precise-reclamation boundary at the exact frame_timeline value: a
+// transient executed with frame_timeline == V survives collect(V - 1) — the GPU
+// has NOT yet passed the submission that referenced it — and is reclaimed by
+// collect(V). This is the fine-grained guarantee the timeline wiring exists to
+// provide (a fixed-latency queue could not draw the line at V exactly).
+static void transient_reclaimed_exactly_at_frame_timeline()
+{
+    FrameGraph fg;
+    const FrameGraphResource color = fg.create_transient("color", transient_target());
+    const FrameGraphResource out = fg.create_transient("out", transient_target());
+    fg.mark_output(out);
+
+    const uint32_t producer = fg.add_pass("producer");
+    fg.write(producer, color, ResourceState::RenderTarget);
+    const uint32_t consumer = fg.add_pass("consumer");
+    fg.read(consumer, color, ResourceState::ShaderRead);
+    fg.write(consumer, out, ResourceState::RenderTarget);
+
+    FakeBackend backend;
+    GpuResourceRegistry registry(backend);
+    RecordingRecorder recorder;
+
+    constexpr uint64_t kFrame = 42;
+    const CompiledFrameGraph plan = fg.compile();
+    WZ_CHECK(fg.execute(plan, registry, recorder, /*frame_timeline*/ kFrame));
+
+    // Released (pending) but not yet destroyed; tagged with kFrame's timeline.
+    WZ_CHECK_EQ(backend.destroys, 0);
+    // One tick short of the frame value: the backings are still in flight.
+    registry.collect(/*completed*/ kFrame - 1);
+    WZ_CHECK_EQ(backend.destroys, 0);
+    WZ_CHECK(registry.resident_count() > 0);
+    // Exactly at the frame value (last_use <= completed): reclaimed.
+    registry.collect(/*completed*/ kFrame);
     WZ_CHECK(backend.destroys > 0);
     WZ_CHECK_EQ(registry.resident_count(), static_cast<size_t>(0));
 }
@@ -365,7 +403,7 @@ static void aliased_transient_first_barrier_uses_prior_state()
 
     // Executing through the stateful recorder must not trip its from-state
     // check, and the two transients must resolve to the same backing.
-    WZ_CHECK(fg.execute(plan, registry, recorder));
+    WZ_CHECK(fg.execute(plan, registry, recorder, /*frame_timeline*/ 1));
     WZ_CHECK(handle_t1.valid());
     WZ_CHECK(handle_t2.valid());
     WZ_CHECK(handle_t1 == handle_t2);
@@ -421,7 +459,7 @@ static void mismatched_desc_transients_do_not_alias()
         WZ_CHECK_FALSE(t2_first->alias_activation);
     }
 
-    WZ_CHECK(fg.execute(plan, registry, recorder));
+    WZ_CHECK(fg.execute(plan, registry, recorder, /*frame_timeline*/ 1));
     WZ_CHECK(handle_t1.valid());
     WZ_CHECK(handle_t2.valid());
     WZ_CHECK_FALSE(handle_t1 == handle_t2);   // distinct backings
@@ -465,7 +503,7 @@ static void transient_identity_is_scrubbed()
     RecordingRecorder recorder;
 
     const CompiledFrameGraph plan = fg.compile();
-    WZ_CHECK(fg.execute(plan, registry, recorder));
+    WZ_CHECK(fg.execute(plan, registry, recorder, /*frame_timeline*/ 1));
 
     WZ_CHECK(handle_a.valid());
     WZ_CHECK(handle_b.valid());
@@ -499,7 +537,7 @@ static void execute_rejects_cyclic_plan()
     CompiledFrameGraph plan = fg.compile();
     plan.acyclic = false;   // pretend a cycle was detected
 
-    WZ_CHECK_FALSE(fg.execute(plan, registry, recorder));
+    WZ_CHECK_FALSE(fg.execute(plan, registry, recorder, /*frame_timeline*/ 1));
     WZ_CHECK_EQ(recorder.barriers.size(), static_cast<size_t>(0));
     WZ_CHECK_FALSE(ran);
     WZ_CHECK_EQ(backend.creates, 0);   // no transient acquired
@@ -532,7 +570,7 @@ static void execute_rejects_stale_plan()
     // matches, so the stale plan must be rejected.
     fg.add_pass("late_addition");
 
-    WZ_CHECK_FALSE(fg.execute(plan, registry, recorder));
+    WZ_CHECK_FALSE(fg.execute(plan, registry, recorder, /*frame_timeline*/ 1));
     WZ_CHECK_EQ(recorder.barriers.size(), static_cast<size_t>(0));
     WZ_CHECK_FALSE(ran);
     WZ_CHECK_EQ(backend.creates, 0);
@@ -571,7 +609,7 @@ static void execute_releases_acquired_backings_on_failure()
     const size_t before = registry.resident_count();
 
     const CompiledFrameGraph plan = fg.compile();
-    WZ_CHECK_FALSE(fg.execute(plan, registry, recorder));
+    WZ_CHECK_FALSE(fg.execute(plan, registry, recorder, /*frame_timeline*/ 1));
     // Nothing recorded: the failure happened during acquisition, before any
     // barrier or callback.
     WZ_CHECK_EQ(recorder.barriers.size(), static_cast<size_t>(0));
@@ -587,6 +625,7 @@ int main()
     WZ_RUN(issues_derived_barriers_during_execution);
     WZ_RUN(aliased_transients_share_backing);
     WZ_RUN(transients_released_after_frame);
+    WZ_RUN(transient_reclaimed_exactly_at_frame_timeline);
     WZ_RUN(aliased_transient_first_barrier_uses_prior_state);
     WZ_RUN(mismatched_desc_transients_do_not_alias);
     WZ_RUN(transient_identity_is_scrubbed);

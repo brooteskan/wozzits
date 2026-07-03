@@ -627,6 +627,17 @@ namespace wz::rhi
         // registry owns the resources, so device-loss / deferred-release policy
         // all apply uniformly.
         //
+        // `frame_timeline` is the GPU timeline value the command work recorded
+        // by this call will be signaled with (the value the caller's frame
+        // submission passes to its fence). Every transient backing is touched
+        // with it before release, so the registry keeps it resident until the
+        // GPU has passed that value. It is REQUIRED — there is no default: a
+        // wrong-by-omission zero would tag a still-in-flight transient with
+        // last-use 0, making it collectable while the frame that uses it is
+        // still executing. Callers that drive frames through the engine device
+        // loop pass wz::gpu::frame_timeline_value(device); a fake/offline loop
+        // passes its own monotonic frame counter.
+        //
         // Returns false and records NOTHING (no barriers, no callbacks, no
         // dangling acquires) when the plan can't be safely run: it has a
         // dependency cycle; it was compiled from a different revision of this
@@ -637,7 +648,7 @@ namespace wz::rhi
         bool execute(const CompiledFrameGraph& plan,
                      GpuResourceRegistry& registry,
                      CommandRecorder& recorder,
-                     uint64_t frame_timeline = 0) const
+                     uint64_t frame_timeline) const
         {
             // ── refuse an unsafe plan up front (before any side effect) ───────
             if (!plan.acyclic || plan.source_revision != revision_) {
