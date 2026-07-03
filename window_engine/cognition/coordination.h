@@ -14,6 +14,7 @@
 // swapped in without touching the decider).
 
 #include <cognition/exact_group.h>
+#include <cognition/loopy_bp.h>
 #include <cognition/mean_field.h>
 #include <cognition/ttn.h>
 
@@ -23,7 +24,8 @@
 
 namespace wz::engine::cognition
 {
-    using Coordination = std::variant<MeanFieldNetwork, ExactGroup, TtnChain>;
+    using Coordination =
+        std::variant<MeanFieldNetwork, ExactGroup, TtnChain, LoopyBpGroup>;
 
     // Advance the coordination one relaxation (dispatches to the held backend).
     void relax(

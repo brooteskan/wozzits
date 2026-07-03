@@ -343,16 +343,41 @@ TEST(AgentCognition, RejectsUnbuildableSpecs)
     empty.agent_count = 0;
     EXPECT_EQ(store.create(empty), kInvalidAgent);
 
-    AgentSpec mean_field;
-    mean_field.agent_count = 2;
-    mean_field.chi = 1;  // not wired yet
-    EXPECT_EQ(store.create(mean_field), kInvalidAgent);
-
     AgentSpec non_chain;
     non_chain.agent_count = 3;
     non_chain.chi = 4;  // TTN requires a nearest-neighbour chain
     non_chain.bonds = { ExactBond{ 0, 2, 1.0 } };  // (0,2) is not a chain edge
     EXPECT_EQ(store.create(non_chain), kInvalidAgent);
+}
+
+// chi == 1 now BUILDS on the loopy-BP backend (formerly rejected). A ferro pair
+// with a goal on agent 0 propagates through the coupling and both agents commit to
+// the goal's disposition -- the chi == 1 path is wired through the store dispatch.
+TEST(AgentCognition, ChiOneBuildsOnLoopyBackend)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 2;
+    spec.bonds = { ExactBond{ 0, 1, 1.0 } };
+    spec.goals = { Goal{ .agent = 0, .field = 0.6 } };  // field > 0 favors |0>
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.9, .decoherence_rate = 0.0 };
+    spec.chi = 1;  // loopy-BP backend
+
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);  // no longer rejected
+    ASSERT_EQ(store.agent_count(h), 2u);
+
+    run_anneal(store, h);
+
+    // Both agents commit to |0> (the goal's disposition), and the live marginal is
+    // strongly +z -- a sane decision, not a stuck/garbage state.
+    for (uint32_t i = 0; i < 2; ++i) {
+        const std::optional<bool> decided = store.committed(h, i);
+        ASSERT_TRUE(decided.has_value()) << "chi==1 agent " << i << " never committed";
+        EXPECT_FALSE(*decided) << "chi==1 agent " << i << " did not follow the +z goal";
+        EXPECT_GT(store.marginal(h, i), 0.5);
+    }
 }
 
 // destroy() forgets the agent; reads after it return defaults.

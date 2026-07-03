@@ -54,6 +54,58 @@ TEST(Coordination, TruncationErrorThroughTheContract)
     EXPECT_EQ(truncation_error(ce), 0.0);
 }
 
+// The chi = 1 loopy-BP backend drives through the whole contract via the seam:
+// relax, decision_z/decisions (in [-1, 1], mutually consistent), collapse (which
+// decision_z then reflects), and truncation_error == 0 (chi = 1 never truncates).
+TEST(Coordination, LoopyBpBackendThroughTheContract)
+{
+    // A small ferro chain with a +z goal on agent 0: order propagates and every
+    // agent commits +z -- the tree-like regime where chi = 1 agrees with exact.
+    LoopyBpGroup g = make_loopy_bp_group(
+        3, { ExactBond{ 0, 1, +1.0 }, ExactBond{ 1, 2, +1.0 } });
+    set_goals(g, { Goal{ .agent = 0, .field = 0.05 } });
+    Coordination c = std::move(g);
+
+    // Anneal gamma 2 -> 0 through the seam.
+    for (int i = 0; i < 600; ++i) {
+        const double t = i / 599.0;
+        relax(c, /*gamma=*/2.0 * (1.0 - t), /*dtau=*/0.05, /*iterations=*/1);
+    }
+
+    // chi = 1 never truncates -> 0 telemetry through the seam.
+    EXPECT_EQ(truncation_error(c), 0.0);
+
+    // decisions() is bulk-consistent with per-agent decision_z, all in [-1, 1].
+    const std::vector<double> z = decisions(c);
+    ASSERT_EQ(z.size(), 3u);
+    for (uint32_t i = 0; i < 3; ++i) {
+        EXPECT_GE(z[i], -1.0);
+        EXPECT_LE(z[i], 1.0);
+        EXPECT_DOUBLE_EQ(z[i], decision_z(c, i));
+        EXPECT_GT(z[i], 0.8) << "loopy agent " << i << " did not commit +z";
+    }
+
+    // Collapse conditions the neighbors -- but only while gamma is still up (with
+    // gamma == 0 the transverse field is off, so a saturated register cannot flip;
+    // this mirrors loopy_bp_tests' collapse test, which collapses PARTWAY through
+    // the anneal). Build a fresh chain, anneal partway, collapse agent 0 to |1>
+    // (z = -1) through the seam, then finish: decision_z reflects the pin and the
+    // ferro coupling drags the neighbor negative.
+    LoopyBpGroup g2 = make_loopy_bp_group(
+        3, { ExactBond{ 0, 1, +1.0 }, ExactBond{ 1, 2, +1.0 } });
+    Coordination c2 = std::move(g2);
+    for (int i = 0; i < 200; ++i) {  // partway: gamma 2 -> 0.5
+        relax(c2, /*gamma=*/2.0 - 1.5 * (i / 199.0), /*dtau=*/0.05, /*iterations=*/1);
+    }
+    collapse(c2, 0, /*bit=*/true);
+    for (int i = 0; i < 400; ++i) {  // finish: gamma 0.5 -> 0
+        relax(c2, /*gamma=*/0.5 * (1.0 - i / 399.0), /*dtau=*/0.05, /*iterations=*/1);
+    }
+    EXPECT_LT(decision_z(c2, 0), -0.99) << "collapse not reflected in decision_z";
+    EXPECT_LT(decision_z(c2, 1), -0.5) << "neighbor not conditioned on the collapse";
+    EXPECT_EQ(truncation_error(c2), 0.0);  // still no truncation after collapse
+}
+
 // The mean-field backend drives through the same contract.
 TEST(Coordination, MeanFieldBackendThroughTheContract)
 {

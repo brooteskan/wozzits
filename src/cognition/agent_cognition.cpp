@@ -3,6 +3,7 @@
 #include <cognition/conditional_policy.h>
 #include <cognition/group_topology.h>
 #include <cognition/learning.h>
+#include <cognition/loopy_bp.h>
 #include <cognition/ttn.h>
 
 #include <algorithm>
@@ -49,9 +50,20 @@ namespace wz::engine::cognition
             return Coordination{ std::move(t) };
         }
 
-        // Build the backend the spec selects (chi == 0 exact / chi >= 2 TTN; chi ==
-        // 1 mean-field is rejected). A FRESH register in equal superposition, which
-        // is why rearm can reuse this to genuinely re-open a collapsed decision.
+        // chi == 1: the LoopyBpNetwork backend (self-consistent mean field with
+        // damping), works for ANY topology -- trees and cyclic villages -- and
+        // scales linearly, so it is the large-group / cyclic-village path. Uses the
+        // default damping (0.5); a per-spec damping knob is a follow-up.
+        std::optional<Coordination> build_loopy(const AgentSpec& spec)
+        {
+            LoopyBpGroup g = make_loopy_bp_group(spec.agent_count, spec.bonds);
+            set_goals(g, spec.goals);
+            return Coordination{ std::move(g) };
+        }
+
+        // Build the backend the spec selects (chi == 0 exact / chi == 1 loopy BP /
+        // chi >= 2 TTN). A FRESH register in equal superposition, which is why rearm
+        // can reuse this to genuinely re-open a collapsed decision.
         //
         // The bonds an Agent stores are RAW (as authored); this is the single choke
         // point that re-canonicalizes them on every build, so whichever backend we
@@ -65,8 +77,8 @@ namespace wz::engine::cognition
             AgentSpec canon = spec;
             canon.bonds = std::move(canon_bonds.bonds);
             if (canon.chi == 0) return build_exact(canon);
-            if (canon.chi >= 2) return build_ttn(canon);
-            return std::nullopt;  // chi == 1 (mean-field) not wired yet
+            if (canon.chi == 1) return build_loopy(canon);
+            return build_ttn(canon);  // chi >= 2 (chi is uint32_t, so 0/1/>=2 total)
         }
     }
 

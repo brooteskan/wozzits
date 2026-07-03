@@ -24,6 +24,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <vector>
@@ -263,4 +264,66 @@ TEST(Village, EvenCycleBeatsFrustratedTriangleOnEdgeAntiCorrelation)
     EXPECT_GT(quad_edge, tri_edge + 0.3);
     EXPECT_LT(tri_edge, 0.5);    // triangle stuck near the frustrated 1/3
     EXPECT_GT(quad_edge, 0.75);  // even cycle cleanly satisfied
+}
+
+// ---------------------------------------------------------------------------
+// 4. End-to-end: the chi = 1 LOOPY backend reached THROUGH the production store.
+//
+// The tests above drive the exact ORACLE. This one drives the SAME cyclic AFM
+// triangle village but through AgentCognitionStore with spec.chi = 1, so the
+// store's build_coordination dispatch routes it to the loopy-BP backend (the chi
+// == 1 path this change wires up). It exercises the full production path
+// create -> start -> think() across the anneal, not the standalone LoopyBpGroup
+// API, and asserts the loopy backend's frustration signature (pinned in
+// loopy_bp_tests) survives that dispatch:
+//   * create() succeeds -- chi == 1 is no longer rejected;
+//   * a goaled AFM triangle commits agent 0 to its +z goal and leaves a
+//     frustrated / sacrificed edge (a pair FORCED to agree despite an AFM bond),
+//     which is chi = 1 mean field's manifestation of the triangle's frustration.
+// ---------------------------------------------------------------------------
+TEST(Village, LoopyBackendThroughTheStoreFrustratesTriangle)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 3;
+    spec.bonds = {
+        ExactBond{ 0, 1, -1.0 },
+        ExactBond{ 1, 2, -1.0 },
+        ExactBond{ 0, 2, -1.0 },
+    };
+    // A +z goal on agent 0 breaks the frustrated symmetry to a definite branch.
+    spec.goals = { Goal{ .agent = 0, .field = 0.05 } };
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.9, .decoherence_rate = 0.0 };
+    spec.chi = 1;  // LOOPY backend, reached through the store dispatch
+    spec.seed = 0xC0FFEEu;
+
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);  // chi == 1 now builds
+    ASSERT_EQ(store.agent_count(h), 3u);
+
+    run_anneal(store, h);
+
+    const double z0 = store.marginal(h, 0);
+    const double z1 = store.marginal(h, 1);
+    const double z2 = store.marginal(h, 2);
+
+    // Agent 0 follows its +z goal.
+    EXPECT_GT(z0, 0.5) << "goal-anchored agent 0 did not commit +z through the store";
+
+    // Per-edge anti-alignment -(z_a * z_b): > 0 satisfied (opposite signs), < 0
+    // frustrated (the pair agrees). A triangle cannot satisfy all three AFM edges;
+    // mean field sacrifices exactly one -- its worst edge is clearly frustrated.
+    const double e01 = -(z0 * z1);
+    const double e12 = -(z1 * z2);
+    const double e02 = -(z0 * z2);
+    const double worst = std::min({ e01, e12, e02 });
+    EXPECT_LT(worst, -0.25)
+        << "triangle satisfied all three AFM edges through the store "
+           "(impossible -- lost the frustration signature)";
+
+    std::printf(
+        "[ store/loopy triangle ] z=(%.3f, %.3f, %.3f)  edges anti (01,12,02)="
+        "(%.3f, %.3f, %.3f)  worst=%.3f\n",
+        z0, z1, z2, e01, e12, e02, worst);
 }

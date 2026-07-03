@@ -16,8 +16,9 @@
 // and an actuator behavior reads the committed decision / live marginal to issue
 // motion/audio. The hot path (think/marginal) goes through the Coordination seam,
 // so chi selects the backend without changing this interface; construction is the
-// one place that knows a concrete backend (this first cut builds the exact joint-
-// state backend for small groups and the chi-truncated TTN chain for larger ones).
+// one place that knows a concrete backend: the exact joint-state backend for small
+// groups (chi == 0), the chi = 1 loopy-BP backend for cyclic villages / large
+// linear-scaling groups, and the chi-truncated TTN chain for larger entangled ones.
 
 #include <cognition/commit.h>
 #include <cognition/coordination.h>
@@ -36,10 +37,13 @@ namespace wz::engine::cognition
     inline constexpr AgentHandle kInvalidAgent = 0;
 
     // Declarative description of one coordinated group the store will deliberate.
-    // chi selects the coordination backend: 0 = exact joint state (genuine
-    // entanglement, small groups); >= 2 = chi-truncated TTN chain (bonds MUST form
-    // the nearest-neighbour chain (i, i+1); larger groups). chi == 1 (mean-field)
-    // is not wired yet -- its goal support is a follow-up -- and create() rejects it.
+    // chi selects the coordination backend:
+    //   chi == 0  -- exact joint state (genuine entanglement, small groups);
+    //   chi == 1  -- LoopyBpNetwork (chi = 1 damped loopy BP): any topology incl.
+    //                cyclic villages, scales linearly, but a product-state
+    //                approximation with NO entanglement;
+    //   chi >= 2  -- chi-truncated TTN chain (bonds MUST form the nearest-neighbour
+    //                chain (i, i+1); larger entangled groups).
     struct AgentSpec
     {
         uint32_t agent_count = 1;
@@ -62,8 +66,8 @@ namespace wz::engine::cognition
     {
     public:
         // Build the agent's backend + clock from the spec. Returns a fresh handle,
-        // or kInvalidAgent if the spec is unbuildable (bad agent_count, unsupported
-        // chi, or chi-TTN bonds that are not a chain).
+        // or kInvalidAgent if the spec is unbuildable (bad agent_count, or chi >= 2
+        // TTN bonds that are not a nearest-neighbour chain).
         AgentHandle create(const AgentSpec& spec);
 
         // Forget an agent (it left the scene). Returns false if unknown.
