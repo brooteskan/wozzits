@@ -10,6 +10,86 @@ namespace
 
     static constexpr float movement_factor = 0.1;
 
+    // ── Engine grain synth ────────────────────────────────────────────────────
+    // The engine "sounds" node (state->engine_audio, authored node "3") hosts a
+    // grain cloud whose bank is the wav/Engines folder, sorted -> clip indices:
+    //   0 = Engines_C.wav  1 = Engines_CC.wav  2 = Engines_D.wav  3 = Engines_F.wav
+    // We drive it by RPM: each rpm level picks one clip and we crossfade the WHOLE
+    // preset (a "program") toward it over ~1 s when the level changes. Tweak the
+    // grain feel (size, density, position, jitter, pan) in make_engine_program.
+
+    // ~1 second at a 48 kHz device (grain ramps are counted in audio frames).
+    static constexpr float kEngineCrossfadeFrames = 48000.0f;
+
+    // RPM level -> which bank clip voices the engine (per player_tank.h mapping).
+    // Index 0 is unused (rpm 0 = engine off / silent).
+    static constexpr uint32_t kRpmClip[5] = { 0u, 0u, 2u, 3u, 1u };
+
+    // Build the complete grain preset for an rpm level. rpm 0 = silent (all
+    // weights 0, gain 0); 1..4 = a slow grain from the middle of that level's clip.
+    static WzGrainProgram make_engine_program(uint8_t rpm)
+    {
+        WzGrainProgram p = {};          // zero-init: weights all 0 = silent
+        p.weight_count = 4u;            // C, CC, D, F
+        p.gain = 0.9f;                  // <-- tweak: engine loudness
+        p.density = 14.0f;              // <-- tweak: grains/sec (slow overlap)
+        p.position = 0.5f;              // middle of the clip
+        p.pitch = 1.0f;
+        p.grain_ms = 500.0f;            // <-- tweak: "slow" grain length (ms)
+        p.position_jitter = 0.05f;      // <-- tweak: playhead wander
+        p.pitch_jitter_semitones = 0.0f;
+        p.pan_center = 0.0f;
+        p.pan_spread = 0.15f;           // <-- tweak: stereo width
+        p.window_param = 0.4f;
+        p.window = WZ_GRAIN_WINDOW_GAUSSIAN;
+        p.blend_rate = 0.0f;            // weights select the clip, not the LFO
+        p.blend_depth = 0.0f;
+
+        if (rpm == 0u) {
+            p.gain = 0.0f;              // engine off (weights already all 0)
+            return p;
+        }
+        if (rpm > 4u) { rpm = 4u; }
+        p.weights[kRpmClip[rpm]] = 1.0f;
+        return p;
+    }
+
+    // Quantize total tread effort (both treads, either direction) into rpm 0..4.
+    static uint8_t compute_rpm_level(const PlayerTankState* state)
+    {
+        const float effort = (fabsf(state->left_tread_speed)
+                            + fabsf(state->right_tread_speed)) * 0.5f;  // ~0..1
+        if (effort < 0.05f) {
+            return 0u;                  // idle deadzone = engine off
+        }
+        int level = (int)(effort * 4.0f + 0.5f);
+        if (level < 1) { level = 1; }
+        if (level > 4) { level = 4; }
+        return (uint8_t)level;
+    }
+
+    // Recompute rpm from tread speed and, when the level changed, crossfade the
+    // engine cloud's program toward that level. The first push snaps (ramp 0) so we
+    // don't hear the renderable's authored all-clips default fade out.
+    static void update_engine_rpm(
+        const WzBehaviorFrameFacts* facts,
+        PlayerTankState* state)
+    {
+        if (state->engine_audio == WZ_INVALID_BEHAVIOR_ENTITY) {
+            return;
+        }
+        const uint8_t rpm = compute_rpm_level(state);
+        if ((int)rpm == state->applied_rpm_level) {
+            return;
+        }
+        const float ramp = (state->applied_rpm_level < 0)
+            ? 0.0f : kEngineCrossfadeFrames;
+        state->applied_rpm_level = (int8_t)rpm;
+        state->rpm_level = rpm;
+        const WzGrainProgram prog = make_engine_program(rpm);
+        wz_write_grain_program(facts, state->engine_audio, &prog, ramp);
+    }
+
     void tank_init(
         const WzBehaviorInitFacts* facts,
         WzBehaviorEntityId,
@@ -22,8 +102,10 @@ namespace
             wz_log_infof(facts, "[tank init] find terrain: %u", result);
 
             result = wz_find_entity_by_authored_id(facts, "1", &state->canon_audio);
-            wz_log_infof(facts, "[tank init] find audio: %u", result);
+            wz_log_infof(facts, "[tank init] find canon audio: %u", result);
 
+            result = wz_find_entity_by_authored_id(facts, "3", &state->engine_audio);
+            wz_log_infof(facts, "[tank init] find engine audio: %u", result);
             // wz_log_infof(facts, "find empty_2: %u", result);
             // wz_find_entity_by_name(facts, "terrain", &state->terrain);
             // First load gives zeroed memory. Re-init/hot reload may preserve it.
@@ -152,6 +234,10 @@ namespace
         }
 
         tank_drive::drive_treads(facts, event, state->left_tread_speed, state->right_tread_speed);
+
+        // Engine grain synth: track tread effort -> rpm and crossfade the engine
+        // cloud's program on a level change (runs on frame.update + input events).
+        update_engine_rpm(facts, state);
 
     }
 }

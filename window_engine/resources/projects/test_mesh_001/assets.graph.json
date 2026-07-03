@@ -124,7 +124,7 @@
     },
     {
       "node_id": 9,
-      "key": "asset-key:ad8386d6949ea377:51a571454f6fb699:f11eca55e7000412:0000000000000000:9e3779b97f4b00c5:0000000000000000:5b6fa0fb68e831c4:4b5eb165ceba6462",
+      "key": "asset-key:ad8386d6949ea377:51a571454f6fb699:f11eca55e7000412:0000000000000000:9e3779b97f4b00c5:0000000000000000:cfc1740be2ebdd92:91a301cb60472c30",
       "type": 537,
       "schema": "0xf11eca55e7000412",
       "stage": 0,
@@ -333,7 +333,7 @@
     },
     {
       "node_id": 15,
-      "key": "asset-key:18555b35946da080:2e8b94a9acc531c8:f11eca55e7000002:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
+      "key": "asset-key:1a5cbe8791d02a9e:a68a115a911e55e6:f11eca55e7000002:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
       "type": 7,
       "schema": "0xf11eca55e7000002",
       "stage": 0,
@@ -373,7 +373,7 @@
     },
     {
       "node_id": 17,
-      "key": "asset-key:e94154689eb5d88c:50b269856e66d290:f11eca55e7000100:0000000000000000:0000000000000001:0000000000000000:bc76ae18b684aba0:8037697cd89605f2",
+      "key": "asset-key:e94154689eb5d88c:50b269856e66d290:f11eca55e7000100:0000000000000000:0000000000000001:0000000000000000:2deb89d17f8565f2:6861c543b1a2f70c",
       "type": 4,
       "schema": "0xf11eca55e7000100",
       "stage": 0,
@@ -453,7 +453,7 @@
     },
     {
       "node_id": 19,
-      "key": "asset-key:9384cd1d234456b0:abeb4223b552aa85:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:83394329cde2f708:27fd0f67e7571415",
+      "key": "asset-key:9384cd1d234456b0:abeb4223b552aa85:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:bc4a789f6e5b645f:ca168c2b33d548f9",
       "type": 1049,
       "schema": "0xf11eca55e7000103",
       "stage": 0,
@@ -527,7 +527,7 @@
     },
     {
       "node_id": 20,
-      "key": "asset-key:c6cd6220c2c452cc:03032b6bff41d11a:f11eca55e7000708:0000000000000000:9e3779b97f4b8704:0000000000000000:d340bad30dc69858:d776982fd4e506c3",
+      "key": "asset-key:c6cd6220c2c452cc:03032b6bff41d11a:f11eca55e7000708:0000000000000000:9e3779b97f4b8704:0000000000000000:a9d6b8951ef251da:4ad4cc40c0f5a828",
       "type": 1048,
       "schema": "0xf11eca55e7000708",
       "stage": 0,
@@ -599,7 +599,7 @@
     },
     {
       "node_id": 21,
-      "key": "asset-key:e22f528ca66f7b60:3c6ef372fe94f869:f11eca55e7000711:0000000000000000:9e3779b97f4c7657:0000000000000000:32936356ea0c84e3:691f05ffd59764f8",
+      "key": "asset-key:e22f528ca66f7b60:3c6ef372fe94f869:f11eca55e7000711:0000000000000000:9e3779b97f4c7657:0000000000000000:46832a5264e0b191:a9e96b854023cd32",
       "type": 2049,
       "schema": "0xf11eca55e7000711",
       "stage": 0,
@@ -624,6 +624,7 @@
     },
     {
       "node_id": 23,
+      "key": "asset-key:1ea2c57752a52a96:22df0280a152b7d6:f11eca55e7000004:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000",
       "type": 66,
       "schema": "0xf11eca55e7000004",
       "stage": 0,
@@ -643,7 +644,7 @@
     },
     {
       "node_id": 24,
-      "key": "asset-key:8ae266df44dbf9d1:902bbfee92f31b0c:f11eca55e7000414:0000000000000000:9e3779b97f4a9c34:0000000000000000:96b8eb81fd45b0dd:5612d51dd2e701ba",
+      "key": "asset-key:8ae266df44dbf9d1:902bbfee92f31b0c:f11eca55e7000414:0000000000000000:9e3779b97f4a9c34:0000000000000000:22e7b27e7781848b:14463aa92855b9f0",
       "type": 130,
       "schema": "0xf11eca55e7000414",
       "stage": 0,
@@ -892,7 +893,7 @@
     },
     {
       "node_id": 34,
-      "key": "asset-key:d38de9372f53f3b3:0c980963c68a148c:f11eca55e7000b84:0000000000000000:9e3779b97f4c9df3:0000000000000000:fcecf54795f2f584:f082d0205792b603",
+      "key": "asset-key:d38de9372f53f3b3:3482158db6813c97:f11eca55e7000b84:0000000000000000:9e3779b97f4c9df3:0000000000000000:fcecf54795f2f584:f082d0205792b603",
       "type": 2142,
       "schema": "0xf11eca55e7000b84",
       "stage": 0,
@@ -925,7 +926,7 @@
           {
             "name": "name",
             "type": "string",
-            "value": "SoundEffects"
+            "value": "Canons"
           },
           {
             "name": "pitch",
@@ -1054,6 +1055,136 @@
           }
         ]
       }
+    },
+    {
+      "node_id": 39,
+      "key": "asset-key:dfd6f5b4ec6e4cee:cfaa0ea024e439a4:f11eca55e7000b85:0000000000000000:9e3779b97f4c9d30:0000000000000000:0000000000000000:0000000000000000",
+      "type": 2141,
+      "schema": "0xf11eca55e7000b85",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "directory",
+            "type": "string",
+            "value": "\"D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\projects\\test_mesh_001\\wav\\Engines\""
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "value": "Engine Clips"
+          },
+          {
+            "name": "recursive",
+            "type": "bool",
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 41,
+      "key": "asset-key:83f517c4f542871e:3d55e140f7818eb2:f11eca55e7000b86:0000000000000000:9e3779b97f4c9df3:0000000000000000:fcecf54795f2f584:0c49f48f6f5b67cf",
+      "type": 2142,
+      "schema": "0xf11eca55e7000b86",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 39,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "blend_depth",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "blend_rate",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "density",
+            "type": "float",
+            "value": 20
+          },
+          {
+            "name": "gain",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "grain_ms",
+            "type": "float",
+            "value": 120
+          },
+          {
+            "name": "max_grains",
+            "type": "int",
+            "value": 32
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "value": "Engine Grain Cloud"
+          },
+          {
+            "name": "normalize",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "pan_center",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "pan_spread",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "pitch",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "pitch_jitter_semitones",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "position",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "position_jitter",
+            "type": "float",
+            "value": 0.10000000000000001
+          },
+          {
+            "name": "seed",
+            "type": "int",
+            "value": 1
+          },
+          {
+            "name": "window_param",
+            "type": "float",
+            "value": 0.40000000000000002
+          }
+        ]
+      }
     }
   ],
   "layout": {
@@ -1101,8 +1232,8 @@
       },
       {
         "node_id": 9,
-        "x": 911.89460297864866,
-        "y": 86.033691082325163
+        "x": 799.31596246522554,
+        "y": 104.53976897494266
       },
       {
         "node_id": 10,
@@ -1161,8 +1292,8 @@
       },
       {
         "node_id": 21,
-        "x": 310.97943758486872,
-        "y": 116.29453388206741
+        "x": 275.50945495735175,
+        "y": 102.41497546260427
       },
       {
         "node_id": 22,
@@ -1181,8 +1312,8 @@
       },
       {
         "node_id": 24,
-        "x": 600.62503704789276,
-        "y": 90.745127559343587
+        "x": 538.93811073916766,
+        "y": 103.08251282108859
       },
       {
         "node_id": 26,
@@ -1211,12 +1342,12 @@
       },
       {
         "node_id": 33,
-        "x": 3.1498555330507543,
-        "y": 1668.8208137448221
+        "x": 8.48193359375,
+        "y": 1651.8568244870096
       },
       {
         "node_id": 34,
-        "x": 281.17757491154862,
+        "x": 282.57955050947407,
         "y": 1651.8479873470264
       },
       {
@@ -1236,10 +1367,35 @@
       },
       {
         "node_id": 38,
-        "x": 272.12935185486401,
+        "x": 270.43294072205151,
         "y": 1793.1556569084864
+      },
+      {
+        "node_id": 31,
+        "x": 2.3173150378935361,
+        "y": 751.15865751894671
+      },
+      {
+        "node_id": 32,
+        "x": 260,
+        "y": 750
+      },
+      {
+        "node_id": 39,
+        "x": 550.7344970703125,
+        "y": 1654.49658203125
+      },
+      {
+        "node_id": 40,
+        "x": 827.2462158203125,
+        "y": 1615.4796142578125
+      },
+      {
+        "node_id": 41,
+        "x": 812.45411091294659,
+        "y": 1648.3228965720589
       }
     ],
-    "zoom": 0.44289025000000026
+    "zoom": 0.71327917652750061
   }
 }

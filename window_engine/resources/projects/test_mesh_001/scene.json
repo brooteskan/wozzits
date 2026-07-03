@@ -220,7 +220,7 @@
       },
       "audio_source": {
         "audio_renderable_node_id": 34,
-        "auto_play": false,
+        "auto_play": true,
         "enabled": true
       }
     },
@@ -277,6 +277,35 @@
           ]
         }
       ]
+    },
+    {
+      "id": "3",
+      "parent": "empty_1",
+      "name": "engine sounds",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "audio_source": {
+        "audio_renderable_node_id": 41,
+        "auto_play": true,
+        "enabled": true
+      }
     }
   ],
   "defaults": {
