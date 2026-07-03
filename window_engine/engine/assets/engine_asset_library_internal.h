@@ -78,6 +78,11 @@ namespace wz::rhi
     class GpuResourceRegistry;
 }
 
+namespace wz::asset
+{
+    class AssetSystem;
+}
+
 namespace wz::engine::assets::internal {
 
     struct FileSourceDesc
@@ -149,6 +154,18 @@ namespace wz::engine::assets::internal {
         wz::rhi::ShaderModuleRegistry*       shader_module_registry = nullptr;
         wz::rhi::DescriptorSemanticRegistry* descriptor_semantic_registry = nullptr;
         wz::rhi::ConstantSemanticRegistry*   constant_semantic_registry = nullptr;
+        // The owning AssetSystem (the library's system_). Compilers only ever
+        // DEREFERENCE it inside compile fns — during resolve, long after
+        // construction — so the library passes &system_ while system_ is still
+        // being constructed. Compilers whose ports cannot be told apart by
+        // dependency type (the 0x70A custom renderable's Any-typed binding
+        // ports) read the input node's PORT-ORDERED dep keys (empty key =
+        // unwired optional port) from asset_system->registered_assets(); that
+        // list is part of the node's identity (its key folds the dep
+        // composition), so reading it keeps compiles content-addressed. Null
+        // for schema-only registries (asset_graph_schema_registry) that never
+        // invoke compile.
+        const wz::asset::AssetSystem*        asset_system = nullptr;
     };
 
     wz::asset::AssetNode compile_failed_node(

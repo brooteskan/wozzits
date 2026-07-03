@@ -197,6 +197,20 @@ namespace wz::engine::rendering
             // MVP, and the program is expected to declare the "mesh_style" root
             // constant (binding_layout preset 4). Default = no style.
             ea::MeshRenderStyleShading style{};
+
+            // Custom renderable recipe (issue #228): geometry rides the CPU
+            // pull-mesh path above, every extra resource comes from walking
+            // custom_bindings (identity = rhi_asset_identity(key, variant),
+            // asset-owned), and the root-constant block is the head packer
+            // named by custom_constants_head followed by the authored tail
+            // values at their baked offsets. No per-recipe semantics here —
+            // this is the generic bind the 0x70A compiler validated.
+            bool custom = false;
+            std::vector<ea::RhiRenderableBinding> custom_bindings;
+            ea::RenderBindingConstantsHead custom_constants_head =
+                ea::RenderBindingConstantsHead::None;
+            uint32_t custom_constants_dwords = 0;
+            std::vector<ea::RhiRenderableConstant> custom_constants;
         };
 
         std::optional<PullMeshSource> pull_mesh_source_for_renderable(
@@ -208,6 +222,23 @@ namespace wz::engine::rendering
                     ea::RenderableAsset{ .output = renderable_key });
             if (!recipe) {
                 return std::nullopt;
+            }
+
+            // Custom renderable recipe (issue #228): CPU pull-mesh geometry
+            // plus the compiled generic bindings/constants, carried verbatim
+            // so ensure_renderable and the per-frame pack stay schema-blind.
+            if (recipe->custom) {
+                return PullMeshSource{
+                    .mesh_key = recipe->mesh_key,
+                    .program_key = recipe->program_key,
+                    .buffer_identity =
+                        ea::rhi_asset_identity(recipe->mesh_key),
+                    .custom = true,
+                    .custom_bindings = recipe->bindings,
+                    .custom_constants_head = recipe->constants_head,
+                    .custom_constants_dwords = recipe->constants_dwords,
+                    .custom_constants = recipe->constants,
+                };
             }
 
             // Gaussian-splat-cloud geometry (#208): no pull mesh. The decoded
@@ -1063,6 +1094,32 @@ namespace wz::engine::rendering
             realized.has_style = true;
             realized.style = source->style;
         }
+        if (source->custom) {
+            // Custom recipe (issue #228): prebuild the root-constant block as
+            // a byte template — zeroed, then the authored tail values written
+            // at their compile-baked offsets. render_scene re-packs only the
+            // head packer's dwords each frame; the tail persists.
+            realized.is_custom = true;
+            realized.custom_constants_head = source->custom_constants_head;
+            realized.custom_constants.assign(
+                static_cast<size_t>(source->custom_constants_dwords) * 4u,
+                uint8_t{ 0 });
+            for (const ea::RhiRenderableConstant& constant :
+                 source->custom_constants)
+            {
+                const size_t offset =
+                    static_cast<size_t>(constant.offset_dwords) * 4u;
+                const size_t bytes =
+                    static_cast<size_t>(constant.dwords) * 4u;
+                if (offset + bytes > realized.custom_constants.size()) {
+                    continue;  // compile-validated; defensive only
+                }
+                std::memcpy(
+                    realized.custom_constants.data() + offset,
+                    constant.value,
+                    bytes);
+            }
+        }
         if (source->clipmap) {
             realized.is_clipmap = true;
             realized.clipmap_settings = source->clipmap->settings;
@@ -1092,17 +1149,64 @@ namespace wz::engine::rendering
             gpu_.descriptor_semantics.find("pulled_mesh_positions");
         const wz::rhi::Tag pulled_indices =
             gpu_.descriptor_semantics.find("pulled_mesh_indices");
-        bool srg_ok =
-            realized.object_srg.set(pulled_positions, realized.positions)
-            && realized.object_srg.set(pulled_indices, realized.indices);
-        if (srg_ok && realized.is_clipmap) {
-            // Bind the resident R32 height texture at the scalar_field_texture
-            // semantic — the third descriptor in the binding_layout==2 object
-            // SRG. After this the 3-descriptor SRG satisfies its layout.
-            const wz::rhi::Tag scalar_field_texture =
-                gpu_.descriptor_semantics.find("scalar_field_texture");
-            srg_ok = realized.object_srg.set(
-                scalar_field_texture, height_texture_handle).has_value();
+        bool srg_ok = true;
+        if (source->custom) {
+            // Generic bind (issue #228): the pull buffers go in only when the
+            // program's authored layout declares the mesh-pull semantics, and
+            // every other resource comes from the recipe's compiled bindings —
+            // located by the identity its publisher used, no semantic table.
+            // satisfies() below still proves the SRG complete against the
+            // program's layout.
+            if (wz::rhi::find_descriptor_binding_index(
+                    *slot2_layout, pulled_positions))
+            {
+                srg_ok = realized.object_srg.set(
+                    pulled_positions, realized.positions).has_value();
+            }
+            if (srg_ok
+                && wz::rhi::find_descriptor_binding_index(
+                    *slot2_layout, pulled_indices))
+            {
+                srg_ok = realized.object_srg.set(
+                    pulled_indices, realized.indices).has_value();
+            }
+            for (const ea::RhiRenderableBinding& binding :
+                 source->custom_bindings)
+            {
+                if (!srg_ok) {
+                    break;
+                }
+                const wz::rhi::Tag semantic =
+                    gpu_.descriptor_semantics.find(binding.semantic);
+                const wz::rhi::GpuResourceHandle resource =
+                    gpu_.resources.find(wz::rhi::ResourceIdentity{
+                        ea::rhi_asset_identity(binding.key, binding.variant),
+                        {} });
+                if (!semantic.valid() || !resource.valid()) {
+                    logger_.error(
+                        "RhiSceneRenderer: custom binding '"
+                        + binding.semantic + "' is not resident");
+                    srg_ok = false;
+                    break;
+                }
+                srg_ok = realized.object_srg.set(semantic, resource)
+                    .has_value();
+            }
+        }
+        else {
+            srg_ok =
+                realized.object_srg.set(pulled_positions, realized.positions)
+                && realized.object_srg.set(pulled_indices, realized.indices);
+            if (srg_ok && realized.is_clipmap) {
+                // Bind the resident R32 height texture at the
+                // scalar_field_texture semantic — the third descriptor in the
+                // binding_layout==2 object SRG. After this the 3-descriptor
+                // SRG satisfies its layout.
+                const wz::rhi::Tag scalar_field_texture =
+                    gpu_.descriptor_semantics.find("scalar_field_texture");
+                srg_ok = realized.object_srg.set(
+                    scalar_field_texture, height_texture_handle).has_value();
+            }
         }
         if (!srg_ok || !realized.object_srg.satisfies(*slot2_layout)) {
             if (realized.owns_buffers) {
@@ -1132,7 +1236,15 @@ namespace wz::engine::rendering
             std::span<const uint8_t>{
                 reinterpret_cast<const uint8_t*>(initial_mvp.m),
                 sizeof(initial_mvp.m) };
-        if (realized.is_clipmap) {
+        if (realized.is_custom) {
+            // The prebuilt template block — already the program's exact
+            // root-constant size (possibly zero when the authored layout
+            // declares no block).
+            initial_constants = std::span<const uint8_t>{
+                realized.custom_constants.data(),
+                realized.custom_constants.size() };
+        }
+        else if (realized.is_clipmap) {
             initial_constants = std::span<const uint8_t>{
                 reinterpret_cast<const uint8_t*>(&initial_clipmap),
                 sizeof(initial_clipmap) };
@@ -1145,10 +1257,11 @@ namespace wz::engine::rendering
         wz::rhi::DrawPacketAllocator allocator;
         wz::rhi::DrawPacketBuilder builder =
             wz::rhi::DrawPacketBuilder::begin(allocator);
-        builder
-            .set_geometry(geometry)
-            .set_root_constants(initial_constants)
-            .add_shader_resource_group(realized.object_srg);
+        builder.set_geometry(geometry);
+        if (!initial_constants.empty()) {
+            builder.set_root_constants(initial_constants);
+        }
+        builder.add_shader_resource_group(realized.object_srg);
         if (!builder.add_draw_item(wz::rhi::DrawRequest{
                 forward_, realized.program, nullptr,
                 wz::rhi::StreamBufferIndices{}, 0,
@@ -1371,6 +1484,42 @@ namespace wz::engine::rendering
                     reinterpret_cast<const uint8_t*>(&constants);
                 realized->packet.root_constants.assign(
                     bytes, bytes + sizeof(constants));
+            }
+            else if (realized->is_custom) {
+                // Custom recipe (issue #228): re-pack only the head packer's
+                // dwords in the prebuilt template — the authored tail values
+                // baked at realize time persist behind it — then hand the
+                // whole block to the packet. Clipmap32 was rejected at
+                // compile; None leaves the block fully authored/static.
+                const wz::math::Mat4& world = node_worlds[node_index];
+                std::vector<uint8_t>& block = realized->custom_constants;
+                switch (realized->custom_constants_head) {
+                case ea::RenderBindingConstantsHead::Mvp16: {
+                    const wz::math::Mat4 mvp =
+                        wz::math::mul(view_projection, world);
+                    if (block.size() >= sizeof(mvp.m)) {
+                        std::memcpy(block.data(), mvp.m, sizeof(mvp.m));
+                    }
+                    break;
+                }
+                case ea::RenderBindingConstantsHead::WorldViewProjCamera36: {
+                    // The splat-cloud packer IS this head's contract; the
+                    // trailing "diameter" float is splat-recipe data a custom
+                    // renderable does not carry — packed as 0.
+                    const SplatCloudDrawConstants head =
+                        make_splat_cloud_draw_constants(
+                            world, view_projection, camera_world_pos, 0.0f);
+                    if (block.size() >= sizeof(head)) {
+                        std::memcpy(block.data(), &head, sizeof(head));
+                    }
+                    break;
+                }
+                case ea::RenderBindingConstantsHead::None:
+                case ea::RenderBindingConstantsHead::Clipmap32:
+                    break;
+                }
+                realized->packet.root_constants.assign(
+                    block.begin(), block.end());
             }
             else if (realized->has_style) {
                 // Styled pull mesh (issue #195 slice A): MVP + baked shading in

@@ -996,12 +996,18 @@ namespace wz::engine::assets::internal
                 // optional binding_layout dep.
                 if (dep_handles.size() < 2 || dep_handles.size() > 3) {
                     logger.error("custom render program requires two shader dependencies (vertex, pixel) plus an optional binding layout");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "custom render program requires two shader "
+                        "dependencies (vertex, pixel) plus an optional "
+                        "binding layout");
                 }
 
                 if (!dep_handles[0].valid() || !dep_handles[1].valid()) {
                     logger.error("custom render program shader dependencies did not resolve");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "shader dependencies did not resolve");
                 }
 
                 if (!desc) {
@@ -1021,7 +1027,9 @@ namespace wz::engine::assets::internal
                     logger.error(
                         "render program missing CustomRenderProgramDesc or "
                         "ParamBlock");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "missing CustomRenderProgramDesc or ParamBlock");
                 }
 
                 // Optional binding-layout dep (issue #227): when wired, the
@@ -1032,6 +1040,7 @@ namespace wz::engine::assets::internal
                 // optional port exists (renderable_compilers.cpp documents
                 // the hazard).
                 CustomRenderProgramDesc effective = *desc;
+                const RenderBindingLayoutData* wired_layout = nullptr;
                 for (size_t i = 0; i < dep_nodes.size(); ++i) {
                     if (dep_nodes[i].type != kAssetTypeRenderBindingLayout) {
                         continue;
@@ -1068,6 +1077,7 @@ namespace wz::engine::assets::internal
                         std::move(srg.descriptor_bindings);
                     effective.static_samplers =
                         std::move(srg.static_samplers);
+                    wired_layout = layout;
                     break;
                 }
 
@@ -1101,13 +1111,23 @@ namespace wz::engine::assets::internal
                 data.root_constants   = effective.root_constants;
                 data.descriptor_bindings = effective.descriptor_bindings;
                 data.static_samplers  = effective.static_samplers;
+                // Carry the layout's constants contract (issue #228) so a
+                // custom renderable (0x70A) can validate authored constant
+                // names and select the head packer from the program alone.
+                if (wired_layout) {
+                    data.has_authored_binding_layout = true;
+                    data.constants_head = wired_layout->constants_head;
+                    data.constant_fields = wired_layout->constant_fields;
+                }
                 data.vertex_shader    = dep_handles[0];
                 data.pixel_shader     = dep_handles[1];
 
                 wz::asset::ResourceHandle handle = table.add(std::move(data));
                 if (!handle.valid()) {
                     logger.error("failed to store custom render program");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "failed to store custom render program");
                 }
 
                 wz::asset::AssetNode out = input;

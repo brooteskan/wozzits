@@ -199,6 +199,20 @@ namespace wz::engine::rendering
             // sets it; clipmap/splat/gpu_sparse take their own pack branches.
             bool has_style = false;
             wz::engine::assets::MeshRenderStyleShading style{};
+
+            // Custom renderable recipes (issue #228). is_custom gates the
+            // generic per-frame constants pack: custom_constants is the full
+            // root-constant block as a byte template — authored tail values
+            // baked in at realize time — and render_scene re-packs only the
+            // head packer named by custom_constants_head (Mvp16 /
+            // WorldViewProjCamera36) in place each frame. The recipe's extra
+            // resource bindings were walked into object_srg at realize time;
+            // they are asset-owned (bound, never released).
+            bool is_custom = false;
+            wz::engine::assets::RenderBindingConstantsHead
+                custom_constants_head =
+                    wz::engine::assets::RenderBindingConstantsHead::None;
+            std::vector<uint8_t> custom_constants;
         };
 
         const RealizedProgram* realize_program(

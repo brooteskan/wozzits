@@ -453,6 +453,24 @@ drawn by `RhiSceneRenderer`):
 | GPU sparse mesh | `kGpuSparseMeshRenderableSchema` | `0x000707` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_gpu_sparse_mesh_renderable()` |
 | Clipmap landscape | `kClipmapLandscapeRenderableSchema` | `0x000708` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_clipmap_landscape()` |
 | Gaussian splat cloud (RHI) | `kGaussianSplatCloudRhiRenderableSchema` | `0x000709` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_gaussian_splat_cloud_rhi()` |
+| Custom renderable (issue #228) | `kCustomRenderableSchema` | `0x00070A` | `kAssetTypeRenderable` (1048) | graph-authored (a typed create rides #229) |
+
+The custom renderable (`0x00070A`) is the zero-per-look-C++ form: a pull mesh +
+a custom render program whose SRG comes from an authored render binding layout
+(#227), up to eight generic `Any`-typed optional binding ports mapped to the
+layout's descriptor semantics by indexed params (`binding0_semantic`, …), and
+authored values for the layout's declared constant tail fields (`const0_name` /
+`const0_value` / `const0_w`, …). The compiler validates every authored binding
+against the wired program's layout — unbound semantic, unknown semantic, kind
+vs source asset type (`render_binding_sources.h`, THE source-type → published
+GPU-resource map), unknown constant name — and surfaces failures on the node
+via `compile_failed_node(input, reason)`. `RhiSceneRenderer` draws the compiled
+recipe generically: it walks `recipe.bindings` (`rhi_asset_identity(key,
+variant)`), binds the mesh-pull buffers only when the layout declares them, and
+packs the root-constant block as the layout's head packer (mvp16 /
+world_viewproj_camera36) followed by the authored tail values at their baked
+offsets. The `Any` port sentinel (`wz::asset::AssetType::Any`) skips the
+edge-time provider-type check; kind validation happens at compile instead.
 
 Legacy renderables (produce `RenderableAssetData`; consumed only by the editor
 field preview and the deprecated terrain path — retirement tracked by #222/#179):

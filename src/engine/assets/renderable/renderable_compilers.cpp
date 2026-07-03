@@ -2,17 +2,22 @@
 
 #include <engine/assets/renderable/renderable_compilers.h>
 #include <engine/assets/engine_asset_library_internal.h>
+#include <engine/assets/renderable/render_binding_sources.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
+
+#include <asset/system.h>
 
 #include <algorithm>
 #include <array>
 #include <any>
 #include <chrono>
 #include <cmath>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace wz::engine::assets::internal
 {
@@ -228,6 +233,379 @@ namespace wz::engine::assets::internal
             ScalarFieldDebugRenderableCompileDesc desc{};
             desc.scalar_field_asset = dep_key(dep_nodes, 0);
             return desc;
+        }
+
+        // ── Custom renderable (issue #228, schema 0x70A) ─────────────────────
+        //
+        // Indexed param rows within the scalar param model (the #227 pattern):
+        // bindingN_semantic maps binding port N to a layout row's semantic;
+        // constN_name / constN_value / constN_w author a value for one of the
+        // layout's declared constant tail fields (xyz from the float3, w from
+        // the scalar — the row's field type selects how many components pack).
+
+        constexpr std::array<std::string_view,
+            kMaxRenderBindingLayoutBindings> kCustomBindingSemanticParams = {
+            "binding0_semantic", "binding1_semantic",
+            "binding2_semantic", "binding3_semantic",
+            "binding4_semantic", "binding5_semantic",
+            "binding6_semantic", "binding7_semantic",
+        };
+        constexpr std::array<std::string_view,
+            kMaxRenderBindingLayoutBindings> kCustomBindingPortNames = {
+            "binding0", "binding1", "binding2", "binding3",
+            "binding4", "binding5", "binding6", "binding7",
+        };
+        constexpr std::array<std::string_view,
+            kMaxRenderBindingLayoutConstantFields> kCustomConstNameParams = {
+            "const0_name", "const1_name", "const2_name", "const3_name",
+            "const4_name", "const5_name", "const6_name", "const7_name",
+        };
+        constexpr std::array<std::string_view,
+            kMaxRenderBindingLayoutConstantFields> kCustomConstValueParams = {
+            "const0_value", "const1_value", "const2_value", "const3_value",
+            "const4_value", "const5_value", "const6_value", "const7_value",
+        };
+        constexpr std::array<std::string_view,
+            kMaxRenderBindingLayoutConstantFields> kCustomConstWParams = {
+            "const0_w", "const1_w", "const2_w", "const3_w",
+            "const4_w", "const5_w", "const6_w", "const7_w",
+        };
+
+        // Builds the desc for a GRAPH-authored 0x70A node: binding sources
+        // come from the node's PORT-ORDERED dep keys (ports 2+i = binding_i;
+        // an empty key = unwired port) and their semantics from the indexed
+        // params. A row is kept when EITHER side is present so validation can
+        // name a half-authored row (semantic without a source, or a wired
+        // port with no semantic) instead of silently dropping it.
+        CustomRenderableCompileDesc custom_renderable_desc_from_ports(
+            const wz::asset::ParamBlock& params,
+            std::span<const wz::asset::AssetKey> port_dep_keys)
+        {
+            CustomRenderableCompileDesc desc{};
+            if (!port_dep_keys.empty()) {
+                desc.mesh_asset = port_dep_keys[0];
+            }
+            if (port_dep_keys.size() > 1) {
+                desc.render_program_asset = port_dep_keys[1];
+            }
+            for (uint32_t i = 0; i < kMaxRenderBindingLayoutBindings; ++i) {
+                const size_t port = 2u + i;
+                const wz::asset::AssetKey key =
+                    port < port_dep_keys.size()
+                        ? port_dep_keys[port]
+                        : wz::asset::AssetKey{};
+                std::string semantic = params.get<std::string>(
+                    kCustomBindingSemanticParams[i], {});
+                if (semantic.empty() && key == wz::asset::AssetKey{}) {
+                    continue;
+                }
+                desc.bindings.push_back({ std::move(semantic), key });
+            }
+            for (uint32_t i = 0;
+                 i < kMaxRenderBindingLayoutConstantFields;
+                 ++i)
+            {
+                CustomRenderableCompileDesc::Constant constant{};
+                constant.name = params.get<std::string>(
+                    kCustomConstNameParams[i], {});
+                if (constant.name.empty()) {
+                    continue;
+                }
+                const auto xyz = params.get<std::array<float, 3>>(
+                    kCustomConstValueParams[i], { 0.0f, 0.0f, 0.0f });
+                constant.value[0] = xyz[0];
+                constant.value[1] = xyz[1];
+                constant.value[2] = xyz[2];
+                constant.value[3] =
+                    params.get<float>(kCustomConstWParams[i], 0.0f);
+                desc.constants.push_back(std::move(constant));
+            }
+            return desc;
+        }
+
+        [[nodiscard]] constexpr bool render_binding_kind_matches_descriptor(
+            RenderBindingKind source_kind,
+            DescriptorKind row_kind) noexcept
+        {
+            return (source_kind == RenderBindingKind::TextureSrv
+                    && row_kind == DescriptorKind::TextureSRV)
+                || (source_kind == RenderBindingKind::StructuredSrv
+                    && row_kind == DescriptorKind::StructuredBufferSRV);
+        }
+
+        [[nodiscard]] constexpr std::string_view descriptor_kind_label(
+            DescriptorKind kind) noexcept
+        {
+            switch (kind) {
+            case DescriptorKind::TextureSRV:          return "a texture SRV";
+            case DescriptorKind::StructuredBufferSRV: return "a structured SRV";
+            case DescriptorKind::Sampler:             return "a sampler";
+            case DescriptorKind::UAV:                 return "a UAV";
+            }
+            return "an unknown descriptor";
+        }
+
+        [[nodiscard]] constexpr std::string_view render_binding_kind_label(
+            RenderBindingKind kind) noexcept
+        {
+            return kind == RenderBindingKind::TextureSrv
+                ? "a texture SRV"
+                : "a structured SRV";
+        }
+
+        // Validates the authored desc against the wired program's layout and
+        // bakes the recipe's custom fields (bindings with resolved variants,
+        // constants with resolved offsets, head + block size). Returns a
+        // human-readable failure reason instead when anything is unbound,
+        // unknown, duplicated, or of the wrong kind — the caller surfaces it
+        // through the two-arg compile_failed_node so it reaches the node
+        // inspector. `dep_nodes` supplies each binding source's asset TYPE.
+        [[nodiscard]] std::optional<std::string>
+        build_custom_renderable_recipe(
+            const CustomRenderableCompileDesc& desc,
+            const RenderProgramData& program,
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            RhiRenderableRecipe& out)
+        {
+            if (!program.has_authored_binding_layout) {
+                return "the render program does not carry an authored "
+                       "binding layout (#227); a custom renderable requires "
+                       "one (numbered binding_layout presets are not "
+                       "introspectable)";
+            }
+            if (program.binding_model != RenderBindingModel::MeshVertexPull) {
+                return "the render program's binding model must be "
+                       "MeshVertexPull (the custom renderable's geometry is "
+                       "a pull mesh)";
+            }
+            if (program.constants_head == RenderBindingConstantsHead::Clipmap32)
+            {
+                return "the clipmap32 constants head is not supported by a "
+                       "custom renderable (its packer needs clipmap "
+                       "settings the recipe does not carry)";
+            }
+
+            const auto source_type_of =
+                [&](const wz::asset::AssetKey& key)
+                    -> std::optional<wz::asset::AssetType>
+                {
+                    for (const wz::asset::AssetNode& dep : dep_nodes) {
+                        if (dep.key == key) {
+                            return dep.type;
+                        }
+                    }
+                    return std::nullopt;
+                };
+
+            // The geometry port owns the mesh-pull semantics: the renderer
+            // binds the pull buffers it uploads for the mesh dep at these
+            // rows (when declared), so authored bindings may not claim them.
+            const auto geometry_owned =
+                [](DescriptorSemantic semantic) noexcept
+                {
+                    return semantic == DescriptorSemantic::PulledMeshPositions
+                        || semantic == DescriptorSemantic::PulledMeshIndices;
+                };
+
+            std::vector<DescriptorSemantic> bound;
+            for (const CustomRenderableCompileDesc::Binding& binding :
+                 desc.bindings)
+            {
+                if (binding.semantic.empty()) {
+                    return "a connected binding port has no semantic set";
+                }
+                if (binding.asset == wz::asset::AssetKey{}) {
+                    return "binding '" + binding.semantic
+                        + "' has no connected source";
+                }
+                const std::optional<DescriptorSemantic> semantic =
+                    descriptor_semantic_from_name(binding.semantic);
+                if (!semantic) {
+                    return "unknown binding semantic '" + binding.semantic
+                        + "'";
+                }
+                if (geometry_owned(*semantic)) {
+                    return "semantic '" + binding.semantic
+                        + "' is bound by the geometry port";
+                }
+                const DescriptorBinding* row = nullptr;
+                for (const DescriptorBinding& candidate :
+                     program.descriptor_bindings)
+                {
+                    if (candidate.semantic == *semantic) {
+                        row = &candidate;
+                        break;
+                    }
+                }
+                if (!row) {
+                    return "the program's layout does not declare semantic '"
+                        + binding.semantic + "'";
+                }
+                if (std::find(bound.begin(), bound.end(), *semantic)
+                    != bound.end())
+                {
+                    return "semantic '" + binding.semantic
+                        + "' is bound more than once";
+                }
+                const std::optional<wz::asset::AssetType> source_type =
+                    source_type_of(binding.asset);
+                if (!source_type) {
+                    return "binding '" + binding.semantic
+                        + "' source is not among the node's dependencies";
+                }
+                const std::optional<RenderBindingSource> source =
+                    render_binding_source_for(*source_type, *semantic);
+                if (!source) {
+                    return "a "
+                        + std::string(
+                            asset_type_display_name_view(*source_type))
+                        + " cannot back binding '" + binding.semantic
+                        + "' (no published GPU resource for that semantic; "
+                          "see render_binding_sources.h)";
+                }
+                if (!render_binding_kind_matches_descriptor(
+                        source->kind, row->kind))
+                {
+                    return "binding '" + binding.semantic
+                        + "' kind mismatch: the layout row is "
+                        + std::string(descriptor_kind_label(row->kind))
+                        + " but a "
+                        + std::string(
+                            asset_type_display_name_view(*source_type))
+                        + " publishes "
+                        + std::string(render_binding_kind_label(source->kind));
+                }
+
+                bound.push_back(*semantic);
+                out.bindings.push_back(RhiRenderableBinding{
+                    .semantic = std::string(descriptor_semantic_name(*semantic)),
+                    .key = binding.asset,
+                    .variant = std::string(source->variant),
+                });
+            }
+
+            // Every SRV row of the layout must now be satisfied — by the
+            // geometry port (mesh-pull rows) or an authored binding.
+            for (const DescriptorBinding& row : program.descriptor_bindings) {
+                if (row.kind != DescriptorKind::TextureSRV
+                    && row.kind != DescriptorKind::StructuredBufferSRV)
+                {
+                    continue;
+                }
+                if (geometry_owned(row.semantic)) {
+                    continue;
+                }
+                if (std::find(bound.begin(), bound.end(), row.semantic)
+                    == bound.end())
+                {
+                    return "unbound semantic '"
+                        + std::string(descriptor_semantic_name(row.semantic))
+                        + "': the program's layout declares it but no "
+                          "binding port supplies it";
+                }
+            }
+
+            // Constants: authored values fill the layout's declared tail
+            // fields; offsets derive from the head packer + declaration order.
+            const uint32_t block_dwords =
+                program.root_constants.empty()
+                    ? 0u
+                    : program.root_constants.front().value_count;
+            if (block_dwords == 0u && !desc.constants.empty()) {
+                return "constant values are authored but the program's "
+                       "layout declares no root-constant block";
+            }
+
+            struct FieldSlot
+            {
+                uint32_t offset = 0;
+                uint32_t dwords = 0;
+            };
+            std::unordered_map<std::string_view, FieldSlot> fields;
+            uint32_t running = render_binding_constants_head_dwords(
+                program.constants_head);
+            for (const RenderBindingConstantField& field :
+                 program.constant_fields)
+            {
+                const uint32_t dwords =
+                    render_binding_constant_type_dwords(field.type);
+                fields.emplace(
+                    std::string_view(field.name),
+                    FieldSlot{ running, dwords });
+                running += dwords;
+            }
+
+            std::vector<std::string_view> authored;
+            for (const CustomRenderableCompileDesc::Constant& constant :
+                 desc.constants)
+            {
+                const auto slot = fields.find(constant.name);
+                if (slot == fields.end()) {
+                    return "unknown constant name '" + constant.name
+                        + "': the program's layout does not declare it";
+                }
+                if (std::find(
+                        authored.begin(), authored.end(),
+                        std::string_view(constant.name))
+                    != authored.end())
+                {
+                    return "constant '" + constant.name
+                        + "' is authored more than once";
+                }
+                authored.push_back(constant.name);
+
+                RhiRenderableConstant baked{};
+                baked.name = constant.name;
+                baked.offset_dwords = slot->second.offset;
+                baked.dwords = slot->second.dwords;
+                for (uint32_t c = 0; c < slot->second.dwords && c < 4u; ++c) {
+                    baked.value[c] = constant.value[c];
+                }
+                out.constants.push_back(std::move(baked));
+            }
+
+            out.mesh_key = desc.mesh_asset;
+            out.program_key = desc.render_program_asset;
+            out.custom = true;
+            out.constants_head = program.constants_head;
+            out.constants_dwords = block_dwords;
+            return std::nullopt;
+        }
+
+        std::vector<wz::asset::ParamDecl> make_custom_renderable_parameters()
+        {
+            using wz::asset::ParamDecl;
+            using wz::asset::ParamType;
+
+            std::vector<ParamDecl> parameters;
+            for (uint32_t i = 0; i < kMaxRenderBindingLayoutBindings; ++i) {
+                parameters.push_back({
+                    .name = kCustomBindingSemanticParams[i],
+                    .type = ParamType::String,
+                    .label = kCustomBindingSemanticParams[i],
+                });
+            }
+            for (uint32_t i = 0;
+                 i < kMaxRenderBindingLayoutConstantFields;
+                 ++i)
+            {
+                parameters.push_back({
+                    .name = kCustomConstNameParams[i],
+                    .type = ParamType::String,
+                    .label = kCustomConstNameParams[i],
+                });
+                parameters.push_back({
+                    .name = kCustomConstValueParams[i],
+                    .type = ParamType::Float3,
+                    .label = kCustomConstValueParams[i],
+                });
+                parameters.push_back({
+                    .name = kCustomConstWParams[i],
+                    .type = ParamType::Float,
+                    .label = kCustomConstWParams[i],
+                });
+            }
+            return parameters;
         }
 
         TerrainDebugRenderableCompileDesc
@@ -531,6 +909,7 @@ namespace wz::engine::assets::internal
         auto* render_program_table = &ctx.render_program_table;
         auto* gpu_sparse_mesh_table = &ctx.gpu_sparse_mesh_table;
         auto* placement_table = &ctx.placement_table;
+        const auto* asset_system = ctx.asset_system;
 
 
         // DEPRECATED (issue #222): the terrain debug renderable (0x703) stands on
@@ -706,7 +1085,9 @@ namespace wz::engine::assets::internal
                     if (dep_handles.size() < 2 || dep_handles.size() > 3) {
                         logger->error(
                             "RHI pull mesh renderable missing compile desc");
-                        return compile_failed_node(input);
+                        return compile_failed_node(
+                            input,
+                            "missing compile desc");
                     }
                 }
 
@@ -714,14 +1095,19 @@ namespace wz::engine::assets::internal
                     logger->error(
                         "RHI pull mesh renderable requires geometry and program "
                         "dependencies, with an optional style dependency");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "requires geometry and program dependencies, with an "
+                        "optional style dependency");
                 }
 
                 const MeshData* mesh = mesh_table->get(dep_handles[0]);
                 if (!mesh || !mesh->valid()) {
                     logger->error(
                         "RHI pull mesh renderable source mesh is invalid");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "source mesh is invalid");
                 }
 
                 const RenderProgramData* program =
@@ -729,7 +1115,9 @@ namespace wz::engine::assets::internal
                 if (!program) {
                     logger->error(
                         "RHI pull mesh renderable program is invalid");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "render program is invalid");
                 }
 
                 // Bake the optional style's shading constants. The style dep, when
@@ -742,14 +1130,18 @@ namespace wz::engine::assets::internal
                     if (dep_handles.size() < 3) {
                         logger->error(
                             "RHI pull mesh renderable style dependency missing");
-                        return compile_failed_node(input);
+                        return compile_failed_node(
+                            input,
+                            "style dependency missing");
                     }
                     const MeshRenderStyleData* style =
                         mesh_render_style_table->get(dep_handles[2]);
                     if (!style || !style->valid()) {
                         logger->error(
                             "RHI pull mesh renderable style is invalid");
-                        return compile_failed_node(input);
+                        return compile_failed_node(
+                            input,
+                            "mesh render style is invalid");
                     }
                     style_shading = bake_mesh_render_style_shading(*style);
                 }
@@ -763,7 +1155,9 @@ namespace wz::engine::assets::internal
                 if (!handle.valid()) {
                     logger->error(
                         "failed to store RHI pull mesh renderable recipe");
-                    return compile_failed_node(input);
+                    return compile_failed_node(
+                        input,
+                        "failed to store RHI pull mesh renderable recipe");
                 }
 
                 wz::asset::AssetNode out = input;
@@ -1429,5 +1823,212 @@ namespace wz::engine::assets::internal
                 return out;
             }
             });
+
+        // Custom renderable recipe (issue #228, schema 0x70A): a pull mesh +
+        // a layout-authored custom program (#227) + up to eight Any-typed
+        // binding ports mapped to the layout's semantics by indexed params,
+        // plus authored values for the layout's declared constant tail
+        // fields. Every authored binding is validated against the program's
+        // layout at compile time (unbound row, unknown semantic, kind vs
+        // source type, unknown constant name) with the reason surfaced on
+        // the node; the renderer binds the compiled recipe GENERICALLY.
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kCustomRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "geometry", kAssetTypeMesh },
+                { "program", kAssetTypeRenderProgram },
+                // Generic optional binding ports. Any-typed: binding sources
+                // legitimately span ScalarField / VectorField /
+                // GaussianSplatCloud / GpuSparseMesh, which a single-typed
+                // port cannot express — the edge-time type check is skipped
+                // and the compile step validates the source KIND against the
+                // wired layout row (render_binding_sources.h). Port N's
+                // semantic comes from the bindingN_semantic param.
+                {
+                    "binding0",
+                    wz::asset::AssetType::Any,
+                    wz::asset::InputPortRequirement::Optional,
+                },
+                {
+                    "binding1",
+                    wz::asset::AssetType::Any,
+                    wz::asset::InputPortRequirement::Optional,
+                },
+                {
+                    "binding2",
+                    wz::asset::AssetType::Any,
+                    wz::asset::InputPortRequirement::Optional,
+                },
+                {
+                    "binding3",
+                    wz::asset::AssetType::Any,
+                    wz::asset::InputPortRequirement::Optional,
+                },
+                {
+                    "binding4",
+                    wz::asset::AssetType::Any,
+                    wz::asset::InputPortRequirement::Optional,
+                },
+                {
+                    "binding5",
+                    wz::asset::AssetType::Any,
+                    wz::asset::InputPortRequirement::Optional,
+                },
+                {
+                    "binding6",
+                    wz::asset::AssetType::Any,
+                    wz::asset::InputPortRequirement::Optional,
+                },
+                {
+                    "binding7",
+                    wz::asset::AssetType::Any,
+                    wz::asset::InputPortRequirement::Optional,
+                },
+            },
+            .parameters = make_custom_renderable_parameters(),
+            .compile = [logger, mesh_table, render_program_table,
+                        rhi_renderable_table, asset_system](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                CustomRenderableCompileDesc editor_desc{};
+                const auto* desc =
+                    std::any_cast<CustomRenderableCompileDesc>(&input.meta);
+                if (!desc) {
+                    const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta);
+                    if (!params) {
+                        logger->error(
+                            "custom renderable missing compile desc");
+                        return compile_failed_node(
+                            input,
+                            "missing CustomRenderableCompileDesc or "
+                            "ParamBlock");
+                    }
+                    // The Any-typed binding ports cannot be told apart by
+                    // dependency TYPE, and dep positions shift once optional
+                    // ports exist — so the graph path recovers the node's
+                    // PORT-ORDERED dep keys (empty key = unwired port) from
+                    // its registration entry. That list is already part of
+                    // the node's identity (the key folds the dep
+                    // composition), so the compile stays content-addressed.
+                    std::span<const wz::asset::AssetKey> port_keys{};
+                    if (asset_system) {
+                        for (const wz::asset::AssetSystem::RegistrationEntry&
+                                 entry : asset_system->registered_assets())
+                        {
+                            if (entry.node.key == input.key) {
+                                port_keys = entry.dep_keys;
+                                break;
+                            }
+                        }
+                    }
+                    if (port_keys.empty()) {
+                        logger->error(
+                            "custom renderable has no port-ordered "
+                            "registration entry");
+                        return compile_failed_node(
+                            input,
+                            "cannot map binding ports: the node has no "
+                            "port-ordered registration entry");
+                    }
+                    editor_desc = custom_renderable_desc_from_ports(
+                        *params, port_keys);
+                    desc = &editor_desc;
+                }
+
+                // Locate the required deps BY KEY: positions shift once
+                // optional ports exist (the documented hazard), and the
+                // binding deps are interleaved arbitrarily.
+                const auto dep_index_of =
+                    [&](const wz::asset::AssetKey& key)
+                        -> std::optional<size_t>
+                    {
+                        for (size_t i = 0; i < dep_nodes.size(); ++i) {
+                            if (dep_nodes[i].key == key) {
+                                return i;
+                            }
+                        }
+                        return std::nullopt;
+                    };
+
+                if (desc->mesh_asset == wz::asset::AssetKey{}) {
+                    logger->error("custom renderable geometry missing");
+                    return compile_failed_node(
+                        input, "geometry dependency missing");
+                }
+                if (desc->render_program_asset == wz::asset::AssetKey{}) {
+                    logger->error("custom renderable program missing");
+                    return compile_failed_node(
+                        input, "render program dependency missing");
+                }
+
+                const std::optional<size_t> mesh_index =
+                    dep_index_of(desc->mesh_asset);
+                if (!mesh_index
+                    || *mesh_index >= dep_handles.size()
+                    || !dep_handles[*mesh_index].valid())
+                {
+                    logger->error(
+                        "custom renderable geometry did not resolve");
+                    return compile_failed_node(
+                        input, "geometry dependency did not resolve");
+                }
+                const MeshData* mesh =
+                    mesh_table->get(dep_handles[*mesh_index]);
+                if (!mesh || !mesh->valid()) {
+                    logger->error(
+                        "custom renderable source mesh is invalid");
+                    return compile_failed_node(
+                        input, "source mesh is invalid");
+                }
+
+                const std::optional<size_t> program_index =
+                    dep_index_of(desc->render_program_asset);
+                if (!program_index
+                    || *program_index >= dep_handles.size()
+                    || !dep_handles[*program_index].valid())
+                {
+                    logger->error(
+                        "custom renderable program did not resolve");
+                    return compile_failed_node(
+                        input, "render program dependency did not resolve");
+                }
+                const RenderProgramData* program =
+                    render_program_table->get(dep_handles[*program_index]);
+                if (!program) {
+                    logger->error(
+                        "custom renderable render program is invalid");
+                    return compile_failed_node(
+                        input, "render program is invalid");
+                }
+
+                RhiRenderableRecipe recipe{};
+                if (std::optional<std::string> error =
+                        build_custom_renderable_recipe(
+                            *desc, *program, dep_nodes, recipe))
+                {
+                    logger->error("custom renderable: " + *error);
+                    return compile_failed_node(input, std::move(*error));
+                }
+
+                const wz::asset::ResourceHandle handle =
+                    rhi_renderable_table->add(std::move(recipe));
+                if (!handle.valid()) {
+                    logger->error(
+                        "failed to store custom renderable recipe");
+                    return compile_failed_node(
+                        input, "failed to store custom renderable recipe");
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            },
+        });
     }
 }

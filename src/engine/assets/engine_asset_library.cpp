@@ -317,6 +317,10 @@ namespace wz::engine::assets
                     gpu_context ? &gpu_context->descriptor_semantics : nullptr,
                 .constant_semantic_registry =
                     gpu_context ? &gpu_context->constant_semantics : nullptr,
+                // Address of the member under construction — only ever
+                // dereferenced inside compile fns during resolve (see the
+                // field's comment in engine_asset_library_internal.h).
+                .asset_system = &system_,
             }))
         , files_(system_, logger_, resource_root_)
         , shaders_(system_, logger_, files_)

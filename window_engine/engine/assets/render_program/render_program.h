@@ -3,6 +3,7 @@
 // engine/assets/render_program/render_program.h
 
 #include <asset/types.h>
+#include <engine/assets/render_binding_layout/render_binding_constants.h>
 #include <engine/assets/renderable/renderable.h>
 
 #include <array>
@@ -237,6 +238,19 @@ namespace wz::engine::assets
         std::vector<RootConstantBinding> root_constants;
         std::vector<DescriptorBinding>   descriptor_bindings;
         std::vector<StaticSamplerBinding> static_samplers;
+
+        // The authored-layout constants contract (issue #228), copied from the
+        // wired render-binding-layout when a 0x103 program compiles with one.
+        // has_authored_binding_layout distinguishes "layout-authored, empty
+        // constants" from a numbered-preset program (whose head/fields are
+        // renderer conventions this struct does not describe); the custom
+        // renderable compiler (0x70A) requires it, validates authored constant
+        // names against constant_fields, and selects the head packer from
+        // constants_head. Preset/builtin programs leave all three at defaults.
+        bool has_authored_binding_layout = false;
+        RenderBindingConstantsHead constants_head =
+            RenderBindingConstantsHead::None;
+        std::vector<RenderBindingConstantField> constant_fields;
 
         wz::asset::ResourceHandle vertex_shader{};
         wz::asset::ResourceHandle pixel_shader{};

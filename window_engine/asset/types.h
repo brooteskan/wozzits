@@ -64,7 +64,15 @@ namespace wz::asset {
         Audio = 5,
         Font = 6,
         ShaderSource = 7,
-        GaussianSplatCloud = 8
+        GaussianSplatCloud = 8,
+
+        // Port-type wildcard (issue #228). Only meaningful as an InputPort
+        // type: an Any-typed port accepts an edge from ANY provider type —
+        // the edge-time TypeMismatch check is skipped and the port's compiler
+        // validates the source kind at compile time instead. Never a node's
+        // type; top of the range so engine type extensions (values 128+)
+        // cannot collide with it.
+        Any = 0xFFFF
     };
 
     // ─── SchemaID ─────────────────────────────────────────────────────────────────

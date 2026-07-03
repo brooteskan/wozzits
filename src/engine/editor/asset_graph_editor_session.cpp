@@ -238,7 +238,11 @@ namespace wz::engine::editor
         check.from_type_name = type_name(from_node->node.type);
         check.to_type_name = type_name(port.type);
 
-        if (from_node->node.type != port.type) {
+        // An Any-typed port (issue #228) accepts every provider type; the
+        // port's compiler validates the source kind at compile time instead.
+        if (port.type != wz::asset::AssetType::Any
+            && from_node->node.type != port.type)
+        {
             check.status = AssetGraphConnectionStatus::TypeMismatch;
             check.compatible = false;
             check.message =

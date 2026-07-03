@@ -5,8 +5,10 @@
 #include <asset/types.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_cloud.h>
 #include <engine/assets/mesh_render_style/mesh_render_style.h>
+#include <engine/assets/render_binding_layout/render_binding_constants.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace wz::engine::assets
@@ -215,6 +217,31 @@ namespace wz::engine::assets
         bool surface_enabled = false;
     };
 
+    // One semantic resource binding baked into a custom renderable recipe
+    // (issue #228). The compiler resolved the authored source against the
+    // program's layout: `semantic` is the canonical descriptor-semantic name
+    // the row declares, `key` the source asset, and `variant` the published
+    // rhi identity discriminator (render_binding_sources.h) — so the renderer
+    // binds with rhi_asset_identity(key, variant) and no type knowledge.
+    struct RhiRenderableBinding
+    {
+        std::string semantic;
+        wz::asset::AssetKey key{};
+        std::string variant;
+    };
+
+    // One authored constant value baked into a custom renderable recipe. The
+    // compiler resolved `name` against the layout's declared tail fields and
+    // baked the field's absolute dword offset + width, so the renderer writes
+    // value[0..dwords) at offset_dwords without re-reading the layout.
+    struct RhiRenderableConstant
+    {
+        std::string name;
+        uint32_t offset_dwords = 0;
+        uint32_t dwords = 0;
+        float value[4]{};
+    };
+
     struct RhiRenderableRecipe
     {
         // Exactly one geometry source is set:
@@ -248,6 +275,24 @@ namespace wz::engine::assets
         // the MVP so the pixel shader can read them. Default (has_style false)
         // leaves the recipe's rendering identical to the pre-slice-A pull mesh.
         MeshRenderStyleShading style{};
+
+        // Custom renderable recipe (issue #228, schema 0x70A). When `custom`
+        // is set the renderer takes the GENERIC bind path: mesh_key supplies
+        // the pull geometry (pulled_mesh_positions/indices, bound only when
+        // the program's layout declares them), every extra resource comes
+        // from walking `bindings`, and the root-constant block is packed as
+        // the head packer named by constants_head followed by the authored
+        // tail values — no per-recipe semantic table in the renderer. The
+        // other geometry keys / clipmap / splat / style fields stay at their
+        // empty defaults on a custom recipe.
+        bool custom = false;
+        std::vector<RhiRenderableBinding> bindings;
+        RenderBindingConstantsHead constants_head =
+            RenderBindingConstantsHead::None;
+        // Total root-constant block size in dwords (the program block's
+        // value_count); 0 = the program declares no root constants.
+        uint32_t constants_dwords = 0;
+        std::vector<RhiRenderableConstant> constants;
 
         bool valid() const noexcept
         {
@@ -351,5 +396,37 @@ namespace wz::engine::assets
         wz::asset::AssetKey render_program_asset{};
         // Per-cloud render settings (splat size).
         GaussianSplatCloudRenderSettings settings{};
+    };
+
+    // Typed compile desc for the custom renderable recipe (issue #228, schema
+    // 0x70A). The graph/editor path recovers the same data from the node's
+    // ParamBlock + its port-ordered registration dep keys; this desc is the
+    // programmatic form (and the shape #229's per-scene-node synthesis fills).
+    // Bindings/constants here are AUTHORED (semantic + source, name + value);
+    // the compiler validates them against the wired program's layout and
+    // bakes the resolved variant / offsets into the recipe.
+    struct CustomRenderableCompileDesc
+    {
+        struct Binding
+        {
+            // Canonical descriptor-semantic name (kDescriptorSemanticNames).
+            std::string semantic;
+            wz::asset::AssetKey asset{};
+        };
+
+        struct Constant
+        {
+            // A tail field name declared by the program's binding layout.
+            std::string name;
+            float value[4]{};
+        };
+
+        // Geometry (kAssetTypeMesh) — the CPU pull-mesh source.
+        wz::asset::AssetKey mesh_asset{};
+        // Render program (kAssetTypeRenderProgram) with an authored binding
+        // layout (#227) and the MeshVertexPull binding model.
+        wz::asset::AssetKey render_program_asset{};
+        std::vector<Binding> bindings;
+        std::vector<Constant> constants;
     };
 }

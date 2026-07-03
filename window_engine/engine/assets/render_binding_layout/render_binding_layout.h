@@ -10,6 +10,7 @@
 // (b0 / t0,t1… / s0,s1… in the object register space) — never authored.
 
 #include <asset/types.h>
+#include <engine/assets/render_binding_layout/render_binding_constants.h>
 #include <engine/assets/render_program/render_program.h>
 
 #include <cstdint>
@@ -28,60 +29,10 @@ namespace wz::engine::assets
     // matching presets 1–4 (the space RhiSceneRenderer binds per draw).
     inline constexpr uint32_t kRenderBindingLayoutRegisterSpace = 2u;
 
-    // Head of the root-constant block: names one of the EXISTING renderer
-    // packers, so the first N dwords of the block are filled by known code
-    // (mvp16 → the 16-float MVP, world_viewproj_camera36 → SplatCloud-style
-    // world[16]+view_proj[16]+camera[4], clipmap32 → ClipmapDrawConstants).
-    enum class RenderBindingConstantsHead : uint8_t
-    {
-        None,
-        Mvp16,
-        WorldViewProjCamera36,
-        Clipmap32,
-    };
-
-    [[nodiscard]] constexpr uint32_t render_binding_constants_head_dwords(
-        RenderBindingConstantsHead head) noexcept
-    {
-        switch (head) {
-        case RenderBindingConstantsHead::None:                  return 0u;
-        case RenderBindingConstantsHead::Mvp16:                 return 16u;
-        case RenderBindingConstantsHead::WorldViewProjCamera36: return 36u;
-        case RenderBindingConstantsHead::Clipmap32:             return 32u;
-        }
-        return 0u;
-    }
-
-    enum class RenderBindingConstantType : uint8_t
-    {
-        Float,
-        Float2,
-        Float3,
-        Float4,
-        Color,
-    };
-
-    [[nodiscard]] constexpr uint32_t render_binding_constant_type_dwords(
-        RenderBindingConstantType type) noexcept
-    {
-        switch (type) {
-        case RenderBindingConstantType::Float:  return 1u;
-        case RenderBindingConstantType::Float2: return 2u;
-        case RenderBindingConstantType::Float3: return 3u;
-        case RenderBindingConstantType::Float4: return 4u;
-        case RenderBindingConstantType::Color:  return 4u;
-        }
-        return 0u;
-    }
-
-    // Authored tail field DECLARATION (name + type only). Field defaults and
-    // values live at consumption sites — renderable node params and scene-node
-    // overrides (#228/#229) — never on the layout.
-    struct RenderBindingConstantField
-    {
-        std::string name;
-        RenderBindingConstantType type = RenderBindingConstantType::Float;
-    };
+    // RenderBindingConstantsHead / RenderBindingConstantType /
+    // RenderBindingConstantField moved to render_binding_constants.h (a leaf
+    // header) so render_program.h and renderable.h can carry the constants
+    // contract too (issue #228). Same namespace — call sites are unchanged.
 
     enum class RenderBindingKind : uint8_t
     {

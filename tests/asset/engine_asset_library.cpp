@@ -210,6 +210,9 @@ float4 main(PSIn input) : SV_TARGET
                 kGaussianSplatCloudRhiRenderableSchema,
                 kAssetTypeRenderable,
             },
+            // Custom renderable (issue #228): graph-authored only for now; a
+            // schema-aware key factory rides the #229 typed create API.
+            { kCustomRenderableSchema, kAssetTypeRenderable },
             { kSceneFromJSONSchema, kAssetTypeScene },
             { kSceneFromGLBSchema, kAssetTypeScene },
 

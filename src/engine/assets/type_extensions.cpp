@@ -55,6 +55,7 @@ namespace wz::engine::assets
             WZ_ADD_TYPE(wz::asset::AssetType::Font);
             WZ_ADD_TYPE(wz::asset::AssetType::ShaderSource);
             WZ_ADD_TYPE(wz::asset::AssetType::GaussianSplatCloud);
+            WZ_ADD_TYPE(wz::asset::AssetType::Any);
 
             WZ_ADD_TYPE(kAssetTypeRawFile);
             WZ_ADD_TYPE(kAssetTypeTextFile);
@@ -332,6 +333,9 @@ namespace wz::engine::assets
             WZ_SET_TYPE_NAME(
                 wz::asset::AssetType::GaussianSplatCloud,
                 "Gaussian splat");
+            // Port-type wildcard (issue #228): shown on Any-typed input ports
+            // in the graph editor; never the type of a node.
+            WZ_SET_TYPE_NAME(wz::asset::AssetType::Any, "Any");
             WZ_SET_TYPE_NAME(kAssetTypeRawFile, "Raw file");
             WZ_SET_TYPE_NAME(kAssetTypeTextFile, "Text file");
             WZ_SET_TYPE_NAME(kAssetTypeBinaryBlob, "Binary blob");

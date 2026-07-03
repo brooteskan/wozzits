@@ -996,7 +996,11 @@ namespace wz::asset {
 
             const InputPort& port =
                 compiler->input_ports[edge.to_input_port];
-            if (from->node.type != port.type) {
+            // An Any-typed port (issue #228) accepts every provider type;
+            // kind-vs-source validation moves to that port's compile step.
+            if (port.type != AssetType::Any
+                && from->node.type != port.type)
+            {
                 add_validation_message(
                     draft,
                     AssetGraphDraftValidationCode::TypeMismatch,

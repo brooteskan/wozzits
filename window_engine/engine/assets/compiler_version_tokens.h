@@ -78,8 +78,15 @@ namespace wz::engine::assets {
     // RenderProgramData (previously dropped) and accepts an optional render
     // binding layout dependency that defines the whole SRG. Bump invalidates
     // caches compiled without samplers/layout consumption.
-    inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 3;
+    // Bumped 3 -> 4 (issue #228): RenderProgramData now carries the wired
+    // layout's constants contract (has_authored_binding_layout, constants_head,
+    // constant_fields) that the custom renderable compiler validates against.
+    inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 4;
     inline constexpr uint64_t kRenderBindingLayoutCompilerVersion = 1;
+    // Custom renderable recipe 0x70A (issue #228): semantic resource bindings
+    // + declared-constant values validated against the wired program's
+    // authored binding layout.
+    inline constexpr uint64_t kCustomRenderableCompilerVersion = 1;
     inline constexpr uint64_t kComputePipelineCompilerVersion = 1;
     // v2: added subsample_step + RHI residency publishing (#208).
     // v3: XZ + height normalization fixes (unit [0,1], raw height, texel-index

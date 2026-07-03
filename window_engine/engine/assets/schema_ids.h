@@ -629,6 +629,18 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000709ull
     };
 
+    // Custom renderable recipe (issue #228): a pull mesh + a custom render
+    // program whose SRG comes from an authored binding layout (#227), plus
+    // semantic resource bindings (binding0..7 ports, Any-typed — the source
+    // kind is validated at compile time against the layout row) and authored
+    // values for the layout's declared constant tail fields. Compiles to an
+    // RhiRenderableRecipe with custom=true that RhiSceneRenderer binds
+    // GENERICALLY (walks recipe.bindings, packs head + tail constants) — zero
+    // per-look C++. Produces kAssetTypeRenderable output.
+    inline constexpr wz::asset::SchemaID kCustomRenderableSchema{
+        0xF11E'CA55'E7'00070Aull
+    };
+
     inline constexpr wz::asset::SchemaID kScalarFieldDebugRenderableSchema{
     0xF11E'CA55'E7'000702ull
     };

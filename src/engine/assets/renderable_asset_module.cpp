@@ -408,7 +408,8 @@ namespace wz::engine::assets
             return schema == kRhiPullMeshRenderableSchema
                 || schema == kGpuSparseMeshRenderableSchema
                 || schema == kClipmapLandscapeRenderableSchema
-                || schema == kGaussianSplatCloudRhiRenderableSchema;
+                || schema == kGaussianSplatCloudRhiRenderableSchema
+                || schema == kCustomRenderableSchema;
         }
     }
 

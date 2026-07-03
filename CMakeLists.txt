@@ -844,6 +844,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_renderable renderable_field_splat_tests)
     rs_add_test_group(asset_renderable renderable_terrain_tests)
     rs_add_test_group(asset_renderable renderable_clipmap_landscape_tests)
+    rs_add_test_group(asset_renderable custom_renderable_tests)
 
     rs_add_test_group(asset_render_program render_program_asset_module)
     rs_add_test_group(asset_render_program render_binding_layout_program_tests)
