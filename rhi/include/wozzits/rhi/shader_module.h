@@ -31,6 +31,10 @@ namespace wz::rhi
 
     struct ProgramBytecode
     {
+        // These spans view registry-owned storage; they are valid only until
+        // the next mutating registry call (register_program / release / clear),
+        // which may reallocate that storage. Callers must consume them
+        // immediately (PSO creation) and never retain them across a mutation.
         std::span<const uint8_t> vertex;
         std::span<const uint8_t> pixel;
     };
@@ -47,7 +51,15 @@ namespace wz::rhi
 
         const ShaderModuleDesc* vertex = modules.get(vertex_tag);
         const ShaderModuleDesc* pixel = modules.get(pixel_tag);
+        // The name resolving is not enough: a module registered under the
+        // vertex name but carrying a pixel (or All) stage would resolve here
+        // and only fail far downstream at PSO creation. Require the concrete
+        // stage so the mismatch is a checkable null at the seam. (ShaderStage::
+        // All is a binding-visibility concept, not a module stage, and does not
+        // satisfy this check.) Mirrors resolve_compute_bytecode below.
         if (!vertex || !pixel
+            || vertex->stage != ShaderStage::Vertex
+            || pixel->stage != ShaderStage::Pixel
             || vertex->bytecode.empty()
             || pixel->bytecode.empty())
         {
