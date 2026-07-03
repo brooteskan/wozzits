@@ -1,6 +1,7 @@
 #include <cognition/agent_cognition.h>
 
 #include <cognition/conditional_policy.h>
+#include <cognition/group_topology.h>
 #include <cognition/learning.h>
 #include <cognition/ttn.h>
 
@@ -51,15 +52,21 @@ namespace wz::engine::cognition
         // Build the backend the spec selects (chi == 0 exact / chi >= 2 TTN; chi ==
         // 1 mean-field is rejected). A FRESH register in equal superposition, which
         // is why rearm can reuse this to genuinely re-open a collapsed decision.
+        //
+        // The bonds an Agent stores are RAW (as authored); this is the single choke
+        // point that re-canonicalizes them on every build, so whichever backend we
+        // dispatch to always receives clean girth >= 3 input.
         std::optional<Coordination> build_coordination(const AgentSpec& spec)
         {
-            if (spec.chi == 0) {
-                return build_exact(spec);
-            }
-            if (spec.chi >= 2) {
-                return build_ttn(spec);
-            }
-            return std::nullopt;  // chi == 1 (mean-field goals) not wired yet
+            // Canonicalize to girth>=3 (drop self-bonds/zeros, sum parallels) so every
+            // backend gets clean input; the loopy-tier BP math will require it, and it
+            // is a no-op for already-clean specs. Idempotent, so rearm/reshape are safe.
+            CanonicalBonds canon_bonds = canonicalize_bonds(spec.agent_count, spec.bonds);
+            AgentSpec canon = spec;
+            canon.bonds = std::move(canon_bonds.bonds);
+            if (canon.chi == 0) return build_exact(canon);
+            if (canon.chi >= 2) return build_ttn(canon);
+            return std::nullopt;  // chi == 1 (mean-field) not wired yet
         }
     }
 
