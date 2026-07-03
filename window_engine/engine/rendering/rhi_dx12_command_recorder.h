@@ -34,7 +34,7 @@ namespace wz::engine::rendering
         RhiDx12CommandRecorder(
             wz::gpu::Device& device,
             RhiDx12PipelineCache& pipelines,
-            const wz::rhi::GpuResourceRegistry& resources,
+            wz::rhi::GpuResourceRegistry& resources,
             const EngineGpuBackend& backend);
         ~RhiDx12CommandRecorder() override;
 
@@ -68,6 +68,15 @@ namespace wz::engine::rendering
         // release_cached_descriptor_tables(); the rebind test asserts on this.
         [[nodiscard]] std::size_t cached_descriptor_table_count() const;
 
+        // Set the GPU timeline value the frame being recorded will be signaled
+        // with — every rhi resource this recorder resolves is touched with it
+        // so the registry keeps the resource resident until the GPU has passed
+        // the frame. The renderer sets this once per frame, before recording.
+        void set_frame_timeline(uint64_t value) noexcept
+        {
+            frame_timeline_ = value;
+        }
+
 #ifdef WZ_ENABLE_TESTING
         void set_current_for_testing(
             const RhiDx12RealizedPipeline* pipeline) noexcept
@@ -90,10 +99,15 @@ namespace wz::engine::rendering
 
         wz::gpu::Device* device_ = nullptr;
         RhiDx12PipelineCache* pipelines_ = nullptr;
-        const wz::rhi::GpuResourceRegistry* resources_ = nullptr;
+        wz::rhi::GpuResourceRegistry* resources_ = nullptr;
         const EngineGpuBackend* backend_ = nullptr;
         const RhiDx12RealizedPipeline* current_ = nullptr;
         bool ready_ = true;
+        // The value end_frame will signal for the frame being recorded; the
+        // renderer sets it once per frame via set_frame_timeline. Resources
+        // resolved by this recorder are touched with it (see bind_resource_group
+        // and barrier) so precise reclamation keeps them until the GPU passes it.
+        uint64_t frame_timeline_ = 0;
         std::unique_ptr<DescriptorTableCache> descriptor_tables_;
     };
 }

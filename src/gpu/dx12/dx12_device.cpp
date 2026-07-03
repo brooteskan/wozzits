@@ -619,7 +619,15 @@ namespace wz::gpu::dx12
                 assert(res == WAIT_OBJECT_0);
             }
 
-            // advance fence for next use
+            // Advance the fence so every value is signaled exactly ONCE. Without
+            // this, wait_for_gpu would re-signal the same value the next
+            // end_frame is about to use, and end_frame's wait would then
+            // short-circuit (GetCompletedValue() already >= that value) —
+            // transiently allowing a frame in flight under a value that no
+            // longer identifies a single submission. The rhi registry's precise
+            // reclamation depends on each timeline value naming one submission:
+            // a resource touched with V must not be judged complete by a stray
+            // second signal of V while a later, unwaited V-frame still uses it.
             impl->fence_value++;
         }
 
@@ -634,6 +642,33 @@ namespace wz::gpu::dx12
             return;
 
         wait_for_gpu(impl);
+    }
+
+    uint64_t frame_timeline_value(Device& d)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        if (!impl || dx12_device_lost(*impl))
+            return 0;
+        // The value end_frame will Signal for the frame currently being
+        // recorded. Every submission signals this value exactly once (see
+        // wait_for_gpu), so it uniquely identifies this frame's GPU work — the
+        // value to touch resources with for precise reclamation.
+        return impl->fence_value;
+    }
+
+    uint64_t completed_timeline_value(Device& d)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        if (!impl || !impl->fence)
+            return 0;
+        // On a removed device GetCompletedValue returns UINT64_MAX, which would
+        // signal "every timeline value is complete" and make collect reclaim
+        // resources the (dead) GPU may still notionally reference. Device-loss
+        // cleanup is owned by GpuResourceRegistry::on_device_lost, so report 0
+        // here instead of letting the sentinel leak into collect().
+        if (dx12_device_lost(*impl))
+            return 0;
+        return impl->fence->GetCompletedValue();
     }
 
     void destroy_device(Device& d)

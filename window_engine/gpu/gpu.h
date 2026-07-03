@@ -46,4 +46,22 @@ namespace wz::gpu
 	bool resize(Device& device, int w, int h); // This MUST recreate swapchain safely.
 	void wait_idle(Device& device);
 
+	// GPU fence timeline accessors, for precise deferred release (the rhi
+	// GpuResourceRegistry touch/collect mechanism).
+
+	// The fence value the CURRENT frame's end_frame will signal — i.e. the
+	// value to tag (touch) any resource this frame references with, so it is
+	// not reclaimed until the GPU has passed this frame. Returns 0 for a null
+	// impl or a lost device.
+	uint64_t frame_timeline_value(Device& device);
+
+	// The GPU's completed fence value (GetCompletedValue) — pass to
+	// GpuResourceRegistry::collect to reclaim everything the GPU is done with.
+	// Returns 0 for a null impl/fence AND for a LOST device: on a removed
+	// device GetCompletedValue returns UINT64_MAX, which would make collect
+	// reclaim every pending resource prematurely; device-loss cleanup is owned
+	// separately by GpuResourceRegistry::on_device_lost, so this reports 0 (=
+	// "nothing completed") instead.
+	uint64_t completed_timeline_value(Device& device);
+
 }

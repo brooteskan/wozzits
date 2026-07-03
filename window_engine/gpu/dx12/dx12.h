@@ -29,6 +29,9 @@ namespace wz::gpu::dx12
     bool resize(wz::gpu::Device& device, int w, int h);
     void wait_idle(wz::gpu::Device& device);
 
+    uint64_t frame_timeline_value(wz::gpu::Device& device);
+    uint64_t completed_timeline_value(wz::gpu::Device& device);
+
     bool begin_frame(wz::gpu::Device& device);
     void clear(wz::gpu::Device& device, float r, float g, float b, float a);
 

@@ -436,7 +436,14 @@ int main(int argc, char** argv)
                 break;
             }
             wz::gpu::clear(device, 0.10f, 0.10f, 0.12f, 1.0f);
-            frame_graph.execute(compiled, gpu.resources, recorder);
+            // This example drives frames through the engine device loop, so the
+            // honest timeline value is the one the upcoming end_frame will
+            // signal — the value this recorded work is submitted under.
+            frame_graph.execute(
+                compiled,
+                gpu.resources,
+                recorder,
+                wz::gpu::frame_timeline_value(device));
             if (!recorder.ready()) {
                 std::cerr << "DX12 RHI recorder rejected the draw.\n";
                 break;

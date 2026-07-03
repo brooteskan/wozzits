@@ -51,6 +51,16 @@ namespace wz::gpu
         wz::gpu::dx12::wait_idle(d);
     }
 
+    uint64_t frame_timeline_value(Device& d)
+    {
+        return wz::gpu::dx12::frame_timeline_value(d);
+    }
+
+    uint64_t completed_timeline_value(Device& d)
+    {
+        return wz::gpu::dx12::completed_timeline_value(d);
+    }
+
     bool begin_frame(Device& d)
     {
         return wz::gpu::dx12::begin_frame(d);

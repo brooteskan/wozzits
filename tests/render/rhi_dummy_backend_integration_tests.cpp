@@ -308,7 +308,9 @@ TEST(RhiDummyBackendIntegration, DrivesResourceProgramSrgPacketAndFrameGraph)
         wz::rhi::ResourceState::ShaderRead);
 
     RecordingCommandRecorder recorder;
-    frame_graph.execute(compiled, resources, recorder);
+    // Fake-backend/offline loop: no engine device, so pass an explicit monotonic
+    // frame value (the execute() timeline parameter is now required).
+    frame_graph.execute(compiled, resources, recorder, /*frame_timeline*/ 1);
     ASSERT_EQ(recorder.barriers.size(), 2u);
     EXPECT_TRUE(has_barrier(
         recorder.barriers,

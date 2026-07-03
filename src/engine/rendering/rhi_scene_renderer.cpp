@@ -116,14 +116,13 @@ namespace wz::engine::rendering
             }
             // No collect() here. This runs mid-frame, with no wait_idle, while
             // other renderables may still reference resources the GPU has not
-            // finished. collect(UINT64_MAX) ignores the last-use timeline and
-            // would destroy them immediately (the registry's timeline is not
-            // wired — nothing calls touch() — so even collect(current) would be
-            // unsafe). Worse, pull buffers are deduped by identity without
+            // finished — and pull buffers are deduped by identity without
             // refcounting, so the handle released here may be shared with a
-            // live renderable. release() alone is timeline-safe: it drops these
-            // from identity lookup so a fresh realize rebuilds, and the buffers
-            // are reclaimed by on_graph_changed's wait_idle-guarded collect.
+            // live renderable. release() alone is the right move: it only drops
+            // these from identity lookup (so a fresh realize rebuilds) and marks
+            // them pending. Now that the timeline is wired, render_scene's
+            // per-frame collect reclaims them once the GPU passes their last
+            // touch — they no longer linger until the next graph swap.
         }
 
         const wz::asset::AssetSystem::RegistrationEntry* registration_entry_for(
@@ -677,11 +676,16 @@ namespace wz::engine::rendering
             return;
         }
 
-        // The outgoing graph's pull buffers may still be referenced by frames
-        // the GPU has not finished. The registry's deferred release reclaims on
-        // a GPU timeline value, but that timeline is not yet wired (nothing
-        // calls touch()), so flush here to guarantee the GPU is done before we
-        // collect — then release + collect is unambiguously safe.
+        // Flush the GPU before swapping. The registry's timeline IS wired now
+        // (render_scene touches every resolved resource and collects each
+        // frame), so the pull-buffer releases below no longer NEED this stall to
+        // be reclaimed safely. It stays for the caches that are NOT
+        // timeline-tracked and are torn down on this same swap: the PSO cache
+        // (cache_.clear()) and the recorder's descriptor-table cache
+        // (release_cached_descriptor_tables()) — both may be referenced by
+        // in-flight command lists, so the GPU must be idle before they are
+        // released. With the GPU idle, the release + collect below is trivially
+        // safe as well.
         wz::gpu::wait_idle(gpu_.device);
 
         for (auto& [key, renderable] : realized_renderables_) {
@@ -701,10 +705,12 @@ namespace wz::engine::rendering
             }
         }
 
-        // The GPU is idle after wait_idle, so every pending resource is past its
-        // last-use timeline: reclaim them all now (UINT64_MAX = "all timelines
-        // completed"). Without this the released buffers would linger resident.
-        gpu_.resources.collect(UINT64_MAX);
+        // Reclaim the just-released buffers. The GPU is idle (wait_idle above),
+        // so its real completed value already covers every pending resource's
+        // last-use timeline — pass that honest value rather than the UINT64_MAX
+        // sledgehammer. Without this the released buffers would linger resident.
+        gpu_.resources.collect(
+            wz::gpu::completed_timeline_value(gpu_.device));
 
         // Release the realized PSOs + root signatures. These are keyed by rhi
         // program Tag; leaving them resident leaks device objects across swaps,
@@ -1175,6 +1181,15 @@ namespace wz::engine::rendering
         if (!cmd) {
             return false;
         }
+
+        // Per-frame precise reclamation: drain any pending release whose last
+        // touch the GPU has now passed, then tag this frame's timeline onto the
+        // recorder so every resource it resolves is kept resident until this
+        // frame completes. Cheap no-op when nothing is pending.
+        gpu_.resources.collect(
+            wz::gpu::completed_timeline_value(gpu_.device));
+        recorder_.set_frame_timeline(
+            wz::gpu::frame_timeline_value(gpu_.device));
 
         D3D12_CPU_DESCRIPTOR_HANDLE rtv =
             wz::gpu::dx12::internal::get_current_rtv(gpu_.device);

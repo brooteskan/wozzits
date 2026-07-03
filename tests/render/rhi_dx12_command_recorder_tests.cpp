@@ -279,3 +279,144 @@ TEST_F(RecorderDeviceFixture, TextureSrvWithBufferHandleFailsBuild)
     gpu.resources.release(buffer_handle);
     gpu.resources.collect(UINT64_MAX);
 }
+
+namespace
+{
+    // Build a fake realized pipeline exposing a single-descriptor table at the
+    // given slot, so bind_resource_group reaches its resource-resolution loop
+    // (where the timeline touch lives). The root-signature/PSO pointers are
+    // non-null sentinels — the SetRootDescriptorTable call they'd drive is not
+    // what these tests assert on; the touch fires before it.
+    wz::engine::rendering::RhiDx12RealizedPipeline fake_single_srv_pipeline(
+        uint32_t slot)
+    {
+        wz::engine::rendering::RhiDx12RealizedPipeline pipeline;
+        pipeline.root_signature = reinterpret_cast<ID3D12RootSignature*>(1);
+        pipeline.pipeline_state = reinterpret_cast<ID3D12PipelineState*>(1);
+        pipeline.layout.descriptor_tables.push_back({
+            /*binding_slot*/ slot,
+            /*root_parameter_index*/ 0,
+            /*descriptor_count*/ 1,
+            { wz::rhi::DescriptorKind::StructuredBufferSRV } });
+        return pipeline;
+    }
+
+    // A one-descriptor SRG referencing `handle` at `slot`, matching the fake
+    // pipeline above so bind_resource_group resolves (and touches) it.
+    wz::rhi::ShaderResourceGroup single_srv_srg(
+        wz::rhi::Tag semantic,
+        uint32_t slot,
+        wz::rhi::GpuResourceHandle handle)
+    {
+        wz::rhi::ShaderResourceGroupLayout layout;
+        layout.binding_slot = slot;
+        layout.descriptors.push_back(wz::rhi::DescriptorBinding{
+            wz::rhi::DescriptorKind::StructuredBufferSRV,
+            wz::rhi::ShaderStage::Vertex,
+            semantic,
+            /*shader_register*/ 0,
+            /*register_space*/ 2,
+            /*descriptor_count*/ 1 });
+        wz::rhi::ShaderResourceGroup srg(layout);
+        srg.set(0u, handle);
+        return srg;
+    }
+}
+
+// ── The core lock: bind touches the resolved handle with the frame timeline, so
+// precise reclamation keeps it resident until the GPU passes that frame ──────
+//
+// A resource referenced by a bound SRG is tagged with the frame's timeline
+// value. After release(), collect(V-1) must NOT reclaim it (the GPU has not
+// passed the frame that referenced it); collect(V) must. This is the exact
+// guarantee the whole timeline wiring exists to provide.
+TEST_F(RecorderDeviceFixture, BindTouchesResourceForPreciseReclamation)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    wz::engine::rendering::RhiDx12PipelineCache pipelines(
+        device, gpu.programs, gpu.compute_programs, gpu.shaders);
+    wz::engine::rendering::RhiDx12CommandRecorder recorder(
+        device, pipelines, gpu.resources, gpu.backend);
+
+    const wz::rhi::GpuResourceHandle handle = gpu.resources.acquire(
+        wz::rhi::GpuResourceDesc::buffer(
+            /*size*/ 256, /*stride*/ 16, wz::rhi::ResourceUsage_Sampled));
+    ASSERT_TRUE(handle.valid());
+
+    wz::rhi::TagRegistry<8> tags;
+    const wz::rhi::Tag positions = tags.acquire("positions");
+    ASSERT_TRUE(positions.valid());
+
+    const wz::engine::rendering::RhiDx12RealizedPipeline pipeline =
+        fake_single_srv_pipeline(/*slot*/ 2);
+    recorder.set_current_for_testing(&pipeline);
+
+    constexpr uint64_t kFrame = 100;
+    recorder.set_frame_timeline(kFrame);
+
+    wz::rhi::ShaderResourceGroup srg =
+        single_srv_srg(positions, /*slot*/ 2, handle);
+    recorder.bind_resource_group(2, srg);
+
+    // The bind touched the handle with kFrame. Release it, then verify the
+    // registry reclaims it exactly at kFrame — not before.
+    gpu.resources.release(handle);
+
+    gpu.resources.collect(/*completed*/ kFrame - 1);
+    EXPECT_NE(gpu.resources.get(handle), nullptr)
+        << "resource reclaimed before the GPU passed the frame that bound it";
+
+    gpu.resources.collect(/*completed*/ kFrame);
+    EXPECT_EQ(gpu.resources.get(handle), nullptr)
+        << "resource not reclaimed after the GPU passed its last-use frame";
+}
+
+// Re-binding at a later frame must refresh last_use: a resource bound at V1 then
+// re-bound at V2 (> V1) survives collect(V1) — a stale first touch must not let
+// it be reclaimed while a later frame still references it.
+TEST_F(RecorderDeviceFixture, RebindRefreshesLastUseToLatestFrame)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    wz::engine::rendering::RhiDx12PipelineCache pipelines(
+        device, gpu.programs, gpu.compute_programs, gpu.shaders);
+    wz::engine::rendering::RhiDx12CommandRecorder recorder(
+        device, pipelines, gpu.resources, gpu.backend);
+
+    const wz::rhi::GpuResourceHandle handle = gpu.resources.acquire(
+        wz::rhi::GpuResourceDesc::buffer(
+            256, 16, wz::rhi::ResourceUsage_Sampled));
+    ASSERT_TRUE(handle.valid());
+
+    wz::rhi::TagRegistry<8> tags;
+    const wz::rhi::Tag positions = tags.acquire("positions");
+    ASSERT_TRUE(positions.valid());
+
+    const wz::engine::rendering::RhiDx12RealizedPipeline pipeline =
+        fake_single_srv_pipeline(/*slot*/ 2);
+    recorder.set_current_for_testing(&pipeline);
+
+    constexpr uint64_t kFrame1 = 10;
+    constexpr uint64_t kFrame2 = 20;
+
+    wz::rhi::ShaderResourceGroup srg =
+        single_srv_srg(positions, /*slot*/ 2, handle);
+
+    // Frame 1 bind, then a later Frame 2 bind: the second touch must win.
+    recorder.set_frame_timeline(kFrame1);
+    recorder.bind_resource_group(2, srg);
+    recorder.set_frame_timeline(kFrame2);
+    recorder.bind_resource_group(2, srg);
+
+    gpu.resources.release(handle);
+
+    // collect at frame 1: the LATEST touch (frame 2) has not been passed, so the
+    // resource must stay — proving the re-bind refreshed last_use to kFrame2.
+    gpu.resources.collect(/*completed*/ kFrame1);
+    EXPECT_NE(gpu.resources.get(handle), nullptr)
+        << "resource reclaimed at the first touch; re-bind did not refresh "
+           "last_use to the latest frame";
+
+    gpu.resources.collect(/*completed*/ kFrame2);
+    EXPECT_EQ(gpu.resources.get(handle), nullptr)
+        << "resource not reclaimed after the GPU passed the latest frame";
+}

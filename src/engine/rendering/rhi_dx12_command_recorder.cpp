@@ -81,7 +81,7 @@ namespace wz::engine::rendering
     RhiDx12CommandRecorder::RhiDx12CommandRecorder(
         wz::gpu::Device& device,
         RhiDx12PipelineCache& pipelines,
-        const wz::rhi::GpuResourceRegistry& resources,
+        wz::rhi::GpuResourceRegistry& resources,
         const EngineGpuBackend& backend)
         : device_(&device)
         , pipelines_(&pipelines)
@@ -123,6 +123,13 @@ namespace wz::engine::rendering
     {
         if (!device_ || !resource.valid()) {
             return;
+        }
+
+        // This frame's command list will reference the resource; record the
+        // frame's timeline so the registry keeps it resident until the GPU has
+        // passed this frame (a no-op for a stale handle).
+        if (resources_) {
+            resources_->touch(resource, frame_timeline_);
         }
 
         const wz::gpu::GPUHandle gpu = gpu_handle_for(resource);
@@ -266,6 +273,15 @@ namespace wz::engine::rendering
         std::vector<wz::gpu::GPUHandle> resources;
         resources.reserve(group.resource_count());
         for (wz::rhi::GpuResourceHandle handle : group.resources()) {
+            // Touch every handle in the group BEFORE the descriptor-table cache
+            // lookup below: this frame's command list will reference them, so
+            // the registry must keep them resident until the GPU has passed the
+            // frame. It runs on the resolution loop so a cache HIT (a long-lived
+            // cached table) still refreshes last_use — otherwise the table's
+            // resources would be collected while it is still bound.
+            if (resources_) {
+                resources_->touch(handle, frame_timeline_);
+            }
             const wz::gpu::GPUHandle gpu = gpu_handle_for(handle);
             if (!gpu.valid()) {
                 ready_ = false;
