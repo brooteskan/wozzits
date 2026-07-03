@@ -537,7 +537,14 @@ namespace wz::engine::behavior
 
         struct TerrainConstraintSupport
         {
+            // Two footprints: `center` drives height/position (the sample under
+            // the actor pivot), `highest` is the ring-max height fallback used
+            // only when the center sample misses (actor straddling a terrain
+            // edge). The averaged ring normal (normal_sum / sample_count) drives
+            // orientation exactly as before.
             bool found = false;
+            bool center_found = false;
+            wz::engine::collision::CollisionSurfaceSample center{};
             wz::engine::collision::CollisionSurfaceSample highest{};
             wz::math::Vec3 normal_sum{};
             uint32_t sample_count = 0u;
@@ -690,7 +697,9 @@ namespace wz::engine::behavior
                 collision,
                 actor_world_position.x,
                 actor_world_position.z);
-            if (center.found) {
+            if (center.found && center.sample.hit) {
+                support.center = center.sample;
+                support.center_found = true;
                 add_support_sample(support, center.sample);
             }
 
@@ -1067,9 +1076,20 @@ namespace wz::engine::behavior
                 support_normal = support.normal_sum;
             }
 
+            // Height comes from the CENTER sample (the ground under the actor
+            // pivot); the footprint ring only feeds the averaged orientation
+            // normal above. On convex terrain a ring sample can catch a peak
+            // higher than the ground under the actor, so a ring-max height would
+            // levitate the actor. Fall back to the ring-max height only when the
+            // center sample misses (actor straddling the terrain edge), which
+            // preserves the existing edge-riding behavior.
+            const float support_height = support.center_found
+                ? support.center.position.y
+                : support.highest.position.y;
+
             const wz::math::Vec3 constrained_world_position{
                 .x = actor_world_position.x,
-                .y = support.highest.position.y + motion.terrain_ride_height,
+                .y = support_height + motion.terrain_ride_height,
                 .z = actor_world_position.z,
             };
             bool changed = false;

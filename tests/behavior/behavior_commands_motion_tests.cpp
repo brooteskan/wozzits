@@ -1093,7 +1093,13 @@ TEST(BehaviorCommands, TerrainConstraintUsesNearestMeshSurfaceOnExactMiss)
     EXPECT_FLOAT_EQ(actor_node.world.m[14], 1.45f);
 }
 
-TEST(BehaviorCommands, TerrainConstraintFootprintUsesHighestSupportSample)
+// Two-footprint rule: on convex terrain (a summit) the actor's HEIGHT comes from
+// the CENTER sample (the ground under its pivot), NOT the ring max. The actor
+// stands next to a raised patch whose rim a footprint ring sample lands on; the
+// ground under the actor's center is the low surface. Old behavior kept the
+// highest support sample (the summit) and levitated the actor; the new rule
+// plants it on the ground under its center.
+TEST(BehaviorCommands, TerrainConstraintFootprintHeightFromCenterNotSummit)
 {
     auto asset = terrain_constraint_scene(
         true,
@@ -1120,6 +1126,9 @@ TEST(BehaviorCommands, TerrainConstraintFootprintUsesHighestSupportSample)
     const RuntimeEntityId high_patch_id =
         result.instance.authored_to_runtime["high_patch"];
     const auto low_surface = flat_height_field_surface(1.0f);
+    // Raised patch covering x,z in [2.75, 3.25]: the +X ring sample at (3, 3)
+    // lands on it (a summit), but the actor's center at (2, 3) sits on the low
+    // surface only.
     const auto high_surface = flat_height_field_surface(
         5.0f,
         0.5f,
@@ -1148,9 +1157,196 @@ TEST(BehaviorCommands, TerrainConstraintFootprintUsesHighestSupportSample)
     const auto& actor_node = wz::core::graph::node_data(
         result.instance.storage.polytree,
         actor);
+    // XZ preserved; height is the CENTER (low) surface, not the ring's summit.
     EXPECT_FLOAT_EQ(actor_node.world.m[12], 2.0f);
-    EXPECT_FLOAT_EQ(actor_node.world.m[13], 5.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 1.0f);
     EXPECT_FLOAT_EQ(actor_node.world.m[14], 3.0f);
+}
+
+// The footprint ring still feeds the averaged orientation normal even though it
+// no longer influences height. A sloped patch on one side of the actor tilts the
+// averaged normal off vertical; the actor's HEIGHT stays on the flat center.
+TEST(BehaviorCommands, TerrainConstraintFootprintRingFeedsOrientationNormal)
+{
+    auto asset = terrain_constraint_scene(
+        true,
+        true,
+        0.0f,
+        2.0f,
+        12.0f,
+        3.0f);
+    asset.nodes[1].motion->terrain_footprint_radius = 1.0f;
+    asset.nodes[1].motion->terrain_align_to_surface = true;
+    asset.nodes[1].motion->terrain_alignment_strength = 1.0f;
+    wz::engine::assets::SceneNodeAsset ramp_patch{};
+    ramp_patch.id = "ramp_patch";
+    ramp_patch.terrain = wz::engine::assets::SceneTerrainAsset{
+        .constrain_movement = true,
+    };
+    asset.nodes.push_back(std::move(ramp_patch));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const RuntimeEntityId ramp_patch_id =
+        result.instance.authored_to_runtime["ramp_patch"];
+    const auto flat_surface = flat_height_field_surface(1.0f);
+    // A sloped mesh patch shifted by (+2.5, +2) so its grid spans x in [2.5, 4.5]
+    // and z in [2, 4]: the actor center at (2, 3) is off it (x < 2.5), while the
+    // +X ring sample at (3, 3) lands inside the triangle and contributes a tilted
+    // normal to the averaged orientation.
+    constexpr float kRampShiftX = 2.5f;
+    constexpr float kRampShiftZ = 2.0f;
+    auto ramp_surface = sloped_mesh_surface();
+    for (auto& point : ramp_surface.points) {
+        point.position[0] += kRampShiftX;
+        point.position[2] += kRampShiftZ;
+    }
+    ramp_surface.bounds_min[0] += kRampShiftX;
+    ramp_surface.bounds_max[0] += kRampShiftX;
+    ramp_surface.bounds_min[2] += kRampShiftZ;
+    ramp_surface.bounds_max[2] += kRampShiftZ;
+    for (auto& tb : ramp_surface.triangle_bounds) {
+        tb.min[0] += kRampShiftX;
+        tb.max[0] += kRampShiftX;
+        tb.min[2] += kRampShiftZ;
+        tb.max[2] += kRampShiftZ;
+    }
+    ramp_surface.surface_grid.origin_x += kRampShiftX;
+    ramp_surface.surface_grid.origin_z += kRampShiftZ;
+    ramp_surface.surface_grid.cell_bounds = ramp_surface.triangle_bounds;
+    ramp_surface.surface_grid.cell_bounds.resize(4u);
+
+    wz::engine::collision::CollisionFrameStorage collision{};
+    collision.world.push_back(wz::engine::collision::CollisionWorldEntry{
+        .entity = terrain,
+        .world_from_local = wz::math::Mat4::identity(),
+        .enabled = true,
+        .resolved = &flat_surface,
+    });
+    collision.world.push_back(wz::engine::collision::CollisionWorldEntry{
+        .entity = ramp_patch_id,
+        .world_from_local = wz::math::Mat4::identity(),
+        .enabled = true,
+        .resolved = &ramp_surface,
+    });
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
+        1u);
+
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    // Height still from the flat center.
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 1.0f);
+    // The ring's ramp normal pulled the averaged up-axis off vertical.
+    wz::math::Transform world_trs{};
+    ASSERT_TRUE(wz::math::decompose_trs(actor_node.world, world_trs));
+    const wz::math::Vec3 up =
+        wz::math::quat_axis_y(wz::math::normalize(world_trs.rotation));
+    EXPECT_LT(up.y, 0.999f)
+        << "footprint ring no longer feeds the averaged orientation normal";
+    EXPECT_GT(up.y, 0.5f);
+}
+
+// Edge fallback: when the CENTER sample misses the terrain entirely (actor
+// straddling a terrain edge) the height falls back to the highest ring sample so
+// the actor rides the ring instead of being dropped. We use a MESH surface,
+// which -- unlike a height field -- does NOT clamp an off-terrain probe to its
+// boundary, so a center probe outside the triangle patch genuinely returns no
+// sample and the ring fallback is exercised. The sparse mesh patch sits at y=5
+// over a grid spanning x,z in [0, 2]; the actor center at (3.5, 0.75) is off the
+// grid, but with footprint radius 3 the -X ring sample at (0.5, 0.75) lands
+// inside the triangle.
+TEST(BehaviorCommands, TerrainConstraintFootprintRidesRingWhenCenterMisses)
+{
+    auto asset = terrain_constraint_scene(
+        true,
+        true,
+        0.0f,
+        3.5f,
+        12.0f,
+        0.75f);
+    asset.nodes[1].motion->terrain_footprint_radius = 3.0f;
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const auto surface = sparse_mesh_surface();  // flat patch at y=5
+    const auto collision = collision_with_surface(terrain, surface);
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
+        1u);
+
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    // The center missed; the actor rides the ring's surface height (5.0) rather
+    // than being dropped. XZ is preserved (the constraint only drives Y).
+    EXPECT_FLOAT_EQ(actor_node.world.m[12], 3.5f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[13], 5.0f);
+    EXPECT_FLOAT_EQ(actor_node.world.m[14], 0.75f);
+}
+
+// Planar-slope invariance: on a single uniform sloped surface, center-only height
+// and averaged-ring orientation coincide with the old semantics because every
+// footprint sample lies on the same plane. Height == the plane height under the
+// actor's center; up-axis == the plane normal.
+TEST(BehaviorCommands, TerrainConstraintFootprintPlanarSlopeInvariant)
+{
+    auto asset = terrain_constraint_scene(
+        true,
+        true,
+        0.0f,
+        0.75f,
+        12.0f,
+        0.75f);
+    asset.nodes[1].motion->terrain_footprint_radius = 0.25f;
+    asset.nodes[1].motion->terrain_align_to_surface = true;
+    asset.nodes[1].motion->terrain_alignment_strength = 1.0f;
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+    const RuntimeEntityId terrain =
+        result.instance.authored_to_runtime["terrain"];
+    const auto surface = sloped_mesh_surface();
+    const auto collision = collision_with_surface(terrain, surface);
+    std::vector<RuntimeEntityId> changed;
+
+    EXPECT_EQ(
+        apply_terrain_constraints(result.instance, collision, 0.0f, &changed),
+        1u);
+
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor);
+    // The sloped patch plane runs from y=4 at x=0.25 to y=6 at x=1.75; at the
+    // actor's center x=0.75 the plane height is 4 + (0.75-0.25)/1.5 * 2 ≈ 4.667.
+    EXPECT_NEAR(actor_node.world.m[13], 4.0f + (0.5f / 1.5f) * 2.0f, 1e-4f);
+    // Up-axis == the plane normal (-0.8, 0.6, 0), identical to the footprint-0
+    // alignment case: a uniform slope makes center-only and averaged-ring agree.
+    wz::math::Transform world_trs{};
+    ASSERT_TRUE(wz::math::decompose_trs(actor_node.world, world_trs));
+    const wz::math::Vec3 up =
+        wz::math::quat_axis_y(wz::math::normalize(world_trs.rotation));
+    EXPECT_NEAR(up.x, -0.8f, 1e-4f);
+    EXPECT_NEAR(up.y, 0.6f, 1e-4f);
+    EXPECT_NEAR(up.z, 0.0f, 1e-4f);
 }
 
 TEST(BehaviorCommands, TerrainConstraintPrefersConstraintSurfaceOverride)

@@ -1,5 +1,7 @@
 #include <engine/assets/scene/scene_json_export.h>
 
+#include <external/json/json_read_helpers.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <iomanip>
@@ -2379,6 +2381,106 @@ namespace wz::engine::assets
             .key = "nodes",
             .value = std::move(nodes_value),
         });
+    }
+
+    void set_scene_document_editor_camera(
+        wz::json::JSONDocument& document,
+        const SceneEditorCameraMetadata& camera)
+    {
+        if (!document.root
+            || document.root->kind != wz::json::JSONValueKind::Object)
+        {
+            return;
+        }
+
+        // The camera record: pose (position + orientation) + fly-cam tuning.
+        auto camera_obj = object_value();
+        add_member(*camera_obj, "position", float_array(camera.position, 3));
+        add_member(*camera_obj, "orientation",
+            float_array(camera.orientation, 4));
+        add_member(*camera_obj, "move_speed", number_value(camera.move_speed));
+        add_member(*camera_obj, "look_speed", number_value(camera.look_speed));
+        add_member(*camera_obj, "boost_multiplier",
+            number_value(camera.boost_multiplier));
+        add_member(*camera_obj, "roll_speed", number_value(camera.roll_speed));
+
+        // Find (or create) the top-level scene_editor_metadata object, then upsert
+        // just its "camera" member -- any sibling metadata (note, ...) is left
+        // intact. The metadata JSONValue is heap-owned via unique_ptr, so the raw
+        // pointer stays valid across the object_members push_back below.
+        JSONValue* metadata = nullptr;
+        for (auto& member : document.root->object_members) {
+            if (member.key == "scene_editor_metadata"
+                && member.value
+                && member.value->kind == wz::json::JSONValueKind::Object)
+            {
+                metadata = member.value.get();
+                break;
+            }
+        }
+        if (!metadata) {
+            auto metadata_obj = object_value();
+            add_member(*metadata_obj, "schema",
+                string_value("wozzits.scene_editor_metadata.v1"));
+            add_member(*metadata_obj, "version", number_value(1));
+            add_member(*metadata_obj, "note",
+                string_value(
+                    "Editor-only metadata; not part of the authored game "
+                    "scene."));
+            metadata = metadata_obj.get();
+            document.root->object_members.push_back(wz::json::JSONMember{
+                .key = "scene_editor_metadata",
+                .value = std::move(metadata_obj),
+            });
+        }
+
+        for (auto& member : metadata->object_members) {
+            if (member.key == "camera") {
+                member.value = std::move(camera_obj);
+                return;
+            }
+        }
+        metadata->object_members.push_back(wz::json::JSONMember{
+            .key = "camera",
+            .value = std::move(camera_obj),
+        });
+    }
+
+    std::optional<SceneEditorCameraMetadata> read_scene_document_editor_camera(
+        const wz::json::JSONDocument& document)
+    {
+        if (!document.root) {
+            return std::nullopt;
+        }
+        const wz::json::JSONValue* metadata =
+            wz::json::find_member(*document.root, "scene_editor_metadata");
+        if (!metadata) {
+            return std::nullopt;
+        }
+        const wz::json::JSONValue* camera =
+            wz::json::find_member(*metadata, "camera");
+        if (!camera || camera->kind != wz::json::JSONValueKind::Object) {
+            return std::nullopt;
+        }
+
+        // A present block fills field-by-field; each missing/malformed field keeps
+        // its default, so a partial block still loads a usable camera.
+        SceneEditorCameraMetadata out;
+        wz::json::read_float3(*camera, "position", out.position);
+        wz::json::read_float4(*camera, "orientation", out.orientation);
+        if (const auto v = wz::json::read_number(*camera, "move_speed")) {
+            out.move_speed = static_cast<float>(*v);
+        }
+        if (const auto v = wz::json::read_number(*camera, "look_speed")) {
+            out.look_speed = static_cast<float>(*v);
+        }
+        if (const auto v = wz::json::read_number(*camera, "boost_multiplier")) {
+            out.boost_multiplier = static_cast<float>(*v);
+        }
+        if (const auto v = wz::json::read_number(*camera, "roll_speed")) {
+            out.roll_speed = static_cast<float>(*v);
+        }
+        return out;
     }
 
 } // namespace wz::engine::assets

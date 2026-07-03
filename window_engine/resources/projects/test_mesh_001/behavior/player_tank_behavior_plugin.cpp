@@ -32,12 +32,12 @@ namespace
         WzGrainProgram p = {};          // zero-init: weights all 0 = silent
         p.weight_count = 4u;            // C, CC, D, F
         p.gain = 0.9f;                  // <-- tweak: engine loudness
-        p.density = 14.0f;              // <-- tweak: grains/sec (slow overlap)
+        p.density = 7.0f * (1.0f + float(rpm));              // <-- tweak: grains/sec (slow overlap)
         p.position = 0.5f;              // middle of the clip
         p.pitch = 1.0f;
-        p.grain_ms = 500.0f;            // <-- tweak: "slow" grain length (ms)
+        p.grain_ms = 300.0f ;            // <-- tweak: "slow" grain length (ms)
         p.position_jitter = 0.05f;      // <-- tweak: playhead wander
-        p.pitch_jitter_semitones = 0.0f;
+        p.pitch_jitter_semitones = 0.1f;
         p.pan_center = 0.0f;
         p.pan_spread = 0.15f;           // <-- tweak: stereo width
         p.window_param = 0.4f;
@@ -60,7 +60,7 @@ namespace
         const float effort = (fabsf(state->left_tread_speed)
                             + fabsf(state->right_tread_speed)) * 0.5f;  // ~0..1
         if (effort < 0.05f) {
-            return 0u;                  // idle deadzone = engine off
+            return 1u;                  // idle deadzone = engine off
         }
         int level = (int)(effort * 4.0f + 0.5f);
         if (level < 1) { level = 1; }

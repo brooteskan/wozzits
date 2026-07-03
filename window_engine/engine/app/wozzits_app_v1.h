@@ -907,6 +907,13 @@ namespace wz::app
         wz::fs::Path  scene_source_path_{};
         bool          scene_dirty_ = false;
 
+        // Editor viewport free-fly camera dirty flag: set when simulation_tick
+        // moves camera_ in the edit viewport (never in standalone play). Its pose
+        // is unsaved state INDEPENDENT of scene_dirty_ (moving the camera is not a
+        // scene edit), so save_scene persists scene_editor_metadata.camera when
+        // this is set even with no authored change. Cleared on load / save.
+        bool          editor_camera_dirty_ = false;
+
         // The asset-graph + behavior-module paths the last load_scene used, so
         // open_scene can swap the WORKING SCENE (e.g. to a scenelet for in-editor
         // prefab editing) while reusing the same project asset graph + modules.

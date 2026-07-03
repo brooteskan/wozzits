@@ -41,6 +41,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -567,6 +568,52 @@ namespace wz::app
         // One-shot: in play mode, open the device and auto-play scene audio.
         start_scene_audio();
 
+        // Editor viewport only (standalone play uses the authored scene camera):
+        // seed the free-fly camera from the scene file's editor metadata so the
+        // project reopens looking from where it was left. The metadata is read
+        // straight from the raw scene file -- it is intentionally NOT part of the
+        // SceneAssetData game-scene model -- and an absent/partial block leaves the
+        // camera at its current pose (its default on first load).
+        if (!prefer_scene_camera_) {
+            const wz::fs::Path resource_root =
+                ctx_.assets ? ctx_.assets->resource_root() : wz::fs::Path{};
+            const wz::fs::Path scene_file =
+                wz::fs::is_absolute(desc.scene) || resource_root.empty()
+                    ? desc.scene
+                    : wz::fs::join(resource_root, desc.scene);
+            std::ifstream file(scene_file, std::ios::binary);
+            if (file) {
+                const std::string text(
+                    (std::istreambuf_iterator<char>(file)),
+                    std::istreambuf_iterator<char>());
+                const wz::json::JSONParseResult parsed =
+                    wz::json::parse_json_string(text);
+                if (parsed.ok && parsed.document.root) {
+                    if (const std::optional<
+                            wz::engine::assets::SceneEditorCameraMetadata>
+                            meta =
+                                wz::engine::assets::
+                                    read_scene_document_editor_camera(
+                                        parsed.document))
+                    {
+                        camera_.x = meta->position[0];
+                        camera_.y = meta->position[1];
+                        camera_.z = meta->position[2];
+                        camera_.orientation = { meta->orientation[0],
+                            meta->orientation[1], meta->orientation[2],
+                            meta->orientation[3] };
+                        camera_.move_speed       = meta->move_speed;
+                        camera_.look_speed       = meta->look_speed;
+                        camera_.boost_multiplier = meta->boost_multiplier;
+                        camera_.roll_speed       = meta->roll_speed;
+                        ctx_.logger.info(
+                            "load_scene: restored editor viewport camera");
+                    }
+                }
+            }
+        }
+        editor_camera_dirty_ = false;
+
         return graph_ok && scene_resolve.ok();
     }
 
@@ -577,7 +624,21 @@ namespace wz::app
         // behaviors below always get the input, so a controller can drive the
         // scene without panning the camera. aspect tracking is independent.
         if (drive_camera) {
+            const wz::bench::FlyingCamera before = camera_;
             wz::bench::update_flying_camera(camera_, input, dt);
+            // Editor viewport only: a moved free-fly camera is unsaved viewport
+            // state, so flag it for save_scene (standalone play does not author
+            // the editor camera). Compare pose so a hold-still frame stays clean.
+            if (!prefer_scene_camera_
+                && (camera_.x != before.x || camera_.y != before.y
+                    || camera_.z != before.z
+                    || camera_.orientation.x != before.orientation.x
+                    || camera_.orientation.y != before.orientation.y
+                    || camera_.orientation.z != before.orientation.z
+                    || camera_.orientation.w != before.orientation.w))
+            {
+                editor_camera_dirty_ = true;
+            }
         }
         if (input.window.width > 0 && input.window.height > 0) {
             aspect_ = static_cast<float>(input.window.width)
@@ -3202,7 +3263,11 @@ namespace wz::app
 
     bool WozzitsApp_v1::save_scene()
     {
-        if (!scene_dirty_) {
+        // The editor viewport's free-fly camera pose is unsaved state independent
+        // of scene edits; persist it alongside authored changes. Standalone play
+        // never authors the editor camera (prefer_scene_camera_).
+        const bool want_editor_camera = !prefer_scene_camera_;
+        if (!scene_dirty_ && !(want_editor_camera && editor_camera_dirty_)) {
             return true;  // nothing changed since load / last save
         }
         if (scene_source_path_.empty()) {
@@ -3262,8 +3327,12 @@ namespace wz::app
             }
         }
         if (document.root) {
-            wz::engine::assets::set_scene_document_nodes(
-                document, persisted_nodes);
+            // A camera-only save (scene not dirty) leaves the authored nodes
+            // untouched so panning the viewport never churns the node array.
+            if (scene_dirty_) {
+                wz::engine::assets::set_scene_document_nodes(
+                    document, persisted_nodes);
+            }
         }
         else {
             // No readable source — emit a fresh scene document from the nodes.
@@ -3271,6 +3340,24 @@ namespace wz::app
             snapshot.nodes = persisted_nodes;
             document =
                 wz::engine::assets::export_scene_to_json_document(snapshot);
+        }
+
+        // Persist the editor viewport camera (editor only). Upserts just the
+        // scene_editor_metadata.camera block, leaving nodes + other data intact.
+        if (want_editor_camera && document.root) {
+            wz::engine::assets::SceneEditorCameraMetadata meta;
+            meta.position[0] = camera_.x;
+            meta.position[1] = camera_.y;
+            meta.position[2] = camera_.z;
+            meta.orientation[0] = camera_.orientation.x;
+            meta.orientation[1] = camera_.orientation.y;
+            meta.orientation[2] = camera_.orientation.z;
+            meta.orientation[3] = camera_.orientation.w;
+            meta.move_speed       = camera_.move_speed;
+            meta.look_speed       = camera_.look_speed;
+            meta.boost_multiplier = camera_.boost_multiplier;
+            meta.roll_speed       = camera_.roll_speed;
+            wz::engine::assets::set_scene_document_editor_camera(document, meta);
         }
 
         std::ofstream out(path, std::ios::binary);
@@ -3283,6 +3370,7 @@ namespace wz::app
         }
 
         scene_dirty_ = false;
+        editor_camera_dirty_ = false;
         ctx_.logger.info("save_scene: scene persisted");
         return true;
     }

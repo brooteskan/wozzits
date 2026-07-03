@@ -1522,11 +1522,16 @@ cost stays independent of the visual mesh triangle count. Heightfield sampling
 uses smooth interpolation for both height and normal so actors do not inherit
 the adaptive mesh's triangle-density steps or flat face-normal jumps.
 
-`terrain_footprint_radius` is optional and defaults to `0`, which means the
-actor is constrained as a point at its pivot. When it is positive, the runtime
-also samples a fixed ring around the actor and uses the highest support height.
-Use this for vehicle-sized actors that should ride over terrain detail under
-their body instead of letting small raised areas clip through the mesh.
+`terrain_footprint_radius` is the *orientation* footprint and is optional,
+defaulting to `0` (a point at the pivot). When it is positive, the runtime
+samples a fixed ring around the actor and averages those samples' surface normals
+to align the actor to the terrain. It no longer affects height: the actor's
+height comes from the center sample under its pivot, so a wide actor standing
+next to a summit stays on the ground under its body instead of being lifted onto
+the ring's peak. If the center sample misses (the actor straddles a terrain
+edge), height falls back to the highest ring sample so the actor rides the edge
+rather than dropping. Use a positive radius for vehicle-sized actors that should
+align to the surface under their whole body rather than to a single pivot point.
 
 `terrain_align_to_surface` is optional. When it is true, the runtime also
 orients the actor so its local Y axis follows the sampled terrain normal. The

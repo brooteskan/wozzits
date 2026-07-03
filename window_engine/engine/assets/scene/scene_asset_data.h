@@ -836,6 +836,12 @@ namespace wz::engine::assets
         SceneMotionSpace space = SceneMotionSpace::World;
         bool terrain_constrained = false;
         float terrain_ride_height = 0.0f;
+        // Orientation footprint: ring radius for surface-normal averaging (used
+        // to align the actor to the surface). It does NOT set height -- height
+        // comes from the CENTER sample under the actor pivot. 0 = point support
+        // (no ring). A ring sample can catch a nearby peak, so letting it drive
+        // height would levitate an actor on convex terrain; height stays on the
+        // ground under the center, the ring only tilts the orientation normal.
         float terrain_footprint_radius = 0.0f;
         bool terrain_align_to_surface = false;
         float terrain_alignment_strength = 1.0f;

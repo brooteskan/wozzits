@@ -656,10 +656,16 @@ commands and velocity integration, before render prep. It preserves X/Z and
 does not currently modify vertical velocity, so constrained actors should drive
 horizontal velocity and let the runtime constraint own ground height.
 
-`terrain_footprint_radius` defaults to `0`, meaning point support at the actor
-pivot. When positive, the runtime samples a fixed ring around the actor and uses
-the highest support height, which is useful for vehicle-sized actors moving over
-terrain detail smaller than the actor.
+`terrain_footprint_radius` is the *orientation* footprint: when positive, the
+runtime samples a fixed ring around the actor and averages those samples' surface
+normals to align the actor to the terrain (see `terrain_align_to_surface` below).
+It does **not** set height — the actor's height always comes from the center
+sample under its pivot. (A ring sample can catch a nearby peak; letting it drive
+height would levitate a wide actor standing next to a summit.) If the center
+sample misses (the actor is straddling a terrain edge), the height falls back to
+the highest ring sample so the actor rides the edge instead of dropping.
+`terrain_footprint_radius` defaults to `0`, meaning point support (no ring): the
+center sample alone drives both height and orientation.
 
 When `terrain_align_to_surface` is true, the same step also rotates the actor so
 its local Y axis follows the sampled terrain normal. The actor's local Z axis is
