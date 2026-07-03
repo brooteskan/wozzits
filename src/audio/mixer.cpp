@@ -63,7 +63,8 @@ namespace wz::audio {
     void Mixer::set_grain_param_client(uint32_t client_id,
                                        GrainParam param,
                                        float value,
-                                       uint32_t ramp_frames) noexcept
+                                       uint32_t ramp_frames,
+                                       uint32_t source_index) noexcept
     {
         if (client_id == 0)
             return;
@@ -79,6 +80,23 @@ namespace wz::audio {
                 gs.cloud.set_blend_rate(value, ramp_frames); break;
             case GrainParam::BlendDepth:
                 gs.cloud.set_blend_depth(value, ramp_frames); break;
+            case GrainParam::SourceWeight:
+                gs.cloud.set_source_weight(source_index, value, ramp_frames); break;
+            case GrainParam::PositionJitter:
+                gs.cloud.set_position_jitter(value, ramp_frames); break;
+            case GrainParam::PitchJitter:
+                gs.cloud.set_pitch_jitter(value, ramp_frames); break;
+            case GrainParam::PanCenter:
+                gs.cloud.set_pan_center(value, ramp_frames); break;
+            case GrainParam::PanSpread:
+                gs.cloud.set_pan_spread(value, ramp_frames); break;
+            case GrainParam::GrainMs:
+                gs.cloud.set_grain_size(value, ramp_frames); break;
+            case GrainParam::WindowParam:
+                gs.cloud.set_window_param(value, ramp_frames); break;
+            case GrainParam::Window:
+                gs.cloud.set_window_shape(
+                    static_cast<GrainWindow>(static_cast<uint8_t>(value))); break;
             }
         }
     }

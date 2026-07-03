@@ -2101,3 +2101,92 @@ TEST(BehaviorModuleApi, SetGrainParamHelpersEncodeParamValueRamp)
         0u);
     EXPECT_EQ(wz_write_set_grain_pitch(nullptr, 1u, 1.0f, 0.0f), 0u);
 }
+
+TEST(BehaviorModuleApi, SetGrainSourceWeightCarriesIndexInValues3)
+{
+    struct Probe { WzBehaviorCommand last{}; int count = 0; } probe;
+    WzBehaviorFrameFacts facts{
+        .command_writer_user = &probe,
+        .write_command = [](void* user, const WzBehaviorCommand* cmd) -> uint8_t
+        {
+            auto* p = static_cast<Probe*>(user);
+            p->last = *cmd;
+            ++p->count;
+            return 1u;
+        },
+    };
+
+    // Source-weight helper: values = { SOURCE_WEIGHT, weight, ramp, index }.
+    ASSERT_EQ(wz_write_set_grain_source_weight(&facts, 5u, 3u, 0.75f, 480.0f), 1u);
+    EXPECT_EQ(probe.last.entity, 5u);
+    EXPECT_EQ(probe.last.kind, WZ_BEHAVIOR_COMMAND_SET_GRAIN_PARAM);
+    EXPECT_FLOAT_EQ(probe.last.values[0],
+                    static_cast<float>(WZ_GRAIN_PARAM_SOURCE_WEIGHT));
+    EXPECT_FLOAT_EQ(probe.last.values[1], 0.75f);
+    EXPECT_FLOAT_EQ(probe.last.values[2], 480.0f);
+    EXPECT_FLOAT_EQ(probe.last.values[3], 3.0f);   // the clip index
+
+    EXPECT_EQ(wz_write_set_grain_source_weight(nullptr, 1u, 0u, 1.0f, 0.0f), 0u);
+}
+
+TEST(BehaviorModuleApi, GrainProgramFansOutPerParamCommands)
+{
+    struct Probe { std::vector<WzBehaviorCommand> cmds; } probe;
+    WzBehaviorFrameFacts facts{
+        .command_writer_user = &probe,
+        .write_command = [](void* user, const WzBehaviorCommand* cmd) -> uint8_t
+        {
+            static_cast<Probe*>(user)->cmds.push_back(*cmd);
+            return 1u;
+        },
+    };
+
+    WzGrainProgram prog = {};
+    prog.weight_count = 4u;
+    prog.weights[0] = 1.0f; prog.weights[1] = 0.0f;
+    prog.weights[2] = 0.5f; prog.weights[3] = 0.0f;
+    prog.gain = 0.8f;
+    prog.grain_ms = 500.0f;
+    prog.window = WZ_GRAIN_WINDOW_GAUSSIAN;
+
+    ASSERT_EQ(wz_write_grain_program(&facts, 7u, &prog, 2400.0f), 1u);
+
+    // 4 source weights + gain/density/position/pitch + grain_ms/pos_jitter/
+    // pitch_jitter/pan_center/pan_spread/window_param + blend_rate/blend_depth +
+    // window = 4 + 13.
+    ASSERT_EQ(probe.cmds.size(), 17u);
+    for (const auto& c : probe.cmds) {
+        EXPECT_EQ(c.entity, 7u);
+        EXPECT_EQ(c.kind, WZ_BEHAVIOR_COMMAND_SET_GRAIN_PARAM);
+    }
+
+    // The source-weight commands carry their index in values[3] + the weight.
+    int weight_cmds = 0;
+    for (const auto& c : probe.cmds) {
+        if (c.values[0] != static_cast<float>(WZ_GRAIN_PARAM_SOURCE_WEIGHT)) {
+            continue;
+        }
+        ++weight_cmds;
+        const int idx = static_cast<int>(c.values[3]);
+        ASSERT_GE(idx, 0);
+        ASSERT_LT(idx, 4);
+        EXPECT_FLOAT_EQ(c.values[1], prog.weights[idx]);
+        EXPECT_FLOAT_EQ(c.values[2], 2400.0f);   // weights crossfade over the ramp
+    }
+    EXPECT_EQ(weight_cmds, 4);
+
+    // Window SHAPE snaps (ramp 0); a scalar like gain rides the program ramp.
+    for (const auto& c : probe.cmds) {
+        if (c.values[0] == static_cast<float>(WZ_GRAIN_PARAM_WINDOW)) {
+            EXPECT_FLOAT_EQ(c.values[2], 0.0f);
+        }
+        if (c.values[0] == static_cast<float>(WZ_GRAIN_PARAM_GAIN)) {
+            EXPECT_FLOAT_EQ(c.values[1], 0.8f);
+            EXPECT_FLOAT_EQ(c.values[2], 2400.0f);
+        }
+    }
+
+    // Null program / facts => no-op.
+    EXPECT_EQ(wz_write_grain_program(&facts, 7u, nullptr, 1.0f), 0u);
+    EXPECT_EQ(wz_write_grain_program(nullptr, 7u, &prog, 1.0f), 0u);
+}

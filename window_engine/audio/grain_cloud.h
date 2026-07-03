@@ -42,17 +42,27 @@ namespace wz::audio {
     // The maximum number of source buffers a cloud blends between.
     inline constexpr uint32_t kMaxGrainSources = 8;
 
-    // The cloud parameters a behavior can drive PER FRAME (the lean live set).
-    // Other params are authored on the renderable and set once at start. Ordinal
-    // values cross the audio command queue, so keep them stable.
+    // The cloud parameters a behavior can drive PER FRAME. Every param is now a
+    // live, ramped value so a "program" (a complete preset) can be crossfaded as a
+    // whole — see set_source_weight and WzGrainProgram in the behavior API. Ordinal
+    // values cross the audio command queue, so keep them stable. Window SHAPE is a
+    // discrete enum and cannot interpolate, so it snaps (ramp ignored).
     enum class GrainParam : uint8_t
     {
         Gain = 0,
         Density = 1,
         Position = 2,
         Pitch = 3,
-        BlendRate = 4,   // source-blend LFO cycles/sec
-        BlendDepth = 5,  // source-blend amount 0..1
+        BlendRate = 4,       // source-blend LFO cycles/sec
+        BlendDepth = 5,      // source-blend amount 0..1
+        SourceWeight = 6,    // per-clip spawn weight; carries a source index
+        PositionJitter = 7,  // 0..1 spread around position
+        PitchJitter = 8,     // +/- spread in semitones
+        PanCenter = 9,       // -1..1
+        PanSpread = 10,      // 0..1
+        GrainMs = 11,        // grain duration (ms)
+        WindowParam = 12,    // window shape parameter
+        Window = 13,         // window SHAPE (GrainWindow ordinal) — snaps, no ramp
     };
 
     // A trivially-copyable, self-contained description of a grain cloud — the form
@@ -141,12 +151,24 @@ namespace wz::audio {
         void set_position(float normalized, uint32_t ramp_frames = 0) noexcept;  // 0..1 playhead
         void set_pitch(float multiplier, uint32_t ramp_frames = 0) noexcept;
 
-        // ── Direct params: apply to grains spawned after the call. ───────────────
-        void set_position_jitter(float normalized) noexcept;   // 0..1 spread around position
-        void set_pitch_jitter(float semitones) noexcept;       // +/- spread in semitones
-        void set_pan(float center, float spread) noexcept;     // center/spread in [-1, 1]
-        void set_grain_size(float milliseconds) noexcept;      // grain duration
-        void set_window(GrainWindow window, float param) noexcept;
+        // ── Character params: sampled by each grain at spawn. Now ramped too, so a
+        // program crossfade morphs them smoothly (new grains read the current
+        // value). ramp_frames == 0 = instant (the config/reset path). ─────────────
+        void set_position_jitter(float normalized, uint32_t ramp_frames = 0) noexcept;
+        void set_pitch_jitter(float semitones, uint32_t ramp_frames = 0) noexcept;
+        void set_pan_center(float center, uint32_t ramp_frames = 0) noexcept;   // -1..1
+        void set_pan_spread(float spread, uint32_t ramp_frames = 0) noexcept;   // 0..1
+        void set_pan(float center, float spread) noexcept;     // both, instant (reset)
+        void set_grain_size(float milliseconds, uint32_t ramp_frames = 0) noexcept;
+        void set_window_param(float param, uint32_t ramp_frames = 0) noexcept;
+        void set_window_shape(GrainWindow window) noexcept;    // snaps (no ramp)
+        void set_window(GrainWindow window, float param) noexcept;  // both, instant
+
+        // Per-clip spawn weight (relative selection probability), ramped so program
+        // switches crossfade which clips voice the texture. `index` beyond the
+        // source count is ignored. A program whose weights all reach ~0 goes silent.
+        void set_source_weight(uint32_t index, float weight,
+                               uint32_t ramp_frames = 0) noexcept;
 
         // Autonomous source-blend LFO: cycles the per-source selection weights so
         // the cloud crossfades between its sources without any external driver.
@@ -217,12 +239,12 @@ namespace wz::audio {
 
         float    effective_weight(uint32_t i) const noexcept;  // base x blend LFO
         uint32_t pick_source() noexcept;   // weighted by effective source weights
+        float    current_weight_total() const noexcept;  // sum of live base weights
         void spawn_grain(uint32_t out_rate) noexcept;
 
         AudioBufferView sources_[kMaxSources]{};
-        float           weights_[kMaxSources]{};
+        Ramp            weights_[kMaxSources]{};  // per-clip weight, ramped
         uint32_t        source_count_ = 0;
-        float           weight_total_ = 0.0f;
 
         std::vector<Grain> grains_;
         uint32_t           pool_limit_ = 0;  // usable grains (<= grains_.size())
@@ -232,13 +254,13 @@ namespace wz::audio {
         Ramp position_{};  // 0..1
         Ramp pitch_{};     // multiplier
 
-        float       position_jitter_ = 0.0f;
-        float       pitch_jitter_semitones_ = 0.0f;
-        float       pan_center_ = 0.0f;
-        float       pan_spread_ = 0.0f;
-        float       grain_ms_ = 100.0f;
+        Ramp        position_jitter_{};
+        Ramp        pitch_jitter_semitones_{};
+        Ramp        pan_center_{};
+        Ramp        pan_spread_{};
+        Ramp        grain_ms_{};
         GrainWindow window_ = GrainWindow::Gaussian;
-        float       window_param_ = 0.4f;
+        Ramp        window_param_{};
 
         Ramp     blend_rate_{};   // source-blend LFO cycles/sec (0 = off)
         Ramp     blend_depth_{};  // 0..1

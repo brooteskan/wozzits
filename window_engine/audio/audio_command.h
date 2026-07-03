@@ -61,6 +61,10 @@ namespace wz::audio {
         // SetGrainParam: which GrainParam to ramp (ordinal). Ignored otherwise.
         uint8_t grain_param = 0;
 
+        // SetGrainParam + GrainParam::SourceWeight: which source (clip) the weight
+        // targets. Ignored by every other grain param and command type.
+        uint8_t grain_source_index = 0;
+
         // SetSpatial payload: per-channel equal-power pan gains and the far-leg
         // ITD offset in output frames (sign convention in voice.h). Doppler reuses
         // `pitch`; the ramp length reuses `ramp_frames`; the target reuses

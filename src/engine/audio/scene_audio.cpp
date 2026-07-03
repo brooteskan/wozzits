@@ -15,16 +15,24 @@
 
 namespace wz::engine::audio {
 
-    // The behavior ABI passes grain params as WZ_GRAIN_PARAM_* ordinals (0..3);
-    // pin GrainParam to the same values so the cast in apply_grain_param_command /
-    // the scheduler is correct.
+    // The behavior ABI passes grain params as WZ_GRAIN_PARAM_* ordinals; pin
+    // GrainParam to the same values so the cast in apply_grain_param_command / the
+    // scheduler is correct.
     static_assert(
         static_cast<uint8_t>(wz::audio::GrainParam::Gain) == 0
         && static_cast<uint8_t>(wz::audio::GrainParam::Density) == 1
         && static_cast<uint8_t>(wz::audio::GrainParam::Position) == 2
         && static_cast<uint8_t>(wz::audio::GrainParam::Pitch) == 3
         && static_cast<uint8_t>(wz::audio::GrainParam::BlendRate) == 4
-        && static_cast<uint8_t>(wz::audio::GrainParam::BlendDepth) == 5,
+        && static_cast<uint8_t>(wz::audio::GrainParam::BlendDepth) == 5
+        && static_cast<uint8_t>(wz::audio::GrainParam::SourceWeight) == 6
+        && static_cast<uint8_t>(wz::audio::GrainParam::PositionJitter) == 7
+        && static_cast<uint8_t>(wz::audio::GrainParam::PitchJitter) == 8
+        && static_cast<uint8_t>(wz::audio::GrainParam::PanCenter) == 9
+        && static_cast<uint8_t>(wz::audio::GrainParam::PanSpread) == 10
+        && static_cast<uint8_t>(wz::audio::GrainParam::GrainMs) == 11
+        && static_cast<uint8_t>(wz::audio::GrainParam::WindowParam) == 12
+        && static_cast<uint8_t>(wz::audio::GrainParam::Window) == 13,
         "GrainParam ordinals must match WZ_GRAIN_PARAM_* in the behavior ABI");
 
     namespace {
@@ -316,7 +324,8 @@ namespace wz::engine::audio {
         wz::scene::RuntimeEntityId entity,
         uint8_t param_id,
         float value,
-        uint32_t ramp_frames)
+        uint32_t ramp_frames,
+        uint8_t source_index)
     {
         using namespace wz::engine::assets;
 
@@ -336,6 +345,7 @@ namespace wz::engine::audio {
         cmd.sample_time = 0;  // apply on the next block
         cmd.client_id = source->client_id;
         cmd.grain_param = param_id;
+        cmd.grain_source_index = source_index;
         cmd.value = value;
         cmd.ramp_frames = ramp_frames;
         return scheduler.post(cmd);

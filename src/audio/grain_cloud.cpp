@@ -87,6 +87,17 @@ namespace wz::audio {
         pitch_ = Ramp{};     pitch_.current = pitch_.target = 1.0f;
         density_ = Ramp{};   // 0 grains/sec
         position_ = Ramp{};  // playhead at start
+
+        // Character params default to their prior fixed values (grain_ms 100,
+        // window_param 0.4); the rest default to 0. reset() overrides from the desc.
+        for (Ramp& w : weights_) { w = Ramp{}; }
+        position_jitter_ = Ramp{};
+        pitch_jitter_semitones_ = Ramp{};
+        pan_center_ = Ramp{};
+        pan_spread_ = Ramp{};
+        grain_ms_ = Ramp{};      grain_ms_.current = grain_ms_.target = 100.0f;
+        window_ = GrainWindow::Gaussian;
+        window_param_ = Ramp{};  window_param_.current = window_param_.target = 0.4f;
     }
 
     void GrainCloud::reset(const GrainCloudDesc& desc) noexcept
@@ -128,13 +139,29 @@ namespace wz::audio {
                                  uint32_t count) noexcept
     {
         source_count_ = std::min(count, kMaxSources);
-        weight_total_ = 0.0f;
         for (uint32_t i = 0; i < source_count_; ++i) {
             sources_[i] = views ? views[i] : AudioBufferView{};
             const float w = weights ? weights[i] : 1.0f;
-            weights_[i] = (w > 0.0f) ? w : 0.0f;
-            weight_total_ += weights_[i];
+            weights_[i].set((w > 0.0f) ? w : 0.0f, 0u);  // instant at (re)arm
         }
+    }
+
+    void GrainCloud::set_source_weight(uint32_t index, float weight,
+                                       uint32_t ramp_frames) noexcept
+    {
+        if (index >= kMaxSources) {
+            return;
+        }
+        weights_[index].set((weight > 0.0f) ? weight : 0.0f, ramp_frames);
+    }
+
+    float GrainCloud::current_weight_total() const noexcept
+    {
+        float total = 0.0f;
+        for (uint32_t i = 0; i < source_count_; ++i) {
+            total += weights_[i].current;
+        }
+        return total;
     }
 
     void GrainCloud::set_gain(float target, uint32_t ramp_frames) noexcept
@@ -158,31 +185,54 @@ namespace wz::audio {
         pitch_.set((multiplier > 0.0f) ? multiplier : 0.0f, ramp_frames);
     }
 
-    void GrainCloud::set_position_jitter(float normalized) noexcept
+    void GrainCloud::set_position_jitter(float normalized,
+                                         uint32_t ramp_frames) noexcept
     {
-        position_jitter_ = std::clamp(normalized, 0.0f, 1.0f);
+        position_jitter_.set(std::clamp(normalized, 0.0f, 1.0f), ramp_frames);
     }
 
-    void GrainCloud::set_pitch_jitter(float semitones) noexcept
+    void GrainCloud::set_pitch_jitter(float semitones,
+                                      uint32_t ramp_frames) noexcept
     {
-        pitch_jitter_semitones_ = semitones;
+        pitch_jitter_semitones_.set(semitones, ramp_frames);
+    }
+
+    void GrainCloud::set_pan_center(float center, uint32_t ramp_frames) noexcept
+    {
+        pan_center_.set(std::clamp(center, -1.0f, 1.0f), ramp_frames);
+    }
+
+    void GrainCloud::set_pan_spread(float spread, uint32_t ramp_frames) noexcept
+    {
+        pan_spread_.set(std::clamp(spread, 0.0f, 1.0f), ramp_frames);
     }
 
     void GrainCloud::set_pan(float center, float spread) noexcept
     {
-        pan_center_ = std::clamp(center, -1.0f, 1.0f);
-        pan_spread_ = std::clamp(spread, 0.0f, 1.0f);
+        set_pan_center(center, 0u);
+        set_pan_spread(spread, 0u);
     }
 
-    void GrainCloud::set_grain_size(float milliseconds) noexcept
+    void GrainCloud::set_grain_size(float milliseconds,
+                                    uint32_t ramp_frames) noexcept
     {
-        grain_ms_ = (milliseconds > 0.0f) ? milliseconds : 1.0f;
+        grain_ms_.set((milliseconds > 0.0f) ? milliseconds : 1.0f, ramp_frames);
+    }
+
+    void GrainCloud::set_window_param(float param, uint32_t ramp_frames) noexcept
+    {
+        window_param_.set(param, ramp_frames);
+    }
+
+    void GrainCloud::set_window_shape(GrainWindow window) noexcept
+    {
+        window_ = window;  // discrete → snaps
     }
 
     void GrainCloud::set_window(GrainWindow window, float param) noexcept
     {
         window_ = window;
-        window_param_ = param;
+        window_param_.set(param, 0u);
     }
 
     void GrainCloud::set_blend(float rate_hz, float depth) noexcept
@@ -259,7 +309,7 @@ namespace wz::audio {
 
     float GrainCloud::effective_weight(uint32_t i) const noexcept
     {
-        float w = weights_[i];
+        float w = weights_[i].current;
         const float depth = blend_depth_.current;
         if (depth > 0.0f && source_count_ > 1) {
             // Sine LFO on the selection weight; sources are evenly staggered in
@@ -324,25 +374,28 @@ namespace wz::audio {
 
         // Start position: the (smoothed) playhead plus normalized jitter.
         const float start_norm = std::clamp(
-            position_.current + position_jitter_ * rng_bipolar(), 0.0f, 1.0f);
+            position_.current + position_jitter_.current * rng_bipolar(),
+            0.0f, 1.0f);
         const double start_frame =
             static_cast<double>(start_norm) *
             static_cast<double>(src.frame_count - 1);
 
         // Pitch: the (smoothed) multiplier with a semitone-spread jitter.
-        const float semis = pitch_jitter_semitones_ * rng_bipolar();
+        const float semis = pitch_jitter_semitones_.current * rng_bipolar();
         const float pitch = pitch_.current * std::pow(2.0f, semis / 12.0f);
         const double step =
             static_cast<double>(src.sample_rate) /
             static_cast<double>(out_rate) * static_cast<double>(pitch);
 
         const double size_d =
-            static_cast<double>(grain_ms_) * static_cast<double>(out_rate) / 1000.0;
+            static_cast<double>(grain_ms_.current) *
+            static_cast<double>(out_rate) / 1000.0;
         const uint32_t size =
             (size_d < 1.0) ? 1u : static_cast<uint32_t>(size_d + 0.5);
 
         const float pan = std::clamp(
-            pan_center_ + pan_spread_ * rng_bipolar(), -1.0f, 1.0f);
+            pan_center_.current + pan_spread_.current * rng_bipolar(),
+            -1.0f, 1.0f);
 
         slot->active = true;
         slot->source = src_idx;
@@ -352,7 +405,7 @@ namespace wz::audio {
         slot->size = size;
         slot->pan = pan;
         slot->window = window_;
-        slot->window_param = window_param_;
+        slot->window_param = window_param_.current;
     }
 
     // ─── Render ─────────────────────────────────────────────────────────────────
@@ -376,6 +429,15 @@ namespace wz::audio {
             pitch_.advance();
             blend_rate_.advance();
             blend_depth_.advance();
+            for (uint32_t i = 0; i < source_count_; ++i) {
+                weights_[i].advance();
+            }
+            position_jitter_.advance();
+            pitch_jitter_semitones_.advance();
+            pan_center_.advance();
+            pan_spread_.advance();
+            grain_ms_.advance();
+            window_param_.advance();
 
             // Advance the autonomous source-blend LFO phase (wraps in [0,1)).
             if (blend_rate_.current > 0.0f) {
@@ -389,7 +451,10 @@ namespace wz::audio {
 
             // Spawn grains for this frame at the current density (grains/sec),
             // bounded so a runaway rate can't loop unbounded.
-            if (emitting_ && density_.current > 0.0f && weight_total_ >= 0.0f) {
+            // A program whose weights have all crossfaded to ~0 goes silent (no
+            // spawns) instead of falling back to source 0.
+            if (emitting_ && density_.current > 0.0f
+                && current_weight_total() > 1.0e-6f) {
                 spawn_phase_ +=
                     static_cast<double>(density_.current) /
                     static_cast<double>(out_rate);

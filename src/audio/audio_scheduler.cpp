@@ -44,7 +44,8 @@ namespace wz::audio {
                 cmd.client_id,
                 static_cast<GrainParam>(cmd.grain_param),
                 cmd.value,
-                cmd.ramp_frames);
+                cmd.ramp_frames,
+                cmd.grain_source_index);
             break;
         case AudioCommandType::SetSpatial:
             mixer_.set_spatial_client(cmd.client_id, cmd.gain_l, cmd.gain_r,

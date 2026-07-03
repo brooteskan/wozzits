@@ -1223,6 +1223,98 @@ static inline uint8_t wz_write_set_grain_blend_depth(
         facts, entity, WZ_GRAIN_PARAM_BLEND_DEPTH, depth, ramp_frames);
 }
 
+// Ramp one clip's spawn weight in the addressed cloud's palette. `source_index`
+// is the clip's index in the node's bank (0-based). Weight 0 = exclude the clip;
+// when every weight reaches ~0 the cloud goes silent. This is the primitive a
+// program is built from; ramp over frames to crossfade which clips voice the
+// texture. Encodes the index in values[3] (see WZ_GRAIN_PARAM_SOURCE_WEIGHT).
+static inline uint8_t wz_write_set_grain_source_weight(
+    const WzBehaviorFrameFacts* facts, WzBehaviorEntityId entity,
+    uint32_t source_index, float weight, float ramp_frames)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_GRAIN_PARAM,
+        { (float)WZ_GRAIN_PARAM_SOURCE_WEIGHT, weight, ramp_frames,
+          (float)source_index },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// A complete grain-synth preset: which clips (per-source weights over the
+// addressed node's fixed bank) PLUS every grain parameter. A "program". Fill one
+// in your behavior (a plain struct), then wz_write_grain_program crossfades the
+// whole preset toward it — the "switch program 1 -> program 2 over N frames" op.
+// Weights index the node's bank palette (set at scene load, not changeable here);
+// weight 0 excludes a clip. `window` is a WZ_GRAIN_WINDOW_* shape (discrete: it
+// snaps, no crossfade). All other fields crossfade over the ramp.
+typedef struct WzGrainProgram
+{
+    float    weights[WZ_GRAIN_MAX_SOURCES];  // per-clip spawn weight; 0 = exclude
+    uint32_t weight_count;                   // clips addressed (<= bank size)
+    float    gain;                           // mix level
+    float    density;                        // grains/sec
+    float    position;                       // 0..1 playhead (0.5 = clip middle)
+    float    pitch;                          // multiplier
+    float    grain_ms;                       // grain duration (large = slow grains)
+    float    position_jitter;                // 0..1 spread around position
+    float    pitch_jitter_semitones;         // +/- semitone spread
+    float    pan_center;                     // -1..1
+    float    pan_spread;                     // 0..1
+    float    window_param;                   // window shape parameter
+    uint32_t window;                         // WZ_GRAIN_WINDOW_* (snaps)
+    float    blend_rate;                     // autonomous blend LFO Hz (0 = off)
+    float    blend_depth;                    // 0..1
+} WzGrainProgram;
+
+// Crossfade the addressed cloud toward the complete preset `program` over
+// `ramp_frames` output frames (~sample_rate frames = 1 second). Every param ramps
+// so the whole texture morphs coherently; window shape snaps. Fires one command
+// per param (cheap, once per switch); each smooths on the audio thread. No-op
+// (returns 0) without a valid program. Harmless if the entity isn't a grain cloud
+// (the mixer only matches grain slots).
+static inline uint8_t wz_write_grain_program(
+    const WzBehaviorFrameFacts* facts, WzBehaviorEntityId entity,
+    const WzGrainProgram* program, float ramp_frames)
+{
+    if (!facts || !facts->write_command || !program) {
+        return 0;
+    }
+    uint32_t n = program->weight_count;
+    if (n > WZ_GRAIN_MAX_SOURCES) {
+        n = WZ_GRAIN_MAX_SOURCES;
+    }
+    for (uint32_t i = 0; i < n; ++i) {
+        wz_write_set_grain_source_weight(
+            facts, entity, i, program->weights[i], ramp_frames);
+    }
+    wz_write_set_grain_gain(facts, entity, program->gain, ramp_frames);
+    wz_write_set_grain_density(facts, entity, program->density, ramp_frames);
+    wz_write_set_grain_position(facts, entity, program->position, ramp_frames);
+    wz_write_set_grain_pitch(facts, entity, program->pitch, ramp_frames);
+    wz_write_set_grain_param(facts, entity, WZ_GRAIN_PARAM_GRAIN_MS,
+                             program->grain_ms, ramp_frames);
+    wz_write_set_grain_param(facts, entity, WZ_GRAIN_PARAM_POSITION_JITTER,
+                             program->position_jitter, ramp_frames);
+    wz_write_set_grain_param(facts, entity, WZ_GRAIN_PARAM_PITCH_JITTER,
+                             program->pitch_jitter_semitones, ramp_frames);
+    wz_write_set_grain_param(facts, entity, WZ_GRAIN_PARAM_PAN_CENTER,
+                             program->pan_center, ramp_frames);
+    wz_write_set_grain_param(facts, entity, WZ_GRAIN_PARAM_PAN_SPREAD,
+                             program->pan_spread, ramp_frames);
+    wz_write_set_grain_param(facts, entity, WZ_GRAIN_PARAM_WINDOW_PARAM,
+                             program->window_param, ramp_frames);
+    wz_write_set_grain_blend_rate(facts, entity, program->blend_rate, ramp_frames);
+    wz_write_set_grain_blend_depth(facts, entity, program->blend_depth, ramp_frames);
+    // Window SHAPE is discrete → snap (ramp 0).
+    wz_write_set_grain_param(facts, entity, WZ_GRAIN_PARAM_WINDOW,
+                             (float)program->window, 0.0f);
+    return 1;
+}
+
 // FNV-1a/32 over a prefab name. constexpr, so a plugin can hash a string literal
 // at COMPILE time (zero runtime cost) and pass the result to wz_write_spawn_-
 // prefab:

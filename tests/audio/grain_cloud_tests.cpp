@@ -265,6 +265,60 @@ namespace wz::audio::test {
         }
     }
 
+    // Ramping the per-source weights crossfades which clip voices the cloud — the
+    // primitive behind program switching. Start fully on the +1 source, ramp to
+    // the -1 source, and the output sign flips from + (early) to - (late).
+    TEST(GrainCloudTests, SourceWeightCrossfadeShiftsSelection)
+    {
+        const std::vector<float> a(48000, 1.0f);   // clip 0: DC +1
+        const std::vector<float> b(48000, -1.0f);  // clip 1: DC -1
+        const AudioBufferView views[2] = {
+            view(a, 1, 48000), view(b, 1, 48000),
+        };
+        const float weights[2] = { 1.0f, 0.0f };   // start on clip 0
+
+        GrainCloud cloud;
+        cloud.configure(GrainCloud::Config{ .max_grains = 32, .seed = 7u });
+        cloud.set_sources(views, weights, 2);
+        cloud.set_density(600.0f);
+        cloud.set_grain_size(5.0f);   // short grains track the weight ramp closely
+        cloud.start();
+
+        // Crossfade the palette to clip 1 over 4800 frames (0.1 s).
+        cloud.set_source_weight(0, 0.0f, 4800);
+        cloud.set_source_weight(1, 1.0f, 4800);
+
+        std::vector<float> out(9600, 0.0f);
+        cloud.render_add(out.data(), 9600, 1, 48000);
+
+        double early = 0.0, late = 0.0;
+        for (size_t f = 0; f < 2400; ++f) { early += out[f]; }
+        for (size_t f = 7200; f < 9600; ++f) { late += out[f]; }  // ramp done
+        EXPECT_GT(early, 0.0);   // still mostly the +1 clip
+        EXPECT_LT(late, 0.0);    // now the -1 clip
+    }
+
+    // A program whose weights all reach ~0 goes silent, rather than falling back
+    // to source 0 (the empty-program contract behaviors rely on for "engine off").
+    TEST(GrainCloudTests, AllZeroWeightsAreSilent)
+    {
+        const std::vector<float> a(48000, 1.0f);
+        const AudioBufferView v = view(a, 1, 48000);
+        const float w = 1.0f;
+
+        GrainCloud cloud;
+        cloud.configure(small_cfg());
+        cloud.set_sources(&v, &w, 1);
+        cloud.set_density(600.0f);
+        cloud.set_grain_size(5.0f);
+        cloud.set_source_weight(0, 0.0f, 0);   // no clip has any weight
+        cloud.start();
+
+        std::vector<float> out(4800, 0.0f);
+        cloud.render_add(out.data(), 4800, 1, 48000);
+        EXPECT_LT(energy(out), 1.0e-6);
+    }
+
     // ─── CPU bound + stop tail ────────────────────────────────────────────────────
 
     // The autonomous blend LFO cycles source selection over time with NO external

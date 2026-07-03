@@ -315,8 +315,10 @@ enum
 };
 
 /*
- * Live grain-cloud parameters a behavior can drive per frame (the lean set).
- * Ordinals MUST match wz::audio::GrainParam — they cross the audio command queue.
+ * Live grain-cloud parameters a behavior can drive per frame. Every param is
+ * rampable so a whole "program" (preset) can be crossfaded at once — see
+ * WzGrainProgram / wz_write_grain_program in behavior_module_api.h. Ordinals MUST
+ * match wz::audio::GrainParam — they cross the audio command queue.
  */
 enum
 {
@@ -324,8 +326,26 @@ enum
     WZ_GRAIN_PARAM_DENSITY = 1u,
     WZ_GRAIN_PARAM_POSITION = 2u,
     WZ_GRAIN_PARAM_PITCH = 3u,
-    WZ_GRAIN_PARAM_BLEND_RATE = 4u,   /* source-blend LFO cycles/sec */
-    WZ_GRAIN_PARAM_BLEND_DEPTH = 5u,  /* source-blend amount 0..1 */
+    WZ_GRAIN_PARAM_BLEND_RATE = 4u,       /* source-blend LFO cycles/sec */
+    WZ_GRAIN_PARAM_BLEND_DEPTH = 5u,      /* source-blend amount 0..1 */
+    WZ_GRAIN_PARAM_SOURCE_WEIGHT = 6u,    /* per-clip weight; uses values[3]=index */
+    WZ_GRAIN_PARAM_POSITION_JITTER = 7u,  /* 0..1 spread around position */
+    WZ_GRAIN_PARAM_PITCH_JITTER = 8u,     /* +/- spread in semitones */
+    WZ_GRAIN_PARAM_PAN_CENTER = 9u,       /* -1..1 */
+    WZ_GRAIN_PARAM_PAN_SPREAD = 10u,      /* 0..1 */
+    WZ_GRAIN_PARAM_GRAIN_MS = 11u,        /* grain duration (ms) */
+    WZ_GRAIN_PARAM_WINDOW_PARAM = 12u,    /* window shape parameter */
+    WZ_GRAIN_PARAM_WINDOW = 13u,          /* window SHAPE (WZ_GRAIN_WINDOW_*); snaps */
+};
+
+/* Max source clips a grain cloud (and thus a program) addresses. Mirrors
+ * wz::audio::kMaxGrainSources. */
+enum { WZ_GRAIN_MAX_SOURCES = 8u };
+
+/* Window shapes (mirror wz::audio::GrainWindow). Only Gaussian exists today. */
+enum
+{
+    WZ_GRAIN_WINDOW_GAUSSIAN = 0u,
 };
 
 enum

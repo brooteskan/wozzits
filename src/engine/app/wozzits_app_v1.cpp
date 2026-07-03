@@ -1935,6 +1935,10 @@ namespace wz::app
                             command.values[1],
                             static_cast<uint32_t>(
                                 command.values[2] > 0.0f ? command.values[2]
+                                                         : 0.0f),
+                            // values[3] = source index (GrainParam::SourceWeight).
+                            static_cast<uint8_t>(
+                                command.values[3] > 0.0f ? command.values[3]
                                                          : 0.0f));
                         continue;
                     }

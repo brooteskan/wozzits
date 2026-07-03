@@ -79,10 +79,13 @@ namespace wz::audio {
                                           uint32_t client_id = 0) noexcept;
 
         // Ramp a live grain-cloud parameter on every cloud tagged client_id.
+        // source_index selects the clip for GrainParam::SourceWeight; ignored by
+        // every other param.
         void set_grain_param_client(uint32_t client_id,
                                     GrainParam param,
                                     float value,
-                                    uint32_t ramp_frames) noexcept;
+                                    uint32_t ramp_frames,
+                                    uint32_t source_index = 0) noexcept;
 
         // Stop a specific voice (no-op if the handle is stale).
         void stop(VoiceHandle handle) noexcept;

@@ -113,7 +113,8 @@ namespace wz::engine::audio {
         wz::scene::RuntimeEntityId entity,
         uint8_t param_id,
         float value,
-        uint32_t ramp_frames);
+        uint32_t ramp_frames,
+        uint8_t source_index = 0);
 
     // ─── Spatialization (audio-track seams 1–3) ────────────────────────────────
 
