@@ -453,6 +453,7 @@
     },
     {
       "node_id": 19,
+      "key": "asset-key:9384cd1d234456b0:1fffec3e4009e908:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:930ea720234e8b61:8ed686d079eaa552",
       "type": 1049,
       "schema": "0xf11eca55e7000103",
       "stage": 0,
@@ -524,77 +525,6 @@
             "name": "topology",
             "type": "int",
             "value": 0
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 20,
-      "type": 1048,
-      "schema": "0xf11eca55e7000708",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [
-        {
-          "from_node_id": 14,
-          "to_input_port": 0
-        },
-        {
-          "from_node_id": 13,
-          "to_input_port": 1
-        },
-        {
-          "from_node_id": 19,
-          "to_input_port": 2
-        },
-        {
-          "from_node_id": 26,
-          "to_input_port": 3
-        }
-      ],
-      "meta": {
-        "params": [
-          {
-            "name": "base_height",
-            "type": "float",
-            "value": 0
-          },
-          {
-            "name": "lattice_world_cell_size",
-            "type": "float",
-            "value": 0.5
-          },
-          {
-            "name": "vertical_scale",
-            "type": "float",
-            "value": 10000
-          },
-          {
-            "name": "view_snapped",
-            "type": "bool",
-            "value": true
-          },
-          {
-            "name": "world_origin_x",
-            "type": "float",
-            "value": -256
-          },
-          {
-            "name": "world_origin_z",
-            "type": "float",
-            "value": -256
-          },
-          {
-            "name": "world_size_x",
-            "type": "float",
-            "value": 1000
-          },
-          {
-            "name": "world_size_z",
-            "type": "float",
-            "value": 1000
           }
         ]
       }
@@ -1190,6 +1120,7 @@
     },
     {
       "node_id": 42,
+      "key": "asset-key:276faa09500999e6:4d3bc05d4de0691e:f11eca55e7000104:0000000000000000:9e3779b97f4b8001:0000000000000000:0000000000000000:0000000000000000",
       "type": 1052,
       "schema": "0xf11eca55e7000104",
       "stage": 0,
@@ -1200,24 +1131,9 @@
       "meta": {
         "params": [
           {
-            "name": "name",
-            "type": "string",
-            "value": "clipmap_terrain_layout"
-          },
-          {
-            "name": "constants_semantic",
-            "type": "string",
-            "value": "clipmap"
-          },
-          {
-            "name": "constants_head",
+            "name": "binding0_kind",
             "type": "int",
-            "value": 3
-          },
-          {
-            "name": "constants_visibility",
-            "type": "int",
-            "value": 0
+            "value": 1
           },
           {
             "name": "binding0_semantic",
@@ -1225,12 +1141,12 @@
             "value": "pulled_mesh_positions"
           },
           {
-            "name": "binding0_kind",
+            "name": "binding0_visibility",
             "type": "int",
             "value": 1
           },
           {
-            "name": "binding0_visibility",
+            "name": "binding1_kind",
             "type": "int",
             "value": 1
           },
@@ -1240,19 +1156,9 @@
             "value": "pulled_mesh_indices"
           },
           {
-            "name": "binding1_kind",
-            "type": "int",
-            "value": 1
-          },
-          {
             "name": "binding1_visibility",
             "type": "int",
             "value": 1
-          },
-          {
-            "name": "binding2_semantic",
-            "type": "string",
-            "value": "scalar_field_texture"
           },
           {
             "name": "binding2_kind",
@@ -1260,9 +1166,34 @@
             "value": 0
           },
           {
+            "name": "binding2_semantic",
+            "type": "string",
+            "value": "scalar_field_texture"
+          },
+          {
             "name": "binding2_visibility",
             "type": "int",
             "value": 1
+          },
+          {
+            "name": "constants_head",
+            "type": "int",
+            "value": 3
+          },
+          {
+            "name": "constants_semantic",
+            "type": "string",
+            "value": "clipmap"
+          },
+          {
+            "name": "constants_visibility",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "value": "clipmap_terrain_layout"
           },
           {
             "name": "sampler0_kind",
@@ -1279,6 +1210,7 @@
     },
     {
       "node_id": 43,
+      "key": "asset-key:4d8e8502abd61213:31d060ecc28c96c6:f11eca55e700070a:0000000000000000:9e3779b97f4b8704:0000000000000000:8fe5c3b69914383d:bc564b7e0ea093c6",
       "type": 1048,
       "schema": "0xf11eca55e700070a",
       "stage": 0,
@@ -1306,14 +1238,14 @@
       "meta": {
         "params": [
           {
-            "name": "name",
-            "type": "string",
-            "value": "clipmap_terrain"
-          },
-          {
             "name": "binding0_semantic",
             "type": "string",
             "value": "scalar_field_texture"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "value": "clipmap_terrain"
           }
         ]
       }
@@ -1389,8 +1321,8 @@
       },
       {
         "node_id": 14,
-        "x": 601.42482811171,
-        "y": 1116.4469216798066
+        "x": 650.68801170546,
+        "y": 1081.5521462891816
       },
       {
         "node_id": 15,
@@ -1403,14 +1335,9 @@
         "y": 1249.5148067161247
       },
       {
-        "node_id": 20,
-        "x": 1322.9275168625907,
-        "y": 1235.3549613570826
-      },
-      {
         "node_id": 19,
-        "x": 585.4427588847817,
-        "y": 1299.9413619106501
+        "x": 655.2323096660317,
+        "y": 1291.7307906215876
       },
       {
         "node_id": 18,
@@ -1434,8 +1361,8 @@
       },
       {
         "node_id": 25,
-        "x": 1314.9381353018978,
-        "y": 942.286682902472
+        "x": 1568.5316788134512,
+        "y": 661.8224825436993
       },
       {
         "node_id": 27,
@@ -1449,8 +1376,8 @@
       },
       {
         "node_id": 26,
-        "x": 1001.9366907717342,
-        "y": 1061.445220833058
+        "x": 1330.3578864393864,
+        "y": 1139.8184607082933
       },
       {
         "node_id": 23,
@@ -1529,25 +1456,25 @@
       },
       {
         "node_id": 42,
-        "x": 795.193734268157,
-        "y": 275.2643654116465
+        "x": 251.36810302734375,
+        "y": 1533.3687744140625
       },
       {
         "node_id": 43,
-        "x": 633.2776572402863,
-        "y": 254.37196837579222
+        "x": 1899.405778293832,
+        "y": 808.5968236640323
       },
       {
         "node_id": 42,
-        "x": 900.0,
-        "y": 700.0
+        "x": 900,
+        "y": 700
       },
       {
         "node_id": 43,
-        "x": 1200.0,
-        "y": 430.0
+        "x": 1200,
+        "y": 430
       }
     ],
-    "zoom": 0.5894869227500004
+    "zoom": 0.7132791765275007
   }
 }

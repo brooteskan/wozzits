@@ -158,14 +158,14 @@ namespace wz::engine::rendering
             // renderer binds but never releases them.
             bool                        owns_buffers = false;
 
-            // Clipmap-landscape renderables (recipe carries height_texture_key)
-            // displace the lattice in the VS by sampling a resident height
-            // texture, and pack a per-frame view transform into the draw's root
-            // constants instead of the per-node MVP. is_clipmap gates that
-            // packing in render_scene; the settings + heightmap dims feed
-            // compute_clipmap_view. The height texture is asset-owned (bound into
-            // object_srg at the scalar_field_texture semantic, never released).
-            bool is_clipmap = false;
+            // Camera-snapped terrain (#233): a custom recipe (0x70A) with the
+            // CameraSnappedTerrain head displaces the lattice in the VS by
+            // sampling a resident height texture and packs a per-frame view
+            // transform (pack_camera_snapped_terrain_constants) via the custom
+            // head switch. These settings + heightmap dims feed compute_clipmap_
+            // view; they're populated when source->clipmap is present (the
+            // height texture binds generically at the scalar_field_texture
+            // semantic). Empty for a non-terrain look.
             wz::engine::assets::ClipmapLandscapeRenderSettings clipmap_settings{};
             uint32_t heightmap_width = 1;
             uint32_t heightmap_height = 1;

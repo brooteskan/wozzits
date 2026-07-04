@@ -212,7 +212,7 @@ float4 main(PSIn input) : SV_TARGET
             { kTerrainSurfaceRenderableSchema, kAssetTypeRenderable },
             { kRhiPullMeshRenderableSchema, kAssetTypeRenderable },
             { kGpuSparseMeshRenderableSchema, kAssetTypeRenderable },
-            { kClipmapLandscapeRenderableSchema, kAssetTypeRenderable },
+            // 0x708 clipmap landscape retired (#234) -> 0x70A custom renderable.
             {
                 kGaussianSplatCloudRhiRenderableSchema,
                 kAssetTypeRenderable,

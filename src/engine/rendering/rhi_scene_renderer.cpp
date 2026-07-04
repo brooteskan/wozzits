@@ -328,20 +328,15 @@ namespace wz::engine::rendering
                 };
             }
 
-            // Clipmap-landscape geometry (0x708): the lattice rides the CPU-pull
-            // mesh_key path (uploaded + owned by the renderer, exactly like a
-            // plain pull mesh); the recipe additionally names a resident height
-            // ScalarField texture the VS samples. The shared binding surfaces the
-            // heightmap dims + settings for the per-frame terrain packing, and
-            // ensure_renderable binds the texture at scalar_field_texture.
             // CPU pull-mesh geometry: the renderer uploads and owns the buffers.
             // Carry any baked mesh-style shading (issue #195 slice A) so the pack
-            // path can emit the MVP + style root-constant block.
+            // path can emit the MVP + style root-constant block. A non-custom
+            // recipe never carries a height texture (camera-snapped terrain is a
+            // custom recipe now, #234), so there is no clipmap binding here.
             return PullMeshSource{
                 .mesh_key = recipe->mesh_key,
                 .program_key = recipe->program_key,
                 .buffer_identity = ea::rhi_asset_identity(recipe->mesh_key),
-                .clipmap = clipmap_binding_for(assets, *recipe),
                 .style = recipe->style,
             };
         }
@@ -1104,29 +1099,11 @@ namespace wz::engine::rendering
             }
         }
 
-        // Clipmap-landscape: locate the resident height texture (#197) by the
-        // identity the scalar-field compiler published it under. It is asset-
-        // owned — bind it into the object SRG, never release it. Resolve this
-        // BEFORE inserting the realized entry so a missing texture fails cleanly
-        // without leaving a half-built renderable behind (and, on the CPU-upload
-        // path, releases the lattice pull buffers we just acquired).
-        wz::rhi::GpuResourceHandle height_texture_handle{};
-        if (source->clipmap) {
-            height_texture_handle = gpu_.resources.find(wz::rhi::ResourceIdentity{
-                ea::rhi_asset_identity(
-                    source->clipmap->height_texture_key, "field_texture"),
-                {} });
-            if (!height_texture_handle.valid()) {
-                if (owns_buffers) {
-                    release_unrealized_pull_buffers(
-                        gpu_.resources, positions_handle, indices_handle);
-                }
-                logger_.error(
-                    "RhiSceneRenderer: clipmap height texture not resident");
-                failed_renderables_.insert(renderable_key);
-                return nullptr;
-            }
-        }
+        // A camera-snapped terrain recipe (source->clipmap) binds its height
+        // texture generically via custom_bindings (scalar_field_texture) in the
+        // custom SRG branch below — the same residency check every custom
+        // binding gets — so there is no separate height-texture resolve here
+        // (the 0x708 path that needed one was retired, #234).
 
         auto [it, inserted] = realized_renderables_.try_emplace(renderable_key);
         RealizedRenderable& realized = it->second;
@@ -1170,8 +1147,13 @@ namespace wz::engine::rendering
             // overrides address fields by name at pack time.
             realized.custom_fields = source->custom_constants;
         }
+        // Camera-snapped terrain data (#233): a custom recipe with a height
+        // texture carries the world settings + heightmap dims here, and the
+        // lattice's level count / world width come from the mesh — the inputs
+        // the shared terrain packer needs. Only 0x70A custom recipes reach this
+        // now (0x708 retired, #234), so it feeds the custom head switch, never a
+        // separate is_clipmap pack.
         if (source->clipmap) {
-            realized.is_clipmap = true;
             realized.clipmap_settings = source->clipmap->settings;
             realized.heightmap_width = source->clipmap->heightmap_width;
             realized.heightmap_height = source->clipmap->heightmap_height;
@@ -1244,19 +1226,12 @@ namespace wz::engine::rendering
             }
         }
         else {
+            // Non-custom pull-mesh recipes bind only the two pull buffers. (The
+            // 0x708 clipmap's height-texture bind lived here; retired by #234 —
+            // a terrain look is now a custom recipe and takes the branch above.)
             srg_ok =
                 realized.object_srg.set(pulled_positions, realized.positions)
                 && realized.object_srg.set(pulled_indices, realized.indices);
-            if (srg_ok && realized.is_clipmap) {
-                // Bind the resident R32 height texture at the
-                // scalar_field_texture semantic — the third descriptor in the
-                // binding_layout==2 object SRG. After this the 3-descriptor
-                // SRG satisfies its layout.
-                const wz::rhi::Tag scalar_field_texture =
-                    gpu_.descriptor_semantics.find("scalar_field_texture");
-                srg_ok = realized.object_srg.set(
-                    scalar_field_texture, height_texture_handle).has_value();
-            }
         }
         if (!srg_ok || !realized.object_srg.satisfies(*slot2_layout)) {
             if (realized.owns_buffers) {
@@ -1275,12 +1250,13 @@ namespace wz::engine::rendering
         geometry.vertex_count = vertex_count;
 
         // Initial root constants sized to the program's block: 64-byte identity
-        // MVP for the pull path, or a zeroed 128-byte clipmap block. render_scene
-        // overwrites these every frame before recording, but sizing them to the
-        // pipeline's root-constant dword_count up front keeps the packet
-        // internally consistent (a size mismatch would make the recorder reject).
+        // MVP for the pull path, the custom template (any size, incl. the
+        // 128-byte terrain block) for a custom recipe, or the style block.
+        // render_scene overwrites these every frame before recording, but
+        // sizing them to the pipeline's root-constant dword_count up front keeps
+        // the packet internally consistent (a size mismatch would make the
+        // recorder reject).
         const wz::math::Mat4 initial_mvp = wz::math::Mat4::identity();
-        const ClipmapDrawConstants initial_clipmap{};
         const MeshStyleDrawConstants initial_style{};
         std::span<const uint8_t> initial_constants =
             std::span<const uint8_t>{
@@ -1289,15 +1265,10 @@ namespace wz::engine::rendering
         if (realized.is_custom) {
             // The prebuilt template block — already the program's exact
             // root-constant size (possibly zero when the authored layout
-            // declares no block).
+            // declares no block; 128 bytes for the CameraSnappedTerrain head).
             initial_constants = std::span<const uint8_t>{
                 realized.custom_constants.data(),
                 realized.custom_constants.size() };
-        }
-        else if (realized.is_clipmap) {
-            initial_constants = std::span<const uint8_t>{
-                reinterpret_cast<const uint8_t*>(&initial_clipmap),
-                sizeof(initial_clipmap) };
         }
         else if (realized.has_style) {
             initial_constants = std::span<const uint8_t>{
@@ -1490,25 +1461,7 @@ namespace wz::engine::rendering
                 continue;
             }
 
-            if (realized->is_clipmap && !realized->is_custom) {
-                // Bespoke clipmap (0x708). A custom recipe (0x70A) also sets
-                // is_clipmap when it carries a height texture, but it packs
-                // through the is_custom head switch below (CameraSnappedTerrain
-                // case) — the SAME shared packer — so exclude it here.
-                // #221: the terrain's placing transform (translation + vertical
-                // scale) comes from the caller's world_transforms span — the
-                // single source of truth (the sim polytree), index-aligned with
-                // `nodes`, so a sim-driven move tracks. The shared packer derives
-                // the placement (mesh-derived c0 + the footprint, node-transform
-                // or Placement-authoritative) and packs ClipmapDrawConstants.
-                pack_camera_snapped_terrain_constants(
-                    *realized,
-                    node_worlds[node_index],
-                    view_projection,
-                    camera_world_pos,
-                    realized->packet.root_constants);
-            }
-            else if (realized->is_splat_cloud) {
+            if (realized->is_splat_cloud) {
                 // The splat VS billboards a uniform world-diameter sphere per
                 // sample facing the camera, so it needs world + view_proj
                 // separate (not a pre-multiplied MVP) and the camera world

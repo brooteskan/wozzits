@@ -265,83 +265,8 @@ namespace wz::engine::assets
         return RenderableAsset{ .output = key };
     }
 
-    RenderableAsset
-    RenderableAssetModule::create_clipmap_landscape(
-        const ClipmapLandscapeRenderableDesc& desc)
-    {
-        if (desc.name.empty()) {
-            logger_.error("clipmap landscape renderable has empty name");
-            return {};
-        }
-
-        if (!desc.lattice_mesh.valid()) {
-            logger_.error(
-                "clipmap landscape renderable has invalid lattice mesh: "
-                + desc.name);
-            return {};
-        }
-
-        if (!desc.height_field.valid()) {
-            logger_.error(
-                "clipmap landscape renderable has invalid height field: "
-                + desc.name);
-            return {};
-        }
-
-        if (!desc.program.valid()) {
-            logger_.error(
-                "clipmap landscape renderable has invalid render program: "
-                + desc.name);
-            return {};
-        }
-
-        // The placement is an OPTIONAL 4th dependency (issue #218 Phase 2). When
-        // present it is folded into the AssetKey (so a placement change
-        // re-compiles the renderable) and registered as a graph edge AFTER the
-        // program, so the compiler can locate it by type and the deps-hash
-        // ordering matches the key factory.
-        const bool has_placement = desc.placement.valid();
-
-        const wz::asset::AssetKey key =
-            make_clipmap_landscape_renderable_key(
-                desc.name,
-                desc.lattice_mesh.output,
-                desc.height_field.output,
-                desc.program.key,
-                desc.settings,
-                has_placement ? desc.placement.output
-                              : wz::asset::AssetKey{});
-
-        wz::asset::AssetNode node;
-        node.key = key;
-        node.type = kAssetTypeRenderable;
-        node.schema = kClipmapLandscapeRenderableSchema;
-        node.stage = wz::asset::AssetStage::Source;
-        node.payload = std::vector<uint8_t>{};
-        node.meta = ClipmapLandscapeRenderableCompileDesc{
-            .lattice_mesh_asset = desc.lattice_mesh.output,
-            .height_field_asset = desc.height_field.output,
-            .render_program_asset = desc.program.key,
-            .placement_asset =
-                has_placement ? desc.placement.output
-                              : wz::asset::AssetKey{},
-            .settings = desc.settings,
-        };
-
-        // Dependency order must match the compiler's input ports:
-        // lattice mesh, height field, render program, [optional] placement.
-        std::vector<wz::asset::AssetKey> deps;
-        deps.push_back(desc.lattice_mesh.output);
-        deps.push_back(desc.height_field.output);
-        deps.push_back(desc.program.key);
-        if (has_placement) {
-            deps.push_back(desc.placement.output);
-        }
-
-        (void)system_.register_asset(std::move(node), std::move(deps));
-
-        return RenderableAsset{ .output = key };
-    }
+    // create_clipmap_landscape (the 0x708 module API) was retired with the
+    // schema (issue #234); the clipmap is authored as a 0x70A custom renderable.
 
     RenderableAsset
     RenderableAssetModule::create_gaussian_splat_cloud_rhi(
@@ -463,7 +388,6 @@ namespace wz::engine::assets
         {
             return schema == kRhiPullMeshRenderableSchema
                 || schema == kGpuSparseMeshRenderableSchema
-                || schema == kClipmapLandscapeRenderableSchema
                 || schema == kGaussianSplatCloudRhiRenderableSchema
                 || schema == kCustomRenderableSchema;
         }

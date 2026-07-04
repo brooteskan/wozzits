@@ -74,24 +74,11 @@ namespace wz::engine::assets
         RenderProgramAsset program{};
     };
 
-    struct ClipmapLandscapeRenderableDesc
-    {
-        std::string name;
-        // Clipmap lattice geometry (the kProceduralClipmapLatticeMeshSchema
-        // mesh, or any kAssetTypeMesh).
-        MeshAsset lattice_mesh{};
-        // Height source — a scalar field resident as an R32 Texture2D (#197).
-        ScalarFieldAsset height_field{};
-        RenderProgramAsset program{};
-        // Optional world-space frame (issue #218 Phase 2). When valid, it is
-        // connected as a 4th graph dependency and becomes authoritative for the
-        // texture->world footprint (world_origin/world_size/vertical_scale/
-        // base_height) at compile time, overriding the corresponding fields in
-        // settings below. lattice_world_cell_size is unaffected. When invalid
-        // (default), settings are used exactly as before (back-compatible).
-        PlacementAsset placement{};
-        ClipmapLandscapeRenderSettings settings{};
-    };
+    // ClipmapLandscapeRenderableDesc + create_clipmap_landscape were retired
+    // with the 0x708 schema (issue #234): the clipmap is now authored as a
+    // 0x70A custom renderable (CameraSnappedTerrain head + a scalar_field_texture
+    // binding + a Placement port), so it goes through create_custom_renderable /
+    // the graph path like any other custom look.
 
     struct GaussianSplatCloudRhiRenderableDesc
     {
@@ -160,9 +147,6 @@ namespace wz::engine::assets
 
         RenderableAsset create_gpu_sparse_mesh_renderable(
             const GpuSparseMeshRenderableDesc& desc);
-
-        RenderableAsset create_clipmap_landscape(
-            const ClipmapLandscapeRenderableDesc& desc);
 
         RenderableAsset create_gaussian_splat_cloud_rhi(
             const GaussianSplatCloudRhiRenderableDesc& desc);

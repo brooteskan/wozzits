@@ -526,9 +526,8 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(
                 kGpuSparseMeshRenderableSchema,
                 "GPU sparse mesh renderable");
-            WZ_ADD_SCHEMA(
-                kClipmapLandscapeRenderableSchema,
-                "Clipmap landscape renderable");
+            // 0x708 (clipmap landscape renderable) retired by #234 -- the
+            // clipmap is now a 0x70A custom renderable (below).
             // 0x702 stays alive after the #195 legacy-schema deletion: its
             // RenderableAssetData feeds the resolver's preview-mesh branch —
             // the editor's scalar-field visualization — not the (deleted)

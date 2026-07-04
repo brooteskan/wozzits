@@ -373,23 +373,10 @@ namespace wz::engine::assets
         wz::asset::AssetKey render_program_asset{};
     };
 
-    struct ClipmapLandscapeRenderableCompileDesc
-    {
-        // Lattice geometry (kAssetTypeMesh, the clipmap lattice recipe).
-        wz::asset::AssetKey lattice_mesh_asset{};
-        // Height source (kAssetTypeScalarField, resident as an R32 texture).
-        wz::asset::AssetKey height_field_asset{};
-        // Render program (kAssetTypeRenderProgram).
-        wz::asset::AssetKey render_program_asset{};
-        // Optional world-space frame (kAssetTypePlacement, issue #218 Phase 2).
-        // When valid, it is connected as a 4th graph dep and becomes
-        // authoritative for the texture->world footprint (world_origin/
-        // world_size/vertical_scale/base_height), overriding the authored
-        // settings below for those four. lattice_world_cell_size is unaffected.
-        wz::asset::AssetKey placement_asset{};
-        // World-space placement / mapping for the landscape.
-        ClipmapLandscapeRenderSettings settings{};
-    };
+    // ClipmapLandscapeRenderableCompileDesc was retired with the 0x708 schema
+    // (issue #234). ClipmapLandscapeRenderSettings (above) stays — it is the
+    // recipe's terrain footprint, now produced by the 0x70A custom renderable
+    // compiler from a Placement dep and consumed by the shared terrain packer.
 
     struct GaussianSplatCloudRhiRenderableCompileDesc
     {
