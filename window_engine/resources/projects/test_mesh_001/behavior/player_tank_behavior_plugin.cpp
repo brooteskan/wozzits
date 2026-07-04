@@ -92,23 +92,26 @@ namespace
 
     void tank_init(
         const WzBehaviorInitFacts* facts,
-        WzBehaviorEntityId,
+        WzBehaviorEntityId self,
         void*)
     {
         PlayerTankState* state = wz_instance_state<PlayerTankState>(facts);
 
         if (state) {
-            uint8_t result = wz_find_entity_by_authored_id(facts, "empty_2", &state->terrain);
+            uint8_t result = wz_find_entity_by_authored_id(
+                facts, "clipmap_landscape", &state->terrain);
             wz_log_infof(facts, "[tank init] find terrain: %u", result);
 
-            result = wz_find_entity_by_authored_id(facts, "1", &state->canon_audio);
+            // The player is a spawned prefab now, so the camera + engine-sounds are
+            // our OWN children with conflict-free ids -- resolve them RELATIVE to
+            // self (by name), not by a scene-global authored id.
+            result = wz_find_descendant_by_name(
+                facts, self, "camera", &state->canon_audio);
             wz_log_infof(facts, "[tank init] find canon audio: %u", result);
 
-            result = wz_find_entity_by_authored_id(facts, "3", &state->engine_audio);
+            result = wz_find_descendant_by_name(
+                facts, self, "engine_sounds", &state->engine_audio);
             wz_log_infof(facts, "[tank init] find engine audio: %u", result);
-            // wz_log_infof(facts, "find empty_2: %u", result);
-            // wz_find_entity_by_name(facts, "terrain", &state->terrain);
-            // First load gives zeroed memory. Re-init/hot reload may preserve it.
         }
     }
 

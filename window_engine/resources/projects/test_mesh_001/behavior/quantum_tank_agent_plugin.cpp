@@ -66,7 +66,9 @@ namespace
         // root (cannon bank); we play "Canon_a" on it when a shot is lined up.
         state->canon_audio = self;
 
-        result = wz_find_entity_by_authored_id(facts, "empty_1", &state->player);
+        // The player is a spawned prefab now (its authored id is prefixed on
+        // spawn), so find it by its unique NAME "tank" rather than a scene id.
+        result = wz_find_entity_by_name(facts, "tank", &state->player);
         wz_log_infof(facts, "[agent tank init] find player: %u", result);
 
         // For now the engagement target IS the player tank. Steering, turret aim,

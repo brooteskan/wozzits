@@ -79,6 +79,7 @@ struct VSOut
     float4 pos        : SV_POSITION;
     float3 world_pos  : TEXCOORD0;  // displaced world position (for PS shading)
     float3 normal     : NORMAL;     // finite-difference height normal
+    float3 bary       : TEXCOORD1;  // per-corner basis for a solid-fill wireframe
 };
 
 // Sample the heightmap at a world XZ position by BILINEAR filtering (#211, was
@@ -264,5 +265,16 @@ VSOut main(uint vid : SV_VertexID)
     o.pos       = mul(view_projection, float4(world_pos, 1.0f));
     o.world_pos = world_pos;
     o.normal    = normal;
+
+    // Per-corner basis for a solid-fill wireframe PS. The clipmap is drawn
+    // non-indexed (the VS fetches indices[vid] itself), so each triangle is
+    // three CONSECUTIVE vertex ids and vid % 3 is the corner. The rasteriser
+    // interpolates this to per-pixel barycentrics; clipmap_wire_ps reads it to
+    // find the distance to the nearest triangle edge. The shaded clipmap_ps
+    // does not declare this input, so it simply ignores the extra output.
+    uint corner = vid % 3u;
+    o.bary = float3(corner == 0u ? 1.0f : 0.0f,
+                    corner == 1u ? 1.0f : 0.0f,
+                    corner == 2u ? 1.0f : 0.0f);
     return o;
 }

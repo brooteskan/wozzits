@@ -50,3 +50,11 @@ add_terrain_collision_behavior_module(
 add_terrain_collision_behavior_module(
     tank_commander
     tank_commander_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    cannon_flash
+    cannon_flash_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    spawn_player
+    spawn_player_plugin.cpp)
