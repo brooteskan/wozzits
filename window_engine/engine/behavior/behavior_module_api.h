@@ -1449,6 +1449,29 @@ static inline uint8_t wz_write_set_renderable_param_named(
         facts, entity, wz_renderable_param_hash(param_name), x, y, z);
 }
 
+// Point the runtime scene camera at `camera_entity` -- a node carrying a camera
+// component (found by name/id, or a spawned prefab's camera). Host-handled like
+// the audio commands: apply_behavior_commands ignores it; WozzitsApp_v1 reads the
+// node's transform + camera params and switches the active view (per frame, not
+// only at scene load). A no-op if the entity has no camera component. Play-mode
+// only -- the editor records the anchor but stays on the free-fly edit camera.
+// This is the built-in scene_camera behavior's action, callable from ANY module
+// (e.g. spawn_player activating the freshly spawned player's camera).
+static inline uint8_t wz_write_set_active_camera(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId camera_entity)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+    const WzBehaviorCommand command = {
+        camera_entity,
+        WZ_BEHAVIOR_COMMAND_SET_ACTIVE_CAMERA,
+        { 0.0f, 0.0f, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
 // Deferred runtime-authoring: ask the runtime to spawn a new child node under
 // `parent_entity`. The add is applied at the next frame boundary through the
 // shared runtime apply path (it does not mutate the scene during dispatch), and

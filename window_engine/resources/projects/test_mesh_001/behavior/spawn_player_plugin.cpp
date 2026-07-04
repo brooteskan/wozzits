@@ -82,12 +82,7 @@ namespace
             if (wz_find_entity_by_name(facts, "camera", &cam)
                 && cam != WZ_INVALID_BEHAVIOR_ENTITY)
             {
-                const WzBehaviorCommand cmd = {
-                    cam,
-                    WZ_BEHAVIOR_COMMAND_SET_ACTIVE_CAMERA,
-                    { 0.0f, 0.0f, 0.0f, 0.0f },
-                };
-                facts->write_command(facts->command_writer_user, &cmd);
+                wz_write_set_active_camera(facts, cam);
                 s->camera_active = 1;
                 wz_log_info(facts, "[spawn_player] activated player camera");
             }

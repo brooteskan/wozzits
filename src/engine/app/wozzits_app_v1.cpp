@@ -2272,6 +2272,23 @@ namespace wz::app
             }
         }
 
+        // Per-frame SET_ACTIVE_CAMERA: a behavior (e.g. spawn_player, after the
+        // deferred spawn of the player prefab) can switch the runtime camera on ANY
+        // frame, not just at scene load. The scene-load path already applies this
+        // once; mirror it here. behavior_scene_ is still current (spawns are applied
+        // at the frame boundary below), and apply_scene_active_camera caches the
+        // authored id, so any same-frame spawn renumbering is re-seated by
+        // refresh_active_camera_entity.
+        for (const wz::engine::behavior::BehaviorCommand& command :
+             frame_storage_.behavior_commands.commands)
+        {
+            if (command.kind
+                == wz::engine::behavior::BehaviorCommandKind::SetActiveCamera)
+            {
+                apply_scene_active_camera(command.entity);
+            }
+        }
+
         std::vector<wz::scene::RuntimeEntityId> velocity_changed;
         (void)wz::engine::behavior::integrate_motion(
             *behavior_scene_, dt, &velocity_changed);
