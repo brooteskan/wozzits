@@ -24,7 +24,7 @@ namespace
         RenderBindingLayoutData layout{};
         layout.constants_semantic = "clipmap";
         layout.constants_visibility = ShaderVisibility::All;
-        layout.constants_head = RenderBindingConstantsHead::Clipmap32;
+        layout.constants_head = RenderBindingConstantsHead::CameraSnappedTerrain;
         layout.bindings = {
             {
                 .semantic = "pulled_mesh_positions",
@@ -134,7 +134,7 @@ TEST(RenderBindingLayoutAssetModule, CompileRoundTrip)
 
     EXPECT_EQ(data->constants_semantic, "clipmap");
     EXPECT_EQ(data->constants_visibility, ShaderVisibility::All);
-    EXPECT_EQ(data->constants_head, RenderBindingConstantsHead::Clipmap32);
+    EXPECT_EQ(data->constants_head, RenderBindingConstantsHead::CameraSnappedTerrain);
     EXPECT_EQ(data->constants_dwords, 40u);
     EXPECT_EQ(data->total_constants_dwords(), 40u);
     ASSERT_EQ(data->constant_fields.size(), 2u);
@@ -482,4 +482,36 @@ TEST(RenderBindingPrelude, FailsOnInvalidLayoutWithReason)
     EXPECT_FALSE(generate_hlsl_binding_prelude(layout, prelude, error));
     EXPECT_NE(error.find("no_such_semantic"), std::string::npos);
     EXPECT_TRUE(prelude.empty());
+}
+
+TEST(RenderBindingPrelude, CameraSnappedTerrainHeadEmitsNamedTerrainMembers)
+{
+    // clipmap_layout() carries the CameraSnappedTerrain head (issue #233): the
+    // prelude must emit the real named terrain cbuffer members matching the
+    // ClipmapDrawConstants byte layout, not an opaque array.
+    std::string prelude;
+    std::string error;
+    ASSERT_TRUE(generate_hlsl_binding_prelude(clipmap_layout(), prelude, error))
+        << error;
+
+    EXPECT_NE(
+        prelude.find("float4x4 view_projection : packoffset(c0);"),
+        std::string::npos);
+    EXPECT_NE(
+        prelude.find("float4 snap_params : packoffset(c4);"),
+        std::string::npos);
+    EXPECT_NE(
+        prelude.find("float4 world_to_uv : packoffset(c5);"),
+        std::string::npos);
+    EXPECT_NE(
+        prelude.find("float4 texel_and_vertical : packoffset(c6);"),
+        std::string::npos);
+    EXPECT_NE(
+        prelude.find("float4 texel_dims_extent : packoffset(c7);"),
+        std::string::npos);
+    // The height field the VS samples still comes through as an SRV row.
+    EXPECT_NE(
+        prelude.find(
+            "Texture2D<float4> scalar_field_texture : register(t2, space2);"),
+        std::string::npos);
 }

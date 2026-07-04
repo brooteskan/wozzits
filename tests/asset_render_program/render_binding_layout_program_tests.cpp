@@ -111,7 +111,7 @@ namespace
         RenderBindingLayoutData layout{};
         layout.constants_semantic = "clipmap";
         layout.constants_visibility = ShaderVisibility::All;
-        layout.constants_head = RenderBindingConstantsHead::Clipmap32;
+        layout.constants_head = RenderBindingConstantsHead::CameraSnappedTerrain;
         layout.bindings = {
             {
                 .semantic = "pulled_mesh_positions",

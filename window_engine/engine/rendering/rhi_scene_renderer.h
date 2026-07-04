@@ -234,6 +234,20 @@ namespace wz::engine::rendering
         // shaders; this just gates the render-time program fallback (#193).
         bool ensure_shader_module(const wz::asset::AssetKey& shader_key);
 
+        // Pack a camera-follow terrain draw-constant block (the 32-dword
+        // ClipmapDrawConstants: view_projection + per-level snap / world→uv /
+        // vertical / texel-extent) into `out`, from the node transform + the
+        // realized clipmap settings/dims + the live camera. Shared by the
+        // bespoke clipmap (0x708) branch and the generic custom-renderable
+        // (0x70A) CameraSnappedTerrain head case (issue #233) so both stay
+        // byte-identical.
+        void pack_camera_snapped_terrain_constants(
+            const RealizedRenderable& realized,
+            const wz::math::Mat4& node_world,
+            const wz::math::Mat4& view_projection,
+            const wz::math::Vec3& camera_world_pos,
+            std::vector<uint8_t>& out);
+
         EngineGpuContext&           gpu_;
         wz::Logger&                 logger_;
         RhiContext                  ctx_;

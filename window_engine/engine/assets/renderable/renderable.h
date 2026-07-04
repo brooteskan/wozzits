@@ -432,5 +432,10 @@ namespace wz::engine::assets
         wz::asset::AssetKey render_program_asset{};
         std::vector<Binding> bindings;
         std::vector<Constant> constants;
+        // Optional Placement (kAssetTypePlacement) — the world footprint for a
+        // CameraSnappedTerrain-head program (issue #233): origin/extent/base
+        // define the texture→world mapping the terrain packer uses, shared with
+        // a collision reading the same Placement. Empty for non-terrain looks.
+        wz::asset::AssetKey placement_asset{};
     };
 }

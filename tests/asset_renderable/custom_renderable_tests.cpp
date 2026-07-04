@@ -113,6 +113,58 @@ float4 main(PSIn input) : SV_TARGET
 }
 )";
 
+    // Camera-snapped terrain fixture shaders (issue #233): the SRG is the
+    // clipmap shape — a 32-dword CameraSnappedTerrain cbuffer (view_projection +
+    // per-level snap / world→uv / vertical / texel-extent) at b0 space2, the two
+    // mesh-pull StructuredBuffers, a height texture sampled in the VS, and a
+    // LinearClamp sampler. Minimal (displace + project); the recipe fields, not
+    // the pixels, are what the terrain-head test asserts.
+    constexpr const char* kTerrainVs = R"(
+cbuffer Terrain : register(b0, space2)
+{
+    float4x4 view_projection;
+    float4   snap_params;
+    float4   world_to_uv;
+    float4   texel_and_vertical;
+    float4   texel_dims_extent;
+};
+
+StructuredBuffer<float3> positions : register(t0, space2);
+StructuredBuffer<uint>   indices   : register(t1, space2);
+Texture2D<float>         heightTex : register(t2, space2);
+SamplerState             linearSampler : register(s0, space2);
+
+struct VSOut
+{
+    float4 pos : SV_POSITION;
+};
+
+VSOut main(uint vid : SV_VertexID)
+{
+    uint   idx = indices[vid];
+    float3 p   = positions[idx];
+    float2 uv  = p.xz * world_to_uv.xy + world_to_uv.zw;
+    float  h   = heightTex.SampleLevel(linearSampler, uv, 0.0f);
+    p.y += h * texel_and_vertical.z + texel_and_vertical.w;
+
+    VSOut o;
+    o.pos = mul(view_projection, float4(p, 1.0f));
+    return o;
+}
+)";
+
+    constexpr const char* kTerrainPs = R"(
+struct PSIn
+{
+    float4 pos : SV_POSITION;
+};
+
+float4 main(PSIn input) : SV_TARGET
+{
+    return float4(0.3f, 0.5f, 0.2f, 1.0f);
+}
+)";
+
     void write_text_file(const fs::path& path, const char* text)
     {
         fs::create_directories(path.parent_path());
@@ -156,6 +208,43 @@ float4 main(PSIn input) : SV_TARGET
             {
                 .kind = ea::StaticSamplerKind::LinearClamp,
                 .visibility = ea::ShaderVisibility::Pixel,
+            },
+        };
+        return layout;
+    }
+
+    // The camera-snapped terrain SRG (issue #233): a 32-dword
+    // CameraSnappedTerrain constant block (no authored tail — the head fills all
+    // 32 dwords), the two mesh-pull buffers, and a VS-sampled height texture with
+    // a LinearClamp sampler. The clipmap shape, expressed as an authored layout.
+    ea::RenderBindingLayoutData terrain_layout()
+    {
+        ea::RenderBindingLayoutData layout{};
+        layout.constants_semantic = "terrain";
+        layout.constants_visibility = ea::ShaderVisibility::Vertex;
+        layout.constants_head =
+            ea::RenderBindingConstantsHead::CameraSnappedTerrain;
+        layout.bindings = {
+            {
+                .semantic = "pulled_mesh_positions",
+                .kind = ea::RenderBindingKind::StructuredSrv,
+                .visibility = ea::ShaderVisibility::Vertex,
+            },
+            {
+                .semantic = "pulled_mesh_indices",
+                .kind = ea::RenderBindingKind::StructuredSrv,
+                .visibility = ea::ShaderVisibility::Vertex,
+            },
+            {
+                .semantic = "scalar_field_texture",
+                .kind = ea::RenderBindingKind::TextureSrv,
+                .visibility = ea::ShaderVisibility::Vertex,
+            },
+        };
+        layout.samplers = {
+            {
+                .kind = ea::StaticSamplerKind::LinearClamp,
+                .visibility = ea::ShaderVisibility::Vertex,
             },
         };
         return layout;
@@ -249,6 +338,10 @@ float4 main(PSIn input) : SV_TARGET
                 root / "shaders" / "custom" / "custom_vs.hlsl", kCustomVs);
             write_text_file(
                 root / "shaders" / "custom" / "custom_ps.hlsl", kCustomPs);
+            write_text_file(
+                root / "shaders" / "terrain" / "terrain_vs.hlsl", kTerrainVs);
+            write_text_file(
+                root / "shaders" / "terrain" / "terrain_ps.hlsl", kTerrainPs);
         }
 
         void TearDown() override
@@ -274,7 +367,9 @@ float4 main(PSIn input) : SV_TARGET
 
         Ingredients build_ingredients(
             ea::EngineAssetLibrary& assets,
-            const ea::RenderBindingLayoutData& layout_data)
+            const ea::RenderBindingLayoutData& layout_data,
+            const char* vertex_path = "shaders/custom/custom_vs.hlsl",
+            const char* pixel_path = "shaders/custom/custom_ps.hlsl")
         {
             Ingredients out{};
             out.mesh = assets.meshes().create_procedural_mesh({
@@ -303,8 +398,8 @@ float4 main(PSIn input) : SV_TARGET
             const ea::ShaderPairAsset shaders =
                 assets.shaders().create_shader_pair({
                     .name = "custom/program",
-                    .vertex_path = "shaders/custom/custom_vs.hlsl",
-                    .pixel_path = "shaders/custom/custom_ps.hlsl",
+                    .vertex_path = vertex_path,
+                    .pixel_path = pixel_path,
                     .vertex_target = "vs_5_1",
                     .pixel_target = "ps_5_1",
                 });
@@ -496,6 +591,80 @@ TEST_F(CustomRenderableFixture, KindMismatchFailsCompileWithReason)
         << "detail was: " << state->detail;
     EXPECT_NE(
         state->detail.find("splat_cloud"), std::string::npos)
+        << "detail was: " << state->detail;
+}
+
+// #233: a CameraSnappedTerrain-head custom renderable compiles into a recipe
+// that names the height field (from the scalar_field_texture binding) and
+// carries the world settings — the same data the 0x708 clipmap recipe carries,
+// so the generic per-frame terrain packer fills the block. No Placement is
+// wired here, so the footprint stays render-time-derived (not authoritative).
+TEST_F(CustomRenderableFixture, CameraSnappedTerrainRecipeCarriesHeightAndSettings)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    ea::EngineAssetLibrary assets(gpu, logger, root.string());
+
+    const Ingredients ingredients = build_ingredients(
+        assets, terrain_layout(),
+        "shaders/terrain/terrain_vs.hlsl", "shaders/terrain/terrain_ps.hlsl");
+
+    wz::asset::ParamBlock params;
+    params.values["binding0_semantic"] =
+        std::string("scalar_field_texture");
+    const wz::asset::AssetKey renderable_key = register_custom_renderable(
+        assets,
+        20,
+        std::move(params),
+        { ingredients.mesh.output,
+          ingredients.program.key,
+          ingredients.field.output });
+
+    ASSERT_TRUE(assets.commit());
+    const ea::ResolveReport resolve = assets.resolve_all();
+    ASSERT_TRUE(resolve.ok());
+
+    const ea::RhiRenderableRecipe* recipe =
+        assets.renderables().get_rhi_renderable_recipe(
+            ea::RenderableAsset{ .output = renderable_key });
+    ASSERT_NE(recipe, nullptr);
+    EXPECT_TRUE(recipe->custom);
+    EXPECT_EQ(
+        recipe->constants_head,
+        ea::RenderBindingConstantsHead::CameraSnappedTerrain);
+    // The height field the renderer samples + derives texel dims from.
+    EXPECT_TRUE(recipe->height_texture_key == ingredients.field.output);
+    // Default footprint (no Placement wired): camera-snapped, not authoritative.
+    EXPECT_TRUE(recipe->clipmap.view_snapped);
+    EXPECT_FALSE(recipe->clipmap.placement_authoritative);
+}
+
+// #233: the terrain head needs the height field. With the layout's
+// scalar_field_texture row unbound, the renderable fails to compile with the
+// reason naming that semantic (so a terrain look can't render heightless).
+TEST_F(CustomRenderableFixture, CameraSnappedTerrainWithoutHeightBindingFails)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    ea::EngineAssetLibrary assets(gpu, logger, root.string());
+
+    const Ingredients ingredients = build_ingredients(
+        assets, terrain_layout(),
+        "shaders/terrain/terrain_vs.hlsl", "shaders/terrain/terrain_ps.hlsl");
+
+    // No scalar_field_texture binding wired.
+    const wz::asset::AssetKey renderable_key = register_custom_renderable(
+        assets,
+        21,
+        wz::asset::ParamBlock{},
+        { ingredients.mesh.output, ingredients.program.key });
+
+    ASSERT_TRUE(assets.commit());
+    const ea::ResolveReport resolve = assets.resolve_all();
+    EXPECT_FALSE(resolve.ok());
+
+    const auto state = assets.system().node_resolve_state(renderable_key);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_NE(
+        state->detail.find("scalar_field_texture"), std::string::npos)
         << "detail was: " << state->detail;
 }
 

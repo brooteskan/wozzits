@@ -17,13 +17,23 @@ namespace wz::engine::assets
     // Head of the root-constant block: names one of the EXISTING renderer
     // packers, so the first N dwords of the block are filled by known code
     // (mvp16 → the 16-float MVP, world_viewproj_camera36 → SplatCloud-style
-    // world[16]+view_proj[16]+camera[4], clipmap32 → ClipmapDrawConstants).
+    // world[16]+view_proj[16]+camera[4], camera_snapped_terrain →
+    // ClipmapDrawConstants: view_projection[16] + a 16-dword camera-follow
+    // terrain block the renderer computes each frame via clipmap_view.h).
     enum class RenderBindingConstantsHead : uint8_t
     {
         None,
         Mvp16,
         WorldViewProjCamera36,
-        Clipmap32,
+        // Camera-follow displaced-terrain head (issue #233): the clipmap's
+        // 32-dword block generalized — view_projection + per-level snap /
+        // world→uv / vertical / texel-extent params. The renderer fills it from
+        // the live camera + the recipe's ClipmapLandscapeRenderSettings + the
+        // bound height field's dims + the lattice geometry (make_clipmap_draw_
+        // constants). Any camera-snapped terrain shader can use it; the clipmap
+        // is one consumer. (Was named Clipmap32 while it lived only on the
+        // bespoke 0x708 path.)
+        CameraSnappedTerrain,
     };
 
     [[nodiscard]] constexpr uint32_t render_binding_constants_head_dwords(
@@ -33,7 +43,7 @@ namespace wz::engine::assets
         case RenderBindingConstantsHead::None:                  return 0u;
         case RenderBindingConstantsHead::Mvp16:                 return 16u;
         case RenderBindingConstantsHead::WorldViewProjCamera36: return 36u;
-        case RenderBindingConstantsHead::Clipmap32:             return 32u;
+        case RenderBindingConstantsHead::CameraSnappedTerrain:  return 32u;
         }
         return 0u;
     }
@@ -99,6 +109,6 @@ namespace wz::engine::assets
         && render_binding_constants_head_dwords(
             RenderBindingConstantsHead::WorldViewProjCamera36) % 4u == 0u
         && render_binding_constants_head_dwords(
-            RenderBindingConstantsHead::Clipmap32) % 4u == 0u,
+            RenderBindingConstantsHead::CameraSnappedTerrain) % 4u == 0u,
         "head packers must end register-aligned for relative tail offsets");
 }

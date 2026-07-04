@@ -288,10 +288,20 @@ namespace wz::engine::assets
                        "    float4x4 view_proj : packoffset(c4);\n"
                        "    float4 camera_and_diameter : packoffset(c8);\n";
                 break;
-            case RenderBindingConstantsHead::Clipmap32:
-                // Packed by the clipmap renderer (ClipmapDrawConstants);
-                // custom renderables reject this head at compile.
-                out += "    float4 clipmap_constants[8] : packoffset(c0);\n";
+            case RenderBindingConstantsHead::CameraSnappedTerrain:
+                // The camera-follow terrain block (issue #233), matching
+                // ClipmapDrawConstants / the clipmap VS cbuffer BYTE-FOR-BYTE:
+                // view_projection + the per-level snap / world→uv / vertical /
+                // texel-extent params the renderer fills each frame.
+                out += "    float4x4 view_projection : packoffset(c0);\n"
+                       "    float4 snap_params : packoffset(c4);"
+                       "        // xy = camera world XZ, z = c0, w = snapped?\n"
+                       "    float4 world_to_uv : packoffset(c5);"
+                       "          // xy = uv scale, zw = uv offset\n"
+                       "    float4 texel_and_vertical : packoffset(c6);"
+                       "   // xy = texel world size, z = vscale, w = base\n"
+                       "    float4 texel_dims_extent : packoffset(c7);"
+                       "    // xy = texel dims, z = base_resolution, w = mips\n";
                 break;
             case RenderBindingConstantsHead::None:
                 break;

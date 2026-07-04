@@ -213,6 +213,35 @@ namespace wz::engine::rendering
             std::vector<ea::RhiRenderableConstant> custom_constants;
         };
 
+        // The clipmap/terrain binding a recipe carries (height_texture_key + the
+        // world settings) plus the height field's resident texel dims — or
+        // nullopt when the recipe names no height texture. Shared by the generic
+        // custom (0x70A, CameraSnappedTerrain head, #233) and the bespoke clipmap
+        // (0x708) paths so both get the identical per-frame terrain packing.
+        std::optional<ClipmapBinding> clipmap_binding_for(
+            const ea::EngineAssetLibrary& assets,
+            const ea::RhiRenderableRecipe& recipe)
+        {
+            if (recipe.height_texture_key == wz::asset::AssetKey{}) {
+                return std::nullopt;
+            }
+            ClipmapBinding binding;
+            binding.height_texture_key = recipe.height_texture_key;
+            binding.settings = recipe.clipmap;
+            const ea::ScalarFieldHandle field_handle =
+                assets.scalar_fields().get_scalar_field(
+                    ea::ScalarFieldAsset{ .output = recipe.height_texture_key });
+            if (const ea::ScalarFieldData* field =
+                    assets.scalar_fields().get_scalar_field_data(field_handle))
+            {
+                binding.heightmap_width =
+                    field->width == 0u ? 1u : field->width;
+                binding.heightmap_height =
+                    field->height == 0u ? 1u : field->height;
+            }
+            return binding;
+        }
+
         std::optional<PullMeshSource> pull_mesh_source_for_renderable(
             const ea::EngineAssetLibrary& assets,
             const wz::asset::AssetKey& renderable_key)
@@ -227,12 +256,19 @@ namespace wz::engine::rendering
             // Custom renderable recipe (issue #228): CPU pull-mesh geometry
             // plus the compiled generic bindings/constants, carried verbatim
             // so ensure_renderable and the per-frame pack stay schema-blind.
+            // A CameraSnappedTerrain-head recipe (#233) also names a height
+            // texture, so it rides the SAME clipmap binding the 0x708 path uses
+            // — realize then derives the mesh/field terrain data for the shared
+            // per-frame packer. The height texture itself is bound generically
+            // via custom_bindings (scalar_field_texture), not the is_clipmap SRG
+            // branch, so there is no double-bind.
             if (recipe->custom) {
                 return PullMeshSource{
                     .mesh_key = recipe->mesh_key,
                     .program_key = recipe->program_key,
                     .buffer_identity =
                         ea::rhi_asset_identity(recipe->mesh_key),
+                    .clipmap = clipmap_binding_for(assets, *recipe),
                     .custom = true,
                     .custom_bindings = recipe->bindings,
                     .custom_constants_head = recipe->constants_head,
@@ -292,30 +328,12 @@ namespace wz::engine::rendering
                 };
             }
 
-            // Clipmap-landscape geometry: the lattice rides the CPU-pull mesh_key
-            // path (uploaded + owned by the renderer, exactly like a plain pull
-            // mesh); the recipe additionally names a resident height ScalarField
-            // texture the VS samples. Surface that here so ensure_renderable binds
-            // the texture into the object SRG and stashes the heightmap dims +
-            // settings for the per-frame view-transform packing.
-            std::optional<ClipmapBinding> clipmap{};
-            if (!(recipe->height_texture_key == wz::asset::AssetKey{})) {
-                ClipmapBinding binding;
-                binding.height_texture_key = recipe->height_texture_key;
-                binding.settings = recipe->clipmap;
-                const ea::ScalarFieldHandle field_handle =
-                    assets.scalar_fields().get_scalar_field(
-                        ea::ScalarFieldAsset{ .output = recipe->height_texture_key });
-                if (const ea::ScalarFieldData* field =
-                        assets.scalar_fields().get_scalar_field_data(field_handle))
-                {
-                    binding.heightmap_width = field->width == 0u ? 1u : field->width;
-                    binding.heightmap_height =
-                        field->height == 0u ? 1u : field->height;
-                }
-                clipmap = binding;
-            }
-
+            // Clipmap-landscape geometry (0x708): the lattice rides the CPU-pull
+            // mesh_key path (uploaded + owned by the renderer, exactly like a
+            // plain pull mesh); the recipe additionally names a resident height
+            // ScalarField texture the VS samples. The shared binding surfaces the
+            // heightmap dims + settings for the per-frame terrain packing, and
+            // ensure_renderable binds the texture at scalar_field_texture.
             // CPU pull-mesh geometry: the renderer uploads and owns the buffers.
             // Carry any baked mesh-style shading (issue #195 slice A) so the pack
             // path can emit the MVP + style root-constant block.
@@ -323,7 +341,7 @@ namespace wz::engine::rendering
                 .mesh_key = recipe->mesh_key,
                 .program_key = recipe->program_key,
                 .buffer_identity = ea::rhi_asset_identity(recipe->mesh_key),
-                .clipmap = clipmap,
+                .clipmap = clipmap_binding_for(assets, *recipe),
                 .style = recipe->style,
             };
         }
@@ -1314,6 +1332,89 @@ namespace wz::engine::rendering
         return &realized;
     }
 
+    void RhiSceneRenderer::pack_camera_snapped_terrain_constants(
+        const RealizedRenderable& realized,
+        const wz::math::Mat4& node_world,
+        const wz::math::Mat4& view_projection,
+        const wz::math::Vec3& camera_world_pos,
+        std::vector<uint8_t>& out)
+    {
+        // The lattice mesh is WORLD-SIZED (its compiler bakes the finest cell
+        // metres into the vertex positions), so the renderer must NOT re-scale
+        // it. Derive the placement from the MESH + the node TRANSLATION (not
+        // node scale): c0 = mesh_width_x / grid_extent, the terrain world
+        // footprint = c0 * heightmap_dims (world-absolute), node translation
+        // places it (XZ → world origin, Y → base height). view_snapped carries
+        // through from the recipe; node ROTATION is not applied.
+        //
+        // #218 Phase 2: when a Placement asset is connected, the recipe's baked
+        // settings are authoritative for the texture→world footprint —
+        // overriding the node-transform derivation so the visible terrain shares
+        // one world mapping with a collision reading the same Placement. c0 stays
+        // mesh-derived in ONE place (the placement never governs the lattice
+        // geometry snap).
+        const float world_translation[3] = {
+            node_world.m[12], node_world.m[13], node_world.m[14] };
+        const auto column_length = [&](int col) noexcept -> float {
+            const int b = col * 4;
+            return std::sqrt(
+                node_world.m[b + 0] * node_world.m[b + 0]
+                + node_world.m[b + 1] * node_world.m[b + 1]
+                + node_world.m[b + 2] * node_world.m[b + 2]);
+        };
+        const float world_scale[3] = {
+            column_length(0), column_length(1), column_length(2) };
+
+        const bool placement_authoritative =
+            realized.clipmap_settings.placement_authoritative;
+        const ea::ClipmapLandscapeRenderSettings placement =
+            wz::engine::rendering::compute_clipmap_placement(
+                realized.clipmap_mesh_width_x,
+                ea::ClipmapLatticeParams{
+                    .level_count = realized.clipmap_level_count,
+                    .base_resolution = realized.clipmap_base_resolution,
+                    .cell_size = 1.0f,
+                },
+                realized.heightmap_width,
+                realized.heightmap_height,
+                world_translation,
+                world_scale,
+                realized.clipmap_settings.view_snapped,
+                placement_authoritative ? &realized.clipmap_settings : nullptr);
+
+        // One-shot diagnostic: where the footprint came from (a connected
+        // Placement auto-aligns a collision reading the same Placement; a
+        // node-transform footprint needs the node-scale hand-match).
+        if (!clipmap_placement_logged_) {
+            clipmap_placement_logged_ = true;
+            logger_.info(
+                std::string("clipmap placement: world_size=(")
+                + std::to_string(placement.world_size[0]) + ", "
+                + std::to_string(placement.world_size[1])
+                + ") world_origin=("
+                + std::to_string(placement.world_origin[0]) + ", "
+                + std::to_string(placement.world_origin[1])
+                + ") vertical_scale=" + std::to_string(placement.vertical_scale)
+                + " | footprint source: "
+                + (placement_authoritative
+                    ? "Placement asset (auto-aligned with a collision reading "
+                      "the same Placement)."
+                    : "node transform (no Placement connected; to align a "
+                      "collision constraint connect a shared Placement asset, "
+                      "or set node scale X/Z = world_size)."));
+        }
+
+        const ClipmapDrawConstants constants = make_clipmap_draw_constants(
+            view_projection,
+            camera_world_pos,
+            placement,
+            realized.heightmap_width,
+            realized.heightmap_height,
+            realized.clipmap_base_resolution);
+        const auto* bytes = reinterpret_cast<const uint8_t*>(&constants);
+        out.assign(bytes, bytes + sizeof(constants));
+    }
+
     bool RhiSceneRenderer::render_scene(
         std::span<const ea::SceneNodeAsset> nodes,
         ea::EngineAssetLibrary& assets,
@@ -1389,115 +1490,23 @@ namespace wz::engine::rendering
                 continue;
             }
 
-            if (realized->is_clipmap) {
-                // The lattice mesh is now WORLD-SIZED (its compiler bakes the
-                // finest cell metres into the vertex positions), so the renderer
-                // must NOT re-scale it. Derive the placement from the MESH + the
-                // node TRANSLATION (not node scale): the finest cell c0 =
-                // mesh_width_x / grid_extent, the terrain world footprint =
-                // c0 * heightmap_dims (so node scale X/Z no longer sizes it — the
-                // clipmap is world-absolute), and node translation places it
-                // (XZ -> world origin, Y -> base height). Vertical scale is still
-                // node.scale.y for now (a separate concern, see the flag below);
-                // view_snapped carries through from the recipe. The lattice still
-                // snaps to / follows the camera; node ROTATION is not applied.
-                //
-                // #218 Phase 2: when a Placement asset is connected, the
-                // recipe's baked settings are authoritative for the texture->
-                // world footprint (origin/size/vertical/base) — overriding the
-                // node-transform derivation so the visible terrain shares one
-                // world mapping with the collision (which reads the same
-                // Placement). We pass the baked settings as a footprint override
-                // to compute_clipmap_placement, which keeps c0 mesh-derived in
-                // ONE place (the placement never governs the lattice geometry
-                // snap). With no placement, the override is null and the
-                // node-transform path is used, exactly as before.
-                // #221: source the terrain's placing transform (translation +
-                // vertical scale) from the caller's world_transforms span — the
-                // single source of truth (the sim polytree) — index-aligned with
-                // `nodes`, NOT from node.local. For the placement-authoritative
-                // case (test_mesh_001) these are IGNORED by
-                // compute_clipmap_placement (the connected Placement is the
-                // footprint), so this changes nothing there; for the no-placement
-                // legacy path the world transform is the correct read (world ==
-                // local for a top-level clipmap node) and it now tracks a
-                // sim-driven move instead of the stale authored pose. World
-                // matrices are column-major: translation = column 3; column i
-                // length = axis-i scale.
-                const wz::math::Mat4& clipmap_world =
-                    node_worlds[node_index];
-                const float world_translation[3] = {
-                    clipmap_world.m[12], clipmap_world.m[13],
-                    clipmap_world.m[14] };
-                const auto column_length = [&](int col) noexcept -> float {
-                    const int b = col * 4;
-                    return std::sqrt(
-                        clipmap_world.m[b + 0] * clipmap_world.m[b + 0]
-                        + clipmap_world.m[b + 1] * clipmap_world.m[b + 1]
-                        + clipmap_world.m[b + 2] * clipmap_world.m[b + 2]);
-                };
-                const float world_scale[3] = {
-                    column_length(0), column_length(1), column_length(2) };
-
-                const bool placement_authoritative =
-                    realized->clipmap_settings.placement_authoritative;
-                ea::ClipmapLandscapeRenderSettings placement =
-                    wz::engine::rendering::compute_clipmap_placement(
-                        realized->clipmap_mesh_width_x,
-                        ea::ClipmapLatticeParams{
-                            .level_count = realized->clipmap_level_count,
-                            .base_resolution =
-                                realized->clipmap_base_resolution,
-                            .cell_size = 1.0f,
-                        },
-                        realized->heightmap_width,
-                        realized->heightmap_height,
-                        world_translation,
-                        world_scale,
-                        realized->clipmap_settings.view_snapped,
-                        placement_authoritative
-                            ? &realized->clipmap_settings
-                            : nullptr);
-
-                // One-shot diagnostic reporting where the footprint came from.
-                // With a connected Placement (#218 Phase 2) the footprint is the
-                // shared world mapping and a collision reading the same Placement
-                // auto-aligns. Without one, the footprint is node-transform
-                // derived (world-absolute: c0 * heightmap_dims, placed by
-                // node.translation) and aligning a collision still needs the
-                // node-scale hand-match.
-                if (!clipmap_placement_logged_) {
-                    clipmap_placement_logged_ = true;
-                    logger_.info(
-                        std::string("clipmap placement: world_size=(")
-                        + std::to_string(placement.world_size[0]) + ", "
-                        + std::to_string(placement.world_size[1])
-                        + ") world_origin=("
-                        + std::to_string(placement.world_origin[0]) + ", "
-                        + std::to_string(placement.world_origin[1])
-                        + ") vertical_scale=" + std::to_string(
-                            placement.vertical_scale)
-                        + " | footprint source: "
-                        + (placement_authoritative
-                            ? "Placement asset (auto-aligned with a collision "
-                              "reading the same Placement)."
-                            : "node transform (no Placement connected; to align "
-                              "a collision constraint connect a shared Placement "
-                              "asset, or set node scale X/Z = world_size)."));
-                }
-
-                const ClipmapDrawConstants constants =
-                    make_clipmap_draw_constants(
-                        view_projection,
-                        camera_world_pos,
-                        placement,
-                        realized->heightmap_width,
-                        realized->heightmap_height,
-                        realized->clipmap_base_resolution);
-                const auto* bytes =
-                    reinterpret_cast<const uint8_t*>(&constants);
-                realized->packet.root_constants.assign(
-                    bytes, bytes + sizeof(constants));
+            if (realized->is_clipmap && !realized->is_custom) {
+                // Bespoke clipmap (0x708). A custom recipe (0x70A) also sets
+                // is_clipmap when it carries a height texture, but it packs
+                // through the is_custom head switch below (CameraSnappedTerrain
+                // case) — the SAME shared packer — so exclude it here.
+                // #221: the terrain's placing transform (translation + vertical
+                // scale) comes from the caller's world_transforms span — the
+                // single source of truth (the sim polytree), index-aligned with
+                // `nodes`, so a sim-driven move tracks. The shared packer derives
+                // the placement (mesh-derived c0 + the footprint, node-transform
+                // or Placement-authoritative) and packs ClipmapDrawConstants.
+                pack_camera_snapped_terrain_constants(
+                    *realized,
+                    node_worlds[node_index],
+                    view_projection,
+                    camera_world_pos,
+                    realized->packet.root_constants);
             }
             else if (realized->is_splat_cloud) {
                 // The splat VS billboards a uniform world-diameter sphere per
@@ -1521,8 +1530,8 @@ namespace wz::engine::rendering
                 // Custom recipe (issue #228): re-pack only the head packer's
                 // dwords in the prebuilt template — the authored tail values
                 // baked at realize time persist behind it — then hand the
-                // whole block to the packet. Clipmap32 was rejected at
-                // compile; None leaves the block fully authored/static.
+                // whole block to the packet. None leaves the block fully
+                // authored/static.
                 const wz::math::Mat4& world = node_worlds[node_index];
                 std::vector<uint8_t>& block = realized->custom_constants;
                 switch (realized->custom_constants_head) {
@@ -1546,8 +1555,17 @@ namespace wz::engine::rendering
                     }
                     break;
                 }
+                case ea::RenderBindingConstantsHead::CameraSnappedTerrain:
+                    // Camera-follow terrain (issue #233): the head IS the whole
+                    // 32-dword block (no authored tail — the layout declares no
+                    // tail fields with this head), packed fresh each frame by
+                    // the SAME shared packer the 0x708 clipmap uses. realize
+                    // populated the clipmap settings/dims (source->clipmap).
+                    pack_camera_snapped_terrain_constants(
+                        *realized, world, view_projection, camera_world_pos,
+                        block);
+                    break;
                 case ea::RenderBindingConstantsHead::None:
-                case ea::RenderBindingConstantsHead::Clipmap32:
                     break;
                 }
                 realized->packet.root_constants.assign(

@@ -428,10 +428,15 @@ pattern.
 
 A layout declares one optional root-constant block (`constants_semantic` +
 visibility + a `constants_head` enum naming an existing renderer packer —
-mvp16 / world_viewproj_camera36 / clipmap32 — plus authored tail field
-declarations, name + type only), up to eight SRV binding rows (descriptor
+mvp16 / world_viewproj_camera36 / camera_snapped_terrain — plus authored tail
+field declarations, name + type only), up to eight SRV binding rows (descriptor
 semantic name, texture/structured kind, visibility), and up to two static
-sampler rows. The tables are encoded as indexed scalar params
+sampler rows. The `camera_snapped_terrain` head (issue #233) is the clipmap's
+32-dword block generalized: the renderer fills it each frame from the live
+camera + the recipe's height field / world footprint / lattice, so a custom
+renderable can camera-follow-snap displaced terrain like the bespoke `0x708`
+clipmap. A program using it needs a `scalar_field_texture` binding (the height
+field) and an optional `placement` port (the world footprint). The tables are encoded as indexed scalar params
 (`binding0_semantic`, `const0_name`, `sampler0_kind`, …). Registers are DERIVED
 from row order (b0 / t0,t1… / s0,s1… in the object space 2) — never authored.
 A custom render program (`0x000103`) consumes a layout through its optional

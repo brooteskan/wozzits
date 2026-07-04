@@ -320,6 +320,13 @@ namespace wz::engine::assets::internal
                     params.get<float>(kCustomConstWParams[i], 0.0f);
                 desc.constants.push_back(std::move(constant));
             }
+            // The optional Placement port follows geometry(0) + program(1) + the
+            // 8 binding ports (issue #233): port 2 + kMaxRenderBindingLayoutBindings.
+            const size_t placement_port =
+                2u + kMaxRenderBindingLayoutBindings;
+            if (placement_port < port_dep_keys.size()) {
+                desc.placement_asset = port_dep_keys[placement_port];
+            }
             return desc;
         }
 
@@ -360,11 +367,16 @@ namespace wz::engine::assets::internal
         // unknown, duplicated, or of the wrong kind — the caller surfaces it
         // through the two-arg compile_failed_node so it reaches the node
         // inspector. `dep_nodes` supplies each binding source's asset TYPE.
+        // `terrain_footprint`, when non-null, is the world footprint derived
+        // from a connected Placement dep (issue #233); it makes the recipe's
+        // terrain settings placement-authoritative. Null = no Placement (a
+        // default, node-transform-derived footprint at render time).
         [[nodiscard]] std::optional<std::string>
         build_custom_renderable_recipe(
             const CustomRenderableCompileDesc& desc,
             const RenderProgramData& program,
             std::span<const wz::asset::AssetNode> dep_nodes,
+            const ClipmapLandscapeRenderSettings* terrain_footprint,
             RhiRenderableRecipe& out)
         {
             if (!program.has_authored_binding_layout) {
@@ -377,12 +389,6 @@ namespace wz::engine::assets::internal
                 return "the render program's binding model must be "
                        "MeshVertexPull (the custom renderable's geometry is "
                        "a pull mesh)";
-            }
-            if (program.constants_head == RenderBindingConstantsHead::Clipmap32)
-            {
-                return "the clipmap32 constants head is not supported by a "
-                       "custom renderable (its packer needs clipmap "
-                       "settings the recipe does not carry)";
             }
 
             const auto source_type_of =
@@ -593,6 +599,44 @@ namespace wz::engine::assets::internal
             out.custom = true;
             out.constants_head = program.constants_head;
             out.constants_dwords = block_dwords;
+
+            // Camera-follow terrain (issue #233): the CameraSnappedTerrain head
+            // is filled per frame by the renderer from the camera + the height
+            // field's dims + the lattice geometry + these settings — so the
+            // recipe must name the height field and carry the world footprint.
+            // The height field is the layout's scalar_field_texture binding
+            // (already resolved into out.bindings); the footprint comes from the
+            // optional Placement dep. c0 (finest cell) + heightmap dims stay
+            // render-time-derived from the mesh + field, exactly like 0x708.
+            if (program.constants_head
+                == RenderBindingConstantsHead::CameraSnappedTerrain)
+            {
+                const RhiRenderableBinding* height = nullptr;
+                for (const RhiRenderableBinding& binding : out.bindings) {
+                    if (binding.semantic
+                        == descriptor_semantic_name(
+                            DescriptorSemantic::ScalarFieldTexture))
+                    {
+                        height = &binding;
+                        break;
+                    }
+                }
+                if (!height) {
+                    return "the camera-snapped terrain head requires a "
+                           "'scalar_field_texture' binding (the height field "
+                           "the VS displaces the lattice by)";
+                }
+                out.height_texture_key = height->key;
+
+                ClipmapLandscapeRenderSettings settings{};
+                settings.view_snapped = true;
+                if (terrain_footprint) {
+                    // A connected Placement is authoritative for the world
+                    // footprint (shared with a collision on the same Placement).
+                    settings = *terrain_footprint;
+                }
+                out.clipmap = settings;
+            }
             return std::nullopt;
         }
 
@@ -1909,10 +1953,20 @@ namespace wz::engine::assets::internal
                     wz::asset::AssetType::Any,
                     wz::asset::InputPortRequirement::Optional,
                 },
+                // Optional world footprint for a CameraSnappedTerrain-head
+                // program (issue #233): a typed Placement port (not Any — a
+                // Placement is not a resource binding). Follows the 8 binding
+                // ports so custom_renderable_desc_from_ports reads it at port
+                // 2 + kMaxRenderBindingLayoutBindings.
+                {
+                    "placement",
+                    kAssetTypePlacement,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .parameters = make_custom_renderable_parameters(),
             .compile = [logger, mesh_table, render_program_table,
-                        rhi_renderable_table, asset_system](
+                        placement_table, rhi_renderable_table, asset_system](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -2030,10 +2084,47 @@ namespace wz::engine::assets::internal
                         input, "render program is invalid");
                 }
 
+                // Resolve the optional Placement (the CameraSnappedTerrain
+                // footprint, #233) and derive the world-frame settings from it —
+                // mirrors the 0x708 placement derivation. Absent = a default,
+                // node-transform-derived footprint at render time.
+                ClipmapLandscapeRenderSettings terrain_footprint{};
+                bool has_terrain_footprint = false;
+                if (!(desc->placement_asset == wz::asset::AssetKey{})) {
+                    if (const std::optional<size_t> placement_index =
+                            dep_index_of(desc->placement_asset);
+                        placement_index
+                        && *placement_index < dep_handles.size())
+                    {
+                        if (const PlacementData* placement =
+                                placement_table->get(
+                                    dep_handles[*placement_index]))
+                        {
+                            terrain_footprint.world_origin[0] =
+                                placement->origin[0];
+                            terrain_footprint.world_origin[1] =
+                                placement->origin[2];
+                            terrain_footprint.world_size[0] =
+                                placement->extent[0];
+                            terrain_footprint.world_size[1] =
+                                placement->extent[2];
+                            terrain_footprint.vertical_scale =
+                                placement->extent[1];
+                            terrain_footprint.base_height =
+                                placement->base_height;
+                            terrain_footprint.view_snapped = true;
+                            terrain_footprint.placement_authoritative = true;
+                            has_terrain_footprint = true;
+                        }
+                    }
+                }
+
                 RhiRenderableRecipe recipe{};
                 if (std::optional<std::string> error =
                         build_custom_renderable_recipe(
-                            *desc, *program, dep_nodes, recipe))
+                            *desc, *program, dep_nodes,
+                            has_terrain_footprint ? &terrain_footprint : nullptr,
+                            recipe))
                 {
                     logger->error("custom renderable: " + *error);
                     return compile_failed_node(input, std::move(*error));
