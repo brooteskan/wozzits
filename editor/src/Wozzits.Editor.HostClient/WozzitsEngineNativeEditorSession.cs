@@ -506,6 +506,32 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.SetNodeGeometryAsset(runtime.Handle, nodeId, assetGraphNodeId);
     }
 
+    public EngineMutationResponse SetNodeRenderableBinding(
+        string nodeId,
+        string semantic,
+        ulong assetGraphNodeId)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeRenderableBinding(
+            runtime.Handle, nodeId, semantic, assetGraphNodeId);
+    }
+
+    public EngineMutationResponse SetNodeRenderableParam(
+        string nodeId,
+        string name,
+        float[]? valueXyzw)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeRenderableParam(
+            runtime.Handle, nodeId, name, valueXyzw);
+    }
+
     public EngineMutationResponse SetNodeRenderProgram(
         string nodeId,
         ulong assetGraphNodeId)

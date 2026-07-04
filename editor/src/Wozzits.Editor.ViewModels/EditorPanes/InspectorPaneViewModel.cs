@@ -41,6 +41,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // geometry-by-ingredients picker was dropped: geometry now comes from the graft
     // or a pre-built renderable, so only the program is authored here.)
     private InspectorAssetGraphRefOptionViewModel? _selectedRenderProgramOption;
+    private bool _hasRenderableIngredientsSection;
+    private string _renderableIngredientsHint = string.Empty;
+    private Func<string, SceneTreeNodeViewModel?>? _sceneNodeLookup;
     private string _renderProgramReferenceLabel = string.Empty;
     private bool _hasRenderProgramSection;
     // "Collision" section (terrain-stick track): the Collision asset-graph node this
@@ -410,6 +413,52 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         get => _hasRenderProgramSection;
         private set => SetProperty(ref _hasRenderProgramSection, value);
+    }
+
+    // ── Renderable bindings + constants (issue #230) ────────────────────────
+    // The custom-renderable ingredient form, GENERATED from the effective
+    // render program's authored binding layout: one source picker per declared
+    // SRV semantic (options filtered by the row's resource kind) and one typed
+    // value editor per declared constant tail field. Revealed when the layout
+    // resolves (or the node already carries ingredients — then with a hint).
+
+    public ObservableCollection<InspectorRenderableBindingRowViewModel>
+        RenderableBindingRows { get; } = [];
+
+    public ObservableCollection<InspectorRenderableConstantRowViewModel>
+        RenderableConstantRows { get; } = [];
+
+    public bool HasRenderableIngredientsSection
+    {
+        get => _hasRenderableIngredientsSection;
+        private set => SetProperty(ref _hasRenderableIngredientsSection, value);
+    }
+
+    public string RenderableIngredientsHint
+    {
+        get => _renderableIngredientsHint;
+        private set
+        {
+            if (SetProperty(ref _renderableIngredientsHint, value))
+            {
+                OnPropertyChanged(nameof(HasRenderableIngredientsHint));
+            }
+        }
+    }
+
+    public bool HasRenderableIngredientsHint =>
+        !string.IsNullOrWhiteSpace(RenderableIngredientsHint);
+
+    public bool HasRenderableBindingRows => RenderableBindingRows.Count > 0;
+
+    public bool HasRenderableConstantRows => RenderableConstantRows.Count > 0;
+
+    // Cross-pane scene-node lookup (wired by the main VM to the scene tree):
+    // the effective-render-program resolution walks ParentId ancestors, and
+    // the inspector holds only the selected node.
+    public void SetSceneNodeLookup(Func<string, SceneTreeNodeViewModel?> lookup)
+    {
+        _sceneNodeLookup = lookup;
     }
 
     // ─── Collision (terrain-stick track) ─────────────────────────────────────────
@@ -846,6 +895,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             // that has them shows them on (re)select instead of starting hidden.
             RestoreSubtreeReferenceState(node);
             RestoreRenderProgramState(node);
+            RestoreRenderableIngredientsState(node);
 
             ComponentsHeader = $"{Header} Components";
             SetTransformFields(node.Transform);
@@ -1121,6 +1171,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             SubtreeReferenceLabel = string.Empty;
             HasSubtreeSection = false;
             ResetRenderProgramState();
+            ResetRenderableIngredientsState();
             ResetCollisionState();
             ResetMotionState();
             ComponentsHeader = "Components";
@@ -2227,6 +2278,344 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             ?? nodes.ToList();
         _assetGraphEdges = edges as IReadOnlyList<EngineAssetGraphEdge>
             ?? edges.ToList();
+    }
+
+    // ── Renderable bindings + constants (issue #230) ────────────────────────
+
+    // Asset types whose compilers publish a bindable GPU resource, keyed by
+    // the resource kind a layout row declares (the editor-side projection of
+    // the engine's render_binding_sources.h publisher map):
+    //   Texture SRV    ← ScalarField (128), VectorField (2258)
+    //   Structured SRV ← GaussianSplatCloud (131), GpuSparseMesh (537)
+    private static readonly uint[] TextureBindingSourceTypes = [128, 2258];
+    private static readonly uint[] StructuredBindingSourceTypes = [131, 537];
+
+    // The custom render program's optional binding-layout input port (#227).
+    private const uint CustomProgramLayoutInputPort = 2;
+
+    // Declared constant widths by the layout's constN_type ordinal
+    // (Float, Float2, Float3, Float4, Color).
+    private static readonly (string Label, int Width)[] ConstantTypeTable =
+    [
+        ("float", 1),
+        ("float2", 2),
+        ("float3", 3),
+        ("float4", 4),
+        ("color", 4),
+    ];
+
+    private void ResetRenderableIngredientsState()
+    {
+        RenderableBindingRows.Clear();
+        RenderableConstantRows.Clear();
+        HasRenderableIngredientsSection = false;
+        RenderableIngredientsHint = string.Empty;
+        OnPropertyChanged(nameof(HasRenderableBindingRows));
+        OnPropertyChanged(nameof(HasRenderableConstantRows));
+    }
+
+    // Build the ingredient form from the node's persisted state + the wired
+    // program's authored layout. Rows come from the LAYOUT (the contract),
+    // pre-selected from the node's authored bindings/overrides; a node that
+    // carries ingredients but whose layout cannot be resolved still reveals
+    // the section with a hint (never silently hides authored state).
+    private void RestoreRenderableIngredientsState(SceneTreeNodeViewModel node)
+    {
+        ResetRenderableIngredientsState();
+
+        var hasAuthoredIngredients =
+            node.RenderableBindings.Count > 0
+            || node.RenderableConstants.Count > 0;
+
+        var programNodeId = ResolveEffectiveRenderProgramNodeId(node);
+        if (programNodeId is not { } programId)
+        {
+            if (hasAuthoredIngredients)
+            {
+                HasRenderableIngredientsSection = true;
+                RenderableIngredientsHint =
+                    "This node has renderable bindings/constants but no "
+                    + "effective render program (own or inherited).";
+            }
+            return;
+        }
+
+        var layoutNodeId = EdgeSourceInto(programId, CustomProgramLayoutInputPort);
+        var layoutNode = layoutNodeId is { } layoutId
+            ? FindSnapshotNode(layoutId)
+            : null;
+        if (layoutNode is null)
+        {
+            if (hasAuthoredIngredients)
+            {
+                HasRenderableIngredientsSection = true;
+                RenderableIngredientsHint =
+                    "This node has renderable bindings/constants but its "
+                    + "render program wires no binding layout (#227); bindings "
+                    + "need a layout-authored custom program.";
+            }
+            return;
+        }
+
+        // One picker row per declared SRV semantic the geometry does not own
+        // (pulled_mesh_* rows are satisfied by the geometry port).
+        for (var i = 0; i < 8; ++i)
+        {
+            var semantic = LayoutParamValue(layoutNode, $"binding{i}_semantic");
+            if (string.IsNullOrWhiteSpace(semantic)
+                || semantic.StartsWith("pulled_mesh_", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var isStructured = IsStructuredBindingKind(
+                LayoutParamValue(layoutNode, $"binding{i}_kind"));
+            var options = new ObservableCollection<
+                InspectorAssetGraphRefOptionViewModel>();
+            foreach (var option in BindingSourceOptions(isStructured))
+            {
+                options.Add(option);
+            }
+
+            ulong? selected = null;
+            foreach (var binding in node.RenderableBindings)
+            {
+                if (string.Equals(
+                        binding.Semantic, semantic, StringComparison.Ordinal))
+                {
+                    selected = binding.AssetGraphNodeId;
+                    break;
+                }
+            }
+
+            RenderableBindingRows.Add(new InspectorRenderableBindingRowViewModel(
+                semantic!,
+                isStructured ? "buffer" : "texture",
+                options,
+                selected,
+                ApplyRenderableBinding));
+        }
+
+        // One typed value row per declared constant tail field.
+        for (var i = 0; i < 8; ++i)
+        {
+            var name = LayoutParamValue(layoutNode, $"const{i}_name");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var (typeLabel, width) = ConstantTypeOf(
+                LayoutParamValue(layoutNode, $"const{i}_type"));
+
+            float[]? initial = null;
+            foreach (var constant in node.RenderableConstants)
+            {
+                if (string.Equals(
+                        constant.Name, name, StringComparison.Ordinal))
+                {
+                    initial = constant.Value;
+                    break;
+                }
+            }
+
+            RenderableConstantRows.Add(
+                new InspectorRenderableConstantRowViewModel(
+                    name!,
+                    width,
+                    typeLabel,
+                    initial,
+                    ApplyRenderableParam));
+        }
+
+        if (RenderableBindingRows.Count > 0
+            || RenderableConstantRows.Count > 0
+            || hasAuthoredIngredients)
+        {
+            HasRenderableIngredientsSection = true;
+        }
+        OnPropertyChanged(nameof(HasRenderableBindingRows));
+        OnPropertyChanged(nameof(HasRenderableConstantRows));
+    }
+
+    // The node's effective render program: its own reference, else the nearest
+    // ParentId ancestor's (the same inheritance the engine's assemble walk
+    // applies). Bounded + cycle-safe; needs the cross-pane node lookup.
+    private ulong? ResolveEffectiveRenderProgramNodeId(
+        SceneTreeNodeViewModel node)
+    {
+        if (node.RenderProgramNodeId is { } own)
+        {
+            return own;
+        }
+        if (_sceneNodeLookup is null)
+        {
+            return null;
+        }
+
+        var visited = new HashSet<string>(StringComparer.Ordinal) { node.Id };
+        var parentId = node.ParentId;
+        while (!string.IsNullOrEmpty(parentId) && visited.Add(parentId!))
+        {
+            var parent = _sceneNodeLookup(parentId!);
+            if (parent is null)
+            {
+                return null;
+            }
+            if (parent.RenderProgramNodeId is { } inherited)
+            {
+                return inherited;
+            }
+            parentId = parent.ParentId;
+        }
+        return null;
+    }
+
+    private IEnumerable<InspectorAssetGraphRefOptionViewModel>
+        BindingSourceOptions(bool isStructured)
+    {
+        var types = isStructured
+            ? StructuredBindingSourceTypes
+            : TextureBindingSourceTypes;
+        foreach (var node in _assetGraphNodes)
+        {
+            foreach (var port in node.OutputPorts)
+            {
+                if (Array.IndexOf(types, port.Type) >= 0)
+                {
+                    yield return new InspectorAssetGraphRefOptionViewModel(
+                        node.Id, node.DisplayName);
+                    break;
+                }
+            }
+        }
+    }
+
+    private static string? LayoutParamValue(
+        EngineAssetGraphNode layoutNode,
+        string paramName)
+    {
+        foreach (var param in layoutNode.Params)
+        {
+            if (string.Equals(param.Name, paramName, StringComparison.Ordinal))
+            {
+                return param.Value;
+            }
+        }
+        return null;
+    }
+
+    // Enum params surface through the graph snapshot as OPTION LABELS
+    // ("Structured SRV"), while a raw authored value (fixture JSON, older
+    // snapshots) is the ordinal — accept both forms.
+    private static bool IsStructuredBindingKind(string? value)
+    {
+        var text = value?.Trim();
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+        return string.Equals(
+                text, "Structured SRV", StringComparison.OrdinalIgnoreCase)
+            || (int.TryParse(
+                    text,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var ordinal)
+                && ordinal == 1);
+    }
+
+    // The engine's constN_type option labels, in ordinal order (matching
+    // ConstantTypeTable); the value may be either the label or the ordinal.
+    private static readonly string[] ConstantTypeOptionLabels =
+        ["Float", "Float2", "Float3", "Float4", "Color"];
+
+    private static (string Label, int Width) ConstantTypeOf(string? value)
+    {
+        var text = value?.Trim();
+        if (!string.IsNullOrEmpty(text))
+        {
+            if (int.TryParse(
+                    text,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var ordinal)
+                && ordinal >= 0
+                && ordinal < ConstantTypeTable.Length)
+            {
+                return ConstantTypeTable[ordinal];
+            }
+            for (var i = 0; i < ConstantTypeOptionLabels.Length; ++i)
+            {
+                if (string.Equals(
+                        text,
+                        ConstantTypeOptionLabels[i],
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return ConstantTypeTable[i];
+                }
+            }
+        }
+        return ConstantTypeTable[0];
+    }
+
+    // Live apply for a binding row pick/clear: upsert (or remove, id 0) the
+    // semantic's row on the engine node, then mirror onto the cached tree node
+    // so an immediate reselect shows the edit (house pattern).
+    private void ApplyRenderableBinding(string semantic, ulong assetGraphNodeId)
+    {
+        if (_suppressLiveEdits || !EnsureCanApply())
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeRenderableBinding(
+            NodeId, semantic, assetGraphNodeId);
+        SetEditResponse(response);
+        if (!response.Ok || _inspectedSceneNode is not { } node)
+        {
+            return;
+        }
+
+        node.RenderableBindings.RemoveAll(binding =>
+            string.Equals(binding.Semantic, semantic, StringComparison.Ordinal));
+        if (assetGraphNodeId != 0)
+        {
+            node.RenderableBindings.Add(new EngineSceneRenderableBinding
+            {
+                Semantic = semantic,
+                AssetGraphNodeId = assetGraphNodeId,
+            });
+        }
+    }
+
+    // Live apply for a constant row edit/remove: a pack-time override on the
+    // engine node (null value removes it) — no rebuild, next frame reflects it.
+    private void ApplyRenderableParam(string name, float[]? value)
+    {
+        if (_suppressLiveEdits || !EnsureCanApply())
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeRenderableParam(
+            NodeId, name, value);
+        SetEditResponse(response);
+        if (!response.Ok || _inspectedSceneNode is not { } node)
+        {
+            return;
+        }
+
+        node.RenderableConstants.RemoveAll(constant =>
+            string.Equals(constant.Name, name, StringComparison.Ordinal));
+        if (value is not null)
+        {
+            node.RenderableConstants.Add(new EngineSceneRenderableConstant
+            {
+                Name = name,
+                Value = (float[])value.Clone(),
+            });
+        }
     }
 
     // Build the "GLB node" tree for the selected "Mesh from GLB scene" node: resolve

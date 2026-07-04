@@ -1186,6 +1186,163 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("(none)", viewModel.Inspector.RenderProgramReferenceDisplay);
     }
 
+    // Issue #230: the renderable-ingredients form is GENERATED from the wired
+    // program's authored binding layout — one kind-filtered source picker per
+    // declared SRV semantic (pulled_mesh_* rows are geometry-owned and skipped)
+    // and one typed value editor per declared constant. Picking a source applies
+    // SetNodeRenderableBinding live; editing a constant applies
+    // SetNodeRenderableParam live; the ✕s clear/remove (id 0 / null).
+    [Fact]
+    public void InspectorGeneratesRenderableIngredientFormFromLayout()
+    {
+        var editorSession = new RecordingEditorSession();
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                assetGraph: new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = true,
+                    Snapshot = new EngineAssetGraphSnapshot
+                    {
+                        Nodes =
+                        [
+                            // The custom render program (output 1049) the node wires.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 16,
+                                DisplayName = "field program",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 1049 },
+                                ],
+                            },
+                            // Its authored binding layout (#227), wired on input
+                            // port 2: pulled positions/indices (geometry-owned),
+                            // a scalar-field texture row, and a float4 'tint'
+                            // tail constant. Enum params surface as option
+                            // LABELS (the snapshot's display form).
+                            new EngineAssetGraphNode
+                            {
+                                Id = 15,
+                                DisplayName = "field layout",
+                                CompileStatus = "ready",
+                                Params =
+                                [
+                                    new EngineAssetGraphParam
+                                    {
+                                        Name = "binding0_semantic",
+                                        Value = "pulled_mesh_positions",
+                                    },
+                                    new EngineAssetGraphParam
+                                    {
+                                        Name = "binding1_semantic",
+                                        Value = "pulled_mesh_indices",
+                                    },
+                                    new EngineAssetGraphParam
+                                    {
+                                        Name = "binding2_semantic",
+                                        Value = "scalar_field_texture",
+                                    },
+                                    new EngineAssetGraphParam
+                                    {
+                                        Name = "binding2_kind",
+                                        Value = "Texture SRV",
+                                    },
+                                    new EngineAssetGraphParam
+                                    {
+                                        Name = "const0_name",
+                                        Value = "tint",
+                                    },
+                                    new EngineAssetGraphParam
+                                    {
+                                        Name = "const0_type",
+                                        Value = "Float4",
+                                    },
+                                ],
+                            },
+                            // A scalar field (128) — a TEXTURE publisher, offered.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 17,
+                                DisplayName = "height field",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 128 },
+                                ],
+                            },
+                            // A splat cloud (131) — a BUFFER publisher, excluded
+                            // from the texture row's options.
+                            new EngineAssetGraphNode
+                            {
+                                Id = 12,
+                                DisplayName = "splats",
+                                CompileStatus = "ready",
+                                OutputPorts =
+                                [
+                                    new EngineAssetGraphPort { Type = 131 },
+                                ],
+                            },
+                        ],
+                        Edges =
+                        [
+                            new EngineAssetGraphEdge
+                            {
+                                Id = 1,
+                                From = 15,
+                                To = 16,
+                                ToInputPort = 2,
+                            },
+                        ],
+                    },
+                },
+                scene: SceneSnapshot(
+                    Node("bound", visible: true, renderProgramNodeId: 16))),
+            editorSession: editorSession);
+
+        var bound = Assert.Single(viewModel.SceneTree.Nodes);
+        viewModel.SceneTree.SelectNode(bound);
+
+        // The section revealed from the resolved layout: ONE binding row (the
+        // pulled_mesh_* rows are geometry-owned) offering only the texture
+        // publisher, and ONE float4 constant row.
+        Assert.True(viewModel.Inspector.HasRenderableIngredientsSection);
+        var bindingRow = Assert.Single(viewModel.Inspector.RenderableBindingRows);
+        Assert.Equal("scalar_field_texture", bindingRow.Semantic);
+        Assert.Equal("texture", bindingRow.KindLabel);
+        var sourceOption = Assert.Single(bindingRow.Options);
+        Assert.Equal(17ul, sourceOption.Id);
+
+        var constantRow = Assert.Single(viewModel.Inspector.RenderableConstantRows);
+        Assert.Equal("tint", constantRow.Name);
+        Assert.Equal(4, constantRow.Width);
+        Assert.False(constantRow.IsOverridden);
+
+        // Picking a source applies live (upsert of the semantic's row).
+        bindingRow.SelectedOption = sourceOption;
+        var bindingEdit = Assert.Single(editorSession.RenderableBindings);
+        Assert.Equal("bound", bindingEdit.NodeId);
+        Assert.Equal("scalar_field_texture", bindingEdit.Semantic);
+        Assert.Equal(17ul, bindingEdit.AssetGraphNodeId);
+
+        // Editing a constant component applies the full 4-float override live.
+        constantRow.ValueX = "0.2";
+        var paramEdit = editorSession.RenderableParams[^1];
+        Assert.Equal("bound", paramEdit.NodeId);
+        Assert.Equal("tint", paramEdit.Name);
+        Assert.NotNull(paramEdit.Value);
+        Assert.Equal(0.2f, paramEdit.Value![0], 3);
+        Assert.True(constantRow.IsOverridden);
+
+        // The ✕s: clearing the binding posts id 0; removing the override posts
+        // null (the instance falls back to the recipe default).
+        bindingRow.ClearCommand.Execute(null);
+        Assert.Equal(0ul, editorSession.RenderableBindings[^1].AssetGraphNodeId);
+        constantRow.RemoveCommand.Execute(null);
+        Assert.Null(editorSession.RenderableParams[^1].Value);
+        Assert.False(constantRow.IsOverridden);
+    }
+
     // Terrain-stick track: the "Collision" picker offers asset-graph nodes by their
     // OUTPUT asset type (Collision = 150), not schema label. The section shows when
     // the node has a Collision component; picking a node applies SetNodeCollision
@@ -3331,6 +3488,30 @@ public sealed partial class ProjectOpeningTests
             ulong assetGraphNodeId)
         {
             RenderPrograms.Add((nodeId, assetGraphNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string NodeId, string Semantic, ulong AssetGraphNodeId)>
+            RenderableBindings { get; } = [];
+
+        public EngineMutationResponse SetNodeRenderableBinding(
+            string nodeId,
+            string semantic,
+            ulong assetGraphNodeId)
+        {
+            RenderableBindings.Add((nodeId, semantic, assetGraphNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<(string NodeId, string Name, float[]? Value)>
+            RenderableParams { get; } = [];
+
+        public EngineMutationResponse SetNodeRenderableParam(
+            string nodeId,
+            string name,
+            float[]? valueXyzw)
+        {
+            RenderableParams.Add((nodeId, name, valueXyzw));
             return new EngineMutationResponse { Ok = true };
         }
 

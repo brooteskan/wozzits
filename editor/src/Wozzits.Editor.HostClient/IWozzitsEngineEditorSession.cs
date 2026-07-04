@@ -227,6 +227,26 @@ public interface IWozzitsEngineEditorSession
         string nodeId,
         ulong assetGraphNodeId);
 
+    // Author ONE semantic resource binding of the node's custom-renderable
+    // ingredients (issue #229/#230): upsert the row for the layout semantic
+    // pointing at an asset-graph source node (0 removes the row). A binding
+    // present makes the assembled renderable the CUSTOM (0x70A) form. Live +
+    // host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeRenderableBinding(
+        string nodeId,
+        string semantic,
+        ulong assetGraphNodeId);
+
+    // Author ONE per-instance constant override of the node's custom-renderable
+    // ingredients (issue #229/#230): upsert the named layout constant with 4
+    // floats (null removes the override). Overrides merge at PACK time — no
+    // asset recompile; the next rendered frame reflects the edit. Live +
+    // host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeRenderableParam(
+        string nodeId,
+        string name,
+        float[]? valueXyzw);
+
     // Author the node's COLLISION component (terrain-stick track): point it at a
     // Collision asset-graph node (0 clears the reference) + a constrain-movement
     // flag (whether the node's movement is constrained by that collision data).

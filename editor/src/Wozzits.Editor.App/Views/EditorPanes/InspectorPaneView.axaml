@@ -371,6 +371,106 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Renderable bindings + constants (issue #230): the
+                             custom-renderable ingredient form, GENERATED from the
+                             effective render program's authored binding layout
+                             (#227). One source picker per declared SRV semantic
+                             (options filtered to asset types publishing that
+                             resource kind) and one typed value editor per declared
+                             constant tail field. Picks + edits apply immediately
+                             (house pattern); a row ✕ clears the pick / removes the
+                             per-instance override. Constant edits are pack-time on
+                             the engine — no recompile — so sliders/typing stream
+                             live into the running viewport. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasRenderableIngredientsSection}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Renderable bindings"
+                                           Classes="InspectorSectionTitle"/>
+
+                                <TextBlock Text="{Binding RenderableIngredientsHint}"
+                                           TextWrapping="Wrap"
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding HasRenderableIngredientsHint}"/>
+
+                                <ItemsControl ItemsSource="{Binding RenderableBindingRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorRenderableBindingRowViewModel">
+                                            <Grid ColumnDefinitions="*,*,Auto"
+                                                  ColumnSpacing="10"
+                                                  Classes="InspectorPropertyRow">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Semantic}"
+                                                               Classes="InspectorPropertyName"/>
+                                                    <TextBlock Text="{Binding KindLabel}"
+                                                               Classes="InspectorPropertyValue"/>
+                                                </StackPanel>
+                                                <ComboBox Grid.Column="1"
+                                                          ItemsSource="{Binding Options}"
+                                                          SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                                          PlaceholderText="Pick a source node"
+                                                          HorizontalAlignment="Stretch"
+                                                          IsEnabled="{Binding HasOptions}">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                            <TextBlock Text="{Binding Label}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                                <Button Grid.Column="2"
+                                                        Content="✕"
+                                                        Command="{Binding ClearCommand}"
+                                                        Classes="InspectorApplyButton"
+                                                        ToolTip.Tip="Clear this binding"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="Constants"
+                                           Classes="InspectorSectionTitle"
+                                           IsVisible="{Binding HasRenderableConstantRows}"/>
+
+                                <ItemsControl ItemsSource="{Binding RenderableConstantRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorRenderableConstantRowViewModel">
+                                            <Grid ColumnDefinitions="*,2*,Auto"
+                                                  ColumnSpacing="10"
+                                                  Classes="InspectorPropertyRow">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Name}"
+                                                               Classes="InspectorPropertyName"/>
+                                                    <TextBlock Text="{Binding TypeLabel}"
+                                                               Classes="InspectorPropertyValue"/>
+                                                </StackPanel>
+                                                <Grid Grid.Column="1"
+                                                      ColumnDefinitions="*,*,*,*"
+                                                      ColumnSpacing="6">
+                                                    <TextBox Text="{Binding ValueX, Mode=TwoWay}"/>
+                                                    <TextBox Grid.Column="1"
+                                                             Text="{Binding ValueY, Mode=TwoWay}"
+                                                             IsVisible="{Binding ShowY}"/>
+                                                    <TextBox Grid.Column="2"
+                                                             Text="{Binding ValueZ, Mode=TwoWay}"
+                                                             IsVisible="{Binding ShowZ}"/>
+                                                    <TextBox Grid.Column="3"
+                                                             Text="{Binding ValueW, Mode=TwoWay}"
+                                                             IsVisible="{Binding ShowW}"/>
+                                                </Grid>
+                                                <Button Grid.Column="2"
+                                                        Content="✕"
+                                                        Command="{Binding RemoveCommand}"
+                                                        Classes="InspectorApplyButton"
+                                                        IsEnabled="{Binding IsOverridden}"
+                                                        ToolTip.Tip="Remove this override (falls back to the recipe default)"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                            </StackPanel>
+                        </Border>
+
                         <!-- Collision (terrain-stick track): reference a Collision
                              asset-graph node ("Collision from height field" / mesh)
                              and toggle whether the node's movement is constrained by

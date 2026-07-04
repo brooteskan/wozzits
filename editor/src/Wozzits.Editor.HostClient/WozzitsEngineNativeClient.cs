@@ -1125,6 +1125,67 @@ public sealed partial class WozzitsEngineNativeClient
             assetGraphNodeId));
     }
 
+    internal EngineMutationResponse SetNodeRenderableBinding(
+        IntPtr runtime,
+        string nodeId,
+        string semantic,
+        ulong assetGraphNodeId)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+        if (string.IsNullOrWhiteSpace(semantic))
+        {
+            return InvalidMutation("Renderable binding semantic is empty.");
+        }
+
+        // assetGraphNodeId 0 is the REMOVE signal (the engine drops the binding
+        // row and re-assembles), so it is valid here.
+        return InvokeMutation(
+            () => WozzitsEngineAbi.WzEditorRuntimeSetNodeRenderableBinding(
+                runtime,
+                nodeId,
+                semantic,
+                assetGraphNodeId));
+    }
+
+    internal EngineMutationResponse SetNodeRenderableParam(
+        IntPtr runtime,
+        string nodeId,
+        string name,
+        float[]? valueXyzw)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return InvalidMutation("Renderable constant name is empty.");
+        }
+        if (valueXyzw is not null && valueXyzw.Length != 4)
+        {
+            return InvalidMutation("Renderable constant value must be 4 floats.");
+        }
+
+        // A null value is the REMOVE signal (the engine drops the override).
+        return InvokeMutation(
+            () => WozzitsEngineAbi.WzEditorRuntimeSetNodeRenderableParam(
+                runtime,
+                nodeId,
+                name,
+                valueXyzw));
+    }
+
     internal EngineMutationResponse SetNodeCollision(
         IntPtr runtime,
         string nodeId,

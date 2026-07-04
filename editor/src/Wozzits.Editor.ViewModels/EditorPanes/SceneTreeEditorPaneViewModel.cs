@@ -146,6 +146,12 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         }
     }
 
+    // Public lookup for cross-pane consumers (the inspector's effective-
+    // render-program ancestor walk, issue #230): the tree node with `id`, or
+    // null if none.
+    public SceneTreeNodeViewModel? FindNodeById(string id) =>
+        FindNode(Nodes, id);
+
     // Depth-first lookup of the tree node with `id`, or null if none.
     private static SceneTreeNodeViewModel? FindNode(
         IReadOnlyList<SceneTreeNodeViewModel> nodes,
@@ -419,6 +425,8 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         Collision = node.Collision;
         Motion = node.Motion;
         AudioSource = node.AudioSource;
+        RenderableBindings = node.RenderableBindings;
+        RenderableConstants = node.RenderableConstants;
         Components = node.Components;
         Behaviors = node.Behaviors;
         IsInstanced = isInstanced;
@@ -509,6 +517,14 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     // Persisted AudioSource component field values (read-back); settable so the
     // inspector's live edits mirror back onto the cached node (like Collision).
     public EngineSceneNodeAudioSource? AudioSource { get; internal set; }
+
+    // Custom-renderable ingredients (issue #229/#230). Mutable so the
+    // inspector's live binding/constant edits mirror back onto the cached node
+    // and an immediate reselect shows them instead of reverting to the startup
+    // snapshot (mirrors Behaviors/Collision).
+    public List<EngineSceneRenderableBinding> RenderableBindings { get; internal set; }
+
+    public List<EngineSceneRenderableConstant> RenderableConstants { get; internal set; }
 
     // Mutable so the inspector's live add/remove of optional components keeps
     // reselection consistent: SetComponentFields rebuilds the inspector rows from

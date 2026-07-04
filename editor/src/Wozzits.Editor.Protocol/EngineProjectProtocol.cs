@@ -353,7 +353,35 @@ public sealed record EngineSceneNode
     // policy on select + after reload.
     public EngineSceneNodeAudioSource? AudioSource { get; init; }
 
+    // Custom-renderable ingredients (issue #229/#230), empty when the node has
+    // none: the authored semantic bindings + per-instance constant overrides.
+    // The inspector pre-fills its binding rows + constant editors from these.
+    public List<EngineSceneRenderableBinding> RenderableBindings { get; init; } = [];
+
+    public List<EngineSceneRenderableConstant> RenderableConstants { get; init; } = [];
+
     public List<EngineSceneNode> Children { get; init; } = [];
+}
+
+// One authored semantic resource binding of a node's custom-renderable
+// ingredients (issue #229/#230). AssetGraphNodeId is the authored source
+// anchor (null = the row has a semantic but no wired source yet); the
+// resolved key re-bridges on bind and is never surfaced.
+public sealed record EngineSceneRenderableBinding
+{
+    public string Semantic { get; init; } = string.Empty;
+
+    public ulong? AssetGraphNodeId { get; init; }
+}
+
+// One per-instance constant override of a node's custom-renderable ingredients
+// (issue #229/#230): a value for one of the program layout's declared constant
+// tail fields. A field narrower than 4 floats consumes a prefix of Value.
+public sealed record EngineSceneRenderableConstant
+{
+    public string Name { get; init; } = string.Empty;
+
+    public float[] Value { get; init; } = new float[4];
 }
 
 // Authored Collision-component field values surfaced read-back (read-back gap

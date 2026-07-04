@@ -8,7 +8,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 28;
+    internal const uint AbiVersion = 29;
 
     private static int _resolverRegistered;
 
@@ -596,6 +596,36 @@ internal static partial class WozzitsEngineAbi
         string nodeIdUtf8,
         ulong assetGraphNodeId);
 
+    // Author ONE semantic resource binding of a node's custom-renderable
+    // ingredients (issue #229/#230): upsert the row for the layout semantic
+    // pointing at an asset-graph source node (0 = remove the row). A binding
+    // present makes the assembled renderable the CUSTOM (0x70A) form. Live +
+    // host-gated, no-op success when no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_renderable_binding",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeRenderableBinding(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string semanticUtf8,
+        ulong assetGraphNodeId);
+
+    // Author ONE per-instance constant override of a node's custom-renderable
+    // ingredients (issue #229/#230): upsert the named layout constant with 4
+    // floats (null = remove the override). Overrides merge at PACK time — no
+    // recompile, no re-key; the next rendered frame reflects the edit. Live +
+    // host-gated, no-op success when no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_renderable_param",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeRenderableParam(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string nameUtf8,
+        [MarshalUsing(ConstantElementCount = 4)] float[]? valueXyzw);
+
     // Author a node's COLLISION component (terrain-stick track): point it at a
     // Collision asset-graph node (0 = clear the reference) and toggle whether the
     // node's movement is constrained by that collision data. Live + host-gated,
@@ -1093,7 +1123,26 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneAudioSourceAbi.Enabled),
             10);
 
-        AssertSize<WzEditorSceneNodeAbi>(632);
+        AssertSize<WzEditorSceneRenderableBindingAbi>(32);
+        AssertOffset<WzEditorSceneRenderableBindingAbi>(
+            nameof(WzEditorSceneRenderableBindingAbi.Semantic),
+            0);
+        AssertOffset<WzEditorSceneRenderableBindingAbi>(
+            nameof(WzEditorSceneRenderableBindingAbi.AssetGraphNodeId),
+            16);
+        AssertOffset<WzEditorSceneRenderableBindingAbi>(
+            nameof(WzEditorSceneRenderableBindingAbi.HasSourceRef),
+            24);
+
+        AssertSize<WzEditorSceneRenderableConstantAbi>(32);
+        AssertOffset<WzEditorSceneRenderableConstantAbi>(
+            nameof(WzEditorSceneRenderableConstantAbi.Name),
+            0);
+        AssertOffset<WzEditorSceneRenderableConstantAbi>(
+            nameof(WzEditorSceneRenderableConstantAbi.Value0),
+            16);
+
+        AssertSize<WzEditorSceneNodeAbi>(664);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -1151,6 +1200,12 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.AudioSource),
             616);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.RenderableBindings),
+            632);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.RenderableConstants),
+            648);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -1488,6 +1543,35 @@ internal readonly struct WzEditorSceneNodeAbi
     // Persisted AudioSource component field values (read-back). Appended last to
     // mirror the native struct. Present iff HasAudioSource.
     public readonly WzEditorSceneAudioSourceAbi AudioSource;
+    // Custom-renderable ingredients (issue #229/#230): always-valid tables,
+    // possibly empty — presence is the count, no HAS_* flag. Appended last to
+    // mirror the native struct (the node STRIDE change is the ABI v29 bump).
+    public readonly WzEditorTableSpanAbi RenderableBindings;
+    public readonly WzEditorTableSpanAbi RenderableConstants;
+}
+
+// One authored semantic resource binding of a node's custom-renderable
+// ingredients (issue #229/#230). Mirrors WzEditorSceneRenderableBinding;
+// AssetGraphNodeId is valid iff HasSourceRef.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneRenderableBindingAbi
+{
+    public readonly WzEditorStringSpanAbi Semantic;
+    public readonly ulong AssetGraphNodeId;
+    public readonly uint HasSourceRef;
+    public readonly uint Reserved;
+}
+
+// One per-instance constant override of a node's custom-renderable ingredients
+// (issue #229/#230). Mirrors WzEditorSceneRenderableConstant (float value[4]).
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneRenderableConstantAbi
+{
+    public readonly WzEditorStringSpanAbi Name;
+    public readonly float Value0;
+    public readonly float Value1;
+    public readonly float Value2;
+    public readonly float Value3;
 }
 
 // Authored AudioSource-component field values surfaced read-back. Mirrors

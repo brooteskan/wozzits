@@ -63,6 +63,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             editorSession, AppendEditorLog);
         SceneTree = new SceneTreeEditorPaneViewModel(
             editorSession, _projectDirectory, AppendEditorLog);
+        // The renderable-ingredients form (issue #230) resolves the node's
+        // EFFECTIVE render program by walking ParentId ancestors, which needs
+        // the scene tree's node lookup (the inspector holds only the selection).
+        Inspector.SetSceneNodeLookup(SceneTree.FindNodeById);
         InitializeDockLayout();
         _editorLogSubscription = editorLog?.Subscribe(AppendEditorLog);
 
@@ -437,7 +441,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Project the asset-graph pane's live node/edge VMs back to the minimal protocol
-    // records the inspector's GLB-node picker traversal needs, and hand them over.
+    // records the inspector's traversals need, and hand them over: the GLB-node
+    // picker walks input ports + params, and the renderable-ingredients form
+    // (issue #230) additionally reads OUTPUT port types to offer kind-filtered
+    // binding sources and follows the program→layout edge to the layout params.
     private void RefreshInspectorAssetGraphTopology()
     {
         var nodes = AssetGraph.Nodes
@@ -450,6 +457,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     .Select(port => new EngineAssetGraphPort
                     {
                         Index = port.Index,
+                        Name = port.Name,
+                    })
+                    .ToList(),
+                OutputPorts = node.OutputPorts
+                    .Select(port => new EngineAssetGraphPort
+                    {
+                        Index = port.Index,
+                        Type = port.Type,
                         Name = port.Name,
                     })
                     .ToList(),

@@ -340,10 +340,54 @@ public sealed partial class WozzitsEngineNativeClient
                 HasFlag(node.Flags, WzEditorSceneNodeFlags.HasRenderProgram)
                     ? node.RenderProgramNodeId
                     : null,
+            // Custom-renderable ingredients (issue #229/#230): always-valid
+            // tables, possibly empty — presence is the count, no HAS_* flag.
+            RenderableBindings = ReadTable<
+                WzEditorSceneRenderableBindingAbi,
+                EngineSceneRenderableBinding>(
+                bytes,
+                node.RenderableBindings,
+                ReadSceneRenderableBinding),
+            RenderableConstants = ReadTable<
+                WzEditorSceneRenderableConstantAbi,
+                EngineSceneRenderableConstant>(
+                bytes,
+                node.RenderableConstants,
+                ReadSceneRenderableConstant),
             Children = ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
                 bytes,
                 node.Children,
                 ReadSceneNode),
+        };
+    }
+
+    private static EngineSceneRenderableBinding ReadSceneRenderableBinding(
+        byte[] bytes,
+        WzEditorSceneRenderableBindingAbi binding)
+    {
+        return new EngineSceneRenderableBinding
+        {
+            Semantic = ReadString(bytes, binding.Semantic),
+            AssetGraphNodeId = binding.HasSourceRef != 0
+                ? binding.AssetGraphNodeId
+                : null,
+        };
+    }
+
+    private static EngineSceneRenderableConstant ReadSceneRenderableConstant(
+        byte[] bytes,
+        WzEditorSceneRenderableConstantAbi constant)
+    {
+        return new EngineSceneRenderableConstant
+        {
+            Name = ReadString(bytes, constant.Name),
+            Value =
+            [
+                constant.Value0,
+                constant.Value1,
+                constant.Value2,
+                constant.Value3,
+            ],
         };
     }
 
