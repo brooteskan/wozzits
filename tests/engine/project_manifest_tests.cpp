@@ -796,6 +796,139 @@ TEST(ProjectSceneSnapshot, SurfacesNodeBehaviorBindingInAbiBlob)
     EXPECT_TRUE(saw_axis);
 }
 
+// Custom-renderable ingredients (issue #229/#230): the scene snapshot surfaces
+// a node's renderable_bindings + renderable_constants from BOTH routes — the
+// scene-JSON read and the live SceneNodeAsset projection — and packs them into
+// the editor ABI blob as the two per-node tables, so the inspector can
+// pre-fill its binding rows + constant overrides.
+TEST(ProjectSceneSnapshot, SurfacesRenderableBindingsAndConstantsInAbiBlob)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "renderable_binding_snapshot";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Renderable Binding Snapshot",
+  "scene": "scene.json"
+})json");
+
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "renderable_binding_scene",
+  "nodes": [
+    {
+      "id": "bound",
+      "parent": null,
+      "visible": true,
+      "geometry": { "asset_graph_node_id": 1 },
+      "render_program": { "asset_graph_node_id": 16 },
+      "renderable_bindings": [
+        { "semantic": "scalar_field_texture", "asset_graph_node_id": 17 },
+        { "semantic": "splat_cloud" }
+      ],
+      "renderable_constants": [
+        { "name": "tint", "value": [0.2, 0.7, 0.3, 1.0] }
+      ]
+    }
+  ]
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    ASSERT_EQ(loaded.snapshot.roots.size(), 1u);
+    const auto& bound = loaded.snapshot.roots[0];
+
+    ASSERT_EQ(bound.renderable_bindings.size(), 2u);
+    EXPECT_EQ(bound.renderable_bindings[0].semantic, "scalar_field_texture");
+    ASSERT_TRUE(bound.renderable_bindings[0].asset_graph_node_id.has_value());
+    EXPECT_EQ(*bound.renderable_bindings[0].asset_graph_node_id, 17u);
+    EXPECT_EQ(bound.renderable_bindings[1].semantic, "splat_cloud");
+    EXPECT_FALSE(bound.renderable_bindings[1].asset_graph_node_id.has_value());
+    ASSERT_EQ(bound.renderable_constants.size(), 1u);
+    EXPECT_EQ(bound.renderable_constants[0].name, "tint");
+    EXPECT_FLOAT_EQ(bound.renderable_constants[0].value[0], 0.2f);
+    EXPECT_FLOAT_EQ(bound.renderable_constants[0].value[3], 1.0f);
+
+    // Pack into the editor ABI blob and read the two per-node tables back.
+    wz::engine::editor::ProjectSnapshotLoadResult project_result;
+    project_result.ok = true;
+    project_result.status =
+        wz::engine::project::ProjectManifestProbeStatus::Valid;
+    project_result.scene = loaded;
+
+    const auto blob =
+        wz::engine::editor::project_snapshot_abi_blob(project_result);
+    ASSERT_GE(blob.size(), sizeof(WzEditorProjectSnapshot));
+
+    const auto& abi = *reinterpret_cast<const WzEditorProjectSnapshot*>(
+        blob.data());
+    EXPECT_EQ(abi.abi_version, WZ_ABI_VERSION);
+    ASSERT_EQ(abi.scene.roots.count, 1u);
+    const WzEditorSceneNode* roots =
+        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
+
+    ASSERT_EQ(roots[0].renderable_bindings.count, 2u);
+    const WzEditorSceneRenderableBinding* abi_bindings =
+        abi_table<WzEditorSceneRenderableBinding>(
+            blob, roots[0].renderable_bindings);
+    EXPECT_EQ(
+        abi_string(blob, abi_bindings[0].semantic), "scalar_field_texture");
+    EXPECT_EQ(abi_bindings[0].has_source_ref, 1u);
+    EXPECT_EQ(abi_bindings[0].asset_graph_node_id, 17u);
+    EXPECT_EQ(abi_string(blob, abi_bindings[1].semantic), "splat_cloud");
+    EXPECT_EQ(abi_bindings[1].has_source_ref, 0u);
+
+    ASSERT_EQ(roots[0].renderable_constants.count, 1u);
+    const WzEditorSceneRenderableConstant* abi_constants =
+        abi_table<WzEditorSceneRenderableConstant>(
+            blob, roots[0].renderable_constants);
+    EXPECT_EQ(abi_string(blob, abi_constants[0].name), "tint");
+    EXPECT_FLOAT_EQ(abi_constants[0].value[0], 0.2f);
+    EXPECT_FLOAT_EQ(abi_constants[0].value[1], 0.7f);
+    EXPECT_FLOAT_EQ(abi_constants[0].value[2], 0.3f);
+    EXPECT_FLOAT_EQ(abi_constants[0].value[3], 1.0f);
+
+    // The LIVE SceneNodeAsset projection surfaces the same ingredients (the
+    // prefab-editor open_scene path rebuilds the tree from live nodes).
+    wz::engine::assets::SceneNodeAsset live{};
+    live.id = "live_bound";
+    live.renderable_bindings.push_back(
+        wz::engine::assets::SceneRenderableSemanticBinding{
+            .semantic = "scalar_field_texture",
+            .asset_graph_node_id = 17u,
+        });
+    live.renderable_constants.push_back(
+        wz::engine::assets::SceneRenderableConstantOverride{
+            .name = "tint",
+            .value = { 0.9f, 0.1f, 0.4f, 1.0f },
+        });
+    const auto live_snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes({ live });
+    ASSERT_EQ(live_snapshot.roots.size(), 1u);
+    ASSERT_EQ(live_snapshot.roots[0].renderable_bindings.size(), 1u);
+    EXPECT_EQ(
+        live_snapshot.roots[0].renderable_bindings[0].semantic,
+        "scalar_field_texture");
+    ASSERT_TRUE(live_snapshot.roots[0]
+                    .renderable_bindings[0].asset_graph_node_id.has_value());
+    EXPECT_EQ(
+        *live_snapshot.roots[0].renderable_bindings[0].asset_graph_node_id,
+        17u);
+    ASSERT_EQ(live_snapshot.roots[0].renderable_constants.size(), 1u);
+    EXPECT_EQ(live_snapshot.roots[0].renderable_constants[0].name, "tint");
+    EXPECT_FLOAT_EQ(
+        live_snapshot.roots[0].renderable_constants[0].value[0], 0.9f);
+}
+
 TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
 {
     TempProjectRoot temp;

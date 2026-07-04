@@ -443,6 +443,60 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_renderable_binding(
+        SceneNodeRenderableBindingEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: an upsert then a remove of the
+        // same semantic must both land.
+        pending_renderable_binding_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_renderable_bindings(
+        const std::function<
+            void(const SceneNodeRenderableBindingEdit&)>& applier)
+    {
+        std::vector<SceneNodeRenderableBindingEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_renderable_binding_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_renderable_binding_edits_);
+        }
+
+        for (const SceneNodeRenderableBindingEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
+    void EditorRuntimeControl::post_scene_node_renderable_param(
+        SceneNodeRenderableParamEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Appended in order, never coalesced: an upsert then a remove of the
+        // same name must both land.
+        pending_renderable_param_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_renderable_params(
+        const std::function<
+            void(const SceneNodeRenderableParamEdit&)>& applier)
+    {
+        std::vector<SceneNodeRenderableParamEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_renderable_param_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_renderable_param_edits_);
+        }
+
+        for (const SceneNodeRenderableParamEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_collision(
         SceneNodeCollisionEdit edit)
     {
@@ -1134,6 +1188,29 @@ namespace wz::app
                                 app.set_node_render_program(
                                     edit.node_id, edit.asset_graph_node_id);
                             }
+                        });
+                    control->service_pending_scene_node_renderable_bindings(
+                        [&app](const SceneNodeRenderableBindingEdit& edit) {
+                            // Upsert/remove one semantic binding of the node's
+                            // custom-renderable ingredients (#229/#230); the
+                            // apply re-assembles the node's renderable (a
+                            // binding present makes it the custom 0x70A form).
+                            app.set_node_renderable_binding(
+                                edit.node_id,
+                                edit.semantic,
+                                edit.asset_graph_node_id);
+                        });
+                    control->service_pending_scene_node_renderable_params(
+                        [&app](const SceneNodeRenderableParamEdit& edit) {
+                            // Upsert/remove one per-instance constant override
+                            // (#229/#230): a pack-time merge on the node — the
+                            // apply neither re-assembles nor recompiles (the
+                            // custom-form flip on first-add/last-remove is
+                            // handled inside the seam).
+                            app.set_node_renderable_constant(
+                                edit.node_id,
+                                edit.name,
+                                edit.clear ? nullptr : edit.value);
                         });
                     control->service_pending_scene_node_collisions(
                         [&app](const SceneNodeCollisionEdit& edit) {

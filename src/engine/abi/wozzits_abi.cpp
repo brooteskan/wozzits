@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <cctype>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -1904,6 +1905,87 @@ extern "C"
             return result(
                 WZ_RESULT_INTERNAL_ERROR,
                 "set node render program post failed");
+        }
+    }
+
+    WzResult wz_host_runtime_set_node_renderable_binding(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        const char* semantic_utf8,
+        uint64_t asset_graph_node_id)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!semantic_utf8 || semantic_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "semantic_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_renderable_binding(
+                wz::app::SceneNodeRenderableBindingEdit{
+                    .node_id = node_id_utf8,
+                    .semantic = semantic_utf8,
+                    .asset_graph_node_id = asset_graph_node_id,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node renderable binding post failed");
+        }
+    }
+
+    WzResult wz_host_runtime_set_node_renderable_param(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        const char* name_utf8,
+        const float* value_xyzw)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!name_utf8 || name_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "name_utf8 must not be empty");
+        }
+
+        try {
+            wz::app::SceneNodeRenderableParamEdit edit{
+                .node_id = node_id_utf8,
+                .name = name_utf8,
+                .clear = value_xyzw == nullptr,
+            };
+            if (value_xyzw) {
+                std::copy(value_xyzw, value_xyzw + 4, edit.value);
+            }
+            runtime->control.post_scene_node_renderable_param(std::move(edit));
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node renderable param post failed");
         }
     }
 

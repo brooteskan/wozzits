@@ -7,7 +7,10 @@
 extern "C" {
 #endif
 
-#define WZ_ABI_VERSION 28u
+// 28 -> 29 (issue #230): WzEditorSceneNode grew the custom-renderable
+// ingredient tables (renderable_bindings / renderable_constants) — a struct
+// layout change, so readers must match.
+#define WZ_ABI_VERSION 29u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -355,6 +358,31 @@ typedef struct WzEditorSceneComponent
     WzEditorStringSpan display_name;
 } WzEditorSceneComponent;
 
+// One authored semantic resource binding of a node's custom-renderable
+// ingredients (issue #229/#230), an entry of
+// WzEditorSceneNode.renderable_bindings. `semantic` names a row of the
+// effective program's authored binding layout; `has_source_ref` is 0/1 and
+// asset_graph_node_id (the authored source anchor) is valid iff set. Only the
+// authored id is surfaced — the resolved key re-bridges on bind.
+typedef struct WzEditorSceneRenderableBinding
+{
+    WzEditorStringSpan semantic;
+    uint64_t asset_graph_node_id;
+    uint32_t has_source_ref;
+    uint32_t reserved;
+} WzEditorSceneRenderableBinding;
+
+// One per-instance constant override of a node's custom-renderable
+// ingredients (issue #229/#230), an entry of
+// WzEditorSceneNode.renderable_constants: a value for one of the program
+// layout's declared constant tail fields. A field narrower than 4 floats
+// consumes a prefix of `value`.
+typedef struct WzEditorSceneRenderableConstant
+{
+    WzEditorStringSpan name;
+    float value[4];
+} WzEditorSceneRenderableConstant;
+
 // A scene node's authored behavior binding (SceneBehaviorAsset). Distinct from
 // the generic `components` table: behaviors carry full structured authoring data
 // so the editor can render/inspect them. `enabled` is 0/1. `events` is a table
@@ -406,6 +434,14 @@ typedef struct WzEditorSceneNode
     // WZ_EDITOR_SCENE_NODE_HAS_AUDIO_SOURCE. Appended last so existing offsets
     // are unchanged.
     WzEditorSceneAudioSource audio_source;
+    // Custom-renderable ingredients (issue #229/#230), always-valid tables
+    // (possibly empty — presence is the count, no HAS_* flag):
+    // renderable_bindings is WzEditorSceneRenderableBinding[] and
+    // renderable_constants is WzEditorSceneRenderableConstant[]. Appended last
+    // so existing field offsets are unchanged (the node STRIDE changed —
+    // that is the WZ_ABI_VERSION 29 bump).
+    WzEditorTableSpan renderable_bindings;
+    WzEditorTableSpan renderable_constants;
 } WzEditorSceneNode;
 
 typedef struct WzEditorSceneSnapshot
@@ -650,7 +686,17 @@ static_assert(offsetof(WzEditorSceneBehavior, enabled) == 64);
 static_assert(offsetof(WzEditorSceneBehavior, events) == 72);
 static_assert(offsetof(WzEditorSceneBehavior, config) == 88);
 
-static_assert(sizeof(WzEditorSceneNode) == 632);
+static_assert(sizeof(WzEditorSceneRenderableBinding) == 32);
+static_assert(offsetof(WzEditorSceneRenderableBinding, semantic) == 0);
+static_assert(
+    offsetof(WzEditorSceneRenderableBinding, asset_graph_node_id) == 16);
+static_assert(offsetof(WzEditorSceneRenderableBinding, has_source_ref) == 24);
+
+static_assert(sizeof(WzEditorSceneRenderableConstant) == 32);
+static_assert(offsetof(WzEditorSceneRenderableConstant, name) == 0);
+static_assert(offsetof(WzEditorSceneRenderableConstant, value) == 16);
+
+static_assert(sizeof(WzEditorSceneNode) == 664);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -670,6 +716,8 @@ static_assert(offsetof(WzEditorSceneNode, render_program_node_id) == 584);
 static_assert(offsetof(WzEditorSceneNode, collision) == 592);
 static_assert(offsetof(WzEditorSceneNode, motion) == 600);
 static_assert(offsetof(WzEditorSceneNode, audio_source) == 616);
+static_assert(offsetof(WzEditorSceneNode, renderable_bindings) == 632);
+static_assert(offsetof(WzEditorSceneNode, renderable_constants) == 648);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);
@@ -1145,6 +1193,38 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_render_program(
     WzHostRuntime* runtime,
     const char* node_id_utf8,
     uint64_t asset_graph_node_id);
+
+// Author ONE semantic resource binding of node `node_id_utf8`'s
+// custom-renderable ingredients (issue #229/#230): upsert the row for layout
+// semantic `semantic_utf8` pointing at the authored asset-graph source
+// `asset_graph_node_id`, or REMOVE the row when the id is 0. A binding present
+// makes the assembled renderable the CUSTOM (0x70A) form, so the engine
+// re-assembles + re-resolves like the geometry/program verbs; a binding the
+// program's layout cannot satisfy surfaces its reason on the synthesized
+// asset (log + resolve detail), never a silent fallback. Same deferral and
+// gating as wz_host_runtime_set_node_geometry_asset. NEW exported fn (the
+// WZ_ABI_VERSION 29 bump is the WzEditorSceneNode table growth, not this).
+WZ_ABI_API WzResult wz_host_runtime_set_node_renderable_binding(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    const char* semantic_utf8,
+    uint64_t asset_graph_node_id);
+
+// Author ONE per-instance constant override of node `node_id_utf8`'s
+// custom-renderable ingredients (issue #229/#230): upsert `name_utf8` with
+// `value_xyzw` (4 floats; a narrower declared field consumes a prefix), or
+// REMOVE the override when `value_xyzw` is null. Overrides merge over the
+// synthesized recipe's defaults at PACK time — no re-assembly, no asset-graph
+// recompile, no re-key; the next rendered frame reflects the edit (the ONLY
+// exception: the first override on a node with no bindings flips its
+// renderable to the custom form, which re-assembles). Same deferral and
+// gating as wz_host_runtime_set_node_geometry_asset. NEW exported fn (the
+// WZ_ABI_VERSION 29 bump is the WzEditorSceneNode table growth, not this).
+WZ_ABI_API WzResult wz_host_runtime_set_node_renderable_param(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    const char* name_utf8,
+    const float* value_xyzw);
 
 // Author node `node_id_utf8`'s Collision component by REFERENCE (issue
 // #216/#217): point it at an authored asset-graph collision node

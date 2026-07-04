@@ -3,6 +3,7 @@
 #include <external/json/json_parser.h>
 #include <external/json/json_read_helpers.h>
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <fstream>
@@ -601,6 +602,75 @@ namespace wz::engine::editor
             return out;
         }
 
+        // Read the authored custom-renderable ingredients (issue #229/#230)
+        // from a node's "renderable_bindings" / "renderable_constants" arrays.
+        // Tolerant: missing blocks yield empty vectors; field names match
+        // scene_json_export's writers (only the authored intent persists).
+        std::vector<SceneSnapshotRenderableBinding> read_renderable_bindings(
+            const wz::json::JSONValue& obj)
+        {
+            std::vector<SceneSnapshotRenderableBinding> out;
+            const auto* bindings =
+                wz::json::find_member(obj, "renderable_bindings");
+            if (!bindings
+                || bindings->kind != wz::json::JSONValueKind::Array)
+            {
+                return out;
+            }
+            for (const auto& entry_ptr : bindings->array_values) {
+                if (!entry_ptr
+                    || entry_ptr->kind != wz::json::JSONValueKind::Object)
+                {
+                    continue;
+                }
+                const auto semantic =
+                    wz::json::read_string(*entry_ptr, "semantic");
+                if (!semantic || semantic->empty()) {
+                    continue;
+                }
+                SceneSnapshotRenderableBinding binding{};
+                binding.semantic = std::string(*semantic);
+                if (const auto anchor = wz::json::read_number(
+                        *entry_ptr, "asset_graph_node_id");
+                    anchor && *anchor > 0.0)
+                {
+                    binding.asset_graph_node_id =
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(*anchor);
+                }
+                out.push_back(std::move(binding));
+            }
+            return out;
+        }
+
+        std::vector<SceneSnapshotRenderableConstant> read_renderable_constants(
+            const wz::json::JSONValue& obj)
+        {
+            std::vector<SceneSnapshotRenderableConstant> out;
+            const auto* constants =
+                wz::json::find_member(obj, "renderable_constants");
+            if (!constants
+                || constants->kind != wz::json::JSONValueKind::Array)
+            {
+                return out;
+            }
+            for (const auto& entry_ptr : constants->array_values) {
+                if (!entry_ptr
+                    || entry_ptr->kind != wz::json::JSONValueKind::Object)
+                {
+                    continue;
+                }
+                const auto name = wz::json::read_string(*entry_ptr, "name");
+                if (!name || name->empty()) {
+                    continue;
+                }
+                SceneSnapshotRenderableConstant constant{};
+                constant.name = std::string(*name);
+                wz::json::read_float4(*entry_ptr, "value", constant.value);
+                out.push_back(std::move(constant));
+            }
+            return out;
+        }
+
         // Map a live SceneNodeAsset's local AuthoredTransform (issue #213) into a
         // SceneSnapshotTransform, REUSING the same euler/display helpers the
         // file-path reader uses so the two routes format identically.
@@ -682,6 +752,30 @@ namespace wz::engine::editor
             // reveals + pre-selects the "Render program" section in the inspector,
             // matching the JSON node path (read_node).
             node.render_program_node_id = source.render_program_node_id;
+
+            // Custom-renderable ingredients (issue #229/#230): surface the
+            // authored bindings + constant overrides so the inspector
+            // pre-fills its rows, matching the JSON node path. Only the
+            // authored intent (semantic + anchor, name + value) — the bridged
+            // resolved keys are bind products, not authored state.
+            node.renderable_bindings.reserve(
+                source.renderable_bindings.size());
+            for (const auto& binding : source.renderable_bindings) {
+                node.renderable_bindings.push_back(
+                    SceneSnapshotRenderableBinding{
+                        .semantic = binding.semantic,
+                        .asset_graph_node_id = binding.asset_graph_node_id,
+                    });
+            }
+            node.renderable_constants.reserve(
+                source.renderable_constants.size());
+            for (const auto& constant : source.renderable_constants) {
+                SceneSnapshotRenderableConstant out{};
+                out.name = constant.name;
+                std::copy(
+                    constant.value, constant.value + 4, out.value);
+                node.renderable_constants.push_back(std::move(out));
+            }
 
             // Persisted Collision/Motion field values (read-back gap fix): the
             // grafted/SceneNodeAsset path reads them off the asset structs so the
@@ -830,6 +924,11 @@ namespace wz::engine::editor
                 read_asset_graph_node_ref(value, "geometry");
             node.render_program_node_id =
                 read_asset_graph_node_ref(value, "render_program");
+            // Custom-renderable ingredients (issue #229/#230): surface the
+            // persisted bindings + constant overrides so the inspector
+            // pre-fills its rows from the node's authored state.
+            node.renderable_bindings = read_renderable_bindings(value);
+            node.renderable_constants = read_renderable_constants(value);
             return FlatSceneSnapshotNode{ .node = std::move(node) };
         }
 

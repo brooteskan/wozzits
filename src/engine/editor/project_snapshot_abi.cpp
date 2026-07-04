@@ -388,6 +388,43 @@ namespace wz::engine::editor
                     node.audio_source->enabled ? 1u : 0u;
             }
 
+            // Custom-renderable ingredients (issue #229/#230): always-valid
+            // tables, possibly empty — presence is the count, no HAS_* flag.
+            std::vector<WzEditorSceneRenderableBinding> renderable_bindings;
+            renderable_bindings.reserve(node.renderable_bindings.size());
+            for (const SceneSnapshotRenderableBinding& binding :
+                 node.renderable_bindings)
+            {
+                renderable_bindings.push_back(WzEditorSceneRenderableBinding{
+                    .semantic = builder.append_string(binding.semantic),
+                    .asset_graph_node_id =
+                        binding.asset_graph_node_id
+                            ? static_cast<uint64_t>(
+                                  *binding.asset_graph_node_id)
+                            : 0ull,
+                    .has_source_ref =
+                        binding.asset_graph_node_id ? 1u : 0u,
+                    .reserved = 0u,
+                });
+            }
+            out.renderable_bindings =
+                builder.append_table(renderable_bindings);
+
+            std::vector<WzEditorSceneRenderableConstant> renderable_constants;
+            renderable_constants.reserve(node.renderable_constants.size());
+            for (const SceneSnapshotRenderableConstant& constant :
+                 node.renderable_constants)
+            {
+                WzEditorSceneRenderableConstant abi_constant{};
+                abi_constant.name = builder.append_string(constant.name);
+                for (size_t i = 0; i < 4; ++i) {
+                    abi_constant.value[i] = constant.value[i];
+                }
+                renderable_constants.push_back(abi_constant);
+            }
+            out.renderable_constants =
+                builder.append_table(renderable_constants);
+
             out.children = scene_nodes_abi(builder, node.children);
             return out;
         }

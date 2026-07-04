@@ -108,3 +108,85 @@ TEST(EditorRuntimeControl, PropertiesPostCoalescesByIdAndDrainsOnce)
         [&again](const SceneNodePropertiesEdit& edit) { again.push_back(edit); });
     EXPECT_TRUE(again.empty());
 }
+
+// Custom-renderable ingredient edits (issue #229/#230): NOT coalesced — an
+// upsert then a remove of the same semantic must both land, in order — and
+// each queue drains exactly once.
+TEST(EditorRuntimeControl, RenderableBindingEditsApplyInOrderNotCoalesced)
+{
+    using wz::app::SceneNodeRenderableBindingEdit;
+
+    EditorRuntimeControl control;
+    control.post_scene_node_renderable_binding(
+        SceneNodeRenderableBindingEdit{
+            .node_id = "n",
+            .semantic = "scalar_field_texture",
+            .asset_graph_node_id = 17u,
+        });
+    control.post_scene_node_renderable_binding(
+        SceneNodeRenderableBindingEdit{
+            .node_id = "n",
+            .semantic = "scalar_field_texture",
+            .asset_graph_node_id = 0u,  // remove — must land AFTER the upsert
+        });
+
+    std::vector<SceneNodeRenderableBindingEdit> applied;
+    control.service_pending_scene_node_renderable_bindings(
+        [&applied](const SceneNodeRenderableBindingEdit& edit) {
+            applied.push_back(edit);
+        });
+
+    ASSERT_EQ(applied.size(), 2u);
+    EXPECT_EQ(applied[0].semantic, "scalar_field_texture");
+    EXPECT_EQ(applied[0].asset_graph_node_id, 17u);
+    EXPECT_EQ(applied[1].asset_graph_node_id, 0u);
+
+    std::vector<SceneNodeRenderableBindingEdit> again;
+    control.service_pending_scene_node_renderable_bindings(
+        [&again](const SceneNodeRenderableBindingEdit& edit) {
+            again.push_back(edit);
+        });
+    EXPECT_TRUE(again.empty());
+}
+
+TEST(EditorRuntimeControl, RenderableParamEditsCarryValueAndClear)
+{
+    using wz::app::SceneNodeRenderableParamEdit;
+
+    EditorRuntimeControl control;
+    control.post_scene_node_renderable_param(
+        SceneNodeRenderableParamEdit{
+            .node_id = "n",
+            .name = "tint",
+            .clear = false,
+            .value = { 0.2f, 0.7f, 0.3f, 1.0f },
+        });
+    control.post_scene_node_renderable_param(
+        SceneNodeRenderableParamEdit{
+            .node_id = "n",
+            .name = "tint",
+            .clear = true,  // remove — must land AFTER the upsert
+        });
+
+    std::vector<SceneNodeRenderableParamEdit> applied;
+    control.service_pending_scene_node_renderable_params(
+        [&applied](const SceneNodeRenderableParamEdit& edit) {
+            applied.push_back(edit);
+        });
+
+    ASSERT_EQ(applied.size(), 2u);
+    EXPECT_EQ(applied[0].name, "tint");
+    EXPECT_FALSE(applied[0].clear);
+    EXPECT_FLOAT_EQ(applied[0].value[0], 0.2f);
+    EXPECT_FLOAT_EQ(applied[0].value[1], 0.7f);
+    EXPECT_FLOAT_EQ(applied[0].value[2], 0.3f);
+    EXPECT_FLOAT_EQ(applied[0].value[3], 1.0f);
+    EXPECT_TRUE(applied[1].clear);
+
+    std::vector<SceneNodeRenderableParamEdit> again;
+    control.service_pending_scene_node_renderable_params(
+        [&again](const SceneNodeRenderableParamEdit& edit) {
+            again.push_back(edit);
+        });
+    EXPECT_TRUE(again.empty());
+}

@@ -128,6 +128,25 @@ namespace wz::engine::editor
         std::vector<SceneSnapshotMeshStyleOverride> style_overrides;
     };
 
+    // One authored semantic resource binding of a node's custom-renderable
+    // ingredients (issue #229/#230), surfaced read-back so the inspector
+    // pre-fills its binding rows. Only the authored intent is carried
+    // (semantic + asset-graph anchor); the resolved key re-bridges on bind.
+    struct SceneSnapshotRenderableBinding
+    {
+        std::string semantic;
+        std::optional<wz::asset::AssetGraphDraftNodeId> asset_graph_node_id;
+    };
+
+    // One per-instance constant override of a node's custom-renderable
+    // ingredients (issue #229/#230), surfaced read-back. A field narrower
+    // than 4 floats consumes a prefix of `value`.
+    struct SceneSnapshotRenderableConstant
+    {
+        std::string name;
+        float value[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
+    };
+
     // A single config entry of an authored behavior binding, mirroring the
     // asset-graph param shape: a name, a kind ("bool"/"int"/"float"/"string")
     // and a display value string, so the editor renders it uniformly.
@@ -177,6 +196,11 @@ namespace wz::engine::editor
         std::optional<SceneSnapshotCollision> collision;
         std::optional<SceneSnapshotMotion> motion;
         std::optional<SceneSnapshotAudioSource> audio_source;
+        // Custom-renderable ingredients (issue #229/#230), surfaced read-back
+        // (possibly empty) so the inspector pre-fills its binding rows +
+        // constant overrides from the node's persisted state.
+        std::vector<SceneSnapshotRenderableBinding> renderable_bindings;
+        std::vector<SceneSnapshotRenderableConstant> renderable_constants;
         std::vector<SceneSnapshotNode> children;
     };
 

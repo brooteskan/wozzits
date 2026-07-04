@@ -165,6 +165,36 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
     };
 
+    // A live edit to ONE semantic resource binding of a node's custom-
+    // renderable ingredients (issue #229/#230): upsert the row for `semantic`
+    // pointing at the authored asset-graph source (0 = remove the row).
+    // Non-blocking and NOT coalesced (appended in order), matching the
+    // render-binding edits. Applied via WozzitsApp_v1::
+    // set_node_renderable_binding, which re-assembles the node's renderable
+    // (a binding present makes it the CUSTOM 0x70A form) on the engine's
+    // next frame.
+    struct SceneNodeRenderableBindingEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        std::string semantic;
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id = 0;
+    };
+
+    // A live edit to ONE per-instance constant override of a node's custom-
+    // renderable ingredients (issue #229/#230): upsert `name` with `value`
+    // (clear = remove the override instead). Non-blocking and NOT coalesced
+    // (appended in order). Applied via WozzitsApp_v1::
+    // set_node_renderable_constant — a PACK-time merge on the node, so the
+    // apply neither re-assembles nor recompiles anything (except the
+    // custom-form flip on first-add/last-remove, which the app seam handles).
+    struct SceneNodeRenderableParamEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        std::string name;
+        bool clear = false;
+        float value[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
+    };
+
     // A live edit to a node's PREFERRED asset-graph-backed Scene-source
     // component (issue #213), posted from the owner thread (editor UI) to the
     // engine thread. Carries the authored asset-graph node id of a "Scene from
@@ -419,6 +449,29 @@ namespace wz::app
             const std::function<
                 void(const SceneNodeRenderBindingEdit&)>& applier);
 
+        // Owner thread: queue an upsert/remove of ONE semantic binding of a
+        // node's custom-renderable ingredients (non-blocking; appended in
+        // order — NOT coalesced). Applied on the engine thread's next frame,
+        // like the render-binding edits (issue #229/#230).
+        void post_scene_node_renderable_binding(
+            SceneNodeRenderableBindingEdit edit);
+
+        void service_pending_scene_node_renderable_bindings(
+            const std::function<
+                void(const SceneNodeRenderableBindingEdit&)>& applier);
+
+        // Owner thread: queue an upsert/remove of ONE per-instance constant
+        // override of a node's custom-renderable ingredients (non-blocking;
+        // appended in order — NOT coalesced; a slider drag streams many edits
+        // but each apply is a cheap node-vector write, no rebuild). Applied on
+        // the engine thread's next frame (issue #229/#230).
+        void post_scene_node_renderable_param(
+            SceneNodeRenderableParamEdit edit);
+
+        void service_pending_scene_node_renderable_params(
+            const std::function<
+                void(const SceneNodeRenderableParamEdit&)>& applier);
+
         // Owner thread: queue a set/clear of a node's Collision reference +
         // constrain_movement toggle (non-blocking; appended in order — NOT
         // coalesced). Applied on the engine thread's next frame, like the
@@ -562,6 +615,10 @@ namespace wz::app
         std::vector<SceneNodeAudioRenderableEdit> pending_audio_renderable_edits_;
         std::vector<SceneNodeAudioSourcePlayEdit> pending_audio_source_play_edits_;
         std::vector<SceneNodeRenderBindingEdit> pending_render_binding_edits_;
+        std::vector<SceneNodeRenderableBindingEdit>
+            pending_renderable_binding_edits_;
+        std::vector<SceneNodeRenderableParamEdit>
+            pending_renderable_param_edits_;
         std::vector<SceneNodeCollisionEdit> pending_collision_edits_;
         std::vector<SceneNodeMotionTerrainEdit> pending_motion_terrain_edits_;
         std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
