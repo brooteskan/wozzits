@@ -631,6 +631,36 @@ target_link_libraries(wozzits_abi
         window_engine
 )
 
+# ----------------------------
+# "Here is the app" install component
+# ----------------------------
+# A dedicated 'app' install component that copies ONLY the three runtime
+# binaries -- the RHI-native app, the play-mode host, and the in-process ABI
+# dll -- into one flat folder. rtaudio is static-linked and DX12/DXGI are
+# system dlls, so these three files are the entire non-system payload; there is
+# nothing transitive to bundle. Kept in its own component so it never drags in
+# the dev-SDK install (window_engine lib + headers + cmake export) defined
+# above.
+#
+#   Install:      cmake --install <build-dir> --component app
+#   Change dest:  reconfigure with -DWOZZITS_APP_INSTALL_DIR=<path>
+#
+# The editor publishes its own output (Wozzits.Editor.App.exe + Avalonia deps)
+# into this SAME folder. Because the editor derives the play-mode host exe from
+# the directory of the wozzits_abi.dll it loads, and the host finds
+# wozzits_app_v1.exe beside itself, co-locating all four makes the whole
+# live/play chain resolve to this one folder with no build-tree scan.
+#
+# DESTINATION is absolute (a fixed local app folder chosen via the cache var),
+# so `cmake --install --component app` writes here regardless of the prefix used
+# for the dev-SDK install. Only RUNTIME artifacts are listed: the wozzits_abi
+# import .lib (ARCHIVE) is a build-time artifact and is intentionally not shipped.
+set(WOZZITS_APP_INSTALL_DIR "D:/wozzits-app" CACHE PATH
+    "Destination folder for the 'app' install component (the runnable app).")
+install(TARGETS wozzits_app_v1 wozzits_editor_host wozzits_abi
+    RUNTIME DESTINATION "${WOZZITS_APP_INSTALL_DIR}"
+    COMPONENT app)
+
 if(WINDOW_ENGINE_BUILD_EXAMPLES AND WOZZITS_ENABLE_V8_SCRIPTING)
     add_executable(v8_script_smoke
         examples/v8_script_smoke/v8_script_smoke.cpp
