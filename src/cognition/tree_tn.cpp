@@ -1,5 +1,6 @@
 #include <cognition/tree_tn.h>
 
+#include <cognition/tensor_leg.h>
 #include <graph/shared_edge_polytree_algo.h>
 
 #include <complex>
@@ -22,6 +23,9 @@ namespace wz::engine::cognition
         // a tensor with all K ket AND all K bra legs open at once), then contract
         // the fully-absorbed ket against the untouched bra tensor conj(T). Peak
         // cost is O(chi^(K+1)); no intermediate ever carries 2K bond legs.
+        //
+        // absorb_leg (the tensor-times-matrix leg fold) is the shared kernel in
+        // cognition/tensor_leg.h; mode_dims stays here because it takes a TreeNode.
 
         // The full mode-dimension list [2, Dp, c_0, ...] for a node's tensor.
         std::vector<uint32_t> mode_dims(const TreeNode& T)
@@ -34,47 +38,6 @@ namespace wz::engine::cognition
                 dims.push_back(d);
             }
             return dims;
-        }
-
-        // Tensor-times-matrix along one mode: converts leg `mode` of W (a dim d
-        // index) from a KET into a BRA by contracting with the d x d matrix `m`
-        // (row-major [ket*d + bra]):
-        //   W'[.., bra, ..] = sum_ket W[.., ket, ..] * m[ket*d + bra].
-        // W keeps its shape; `dims` is the full mode-dimension list of W. Cost is
-        // O(size(W) * d) -- a single extra bond factor, never a joint blow-up.
-        void absorb_leg(
-            std::vector<Complex>& W, const std::vector<uint32_t>& dims,
-            std::size_t mode, const std::vector<Complex>& m)
-        {
-            const std::size_t d = dims[mode];
-            // Strides: inner = product of dims after `mode`, outer = before.
-            std::size_t inner = 1;
-            for (std::size_t i = mode + 1; i < dims.size(); ++i) {
-                inner *= dims[i];
-            }
-            std::size_t outer = 1;
-            for (std::size_t i = 0; i < mode; ++i) {
-                outer *= dims[i];
-            }
-            const std::size_t block = d * inner;  // one full [mode,inner...] slab
-            std::vector<Complex> out(W.size(), Complex{ 0, 0 });
-            for (std::size_t o = 0; o < outer; ++o) {
-                const std::size_t base = o * block;
-                for (std::size_t ket = 0; ket < d; ++ket) {
-                    const std::size_t ket_base = base + ket * inner;
-                    for (std::size_t bra = 0; bra < d; ++bra) {
-                        const Complex mm = m[ket * d + bra];
-                        if (mm == Complex{ 0, 0 }) {
-                            continue;
-                        }
-                        const std::size_t bra_base = base + bra * inner;
-                        for (std::size_t j = 0; j < inner; ++j) {
-                            out[bra_base + j] += W[ket_base + j] * mm;
-                        }
-                    }
-                }
-            }
-            W.swap(out);
         }
 
         // Up-message on the parent bond (parent_bond^2), folding in every child's
