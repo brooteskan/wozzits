@@ -1730,6 +1730,23 @@ public sealed partial class WozzitsEngineNativeClient
             return configured;
         }
 
+        // An installed editor ships wozzits_abi.dll beside its own executable (the
+        // "here is the app" folder that `cmake --install --component app` +
+        // `dotnet publish` both target). Prefer that co-located copy over the dev
+        // build-tree scan below, so a run-from-install is deterministic: it loads
+        // the engine binary it was installed with, and play-mode host resolution
+        // -- which takes this path's directory -- points back into the install
+        // folder. A dev checkout has no dll next to Wozzits.Editor.App.exe in
+        // bin/<config>, so this misses there and the build-config scan runs.
+        var coLocated = Path.Combine(AppContext.BaseDirectory, "wozzits_abi.dll");
+        if (File.Exists(coLocated))
+        {
+            AbiSourcePath = coLocated;
+            AbiBuiltUtc = File.GetLastWriteTimeUtc(coLocated);
+            AbiCandidates = new[] { $"{coLocated} (installed, co-located)" };
+            return coLocated;
+        }
+
         var buildRoot = FindEngineBuildRoot();
         if (buildRoot is not null)
         {

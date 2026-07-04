@@ -7,6 +7,18 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
+  <!-- "Here is the app" install: a bare `dotnet publish` drops the editor and
+       its Avalonia deps into the same flat folder the engine installs its three
+       runtime binaries into (see WOZZITS_APP_INSTALL_DIR in the engine's
+       CMakeLists.txt), so the whole app runs from one place. The installed
+       editor loads the wozzits_abi.dll co-located here (see ResolveDefaultAbiPath).
+       Override the folder with -p:WozzitsAppInstallDir=<dir>, or the publish
+       output entirely with `dotnet publish -o <dir>`. -->
+  <PropertyGroup>
+    <WozzitsAppInstallDir Condition="'$(WozzitsAppInstallDir)' == ''">D:\wozzits-app</WozzitsAppInstallDir>
+    <PublishDir Condition="'$(PublishDir)' == ''">$(WozzitsAppInstallDir)\</PublishDir>
+  </PropertyGroup>
+
   <ItemGroup>
     <Folder Include="Models\" />
     <AvaloniaResource Include="Assets\**" />
