@@ -33,7 +33,7 @@ namespace wz::engine::assets::internal
             "None",
             "MVP (16)",
             "World + view-proj + camera (36)",
-            "Clipmap (32)",
+            "Camera-snapped terrain (32)",
         };
 
         constexpr std::array<std::string_view, 5> kConstantTypeOptions = {

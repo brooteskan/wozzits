@@ -21,6 +21,7 @@
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/mesh_asset_module.h>
+#include <engine/assets/placement_asset_module.h>
 #include <engine/assets/render_binding_layout/render_binding_layout.h>
 #include <engine/assets/render_binding_layout_asset_module.h>
 #include <engine/assets/render_program/render_program.h>
@@ -594,12 +595,13 @@ TEST_F(CustomRenderableFixture, KindMismatchFailsCompileWithReason)
         << "detail was: " << state->detail;
 }
 
-// #233: a CameraSnappedTerrain-head custom renderable compiles into a recipe
-// that names the height field (from the scalar_field_texture binding) and
-// carries the world settings — the same data the 0x708 clipmap recipe carries,
-// so the generic per-frame terrain packer fills the block. No Placement is
-// wired here, so the footprint stays render-time-derived (not authoritative).
-TEST_F(CustomRenderableFixture, CameraSnappedTerrainRecipeCarriesHeightAndSettings)
+// #233/#234: a CameraSnappedTerrain-head custom renderable compiles into a
+// recipe that names the height field (from the scalar_field_texture binding) and
+// carries the world footprint from a Placement wired at the placement port — the
+// same data the 0x708 clipmap recipe carries, so the generic per-frame terrain
+// packer fills the block — then records a device draw. This is the exact pattern
+// test_mesh_001's clipmap now uses (graph-path 0x70A + placement port).
+TEST_F(CustomRenderableFixture, CameraSnappedTerrainWithPlacementCarriesFootprintAndDraws)
 {
     wz::engine::rendering::EngineGpuContext gpu(device);
     ea::EngineAssetLibrary assets(gpu, logger, root.string());
@@ -608,16 +610,30 @@ TEST_F(CustomRenderableFixture, CameraSnappedTerrainRecipeCarriesHeightAndSettin
         assets, terrain_layout(),
         "shaders/terrain/terrain_vs.hlsl", "shaders/terrain/terrain_ps.hlsl");
 
+    // The world footprint the terrain shares with a collision on the same
+    // Placement (#218): extent.xz = world size, extent.y = vertical scale.
+    const ea::PlacementAsset placement =
+        assets.placements().create_placement(ea::PlacementDesc{
+            .name = "terrain/placement",
+            .origin = { 0.0f, 0.0f, 0.0f },
+            .extent = { 16.0f, 4.0f, 16.0f },
+            .base_height = 0.0f,
+        });
+    ASSERT_TRUE(placement.valid());
+
+    // Port-ordered deps: geometry(0), program(1), field at binding0(2), and the
+    // Placement at the placement port (2 + kMaxRenderBindingLayoutBindings = 10).
+    std::vector<wz::asset::AssetKey> ports(11);
+    ports[0] = ingredients.mesh.output;
+    ports[1] = ingredients.program.key;
+    ports[2] = ingredients.field.output;
+    ports[10] = placement.output;
+
     wz::asset::ParamBlock params;
     params.values["binding0_semantic"] =
         std::string("scalar_field_texture");
     const wz::asset::AssetKey renderable_key = register_custom_renderable(
-        assets,
-        20,
-        std::move(params),
-        { ingredients.mesh.output,
-          ingredients.program.key,
-          ingredients.field.output });
+        assets, 20, std::move(params), std::move(ports));
 
     ASSERT_TRUE(assets.commit());
     const ea::ResolveReport resolve = assets.resolve_all();
@@ -633,9 +649,35 @@ TEST_F(CustomRenderableFixture, CameraSnappedTerrainRecipeCarriesHeightAndSettin
         ea::RenderBindingConstantsHead::CameraSnappedTerrain);
     // The height field the renderer samples + derives texel dims from.
     EXPECT_TRUE(recipe->height_texture_key == ingredients.field.output);
-    // Default footprint (no Placement wired): camera-snapped, not authoritative.
+    // The Placement is authoritative for the footprint (extent → world size /
+    // vertical scale), exactly the 0x708 #218 derivation.
     EXPECT_TRUE(recipe->clipmap.view_snapped);
-    EXPECT_FALSE(recipe->clipmap.placement_authoritative);
+    EXPECT_TRUE(recipe->clipmap.placement_authoritative);
+    EXPECT_FLOAT_EQ(recipe->clipmap.world_size[0], 16.0f);
+    EXPECT_FLOAT_EQ(recipe->clipmap.world_size[1], 16.0f);
+    EXPECT_FLOAT_EQ(recipe->clipmap.vertical_scale, 4.0f);
+
+    // Drive one device frame: the CameraSnappedTerrain head packs through the
+    // custom head switch (pack_camera_snapped_terrain_constants) and the height
+    // texture binds at scalar_field_texture — the recorder must accept the draw.
+    wz::engine::rendering::RhiSceneRenderer renderer(gpu, logger);
+    ea::SceneNodeAsset node{};
+    node.id = wz::scene::AuthoredEntityId{ 1 };
+    node.name = "terrain";
+    node.visible = true;
+    node.renderable_asset = renderable_key;
+    const std::vector<ea::SceneNodeAsset> nodes{ node };
+
+    ASSERT_TRUE(wz::gpu::begin_frame(device));
+    wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+    const bool recorded = renderer.render_scene(
+        nodes, assets, wz::math::Mat4::identity(),
+        wz::math::Vec3{ 2.0f, 5.0f, -3.0f });
+    EXPECT_TRUE(recorded)
+        << "camera-snapped terrain renderable failed to realize or the recorder "
+           "rejected the draw";
+    ASSERT_TRUE(wz::gpu::end_frame(device));
+    wz::gpu::present(device, /*sync_interval*/ 0);
 }
 
 // #233: the terrain head needs the height field. With the layout's
