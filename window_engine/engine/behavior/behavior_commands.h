@@ -50,6 +50,13 @@ namespace wz::engine::behavior
         // instantaneous strength path. See
         // WZ_BEHAVIOR_COMMAND_SET_TERRAIN_ALIGNMENT_RATE.
         SetTerrainAlignmentRate,
+        // Set an authored renderable constant on `entity`'s look (#232). Host-
+        // handled (not applied here): WozzitsApp_v1 resolves the name hash to a
+        // declared constant field and writes the node's renderable_constants
+        // override (the #229 seam). values[0] = the constant name hash as a
+        // float bit pattern, values[1..3] = the new x/y/z (w preserved). See
+        // WZ_BEHAVIOR_COMMAND_SET_RENDERABLE_PARAM.
+        SetRenderableParam,
     };
 
     struct BehaviorCommand

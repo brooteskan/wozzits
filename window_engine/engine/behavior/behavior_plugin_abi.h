@@ -312,6 +312,27 @@ enum
      * field consumed by an engine pass.
      */
     WZ_BEHAVIOR_COMMAND_SET_TERRAIN_ALIGNMENT_RATE = 17u,
+    /*
+     * Set an authored renderable CONSTANT on `entity`'s look at runtime (issue
+     * #232) — the SET_SOUND_GAIN pattern applied to renderable constants. Like
+     * the audio/spawn commands, this does NOT mutate `entity`: the host
+     * (WozzitsApp_v1) resolves the name hash to one of the node's declared
+     * constant fields and writes the node's per-instance renderable_constants
+     * override (the #229 seam), which the next frame's pack merges into the
+     * draw packet — no re-key, no recompile. apply_behavior_commands ignores
+     * it. `entity` is the node carrying the renderable (one look per node, so
+     * the entity is a complete address); a no-op if the hash names no declared
+     * or already-overridden constant.
+     *
+     * Encoding: values[0] = the constant NAME's FNV-1a/32 hash as a float BIT
+     * PATTERN (a container, not a numeric value — mirrors the clip-name /
+     * prefab-name trick), values[1..3] = the new x/y/z (r/g/b). The command
+     * struct has only four value slots, so the name hash consumes one and the
+     * payload is a float3: a float4 field's fourth component (w / alpha) is
+     * PRESERVED at its current value, not carried. Use wz_write_set_renderable_
+     * param / _named in behavior_module_api.h.
+     */
+    WZ_BEHAVIOR_COMMAND_SET_RENDERABLE_PARAM = 18u,
 };
 
 /*

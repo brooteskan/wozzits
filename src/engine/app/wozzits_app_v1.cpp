@@ -37,6 +37,7 @@
 #include <scene/scene_graph.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -58,6 +59,21 @@ namespace wz::app
         // constexpr) bit-for-bit so a SPAWN_PREFAB command's hash resolves to the
         // prefab registered under the same name.
         uint32_t prefab_name_hash(std::string_view name) noexcept
+        {
+            uint32_t h = 2166136261u;
+            for (const unsigned char c : name) {
+                h ^= static_cast<uint32_t>(c);
+                h *= 16777619u;
+            }
+            return h;
+        }
+
+        // FNV-1a/32 over a renderable-constant name. Matches
+        // wz_renderable_param_hash (behavior-side) bit-for-bit so a
+        // SET_RENDERABLE_PARAM command's hash resolves to the declared field of
+        // the same name (#232). Same algorithm as prefab_name_hash — kept a
+        // distinct function for a semantically distinct call site.
+        uint32_t renderable_param_name_hash(std::string_view name) noexcept
         {
             uint32_t h = 2166136261u;
             for (const unsigned char c : name) {
@@ -2117,6 +2133,109 @@ namespace wz::app
                 }
             }
 
+            // SET_RENDERABLE_PARAM (issue #232): write the addressed node's
+            // per-instance renderable_constants override, which the next
+            // frame's pack merges into the draw packet (the #229 seam). Like
+            // the audio verbs this is host-handled (apply_behavior_commands
+            // ignores it) and runs in the command pass — it mutates only the
+            // authored SceneNodeAsset (no behavior-runtime rebuild, no
+            // recompile, no re-key), so it does not renumber the runtime ids
+            // the remaining commands address. `entity` (runtime) is resolved to
+            // its stable authored id here while behavior_scene_ is current.
+            for (const wz::engine::behavior::BehaviorCommand& command :
+                 frame_storage_.behavior_commands.commands)
+            {
+                if (command.kind
+                    != wz::engine::behavior::BehaviorCommandKind
+                        ::SetRenderableParam)
+                {
+                    continue;
+                }
+                if (command.entity
+                    >= behavior_scene_->runtime_to_authored.size())
+                {
+                    continue;
+                }
+                const wz::scene::AuthoredEntityId authored_id =
+                    behavior_scene_->runtime_to_authored[command.entity];
+
+                uint32_t name_hash = 0u;
+                std::memcpy(
+                    &name_hash, &command.values[0], sizeof(uint32_t));
+
+                // Resolve the name hash to a real field name: prefer the
+                // synthesized recipe's declared constants (the full addressable
+                // set), then the node's authored overrides (so a look that has
+                // not compiled — e.g. no device — is still addressable by an
+                // existing override).
+                std::string name;
+                if (ctx_.assets) {
+                    if (const std::optional<wz::asset::AssetKey> key =
+                            node_renderable_asset(authored_id))
+                    {
+                        if (const wz::engine::assets::RhiRenderableRecipe*
+                                recipe =
+                                    ctx_.assets->renderables()
+                                        .get_rhi_renderable_recipe(
+                                            wz::engine::assets::RenderableAsset{
+                                                .output = *key }))
+                        {
+                            for (const wz::engine::assets::RhiRenderableConstant&
+                                     c : recipe->constants)
+                            {
+                                if (renderable_param_name_hash(c.name)
+                                    == name_hash)
+                                {
+                                    name = c.name;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (name.empty()) {
+                    if (const wz::engine::assets::SceneNodeAsset* node =
+                            wz::engine::assets::find_scene_node(
+                                scene_nodes_, authored_id))
+                    {
+                        for (const wz::engine::assets::
+                                 SceneRenderableConstantOverride& c :
+                             node->renderable_constants)
+                        {
+                            if (renderable_param_name_hash(c.name) == name_hash)
+                            {
+                                name = c.name;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (name.empty()) {
+                    ctx_.logger.warn(
+                        "behavior set_renderable_param: node '" + authored_id
+                        + "' has no declared or overridden constant matching "
+                          "the command's name hash (skipped)");
+                    continue;
+                }
+
+                // The command carries only x/y/z; preserve the field's fourth
+                // component (w / alpha) from any existing override, else a
+                // sensible opaque default so a first color pulse is visible.
+                float w = 1.0f;
+                if (const std::optional<std::array<float, 4>> existing =
+                        node_renderable_constant(authored_id, name))
+                {
+                    w = (*existing)[3];
+                }
+                const float value[4] = {
+                    command.values[1],
+                    command.values[2],
+                    command.values[3],
+                    w,
+                };
+                (void)set_node_renderable_constant(authored_id, name, value);
+            }
+
             // Collect SPAWN_PREFAB requests (runtime prefab spawning). Resolve the
             // spawner runtime entity -> its STABLE authored id NOW, while
             // behavior_scene_ is still the scene the command was issued against; a
@@ -2922,6 +3041,27 @@ namespace wz::app
             rematerialize_render_bindings();
         }
         return true;
+    }
+
+    std::optional<std::array<float, 4>>
+    WozzitsApp_v1::node_renderable_constant(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& name) const
+    {
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            return std::nullopt;
+        }
+        for (const wz::engine::assets::SceneRenderableConstantOverride& c :
+             node->renderable_constants)
+        {
+            if (c.name == name) {
+                return std::array<float, 4>{
+                    c.value[0], c.value[1], c.value[2], c.value[3] };
+            }
+        }
+        return std::nullopt;
     }
 
     bool WozzitsApp_v1::set_node_collision_asset(

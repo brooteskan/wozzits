@@ -175,6 +175,8 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::SpawnPrefab;
             case WZ_BEHAVIOR_COMMAND_SET_TERRAIN_ALIGNMENT_RATE:
                 return BehaviorCommandKind::SetTerrainAlignmentRate;
+            case WZ_BEHAVIOR_COMMAND_SET_RENDERABLE_PARAM:
+                return BehaviorCommandKind::SetRenderableParam;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;

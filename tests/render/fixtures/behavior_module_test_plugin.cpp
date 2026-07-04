@@ -28,6 +28,13 @@
 //     one tick — proving a behavior can issue the same deferred
 //     set_node_renderable_asset op the host uses (#204).
 //
+//   - "pulse_tint_on_frame": calls wz_write_set_renderable_param_named(.., "tint",
+//     0.9, 0.1, 0.4) for its own entity on every frame.update. The renderable-
+//     param test binds it to a node carrying an authored "tint" constant and
+//     asserts the per-instance override becomes that color after one tick (alpha
+//     preserved), surviving a structural rebuild — proving a behavior can animate
+//     an authored look constant through the SET_RENDERABLE_PARAM host verb (#232).
+//
 //   - "reparent_self_to_top_on_frame": calls wz_self_detach_to_top_level for its
 //     own entity on every frame.update (reparent to WZ_INVALID_BEHAVIOR_ENTITY =
 //     top level). The behavior-driven reparent test binds it to a child under
@@ -130,6 +137,30 @@ namespace
         // apply path. An arbitrary asset-graph node id is fine — the apply only
         // sets the field.
         wz_self_set_renderable_asset(facts, event, 42u);
+    }
+
+    // Pulses the "tint" renderable constant to a fixed distinctive color on
+    // every frame.update via SET_RENDERABLE_PARAM (issue #232). The host
+    // resolves the "tint" name hash against the node's declared/overridden
+    // constants and writes the per-instance override (the #229 seam). The
+    // renderable-param test binds it to a node carrying an authored "tint" and
+    // asserts the override becomes this color after one tick — proving a
+    // behavior can animate an authored look constant through the host, and that
+    // the override survives a structural rebuild. Only x/y/z (r/g/b) are
+    // carried; the host preserves the fourth component (alpha).
+    void pulse_tint_on_frame(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event) {
+            return;
+        }
+        if (event->kind != WZ_EVENT_FRAME_UPDATE) {
+            return;
+        }
+        wz_write_set_renderable_param_named(
+            facts, event->entity, "tint", 0.9f, 0.1f, 0.4f);
     }
 
     void reparent_self_to_top_on_frame(
@@ -318,6 +349,14 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         .event_channel_count = 1u,
         .module_user_data = nullptr,
     };
+    const WzBehaviorModuleDesc pulse_tint_desc{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "pulse_tint_on_frame",
+        .on_event = pulse_tint_on_frame,
+        .event_channels = events,
+        .event_channel_count = 1u,
+        .module_user_data = nullptr,
+    };
     const WzBehaviorModuleDesc reparent_desc{
         .size = sizeof(WzBehaviorModuleDesc),
         .module = "reparent_self_to_top_on_frame",
@@ -377,6 +416,8 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         api->register_module_desc(api->user, &remove_desc);
     const uint8_t set_renderable_ok =
         api->register_module_desc(api->user, &set_renderable_desc);
+    const uint8_t pulse_tint_ok =
+        api->register_module_desc(api->user, &pulse_tint_desc);
     const uint8_t reparent_ok =
         api->register_module_desc(api->user, &reparent_desc);
     const uint8_t add_proximity_ok =
@@ -390,8 +431,9 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
     const uint8_t spawn_prefab_ok =
         api->register_module_desc(api->user, &spawn_prefab_desc);
     return (move_ok && spawn_ok && remove_ok && set_renderable_ok
-            && reparent_ok && add_proximity_ok && remove_proximity_ok
-            && move_on_input_ok && accumulate_ok && spawn_prefab_ok)
+            && pulse_tint_ok && reparent_ok && add_proximity_ok
+            && remove_proximity_ok && move_on_input_ok && accumulate_ok
+            && spawn_prefab_ok)
         ? uint8_t{ 1 }
         : uint8_t{ 0 };
 }

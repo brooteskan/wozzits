@@ -1,0 +1,38 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "renderable_param_scene",
+  "note": "Issue #232: a 'tinted' node carries an authored renderable_constants 'tint' override and a pulse_tint_on_frame behavior. One tick makes the behavior emit SET_RENDERABLE_PARAM('tint', 0.9, 0.1, 0.4); the host resolves the name hash against the node's authored override and writes it (alpha preserved). The override lives on the stable node, so it survives a structural rebuild. No geometry is needed — the test asserts the override field, not a draw.",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "tinted",
+      "parent": "root",
+      "name": "tinted",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "renderable_constants": [
+        { "name": "tint", "value": [0.2, 0.7, 0.3, 1.0] }
+      ],
+      "behavior": {
+        "label": "Pulse tint each frame",
+        "module": "pulse_tint_on_frame",
+        "enabled": true,
+        "events": ["frame.update"]
+      }
+    }
+  ],
+  "defaults": {}
+}

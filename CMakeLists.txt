@@ -409,6 +409,28 @@ configure_file(
     "${WZ_PREFAB_SPAWN_FIXTURE_DST}/scenelets/spawnling.scene.json"
     COPYONLY)
 
+# Self-contained fixture for the WozzitsApp_v1 renderable-param test (issue
+# #232): an empty asset graph + a scene with a "tinted" node that carries an
+# authored renderable_constants "tint" override and a pulse_tint_on_frame
+# behavior. Reuses the behavior fixture's staged module dir so the same test
+# plugin DLL is loaded.
+set(WZ_RENDERABLE_PARAM_FIXTURE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/renderable_param_fixture")
+set(WZ_RENDERABLE_PARAM_FIXTURE_DST
+    "${CMAKE_BINARY_DIR}/resources/projects/renderable_param_fixture")
+configure_file(
+    "${WZ_RENDERABLE_PARAM_FIXTURE_SRC}/.wozzits/project.json.in"
+    "${WZ_RENDERABLE_PARAM_FIXTURE_DST}/.wozzits/project.json"
+    @ONLY)
+configure_file(
+    "${WZ_RENDERABLE_PARAM_FIXTURE_SRC}/assets.graph.json"
+    "${WZ_RENDERABLE_PARAM_FIXTURE_DST}/assets.graph.json"
+    COPYONLY)
+configure_file(
+    "${WZ_RENDERABLE_PARAM_FIXTURE_SRC}/scene.json"
+    "${WZ_RENDERABLE_PARAM_FIXTURE_DST}/scene.json"
+    COPYONLY)
+
 # Self-contained fixture for the WozzitsApp_v1 GLB scene-source test (issue
 # #213): an empty asset graph + a scene whose host node carries a
 # glb_scene_source DESCRIPTOR pointing at the bundled gltf/tank1.glb (staged by
@@ -985,6 +1007,15 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     # spawn does not flip the active scene camera (#219).
     rs_add_test_group(render wozzits_app_prefab_spawn_tests)
     add_dependencies(render_wozzits_app_prefab_spawn_tests
+        wozzits_app_behavior_test_plugin wz_stage_resources)
+
+    # WozzitsApp_v1 renderable-param behavior verb test (issue #232). On-device:
+    # loads the renderable_param_fixture and reuses the staged behavior module
+    # DLL (pulse_tint_on_frame); proves a behavior animates an authored
+    # renderable constant through SET_RENDERABLE_PARAM and that the override
+    # survives a structural rebuild.
+    rs_add_test_group(render wozzits_app_renderable_param_tests)
+    add_dependencies(render_wozzits_app_renderable_param_tests
         wozzits_app_behavior_test_plugin wz_stage_resources)
 
     # WozzitsApp_v1 terrain-constraint tick test (issue #216 work item B). On-

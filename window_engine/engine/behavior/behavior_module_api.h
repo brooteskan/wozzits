@@ -1381,6 +1381,74 @@ static inline uint8_t wz_write_spawn_prefab(
         offset_x, offset_y, offset_z);
 }
 
+// FNV-1a/32 over a renderable-constant name. constexpr, so a plugin can hash a
+// string literal at COMPILE time:
+//   static constexpr uint32_t kTint = wz_renderable_param_hash("tint");
+//   wz_write_set_renderable_param(facts, e, kTint, r, g, b);
+// Must match the host's field-name hash (the host hashes the layout's declared
+// constant names the same way). Identical FNV-1a/32 to wz_prefab_hash.
+static inline constexpr uint32_t wz_renderable_param_hash(const char* name)
+{
+    uint32_t h = 2166136261u;
+    if (name) {
+        for (const char* p = name; *p; ++p) {
+            h ^= (uint32_t)(unsigned char)(*p);
+            h *= 16777619u;
+        }
+    }
+    return h;
+}
+
+// Set an authored renderable CONSTANT on `entity`'s look (issue #232): the host
+// resolves `param_name_hash` to one of the node's declared constant fields and
+// writes the node's per-instance override, which the next frame's pack merges
+// into the draw packet — no re-key, no recompile (the #229 seam). Host-handled
+// (it does not mutate `entity`); applied in the per-frame command pass. A no-op
+// if the hash names no declared or already-overridden constant on the node.
+//
+// Encoding: values[0] carries the 32-bit name hash as a bit pattern (a
+// container, not a numeric value, so the full 32 bits survive the float slot),
+// values[1..3] = the new x/y/z (r/g/b). With only four value slots the name
+// consumes one, so a float4 field's fourth component (w / alpha) is PRESERVED,
+// not carried. Prefer the compile-time wz_renderable_param_hash().
+static inline uint8_t wz_write_set_renderable_param(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint32_t param_name_hash,
+    float x,
+    float y,
+    float z)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+
+    float hash_bits = 0.0f;
+    memcpy(&hash_bits, &param_name_hash, sizeof(uint32_t));
+
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_RENDERABLE_PARAM,
+        { hash_bits, x, y, z },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Convenience: set a renderable constant by name, hashing at the call site. For
+// a hot per-frame pulse, prefer wz_write_set_renderable_param(.., wz_renderable_
+// param_hash("name"), ..) so the hash is computed at compile time.
+static inline uint8_t wz_write_set_renderable_param_named(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* param_name,
+    float x,
+    float y,
+    float z)
+{
+    return wz_write_set_renderable_param(
+        facts, entity, wz_renderable_param_hash(param_name), x, y, z);
+}
+
 // Deferred runtime-authoring: ask the runtime to spawn a new child node under
 // `parent_entity`. The add is applied at the next frame boundary through the
 // shared runtime apply path (it does not mutate the scene during dispatch), and

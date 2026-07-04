@@ -2052,6 +2052,67 @@ TEST(BehaviorModuleApi, SpawnPrefabNullFactsIsNoOp)
     EXPECT_EQ(wz_write_spawn_prefab_hashed(nullptr, 1u, 1u, 0.f, 0.f, 0.f), 0u);
 }
 
+TEST(BehaviorModuleApi, SetRenderableParamEncodesNameHashBitsAndXYZ)
+{
+    struct Probe { WzBehaviorCommand last{}; int count = 0; } probe;
+    WzBehaviorFrameFacts facts{
+        .command_writer_user = &probe,
+        .write_command = [](void* user, const WzBehaviorCommand* cmd) -> uint8_t
+        {
+            auto* p = static_cast<Probe*>(user);
+            p->last = *cmd;
+            ++p->count;
+            return 1u;
+        },
+    };
+
+    // Set-by-name encodes the constant name's FNV-1a/32 hash as the bit pattern
+    // of v0 (full 32 bits preserved through the float slot) and the new x/y/z in
+    // v1..v3. Only three components fit alongside the name — a float4 field's
+    // fourth component is preserved host-side, not carried.
+    ASSERT_EQ(
+        wz_write_set_renderable_param_named(
+            &facts, 7u, "tint", 0.9f, 0.1f, 0.4f),
+        1u);
+    EXPECT_EQ(probe.count, 1);
+    EXPECT_EQ(probe.last.entity, 7u);
+    EXPECT_EQ(probe.last.kind, WZ_BEHAVIOR_COMMAND_SET_RENDERABLE_PARAM);
+
+    uint32_t decoded = 0u;
+    memcpy(&decoded, &probe.last.values[0], sizeof(uint32_t));
+    EXPECT_EQ(decoded, wz_renderable_param_hash("tint"));
+    EXPECT_FLOAT_EQ(probe.last.values[1], 0.9f);
+    EXPECT_FLOAT_EQ(probe.last.values[2], 0.1f);
+    EXPECT_FLOAT_EQ(probe.last.values[3], 0.4f);
+
+    // The pre-hashed helper yields the identical encoding.
+    probe.count = 0;
+    ASSERT_EQ(
+        wz_write_set_renderable_param(
+            &facts, 7u, wz_renderable_param_hash("tint"), 0.9f, 0.1f, 0.4f),
+        1u);
+    uint32_t decoded2 = 0u;
+    memcpy(&decoded2, &probe.last.values[0], sizeof(uint32_t));
+    EXPECT_EQ(decoded2, decoded);
+
+    // The name hash is a compile-time constant and shares FNV-1a/32 with the
+    // prefab/clip hashes (the same constants the host's renderable_param_name_-
+    // hash uses). The ABI -> BehaviorCommandKind::SetRenderableParam mapping is
+    // exercised end-to-end by the WozzitsApp_v1 renderable-param test.
+    static_assert(
+        wz_renderable_param_hash("tint") == wz_prefab_hash("tint"),
+        "renderable-param and prefab hashes share FNV-1a/32");
+}
+
+TEST(BehaviorModuleApi, SetRenderableParamNullFactsIsNoOp)
+{
+    EXPECT_EQ(
+        wz_write_set_renderable_param(nullptr, 1u, 1u, 0.f, 0.f, 0.f), 0u);
+    EXPECT_EQ(
+        wz_write_set_renderable_param_named(nullptr, 1u, "x", 0.f, 0.f, 0.f),
+        0u);
+}
+
 TEST(BehaviorModuleApi, SetGrainParamHelpersEncodeParamValueRamp)
 {
     struct Probe { WzBehaviorCommand last{}; int count = 0; } probe;

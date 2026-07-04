@@ -43,6 +43,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -301,6 +302,17 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             const std::string& name,
             const float* value);
+
+        // The node's current per-instance override value for renderable
+        // constant `name`, or nullopt if the node is missing or carries no
+        // override for that name. Reads the authored SceneNodeAsset (which
+        // survives a behavior-runtime rebuild), so it observes both a live
+        // set_node_renderable_constant and the SET_RENDERABLE_PARAM behavior
+        // verb (#232).
+        [[nodiscard]] std::optional<std::array<float, 4>>
+        node_renderable_constant(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& name) const;
 
         // Apply behind the host ABI's set_node_collision verb (issue #216/#217).
         // Author the node's Collision component by REFERENCE: point it at an
