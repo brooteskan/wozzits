@@ -82,7 +82,14 @@ namespace wz::engine::assets {
     // layout's constants contract (has_authored_binding_layout, constants_head,
     // constant_fields) that the custom renderable compiler validates against.
     inline constexpr uint64_t kCustomRenderProgramCompilerVersion = 4;
-    inline constexpr uint64_t kRenderBindingLayoutCompilerVersion = 1;
+    // Bumped 1 -> 2 (issue #231): tail_dwords()/total_constants_dwords now
+    // follow HLSL cbuffer packing (no-straddle field alignment), so a layout
+    // whose declared fields cross a 16-byte register derives a larger
+    // root-constant block than the old tight sum.
+    inline constexpr uint64_t kRenderBindingLayoutCompilerVersion = 2;
+    // HLSL binding prelude 0x105 (issue #231): generated declarations from an
+    // authored render binding layout, prepended to a shader source dep.
+    inline constexpr uint64_t kHLSLBindingPreludeCompilerVersion = 1;
     // Custom renderable recipe 0x70A (issue #228): semantic resource bindings
     // + declared-constant values validated against the wired program's
     // authored binding layout.
@@ -90,7 +97,11 @@ namespace wz::engine::assets {
     // tail field (authored value or zero default), not just the authored
     // ones, so per-instance scene-node overrides can address any field by
     // name at pack time.
-    inline constexpr uint64_t kCustomRenderableCompilerVersion = 2;
+    // Bumped 2 -> 3 (issue #231): baked field offsets follow HLSL cbuffer
+    // packing (no-straddle alignment) instead of a tight running sum — the
+    // block is read through a cbuffer, so the old offsets misaddressed any
+    // field the packing rule moves.
+    inline constexpr uint64_t kCustomRenderableCompilerVersion = 3;
     inline constexpr uint64_t kComputePipelineCompilerVersion = 1;
     // v2: added subsample_step + RHI residency publishing (#208).
     // v3: XZ + height normalization fixes (unit [0,1], raw height, texel-index

@@ -210,6 +210,54 @@
       }
     },
     {
+      "node_id": 18,
+      "type": 7,
+      "schema": "0xf11eca55e7000105",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 11,
+          "to_input_port": 0
+        },
+        {
+          "from_node_id": 15,
+          "to_input_port": 1
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "name", "type": "string", "value": "" }
+        ]
+      }
+    },
+    {
+      "node_id": 19,
+      "type": 7,
+      "schema": "0xf11eca55e7000105",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 12,
+          "to_input_port": 0
+        },
+        {
+          "from_node_id": 15,
+          "to_input_port": 1
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "name", "type": "string", "value": "" }
+        ]
+      }
+    },
+    {
       "node_id": 13,
       "type": 4,
       "schema": "0xf11eca55e7000100",
@@ -219,7 +267,7 @@
       "demand_root": 0,
       "deps": [
         {
-          "from_node_id": 11,
+          "from_node_id": 18,
           "to_input_port": 0
         }
       ],
@@ -242,7 +290,7 @@
       "demand_root": 0,
       "deps": [
         {
-          "from_node_id": 12,
+          "from_node_id": 19,
           "to_input_port": 0
         }
       ],
@@ -354,6 +402,8 @@
       { "node_id": 10, "x": 626, "y": 430 },
       { "node_id": 11, "x": 0, "y": 640 },
       { "node_id": 12, "x": 0, "y": 810 },
+      { "node_id": 18, "x": 130, "y": 640 },
+      { "node_id": 19, "x": 130, "y": 810 },
       { "node_id": 13, "x": 260, "y": 640 },
       { "node_id": 14, "x": 260, "y": 810 },
       { "node_id": 15, "x": 260, "y": 980 },

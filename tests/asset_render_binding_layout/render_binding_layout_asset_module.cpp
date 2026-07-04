@@ -5,6 +5,8 @@
 #include <engine/assets/render_binding_layout/render_binding_layout.h>
 #include <engine/assets/type_extensions.h>
 
+#include <engine/assets/render_binding_layout/render_binding_constants.h>
+
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
 #include <logging/logger.h>
@@ -307,4 +309,177 @@ TEST(RenderBindingLayout, KeyChangesWithEachSection)
         EXPECT_FALSE(
             base_key == make_render_binding_layout_key("layout/other", base));
     }
+}
+
+// ── HLSL cbuffer packing (issue #231) ────────────────────────────────────────
+//
+// The block is read by the shader as a cbuffer, so field offsets follow
+// cbuffer packing (a vector may not straddle a 16-byte register), NOT a tight
+// dword sum. render_binding_constant_field_offset is the ONE rule the recipe
+// baking, the tail_dwords derivation, and the generated prelude all share.
+
+TEST(RenderBindingConstantPacking, FieldOffsetRespectsNoStraddleRule)
+{
+    using T = RenderBindingConstantType;
+
+    // Scalars pack tightly into any lane.
+    EXPECT_EQ(render_binding_constant_field_offset(0, T::Float), 0u);
+    EXPECT_EQ(render_binding_constant_field_offset(1, T::Float), 1u);
+    EXPECT_EQ(render_binding_constant_field_offset(3, T::Float), 3u);
+
+    // A vector that fits before the boundary stays put …
+    EXPECT_EQ(render_binding_constant_field_offset(0, T::Float4), 0u);
+    EXPECT_EQ(render_binding_constant_field_offset(2, T::Float2), 2u);
+    EXPECT_EQ(render_binding_constant_field_offset(1, T::Float3), 1u);
+
+    // … one that would cross the 16-byte boundary jumps to the next register.
+    EXPECT_EQ(render_binding_constant_field_offset(1, T::Float4), 4u);
+    EXPECT_EQ(render_binding_constant_field_offset(3, T::Float2), 4u);
+    EXPECT_EQ(render_binding_constant_field_offset(2, T::Float3), 4u);
+}
+
+TEST(RenderBindingConstantPacking, TailDwordsGrowsWithAlignmentPadding)
+{
+    // float (1) then float4: the float4 can't start at lane 1, so it pads to
+    // lane 4 — the tail spans 8 dwords, not the tight sum of 5.
+    RenderBindingLayoutData layout{};
+    layout.constants_semantic = "packed";
+    layout.constants_head = RenderBindingConstantsHead::None;
+    layout.constant_fields = {
+        { .name = "amount", .type = RenderBindingConstantType::Float },
+        { .name = "tint", .type = RenderBindingConstantType::Float4 },
+    };
+
+    EXPECT_EQ(layout.tail_dwords(), 8u);
+    EXPECT_EQ(layout.total_constants_dwords(), 8u);
+    EXPECT_TRUE(layout.valid());
+}
+
+// ── Generated HLSL binding prelude (issue #231) ──────────────────────────────
+
+TEST(RenderBindingPrelude, EmitsCbufferSrvsAndSamplerFromLayout)
+{
+    // clipmap_layout() + a Mvp16 head and a float4 tail so the cbuffer has
+    // both a head packer and a declared field.
+    RenderBindingLayoutData layout = clipmap_layout();
+    layout.constants_head = RenderBindingConstantsHead::Mvp16;
+    layout.constants_dwords = 0;
+    layout.constant_fields = {
+        { .name = "tint", .type = RenderBindingConstantType::Float4 },
+    };
+
+    std::string prelude;
+    std::string error;
+    ASSERT_TRUE(generate_hlsl_binding_prelude(layout, prelude, error)) << error;
+
+    EXPECT_NE(prelude.find("// Generated binding prelude"), std::string::npos);
+    EXPECT_NE(
+        prelude.find("cbuffer clipmap : register(b0, space2)"),
+        std::string::npos);
+    // Head packer at c0 (a float4x4 spans c0..c3), the declared tail float4
+    // at c4 (dword 16).
+    EXPECT_NE(
+        prelude.find("float4x4 mvp : packoffset(c0);"), std::string::npos);
+    EXPECT_NE(
+        prelude.find("float4 tint : packoffset(c4);"), std::string::npos);
+    // SRV rows in derived register order, structured with canonical element
+    // types and the texture as Texture2D<float4>.
+    EXPECT_NE(
+        prelude.find(
+            "StructuredBuffer<float3> pulled_mesh_positions : "
+            "register(t0, space2);"),
+        std::string::npos);
+    EXPECT_NE(
+        prelude.find(
+            "StructuredBuffer<uint> pulled_mesh_indices : "
+            "register(t1, space2);"),
+        std::string::npos);
+    EXPECT_NE(
+        prelude.find(
+            "Texture2D<float4> scalar_field_texture : register(t2, space2);"),
+        std::string::npos);
+    // Static sampler, row-derived register.
+    EXPECT_NE(
+        prelude.find("SamplerState sampler0 : register(s0, space2);"),
+        std::string::npos);
+}
+
+TEST(RenderBindingPrelude, StraddlingTailFieldGetsPaddedPackoffset)
+{
+    RenderBindingLayoutData layout{};
+    layout.constants_semantic = "packed";
+    layout.constants_head = RenderBindingConstantsHead::None;
+    layout.constant_fields = {
+        { .name = "amount", .type = RenderBindingConstantType::Float },
+        { .name = "tint", .type = RenderBindingConstantType::Float4 },
+    };
+
+    std::string prelude;
+    std::string error;
+    ASSERT_TRUE(generate_hlsl_binding_prelude(layout, prelude, error)) << error;
+
+    // amount at c0.x, tint padded to the next register (c1.x = dword 4), never
+    // c0.y — that would straddle. The packoffset the shader reads MUST equal
+    // the offset the recipe bakes (render_binding_constant_field_offset).
+    EXPECT_NE(prelude.find("float amount : packoffset(c0);"), std::string::npos);
+    EXPECT_NE(prelude.find("float4 tint : packoffset(c1);"), std::string::npos);
+}
+
+TEST(RenderBindingPrelude, EmitsSplatStructAndBufferForSplatCloudRow)
+{
+    RenderBindingLayoutData layout{};
+    layout.bindings = {
+        {
+            .semantic = "splat_cloud",
+            .kind = RenderBindingKind::StructuredSrv,
+            .visibility = ShaderVisibility::Vertex,
+        },
+    };
+
+    std::string prelude;
+    std::string error;
+    ASSERT_TRUE(generate_hlsl_binding_prelude(layout, prelude, error)) << error;
+
+    EXPECT_NE(prelude.find("struct WzSplat"), std::string::npos);
+    EXPECT_NE(
+        prelude.find(
+            "StructuredBuffer<WzSplat> splat_cloud : register(t0, space2);"),
+        std::string::npos);
+}
+
+TEST(RenderBindingPrelude, EmitsRegisterMacroWhenNoCanonicalElementType)
+{
+    // mesh_mask_rules is a valid StructuredSrv semantic with no canonical
+    // shader element type — the layout still owns the register, so the prelude
+    // hands the author a register macro instead of guessing an element.
+    RenderBindingLayoutData layout{};
+    layout.bindings = {
+        {
+            .semantic = "mesh_mask_rules",
+            .kind = RenderBindingKind::StructuredSrv,
+            .visibility = ShaderVisibility::Pixel,
+        },
+    };
+
+    std::string prelude;
+    std::string error;
+    ASSERT_TRUE(generate_hlsl_binding_prelude(layout, prelude, error)) << error;
+
+    EXPECT_NE(
+        prelude.find("#define WZ_BINDING_MESH_MASK_RULES register(t0, space2)"),
+        std::string::npos);
+    EXPECT_EQ(prelude.find("StructuredBuffer<"), std::string::npos)
+        << "guessed an element type for a semantic with no canonical one";
+}
+
+TEST(RenderBindingPrelude, FailsOnInvalidLayoutWithReason)
+{
+    RenderBindingLayoutData layout = clipmap_layout();
+    layout.bindings[1].semantic = "no_such_semantic";
+
+    std::string prelude;
+    std::string error;
+    EXPECT_FALSE(generate_hlsl_binding_prelude(layout, prelude, error));
+    EXPECT_NE(error.find("no_such_semantic"), std::string::npos);
+    EXPECT_TRUE(prelude.empty());
 }

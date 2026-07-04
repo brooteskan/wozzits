@@ -9,6 +9,8 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <variant>
+#include <vector>
 
 namespace wz::engine::assets::internal
 {
@@ -369,6 +371,94 @@ namespace wz::engine::assets::internal
                 wz::asset::AssetNode out = input;
                 out.stage = wz::asset::AssetStage::Compiled;
                 out.payload = handle;
+                return out;
+            }
+        });
+
+        // ── HLSL binding prelude (issue #231) ────────────────────────────────
+        //
+        // The shader-side twin of the SRG derivation above: prepends the
+        // layout's generated declarations to an authored HLSL body and outputs
+        // the combined ShaderSource a shader node compiles. Routing the
+        // include THROUGH the DAG (instead of a #include resolved by the HLSL
+        // compiler) keeps it key-visible: a layout edit re-keys this node, the
+        // shader, and the program, so the declarations and the root signature
+        // can never drift apart via a stale cache.
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kHLSLBindingPreludeSchema,
+            .output_type = wz::asset::AssetType::ShaderSource,
+            .input_ports = {
+                { "source", wz::asset::AssetType::ShaderSource },
+                { "binding_layout", kAssetTypeRenderBindingLayout },
+            },
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+            },
+            .compile = [&logger, &table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>)
+                    -> wz::asset::AssetNode
+            {
+                // Dispatch deps by compiled payload rather than port index:
+                // the body arrives as ShaderSource bytes, the layout as a
+                // table handle — unambiguous regardless of dep order.
+                const std::vector<uint8_t>* body = nullptr;
+                const RenderBindingLayoutData* layout = nullptr;
+                for (const wz::asset::AssetNode& dep : dep_nodes) {
+                    if (const auto* bytes =
+                            std::get_if<std::vector<uint8_t>>(&dep.payload))
+                    {
+                        body = bytes;
+                        continue;
+                    }
+                    if (const auto* handle =
+                            std::get_if<wz::asset::ResourceHandle>(
+                                &dep.payload))
+                    {
+                        layout = table.get(*handle);
+                    }
+                }
+
+                if (!body) {
+                    logger.error(
+                        "hlsl binding prelude: shader source dependency did "
+                        "not resolve");
+                    return compile_failed_node(
+                        input,
+                        "shader source dependency did not resolve");
+                }
+                if (!layout) {
+                    logger.error(
+                        "hlsl binding prelude: binding layout dependency did "
+                        "not resolve");
+                    return compile_failed_node(
+                        input,
+                        "binding layout dependency did not resolve");
+                }
+
+                std::string prelude;
+                std::string error;
+                if (!generate_hlsl_binding_prelude(*layout, prelude, error)) {
+                    logger.error("hlsl binding prelude: " + error);
+                    return compile_failed_node(input, std::move(error));
+                }
+                prelude += '\n';
+
+                std::vector<uint8_t> combined;
+                combined.reserve(prelude.size() + body->size());
+                combined.insert(
+                    combined.end(), prelude.begin(), prelude.end());
+                combined.insert(combined.end(), body->begin(), body->end());
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = std::move(combined);
                 return out;
             }
         });

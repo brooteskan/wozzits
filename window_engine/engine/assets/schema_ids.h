@@ -111,6 +111,18 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000104ull
     };
 
+    // HLSL binding prelude (issue #231): prepends the generated shader-side
+    // declarations of a render binding layout (cbuffer with packoffset, SRV
+    // rows, static samplers) to an authored HLSL body, producing the combined
+    // ShaderSource a shader node compiles. The include travels THROUGH the
+    // asset DAG instead of a #include/include-handler so a layout edit
+    // re-keys the prelude, the shader, and the program — generated
+    // declarations can never go stale against the root signature. Deps: one
+    // ShaderSource body + one RenderBindingLayout.
+    inline constexpr wz::asset::SchemaID kHLSLBindingPreludeSchema{
+    0xF11E'CA55'E7'000105ull
+    };
+
     // Scalar field recipe: interpret a raw float32 file dependency as ScalarFieldData.
     // Compiled by the scalar field compiler; expects a kRawFileSchema dependency.
     // Multiple scalar field schemas may coexist for different recipe types

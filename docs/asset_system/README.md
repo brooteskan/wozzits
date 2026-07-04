@@ -424,6 +424,7 @@ pattern.
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
 |---|---|---|---|---|
 | Render binding layout | `kRenderBindingLayoutSchema` | `0x000104` | `kAssetTypeRenderBindingLayout` (1052) | `RenderBindingLayoutAssetModule::create_render_binding_layout()` |
+| HLSL binding prelude (issue #231) | `kHLSLBindingPreludeSchema` | `0x000105` | `AssetType::ShaderSource` (7) | graph-authored (`source` + `binding_layout` ports) |
 
 A layout declares one optional root-constant block (`constants_semantic` +
 visibility + a `constants_head` enum naming an existing renderer packer —
@@ -436,6 +437,28 @@ from row order (b0 / t0,t1… / s0,s1… in the object space 2) — never author
 A custom render program (`0x000103`) consumes a layout through its optional
 `binding_layout` input port; when wired, the layout defines the program's whole
 SRG and the numbered presets are ignored.
+
+Root-constant fields follow HLSL cbuffer packing, not a tight dword sum: a
+vector may not straddle a 16-byte register, so a 2/3/4-dword field that would
+cross one starts at the next register. `render_binding_constant_field_offset`
+(in `render_binding_constants.h`) is the single rule shared by the block-size
+derivation (`tail_dwords`), the custom renderable recipe's baked field offsets,
+and the generated binding prelude's `packoffset` emission — the block is read
+through a cbuffer, so all three must agree byte-for-byte.
+
+The **HLSL binding prelude** (`0x000105`) is the shader-side twin of that
+derivation: it prepends the layout's generated declarations — the `cbuffer`
+with a `packoffset` on every member, the SRV rows in derived register order
+(canonical element types where a semantic has one, a `WZ_BINDING_<SEMANTIC>`
+register macro otherwise), and the static samplers — to an authored shader body,
+outputting the combined `ShaderSource` a shader node then compiles. Routing the
+include THROUGH the asset DAG (a node with a `source` body port and a
+`binding_layout` port) instead of a `#include` resolved by the HLSL compiler
+keeps it key-visible: a layout edit re-keys the prelude, the shader, and the
+program, so the generated declarations can never go stale against the root
+signature via a cached shader. `generate_hlsl_binding_prelude` is the pure
+generator; shaders authored against a layout `#include` nothing and declare no
+registers or offsets the layout owns.
 
 ---
 

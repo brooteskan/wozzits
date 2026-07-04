@@ -68,4 +68,37 @@ namespace wz::engine::assets
         std::string name;
         RenderBindingConstantType type = RenderBindingConstantType::Float;
     };
+
+    // Where a field starting no earlier than `running_dwords` actually lands
+    // under HLSL cbuffer packing: a vector may not straddle a 16-byte register
+    // boundary, so a 2/3/4-dword field that would cross one starts at the next
+    // register instead (scalars pack tightly). The shader reads the block as a
+    // cbuffer, so THIS rule — not tight packing — is the byte contract every
+    // consumer must share: the recipe's baked field offsets
+    // (renderable_compilers.cpp), the block-size derivation (tail_dwords), and
+    // the generated HLSL binding prelude's packoffset emission (issue #231).
+    [[nodiscard]] constexpr uint32_t render_binding_constant_field_offset(
+        uint32_t running_dwords, RenderBindingConstantType type) noexcept
+    {
+        const uint32_t dwords = render_binding_constant_type_dwords(type);
+        const uint32_t lane = running_dwords % 4u;
+        if (dwords > 1u && lane + dwords > 4u) {
+            return running_dwords + (4u - lane);
+        }
+        return running_dwords;
+    }
+
+    // Tail packing computes offsets relative to the head's end but must equal
+    // the absolute in-block offsets; that holds only because every head packer
+    // ends on a 16-byte register boundary.
+    static_assert(
+        render_binding_constants_head_dwords(
+            RenderBindingConstantsHead::None) % 4u == 0u
+        && render_binding_constants_head_dwords(
+            RenderBindingConstantsHead::Mvp16) % 4u == 0u
+        && render_binding_constants_head_dwords(
+            RenderBindingConstantsHead::WorldViewProjCamera36) % 4u == 0u
+        && render_binding_constants_head_dwords(
+            RenderBindingConstantsHead::Clipmap32) % 4u == 0u,
+        "head packers must end register-aligned for relative tail offsets");
 }

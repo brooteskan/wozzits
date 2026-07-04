@@ -1,15 +1,9 @@
-// Custom-renderable fixture PS (issue #229): samples the scalar-field texture
-// bound by SEMANTIC through the scene node's renderable_bindings (layout row
-// scalar_field_texture -> t2 space2) and tints by the "tint" constant, whose
-// value comes from the node's per-instance renderable_constants override.
-cbuffer CustomBlock : register(b0, space2)
-{
-    float4x4 mvp;
-    float4   tint;
-};
-
-Texture2D<float> fieldTex     : register(t2, space2);
-SamplerState     fieldSampler : register(s0, space2);
+// Custom-renderable fixture PS BODY (issues #229/#231): declarations come
+// from the binding-prelude node (graph node 19) generated off the authored
+// layout (node 15) — scalar_field_texture at its row-derived register,
+// sampler0, and the "tint" tail constant at its packed cbuffer offset. The
+// texture declares as Texture2D<float4>, so the single-channel field value is
+// read from .r.
 
 struct PSIn
 {
@@ -19,6 +13,6 @@ struct PSIn
 
 float4 main(PSIn input) : SV_TARGET
 {
-    float h = fieldTex.SampleLevel(fieldSampler, input.uv, 0.0f);
+    float h = scalar_field_texture.SampleLevel(sampler0, input.uv, 0.0f).r;
     return float4(tint.rgb * (0.25f + 0.75f * h), tint.a);
 }

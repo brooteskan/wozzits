@@ -25,6 +25,7 @@
 #include <engine/assets/render_binding_layout_asset_module.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/render_program/render_program_asset_module.h>
+#include <engine/assets/engine_asset_key_factory.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/renderable_asset_module.h>
 #include <engine/assets/rhi_asset_identity.h>
@@ -595,4 +596,103 @@ TEST(CustomRenderableDraft, AnyBindingPortSkipsEdgeTypeCheck)
         EXPECT_TRUE(saw_type_mismatch)
             << "the Mesh-typed geometry port accepted a ScalarField";
     }
+}
+
+// #231 staleness cascade, device-free: routing the binding declarations
+// THROUGH the DAG (a 0x105 prelude node wiring a shader-source body + the
+// authored layout) is the whole point — an edit to the layout must re-key the
+// prelude so the generated declarations can never go stale against the root
+// signature via a cached shader. Editing a layout param changes the prelude
+// node's computed key; leaving it unchanged keeps the key stable.
+TEST(HlslBindingPreludeCascade, LayoutEditRekeysPreludeNode)
+{
+    using namespace wz::asset;
+
+    const CompilerRegistry registry =
+        wz::engine::editor::build_asset_graph_schema_registry();
+    const AssetKeyFactoryFn key_factory =
+        ea::make_engine_asset_key_factory(registry);
+
+    const auto param_node = [](
+        AssetType type, SchemaID schema, ParamBlock params)
+    {
+        AssetNode node{};
+        node.type = type;
+        node.schema = schema;
+        node.stage = AssetStage::Source;
+        node.residency = ResidencyIntent::CompileOnly;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = std::move(params);
+        return node;
+    };
+
+    ParamBlock layout_params;
+    layout_params.values["constants_semantic"] = std::string("custom_block");
+    layout_params.values["binding0_semantic"] =
+        std::string("scalar_field_texture");
+    layout_params.values["binding0_kind"] = int64_t{ 0 };
+
+    ParamBlock source_params;
+    source_params.values["source_path"] = std::string("shaders/body.hlsl");
+
+    ParamBlock prelude_params;
+    prelude_params.values["name"] = std::string("");
+
+    AssetGraphDraft draft{};
+    const AssetGraphDraftNodeId layout_id = add_asset_graph_draft_node(
+        draft,
+        param_node(
+            ea::kAssetTypeRenderBindingLayout,
+            ea::kRenderBindingLayoutSchema,
+            layout_params),
+        AssetGraphDraftNodeState::Created);
+    const AssetGraphDraftNodeId source_id = add_asset_graph_draft_node(
+        draft,
+        param_node(
+            AssetType::ShaderSource, ea::kHLSLFileSchema, source_params),
+        AssetGraphDraftNodeState::Created);
+    const AssetGraphDraftNodeId prelude_id = add_asset_graph_draft_node(
+        draft,
+        param_node(
+            AssetType::ShaderSource,
+            ea::kHLSLBindingPreludeSchema,
+            prelude_params),
+        AssetGraphDraftNodeState::Created);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft, source_id, prelude_id, 0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft, layout_id, prelude_id, 1),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+
+    const auto prelude_key = [&]() -> AssetKey
+    {
+        const std::vector<AssetGraphDraftRegistration> regs =
+            asset_graph_draft_to_registrations(draft, &registry, key_factory);
+        for (const AssetGraphDraftRegistration& reg : regs) {
+            if (reg.draft_node == prelude_id) {
+                return reg.node.key;
+            }
+        }
+        return {};
+    };
+
+    const AssetKey key_before = prelude_key();
+    ASSERT_TRUE(asset_graph_draft_key_valid(key_before));
+
+    // Recomputing with no change is stable (content addressing).
+    EXPECT_TRUE(key_before == prelude_key());
+
+    // Edit the layout: a different declared binding. The layout re-keys, and
+    // that flows into the prelude's dependency hash.
+    AssetGraphDraftNode* layout_node =
+        find_asset_graph_draft_node(draft, layout_id);
+    ASSERT_NE(layout_node, nullptr);
+    ParamBlock edited = layout_params;
+    edited.values["binding0_semantic"] =
+        std::string("mesh_field_visualization");
+    layout_node->node.meta = edited;
+
+    EXPECT_FALSE(key_before == prelude_key())
+        << "editing the wired layout did not re-key the prelude node";
 }

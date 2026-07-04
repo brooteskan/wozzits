@@ -1,15 +1,9 @@
-// Custom-renderable fixture VS (issue #229): pull-mesh vertex shader against
-// the AUTHORED binding layout (graph node 15) — a 20-dword root-constant
-// block (Mvp16 head + a declared float4 "tint" tail) at b0 space2 and the two
-// mesh-pull StructuredBuffers at t0/t1; registers all derived from row order.
-cbuffer CustomBlock : register(b0, space2)
-{
-    float4x4 mvp;
-    float4   tint;
-};
-
-StructuredBuffer<float3> positions : register(t0, space2);
-StructuredBuffer<uint>   indices   : register(t1, space2);
+// Custom-renderable fixture VS BODY (issues #229/#231): no hand-declared
+// cbuffer/SRV/sampler headers — the binding-prelude node (graph node 18)
+// prepends the declarations generated from the authored layout (node 15), so
+// this body only references them by their semantic names (mvp, tint,
+// pulled_mesh_positions, pulled_mesh_indices). Declaring registers here would
+// re-create exactly the drift #231 removes.
 
 struct VSOut
 {
@@ -19,8 +13,8 @@ struct VSOut
 
 VSOut main(uint vid : SV_VertexID)
 {
-    uint   idx = indices[vid];
-    float3 p   = positions[idx];
+    uint   idx = pulled_mesh_indices[vid];
+    float3 p   = pulled_mesh_positions[idx];
 
     VSOut o;
     o.pos = mul(mvp, float4(p, 1.0f));

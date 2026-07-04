@@ -197,6 +197,13 @@ float4 main(PSIn input) : SV_TARGET
 
             { kMeshRenderStyleSchema, kAssetTypeMeshRenderStyle },
             { kRenderBindingLayoutSchema, kAssetTypeRenderBindingLayout },
+            // HLSL binding prelude (#231): outputs ShaderSource by prepending
+            // generated declarations; keyed through the generic draft path
+            // (its identity is meta + the source/layout dep keys), same
+            // standing as the layout and shader recipes it sits between.
+            // Uses the built-in ShaderSource type (7) that source/shader nodes
+            // carry, NOT the reserved kAssetTypeShaderSource (1024).
+            { kHLSLBindingPreludeSchema, wz::asset::AssetType::ShaderSource },
             // 0x700 wireframe, 0x701 splat debug, and 0x705 styled renderable
             // schema rows removed by the issue #195 scrap-and-rebuild (the
             // 0x706 RHI pull mesh + 0x709 rhi splat cloud are the replacements).

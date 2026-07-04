@@ -554,7 +554,11 @@ namespace wz::engine::assets::internal
             // entry, an unauthored one keeps the zero default. The full table
             // is what lets a per-instance scene-node override address any
             // declared field by name at pack time — the renderer never
-            // re-reads the layout.
+            // re-reads the layout. Offsets follow HLSL cbuffer packing
+            // (render_binding_constant_field_offset), the same rule the
+            // generated binding prelude emits as packoffset (issue #231) —
+            // the shader reads these dwords through a cbuffer, so tight
+            // packing would misaddress any field the no-straddle rule moves.
             uint32_t running = render_binding_constants_head_dwords(
                 program.constants_head);
             for (const RenderBindingConstantField& field :
@@ -562,6 +566,8 @@ namespace wz::engine::assets::internal
             {
                 const uint32_t dwords =
                     render_binding_constant_type_dwords(field.type);
+                running = render_binding_constant_field_offset(
+                    running, field.type);
 
                 RhiRenderableConstant baked{};
                 baked.name = field.name;

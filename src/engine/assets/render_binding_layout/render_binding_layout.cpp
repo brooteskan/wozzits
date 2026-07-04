@@ -1,6 +1,9 @@
 #include <engine/assets/render_binding_layout/render_binding_layout.h>
 #include <engine/assets/type_extensions.h>
 
+#include <cctype>
+#include <string>
+
 namespace wz::engine::assets
 {
     namespace
@@ -19,11 +22,17 @@ namespace wz::engine::assets
 
     uint32_t RenderBindingLayoutData::tail_dwords() const noexcept
     {
-        uint32_t total = 0;
+        // HLSL cbuffer packing, not a tight sum: the block is read as a
+        // cbuffer, so a field pushed to the next 16-byte register by the
+        // no-straddle rule grows the tail past the sum of its field sizes.
+        // Relative-to-head is exact because heads end register-aligned
+        // (static_assert in render_binding_constants.h).
+        uint32_t running = 0;
         for (const RenderBindingConstantField& field : constant_fields) {
-            total += render_binding_constant_type_dwords(field.type);
+            running = render_binding_constant_field_offset(running, field.type)
+                + render_binding_constant_type_dwords(field.type);
         }
-        return total;
+        return running;
     }
 
     uint32_t RenderBindingLayoutData::total_constants_dwords() const noexcept
@@ -149,6 +158,213 @@ namespace wz::engine::assets
                 .shader_register = sampler_register++,
                 .register_space = kRenderBindingLayoutRegisterSpace,
             });
+        }
+
+        return true;
+    }
+
+    namespace
+    {
+        // Canonical HLSL element type for a StructuredSrv semantic, where one
+        // exists: the type every engine shader already declares for that
+        // buffer (pull/mesh_style/splat shaders). nullptr = no canonical type
+        // (the buffer's element layout is defined by its publisher recipe) —
+        // the prelude emits a register macro and the author declares the
+        // element themselves.
+        const char* structured_element_type_for(
+            DescriptorSemantic semantic) noexcept
+        {
+            switch (semantic) {
+            case DescriptorSemantic::PulledMeshPositions:    return "float3";
+            case DescriptorSemantic::PulledMeshIndices:      return "uint";
+            case DescriptorSemantic::SortedSplatIndices:     return "uint";
+            case DescriptorSemantic::MeshFieldVisualization: return "float";
+            case DescriptorSemantic::SplatCloud:             return "WzSplat";
+            default:                                         return nullptr;
+            }
+        }
+
+        std::string packoffset_of(uint32_t offset_dwords)
+        {
+            constexpr char kLane[4] = { 'x', 'y', 'z', 'w' };
+            std::string text =
+                "packoffset(c" + std::to_string(offset_dwords / 4u);
+            // The .x lane is implicit at a register base; a scalar packed into
+            // a later lane of a register needs the explicit component.
+            if (offset_dwords % 4u != 0u) {
+                text += '.';
+                text += kLane[offset_dwords % 4u];
+            }
+            text += ')';
+            return text;
+        }
+
+        const char* hlsl_type_of(RenderBindingConstantType type) noexcept
+        {
+            switch (type) {
+            case RenderBindingConstantType::Float:  return "float";
+            case RenderBindingConstantType::Float2: return "float2";
+            case RenderBindingConstantType::Float3: return "float3";
+            case RenderBindingConstantType::Float4: return "float4";
+            case RenderBindingConstantType::Color:  return "float4";
+            }
+            return "float";
+        }
+
+        const char* visibility_note_of(ShaderVisibility visibility) noexcept
+        {
+            switch (visibility) {
+            case ShaderVisibility::All:    return "all stages";
+            case ShaderVisibility::Vertex: return "vertex stage";
+            case ShaderVisibility::Pixel:  return "pixel stage";
+            }
+            return "all stages";
+        }
+    }
+
+    bool generate_hlsl_binding_prelude(
+        const RenderBindingLayoutData& layout,
+        std::string& out,
+        std::string& error)
+    {
+        out.clear();
+
+        // The SRG derivation is the authority for validation and register
+        // assignment; the prelude re-emits ITS rows so the two views cannot
+        // disagree.
+        RenderBindingLayoutSrg srg{};
+        if (!build_render_binding_layout_srg(layout, srg, error)) {
+            return false;
+        }
+
+        out +=
+            "// Generated binding prelude (issue #231) — derived from the "
+            "authored render\n"
+            "// binding layout, prepended to the shader body by the binding-"
+            "prelude asset\n"
+            "// node. The layout is the single source of truth for these "
+            "registers and\n"
+            "// cbuffer offsets: do not hand-declare them in the body.\n";
+
+        const std::string space =
+            "space" + std::to_string(kRenderBindingLayoutRegisterSpace);
+
+        // Resident decoded splat element (64 bytes) — must match the CPU-side
+        // decode; copied from the splat shaders' canonical declaration.
+        for (const DescriptorBinding& row : srg.descriptor_bindings) {
+            if (row.semantic != DescriptorSemantic::SplatCloud) {
+                continue;
+            }
+            out +=
+                "\n"
+                "struct WzSplat\n"
+                "{\n"
+                "    float3 position;   // offset  0\n"
+                "    float  opacity;    // offset 12\n"
+                "    float3 scale;      // offset 16\n"
+                "    float  pad0;       // offset 28\n"
+                "    float4 rotation;   // offset 32\n"
+                "    float3 color;      // offset 48\n"
+                "    uint   pad1;       // offset 60\n"
+                "};\n";
+            break;
+        }
+
+        if (layout.has_constants()) {
+            // packoffset on EVERY member: the offsets are the ones the recipe
+            // bakes (render_binding_constant_field_offset), so the shader is
+            // FORCED onto the CPU byte contract instead of relying on the
+            // packing rules agreeing.
+            out += "\ncbuffer " + layout.constants_semantic + " : register(b0, "
+                + space + ")\n{\n";
+            switch (layout.constants_head) {
+            case RenderBindingConstantsHead::Mvp16:
+                out += "    float4x4 mvp : packoffset(c0);\n";
+                break;
+            case RenderBindingConstantsHead::WorldViewProjCamera36:
+                // The splat-cloud packer's contract; a custom renderable
+                // packs the trailing diameter float as 0.
+                out += "    float4x4 world : packoffset(c0);\n"
+                       "    float4x4 view_proj : packoffset(c4);\n"
+                       "    float4 camera_and_diameter : packoffset(c8);\n";
+                break;
+            case RenderBindingConstantsHead::Clipmap32:
+                // Packed by the clipmap renderer (ClipmapDrawConstants);
+                // custom renderables reject this head at compile.
+                out += "    float4 clipmap_constants[8] : packoffset(c0);\n";
+                break;
+            case RenderBindingConstantsHead::None:
+                break;
+            }
+
+            uint32_t running =
+                render_binding_constants_head_dwords(layout.constants_head);
+            for (const RenderBindingConstantField& field :
+                 layout.constant_fields)
+            {
+                running =
+                    render_binding_constant_field_offset(running, field.type);
+                out += "    ";
+                out += hlsl_type_of(field.type);
+                out += ' ';
+                out += field.name;
+                out += " : " + packoffset_of(running) + ";\n";
+                running += render_binding_constant_type_dwords(field.type);
+            }
+            out += "};\n";
+        }
+
+        if (!srg.descriptor_bindings.empty()) {
+            out += '\n';
+        }
+        for (size_t i = 0; i < srg.descriptor_bindings.size(); ++i) {
+            const DescriptorBinding& row = srg.descriptor_bindings[i];
+            const std::string_view name =
+                descriptor_semantic_name(row.semantic);
+            const std::string reg = "register(t"
+                + std::to_string(row.shader_register) + ", " + space + ")";
+            if (row.kind == DescriptorKind::TextureSRV) {
+                out += "Texture2D<float4> ";
+                out += name;
+                out += " : " + reg + ";  // "
+                    + visibility_note_of(row.visibility) + "\n";
+                continue;
+            }
+            if (const char* element =
+                    structured_element_type_for(row.semantic))
+            {
+                out += "StructuredBuffer<";
+                out += element;
+                out += "> ";
+                out += name;
+                out += " : " + reg + ";  // "
+                    + visibility_note_of(row.visibility) + "\n";
+                continue;
+            }
+            // No canonical element type — the register still comes from the
+            // layout; the author supplies the element declaration:
+            //   StructuredBuffer<YourElement> <name> : WZ_BINDING_<NAME>;
+            std::string macro = "WZ_BINDING_";
+            for (const char c : name) {
+                macro += static_cast<char>(
+                    std::toupper(static_cast<unsigned char>(c)));
+            }
+            out += "// " + std::string(name)
+                + ": StructuredBuffer with no canonical element type — "
+                  "declare your own\n"
+                  "// element struct and bind it with the macro below ("
+                + visibility_note_of(row.visibility) + ").\n"
+                  "#define " + macro + " " + reg + "\n";
+        }
+
+        if (!srg.static_samplers.empty()) {
+            out += '\n';
+        }
+        for (size_t i = 0; i < srg.static_samplers.size(); ++i) {
+            const StaticSamplerBinding& row = srg.static_samplers[i];
+            out += "SamplerState sampler" + std::to_string(i) + " : register(s"
+                + std::to_string(row.shader_register) + ", " + space + ");  // "
+                + visibility_note_of(row.visibility) + "\n";
         }
 
         return true;

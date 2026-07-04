@@ -109,6 +109,22 @@ namespace wz::engine::assets
         RenderBindingLayoutSrg& out,
         std::string& error);
 
+    // The shader-side view of the same derivation (issue #231): HLSL
+    // declarations for everything the layout authors — the cbuffer (head +
+    // tail fields at their packed offsets, emitted as packoffset so the byte
+    // contract is forced, not inferred), the SRV rows (canonical element
+    // types where a semantic has one, a WZ_BINDING_<SEMANTIC> register macro
+    // where the author must declare their own), and the static samplers
+    // (sampler0/sampler1, matching the authoring row names). The 0x105
+    // binding-prelude compiler prepends this to an authored shader body, so
+    // shaders never hand-declare registers or offsets the layout owns.
+    // Returns false and fills `error` on the same conditions as
+    // build_render_binding_layout_srg (it is this derivation, re-emitted).
+    [[nodiscard]] bool generate_hlsl_binding_prelude(
+        const RenderBindingLayoutData& layout,
+        std::string& out,
+        std::string& error);
+
     class RenderBindingLayoutTable
     {
     public:
