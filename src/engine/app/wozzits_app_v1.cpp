@@ -14,6 +14,8 @@
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/renderable/render_binding_sources.h>
 #include <engine/assets/renderable_asset_module.h>
+
+#include <chrono>
 #include <engine/assets/type_extensions.h>
 #include <engine/audio/scene_audio.h>
 
@@ -638,6 +640,11 @@ namespace wz::app
     void WozzitsApp_v1::simulation_tick(
         const wz::input::InputState& input, float dt, bool drive_camera)
     {
+        rematerialize_count_this_frame_ = 0;
+        rebuild_scene_count_this_frame_ = 0;
+        const std::chrono::steady_clock::time_point sim_started =
+            std::chrono::steady_clock::now();
+
         // The fly-cam consumes input only when the host arms it (drive_camera);
         // behaviors below always get the input, so a controller can drive the
         // scene without panning the camera. aspect tracking is independent.
@@ -693,6 +700,33 @@ namespace wz::app
                 *ctx_.assets, *behavior_scene_,
                 dt, audio_runtime_.output_sample_rate(),
                 audio_runtime_.scheduler(), audio_spatialization_);
+        }
+
+        // Per-frame rebuild profiling (#252): warn on redundant structural work and
+        // record a sample for the CSV (behavior_frame_index_ advanced above).
+        const double sim_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - sim_started).count();
+        if (rematerialize_count_this_frame_ > 1
+            || rebuild_scene_count_this_frame_ > 1)
+        {
+            ctx_.logger.warn(
+                "[perf] frame " + std::to_string(behavior_frame_index_)
+                + ": redundant structural rebuilds -- rematerialize x"
+                + std::to_string(rematerialize_count_this_frame_)
+                + " rebuild_behavior_scene x"
+                + std::to_string(rebuild_scene_count_this_frame_)
+                + " (" + std::to_string(sim_ms) + " ms)");
+        }
+        if (frame_profile_.size() < 200000u) {
+            frame_profile_.push_back(FrameProfileSample{
+                .frame = behavior_frame_index_,
+                .dt_ms = static_cast<double>(dt) * 1000.0,
+                .sim_ms = sim_ms,
+                .scene_nodes = scene_nodes_.size(),
+                .rematerialize = rematerialize_count_this_frame_,
+                .rebuild = rebuild_scene_count_this_frame_,
+            });
         }
     }
 
@@ -1378,6 +1412,7 @@ namespace wz::app
 
     void WozzitsApp_v1::rebuild_behavior_scene()
     {
+        ++rebuild_scene_count_this_frame_;
         // DIAGNOSTIC (#219): a rebuild while the scene camera is the active source
         // renumbers polytree handles; refresh_active_camera_entity re-seats the
         // handle below, but logging the event tells us whether an unexpected
@@ -3223,8 +3258,18 @@ namespace wz::app
         return true;
     }
 
-    void WozzitsApp_v1::rematerialize_render_bindings()
+    void WozzitsApp_v1::rematerialize_render_bindings(std::source_location caller)
     {
+        ++rematerialize_count_this_frame_;
+        // Name the caller so a play log can attribute WHICH edit forced the
+        // re-materialize -- pins the spurious spawn-time burst (4x in one frame
+        // with nothing structural changed; #252). Rare (a few frames/session),
+        // so an unconditional line is not noisy.
+        ctx_.logger.info(
+            std::string("[perf] rematerialize_render_bindings frame ")
+            + std::to_string(behavior_frame_index_) + " caller="
+            + caller.function_name() + " ("
+            + std::to_string(caller.line()) + ")");
         if (!ctx_.assets) {
             return;
         }
@@ -3671,8 +3716,81 @@ namespace wz::app
         });
     }
 
+    void WozzitsApp_v1::flush_frame_profile_csv()
+    {
+        if (!ctx_.assets || frame_profile_.empty()) {
+            return;
+        }
+
+        // Rows = frames, columns = the recorded metrics. Built as a data_table asset
+        // and exported via csv_export -- the same chain the diagnostic tables use
+        // (issue #252). Runs at save/shutdown; the commit re-registers the graph,
+        // but resolve is cache-hit for the existing scene, so only the two profile
+        // nodes do real work.
+        wz::engine::assets::DataTableData table;
+        table.columns.push_back({ .name = "frame" });
+        table.columns.push_back({ .name = "dt_ms" });
+        table.columns.push_back({ .name = "sim_ms" });
+        table.columns.push_back({ .name = "scene_nodes" });
+        table.columns.push_back({ .name = "rematerialize" });
+        table.columns.push_back({ .name = "rebuild_behavior_scene" });
+        table.rows.reserve(frame_profile_.size());
+        for (const FrameProfileSample& s : frame_profile_) {
+            table.rows.push_back({ .cells = {
+                std::to_string(s.frame),
+                std::to_string(s.dt_ms),
+                std::to_string(s.sim_ms),
+                std::to_string(s.scene_nodes),
+                std::to_string(s.rematerialize),
+                std::to_string(s.rebuild),
+            } });
+        }
+
+        const wz::engine::assets::DataTableAsset table_asset =
+            ctx_.assets->data_tables().create_inline_table(
+                { .name = "profile/frame_profile", .table = std::move(table) });
+        if (!table_asset.valid()) {
+            ctx_.logger.warn("flush_frame_profile_csv: data table invalid");
+            return;
+        }
+        const wz::engine::assets::CSVExportAsset csv_asset =
+            ctx_.assets->csv_export().create_csv_export(
+                { .name = "profile/frame_profile_csv", .source = table_asset });
+        if (!csv_asset.valid()) {
+            ctx_.logger.warn("flush_frame_profile_csv: csv export invalid");
+            return;
+        }
+
+        ctx_.assets->commit();
+        (void)ctx_.assets->resolve_all();
+
+        const wz::engine::assets::CSVExportHandle handle =
+            ctx_.assets->csv_export().get_export(csv_asset);
+        if (!handle.valid()) {
+            ctx_.logger.warn("flush_frame_profile_csv: csv export unresolved");
+            return;
+        }
+        const wz::fs::Path path =
+            wz::fs::join(ctx_.assets->resource_root(), "frame_profile.csv");
+        if (ctx_.assets->csv_export().write_export_to_file(handle, path)
+            != wz::fs::FileError::None)
+        {
+            ctx_.logger.warn("flush_frame_profile_csv: write failed for " + path);
+        }
+        else {
+            ctx_.logger.info(
+                "flush_frame_profile_csv: wrote " + path + " ("
+                + std::to_string(frame_profile_.size()) + " frames)");
+        }
+    }
+
     bool WozzitsApp_v1::save_scene()
     {
+        // Per-frame profile (#252): write the accumulated CSV on the way out.
+        // save_scene runs at play/editor exit; independent of the scene-dirty
+        // early-out below, and a no-op when nothing was recorded.
+        flush_frame_profile_csv();
+
         // The editor viewport's free-fly camera pose is unsaved state independent
         // of scene edits; persist it alongside authored changes. Standalone play
         // never authors the editor camera (prefer_scene_camera_).

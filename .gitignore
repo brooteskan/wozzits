@@ -386,3 +386,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Generated play-time profiling telemetry (WozzitsApp_v1::flush_frame_profile_csv)
+window_engine/resources/projects/test_mesh_001/frame_profile.csv
