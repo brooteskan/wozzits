@@ -26,7 +26,8 @@ extern "C" {
 // v28: appended reward_agent / agent_memory (cognition LEARNING seam).
 // v29: appended reward_agent_pair / agent_conditional_pref (CONTEXTUAL learning).
 // v30: appended set_agent_decoherence (observation-forced decoherence).
-#define WZ_BEHAVIOR_ABI_VERSION 30u
+// v31: appended get_instance_state_of (handle-based peer instance-state read).
+#define WZ_BEHAVIOR_ABI_VERSION 31u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -997,6 +998,20 @@ typedef struct WzFrameTiming
     uint64_t frame_index;
 } WzFrameTiming;
 
+/*
+ * Handle-based peer instance-state read (v31). Returns a pointer to the instance
+ * state of the `module`-named behavior bound to `entity`, or null if there is no
+ * such binding (or it has no allocated state). The reading + owning behaviors
+ * agree on the struct layout via a shared header -- the engine defines no schema.
+ * Entirely event-agnostic: `entity` is any handle, e.g. a collision OR proximity
+ * event's `other` (both deliver it identically). Read it immediately; do not cache
+ * the pointer across frames (a rebuild can relocate state).
+ */
+typedef void* (*WzGetBehaviorStateOfFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    const char* module_name);
+
 typedef struct WzBehaviorFrameFacts
 {
     const WzInputStateView* input;
@@ -1132,6 +1147,14 @@ typedef struct WzBehaviorFrameFacts
      * no cognition host.
      */
     WzSetAgentDecoherenceFn set_agent_decoherence;
+
+    /*
+     * Handle-based peer instance-state read (v31; shares behavior_state_user). Lets
+     * a behavior read ANOTHER entity's behavior data by handle -- the read half of
+     * cross-entity communication (the projectile-carries-its-own-data model). Null
+     * when the host wires no reader. See WzGetBehaviorStateOfFn above.
+     */
+    WzGetBehaviorStateOfFn get_instance_state_of;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

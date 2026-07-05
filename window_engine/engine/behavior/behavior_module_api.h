@@ -2043,6 +2043,51 @@ static inline T* wz_instance_state(const WzBehaviorFrameFacts* facts)
     return static_cast<T*>(wz_get_instance_state(facts));
 }
 
+// ── Peer instance state: read ANOTHER entity's behavior data by handle ──────────
+//
+// The read half of cross-entity behavior communication. Given a handle (e.g. a
+// collision / proximity event's `other`, from wz_other(event)) and the module
+// name of a behavior bound to it, returns a pointer to that behavior's instance
+// state -- or null if the entity has no such behavior binding. The reading + the
+// owning behavior agree on the struct layout via a SHARED HEADER (like the tanks
+// share cannon_fire.h); the engine defines no schema. Event-agnostic -- it takes a
+// handle, not an event, so it works from any of the collision/proximity events (or
+// any handle at all).
+//
+//   // projectile.h -- shared by the projectile AND every collision handler
+//   struct ProjectileState { WzBehaviorEntityId shooter; double fired_at; float damage; };
+//
+//   // a tank's COLLISION_ENTER / PROXIMITY_ENTER handler:
+//   if (auto* p = wz_instance_state_of<ProjectileState>(
+//           facts, wz_other(event), "projectile")) {
+//       take_damage(p->damage); credit(p->shooter);
+//   }
+//
+// Read it immediately; do NOT cache the pointer across frames (a rebuild can
+// relocate the state block).
+static inline void* wz_get_instance_state_of(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* module_name)
+{
+    return facts && facts->get_instance_state_of
+        ? facts->get_instance_state_of(
+            facts->behavior_state_user, entity, module_name)
+        : nullptr;
+}
+
+template <typename T>
+static inline T* wz_instance_state_of(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* module_name)
+{
+    static_assert(std::is_trivially_copyable<T>::value,
+        "peer behavior state must be trivially copyable (plain data)");
+    return static_cast<T*>(
+        wz_get_instance_state_of(facts, entity, module_name));
+}
+
 static inline void* wz_create_shared_state(
     const WzBehaviorInitFacts* facts,
     const char* key,

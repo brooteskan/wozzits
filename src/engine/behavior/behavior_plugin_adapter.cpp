@@ -1289,6 +1289,35 @@ namespace wz::engine::behavior
             return block ? block->data : nullptr;
         }
 
+        // Peer instance state: the instance state of the `module`-named behavior on
+        // ANOTHER entity, by handle. Finds the (entity, module) binding, then reads
+        // its state exactly the way self-state resolves -- by binding_id. Null if no
+        // such binding / no allocated state. Event-agnostic: `entity` is any handle
+        // (e.g. a collision or proximity event's `other`).
+        void* get_instance_state_of(
+            void* user,
+            WzBehaviorEntityId entity,
+            const char* module_name)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->scene || !context->behavior_state
+                || !module_name)
+            {
+                return nullptr;
+            }
+
+            for (const auto& record : context->scene->behaviors) {
+                if (record.node == entity
+                    && record.component.module == module_name)
+                {
+                    auto* block = context->behavior_state->find_instance_state(
+                        record.component.binding_id);
+                    return block ? block->data : nullptr;
+                }
+            }
+            return nullptr;
+        }
+
         void* alloc_instance_state(
             void* user,
             uint32_t size,
@@ -1966,6 +1995,7 @@ namespace wz::engine::behavior
                 .reward_agent_pair = reward_agent_pair_request,
                 .agent_conditional_pref = agent_conditional_pref_query,
                 .set_agent_decoherence = set_agent_decoherence_request,
+                .get_instance_state_of = get_instance_state_of,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -2054,6 +2084,7 @@ namespace wz::engine::behavior
                 .reward_agent_pair = reward_agent_pair_request,
                 .agent_conditional_pref = agent_conditional_pref_query,
                 .set_agent_decoherence = set_agent_decoherence_request,
+                .get_instance_state_of = get_instance_state_of,
             };
         }
 
