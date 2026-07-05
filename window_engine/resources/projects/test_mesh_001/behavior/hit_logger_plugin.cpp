@@ -1,6 +1,7 @@
 #include <engine/behavior/behavior_module_api.h>
 
 #include "collidable.h"
+#include "tank_damage.h"
 
 // hit_logger -- on THIS node's hitbox, tallies damage taken. On COLLISION_ENTER it
 // reads the striker's "collidable" state off `other` (kind / owner / damage), adds
@@ -10,19 +11,14 @@
 
 namespace
 {
-    struct HitState
-    {
-        float total_damage = 0.0f;  // cumulative damage this tank has taken
-    };
-
     // Both channels: a trigger collider fires COLLISION events; subscribing to
     // proximity too is harmless (this node has no proximity component).
     static const char* kHitEvents[] = { "collision.*", "proximity.*" };
 
     void hit_init(const WzBehaviorInitFacts* facts, WzBehaviorEntityId, void*)
     {
-        if (auto* s = wz_instance_state<HitState>(facts)) {
-            s->total_damage = 0.0f;
+        if (auto* s = wz_instance_state<tank_damage::Tally>(facts)) {
+            s->total = 0.0f;
         }
     }
 
@@ -44,14 +40,14 @@ namespace
         uint32_t required = 0;
         wz_config_string(facts, "label", label, sizeof(label), &required);
 
-        auto* s = wz_instance_state<HitState>(facts);
+        auto* s = wz_instance_state<tank_damage::Tally>(facts);
         const WzBehaviorEntityId other = wz_other(event);
 
         // The striker carries a "collidable" -- who owns it + how much it hurts.
         if (auto* c = wz_instance_state_of<collidable::State>(
                 facts, other, collidable::kModule)) {
             const float total =
-                s ? (s->total_damage += c->damage) : c->damage;
+                s ? (s->total += c->damage) : c->damage;
             wz_log_infof(
                 facts, "[HIT] %s took %.1f dmg from entity %u -- total %.1f",
                 label, (double)c->damage, (unsigned)c->owner, (double)total);

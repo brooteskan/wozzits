@@ -128,6 +128,9 @@ namespace
             result = wz_find_descendant_by_name(
                 facts, self, "gun", &state->barrel);
             wz_log_infof(facts, "[tank init] find barrel: %u", result);
+            result = wz_find_descendant_by_name(
+                facts, self, "hitbox", &state->hitbox);
+            wz_log_infof(facts, "[tank init] find hitbox: %u", result);
 
             // THE "fire the cannon" -- shared with the enemy tank (cannon_fire.h).
             // Anchors the muzzle flash on the barrel; fired from the controller
@@ -255,6 +258,35 @@ namespace
         
         default:
             break;
+        }
+
+        // Death threshold: capture the spawn point once, then poll the hitbox's
+        // cumulative damage. At kMaxHealth the player is destroyed -> respawn at the
+        // spawn point with the tally cleared (we do NOT remove the player -- its
+        // camera child would go with it).
+        {
+            WzMat4 self_w{};
+            if (!state->spawn_captured
+                && wz_self_world_transform(facts, event, &self_w)) {
+                state->spawn_x = self_w.m[12];
+                state->spawn_y = self_w.m[13];
+                state->spawn_z = self_w.m[14];
+                state->spawn_captured = 1;
+            }
+            if (auto* d = wz_instance_state_of<tank_damage::Tally>(
+                    facts, state->hitbox, tank_damage::kModule)) {
+                if (d->total >= kMaxHealth) {
+                    wz_log_infof(
+                        facts, "[DEATH] player destroyed (%.0f dmg) -- respawning",
+                        (double)d->total);
+                    d->total = 0.0f;
+                    if (state->spawn_captured) {
+                        wz_write_set_world_translation(
+                            facts, wz_self(event),
+                            state->spawn_x, state->spawn_y, state->spawn_z);
+                    }
+                }
+            }
         }
 
         tank_drive::drive_treads(facts, event, state->left_tread_speed, state->right_tread_speed);

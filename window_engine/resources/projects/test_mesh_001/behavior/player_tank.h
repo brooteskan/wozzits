@@ -3,6 +3,7 @@
 #include <engine/behavior/behavior_module_api.h>
 #include "tank_drive.h"
 #include "cannon_fire.h"
+#include "tank_damage.h"
 
 // Barrel elevation travel limits (radians, relative to the gun's LEVEL rest pose
 // authored in the GLB). The gun pitches between these while buttons 13 (raise) /
@@ -10,6 +11,12 @@
 // floor (0 = level; go negative to let the muzzle drop below horizontal).
 inline constexpr float kGunElevationMax = 2 * 0.2617994f;  // 30 deg above horizontal
 inline constexpr float kGunElevationMin = 0.0f;        // level
+
+// Total damage the player can absorb before it is destroyed. On death the player
+// respawns at its captured spawn point with the tally cleared (it is NOT removed --
+// its camera child would go with it). Enemy shells deal 25 (authored on the
+// projectile's collidable), so this is ~8 clean hits. Tune to taste.
+inline constexpr float kMaxHealth = 200.0f;
 
 struct PlayerTankState {
     float throttle = 0.0f;
@@ -42,6 +49,12 @@ struct PlayerTankState {
     WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
     WzBehaviorEntityId canon_audio = WZ_INVALID_BEHAVIOR_ENTITY;
     WzBehaviorEntityId engine_audio = WZ_INVALID_BEHAVIOR_ENTITY;
+
+    // Damage tracking: the "hitbox" child's hit_logger accumulates the tally; we
+    // poll it each frame and respawn at the captured spawn point on death.
+    WzBehaviorEntityId hitbox = WZ_INVALID_BEHAVIOR_ENTITY;
+    float   spawn_x = 0.0f, spawn_y = 0.0f, spawn_z = 0.0f;
+    uint8_t spawn_captured = 0;
 
     // Last committed disposition of the co-located quantum_agent (if any):
     // -2 = never read, -1 = deliberating, 0/1 = the chosen outcome. We react
