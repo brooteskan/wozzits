@@ -4,7 +4,7 @@
 namespace
 {
     static const char* kTankEvents[] = {
-    "input.*","self.start"
+    "input.*","self.start","frame.update"
     };
 
 
@@ -84,6 +84,9 @@ namespace
         }
         const float ramp = (state->applied_rpm_level < 0)
             ? 0.0f : kEngineCrossfadeFrames;
+        // The grain cloud itself is STARTED by the host's spawn auto-play pass
+        // (start_spawned_audio) -- wz_write_grain_program only retunes a live cloud,
+        // it can't start one. Here we just crossfade the program on an rpm change.
         state->applied_rpm_level = (int8_t)rpm;
         state->rpm_level = rpm;
         const WzGrainProgram prog = make_engine_program(rpm);
@@ -112,23 +115,38 @@ namespace
             result = wz_find_descendant_by_name(
                 facts, self, "engine_sounds", &state->engine_audio);
             wz_log_infof(facts, "[tank init] find engine audio: %u", result);
+
+            // The gun assembly: the turret ring (aim it later) and the gun/barrel
+            // (the muzzle-flash anchor). The tank GLB is body -> "turret" -> "gun".
+            result = wz_find_descendant_by_name(
+                facts, self, "turret", &state->chassis.turret);
+            wz_log_infof(facts, "[tank init] find turret: %u", result);
+            result = wz_find_descendant_by_name(
+                facts, self, "gun", &state->barrel);
+            wz_log_infof(facts, "[tank init] find barrel: %u", result);
+
+            // THE "fire the cannon" -- shared with the enemy tank (cannon_fire.h).
+            // Anchors the muzzle flash on the barrel; fired from the controller
+            // button below.
+            cannon_fire::init(
+                facts, self, state->chassis.turret, state->barrel,
+                state->terrain, &state->cannon);
         }
     }
 
 
+    // THE fire-the-cannon call. The player triggers it from the controller button
+    // (below); it runs the shared muzzle-beam + impact + report sequence.
     static void try_fire_canon(
         const WzBehaviorFrameFacts* facts,
         const WzBehaviorEvent* event,
         PlayerTankState* state)
     {
+        (void)facts;
         (void)event;
         if (state->ammo > 0) {
-            wz_log_infof(facts, "[tank] we have ammo %u", state->ammo);
             state->ammo--;
-            if (state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY) {
-                wz_log_info(facts, "[tank] played the canon");
-                wz_write_play_sound_named(facts, state->canon_audio, "Canon_a");
-            }
+            cannon_fire::fire(&state->cannon);
         }
     }
 
@@ -165,11 +183,6 @@ namespace
                     facts,
                     "[tank] quantum mind committed: ENGAGE (z=%.2f)",
                     decision.marginal);
-                // React audibly so the collapse is observable in play.
-                if (state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY) {
-                    wz_write_play_sound_named(
-                        facts, state->canon_audio, "Canon_a");
-                }
             } else if (decision.committed == 1) {
                 wz_log_infof(
                     facts,
@@ -242,6 +255,9 @@ namespace
         // cloud's program on a level change (runs on frame.update + input events).
         update_engine_rpm(facts, state);
 
+        // Advance the cannon shot: position the beam on the gun, fade the flashes,
+        // place the impact, play the report. Triggered from the controller above.
+        cannon_fire::tick(facts, event, &state->cannon);
     }
 }
 

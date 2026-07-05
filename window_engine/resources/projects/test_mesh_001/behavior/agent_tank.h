@@ -3,6 +3,7 @@
 
 #include <engine/behavior/behavior_module_api.h>
 #include "tank_drive.h"
+#include "cannon_fire.h"
 
 // Shared squad roster (behavior SHARED state, key "squad"): tanks register on
 // spawn to claim a slot in the commander's group agent, and the commander reads
@@ -26,8 +27,13 @@ struct QuantumTankState {
 
     float heading = 0.0f;
     float speed = 0.0f;
-    tank_drive::Chassis chassis;  // turret handle + turret aim
-    
+    tank_drive::Chassis chassis;  // turret handle (chassis.turret) + turret aim
+    cannon_fire::State cannon;    // the shared "fire the cannon" sequence state
+
+    // The gun (barrel) node -- the "gun" child of the turret in the tank GLB
+    // (body -> turret -> gun); the muzzle-flash anchor.
+    WzBehaviorEntityId barrel = WZ_INVALID_BEHAVIOR_ENTITY;
+
     uint32_t ammo = 1000;  // effectively unlimited; enemy firing isn't ammo-gated
 
     // The clipmap landscape node (its Heightfield Collision component is what we

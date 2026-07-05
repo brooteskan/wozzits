@@ -79,6 +79,16 @@ namespace
         result = wz_find_descendant_by_name(facts, self,"turret", &state->chassis.turret);
         wz_log_infof(facts, "[agent tank init] find turret: %u", result);
 
+        result = wz_find_descendant_by_name(facts, self, "gun", &state->barrel);
+        wz_log_infof(facts, "[agent tank init] find barrel: %u", result);
+
+        // THE "fire the cannon" -- shared with the player (cannon_fire.h). Anchors
+        // the muzzle flash on the barrel; fired below when the agent commits to a
+        // shot.
+        cannon_fire::init(
+            facts, self, state->chassis.turret, state->barrel,
+            state->terrain, &state->cannon);
+
         // The squad commander (hidden top-level node). Optional -- the tank fights
         // solo if it isn't present.
         (void)wz_find_entity_by_authored_id(facts, "2:command", &state->command);
@@ -432,7 +442,7 @@ namespace
                     && now >= state->next_fire_time
                     && state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY)
                 {
-                    wz_write_play_sound_named(facts, state->canon_audio, "Canon_a");
+                    cannon_fire::fire(&state->cannon);
                     state->ammo--;
                     state->next_fire_time = now + kFireCooldown;
                     wz_log_infof(
@@ -516,6 +526,8 @@ namespace
 
         tank_drive::drive_facing(facts, event, state->heading, state->speed);
 
+        // Advance the cannon shot (shared with the player). Fired above on a shot.
+        cannon_fire::tick(facts, event, &state->cannon);
     }
 }
 

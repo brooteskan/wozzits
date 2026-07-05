@@ -2,6 +2,7 @@
 // behavior/player_tank.h
 #include <engine/behavior/behavior_module_api.h>
 #include "tank_drive.h"
+#include "cannon_fire.h"
 
 struct PlayerTankState {
     float throttle = 0.0f;
@@ -16,9 +17,15 @@ struct PlayerTankState {
                         // 4 = Engines_CC.wav
     int8_t applied_rpm_level = -1;  // last engine program pushed (-1 = none yet)
 
-    tank_drive::Chassis chassis;  // turret handle + turret aim
+    tank_drive::Chassis chassis;  // turret handle (chassis.turret) + turret aim
+    cannon_fire::State cannon;    // the shared "fire the cannon" sequence state
 
-    uint8_t ammo = 10;
+    // The gun (barrel) node -- the "gun" child of the turret in the tank GLB
+    // (body -> turret -> gun). Recorded so the muzzle flash can anchor on it and so
+    // the turret can be aimed independently of the barrel later.
+    WzBehaviorEntityId barrel = WZ_INVALID_BEHAVIOR_ENTITY;
+
+    uint8_t ammo = 255;
     WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;
     WzBehaviorEntityId canon_audio = WZ_INVALID_BEHAVIOR_ENTITY;
     WzBehaviorEntityId engine_audio = WZ_INVALID_BEHAVIOR_ENTITY;

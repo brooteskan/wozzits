@@ -85,16 +85,6 @@
             "self.start",
             "frame.update"
           ]
-        },
-        {
-          "id": "enemy_tank_root.behavior.3",
-          "module": "cannon_flash",
-          "name": "",
-          "enabled": true,
-          "apply_in_editor": false,
-          "events": [
-            "frame.update"
-          ]
         }
       ]
     },
@@ -111,13 +101,25 @@
       "renderable": { "asset_graph_node_id": 55 }
     },
     {
+      "id": "enemy_trajectory",
+      "parent": "enemy_tank_root",
+      "name": "trajectory",
+      "transform": {
+        "translation": [ 0, 0, 0 ],
+        "rotation_quat": [ 0, 0, 0, 1 ],
+        "scale": [ 4, 4, 4 ]
+      },
+      "visible": true,
+      "renderable": { "asset_graph_node_id": 55 }
+    },
+    {
       "id": "enemy_impact_flash",
       "parent": "enemy_tank_root",
       "name": "impact_flash",
       "transform": {
         "translation": [ 0, 0, 0 ],
         "rotation_quat": [ 0, 0, 0, 1 ],
-        "scale": [ 4, 4, 4 ]
+        "scale": [ 1, 1, 1 ]
       },
       "visible": true,
       "renderable": { "asset_graph_node_id": 55 }
