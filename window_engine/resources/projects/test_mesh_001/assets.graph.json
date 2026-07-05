@@ -1751,6 +1751,66 @@
           }
         ]
       }
+    },
+    {
+      "node_id": 56,
+      "key": "asset-key:5b1aa7b7525c8433:e69f678512921d38:f11eca55e7000b00:0000000000000000:9e3779b97f4aa12d:0000000000000000:f4d63ad2ce39597e:cc265f70aab8d8c2",
+      "type": 150,
+      "schema": "0xf11eca55e7000b00",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 57,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "build_method",
+            "type": "int",
+            "value": 1
+          },
+          {
+            "name": "occupancy_blocks_movement",
+            "type": "bool",
+            "value": true
+          },
+          {
+            "name": "occupancy_kind",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "occupancy_queryable",
+            "type": "bool",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 57,
+      "key": "asset-key:cfa767631a46bad4:0861905782b71b90:f11eca55e7000402:0000000000000000:9e3779b97f4a9c34:0000000000000000:0000000000000000:0000000000000000",
+      "type": 130,
+      "schema": "0xf11eca55e7000402",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": ""
+          }
+        ]
+      }
     }
   ],
   "layout": {
@@ -2035,8 +2095,18 @@
         "node_id": 53,
         "x": 296.07645749932817,
         "y": 2204.9807986389296
+      },
+      {
+        "node_id": 56,
+        "x": 927.95709649275818,
+        "y": 2777.4272066419339
+      },
+      {
+        "node_id": 57,
+        "x": 649.46445779402927,
+        "y": 2774.623255446083
       }
     ],
-    "zoom": 0.25
+    "zoom": 0.71327917652750072
   }
 }

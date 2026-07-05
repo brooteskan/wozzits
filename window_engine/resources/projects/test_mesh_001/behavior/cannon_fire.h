@@ -21,6 +21,8 @@
 #include <engine/behavior/behavior_module_api.h>
 #include <math.h>
 
+#include "projectile_impact.h"
+
 namespace cannon_fire
 {
     // Exact GLB Empty name (note the spelling authored in tank1.glb).
@@ -35,6 +37,17 @@ namespace cannon_fire
     inline constexpr float kBeamThick     = 0.30f;  // trajectory beam thickness (world units)
     inline constexpr float kImpactScale   = 1.50f;  // impact-flash blob half-extent
     inline constexpr float kImpactMaxDist = 500.0f; // how far to trace the shot to the terrain
+
+    // Projectile: a bright collider that physically FLIES from the muzzle down the
+    // firing axis on a shot, so it sweeps through a target's hit-collider and fires
+    // COLLISION_ENTER on it. One per tank, reused (parked far below when idle) -- no
+    // spawn churn. cannon_fire owns the flight; the victim handles the hit.
+    inline constexpr float kProjSpeed   = 300.0f;    // flight speed (world units / sec)
+    inline constexpr float kProjMaxDist = 300.0f;   // range before it parks (units)
+    inline constexpr float kProjParkY   = -1000.0f; // world Y to park it at when idle
+    inline constexpr float kProjScale    = 0.5f;    // projectile size in flight (matches prefab)
+    inline constexpr float kBurstScale   = 5.0f;    // impact-burst size (~x10 the projectile)
+    inline constexpr float kBurstSeconds = 1.0f / 15.0f; // how long the impact burst holds
 
     inline constexpr uint32_t kIntensity = wz_renderable_param_hash("intensity");
 
@@ -65,6 +78,18 @@ namespace cannon_fire
         WzBehaviorEntityId beam   = WZ_INVALID_BEHAVIOR_ENTITY;  // "trajectory" node
         WzBehaviorEntityId impact = WZ_INVALID_BEHAVIOR_ENTITY;  // "impact_flash" node
         WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY; // for the impact raycast
+        WzBehaviorEntityId projectile = WZ_INVALID_BEHAVIOR_ENTITY; // "projectile" node (flies)
+        float   proj_x = 0.0f, proj_y = 0.0f, proj_z = 0.0f;    // projectile world pos
+        float   proj_dx = 0.0f, proj_dy = 0.0f, proj_dz = 0.0f; // unit flight direction
+        float   proj_dist = 0.0f;   // distance flown this shot
+        uint8_t proj_active = 0;    // 1 = in flight
+        uint8_t proj_launch = 0;    // 1 = launch pending (seed pos/dir next tick)
+        uint8_t bursting = 0;       // 1 = holding the impact burst
+        float   burst_timer = 0.0f; // seconds left on the burst
+        float   impact_x = 0.0f, impact_y = 0.0f, impact_z = 0.0f; // burst position
+        float   terrain_dist = 0.0f;   // muzzle->terrain distance (launch raycast)
+        float   terrain_x = 0.0f, terrain_y = 0.0f, terrain_z = 0.0f; // terrain hit point
+        uint8_t terrain_valid = 0;  // 1 = the shot ray hit terrain this launch
         float   intensity = 0.0f;   // current flash brightness (fades to 0)
         uint8_t firing = 0;
         uint8_t boom_done = 1;
@@ -92,6 +117,7 @@ namespace cannon_fire
         wz_find_descendant_by_name(facts, self, "muzzle_beam", &s->flash);
         wz_find_descendant_by_name(facts, self, "trajectory", &s->beam);
         wz_find_descendant_by_name(facts, self, "impact_flash", &s->impact);
+        wz_find_descendant_by_name(facts, self, "projectile", &s->projectile);
         // 1 = the GLB muzzle Empty resolved (exact anchor); 0 = fell back to the
         // gun+turret heuristic (marker missing / GLB not re-imported / name typo).
         wz_log_infof(facts, "[cannon] find muzzle marker: %u",
@@ -99,6 +125,10 @@ namespace cannon_fire
         s->intensity = 0.0f;
         s->firing = 0;
         s->boom_done = 1;
+        s->proj_active = 0;
+        s->proj_launch = 0;
+        s->bursting = 0;
+        s->terrain_valid = 0;
     }
 
     // FIRE. Flash the muzzle + play the report. Call from a trigger (controller
@@ -108,6 +138,8 @@ namespace cannon_fire
         s->intensity = 1.0f;
         s->firing = 1;
         s->boom_done = 0;
+        s->proj_active = 1;
+        s->proj_launch = 1;
     }
 
     // Per-frame: sit the flash on the muzzle, and fade it out after a shot. Safe to
@@ -169,6 +201,37 @@ namespace cannon_fire
             return;
         }
 
+        // At launch, trace the shot to the terrain ONCE (the ray is fixed for the
+        // shot): the distance clips the trajectory beam at a hillside and gives the
+        // projectile its ground-impact range, and the point places the impact flash.
+        // Also clear the projectile's own hit flag for the new shot.
+        if (s->proj_launch) {
+            s->terrain_valid = 0;
+            s->terrain_dist = 0.0f;
+            if (s->terrain != WZ_INVALID_BEHAVIOR_ENTITY) {
+                const WzVec3 origin{ ax, ay, az };
+                const WzVec3 dir{ nx, ny, nz };
+                WzSurfaceSample surf{};
+                if (wz_query_collision_surface_ray(
+                        facts, s->terrain, origin, dir, kImpactMaxDist, &surf)
+                    && surf.hit)
+                {
+                    const float ex = surf.position.x - ax;
+                    const float ey = surf.position.y - ay;
+                    const float ez = surf.position.z - az;
+                    s->terrain_dist = sqrtf(ex * ex + ey * ey + ez * ez);
+                    s->terrain_x = surf.position.x;
+                    s->terrain_y = surf.position.y;
+                    s->terrain_z = surf.position.z;
+                    s->terrain_valid = 1;
+                }
+            }
+            if (auto* p = wz_instance_state_of<projectile_impact::State>(
+                    facts, s->projectile, projectile_impact::kModule)) {
+                p->hit = 0;
+            }
+        }
+
         wz_write_set_world_translation(
             facts, s->flash,
             ax + nx * kMuzzleForward,
@@ -197,13 +260,98 @@ namespace cannon_fire
                 const float ly = c1x * nx + c1y * ny + c1z * nz;
                 const float lz = c2x * nx + c2y * ny + c2z * nz;
                 const WzQuaternion q = quat_pos_x_to(lx, ly, lz);
-                const float half = 0.5f * kBeamDistance;
+                // Clip the beam at the hillside so it doesn't poke through terrain.
+                float beam_len = kBeamDistance;
+                if (s->terrain_valid && s->terrain_dist < beam_len) {
+                    beam_len = s->terrain_dist;
+                }
+                const float half = 0.5f * beam_len;
                 wz_write_set_world_translation(
                     facts, s->beam,
                     ax + nx * half, ay + ny * half, az + nz * half);
                 wz_write_set_local_rotation(facts, s->beam, q);
                 wz_write_set_local_scale(
                     facts, s->beam, half, 0.5f * kBeamThick, 0.5f * kBeamThick);
+            }
+        }
+
+        // Projectile flight -- runs whether or not the flash is still "firing": the
+        // flash fades in ~0.1s but the shot flies for seconds. Launched by fire();
+        // seeds pos/dir from the muzzle on the first tick, then steps down the firing
+        // axis until it parks at range. set_world_translation moves this hull-child in
+        // WORLD space so its collider sweeps through a target's hit-collider.
+        if (s->projectile != WZ_INVALID_BEHAVIOR_ENTITY) {
+            const float dt = wz_delta_seconds(facts);
+            if (s->proj_launch) {
+                s->proj_x = ax; s->proj_y = ay; s->proj_z = az;
+                s->proj_dx = nx; s->proj_dy = ny; s->proj_dz = nz;
+                s->proj_dist = 0.0f;
+                s->proj_launch = 0;
+                s->bursting = 0;
+            }
+            if (s->bursting) {
+                // Hold the big bright burst, then shrink + park far below + go dark.
+                s->burst_timer -= dt;
+                if (s->burst_timer <= 0.0f) {
+                    s->bursting = 0;
+                    wz_write_set_local_scale(
+                        facts, s->projectile, kProjScale, kProjScale, kProjScale);
+                    wz_write_set_world_translation(
+                        facts, s->projectile, s->impact_x, kProjParkY, s->impact_z);
+                    wz_write_set_renderable_param(
+                        facts, s->projectile, kIntensity, 0.0f, 0.0f, 0.0f);
+                }
+            }
+            else if (s->proj_active) {
+                const float step = kProjSpeed * dt;
+                s->proj_x += s->proj_dx * step;
+                s->proj_y += s->proj_dy * step;
+                s->proj_z += s->proj_dz * step;
+                s->proj_dist += step;
+
+                // Struck a tank? (the projectile's own collider recorded where.) Or
+                // reached the ground? (terrain range from the launch raycast.)
+                uint8_t hit_tank = 0;
+                if (auto* p = wz_instance_state_of<projectile_impact::State>(
+                        facts, s->projectile, projectile_impact::kModule)) {
+                    if (p->hit) {
+                        hit_tank = 1;
+                        s->impact_x = p->hx; s->impact_y = p->hy; s->impact_z = p->hz;
+                    }
+                }
+                const uint8_t hit_terrain =
+                    !hit_tank && s->terrain_valid && s->proj_dist >= s->terrain_dist;
+                if (hit_terrain) {
+                    s->impact_x = s->terrain_x;
+                    s->impact_y = s->terrain_y;
+                    s->impact_z = s->terrain_z;
+                }
+
+                if (hit_tank || hit_terrain) {
+                    // Impact: freeze here and burst (~x10 for a fraction of a second).
+                    s->proj_active = 0;
+                    s->bursting = 1;
+                    s->burst_timer = kBurstSeconds;
+                    wz_write_set_world_translation(
+                        facts, s->projectile, s->impact_x, s->impact_y, s->impact_z);
+                    wz_write_set_local_scale(
+                        facts, s->projectile, kBurstScale, kBurstScale, kBurstScale);
+                    wz_write_set_renderable_param(
+                        facts, s->projectile, kIntensity, 1.0f, 0.0f, 0.0f);
+                }
+                else if (s->proj_dist >= kProjMaxDist) {
+                    s->proj_active = 0;  // out of range: park far below, go dark
+                    wz_write_set_world_translation(
+                        facts, s->projectile, s->proj_x, kProjParkY, s->proj_z);
+                    wz_write_set_renderable_param(
+                        facts, s->projectile, kIntensity, 0.0f, 0.0f, 0.0f);
+                }
+                else {
+                    wz_write_set_world_translation(
+                        facts, s->projectile, s->proj_x, s->proj_y, s->proj_z);
+                    wz_write_set_renderable_param(
+                        facts, s->projectile, kIntensity, 1.0f, 0.0f, 0.0f);
+                }
             }
         }
 
@@ -216,26 +364,8 @@ namespace cannon_fire
             s->boom_done = 1;
         }
 
-        // Impact flash: raycast the shot from the muzzle along the firing axis to
-        // the terrain and sit the impact where it lands. No hit (fired over a ridge
-        // into the sky) -> the impact stays dark.
-        uint8_t impact_hit = 0;
-        WzVec3 impact_pos{};
-        if (s->impact != WZ_INVALID_BEHAVIOR_ENTITY
-            && s->terrain != WZ_INVALID_BEHAVIOR_ENTITY)
-        {
-            const WzVec3 origin{ ax, ay, az };
-            const WzVec3 dir{ nx, ny, nz };
-            WzSurfaceSample surf{};
-            if (wz_query_collision_surface_ray(
-                    facts, s->terrain, origin, dir, kImpactMaxDist, &surf)
-                && surf.hit)
-            {
-                impact_pos = surf.position;
-                impact_hit = 1;
-            }
-        }
-
+        // Impact-flash preview: the launch raycast already found where the shot meets
+        // the terrain; sit the preview there (dark if the shot cleared the ridge).
         const float dt = wz_delta_seconds(facts);
         const float decay = (kFadeSeconds > 0.0f) ? (dt / kFadeSeconds) : 1.0f;
         s->intensity = (s->intensity > decay) ? (s->intensity - decay) : 0.0f;
@@ -246,9 +376,9 @@ namespace cannon_fire
                 facts, s->beam, kIntensity, s->intensity, 0.0f, 0.0f);
         }
         if (s->impact != WZ_INVALID_BEHAVIOR_ENTITY) {
-            if (impact_hit) {
+            if (s->terrain_valid) {
                 wz_write_set_world_translation(
-                    facts, s->impact, impact_pos.x, impact_pos.y, impact_pos.z);
+                    facts, s->impact, s->terrain_x, s->terrain_y, s->terrain_z);
                 wz_write_set_local_scale(
                     facts, s->impact, kImpactScale, kImpactScale, kImpactScale);
                 wz_write_set_renderable_param(

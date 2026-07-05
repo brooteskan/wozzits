@@ -54,3 +54,11 @@ add_terrain_collision_behavior_module(
 add_terrain_collision_behavior_module(
     spawn_player
     spawn_player_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    hit_logger
+    hit_logger_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    projectile_impact
+    projectile_impact_plugin.cpp)

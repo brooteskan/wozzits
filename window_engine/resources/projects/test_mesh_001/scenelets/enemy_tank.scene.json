@@ -123,6 +123,68 @@
       },
       "visible": true,
       "renderable": { "asset_graph_node_id": 55 }
+    },
+    {
+      "id": "enemy_hitbox",
+      "parent": "enemy_tank_root",
+      "name": "hitbox",
+      "transform": {
+        "translation": [ 0, 0.5, 0 ],
+        "rotation_quat": [ 0, 0, 0, 1 ],
+        "scale": [ 1.5, 1.0, 1.5 ]
+      },
+      "visible": true,
+      "collision": {
+        "collision_asset_node_id": 56,
+        "layer_mask": 2,
+        "collides_with_mask": 4,
+        "is_trigger": true,
+        "enabled": true,
+        "constrain_movement": false
+      },
+      "behaviors": [
+        {
+          "id": "enemy_hitbox.behavior.1",
+          "module": "hit_logger",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [ "collision.*", "proximity.*" ],
+          "config": { "label": "enemy" }
+        }
+      ]
+    },
+    {
+      "id": "enemy_projectile",
+      "parent": "enemy_tank_root",
+      "name": "projectile",
+      "transform": {
+        "translation": [ 0, -1000, 0 ],
+        "rotation_quat": [ 0, 0, 0, 1 ],
+        "scale": [ 0.5, 0.5, 0.5 ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset_graph_node_id": 55
+      },
+      "collision": {
+        "collision_asset_node_id": 56,
+        "layer_mask": 4,
+        "collides_with_mask": 2,
+        "is_trigger": true,
+        "enabled": true,
+        "constrain_movement": false
+      },
+      "behaviors": [
+        {
+          "id": "enemy_projectile.behavior.1",
+          "module": "projectile_impact",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [ "collision.*" ]
+        }
+      ]
     }
   ],
   "defaults": {}
