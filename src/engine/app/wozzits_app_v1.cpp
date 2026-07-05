@@ -918,7 +918,8 @@ namespace wz::app
     }
 
     std::size_t WozzitsApp_v1::assemble_render_bindings(
-        const wz::asset::AssetGraphDraft& draft)
+        const wz::asset::AssetGraphDraft& draft,
+        const std::string* only_node)
     {
         if (!ctx_.assets) {
             return 0;
@@ -963,6 +964,13 @@ namespace wz::app
 
         std::size_t assembled = 0;
         for (wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            // Incremental (#253): when a single node is targeted, skip the rest --
+            // the bare loop + id compare is trivial; only the target does the
+            // expensive resolve/create-renderable work. Ancestor-program lookups
+            // below still scan the full span, so inheritance stays correct.
+            if (only_node && node.id != *only_node) {
+                continue;
+            }
             // Resolve this node's OWN program ref (companion key), if any --
             // independent of whether the node itself draws.
             node.render_program_asset.reset();
@@ -3148,7 +3156,9 @@ namespace wz::app
                 || (!value && existed && constants.empty()));
         scene_dirty_ = true;
         if (custom_form_flipped) {
-            rematerialize_render_bindings();
+            // Only THIS node's recipe changed (plain pull-mesh <-> custom 0x70A);
+            // re-assemble just it, not the whole scene (#253).
+            rematerialize_node_render_binding(node->id);
         }
         return true;
     }
@@ -3331,6 +3341,30 @@ namespace wz::app
             if (!resolve.ok()) {
                 ctx_.logger.warn(
                     "rematerialize_render_bindings: resolved with errors="
+                    + std::to_string(resolve.failures.size()));
+            }
+        }
+    }
+
+    void WozzitsApp_v1::rematerialize_node_render_binding(
+        const std::string& node_id)
+    {
+        if (!ctx_.assets) {
+            return;
+        }
+        // Incremental (#253): assemble only this node's renderable (its recipe
+        // changed) -- no full-scene re-bridge/re-assemble. commit + resolve_all
+        // materialize the (re)synthesized asset; resolve is cache-hit for every
+        // other node, so only the changed node does real work.
+        const std::size_t assembled =
+            assemble_render_bindings(graph_draft_, &node_id);
+        if (assembled > 0) {
+            ctx_.assets->commit();
+            const wz::engine::assets::ResolveReport resolve =
+                ctx_.assets->resolve_all();
+            if (!resolve.ok()) {
+                ctx_.logger.warn(
+                    "rematerialize_node_render_binding: resolved with errors="
                     + std::to_string(resolve.failures.size()));
             }
         }

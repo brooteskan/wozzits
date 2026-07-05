@@ -759,8 +759,12 @@ namespace wz::app
         // REGISTERS the renderables but does not compile them -- the caller must
         // commit() + resolve_all() afterwards. Returns the count assembled; no-op
         // (0) with no asset library or no geometry bindings.
+        // only_node (optional): assemble just that one node's renderable and skip
+        // the rest -- the incremental path for a single-node change (a custom-form
+        // flip; later a grafted subtree). nullptr = the whole scene (#253).
         std::size_t assemble_render_bindings(
-            const wz::asset::AssetGraphDraft& draft);
+            const wz::asset::AssetGraphDraft& draft,
+            const std::string* only_node = nullptr);
 
         // Re-assemble renderable bindings after one was edited live (issue #213
         // increment 2): re-bridge the pre-built renderables, re-run
@@ -773,6 +777,12 @@ namespace wz::app
         // spawn-time burst (4x in one frame, nothing structural changed; #252).
         void rematerialize_render_bindings(
             std::source_location caller = std::source_location::current());
+        // Incremental single-node variant (#253): re-assemble ONLY node_id's
+        // renderable (its recipe changed, e.g. a custom-form flip) + commit +
+        // resolve. Skips the O(scene) full re-bridge + re-assemble; the renderer
+        // reads scene_nodes_ each frame, so the next render reflects it. No-op
+        // without an asset library.
+        void rematerialize_node_render_binding(const std::string& node_id);
         // Write the accumulated per-frame profile to
         // <resource_root>/frame_profile.csv through the data_table -> csv_export
         // asset chain (issue #252). No-op when nothing was recorded.
