@@ -641,6 +641,7 @@ namespace wz::app
     {
         rematerialize_count_this_frame_ = 0;
         rebuild_scene_count_this_frame_ = 0;
+        remat_callers_this_frame_.clear();
         const std::chrono::steady_clock::time_point sim_started =
             std::chrono::steady_clock::now();
 
@@ -725,6 +726,7 @@ namespace wz::app
                 .scene_nodes = scene_nodes_.size(),
                 .rematerialize = rematerialize_count_this_frame_,
                 .rebuild = rebuild_scene_count_this_frame_,
+                .callers = remat_callers_this_frame_,
             });
         }
     }
@@ -3267,9 +3269,38 @@ namespace wz::app
         return true;
     }
 
+    // Extract a short seam identifier from a source_location function name --
+    // "void wz::app::WozzitsApp_v1::set_node_renderable_program(...)" -> the bare
+    // "set_node_renderable_program". CSV-safe (a bare identifier: no comma) and
+    // stable across line shifts, so it can name WHICH call site forced a
+    // rematerialize in the frame_profile "remat_callers" column (#252).
+    static std::string short_render_caller(const char* fn)
+    {
+        std::string s = fn ? fn : "?";
+        if (const std::size_t paren = s.find('('); paren != std::string::npos) {
+            s.resize(paren);
+        }
+        if (const std::size_t colons = s.rfind("::");
+            colons != std::string::npos) {
+            s.erase(0, colons + 2);
+        }
+        if (const std::size_t space = s.rfind(' '); space != std::string::npos) {
+            s.erase(0, space + 1);  // drop any leftover return-type prefix
+        }
+        return s;
+    }
+
     void WozzitsApp_v1::rematerialize_render_bindings(std::source_location caller)
     {
         ++rematerialize_count_this_frame_;
+        // Accumulate a short caller label per frame for the frame_profile
+        // "remat_callers" CSV column -- the CSV is the artifact the user hands
+        // back (the editor never writes the play log to a file), so the
+        // WHICH-seam answer to the spurious burst must live in the CSV (#252).
+        if (!remat_callers_this_frame_.empty()) {
+            remat_callers_this_frame_ += ";";
+        }
+        remat_callers_this_frame_ += short_render_caller(caller.function_name());
         // Name the caller so a play log can attribute WHICH edit forced the
         // re-materialize -- pins the spurious spawn-time burst (4x in one frame
         // with nothing structural changed; #252). Rare (a few frames/session),
@@ -3760,6 +3791,7 @@ namespace wz::app
         table.columns.push_back({ .name = "scene_nodes" });
         table.columns.push_back({ .name = "rematerialize" });
         table.columns.push_back({ .name = "rebuild_behavior_scene" });
+        table.columns.push_back({ .name = "remat_callers" });
         table.rows.reserve(frame_profile_.size());
         for (const FrameProfileSample& s : frame_profile_) {
             table.rows.push_back({ .cells = {
@@ -3769,6 +3801,7 @@ namespace wz::app
                 std::to_string(s.scene_nodes),
                 std::to_string(s.rematerialize),
                 std::to_string(s.rebuild),
+                s.callers,
             } });
         }
 

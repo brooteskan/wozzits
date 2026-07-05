@@ -1027,12 +1027,17 @@ namespace wz::app
             uint64_t scene_nodes = 0;
             uint32_t rematerialize = 0;
             uint32_t rebuild = 0;
+            std::string callers{};  // ";"-joined seam labels for the remat calls
         };
         std::vector<FrameProfileSample>          frame_profile_{};
         // A wall-clock tag (YYYYMMDD_HHMMSS) minted once per process so each play
         // session writes its OWN frame_profile_<tag>.csv -- successive play/stop
         // cycles are separate host processes and no longer clobber one file (#252).
         std::string                              frame_profile_run_tag_{};
+        // Per-frame ";"-joined short caller labels for each rematerialize call,
+        // reset each sim tick -> the frame_profile "remat_callers" column names
+        // WHICH seam forced the spurious burst (#252).
+        std::string                              remat_callers_this_frame_{};
 
         // Runtime prefab spawning (the second prefab-system milestone). Prefabs are
         // registered scenelets keyed by their name's FNV-1a/32 hash (register_prefab);
