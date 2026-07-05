@@ -178,11 +178,12 @@
       "behaviors": [
         {
           "id": "enemy_projectile.behavior.1",
-          "module": "projectile_impact",
+          "module": "collidable",
           "name": "",
           "enabled": true,
           "apply_in_editor": false,
-          "events": [ "collision.*" ]
+          "events": [ "collision.*" ],
+          "config": { "kind": 2, "damage": 25, "team": 2 }
         }
       ]
     }

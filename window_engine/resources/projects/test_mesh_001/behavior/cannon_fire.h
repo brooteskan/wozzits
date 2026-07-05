@@ -21,7 +21,7 @@
 #include <engine/behavior/behavior_module_api.h>
 #include <math.h>
 
-#include "projectile_impact.h"
+#include "collidable.h"
 
 namespace cannon_fire
 {
@@ -226,9 +226,10 @@ namespace cannon_fire
                     s->terrain_valid = 1;
                 }
             }
-            if (auto* p = wz_instance_state_of<projectile_impact::State>(
-                    facts, s->projectile, projectile_impact::kModule)) {
+            if (auto* p = wz_instance_state_of<collidable::State>(
+                    facts, s->projectile, collidable::kModule)) {
                 p->hit = 0;
+                p->owner = s->self;  // credit the shooter (this tank's root)
             }
         }
 
@@ -312,8 +313,8 @@ namespace cannon_fire
                 // Struck a tank? (the projectile's own collider recorded where.) Or
                 // reached the ground? (terrain range from the launch raycast.)
                 uint8_t hit_tank = 0;
-                if (auto* p = wz_instance_state_of<projectile_impact::State>(
-                        facts, s->projectile, projectile_impact::kModule)) {
+                if (auto* p = wz_instance_state_of<collidable::State>(
+                        facts, s->projectile, collidable::kModule)) {
                     if (p->hit) {
                         hit_tank = 1;
                         s->impact_x = p->hx; s->impact_y = p->hy; s->impact_z = p->hz;

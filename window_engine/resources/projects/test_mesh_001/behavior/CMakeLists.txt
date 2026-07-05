@@ -60,5 +60,5 @@ add_terrain_collision_behavior_module(
     hit_logger_plugin.cpp)
 
 add_terrain_collision_behavior_module(
-    projectile_impact
-    projectile_impact_plugin.cpp)
+    collidable
+    collidable_plugin.cpp)
