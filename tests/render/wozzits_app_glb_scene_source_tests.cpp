@@ -465,8 +465,25 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, GraftedSceneNodesReturnsInstanceGraft)
         return it == grafted.end() ? nullptr : &*it;
     };
 
-    // Exactly the three grafted GLB children, nothing else.
-    EXPECT_EQ(grafted.size(), 3u);
+    // Every grafted node is a host-namespaced GLB child (no authored node like
+    // the host itself or "root" leaks in) and NONE is grafted twice (a real
+    // double-graft would show here). The GLB's exact node count is deliberately
+    // NOT pinned: the shared tank model (gltf/tank1.glb) gains locators over time
+    // (e.g. barrel_orientation for gun elevation), and coupling the test to that
+    // count made it break on an unrelated model change. Assert the invariants.
+    EXPECT_FALSE(grafted.empty());
+    for (const auto& gn : grafted) {
+        EXPECT_EQ(gn.id.rfind("tank_host/", 0), 0u)
+            << "grafted node '" << gn.id << "' is not host-namespaced";
+        EXPECT_EQ(
+            std::count_if(
+                grafted.begin(), grafted.end(),
+                [&gn](const wz::engine::assets::SceneNodeAsset& o) {
+                    return o.id == gn.id;
+                }),
+            1)
+            << "grafted node '" << gn.id << "' was grafted more than once";
+    }
     EXPECT_TRUE(has_id("tank_host/body"));
     EXPECT_TRUE(has_id("tank_host/turret"));
     EXPECT_TRUE(has_id("tank_host/gun"));
