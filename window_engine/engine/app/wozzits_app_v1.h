@@ -1029,6 +1029,10 @@ namespace wz::app
             uint32_t rebuild = 0;
         };
         std::vector<FrameProfileSample>          frame_profile_{};
+        // A wall-clock tag (YYYYMMDD_HHMMSS) minted once per process so each play
+        // session writes its OWN frame_profile_<tag>.csv -- successive play/stop
+        // cycles are separate host processes and no longer clobber one file (#252).
+        std::string                              frame_profile_run_tag_{};
 
         // Runtime prefab spawning (the second prefab-system milestone). Prefabs are
         // registered scenelets keyed by their name's FNV-1a/32 hash (register_prefab);

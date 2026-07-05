@@ -14,8 +14,6 @@
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/renderable/render_binding_sources.h>
 #include <engine/assets/renderable_asset_module.h>
-
-#include <chrono>
 #include <engine/assets/type_extensions.h>
 #include <engine/audio/scene_audio.h>
 
@@ -43,6 +41,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -1867,6 +1866,7 @@ namespace wz::app
         // pre-existing bindings keep their state and the spawned subtree's
         // behaviors initialize fresh), and re-assemble render bindings (so a
         // spawned renderable draws). Mirrors add_child_node's append->rebuild.
+        const std::size_t nodes_before = scene_nodes_.size();
         std::vector<wz::engine::assets::SceneNodeAsset> spawned =
             wz::engine::assets::instantiate_prefab_nodes(
                 prefab_it->second, ++spawn_counter_, root_transform);
@@ -1913,6 +1913,15 @@ namespace wz::app
             // intrinsic geometry bindings (the pre-graft assemble can't see them).
             rematerialize_render_bindings();
         }
+        // Loud, greppable spawn marker so a play log unambiguously records WHEN a
+        // graft landed and its node delta -- correlate with a frame_profile CSV row
+        // (scene_nodes jump + rematerialize/rebuild) to confirm a spawn (#252).
+        ctx_.logger.info(
+            "[perf] SPAWN instance " + std::to_string(spawn_counter_)
+            + " from '" + spawner_id + "' -- scene_nodes "
+            + std::to_string(nodes_before) + " -> "
+            + std::to_string(scene_nodes_.size()) + " (frame "
+            + std::to_string(behavior_frame_index_) + ")");
         ctx_.logger.info(
             "spawn_prefab: grafted prefab as instance "
             + std::to_string(spawn_counter_));
@@ -3722,6 +3731,23 @@ namespace wz::app
             return;
         }
 
+        // Mint a wall-clock run tag ONCE per process so each play session writes
+        // its OWN frame_profile_<tag>.csv. Successive play/stop cycles are separate
+        // host processes that all flushed one fixed filename before, so a later
+        // (e.g. no-spawn) run silently clobbered an earlier spawn run (#252).
+        if (frame_profile_run_tag_.empty()) {
+            const std::time_t now = std::time(nullptr);
+            std::tm lt{};
+#ifdef _WIN32
+            localtime_s(&lt, &now);
+#else
+            localtime_r(&now, &lt);
+#endif
+            char stamp[24] = {};
+            std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &lt);
+            frame_profile_run_tag_ = stamp;
+        }
+
         // Rows = frames, columns = the recorded metrics. Built as a data_table asset
         // and exported via csv_export -- the same chain the diagnostic tables use
         // (issue #252). Runs at save/shutdown; the commit re-registers the graph,
@@ -3771,7 +3797,9 @@ namespace wz::app
             return;
         }
         const wz::fs::Path path =
-            wz::fs::join(ctx_.assets->resource_root(), "frame_profile.csv");
+            wz::fs::join(
+                ctx_.assets->resource_root(),
+                "frame_profile_" + frame_profile_run_tag_ + ".csv");
         if (ctx_.assets->csv_export().write_export_to_file(handle, path)
             != wz::fs::FileError::None)
         {

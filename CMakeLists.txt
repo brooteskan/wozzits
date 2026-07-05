@@ -288,6 +288,11 @@ endif()
 # ${CMAKE_BINARY_DIR}/resources if that ever matters.
 file(GLOB_RECURSE WZ_RESOURCE_FILES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources/*")
+# Generated play-time profiling CSVs (frame_profile_<tag>.csv) live under a
+# sample project's resource_root but are runtime telemetry, not resources -- drop
+# them from the staged set so a new file per play does not get copied into the
+# build resources. (They stay gitignored; see .gitignore.)
+list(FILTER WZ_RESOURCE_FILES EXCLUDE REGEX "/frame_profile[^/]*\\.csv$")
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.26")
     set(WZ_RESOURCE_COPY_MODE copy_directory_if_different)
 else()
