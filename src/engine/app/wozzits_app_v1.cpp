@@ -3134,11 +3134,16 @@ namespace wz::app
 
         // Instance overrides merge at PACK time from the node — no
         // re-assembly, no recompile, no re-key. The one exception: the FIRST
-        // override on a node with no bindings flips its assembled renderable
-        // from the plain pull-mesh recipe to the custom form (and the last
-        // removal flips it back), which IS an assembly change.
+        // override on a GEOMETRY node with no bindings flips its SYNTHESIZED
+        // renderable from the plain pull-mesh recipe to the custom (0x70A) form
+        // (and the last removal flips it back), which IS an assembly change. A
+        // node drawn by a PRE-BUILT renderable (renderable_asset_node_id, e.g.
+        // the cannon FX) has no synthesized recipe to flip — assemble_render_-
+        // bindings skips it (no geometry) — so its constant just merges at pack
+        // time and a rematerialize there is pure O(scene) waste (#252/#253).
         const bool custom_form_flipped =
-            node->renderable_bindings.empty()
+            node->geometry_asset_node_id
+            && node->renderable_bindings.empty()
             && ((value && !existed && constants.size() == 1u)
                 || (!value && existed && constants.empty()));
         scene_dirty_ = true;
