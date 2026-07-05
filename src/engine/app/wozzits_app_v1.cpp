@@ -1862,6 +1862,14 @@ namespace wz::app
             // unresolved (empty) key there makes a spawned tank's cannon silent
             // (mirrors the load path, where assemble precedes the final rebuild).
             assemble_render_bindings(graph_draft_);
+            // Bridge the spawned subtree's collision_asset_node_id -> key (mirrors
+            // the load/bind path). Without this a spawned prefab's collision
+            // component keeps an unresolved key, so build_collision_frame skips it
+            // and the collider never exists -- the same spawn-gap class as the audio
+            // auto-play + active-camera passes. Runs BEFORE rebuild_behavior_scene,
+            // which materializes the runtime collider from the resolved key.
+            wz::engine::assets::bridge_scene_collision_keys(
+                scene_nodes_, graph_draft_);
         }
 
         rebuild_behavior_scene();
