@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <deque>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace wz::engine::assets {
     class EngineAssetLibrary;
@@ -64,11 +65,20 @@ namespace wz::engine::audio {
     //
     // Producer-side (sim thread): only posts commands, never touches the audio
     // thread. Safe to call once when a scene starts.
+    //
+    // `played_clients` (optional, in/out): when non-null, a source whose client_id
+    // is already in the set is skipped (not re-counted), and every source this call
+    // DOES start has its client_id inserted. This makes the pass idempotent across
+    // calls that share one set — run it at scene load, then again after each prefab
+    // spawn, and the ambient bed starts once while a freshly spawned node's
+    // auto_play source (e.g. a spawned tank's engine grain cloud) starts on the
+    // spawn pass. Pass nullptr for the classic play-everything behavior.
     ScenePlaybackReport play_scene_audio_sources(
         const wz::engine::assets::EngineAssetLibrary& assets,
         const wz::engine::assets::SceneInstance& instance,
         wz::audio::AudioScheduler& scheduler,
-        GrainCloudDescStore& grain_store);
+        GrainCloudDescStore& grain_store,
+        std::unordered_set<uint32_t>* played_clients = nullptr);
 
     // Behavior-triggered audio (audio-track item 9). The host translates a
     // PLAY/STOP/SET_SOUND_GAIN behavior command into one of these and applies it

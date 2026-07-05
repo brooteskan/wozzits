@@ -47,6 +47,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace wz::app
@@ -836,6 +837,14 @@ namespace wz::app
         // load_scene after the behavior scene is materialized.
         void start_scene_audio();
 
+        // Auto-play the AudioSources of a freshly SPAWNED prefab subtree. The
+        // scene-load start_scene_audio() pass runs ONCE, before any spawn exists,
+        // so a spawned node's auto_play source (e.g. a spawned tank's engine grain
+        // cloud) would otherwise never start. Called at the end of spawn_prefab; it
+        // re-runs the auto-play pass but skips every client id already started
+        // (tracked in auto_played_clients_), so only the new subtree's sources fire.
+        void start_spawned_audio();
+
         // Apply a SET_ACTIVE_CAMERA command: resolve the runtime entity to its
         // authored node and record it as the scene-camera selection anchor
         // (id + live polytree handle + SceneCameraAsset params). Flips
@@ -1019,6 +1028,13 @@ namespace wz::app
         // PlayGrainCloud command carries a pointer into this). Cleared on scene
         // load after the runtime is (re)started.
         wz::engine::audio::GrainCloudDescStore    grain_desc_store_{};
+
+        // AudioSource client ids already auto-played this scene. start_scene_audio()
+        // clears + fills it; start_spawned_audio() consults + extends it so a spawned
+        // subtree's auto_play sources start exactly once and the ambient bed is never
+        // double-played. Client ids are stable per node, so this survives the
+        // behavior-scene rebuild a spawn triggers.
+        std::unordered_set<uint32_t>              auto_played_clients_{};
 
         // Per-scene audio-spatialization state (prev positions for Doppler).
         // Cleared on scene load next to grain_desc_store_; driven each

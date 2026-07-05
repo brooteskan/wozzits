@@ -174,7 +174,8 @@ namespace wz::engine::audio {
         const wz::engine::assets::EngineAssetLibrary& assets,
         const wz::engine::assets::SceneInstance& instance,
         wz::audio::AudioScheduler& scheduler,
-        GrainCloudDescStore& grain_store)
+        GrainCloudDescStore& grain_store,
+        std::unordered_set<uint32_t>* played_clients)
     {
         using namespace wz::engine::assets;
 
@@ -193,6 +194,12 @@ namespace wz::engine::audio {
             if (!source.auto_play) {
                 // Valid but manually triggered (e.g. by a behavior) — not played
                 // here and not counted as skipped.
+                continue;
+            }
+            if (played_clients != nullptr
+                && played_clients->count(client_id) != 0) {
+                // Already started on an earlier pass (scene load, or a prior
+                // spawn) — don't re-post. It's playing fine, so not "skipped".
                 continue;
             }
 
@@ -218,6 +225,9 @@ namespace wz::engine::audio {
                 cmd.grain = &desc;
                 if (scheduler.post(cmd)) {
                     ++report.played;
+                    if (played_clients != nullptr) {
+                        played_clients->insert(client_id);
+                    }
                 }
                 else {
                     ++report.skipped_unresolved;
@@ -239,6 +249,9 @@ namespace wz::engine::audio {
 
             if (scheduler.post(cmd)) {
                 ++report.played;
+                if (played_clients != nullptr) {
+                    played_clients->insert(client_id);
+                }
             }
             else {
                 // Queue full this tick; treat as not played.

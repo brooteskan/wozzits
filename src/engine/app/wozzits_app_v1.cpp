@@ -1873,6 +1873,11 @@ namespace wz::app
         ctx_.logger.info(
             "spawn_prefab: grafted prefab as instance "
             + std::to_string(spawn_counter_));
+
+        // Start the spawned subtree's auto_play AudioSources. The scene-load
+        // auto-play pass already ran, before this instance existed, so without this
+        // a spawned tank's engine grain cloud (auto_play) would never start.
+        start_spawned_audio();
     }
 
     void WozzitsApp_v1::apply_scene_active_camera(
@@ -3904,6 +3909,10 @@ namespace wz::app
         // exit, so the audio thread no longer references them), then repopulate.
         grain_desc_store_.clear();
 
+        // Fresh scene: forget which sources were auto-played (a reloaded scene may
+        // reuse client ids) so start_spawned_audio() tracks only this scene's.
+        auto_played_clients_.clear();
+
         // Reset spatialization velocity tracking so a new scene starts with no
         // stale prev positions (the first tick then skips Doppler).
         audio_spatialization_.clear();
@@ -3911,13 +3920,42 @@ namespace wz::app
         const wz::engine::audio::ScenePlaybackReport report =
             wz::engine::audio::play_scene_audio_sources(
                 *ctx_.assets, *behavior_scene_, audio_runtime_.scheduler(),
-                grain_desc_store_);
+                grain_desc_store_, &auto_played_clients_);
 
         ctx_.logger.info(
             "scene audio: played " + std::to_string(report.played)
             + " source(s), skipped " + std::to_string(report.skipped_disabled)
             + " disabled / " + std::to_string(report.skipped_unresolved)
             + " unresolved");
+    }
+
+    void WozzitsApp_v1::start_spawned_audio()
+    {
+        // Only play mode has an open device + the auto-play policy; the editor is
+        // silent and never spawns into a running mixer.
+        if (!prefer_scene_camera_)
+            return;
+        if (!ctx_.assets || !behavior_scene_)
+            return;
+        if (!audio_runtime_.running())
+            return;  // device never came up — nothing to add to
+
+        // Re-run the auto-play pass over the (rebuilt) instance, skipping every
+        // client id already started (auto_played_clients_). Only the freshly
+        // spawned subtree's auto_play sources are new, so only they fire; the
+        // ambient bed and earlier spawns are left untouched. grain_desc_store_ is
+        // NOT cleared (live clouds still reference their descs) — a new cloud just
+        // appends a fresh desc.
+        const wz::engine::audio::ScenePlaybackReport report =
+            wz::engine::audio::play_scene_audio_sources(
+                *ctx_.assets, *behavior_scene_, audio_runtime_.scheduler(),
+                grain_desc_store_, &auto_played_clients_);
+
+        if (report.played > 0) {
+            ctx_.logger.info(
+                "spawn audio: started " + std::to_string(report.played)
+                + " new source(s)");
+        }
     }
 
     void WozzitsApp_v1::update_active_view()

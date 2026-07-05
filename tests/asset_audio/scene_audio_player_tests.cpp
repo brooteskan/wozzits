@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <memory>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace wz::engine::assets::test {
@@ -197,6 +198,63 @@ namespace wz::engine::assets::test {
         std::vector<float> out(64, 0.0f);
         scheduler.process(out.data(), 64, 1, 48000);
         EXPECT_GT(peak(out), 0.0f); // the scene is audible
+    }
+
+    // Locks the spawn-audio scoping (WozzitsApp_v1::start_spawned_audio). With a
+    // shared `played_clients` set, play_scene_audio_sources starts each client
+    // exactly once across calls, so re-running the pass after a prefab spawn fires
+    // ONLY the newly spawned subtree's auto_play sources — never the ambient bed a
+    // second time. client_id hashes the STABLE node id, so "ambient" is the same
+    // tag in the pre- and post-spawn instances (mirroring the rebuild a spawn
+    // triggers). Without this, a spawned tank's engine grain cloud never starts.
+    TEST_F(SceneAudioPlayerTest, SharedPlayedSetPlaysEachClientOnce)
+    {
+        const wz::asset::AssetKey renderable = make_resolved_renderable(0.5f);
+
+        auto make_source = [&](std::string_view id) {
+            SceneNodeAsset node{};
+            node.id = std::string{ id };
+            node.audio_source = SceneAudioSourceAsset{
+                .audio_renderable = renderable,
+                .auto_play = true,
+                .enabled = true,
+            };
+            return node;
+        };
+
+        // Scene load: one ambient auto_play source.
+        SceneAssetData at_load{};
+        at_load.nodes.push_back(make_source("ambient"));
+        auto load = instantiate_scene(at_load);
+        ASSERT_TRUE(load.ok());
+
+        wz::audio::AudioScheduler scheduler(16, 64);
+        std::unordered_set<uint32_t> played;
+
+        // Load pass: the ambient starts and its client id is recorded.
+        EXPECT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, load.instance, scheduler, grain_store_, &played)
+                      .played, 1u);
+        EXPECT_EQ(played.size(), 1u);
+
+        // A spawn that adds no new auto_play source re-runs the pass -> nothing new.
+        EXPECT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, load.instance, scheduler, grain_store_, &played)
+                      .played, 0u);
+
+        // The player spawns: the rebuilt instance carries the ambient (same id ->
+        // same client_id, already played) PLUS a freshly spawned "engine" source.
+        // Only the new one fires; the ambient is not double-played.
+        SceneAssetData after_spawn{};
+        after_spawn.nodes.push_back(make_source("ambient"));
+        after_spawn.nodes.push_back(make_source("spawn:1:engine"));
+        auto spawned = instantiate_scene(after_spawn);
+        ASSERT_TRUE(spawned.ok());
+
+        EXPECT_EQ(wz::engine::audio::play_scene_audio_sources(
+                      *library_, spawned.instance, scheduler, grain_store_, &played)
+                      .played, 1u);
+        EXPECT_EQ(played.size(), 2u);
     }
 
     TEST_F(SceneAudioPlayerTest, DisabledSourceIsSkippedAndSilent)
