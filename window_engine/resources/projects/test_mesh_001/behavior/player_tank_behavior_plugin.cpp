@@ -10,6 +10,10 @@ namespace
 
     static constexpr float movement_factor = 0.1;
 
+    // Gun elevation rate while a controller button is held (13 = raise, 10 =
+    // lower). The travel limits live in player_tank.h (kGunElevationMin/Max).
+    static constexpr float kGunElevSpeed = 0.35f;  // rad/sec
+
     // ── Engine grain synth ────────────────────────────────────────────────────
     // The engine "sounds" node (state->engine_audio, authored node "3") hosts a
     // grain cloud whose bank is the wav/Engines folder, sorted -> clip indices:
@@ -234,6 +238,8 @@ namespace
                 wz_log_info(facts, "[tank] try fire canon");
                 try_fire_canon(facts, event, state);
             }
+            if (button == 13) { state->raise_held = 1; }  // elevate the gun
+            if (button == 10) { state->lower_held = 1; }  // depress the gun
             break;
         }
         case WZ_EVENT_INPUT_CONTROLLER_BUTTON_RELEASED:
@@ -241,6 +247,8 @@ namespace
             uint32_t controller = wz_input_event_controller(facts);
             uint32_t button = wz_input_event_controller_button(facts);
             // wz_log_infof(facts, "farme %u released controller %u button %u",frame_index, controller, button);
+            if (button == 13) { state->raise_held = 0; }
+            if (button == 10) { state->lower_held = 0; }
             break;
         }
         
@@ -254,6 +262,25 @@ namespace
         // Engine grain synth: track tread effort -> rpm and crossfade the engine
         // cloud's program on a level change (runs on frame.update + input events).
         update_engine_rpm(facts, state);
+
+        // Barrel elevation: raise (13) / lower (10) while held, clamped to
+        // [0, 15 deg] above horizontal, then pitch the gun so the muzzle flash,
+        // trajectory beam, and shot ray (which ride the barrel) follow.
+        const float elev_dir =
+            (float)state->raise_held - (float)state->lower_held;
+        if (elev_dir != 0.0f) {
+            state->barrel_elevation +=
+                elev_dir * kGunElevSpeed * wz_delta_seconds(facts);
+            if (state->barrel_elevation < kGunElevationMin) {
+                state->barrel_elevation = kGunElevationMin;
+            }
+            if (state->barrel_elevation > kGunElevationMax) {
+                state->barrel_elevation = kGunElevationMax;
+            }
+        }
+        if (state->barrel != WZ_INVALID_BEHAVIOR_ENTITY) {
+            tank_drive::elevate_gun(facts, state->barrel, state->barrel_elevation);
+        }
 
         // Advance the cannon shot: position the beam on the gun, fade the flashes,
         // place the impact, play the report. Triggered from the controller above.

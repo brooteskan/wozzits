@@ -4,6 +4,13 @@
 #include "tank_drive.h"
 #include "cannon_fire.h"
 
+// Barrel elevation travel limits (radians, relative to the gun's LEVEL rest pose
+// authored in the GLB). The gun pitches between these while buttons 13 (raise) /
+// 10 (lower) are held. Max = raise ceiling above horizontal; min = depression
+// floor (0 = level; go negative to let the muzzle drop below horizontal).
+inline constexpr float kGunElevationMax = 2 * 0.2617994f;  // 30 deg above horizontal
+inline constexpr float kGunElevationMin = 0.0f;        // level
+
 struct PlayerTankState {
     float throttle = 0.0f;
     float turn = 0.0f;
@@ -24,6 +31,12 @@ struct PlayerTankState {
     // (body -> turret -> gun). Recorded so the muzzle flash can anchor on it and so
     // the turret can be aimed independently of the barrel later.
     WzBehaviorEntityId barrel = WZ_INVALID_BEHAVIOR_ENTITY;
+
+    // Barrel elevation (rad above horizontal), clamped [0, 15 deg]. Controller
+    // buttons 13 (raise) / 10 (lower) set the held flags; the gun pitches per frame.
+    float   barrel_elevation = 0.0f;
+    uint8_t raise_held = 0;
+    uint8_t lower_held = 0;
 
     uint8_t ammo = 255;
     WzBehaviorEntityId terrain = WZ_INVALID_BEHAVIOR_ENTITY;

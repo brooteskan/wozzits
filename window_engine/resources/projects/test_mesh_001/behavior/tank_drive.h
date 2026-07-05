@@ -118,6 +118,19 @@ namespace tank_drive
         wz_write_set_local_rotation(facts, turret, q);
     }
 
+    // Elevate/depress the gun (barrel) CHILD by pitching its LOCAL rotation about
+    // the gun's trunnion axis -- its local Z (the barrel runs along local -X and is
+    // thin in Z). pitch (rad) > 0 raises the muzzle above horizontal. Like
+    // aim_turret, SET_LOCAL_ROTATION replaces rotation + preserves translation and
+    // scale -- exactly a barrel pivot. Flip the sign of h if raise/lower invert.
+    inline void elevate_gun(const WzBehaviorFrameFacts* facts,
+        WzBehaviorEntityId gun, float pitch)
+    {
+        const float h = -pitch * 0.5f;                    // -pitch about +Z raises -X
+        WzQuaternion q{ 0.0f, 0.0f, sinf(h), cosf(h) };   // pitch about local +Z
+        wz_write_set_local_rotation(facts, gun, q);
+    }
+
     // Differential steering: two tread speeds -> (throttle, turn). Matches the
     // original tank mapping -- the SUM of the treads drives forward, their
     // DIFFERENCE yaws, and the -0.2 folds the input range into the drive range.
@@ -246,6 +259,28 @@ namespace tank_drive
         const float ta = atan2f(-(tp.z - sw.m[14]),            // to-target angle
             (tp.x - sw.m[12]));
         return wrap_pi((ta - fa) - kBodyForward);
+    }
+
+    // Pitch angle (rad) from `shooter`'s world position to `target`: the gun
+    // elevation needed to point AT the target for direct (line-of-sight) fire.
+    // + = target is above the shooter. Pass the gun/barrel node as `shooter` -- it
+    // pivots at its own origin, so this is the angle from that pivot to the target.
+    // Feed it (clamped to the gun's limits) into elevate_gun to aim in the vertical.
+    // Returns 0 if either transform is unreadable.
+    inline float elevation_to(const WzBehaviorFrameFacts* facts,
+        WzBehaviorEntityId shooter, WzBehaviorEntityId target)
+    {
+        WzMat4 sw{}; WzVec3 tp{};
+        if (!wz_read_world_transform(facts, shooter, &sw)
+            || !wz_read_world_position(facts, target, &tp))
+        {
+            return 0.0f;
+        }
+        const float dx = tp.x - sw.m[12];
+        const float dy = tp.y - sw.m[13];
+        const float dz = tp.z - sw.m[14];
+        const float horiz = sqrtf(dx * dx + dz * dz);
+        return atan2f(dy, horiz);
     }
 
     // Yaw rate (rad/sec) that steers the hull to ORBIT `target` at roughly

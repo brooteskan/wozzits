@@ -5,6 +5,14 @@
 #include "tank_drive.h"
 #include "cannon_fire.h"
 
+// Enemy gun elevation travel limits (radians, relative to the gun's LEVEL rest
+// pose), the AI counterpart to the player's in player_tank.h. The agent pitches
+// the gun between these to hold a target above/below it. min < 0 lets the muzzle
+// depress below horizontal to aim DOWN at a lower target (reduce if it clips the
+// hull).
+inline constexpr float kGunElevationMax = 2 * 0.2617994f;  // 30 deg above horizontal
+inline constexpr float kGunElevationMin = -0.2617994f;     // 15 deg depression
+
 // Shared squad roster (behavior SHARED state, key "squad"): tanks register on
 // spawn to claim a slot in the commander's group agent, and the commander reads
 // the count to size that agent. Lives in shared state so it survives rebuilds and

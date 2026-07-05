@@ -352,6 +352,17 @@ namespace
             tank_drive::kTurretHalfArc);
         tank_drive::aim_turret(facts, state->chassis.turret, state->chassis.turret_yaw);
 
+        // Elevate the gun to hold the target's pitch for direct fire, clamped to
+        // the gun's travel -- the barrel (and thus its shot ray, which rides the
+        // barrel marker) tracks the target's HEIGHT, the AI counterpart to the
+        // player's manual raise/lower.
+        if (state->barrel != WZ_INVALID_BEHAVIOR_ENTITY) {
+            const float elev = tank_drive::clampf(
+                tank_drive::elevation_to(facts, state->barrel, state->target),
+                kGunElevationMin, kGunElevationMax);
+            tank_drive::elevate_gun(facts, state->barrel, elev);
+        }
+
         // How far off the gun is from the target (0 = on target; nonzero when the
         // target is beyond the frontal arc so the hull must reposition).
         state->aim_error = tank_drive::aim_error(
