@@ -57,6 +57,12 @@ namespace wz::engine::behavior
         // float bit pattern, values[1..3] = the new x/y/z (w preserved). See
         // WZ_BEHAVIOR_COMMAND_SET_RENDERABLE_PARAM.
         SetRenderableParam,
+
+        // Set a scene node's `visible` flag (render-only, hierarchical). Host-
+        // handled: a cheap flag write on the authored SceneNodeAsset. values[0] =
+        // the new visibility (nonzero = visible, 0 = hidden). Does NOT gate
+        // dispatch/collision. See WZ_BEHAVIOR_COMMAND_SET_NODE_VISIBLE.
+        SetNodeVisible,
     };
 
     struct BehaviorCommand

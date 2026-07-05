@@ -2249,6 +2249,35 @@ namespace wz::app
                 (void)set_node_renderable_constant(authored_id, name, value);
             }
 
+            // SET_NODE_VISIBLE (issue #250): flip the addressed node's authored
+            // `visible` flag. Render-only + host-handled (apply ignores it) — a
+            // cheap field write, no behavior rebuild / render re-assemble. The
+            // renderer honors visibility hierarchically, so hiding a node hides its
+            // whole subtree. Same runtime->authored id resolution as above.
+            for (const wz::engine::behavior::BehaviorCommand& command :
+                 frame_storage_.behavior_commands.commands)
+            {
+                if (command.kind
+                    != wz::engine::behavior::BehaviorCommandKind::SetNodeVisible)
+                {
+                    continue;
+                }
+                if (command.entity
+                    >= behavior_scene_->runtime_to_authored.size())
+                {
+                    continue;
+                }
+                const wz::scene::AuthoredEntityId authored_id =
+                    behavior_scene_->runtime_to_authored[command.entity];
+                if (wz::engine::assets::SceneNodeAsset* node =
+                        wz::engine::assets::find_scene_node(
+                            scene_nodes_, authored_id))
+                {
+                    node->visible = command.values[0] != 0.0f;
+                    scene_dirty_ = true;
+                }
+            }
+
             // Collect SPAWN_PREFAB requests (runtime prefab spawning). Resolve the
             // spawner runtime entity -> its STABLE authored id NOW, while
             // behavior_scene_ is still the scene the command was issued against; a

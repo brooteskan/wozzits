@@ -177,6 +177,8 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::SetTerrainAlignmentRate;
             case WZ_BEHAVIOR_COMMAND_SET_RENDERABLE_PARAM:
                 return BehaviorCommandKind::SetRenderableParam;
+            case WZ_BEHAVIOR_COMMAND_SET_NODE_VISIBLE:
+                return BehaviorCommandKind::SetNodeVisible;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;

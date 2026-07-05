@@ -2104,6 +2104,36 @@ TEST(BehaviorModuleApi, SetRenderableParamEncodesNameHashBitsAndXYZ)
         "renderable-param and prefab hashes share FNV-1a/32");
 }
 
+TEST(BehaviorModuleApi, SetVisibleEncodesVisibilityIntoValue0)
+{
+    struct Probe { WzBehaviorCommand last{}; int count = 0; } probe;
+    WzBehaviorFrameFacts facts{
+        .command_writer_user = &probe,
+        .write_command = [](void* user, const WzBehaviorCommand* cmd) -> uint8_t
+        {
+            auto* p = static_cast<Probe*>(user);
+            p->last = *cmd;
+            ++p->count;
+            return 1u;
+        },
+    };
+
+    // Hide: kind = SET_NODE_VISIBLE, visibility carried in values[0] (0 = hidden).
+    ASSERT_EQ(wz_write_set_visible(&facts, 5u, 0u), 1u);
+    EXPECT_EQ(probe.count, 1);
+    EXPECT_EQ(probe.last.entity, 5u);
+    EXPECT_EQ(probe.last.kind, WZ_BEHAVIOR_COMMAND_SET_NODE_VISIBLE);
+    EXPECT_FLOAT_EQ(probe.last.values[0], 0.0f);
+
+    // Show: any nonzero visibility normalizes to 1.
+    ASSERT_EQ(wz_write_set_visible(&facts, 5u, 42u), 1u);
+    EXPECT_EQ(probe.count, 2);
+    EXPECT_FLOAT_EQ(probe.last.values[0], 1.0f);
+
+    // Null facts / no writer -> no-op (mirrors the other write verbs).
+    EXPECT_EQ(wz_write_set_visible(nullptr, 5u, 1u), 0u);
+}
+
 TEST(BehaviorModuleApi, SetRenderableParamNullFactsIsNoOp)
 {
     EXPECT_EQ(

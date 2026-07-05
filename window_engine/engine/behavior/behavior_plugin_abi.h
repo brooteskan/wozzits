@@ -334,6 +334,18 @@ enum
      * param / _named in behavior_module_api.h.
      */
     WZ_BEHAVIOR_COMMAND_SET_RENDERABLE_PARAM = 18u,
+
+    /*
+     * Set a scene node's `visible` flag (issue #250). Host-handled: a cheap flag
+     * write on the authored SceneNodeAsset -- no behavior-runtime rebuild, no
+     * render re-assemble. The renderer honors visibility HIERARCHICALLY, so hiding
+     * a node hides its whole subtree (grafted GLB children included).
+     * values[0] = the new visibility (nonzero = visible, 0 = hidden).
+     * NOTE: visibility is a RENDER concern only -- it does NOT gate behavior
+     * dispatch or collision (a hidden node still ticks + collides), so this is a
+     * cheap HIDE, not a pause. Use wz_write_set_visible in behavior_module_api.h.
+     */
+    WZ_BEHAVIOR_COMMAND_SET_NODE_VISIBLE = 19u,
 };
 
 /*

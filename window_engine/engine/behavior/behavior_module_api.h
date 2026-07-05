@@ -1434,6 +1434,40 @@ static inline uint8_t wz_write_set_renderable_param(
     return facts->write_command(facts->command_writer_user, &command);
 }
 
+// Set a scene node's `visible` flag (issue #250). Render-only: the renderer honors
+// it HIERARCHICALLY, so hiding a node hides its whole subtree (grafted GLB children
+// included). Host-handled — a cheap flag write on the authored node, no behavior
+// rebuild / render re-assemble. Visibility does NOT gate dispatch or collision: a
+// hidden node still ticks + collides, so this is a cheap HIDE, not a pause.
+// Deferred (applied at the next frame boundary, like the other write_command verbs).
+static inline uint8_t wz_write_set_visible(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint8_t visible)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_NODE_VISIBLE,
+        { visible ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Convenience: set the visibility of the event's own entity (self).
+static inline uint8_t wz_self_set_visible(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint8_t visible)
+{
+    return wz_write_set_visible(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        visible);
+}
+
 // Convenience: set a renderable constant by name, hashing at the call site. For
 // a hot per-frame pulse, prefer wz_write_set_renderable_param(.., wz_renderable_
 // param_hash("name"), ..) so the hash is computed at compile time.
