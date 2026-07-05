@@ -99,7 +99,7 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, InstanceGraftsGlbHierarchyAndIsAddressab
     // load_scene returns true overall.
     EXPECT_TRUE(app.load_scene(load_desc));
 
-    // The GLB hierarchy (tank1.glb: body -> turret -> gun) is grafted under the
+    // The GLB hierarchy (test-mesh-a.glb: body -> turret -> gun) is grafted under the
     // host with namespaced ids, sub-scene parenting preserved (roots reparent to
     // the host). Presence is observed via node_local_translation (nullopt if the
     // node is absent from scene_nodes_, the renderer's source of truth).
@@ -227,7 +227,7 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, SetGlbSceneSourceAuthorsAndClearsLive)
     // Guard: authoring on a node that does not exist is a fail-closed no-op.
     EXPECT_FALSE(app.set_node_glb_scene_source(
         "does_not_exist",
-        wz::engine::assets::SceneGLBSceneSource{ .path = "gltf/tank1.glb" }));
+        wz::engine::assets::SceneGLBSceneSource{ .path = "gltf/test-mesh-a.glb" }));
 
     // Author a single-default-style descriptor (no base_style/style_overrides —
     // Phase 3a) onto "root": it resolves the GLB into a Scene and grafts the
@@ -236,7 +236,7 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, SetGlbSceneSourceAuthorsAndClearsLive)
     EXPECT_TRUE(app.set_node_glb_scene_source(
         "root",
         wz::engine::assets::SceneGLBSceneSource{
-            .path = "gltf/tank1.glb",
+            .path = "gltf/test-mesh-a.glb",
             .scene_index = 0,
             .consume_mode =
                 wz::engine::assets::SceneSourceConsumeMode::Instance,
@@ -466,11 +466,12 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, GraftedSceneNodesReturnsInstanceGraft)
     };
 
     // Every grafted node is a host-namespaced GLB child (no authored node like
-    // the host itself or "root" leaks in) and NONE is grafted twice (a real
-    // double-graft would show here). The GLB's exact node count is deliberately
-    // NOT pinned: the shared tank model (gltf/tank1.glb) gains locators over time
-    // (e.g. barrel_orientation for gun elevation), and coupling the test to that
-    // count made it break on an unrelated model change. Assert the invariants.
+    // the host itself or "root" leaks in) and NONE is grafted twice -- a real
+    // double-graft is exactly what would show here. The fixture loads its OWN
+    // isolated GLB (tests/fixtures/gltf/test-mesh-a.glb), decoupled from the
+    // production model so gameplay can't perturb it. The exact node count is
+    // still left unpinned so a deliberate tweak to the test model (e.g. adding a
+    // locator) does not spuriously fail this invariant.
     EXPECT_FALSE(grafted.empty());
     for (const auto& gn : grafted) {
         EXPECT_EQ(gn.id.rfind("tank_host/", 0), 0u)
@@ -522,7 +523,7 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, GraftedChildComponentOverridePersists)
     ASSERT_TRUE(project.ok) << project.error;
 
     // Save/reload through a TEMP scene file so the test never clobbers the staged
-    // fixture. The GLB ("gltf/tank1.glb") resolves against the resource root, so an
+    // fixture. The GLB ("gltf/test-mesh-a.glb") resolves against the resource root, so an
     // absolute scene path elsewhere still finds it.
     const wz::fs::Path staged_scene =
         wz::fs::join(ctx.assets->resource_root(), project.manifest.scene_path);

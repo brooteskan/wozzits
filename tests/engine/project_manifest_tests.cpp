@@ -962,7 +962,7 @@ TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
       "parent": "root",
       "name": "tank_host",
       "glb_scene_source": {
-        "path": "gltf/tank1.glb",
+        "path": "gltf/test-mesh-a.glb",
         "scene_index": 0,
         "consume_mode": "instance",
         "base_style": {
@@ -1004,7 +1004,7 @@ TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
     EXPECT_EQ(host.id, "tank_host");
     ASSERT_TRUE(host.scene_source);
     EXPECT_EQ(host.scene_source->kind, "glb");
-    EXPECT_EQ(host.scene_source->path, "gltf/tank1.glb");
+    EXPECT_EQ(host.scene_source->path, "gltf/test-mesh-a.glb");
     EXPECT_EQ(host.scene_source->consume_mode, "instance");
     EXPECT_EQ(host.scene_source->scene_index, 0u);
     EXPECT_EQ(host.scene_source->style_override_count, 1u);
@@ -1061,7 +1061,7 @@ TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
         abi_host.flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE,
         0u);
     EXPECT_EQ(abi_string(blob, abi_host.scene_source.kind), "glb");
-    EXPECT_EQ(abi_string(blob, abi_host.scene_source.path), "gltf/tank1.glb");
+    EXPECT_EQ(abi_string(blob, abi_host.scene_source.path), "gltf/test-mesh-a.glb");
     EXPECT_EQ(
         abi_string(blob, abi_host.scene_source.consume_mode),
         "instance");
@@ -1566,12 +1566,12 @@ TEST(ProjectSnapshot, PacksCreateProjectResponseForEditorAbi)
 
 namespace
 {
-    // tank1.glb (the glb_scene_source fixture's GLB) scene-0 hierarchy, observed
+    // test-mesh-a.glb (the glb_scene_source fixture's GLB) scene-0 hierarchy, observed
     // by parsing the file: a depth-first single root chain body -> turret -> gun,
-    // each carrying a mesh. The same bytes ship in resources/gltf/tank1.glb; this
+    // each carrying a mesh. The same bytes ship in resources/gltf/test-mesh-a.glb; this
     // exercises the on-demand import path that backs wz_import_glb_scene_hierarchy
     // (read_file -> import_gltf_scene -> glb_scene_hierarchy_abi_blob) device-free.
-    const char* kTank1Glb = WZ_TEST_FIXTURE_DIR "/gltf/tank1.glb";
+    const char* kTank1Glb = WZ_TEST_FIXTURE_DIR "/gltf/test-mesh-a.glb";
 
     wz::engine::assets::ImportedGLTFScene import_glb_scene(
         const std::string& path,

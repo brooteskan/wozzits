@@ -1818,7 +1818,7 @@ TEST(SceneAuthoringMaterialize, SceneImportSourceAppendsGLBHierarchy)
     SceneNodeAsset anchor = make_scene_node("tank_anchor");
     anchor.scene_import_source = SceneImportSourceAsset{
         .kind = SceneImportSourceKind::GLB,
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
         .import_prefix = "tank_anchor/tank1",
     };
     scene.nodes.push_back(std::move(anchor));
@@ -1877,7 +1877,7 @@ TEST(SceneAuthoringMaterialize, SceneImportSourceRebuildPreservesChildBehavior)
     SceneNodeAsset anchor = make_scene_node("tank_anchor");
     anchor.scene_import_source = SceneImportSourceAsset{
         .kind = SceneImportSourceKind::GLB,
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
         .import_prefix = "tank_anchor/tank1",
     };
     scene.nodes.push_back(std::move(anchor));
@@ -1940,7 +1940,7 @@ TEST(SceneAuthoringMaterialize, SceneImportSourceRejectsNodeIdCollision)
     SceneNodeAsset anchor = make_scene_node("tank_anchor");
     anchor.scene_import_source = SceneImportSourceAsset{
         .kind = SceneImportSourceKind::GLB,
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
         .import_prefix = "tank_anchor/tank1",
     };
     scene.nodes.push_back(std::move(anchor));
@@ -1966,7 +1966,7 @@ TEST(SceneAuthoringMaterialize, SceneImportSourceMarksMissingNodes)
     SceneNodeAsset anchor = make_scene_node("tank_anchor");
     anchor.scene_import_source = SceneImportSourceAsset{
         .kind = SceneImportSourceKind::GLB,
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
         .import_prefix = "tank_anchor/import",
     };
     scene.nodes.push_back(std::move(anchor));

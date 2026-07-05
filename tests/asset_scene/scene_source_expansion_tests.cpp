@@ -7,7 +7,7 @@
 // These are device-free (a default wz::gpu::Device resolves the GLB scene + its
 // per-mesh renderables on the CPU). The referenced Scene asset is built via the
 // REAL authoring path — SceneAssetModule::create_scene_from_glb — using the
-// bundled tank1.glb fixture (nodes: body -> turret -> gun, each with a styled
+// bundled test-mesh-a.glb fixture (nodes: body -> turret -> gun, each with a styled
 // renderable). The tests exercise the load-bearing engine pieces:
 //   - expand_scene_source_children: the shared expander (runtime graft + flatten)
 //   - bridge_scene_source_keys:     the authored-node-id -> resolved-key bridge
@@ -32,14 +32,14 @@ namespace
 {
     using namespace wz::engine::assets;
 
-    // Build the tank1.glb Scene asset via the real per-mesh authoring path and
+    // Build the test-mesh-a.glb Scene asset via the real per-mesh authoring path and
     // return its resolved SceneAssetData (body -> turret -> gun, renderables set).
     const SceneAssetData* build_tank_subscene(
         EngineAssetLibrary& assets, SceneAsset& out_asset)
     {
         out_asset = assets.scenes().create_scene_from_glb({
             .name = "tank_subscene",
-            .path = "gltf/tank1.glb",
+            .path = "gltf/test-mesh-a.glb",
         });
         if (!out_asset.valid()) {
             return nullptr;
@@ -55,7 +55,7 @@ namespace
             assets.scenes().get_scene(out_asset));
     }
 
-    // Build the tank1.glb Scene asset with an explicit per-component style
+    // Build the test-mesh-a.glb Scene asset with an explicit per-component style
     // mapping (issue #213 phase): a base style + the given sparse overrides.
     const SceneAssetData* build_tank_subscene_styled(
         EngineAssetLibrary& assets,
@@ -65,7 +65,7 @@ namespace
     {
         out_asset = assets.scenes().create_scene_from_glb({
             .name = "tank_subscene_styled",
-            .path = "gltf/tank1.glb",
+            .path = "gltf/test-mesh-a.glb",
             .base_style = base_style,
             .style_overrides = overrides,
         });

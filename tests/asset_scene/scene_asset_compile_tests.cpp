@@ -182,7 +182,7 @@ TEST(SceneAssetModule, CompilesGraphAuthoredGLBAsStructureWithoutBindings)
     // mirroring a "Scene from GLB" asset-graph node whose sole input is the
     // source_file (+ scene_index param).
     const wz::asset::AssetKey file_key = assets.files().register_file_node(
-        "gltf/tank1.glb", kRawFileSchema, kAssetTypeRawFile);
+        "gltf/test-mesh-a.glb", kRawFileSchema, kAssetTypeRawFile);
     ASSERT_FALSE(file_key == wz::asset::AssetKey{});
 
     const wz::asset::AssetKey scene_key =
@@ -246,7 +246,7 @@ TEST(SceneAssetModule, ResolvesTankGLBHierarchyFixture)
     const auto scene_asset =
         assets.scenes().create_scene_from_glb({
             .name = "tank1_import",
-            .path = "gltf/tank1.glb",
+            .path = "gltf/test-mesh-a.glb",
         });
 
     ASSERT_TRUE(scene_asset.valid());
@@ -289,7 +289,7 @@ TEST(SceneAssetModule, ResolvesTankGLBHierarchyFixture)
 
 // Issue #213 (Phase 1): per-component style mapping. Two distinct overrides on
 // two different mesh indices produce renderables whose styles differ from each
-// other and from the base; an un-overridden mesh keeps the base style. tank1.glb
+// other and from the base; an un-overridden mesh keeps the base style. test-mesh-a.glb
 // has three distinct meshes (body/turret/gun -> indices 0,1,2); override 0 and 1.
 TEST(SceneAssetModule, GLBPerComponentStyleOverrides)
 {
@@ -319,7 +319,7 @@ TEST(SceneAssetModule, GLBPerComponentStyleOverrides)
 
     const auto scene_asset = assets.scenes().create_scene_from_glb({
         .name = "tank1_styled",
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
         .base_style = base,
         .style_overrides = {
             { .mesh_index = 0u, .style = style_a },
@@ -406,7 +406,7 @@ TEST(SceneAssetModule, GLBNoOverrideDefaultIsUniform)
 
     const auto scene_asset = assets.scenes().create_scene_from_glb({
         .name = "tank1_uniform",
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
     });
 
     ASSERT_TRUE(scene_asset.valid());
@@ -449,7 +449,7 @@ TEST(SceneAssetModule, GLBNoOverrideDefaultIsUniform)
 // (SceneAssetData::glb_meshes) keyed by glTF mesh_index, and records each node's
 // mesh_index. The "Mesh from GLB scene" extractor then pulls one node's geometry
 // out as a standalone Mesh via a SCENE input. Positive path: extract node "body"
-// from tank1.glb and confirm the output Mesh matches the raw body mesh straight
+// from test-mesh-a.glb and confirm the output Mesh matches the raw body mesh straight
 // from import_glb_meshes (verbatim object-space — no node transform baked in).
 TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
 {
@@ -466,7 +466,7 @@ TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
     // Build a "Scene from GLB" so its output carries the embedded geometry.
     const auto scene_asset = assets.scenes().create_scene_from_glb({
         .name = "tank1_extract",
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
     });
     ASSERT_TRUE(scene_asset.valid());
 
@@ -504,7 +504,7 @@ TEST(SceneAssetModule, ExtractsMeshFromGLBSceneNode)
     // vertex/index counts and identical first-vertex object-space position —
     // no node transform baked into the extracted mesh).
     const auto bytes = wz::fs::read_file(
-        wz::fs::join(WZ_TEST_FIXTURE_DIR, "gltf/tank1.glb"));
+        wz::fs::join(WZ_TEST_FIXTURE_DIR, "gltf/test-mesh-a.glb"));
     ASSERT_TRUE(static_cast<bool>(bytes));
     ImportedGLTFMeshSet imported{};
     ASSERT_TRUE(import_glb_meshes(
@@ -540,7 +540,7 @@ TEST(SceneAssetModule, MeshFromGLBSceneUnknownNodeFails)
 
     const auto scene_asset = assets.scenes().create_scene_from_glb({
         .name = "tank1_extract_unknown",
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
     });
     ASSERT_TRUE(scene_asset.valid());
 
@@ -637,7 +637,7 @@ TEST(SceneAssetModule, MeshFromGLBSceneGroupNodeFails)
 
 // Issue #213: FileCarrierAssetModule::resolve_path strips a single matched
 // surrounding pair of ASCII double-quotes before resolving. Windows Explorer's
-// "Copy as path" wraps a path in double-quotes ("C:\...\tank1.glb"), which then
+// "Copy as path" wraps a path in double-quotes ("C:\...\test-mesh-a.glb"), which then
 // can't be opened. A quote-wrapped path must resolve to the SAME result as the
 // unwrapped one; interior quotes and a lone unbalanced quote are left untouched.
 TEST(SceneAssetModule, ResolvePathStripsSurroundingQuotes)
@@ -655,9 +655,9 @@ TEST(SceneAssetModule, ResolvePathStripsSurroundingQuotes)
     // An already-absolute path is returned verbatim, so a quote-wrapped form must
     // resolve to exactly the bare path (the surrounding pair removed).
 #ifdef _WIN32
-    const wz::fs::Path bare = "C:\\models\\tank1.glb";
+    const wz::fs::Path bare = "C:\\models\\test-mesh-a.glb";
 #else
-    const wz::fs::Path bare = "/models/tank1.glb";
+    const wz::fs::Path bare = "/models/test-mesh-a.glb";
 #endif
     const wz::fs::Path quoted = "\"" + bare + "\"";
     EXPECT_EQ(files.resolve_path(quoted), files.resolve_path(bare));
@@ -666,8 +666,8 @@ TEST(SceneAssetModule, ResolvePathStripsSurroundingQuotes)
     // A relative quote-wrapped path resolves identically to the unwrapped one
     // (both joined against the resource root).
     EXPECT_EQ(
-        files.resolve_path("\"gltf/tank1.glb\""),
-        files.resolve_path("gltf/tank1.glb"));
+        files.resolve_path("\"gltf/test-mesh-a.glb\""),
+        files.resolve_path("gltf/test-mesh-a.glb"));
 
     // Only a matched surrounding pair is stripped: a lone leading quote and
     // interior quotes are preserved (the path is altered only at both ends).

@@ -1207,7 +1207,7 @@ TEST(SceneAssetModule, SceneImportSourceRoundTripsThroughSceneJSON)
     SceneNodeAsset anchor = make_scene_node("tank_anchor");
     anchor.scene_import_source = SceneImportSourceAsset{
         .kind = SceneImportSourceKind::GLB,
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
         .import_prefix = "tank_anchor/tank1",
         .scene_index = 0u,
     };
@@ -1262,7 +1262,7 @@ TEST(SceneAssetModule, SceneImportSourceRoundTripsThroughSceneJSON)
     ASSERT_TRUE(parsed_anchor->scene_import_source.has_value());
     EXPECT_EQ(parsed_anchor->scene_import_source->kind,
         SceneImportSourceKind::GLB);
-    EXPECT_EQ(parsed_anchor->scene_import_source->path, "gltf/tank1.glb");
+    EXPECT_EQ(parsed_anchor->scene_import_source->path, "gltf/test-mesh-a.glb");
     EXPECT_EQ(
         parsed_anchor->scene_import_source->import_prefix,
         "tank_anchor/tank1");
@@ -2410,7 +2410,7 @@ TEST(SceneAssetModule, GlbSceneSourceDescriptorRoundTripsThroughSceneJSON)
     SceneNodeAsset host = make_scene_node("tank_host");
 
     SceneGLBSceneSource source{};
-    source.path = "gltf/tank1.glb";
+    source.path = "gltf/test-mesh-a.glb";
     source.scene_index = 0u;
     source.consume_mode = SceneSourceConsumeMode::Flatten;
 
@@ -2448,7 +2448,7 @@ TEST(SceneAssetModule, GlbSceneSourceDescriptorRoundTripsThroughSceneJSON)
     const std::string exported =
         wz::json::serialize_json(export_scene_to_json_document(authored));
     EXPECT_NE(exported.find("\"glb_scene_source\""), std::string::npos);
-    EXPECT_NE(exported.find("\"gltf/tank1.glb\""), std::string::npos);
+    EXPECT_NE(exported.find("\"gltf/test-mesh-a.glb\""), std::string::npos);
     EXPECT_NE(exported.find("\"flatten\""), std::string::npos);
     EXPECT_NE(exported.find("\"style_overrides\""), std::string::npos);
 
@@ -2483,7 +2483,7 @@ TEST(SceneAssetModule, GlbSceneSourceDescriptorRoundTripsThroughSceneJSON)
     EXPECT_FALSE(parsed->scene_source_node_id.has_value());
 
     const SceneGLBSceneSource& got = *parsed->glb_scene_source;
-    EXPECT_EQ(got.path, "gltf/tank1.glb");
+    EXPECT_EQ(got.path, "gltf/test-mesh-a.glb");
     EXPECT_EQ(got.scene_index, 0u);
     EXPECT_EQ(got.consume_mode, SceneSourceConsumeMode::Flatten);
 

@@ -924,7 +924,7 @@ TEST_F(WozzitsAppBehaviorFixture, GlbSceneSourceVerbGuardAndStateOnApp)
     // Guard: authoring a GLB descriptor on a missing node fails closed.
     EXPECT_FALSE(app.set_node_glb_scene_source(
         "does_not_exist",
-        wz::engine::assets::SceneGLBSceneSource{ .path = "gltf/tank1.glb" }));
+        wz::engine::assets::SceneGLBSceneSource{ .path = "gltf/test-mesh-a.glb" }));
 
     // A real node with no scene source reports none; authoring the descriptor
     // resolves + grafts the GLB hierarchy under it (single default style — 3a).
@@ -932,7 +932,7 @@ TEST_F(WozzitsAppBehaviorFixture, GlbSceneSourceVerbGuardAndStateOnApp)
     EXPECT_TRUE(app.set_node_glb_scene_source(
         "blank",
         wz::engine::assets::SceneGLBSceneSource{
-            .path = "gltf/tank1.glb",
+            .path = "gltf/test-mesh-a.glb",
             .scene_index = 0,
             .consume_mode =
                 wz::engine::assets::SceneSourceConsumeMode::Instance,

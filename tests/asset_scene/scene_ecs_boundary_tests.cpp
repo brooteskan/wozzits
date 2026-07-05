@@ -442,7 +442,7 @@ TEST(SceneECSBoundary, CountsSceneSourceComponents)
     SceneNodeAsset by_descriptor{};
     by_descriptor.id = "host_descriptor";
     attach_glb_scene_source(by_descriptor, SceneGLBSceneSource{
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
     });
     EXPECT_TRUE(has_runtime_relevant_components(by_descriptor));
     scene.nodes.push_back(std::move(by_descriptor));
@@ -1192,7 +1192,7 @@ TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)
     node.id = "rock";
     node.scene_import_source = SceneImportSourceAsset{
         .kind = SceneImportSourceKind::GLB,
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
         .import_prefix = "tank",
         .scene_index = 0u,
     };
@@ -1297,7 +1297,7 @@ TEST(SceneECSBoundary, EditorAuthoringDraftsDoNotInstantiateRuntimeComponents)
     node.id = "drafts";
     node.scene_import_source = SceneImportSourceAsset{
         .kind = SceneImportSourceKind::GLB,
-        .path = "gltf/tank1.glb",
+        .path = "gltf/test-mesh-a.glb",
         .import_prefix = "tank",
     };
     node.mesh_source = SceneMeshSourceAsset{

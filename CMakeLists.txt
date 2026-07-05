@@ -465,6 +465,17 @@ configure_file(
     "${WZ_GLB_SCENE_SOURCE_FIXTURE_SRC}/scene_flatten.json"
     "${WZ_GLB_SCENE_SOURCE_FIXTURE_DST}/scene_flatten.json"
     COPYONLY)
+# The two render tests that exercise this fixture (glb_scene_source,
+# behavior_dispatch) init the engine with resource_root="resources" and load the
+# tank GLB by the resources-relative path "gltf/test-mesh-a.glb". Stage the
+# TEST-OWNED GLB (tests/fixtures/gltf/, deliberately named off "tank1.glb" so it
+# never collides with the production model in searches) into the staged
+# resources, so those tests never pick up window_engine/resources/gltf/tank1.glb
+# -- which gameplay work mutates (e.g. the gun-elevation barrel_orientation node).
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/gltf/test-mesh-a.glb"
+    "${CMAKE_BINARY_DIR}/resources/gltf/test-mesh-a.glb"
+    COPYONLY)
 
 # Self-contained, fully portable fixture for the WozzitsApp_v1 terrain-constraint
 # tick test (issue #216 work item B). An empty asset graph + a scene with a

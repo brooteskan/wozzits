@@ -23,7 +23,7 @@
       },
       "visible": true,
       "glb_scene_source": {
-        "path": "gltf/tank1.glb",
+        "path": "gltf/test-mesh-a.glb",
         "scene_index": 0,
         "consume_mode": "instance",
         "base_style": {
