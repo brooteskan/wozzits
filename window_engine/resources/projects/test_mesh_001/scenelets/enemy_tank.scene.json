@@ -98,7 +98,10 @@
         "scale": [ 1, 1, 1 ]
       },
       "visible": true,
-      "renderable": { "asset_graph_node_id": 55 }
+      "renderable": { "asset_graph_node_id": 55 },
+      "renderable_constants": [
+        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+      ]
     },
     {
       "id": "enemy_trajectory",
@@ -110,7 +113,10 @@
         "scale": [ 4, 4, 4 ]
       },
       "visible": true,
-      "renderable": { "asset_graph_node_id": 55 }
+      "renderable": { "asset_graph_node_id": 55 },
+      "renderable_constants": [
+        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+      ]
     },
     {
       "id": "enemy_impact_flash",
@@ -122,7 +128,10 @@
         "scale": [ 1, 1, 1 ]
       },
       "visible": true,
-      "renderable": { "asset_graph_node_id": 55 }
+      "renderable": { "asset_graph_node_id": 55 },
+      "renderable_constants": [
+        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+      ]
     },
     {
       "id": "enemy_hitbox",
@@ -167,6 +176,9 @@
       "renderable": {
         "asset_graph_node_id": 55
       },
+      "renderable_constants": [
+        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+      ],
       "collision": {
         "collision_asset_node_id": 56,
         "layer_mask": 4,

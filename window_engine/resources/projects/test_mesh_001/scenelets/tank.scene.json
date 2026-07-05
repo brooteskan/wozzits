@@ -176,7 +176,10 @@
       "visible": true,
       "renderable": {
         "asset_graph_node_id": 55
-      }
+      },
+      "renderable_constants": [
+        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+      ]
     },
     {
       "id": "trajectory",
@@ -202,7 +205,10 @@
       "visible": true,
       "renderable": {
         "asset_graph_node_id": 55
-      }
+      },
+      "renderable_constants": [
+        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+      ]
     },
     {
       "id": "impact_flash",
@@ -228,7 +234,10 @@
       "visible": true,
       "renderable": {
         "asset_graph_node_id": 55
-      }
+      },
+      "renderable_constants": [
+        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+      ]
     },
     {
       "id": "hitbox",
@@ -273,6 +282,9 @@
       "renderable": {
         "asset_graph_node_id": 55
       },
+      "renderable_constants": [
+        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+      ],
       "collision": {
         "collision_asset_node_id": 56,
         "layer_mask": 4,
