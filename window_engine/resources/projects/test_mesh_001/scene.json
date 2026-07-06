@@ -82,7 +82,7 @@
         "asset_graph_node_id": 47
       },
       "collision": {
-        "asset": "asset-key:c907f5b2087697ba:cf0893b2d7afcd1c:f11eca55e7000b02:0000000000000000:9e3779b97f4aa12d:0000000000000000:c5fe4e1fa014ffb0:b75c19da07c7373d",
+        "asset": "asset-key:c907f5b2087697ba:cf0893b2d7afcd1c:f11eca55e7000b02:0000000000000000:9e3779b97f4aa12d:0000000000000000:f9f278124757b386:bd5bfb2d3c56edd6",
         "layer_mask": 1,
         "collides_with_mask": 4294967295,
         "is_trigger": false,
