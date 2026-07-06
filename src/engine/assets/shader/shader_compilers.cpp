@@ -160,12 +160,6 @@ namespace wz::engine::assets::internal
                     .default_str = "main",
                 },
                 {
-                    .name = "target",
-                    .type = wz::asset::ParamType::String,
-                    .label = "Target",
-                    .default_str = "vs_5_1",
-                },
-                {
                     .name = "primary_source_index",
                     .type = wz::asset::ParamType::Int,
                     .label = "Primary source index",

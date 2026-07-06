@@ -42,10 +42,13 @@ namespace wz::engine::assets::internal
         desc.stage =
             hlsl_shader_stage_from_index(params.get<int64_t>("stage", 0));
         desc.entry = params.get<std::string>("entry", "main");
-        desc.target =
-            params.get<std::string>(
-                "target",
-                default_hlsl_target_for_stage(desc.stage));
+        // Target is DERIVED from stage: stage is the single source of truth, so a
+        // node can no longer be authored with a stage/target that disagree (which
+        // used to compile against the target while registering under the stage,
+        // e.g. a pixel body tagged Vertex). The free-text "target" param is gone
+        // from the node's declared params; any stale value in old graph JSON is
+        // ignored. (task #1)
+        desc.target = default_hlsl_target_for_stage(desc.stage);
         desc.primary_source_index =
             static_cast<uint32_t>(
                 std::max<int64_t>(
@@ -53,9 +56,6 @@ namespace wz::engine::assets::internal
                     params.get<int64_t>("primary_source_index", 0)));
         if (desc.entry.empty()) {
             desc.entry = "main";
-        }
-        if (desc.target.empty()) {
-            desc.target = default_hlsl_target_for_stage(desc.stage);
         }
         return desc;
     }
