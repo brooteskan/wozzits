@@ -718,7 +718,7 @@ namespace wz::app
                 + std::to_string(rebuild_scene_count_this_frame_)
                 + " (" + std::to_string(sim_ms) + " ms)");
         }
-        if (frame_profile_.size() < 200000u) {
+        if (frame_profiling_enabled_ && frame_profile_.size() < 200000u) {
             frame_profile_.push_back(FrameProfileSample{
                 .frame = behavior_frame_index_,
                 .dt_ms = static_cast<double>(dt) * 1000.0,
@@ -3881,6 +3881,31 @@ namespace wz::app
             ctx_.logger.info(
                 "flush_frame_profile_csv: wrote " + path + " ("
                 + std::to_string(frame_profile_.size()) + " frames)");
+        }
+    }
+
+    void WozzitsApp_v1::set_frame_profiling_enabled(bool enabled)
+    {
+        if (enabled == frame_profiling_enabled_) {
+            return;
+        }
+        if (enabled) {
+            // Start a fresh capture. The run tag is minted at flush time, so a
+            // cleared tag + empty buffer means this on->off session writes its
+            // OWN frame_profile_<tag>.csv.
+            frame_profile_.clear();
+            frame_profile_run_tag_.clear();
+            frame_profiling_enabled_ = true;
+            ctx_.logger.info("frame profiling: enabled");
+        }
+        else {
+            // Flush what was captured to its own file, then stop and reset so a
+            // later enable starts clean.
+            frame_profiling_enabled_ = false;
+            flush_frame_profile_csv();
+            frame_profile_.clear();
+            frame_profile_run_tag_.clear();
+            ctx_.logger.info("frame profiling: disabled");
         }
     }
 

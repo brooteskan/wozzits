@@ -935,6 +935,13 @@ WZ_ABI_API void wz_host_runtime_stop(WzHostRuntime* runtime);
 // rather than binding into a dead handle.
 WZ_ABI_API int wz_host_runtime_is_running(WzHostRuntime* runtime);
 
+// Enable/disable frame profiling on the running engine (default OFF). While
+// enabled the engine records a per-frame profile and, on the on->off transition
+// (and on app close), writes it to its own frame_profile_<tag>.csv. OFF records
+// nothing and writes no file. Safe on NULL.
+WZ_ABI_API void wz_host_runtime_set_frame_profiling(
+    WzHostRuntime* runtime, int enabled);
+
 // Compile the session's current asset-graph draft on the running engine: copies
 // the draft, binds it on the engine thread (materialize -> swap -> resolve ->
 // rebind the renderer), and blocks until done. The draft is the only thing that

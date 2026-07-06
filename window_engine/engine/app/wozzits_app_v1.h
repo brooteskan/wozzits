@@ -495,6 +495,18 @@ namespace wz::app
         // no live edit happened since load/last save; false on write failure.
         bool save_scene();
 
+        // Frame profiling is opt-in (default OFF). OFF records nothing, so the
+        // exit-time flush is a no-op and no frame_profile_<tag>.csv is written
+        // (fixes the file spam + slow shutdown). Toggling ON starts a fresh
+        // capture; toggling OFF flushes what was captured to its own file; app
+        // close flushes too (via save_scene). Driven by the editor menu through
+        // the runtime control seam.
+        void set_frame_profiling_enabled(bool enabled);
+        [[nodiscard]] bool frame_profiling_enabled() const noexcept
+        {
+            return frame_profiling_enabled_;
+        }
+
         // Swap the WORKING SCENE to a different scene file (the prefab-editor's
         // open: point the editor at a scenelet, edit it with the normal tools, then
         // save_scene() writes back to it; open_scene the main scene again to switch
@@ -1039,6 +1051,10 @@ namespace wz::app
             uint32_t rebuild = 0;
             std::string callers{};  // ";"-joined seam labels for the remat calls
         };
+        // Opt-in (issue #252 follow-up): off by default so a normal editor/play
+        // session records nothing and writes no CSV. Toggled from the editor menu
+        // via set_frame_profiling_enabled.
+        bool                                     frame_profiling_enabled_ = false;
         std::vector<FrameProfileSample>          frame_profile_{};
         // A wall-clock tag (YYYYMMDD_HHMMSS) minted once per process so each play
         // session writes its OWN frame_profile_<tag>.csv -- successive play/stop

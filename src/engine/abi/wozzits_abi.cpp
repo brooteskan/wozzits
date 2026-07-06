@@ -1146,6 +1146,14 @@ extern "C"
         return runtime->control.finished() ? 0 : 1;
     }
 
+    void wz_host_runtime_set_frame_profiling(WzHostRuntime* runtime, int enabled)
+    {
+        if (!runtime) {
+            return;
+        }
+        runtime->control.set_frame_profiling(enabled != 0);
+    }
+
     WzResult wz_host_runtime_bind_draft(
         WzHostRuntime* runtime,
         WzHostSession* session)

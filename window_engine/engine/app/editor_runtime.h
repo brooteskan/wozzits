@@ -296,6 +296,13 @@ namespace wz::app
         // Engine thread: consume a pending save request (true once per request).
         [[nodiscard]] bool take_save_request();
 
+        // Owner thread: enable/disable frame profiling (default off). Applied by
+        // the engine thread each frame; the app records + writes a CSV only while
+        // enabled, and flushes to its own file on the on->off transition.
+        void set_frame_profiling(bool enabled);
+        // Engine thread: the current requested profiling state.
+        [[nodiscard]] bool frame_profiling_enabled() const;
+
         // Owner thread: carve the subtree rooted at `root_node_id` out of the
         // running scene and write it to `out_path` as a standalone prefab
         // scene.json, blocking until the engine thread does it (the prefab
@@ -591,6 +598,7 @@ namespace wz::app
         std::atomic_bool stop_{ false };
         std::atomic_bool save_requested_{ false };
         std::atomic_bool reload_behaviors_requested_{ false };
+        std::atomic_bool frame_profiling_{ false };
         std::vector<std::string> behavior_modules_;  // guarded by mutex_
         std::vector<SceneletCatalogEntry> scenelets_;  // guarded by mutex_
         // #194: the asset-GRAPH bind handshake (bind_asset_graph /

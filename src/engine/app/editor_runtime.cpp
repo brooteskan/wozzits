@@ -77,6 +77,16 @@ namespace wz::app
         return save_requested_.exchange(false, std::memory_order_acq_rel);
     }
 
+    void EditorRuntimeControl::set_frame_profiling(bool enabled)
+    {
+        frame_profiling_.store(enabled, std::memory_order_release);
+    }
+
+    bool EditorRuntimeControl::frame_profiling_enabled() const
+    {
+        return frame_profiling_.load(std::memory_order_acquire);
+    }
+
     void EditorRuntimeControl::request_reload_behavior_modules()
     {
         reload_behaviors_requested_.store(true, std::memory_order_release);
@@ -1073,6 +1083,10 @@ namespace wz::app
                 // Service editor edits (compile/swap, then live scene-node
                 // transforms) before sim + render so this frame reflects them.
                 if (control) {
+                    // Apply the editor's frame-profiling toggle each frame
+                    // (idempotent: the app acts only on an on->off transition).
+                    app.set_frame_profiling_enabled(
+                        control->frame_profiling_enabled());
                     control->service_pending_asset_graph_bind(binder);
                     control->service_pending_scene_node_transforms(
                         [&app](const SceneNodeTransformEdit& edit) {
