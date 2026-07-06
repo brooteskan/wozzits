@@ -867,8 +867,33 @@ namespace wz::engine::rendering
         ++render_time_program_bridges_;
 
         const auto* program_entry = registration_entry_for(assets, program_key);
-        if (!program_entry || program_entry->dep_keys.size() < 2u) {
-            logger_.error("RhiSceneRenderer: program missing shader deps");
+        const std::size_t program_dep_count =
+            program_entry ? program_entry->dep_keys.size() : 0u;
+        if (!program_entry || program_dep_count < 2u) {
+            // Name which REQUIRED shader ports are unwired so the log is
+            // actionable: port 0 = vertex, port 1 = pixel. dep_keys is
+            // port-indexed, so an unwired port is either missing (index beyond
+            // the array) or an empty key. NOTE this resolves the COMMITTED graph,
+            // so a program that looks wired in the editor lands here when the
+            // edit was not committed or a rewired node kept a stale key.
+            std::string missing;
+            for (std::size_t port = 0; port < 2u; ++port) {
+                const bool wired =
+                    port < program_dep_count
+                    && program_entry->dep_keys[port] != wz::asset::AssetKey{};
+                if (!wired) {
+                    if (!missing.empty()) {
+                        missing += ", ";
+                    }
+                    missing += (port == 0u ? "port 0 (vertex shader)"
+                                           : "port 1 (pixel shader)");
+                }
+            }
+            logger_.error(
+                "RhiSceneRenderer: render program missing shader deps — "
+                + std::to_string(program_dep_count)
+                + " input(s) wired, unwired required: " + missing
+                + " (resolved from the committed graph)");
             return nullptr;
         }
         const wz::asset::AssetKey vertex_key = program_entry->dep_keys[0];
