@@ -424,5 +424,13 @@ namespace wz::engine::assets
         // define the texture→world mapping the terrain packer uses, shared with
         // a collision reading the same Placement. Empty for non-terrain looks.
         wz::asset::AssetKey placement_asset{};
+        // Optional PlacedField (kAssetTypePlacedField, issue #223) — a single
+        // upstream bundling the height field + its Placement. When set it
+        // SUPERSEDES the separate scalar_field_texture binding + placement port:
+        // the combiner's field becomes the height binding and its placement the
+        // footprint, so a terrain look references one node instead of wiring the
+        // field and frame separately (and they cannot drift apart). Empty = use
+        // the separate binding + placement_asset above.
+        wz::asset::AssetKey placed_field_asset{};
     };
 }

@@ -282,6 +282,13 @@ namespace wz::engine::assets::internal
             if (placement_port < port_dep_keys.size()) {
                 desc.placement_asset = port_dep_keys[placement_port];
             }
+            // The optional PlacedField port follows the Placement port (issue
+            // #223): port 3 + kMaxRenderBindingLayoutBindings.
+            const size_t placed_field_port =
+                3u + kMaxRenderBindingLayoutBindings;
+            if (placed_field_port < port_dep_keys.size()) {
+                desc.placed_field_asset = port_dep_keys[placed_field_port];
+            }
             return desc;
         }
 
@@ -932,6 +939,7 @@ namespace wz::engine::assets::internal
         auto* render_program_table = &ctx.render_program_table;
         auto* gpu_sparse_mesh_table = &ctx.gpu_sparse_mesh_table;
         auto* placement_table = &ctx.placement_table;
+        auto* placed_field_table = &ctx.placed_field_table;
         const auto* asset_system = ctx.asset_system;
 
 
@@ -1731,10 +1739,22 @@ namespace wz::engine::assets::internal
                     kAssetTypePlacement,
                     wz::asset::InputPortRequirement::Optional,
                 },
+                // Optional PlacedField (issue #223): one upstream bundling the
+                // height field + its Placement. Follows the placement port, so
+                // custom_renderable_desc_from_ports reads it at port
+                // 3 + kMaxRenderBindingLayoutBindings. When connected it
+                // SUPERSEDES the separate scalar_field_texture binding +
+                // placement port.
+                {
+                    "placed_field",
+                    kAssetTypePlacedField,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .parameters = make_custom_renderable_parameters(),
             .compile = [logger, mesh_table, render_program_table,
-                        placement_table, rhi_renderable_table, asset_system](
+                        placement_table, placed_field_table,
+                        rhi_renderable_table, asset_system](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -1852,13 +1872,102 @@ namespace wz::engine::assets::internal
                         input, "render program is invalid");
                 }
 
-                // Resolve the optional Placement (the CameraSnappedTerrain
-                // footprint, #233) and derive the world-frame settings from it —
-                // mirrors the 0x708 placement derivation. Absent = a default,
-                // node-transform-derived footprint at render time.
+                // Fill a CameraSnappedTerrain footprint from a resolved Placement
+                // frame (extent.xz = world size, extent.y = vertical scale) —
+                // the 0x708 #218 derivation, shared by the placement port and the
+                // PlacedField path below.
+                const auto fill_footprint =
+                    [](const PlacementData& placement,
+                       ClipmapLandscapeRenderSettings& out) noexcept
+                    {
+                        out.world_origin[0] = placement.origin[0];
+                        out.world_origin[1] = placement.origin[2];
+                        out.world_size[0] = placement.extent[0];
+                        out.world_size[1] = placement.extent[2];
+                        out.vertical_scale = placement.extent[1];
+                        out.base_height = placement.base_height;
+                        out.view_snapped = true;
+                        out.placement_authoritative = true;
+                    };
+
+                // Resolve the optional footprint (#233). A default (absent)
+                // footprint is node-transform-derived at render time.
                 ClipmapLandscapeRenderSettings terrain_footprint{};
                 bool has_terrain_footprint = false;
-                if (!(desc->placement_asset == wz::asset::AssetKey{})) {
+
+                // build_custom_renderable_recipe reads the desc's bindings +
+                // resolves each binding's source type from these deps. A
+                // PlacedField (below) injects a synthetic binding + dep, so work
+                // from mutable copies; without a PlacedField they equal *desc /
+                // dep_nodes exactly (the legacy path is unchanged).
+                CustomRenderableCompileDesc effective_desc = *desc;
+                std::vector<wz::asset::AssetNode> effective_deps(
+                    dep_nodes.begin(), dep_nodes.end());
+
+                if (!(desc->placed_field_asset == wz::asset::AssetKey{})) {
+                    // A connected PlacedField (issue #223) is ONE upstream
+                    // bundling the height field + its Placement. It SUPERSEDES
+                    // the separate scalar_field_texture binding + placement port:
+                    // its field is injected as the height binding and its
+                    // placement drives the footprint, so a terrain look
+                    // references one node and the two cannot drift apart.
+                    const std::optional<size_t> placed_index =
+                        dep_index_of(desc->placed_field_asset);
+                    const PlacedFieldData* placed =
+                        (placed_index && *placed_index < dep_handles.size())
+                            ? placed_field_table->get(
+                                  dep_handles[*placed_index])
+                            : nullptr;
+                    if (!placed || !placed->valid()) {
+                        logger->error(
+                            "custom renderable placed field did not resolve");
+                        return compile_failed_node(
+                            input, "placed field dependency did not resolve");
+                    }
+
+                    // The field IS the height binding. Drop any separately-wired
+                    // scalar_field_texture binding (the PlacedField wins), then
+                    // inject one for the combiner's field. Its source type is
+                    // known from the PlacedField, so append a synthetic dep node
+                    // for source_type_of — the field is one hop away, not a
+                    // direct dep of this node.
+                    const std::string height_semantic(
+                        descriptor_semantic_name(
+                            DescriptorSemantic::ScalarFieldTexture));
+                    effective_desc.bindings.erase(
+                        std::remove_if(
+                            effective_desc.bindings.begin(),
+                            effective_desc.bindings.end(),
+                            [&](const CustomRenderableCompileDesc::Binding& b) {
+                                return b.semantic == height_semantic;
+                            }),
+                        effective_desc.bindings.end());
+                    effective_desc.bindings.push_back(
+                        CustomRenderableCompileDesc::Binding{
+                            height_semantic, placed->field_key });
+                    wz::asset::AssetNode field_dep{};
+                    field_dep.key = placed->field_key;
+                    field_dep.type = placed->field_type;
+                    effective_deps.push_back(std::move(field_dep));
+
+                    // The placement drives the footprint. It is a dep of the
+                    // PlacedField (one hop away), so resolve it through the asset
+                    // system rather than this node's direct deps.
+                    if (const auto* compiled =
+                            asset_system->find_compiled(placed->placement_key))
+                    {
+                        if (const PlacementData* placement =
+                                placement_table->get(compiled->handle))
+                        {
+                            fill_footprint(*placement, terrain_footprint);
+                            has_terrain_footprint = true;
+                        }
+                    }
+                }
+                else if (!(desc->placement_asset == wz::asset::AssetKey{})) {
+                    // Legacy path: the Placement is a direct dep at the placement
+                    // port; the height field arrives via its own
+                    // scalar_field_texture binding.
                     if (const std::optional<size_t> placement_index =
                             dep_index_of(desc->placement_asset);
                         placement_index
@@ -1868,20 +1977,7 @@ namespace wz::engine::assets::internal
                                 placement_table->get(
                                     dep_handles[*placement_index]))
                         {
-                            terrain_footprint.world_origin[0] =
-                                placement->origin[0];
-                            terrain_footprint.world_origin[1] =
-                                placement->origin[2];
-                            terrain_footprint.world_size[0] =
-                                placement->extent[0];
-                            terrain_footprint.world_size[1] =
-                                placement->extent[2];
-                            terrain_footprint.vertical_scale =
-                                placement->extent[1];
-                            terrain_footprint.base_height =
-                                placement->base_height;
-                            terrain_footprint.view_snapped = true;
-                            terrain_footprint.placement_authoritative = true;
+                            fill_footprint(*placement, terrain_footprint);
                             has_terrain_footprint = true;
                         }
                     }
@@ -1890,7 +1986,7 @@ namespace wz::engine::assets::internal
                 RhiRenderableRecipe recipe{};
                 if (std::optional<std::string> error =
                         build_custom_renderable_recipe(
-                            *desc, *program, dep_nodes,
+                            effective_desc, *program, effective_deps,
                             has_terrain_footprint ? &terrain_footprint : nullptr,
                             recipe))
                 {

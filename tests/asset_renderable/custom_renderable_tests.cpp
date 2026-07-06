@@ -22,6 +22,7 @@
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/placement_asset_module.h>
+#include <engine/assets/placed_field_asset_module.h>
 #include <engine/assets/render_binding_layout/render_binding_layout.h>
 #include <engine/assets/render_binding_layout_asset_module.h>
 #include <engine/assets/render_program/render_program.h>
@@ -676,6 +677,96 @@ TEST_F(CustomRenderableFixture, CameraSnappedTerrainWithPlacementCarriesFootprin
     EXPECT_TRUE(recorded)
         << "camera-snapped terrain renderable failed to realize or the recorder "
            "rejected the draw";
+    ASSERT_TRUE(wz::gpu::end_frame(device));
+    wz::gpu::present(device, /*sync_interval*/ 0);
+}
+
+// #223 Seam 2: a CameraSnappedTerrain-head custom renderable can take its height
+// field AND world footprint from a single PlacedField upstream instead of a
+// separately-wired scalar_field_texture binding + placement port. The PlacedField
+// SUPERSEDES both — its field is injected as the height binding and its placement
+// drives the footprint — so the terrain and a collision on the same PlacedField
+// cannot drift apart. The resolved recipe is identical to the directly-wired
+// clipmap, so it draws the same way.
+TEST_F(CustomRenderableFixture, CameraSnappedTerrainFromPlacedFieldCarriesFootprintAndDraws)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    ea::EngineAssetLibrary assets(gpu, logger, root.string());
+
+    const Ingredients ingredients = build_ingredients(
+        assets, terrain_layout(),
+        "shaders/terrain/terrain_vs.hlsl", "shaders/terrain/terrain_ps.hlsl");
+
+    const ea::PlacementAsset placement =
+        assets.placements().create_placement(ea::PlacementDesc{
+            .name = "terrain/placed_field_frame",
+            .origin = { 0.0f, 0.0f, 0.0f },
+            .extent = { 16.0f, 4.0f, 16.0f },
+            .base_height = 0.0f,
+        });
+    ASSERT_TRUE(placement.valid());
+
+    // One upstream binding the height field to its world frame (issue #223).
+    const ea::PlacedFieldAsset placed =
+        assets.placed_fields().create_placed_field(ea::PlacedFieldDesc{
+            .field_key = ingredients.field.output,
+            .placement_key = placement.output,
+            .field_type = ea::kAssetTypeScalarField,
+        });
+    ASSERT_TRUE(placed.valid());
+
+    // Port-ordered deps: geometry(0), program(1), and the PlacedField at the
+    // placed_field port (3 + kMaxRenderBindingLayoutBindings = 11). NO separate
+    // field binding, NO placement port — the PlacedField provides both.
+    std::vector<wz::asset::AssetKey> ports(12);
+    ports[0] = ingredients.mesh.output;
+    ports[1] = ingredients.program.key;
+    ports[11] = placed.output;
+
+    const wz::asset::AssetKey renderable_key = register_custom_renderable(
+        assets, 21, wz::asset::ParamBlock{}, std::move(ports));
+
+    ASSERT_TRUE(assets.commit());
+    const ea::ResolveReport resolve = assets.resolve_all();
+    ASSERT_TRUE(resolve.ok());
+
+    const ea::RhiRenderableRecipe* recipe =
+        assets.renderables().get_rhi_renderable_recipe(
+            ea::RenderableAsset{ .output = renderable_key });
+    ASSERT_NE(recipe, nullptr);
+    EXPECT_TRUE(recipe->custom);
+    EXPECT_EQ(
+        recipe->constants_head,
+        ea::RenderBindingConstantsHead::CameraSnappedTerrain);
+    // The PlacedField's field is injected as the scalar_field_texture binding —
+    // the same height source a directly-wired clipmap would carry.
+    EXPECT_TRUE(recipe->height_texture_key == ingredients.field.output);
+    // The PlacedField's placement is authoritative for the footprint (extent →
+    // world size / vertical scale), exactly the placement-port derivation.
+    EXPECT_TRUE(recipe->clipmap.view_snapped);
+    EXPECT_TRUE(recipe->clipmap.placement_authoritative);
+    EXPECT_FLOAT_EQ(recipe->clipmap.world_size[0], 16.0f);
+    EXPECT_FLOAT_EQ(recipe->clipmap.world_size[1], 16.0f);
+    EXPECT_FLOAT_EQ(recipe->clipmap.vertical_scale, 4.0f);
+
+    // Same recipe shape as the directly-wired clipmap → the renderer draws it the
+    // same way. Drive one device frame to confirm the recorder accepts the draw.
+    wz::engine::rendering::RhiSceneRenderer renderer(gpu, logger);
+    ea::SceneNodeAsset node{};
+    node.id = wz::scene::AuthoredEntityId{ 1 };
+    node.name = "terrain";
+    node.visible = true;
+    node.renderable_asset = renderable_key;
+    const std::vector<ea::SceneNodeAsset> nodes{ node };
+
+    ASSERT_TRUE(wz::gpu::begin_frame(device));
+    wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+    const bool recorded = renderer.render_scene(
+        nodes, assets, wz::math::Mat4::identity(),
+        wz::math::Vec3{ 2.0f, 5.0f, -3.0f });
+    EXPECT_TRUE(recorded)
+        << "placed-field camera-snapped terrain failed to realize or the "
+           "recorder rejected the draw";
     ASSERT_TRUE(wz::gpu::end_frame(device));
     wz::gpu::present(device, /*sync_interval*/ 0);
 }
