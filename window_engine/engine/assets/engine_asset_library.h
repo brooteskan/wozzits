@@ -54,6 +54,8 @@
 
 #include <engine/assets/placement/placement.h>
 #include <engine/assets/placement_asset_module.h>
+#include <engine/assets/placed_field/placed_field.h>
+#include <engine/assets/placed_field_asset_module.h>
 
 #include <engine/assets/audio/audio_clip.h>
 #include <engine/assets/audio_clip_asset_module.h>
@@ -291,6 +293,9 @@ namespace wz::engine::assets
         PlacementAssetModule&       placements()       { return placements_; }
         const PlacementAssetModule& placements() const { return placements_; }
 
+        PlacedFieldAssetModule&       placed_fields()       { return placed_fields_; }
+        const PlacedFieldAssetModule& placed_fields() const { return placed_fields_; }
+
         AudioClipAssetModule&       audio_clips()       { return audio_clips_; }
         const AudioClipAssetModule& audio_clips() const { return audio_clips_; }
 
@@ -447,6 +452,7 @@ namespace wz::engine::assets
         TerrainVisualProxyTable      terrain_visual_proxy_table_;
         CollisionAssetTable         collision_table_;
         PlacementTable              placement_table_;
+        PlacedFieldTable            placed_field_table_;
         AudioClipTable              audio_clip_table_;
         AudioClipBankTable          audio_clip_bank_table_;
         AudioRenderableTable        audio_renderable_table_;
@@ -490,6 +496,7 @@ namespace wz::engine::assets
         TerrainVisualProxyAssetModule terrain_visual_proxies_;
         CollisionAssetModule        collisions_;
         PlacementAssetModule        placements_;
+        PlacedFieldAssetModule      placed_fields_;
         AudioClipAssetModule        audio_clips_;
         AudioClipBankAssetModule    audio_clip_banks_;
         AudioRenderableAssetModule  audio_renderables_;

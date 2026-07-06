@@ -367,6 +367,16 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeSignedDistanceTerrain =
         static_cast<wz::asset::AssetType>(199);
 
+    // Implemented: CPU-side combiner that binds a frame-less field (a scalar
+    // field in v1) to a world-space Placement frame — a thin reference pair
+    // {field_key, placement_key}, NOT a data copy (issue #223). Lets consumers
+    // (clipmap visual, terrain collision) descend from ONE placed upstream so a
+    // placement is authored once and cannot drift between them. Runtime data is
+    // owned by PlacedFieldTable. Sibling to kAssetTypePlacement (159), whose
+    // CPU-data block is full — placed here in the field/terrain-domain range.
+    inline constexpr wz::asset::AssetType kAssetTypePlacedField =
+        static_cast<wz::asset::AssetType>(200);
+
 
     // ─── Renderer/backend GPU-resident asset types: 512–1023 ────────────────────
     // Backend-owned or backend-facing resources.

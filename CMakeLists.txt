@@ -874,6 +874,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_terrain terrain_visual_proxy_asset_module)
 
     rs_add_test_group(asset_collision collision_asset_module)
+    rs_add_test_group(asset_placed_field placed_field_asset_module)
     rs_add_test_group(collision proximity_frame_tests)
     rs_add_test_group(collision collision_frame_core_tests)
     rs_add_test_group(collision collision_surface_sampling_tests)

@@ -96,6 +96,10 @@ target_sources(window_engine PRIVATE
     assets/placement/placement_compilers.cpp
     assets/placement_asset_module.cpp
 
+    assets/placed_field/placed_field.cpp
+    assets/placed_field/placed_field_compilers.cpp
+    assets/placed_field_asset_module.cpp
+
     assets/audio/audio_clip.cpp
     assets/audio/wav_decoder.cpp
     assets/audio/audio_clip_compilers.cpp

@@ -79,6 +79,7 @@ namespace wz::engine::assets
             WZ_ADD_TYPE(kAssetTypeGpuSparseMesh);
             WZ_ADD_TYPE(kAssetTypeMeshClusterHierarchy);
             WZ_ADD_TYPE(kAssetTypePlacement);
+            WZ_ADD_TYPE(kAssetTypePlacedField);
             WZ_ADD_TYPE(kAssetTypePointCloud);
             WZ_ADD_TYPE(kAssetTypeVoxelGrid);
             WZ_ADD_TYPE(kAssetTypeCurve);
@@ -358,6 +359,7 @@ namespace wz::engine::assets
                 kAssetTypeMeshClusterHierarchy,
                 "Mesh cluster hierarchy");
             WZ_SET_TYPE_NAME(kAssetTypePlacement, "Placement");
+            WZ_SET_TYPE_NAME(kAssetTypePlacedField, "Placed field");
             WZ_SET_TYPE_NAME(kAssetTypeAudioClip, "Audio clip");
             WZ_SET_TYPE_NAME(kAssetTypeAudioBank, "Audio clip bank");
             WZ_SET_TYPE_NAME(kAssetTypeAudioRenderable, "Audio renderable");
@@ -460,6 +462,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kTerrainFromMeshSchema, "Terrain from mesh");
             WZ_ADD_SCHEMA(kTerrainVisualProxySchema, "Terrain visual proxy");
             WZ_ADD_SCHEMA(kPlacementSchema, "Placement");
+            WZ_ADD_SCHEMA(kPlacedFieldSchema, "Placed field");
             WZ_ADD_SCHEMA(kAudioClipFromWavSchema, "Audio clip from WAV");
             WZ_ADD_SCHEMA(kAudioClipProceduralToneSchema, "Procedural tone");
             WZ_ADD_SCHEMA(kAudioRenderableSchema, "Audio renderable");

@@ -28,6 +28,8 @@
 #include <engine/assets/collision/collision_compilers.h>
 #include <engine/assets/placement/placement.h>
 #include <engine/assets/placement/placement_compilers.h>
+#include <engine/assets/placed_field/placed_field.h>
+#include <engine/assets/placed_field/placed_field_compilers.h>
 #include <engine/assets/audio/audio_clip.h>
 #include <engine/assets/audio/audio_clip_compilers.h>
 #include <engine/assets/audio/audio_clip_bank.h>
@@ -119,6 +121,7 @@ namespace wz::engine::assets::internal {
         TerrainVisualProxyTable&     terrain_visual_proxy_table;
         CollisionAssetTable&        collision_table;
         PlacementTable&             placement_table;
+        PlacedFieldTable&           placed_field_table;
         AudioClipTable&             audio_clip_table;
         AudioClipBankTable&         audio_clip_bank_table;
         AudioRenderableTable&       audio_renderable_table;

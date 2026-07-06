@@ -234,6 +234,7 @@ namespace wz::engine::assets
         , terrain_visual_proxy_table_{}
         , collision_table_{}
         , placement_table_{}
+        , placed_field_table_{}
         , audio_clip_table_{}
         , audio_clip_bank_table_{}
         , audio_renderable_table_{}
@@ -281,6 +282,7 @@ namespace wz::engine::assets
                 .terrain_visual_proxy_table = terrain_visual_proxy_table_,
                 .collision_table           = collision_table_,
                 .placement_table           = placement_table_,
+                .placed_field_table        = placed_field_table_,
                 .audio_clip_table          = audio_clip_table_,
                 .audio_clip_bank_table     = audio_clip_bank_table_,
                 .audio_renderable_table    = audio_renderable_table_,
@@ -340,6 +342,7 @@ namespace wz::engine::assets
         , terrain_visual_proxies_(system_, logger_, terrain_visual_proxy_table_)
         , collisions_(system_, logger_, collision_table_)
         , placements_(system_, logger_, placement_table_)
+        , placed_fields_(system_, logger_, placed_field_table_)
         , audio_clips_(system_, logger_, files_, audio_clip_table_)
         , audio_clip_banks_(
             system_, logger_, audio_clip_bank_table_, files_)

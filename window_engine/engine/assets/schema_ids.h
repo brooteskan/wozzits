@@ -326,6 +326,13 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000A03ull
     };
 
+    // PlacedField combiner (issue #223): binds a frame-less field to a Placement
+    // frame → kAssetTypePlacedField. Same "world-data" range (0xA00-0xAFF) as
+    // Placement, next after it, since a PlacedField describes placed world data.
+    inline constexpr wz::asset::SchemaID kPlacedFieldSchema{
+        0xF11E'CA55'E7'000A04ull
+    };
+
     // Collision schemas intentionally occupy 0x000B00-0x000B7F. These IDs
     // are persisted in disk-cache keys, so keep them stable; reserve
     // 0x000B80-0x000BFF for future audio schemas.

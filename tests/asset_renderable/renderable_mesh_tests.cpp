@@ -167,6 +167,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     TerrainVisualProxyTable terrain_visual_proxy_table;
     CollisionAssetTable collision_table;
     PlacementTable placement_table;
+    PlacedFieldTable placed_field_table;
     AudioClipTable audio_clip_table;
     AudioClipBankTable audio_clip_bank_table;
     AudioRenderableTable audio_renderable_table;
@@ -286,6 +287,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         .terrain_visual_proxy_table = terrain_visual_proxy_table,
         .collision_table = collision_table,
         .placement_table = placement_table,
+        .placed_field_table = placed_field_table,
         .audio_clip_table = audio_clip_table,
         .audio_clip_bank_table = audio_clip_bank_table,
         .audio_renderable_table = audio_renderable_table,
@@ -537,6 +539,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
     TerrainVisualProxyTable terrain_visual_proxy_table;
     CollisionAssetTable collision_table;
     PlacementTable placement_table;
+    PlacedFieldTable placed_field_table;
     AudioClipTable audio_clip_table;
     AudioClipBankTable audio_clip_bank_table;
     AudioRenderableTable audio_renderable_table;
@@ -650,6 +653,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
         .terrain_visual_proxy_table = terrain_visual_proxy_table,
         .collision_table = collision_table,
         .placement_table = placement_table,
+        .placed_field_table = placed_field_table,
         .audio_clip_table = audio_clip_table,
         .audio_clip_bank_table = audio_clip_bank_table,
         .audio_renderable_table = audio_renderable_table,
