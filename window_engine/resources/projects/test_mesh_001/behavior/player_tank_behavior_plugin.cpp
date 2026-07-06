@@ -241,7 +241,8 @@ namespace
             uint32_t button = wz_input_event_controller_button(facts);
             wz_log_infof(facts, "frame %u pressed controller %u button %u",frame_index, controller, button);
             
-            if (button == 8) {
+            if (button == 8
+                && tank_lifecycle::is_alive(&state->lifecycle)) {
                 wz_log_info(facts, "[tank] try fire canon");
                 try_fire_canon(facts, event, state);
             }
@@ -264,37 +265,43 @@ namespace
             break;
         }
 
-        // Life/death: capture spawn (once), poll the hitbox tally, and respawn at
-        // the spawn point on death -- now a shared Alive/Dead machine.
+        // Life/death: capture spawn (once), poll the hitbox tally, and -- after a
+        // brief "destroyed" beat (hidden + frozen) -- respawn at the spawn point on
+        // death. A shared Alive/Dead machine (tank_lifecycle.h).
         tank_lifecycle::tick(facts, event, &state->lifecycle);
 
-        tank_drive::drive_treads(facts, event, state->left_tread_speed, state->right_tread_speed);
+        // Controls are live only while alive: a destroyed tank sits frozen at the
+        // death spot until the lifecycle respawns it (in-flight shots still finish).
+        if (tank_lifecycle::is_alive(&state->lifecycle)) {
+            tank_drive::drive_treads(facts, event, state->left_tread_speed, state->right_tread_speed);
 
-        // Engine grain synth: track tread effort -> rpm and crossfade the engine
-        // cloud's program on a level change (runs on frame.update + input events).
-        update_engine_rpm(facts, state);
+            // Engine grain synth: track tread effort -> rpm and crossfade the engine
+            // cloud's program on a level change (runs on frame.update + input events).
+            update_engine_rpm(facts, state);
 
-        // Barrel elevation: raise (13) / lower (10) while held, clamped to
-        // [0, 15 deg] above horizontal, then pitch the gun so the muzzle flash,
-        // trajectory beam, and shot ray (which ride the barrel) follow.
-        const float elev_dir =
-            (float)state->raise_held - (float)state->lower_held;
-        if (elev_dir != 0.0f) {
-            state->barrel_elevation +=
-                elev_dir * kGunElevSpeed * wz_delta_seconds(facts);
-            if (state->barrel_elevation < kGunElevationMin) {
-                state->barrel_elevation = kGunElevationMin;
+            // Barrel elevation: raise (13) / lower (10) while held, clamped to
+            // [0, 15 deg] above horizontal, then pitch the gun so the muzzle flash,
+            // trajectory beam, and shot ray (which ride the barrel) follow.
+            const float elev_dir =
+                (float)state->raise_held - (float)state->lower_held;
+            if (elev_dir != 0.0f) {
+                state->barrel_elevation +=
+                    elev_dir * kGunElevSpeed * wz_delta_seconds(facts);
+                if (state->barrel_elevation < kGunElevationMin) {
+                    state->barrel_elevation = kGunElevationMin;
+                }
+                if (state->barrel_elevation > kGunElevationMax) {
+                    state->barrel_elevation = kGunElevationMax;
+                }
             }
-            if (state->barrel_elevation > kGunElevationMax) {
-                state->barrel_elevation = kGunElevationMax;
+            if (state->barrel != WZ_INVALID_BEHAVIOR_ENTITY) {
+                tank_drive::elevate_gun(facts, state->barrel, state->barrel_elevation);
             }
-        }
-        if (state->barrel != WZ_INVALID_BEHAVIOR_ENTITY) {
-            tank_drive::elevate_gun(facts, state->barrel, state->barrel_elevation);
         }
 
         // Advance the cannon shot: position the beam on the gun, fade the flashes,
-        // place the impact, play the report. Triggered from the controller above.
+        // place the impact, play the report (runs even while destroyed so a shot
+        // fired just before death still lands).
         cannon_fire::tick(facts, event, &state->cannon);
     }
 }
