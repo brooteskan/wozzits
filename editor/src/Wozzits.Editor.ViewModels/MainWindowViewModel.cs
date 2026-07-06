@@ -23,6 +23,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly Action<Action>? _dispatch;
     private readonly string _projectDirectory;
     private readonly BehaviorModuleBuilder _behaviorBuilder = new();
+
+    // Engine log lines arrive one at a time (often on the engine's logger thread)
+    // and used to each trigger a full console rebuild + re-render on the UI thread
+    // — a resolve's burst of hundreds froze the editor. Buffer them and drain on a
+    // single coalesced UI-thread flush so a burst is one update, not one per line.
+    private readonly object _pendingLogGate = new();
+    private readonly List<string> _pendingLogLines = [];
+    private bool _logFlushScheduled;
     private readonly StandaloneAppLauncher _standaloneLauncher = new();
     private Process? _standaloneProcess;
     private bool _shutdown;
@@ -305,24 +313,52 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        bool scheduleFlush;
+        lock (_pendingLogGate)
+        {
+            _pendingLogLines.Add(line);
+            scheduleFlush = !_logFlushScheduled;
+            _logFlushScheduled = true;
+        }
+
+        // Only one flush is ever in flight. Lines that arrive while it is queued
+        // accumulate under the lock and drain together, so a burst collapses to a
+        // single UI-thread update instead of one marshal + rebuild per line.
+        if (!scheduleFlush)
+        {
+            return;
+        }
+
         if (_dispatch is not null)
         {
-            _dispatch(() => AddEngineLogLine(line));
-            return;
+            _dispatch(FlushPendingLogLines);
         }
-
-        if (_syncContext is null || SynchronizationContext.Current == _syncContext)
+        else if (_syncContext is null || SynchronizationContext.Current == _syncContext)
         {
-            AddEngineLogLine(line);
-            return;
+            FlushPendingLogLines();
         }
-
-        _syncContext.Post(_ => AddEngineLogLine(line), null);
+        else
+        {
+            _syncContext.Post(_ => FlushPendingLogLines(), null);
+        }
     }
 
-    private void AddEngineLogLine(string line)
+    private void FlushPendingLogLines()
     {
-        Console.AppendLogLine(line);
+        List<string> batch;
+        lock (_pendingLogGate)
+        {
+            _logFlushScheduled = false;
+            if (_pendingLogLines.Count == 0)
+            {
+                return;
+            }
+
+            batch = new List<string>(_pendingLogLines);
+            _pendingLogLines.Clear();
+        }
+
+        Console.AppendLogLines(batch);
         OnPropertyChanged(nameof(EngineLogText));
     }
 
