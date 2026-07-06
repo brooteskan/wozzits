@@ -229,6 +229,13 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
             ParentId = parent?.Id,
             Kind = "node",
             Visible = true,
+            // A freshly added node has the engine's identity local transform.
+            // Populate it so its transform pane shows immediately: the inspector
+            // hides the pane while Transform is null (SetTransformFields sets
+            // HasTransform = transform is not null), which is why a new node's
+            // transform used to appear only after an editor reload re-read the
+            // snapshot. Reload still re-reads the engine's authoritative value.
+            Transform = IdentitySceneTransform(),
         });
 
         if (parent is null)
@@ -244,6 +251,29 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasNoScene));
         SelectNode(added);
     }
+
+    // The identity local transform the engine assigns a newly added node, mirrored
+    // client-side so the inspector shows the transform pane right away. Display
+    // strings match the identity values; a reload re-reads the engine's formatting.
+    private static EngineSceneTransform IdentitySceneTransform() => new()
+    {
+        Translation = [0.0, 0.0, 0.0],
+        RotationQuaternion = [0.0, 0.0, 0.0, 1.0],
+        RotationEulerDegrees = [0.0, 0.0, 0.0],
+        Scale = [1.0, 1.0, 1.0],
+        Display = new EngineSceneTransformDisplay
+        {
+            TranslationX = "0",
+            TranslationY = "0",
+            TranslationZ = "0",
+            RotationX = "0",
+            RotationY = "0",
+            RotationZ = "0",
+            ScaleX = "1",
+            ScaleY = "1",
+            ScaleZ = "1",
+        },
+    };
 
     // Reparent `node` under `newParent` (null => top level) via the engine, then
     // move it in the tree. Rejects dropping a node onto itself or its own
