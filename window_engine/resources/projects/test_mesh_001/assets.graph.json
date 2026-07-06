@@ -1886,7 +1886,7 @@
     },
     {
       "node_id": 62,
-      "key": "asset-key:128bc31f02104229:06cea8b09d7316b5:f11eca55e7000100:0000000000000000:0000000000000001:0000000000000000:637286a882c3cd35:b35c460deceec2e1",
+      "key": "asset-key:128bc31f02104228:06cea8b09d7316b5:f11eca55e7000100:0000000000000000:0000000000000001:0000000000000000:637286a882c3cd35:b35c460deceec2e1",
       "type": 4,
       "schema": "0xf11eca55e7000100",
       "stage": 0,
@@ -1914,7 +1914,7 @@
           {
             "name": "stage",
             "type": "int",
-            "value": 0
+            "value": 1
           },
           {
             "name": "target",
@@ -2226,7 +2226,7 @@
     },
     {
       "node_id": 65,
-      "key": "asset-key:9384cd1d234456b0:20f4a73bda6cbd3f:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:dee04ab3a1f0fed8:16575d247a07e767",
+      "key": "asset-key:9384cd1d234456b0:20f4a73bda6cbd3f:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:dee04ab3a1e4d175:16575d247a07e767",
       "type": 1049,
       "schema": "0xf11eca55e7000103",
       "stage": 0,
@@ -2304,7 +2304,7 @@
     },
     {
       "node_id": 67,
-      "key": "asset-key:5b8fcb100759ae2c:97f2a2e955519745:f11eca55e700070a:0000000000000000:9e3779b97f4b8704:0000000000000000:657a42dd9f538704:55ebeab277c049b7",
+      "key": "asset-key:5b8fcb100759ae2c:97f2a2e955519745:f11eca55e700070a:0000000000000000:9e3779b97f4b8704:0000000000000000:f6b8375ac77d2758:55ebeab277c049b7",
       "type": 1048,
       "schema": "0xf11eca55e700070a",
       "stage": 0,
@@ -2514,46 +2514,6 @@
             "name": "const7_w",
             "type": "float",
             "value": 0
-          }
-        ]
-      }
-    },
-    {
-      "node_id": 68,
-      "key": "asset-key:5b1aa7b7525c8433:e69f6785163a2ceb:f11eca55e7000b00:0000000000000000:9e3779b97f4aa12d:0000000000000000:f4d63ad2ce39597e:526463b98cb994de",
-      "type": 150,
-      "schema": "0xf11eca55e7000b00",
-      "stage": 0,
-      "residency": 1,
-      "kind": 0,
-      "demand_root": 0,
-      "deps": [
-        {
-          "from_node_id": 59,
-          "to_input_port": 0
-        }
-      ],
-      "meta": {
-        "params": [
-          {
-            "name": "build_method",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "occupancy_blocks_movement",
-            "type": "bool",
-            "value": true
-          },
-          {
-            "name": "occupancy_kind",
-            "type": "int",
-            "value": 0
-          },
-          {
-            "name": "occupancy_queryable",
-            "type": "bool",
-            "value": true
           }
         ]
       }
@@ -2870,7 +2830,7 @@
       {
         "node_id": 62,
         "x": 937.54796684843745,
-        "y": 2287.4552046291733
+        "y": 2285.9130314714553
       },
       {
         "node_id": 63,
@@ -2908,6 +2868,6 @@
         "y": 2142.0984089346011
       }
     ],
-    "zoom": 0.86306780359827606
+    "zoom": 0.36602500000000016
   }
 }
