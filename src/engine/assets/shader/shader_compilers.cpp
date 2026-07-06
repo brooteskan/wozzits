@@ -221,12 +221,19 @@ namespace wz::engine::assets::internal
                     sources.push_back({ bytes->data(), bytes->size() });
                 }
 
+                std::string compile_error;
                 wz::gpu::GPUHandle gpu_handle =
-                    wz::gpu::compile_hlsl(device, sources, *desc);
+                    wz::gpu::compile_hlsl(device, sources, *desc, &compile_error);
 
                 if (!gpu_handle.valid()) {
-                    logger.error("gpu.compile_hlsl failed");
-                    return compile_failed_node(input);
+                    std::string reason =
+                        "shader compile failed (target=" + desc->target
+                        + " entry=" + desc->entry + ")"
+                        + (compile_error.empty()
+                               ? std::string{}
+                               : ": " + compile_error);
+                    logger.error("gpu.compile_hlsl failed: " + reason);
+                    return compile_failed_node(input, std::move(reason));
                 }
 
                 // Dual-output: also D3DCompile to bytecode and register an rhi

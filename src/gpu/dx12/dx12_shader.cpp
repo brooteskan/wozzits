@@ -24,7 +24,8 @@ namespace wz::gpu
     wz::asset::ResourceHandle compile_hlsl(
         wz::gpu::Device& device,
         std::span<const std::span<const uint8_t>> sources,
-        const HLSLCompileDesc& desc)
+        const HLSLCompileDesc& desc,
+        std::string* out_error)
     {
         // Not needed by D3DCompile itself, but this verifies the GPU device is valid
         // and keeps the function shaped correctly for the later blob table.
@@ -68,9 +69,13 @@ namespace wz::gpu
         {
             if (error_blob)
             {
-                OutputDebugStringA(
-                    static_cast<const char*>(error_blob->GetBufferPointer())
-                );
+                const char* text =
+                    static_cast<const char*>(error_blob->GetBufferPointer());
+                OutputDebugStringA(text);
+                if (out_error)
+                {
+                    *out_error = text;
+                }
 
                 error_blob->Release();
                 error_blob = nullptr;
