@@ -120,7 +120,7 @@
     },
     {
       "id": "2",
-      "parent": "root",
+      "parent": "4",
       "name": "command",
       "transform": {
         "translation": [
@@ -171,6 +171,56 @@
           ]
         }
       ]
+    },
+    {
+      "id": "3",
+      "parent": "4",
+      "name": "hut",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          5,
+          2,
+          5
+        ]
+      },
+      "visible": true,
+      "renderable": {
+        "asset_graph_node_id": 67
+      }
+    },
+    {
+      "id": "4",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          100,
+          32,
+          100
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true
     }
   ],
   "defaults": {
@@ -182,15 +232,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        399.88681030273438,
-        215.51318359375,
-        616.2672119140625
+        193.43673706054688,
+        193.95944213867188,
+        261.75814819335938
       ],
       "orientation": [
-        -0.010801001451909542,
-        0.99533456563949585,
-        0.077942691743373871,
-        0.055834461003541946
+        -0.11776474118232727,
+        0.8528408408164978,
+        -0.42684566974639893,
+        -0.27676153182983398
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
