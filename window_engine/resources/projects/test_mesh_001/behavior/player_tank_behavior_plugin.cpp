@@ -138,6 +138,10 @@ namespace
             cannon_fire::init(
                 facts, self, state->chassis.turret, state->barrel,
                 state->terrain, &state->cannon);
+
+            // Life/death: the lifecycle machine polls the hitbox tally and
+            // respawns at the captured spawn point on death (kMaxHealth).
+            tank_lifecycle::init(state->hitbox, kMaxHealth, &state->lifecycle);
         }
     }
 
@@ -260,34 +264,9 @@ namespace
             break;
         }
 
-        // Death threshold: capture the spawn point once, then poll the hitbox's
-        // cumulative damage. At kMaxHealth the player is destroyed -> respawn at the
-        // spawn point with the tally cleared (we do NOT remove the player -- its
-        // camera child would go with it).
-        {
-            WzMat4 self_w{};
-            if (!state->spawn_captured
-                && wz_self_world_transform(facts, event, &self_w)) {
-                state->spawn_x = self_w.m[12];
-                state->spawn_y = self_w.m[13];
-                state->spawn_z = self_w.m[14];
-                state->spawn_captured = 1;
-            }
-            if (auto* d = wz_instance_state_of<tank_damage::Tally>(
-                    facts, state->hitbox, tank_damage::kModule)) {
-                if (d->total >= kMaxHealth) {
-                    wz_log_infof(
-                        facts, "[DEATH] player destroyed (%.0f dmg) -- respawning",
-                        (double)d->total);
-                    d->total = 0.0f;
-                    if (state->spawn_captured) {
-                        wz_write_set_world_translation(
-                            facts, wz_self(event),
-                            state->spawn_x, state->spawn_y, state->spawn_z);
-                    }
-                }
-            }
-        }
+        // Life/death: capture spawn (once), poll the hitbox tally, and respawn at
+        // the spawn point on death -- now a shared Alive/Dead machine.
+        tank_lifecycle::tick(facts, event, &state->lifecycle);
 
         tank_drive::drive_treads(facts, event, state->left_tread_speed, state->right_tread_speed);
 

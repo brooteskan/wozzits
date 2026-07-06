@@ -4,6 +4,7 @@
 #include "tank_drive.h"
 #include "cannon_fire.h"
 #include "tank_damage.h"
+#include "tank_lifecycle.h"
 
 // Barrel elevation travel limits (radians, relative to the gun's LEVEL rest pose
 // authored in the GLB). The gun pitches between these while buttons 13 (raise) /
@@ -50,11 +51,11 @@ struct PlayerTankState {
     WzBehaviorEntityId canon_audio = WZ_INVALID_BEHAVIOR_ENTITY;
     WzBehaviorEntityId engine_audio = WZ_INVALID_BEHAVIOR_ENTITY;
 
-    // Damage tracking: the "hitbox" child's hit_logger accumulates the tally; we
-    // poll it each frame and respawn at the captured spawn point on death.
+    // Damage tracking: the "hitbox" child's hit_logger accumulates the tally; the
+    // lifecycle machine (Alive/Dead) polls it and respawns at the captured spawn
+    // point on death. Spawn capture + the tally poll now live in tank_lifecycle.
     WzBehaviorEntityId hitbox = WZ_INVALID_BEHAVIOR_ENTITY;
-    float   spawn_x = 0.0f, spawn_y = 0.0f, spawn_z = 0.0f;
-    uint8_t spawn_captured = 0;
+    tank_lifecycle::State lifecycle;
 
     // Last committed disposition of the co-located quantum_agent (if any):
     // -2 = never read, -1 = deliberating, 0/1 = the chosen outcome. We react
