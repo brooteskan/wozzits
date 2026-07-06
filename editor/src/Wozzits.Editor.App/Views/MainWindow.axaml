@@ -32,6 +32,10 @@
                 <Separator/>
                 <MenuItem Header="Launch _Standalone Play"
                           Command="{Binding LaunchStandaloneCommand}"/>
+                <Separator/>
+                <MenuItem Header="Frame _Profiling"
+                          ToggleType="CheckBox"
+                          IsChecked="{Binding FrameProfilingEnabled, Mode=TwoWay}"/>
             </MenuItem>
             <MenuItem Header="_Prefabs" SubmenuOpened="OnPrefabsMenuOpened">
                 <MenuItem Header="_Open Prefab" x:Name="OpenPrefabMenu"/>

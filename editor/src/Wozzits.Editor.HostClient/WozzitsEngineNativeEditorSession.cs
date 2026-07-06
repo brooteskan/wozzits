@@ -161,6 +161,11 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         _runtime?.Restart();
     }
 
+    public void SetFrameProfiling(bool enabled)
+    {
+        _runtime?.SetFrameProfiling(enabled);
+    }
+
     public EngineMutationResponse SetSceneNodeProperties(
         string nodeId,
         string name,

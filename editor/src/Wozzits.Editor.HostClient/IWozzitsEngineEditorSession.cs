@@ -309,6 +309,12 @@ public interface IWozzitsEngineEditorSession
     // host-gated, no-op success when no viewport is running (issue #213 3b-2).
     EngineMutationResponse ClearNodeGlbComponentStyle(string nodeId, uint meshIndex);
 
+    // Enable/disable frame profiling on the running viewport engine (default
+    // off). No-op when no viewport is running. While enabled the engine records a
+    // per-frame profile and writes frame_profile_<tag>.csv on the on->off toggle
+    // and on app close; off records nothing and writes no file.
+    void SetFrameProfiling(bool enabled);
+
     // Stop the engine's viewport runtime (if any) and start a fresh one for the
     // current project - used to reopen the viewport after its window was closed.
     void RestartRuntime();

@@ -339,6 +339,11 @@ internal static partial class WozzitsEngineAbi
     [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_is_running")]
     internal static partial int WzEditorRuntimeIsRunning(IntPtr runtime);
 
+    [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_set_frame_profiling")]
+    internal static partial void WzEditorRuntimeSetFrameProfiling(
+        IntPtr runtime,
+        int enabled);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_bind_draft")]
     internal static partial WzResult WzEditorRuntimeBindDraft(
         IntPtr runtime,

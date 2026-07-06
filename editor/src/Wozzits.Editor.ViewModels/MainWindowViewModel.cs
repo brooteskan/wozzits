@@ -153,6 +153,23 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     public bool IsEditingPrefab => !string.IsNullOrEmpty(_editingPrefabName);
 
+    // Frame profiling is opt-in (default off). Toggling drives the running engine
+    // through the runtime seam: OFF records nothing and writes no CSV; ON starts a
+    // fresh capture that flushes to its own frame_profile_<tag>.csv on OFF or on
+    // app close. A no-op when no viewport is running.
+    private bool _frameProfilingEnabled;
+    public bool FrameProfilingEnabled
+    {
+        get => _frameProfilingEnabled;
+        set
+        {
+            if (SetProperty(ref _frameProfilingEnabled, value))
+            {
+                _editorSession?.SetFrameProfiling(value);
+            }
+        }
+    }
+
     public string EngineLogText => Console.LogText;
 
     public void Shutdown()

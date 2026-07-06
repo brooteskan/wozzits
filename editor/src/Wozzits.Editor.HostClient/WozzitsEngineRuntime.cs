@@ -39,6 +39,18 @@ public sealed class WozzitsEngineRuntime : IDisposable
 
     internal IntPtr Handle => _runtime;
 
+    // Enable/disable frame profiling on the running engine (default off). No-op
+    // when no runtime is alive.
+    public void SetFrameProfiling(bool enabled)
+    {
+        if (_runtime != IntPtr.Zero)
+        {
+            WozzitsEngineAbi.WzEditorRuntimeSetFrameProfiling(
+                _runtime,
+                enabled ? 1 : 0);
+        }
+    }
+
     // Stop any current runtime (freeing a closed/zombie one) and start a fresh
     // engine + viewport for the same project - the way to bring the viewport
     // back after its window was closed.
