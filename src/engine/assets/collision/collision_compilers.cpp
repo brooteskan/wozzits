@@ -1560,6 +1560,8 @@ namespace wz::engine::assets::internal
         TerrainAssetTable& terrain_table,
         CollisionAssetTable& collision_table,
         PlacementTable& placement_table,
+        PlacedFieldTable& placed_field_table,
+        const wz::asset::AssetSystem* asset_system,
         const EngineAssetCacheSettings& cache_settings)
     {
         registry.register_compiler(wz::asset::AssetCompiler{
@@ -1810,6 +1812,16 @@ namespace wz::engine::assets::internal
                     kAssetTypePlacement,
                     wz::asset::InputPortRequirement::Optional,
                 },
+                // Optional PlacedField (issue #223): one upstream bundling the
+                // height field + its Placement — the same combiner the terrain
+                // clipmap reads. When connected it supersedes the separate
+                // scalar field + placement ports so the two consumers share one
+                // frame and cannot drift.
+                {
+                    "placed_field",
+                    kAssetTypePlacedField,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .parameters = {
                 {
@@ -1896,7 +1908,8 @@ namespace wz::engine::assets::internal
             },
             .compile =
                 [&logger, &scalar_fields_table, &collision_table,
-                 &placement_table, cache_settings](
+                 &placement_table, &placed_field_table, asset_system,
+                 cache_settings](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -1948,6 +1961,51 @@ namespace wz::engine::assets::internal
                     }
                 }
 
+                // A connected PlacedField (issue #223) SUPERSEDES the separate
+                // scalar field + placement ports: it bundles both as ONE upstream
+                // — the same combiner the terrain clipmap reads, so the visual
+                // terrain and this collision cannot drift out of alignment. The
+                // field + placement live one hop away (deps of the PlacedField),
+                // so resolve them through the asset system.
+                wz::asset::AssetKey placed_height_field_key{};
+                for (const wz::asset::AssetNode& dep : dep_nodes) {
+                    if (dep.type != kAssetTypePlacedField) {
+                        continue;
+                    }
+                    const PlacedFieldData* placed = nullptr;
+                    if (asset_system) {
+                        if (const auto* compiled =
+                                asset_system->find_compiled(dep.key))
+                        {
+                            placed = placed_field_table.get(compiled->handle);
+                        }
+                    }
+                    if (!placed || !placed->valid()) {
+                        logger.error(
+                            "collision height field placed field did not "
+                            "resolve");
+                        return compile_failed_node(
+                            input,
+                            "collision height field placed field did not "
+                            "resolve");
+                    }
+                    if (asset_system) {
+                        if (const auto* fc =
+                                asset_system->find_compiled(placed->field_key))
+                        {
+                            field = scalar_fields_table.get(fc->handle);
+                        }
+                        if (const auto* pc =
+                                asset_system->find_compiled(
+                                    placed->placement_key))
+                        {
+                            placement = placement_table.get(pc->handle);
+                        }
+                    }
+                    placed_height_field_key = placed->field_key;
+                    break;
+                }
+
                 if (!field || !field->valid()) {
                     logger.error(
                         "collision height field requires a valid scalar field "
@@ -1965,6 +2023,11 @@ namespace wz::engine::assets::internal
                 // the key via key_to_dep_hash / combine_dep_hashes), so a
                 // placement change re-compiles the collision.
                 CollisionFromHeightFieldCompileDesc resolved_desc = *desc;
+                if (!(placed_height_field_key == wz::asset::AssetKey{})) {
+                    // The PlacedField supplies the height field key (there is no
+                    // direct scalar-field dep to read it from).
+                    resolved_desc.height_field = placed_height_field_key;
+                }
                 if (placement) {
                     if (!placement->valid()) {
                         logger.error(

@@ -1,4 +1,8 @@
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/collision/collision.h>
+#include <engine/assets/key_factories/collision.h>
+#include <engine/assets/placed_field_asset_module.h>
+#include <engine/assets/schema_ids.h>
 
 #include <gtest/gtest.h>
 
@@ -662,6 +666,103 @@ TEST(CollisionAssetModule, HeightFieldHonoursConnectedPlacement)
     // (values 0..1): min == base, max == base + vertical_scale.
     EXPECT_FLOAT_EQ(data->min_height, 5.0f);
     EXPECT_FLOAT_EQ(data->max_height, 5.0f + 30.0f);
+}
+
+// #223 Seam 3: a height-field collision can take BOTH its scalar field and its
+// world frame from a single PlacedField upstream — the same combiner the terrain
+// clipmap reads. The PlacedField supersedes the separate field + placement ports
+// so the collision and the visual terrain share one frame and cannot drift.
+TEST(CollisionAssetModule, HeightFieldFromPlacedField)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_collision_placed_field_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const auto field = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "collision/placed_height_field",
+        .width = 4,
+        .height = 4,
+        .depth = 1,
+        .generator = ScalarFieldGenerator::GradientX,
+    });
+    ASSERT_TRUE(field.valid());
+
+    // Same frame the clipmap would read: origin (10,_,20), footprint 500x600,
+    // vertical 30, base 5.
+    const auto placement = assets.placements().create_placement({
+        .name = "collision/placed_frame",
+        .origin = { 10.0f, 0.0f, 20.0f },
+        .extent = { 500.0f, 30.0f, 600.0f },
+        .base_height = 5.0f,
+    });
+    ASSERT_TRUE(placement.valid());
+
+    // The single shared upstream binding the field to its frame.
+    const auto placed = assets.placed_fields().create_placed_field({
+        .field_key = field.output,
+        .placement_key = placement.output,
+        .field_type = kAssetTypeScalarField,
+    });
+    ASSERT_TRUE(placed.valid());
+
+    // Author a collision node referencing ONLY the PlacedField (no direct field
+    // or placement dep). The graph/editor path wires this through the new
+    // placed_field port; here we register it directly. The key folds the
+    // PlacedField so a change to it re-compiles the collision. The compile desc
+    // carries no height field — the PlacedField supplies it.
+    const float zero2[2] = { 0.0f, 0.0f };
+    const CollisionOccupancyData occupancy{};
+    const wz::asset::AssetKey collision_key =
+        make_collision_from_height_field_key(
+            "collision/from_placed_field",
+            placed.output,
+            zero2,
+            zero2,
+            1.0f,
+            0.0f,
+            occupancy);
+
+    CollisionFromHeightFieldCompileDesc compile_desc{};
+    wz::asset::AssetNode node{};
+    node.key = collision_key;
+    node.type = kAssetTypeCollisionAsset;
+    node.schema = kCollisionFromHeightFieldSchema;
+    node.stage = wz::asset::AssetStage::Source;
+    node.payload = std::vector<uint8_t>{};
+    node.meta = compile_desc;
+    ASSERT_TRUE(assets.system().register_asset(
+        std::move(node), { placed.output }));
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const CollisionAssetData* data =
+        assets.collisions().get_collision_data(
+            assets.collisions().get_collision(
+                CollisionAsset{ .output = collision_key }));
+    ASSERT_NE(data, nullptr);
+    EXPECT_TRUE(data->valid());
+    EXPECT_EQ(data->shape_kind, CollisionShapeKind::TerrainHeightField);
+
+    // The height field the collision queries comes from the PlacedField's field.
+    EXPECT_TRUE(data->height_field == field.output);
+
+    // The PlacedField's placement is authoritative for the world frame — the
+    // SAME values a clipmap on the same PlacedField carries, so they align.
+    EXPECT_TRUE(data->placement_driven);
+    EXPECT_FLOAT_EQ(data->origin[0], 10.0f);   // placement origin.x
+    EXPECT_FLOAT_EQ(data->origin[1], 20.0f);   // placement origin.z
+    EXPECT_FLOAT_EQ(data->size[0], 500.0f);    // placement extent.x
+    EXPECT_FLOAT_EQ(data->size[1], 600.0f);    // placement extent.z
+    EXPECT_FLOAT_EQ(data->min_height, 5.0f);            // base
+    EXPECT_FLOAT_EQ(data->max_height, 5.0f + 30.0f);    // base + vertical
 }
 
 // Back-compat: with NO placement connected, the collision uses its own params
