@@ -92,6 +92,13 @@ namespace
         // The squad commander (hidden top-level node). Optional -- the tank fights
         // solo if it isn't present.
         (void)wz_find_entity_by_authored_id(facts, "2:command", &state->command);
+
+        // Life/death: poll the hitbox tally, and on death respawn at the command
+        // node (HQ) after the destroyed beat -- falls back to the enemy's own
+        // spawn if there is no command node.
+        wz_find_descendant_by_name(facts, self, "hitbox", &state->hitbox);
+        tank_lifecycle::init(
+            state->hitbox, kEnemyMaxHealth, &state->lifecycle, state->command);
     }
 
     // sense_world lives in agent_tank.h now -- SHARED with the commander.
@@ -237,6 +244,12 @@ namespace
         if (!state) {
             return;
         }
+
+        // Life/death first: capture spawn, poll the hitbox tally, and after a
+        // destroyed beat respawn at the command node. Sensing + cognition keep
+        // running while destroyed, but driving + firing are gated on `alive`.
+        tank_lifecycle::tick(facts, event, &state->lifecycle);
+        const uint8_t alive = tank_lifecycle::is_alive(&state->lifecycle);
 
         // Sense the world every frame, then RE-ANNEAL the stance on a cadence the
         // COGNITION picks -- the "reconsider" meta-qubit (2): its committed VOLATILE
@@ -449,7 +462,7 @@ namespace
                     !has_fire
                     || fire_dec.committed == 0
                     || (fire_dec.committed == -1 && fire_dec.marginal > 0.0f);
-                if (weapons_free && state->ammo > 0
+                if (alive && weapons_free && state->ammo > 0
                     && now >= state->next_fire_time
                     && state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY)
                 {
@@ -535,9 +548,13 @@ namespace
             break;
         }
 
-        tank_drive::drive_facing(facts, event, state->heading, state->speed);
+        // Frozen while destroyed; the lifecycle teleports us to HQ on respawn.
+        if (alive) {
+            tank_drive::drive_facing(facts, event, state->heading, state->speed);
+        }
 
-        // Advance the cannon shot (shared with the player). Fired above on a shot.
+        // Advance the cannon shot (shared with the player). Fired above on a shot;
+        // runs even while destroyed so an in-flight shot still finishes.
         cannon_fire::tick(facts, event, &state->cannon);
     }
 }

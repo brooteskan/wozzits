@@ -8,16 +8,21 @@
 //
 //   Alive --(damage >= max_health)--> Dead --(after kRespawnDelay)--> Alive
 //
-// Alive captures the spawn point on the first readable frame and polls the
+// Alive captures the self spawn point on the first readable frame and polls the
 // hitbox tally. On death the tank enters Dead: it HIDES (a "destroyed" beat --
 // render-only, so the machine keeps ticking) and holds for kRespawnDelay; the
 // owner freezes its controls while !is_alive(). On leaving Dead it RESPAWNS --
-// clears the tally, teleports back to the captured spawn, and shows again. So the
+// clears the tally, teleports to its respawn point, and shows again. So the
 // respawn teleport is a deliberate, telegraphed beat rather than an instant snap
 // mid-combat. The tank is never removed (its camera / children ride with it).
 //
-// Only the player wires this today; an enemy can adopt it to gain death +
-// respawn (it has none). Persistence mirrors cannon_fire: the machine + captured
+// The respawn point is either the captured self spawn (player) or a configured
+// ANCHOR node's CURRENT world position (enemies respawn at the squad command
+// node) -- pass the anchor to init(); it falls back to the self spawn if the
+// anchor is unset or unreadable.
+//
+// The player and (now) the enemy both wire this; the enemy passes its command
+// node as the respawn anchor so a destroyed enemy regroups at HQ. Persistence mirrors cannon_fire: the machine + captured
 // spawn ride in the tank's instance state and survive rebuild relocation; init()
 // preserves the captured spawn across reload (the old inline state was never
 // reset in tank_init either).
@@ -34,6 +39,10 @@ namespace tank_lifecycle
 
     struct Data {
         WzBehaviorEntityId hitbox = WZ_INVALID_BEHAVIOR_ENTITY;  // child hit_logger tally
+        // Respawn point. INVALID -> the captured self spawn below (player). Valid
+        // -> that node's CURRENT world position, read at respawn (enemies at the
+        // squad command node); falls back to the self spawn if it can't be read.
+        WzBehaviorEntityId respawn_anchor = WZ_INVALID_BEHAVIOR_ENTITY;
         float   max_health = 0.0f;                               // <= 0 = immortal
         float   spawn_x = 0.0f, spawn_y = 0.0f, spawn_z = 0.0f;  // captured on first tick
         uint8_t spawn_captured = 0;
@@ -102,7 +111,9 @@ namespace tank_lifecycle
                 ctl.changeTo<Alive>();
             }
         }
-        // Respawn: clear the tally, teleport to the captured spawn, show again.
+        // Respawn: clear the tally, teleport to the respawn point (the anchor
+        // node's current position if set + readable, else the captured self
+        // spawn), show again.
         void exit(Control& ctl) {
             Ctx& c = ctl.context();
             Data* d = c.d;
@@ -110,9 +121,17 @@ namespace tank_lifecycle
                     c.facts, d->hitbox, tank_damage::kModule)) {
                 t->total = 0.0f;
             }
-            if (d->spawn_captured) {
+            float rx = d->spawn_x, ry = d->spawn_y, rz = d->spawn_z;
+            uint8_t have = d->spawn_captured;
+            if (d->respawn_anchor != WZ_INVALID_BEHAVIOR_ENTITY) {
+                WzVec3 p{};
+                if (wz_read_world_position(c.facts, d->respawn_anchor, &p)) {
+                    rx = p.x; ry = p.y; rz = p.z; have = 1;
+                }
+            }
+            if (have) {
                 wz_write_set_world_translation(
-                    c.facts, wz_self(c.event), d->spawn_x, d->spawn_y, d->spawn_z);
+                    c.facts, wz_self(c.event), rx, ry, rz);
             }
             wz_write_set_visible(c.facts, wz_self(c.event), 1);
         }
@@ -126,10 +145,13 @@ namespace tank_lifecycle
 
     // Bind the hitbox + health. Preserves any already-captured spawn + the live
     // machine across reload, matching the old inline lifecycle tank_init never reset.
-    inline void init(WzBehaviorEntityId hitbox, float max_health, State* s)
+    inline void init(
+        WzBehaviorEntityId hitbox, float max_health, State* s,
+        WzBehaviorEntityId respawn_anchor = WZ_INVALID_BEHAVIOR_ENTITY)
     {
         s->data.hitbox = hitbox;
         s->data.max_health = max_health;
+        s->data.respawn_anchor = respawn_anchor;
     }
 
     inline void tick(

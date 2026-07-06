@@ -4,6 +4,7 @@
 #include <engine/behavior/behavior_module_api.h>
 #include "tank_drive.h"
 #include "cannon_fire.h"
+#include "tank_lifecycle.h"
 
 // Enemy gun elevation travel limits (radians, relative to the gun's LEVEL rest
 // pose), the AI counterpart to the player's in player_tank.h. The agent pitches
@@ -12,6 +13,11 @@
 // hull).
 inline constexpr float kGunElevationMax = 2 * 0.2617994f;  // 30 deg above horizontal
 inline constexpr float kGunElevationMin = -0.2617994f;     // 15 deg depression
+
+// Total damage an enemy tank absorbs before it is destroyed. The player's shell
+// deals 25 (its projectile's collidable), so this is ~4 clean hits. On death the
+// enemy respawns at the squad command node (its HQ). Tune to taste.
+inline constexpr float kEnemyMaxHealth = 100.0f;
 
 // Shared squad roster (behavior SHARED state, key "squad"): tanks register on
 // spawn to claim a slot in the commander's group agent, and the commander reads
@@ -56,6 +62,11 @@ struct QuantumTankState {
     // order (PRESS/HARASS). A tank READS it and folds it into its own goals; the
     // commander behavior itself leaves this invalid (it IS the command node).
     WzBehaviorEntityId command = WZ_INVALID_BEHAVIOR_ENTITY;
+
+    // Life/death: the "hitbox" child's hit_logger tally feeds the lifecycle
+    // machine (Alive/Dead), which respawns the enemy at the command node on death.
+    WzBehaviorEntityId hitbox = WZ_INVALID_BEHAVIOR_ENTITY;
+    tank_lifecycle::State lifecycle;
 
     // --- World snapshot: sensed every frame; the raw inputs the cognition goals
     // read. Grow this as the tank learns to care about more of the world. ---
