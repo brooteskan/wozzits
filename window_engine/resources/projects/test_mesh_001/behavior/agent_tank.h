@@ -137,6 +137,12 @@ struct QuantumTankState {
     // commander rewards its doctrine memory on the DELTA each re-anneal.
     int prev_shots_landed = 0;
     int prev_fire_taken = 0;
+
+    // Commander-only: sim_time the commander may next bring up a reinforcement
+    // (spawn cooldown), so populating the squad from HQ is paced -- a spawn is
+    // O(scene). Preserved across rebuilds (commander_init never resets it), so the
+    // cadence survives the rebuild each spawn triggers.
+    double next_spawn_time = 0.0;
 };
 
 // Populate the world snapshot the cognition goals read: distance + bearing to the

@@ -57,6 +57,20 @@ namespace agent_tank_config
     inline constexpr float kCommandBias = 0.3f;        // subtracted: passive -> press
     inline constexpr double kCommandReanneal = 6.0;    // commander re-think interval (s)
 
+    // --- SQUAD REINFORCEMENT: the command node brings its squad up to strength
+    // from its OWN position (HQ), on its OWN clock -- this REPLACES the player's
+    // spacebar spawner. The commander is the spawner entity, so enemy tanks appear
+    // AT the command node and roll out from there. Bounded on purpose: a spawn is
+    // O(scene) and the roster is grow-only (dead tanks RESPAWN at HQ, they never
+    // leave), so member_count IS the live squad size -- once it reaches the target
+    // the commander holds. kSquadTargetSize stays within the group agent's member
+    // budget (hub + up to kQuantumAgentMaxDecisions-1 stance qubits = 3) so every
+    // reinforced tank still gets its own stance qubit in the group order.
+    inline constexpr int    kSquadTargetSize = 3;         // tanks the commander brings up
+    inline constexpr double kReinforceCooldown = 4.0;     // min seconds between spawns
+    inline constexpr float  kReinforceSpawnAhead = 12.0f; // +Z from HQ (spawner frame)
+    inline constexpr float  kReinforceSpread = 8.0f;      // lateral gap so they don't stack
+
     // --- DOCTRINE LEARNING: the commander's own quantum_agent carries a memory
     // qubit (|0> = pressing pays off vs THIS player, |1> = caution does). Each
     // re-anneal it rewards the doctrine from the squad's net shot-exchange delta

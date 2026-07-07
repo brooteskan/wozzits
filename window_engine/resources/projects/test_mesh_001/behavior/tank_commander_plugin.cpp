@@ -30,9 +30,14 @@ namespace
         if (!state) {
             return;
         }
-        // The squad watches the player.
-        (void)wz_find_entity_by_authored_id(facts, "empty_1", &state->player);
-        state->target = state->player;
+        // The squad watches the player. The player is a runtime-spawned prefab
+        // (root node named "tank"), so its authored id is remapped on spawn -- find
+        // it by NAME, the same way the tanks do. It usually isn't present yet at the
+        // commander's init (the commander is authored into the scene; the player
+        // drops in a frame later), so on_event retries this until it resolves.
+        if (wz_find_entity_by_name(facts, "tank", &state->player)) {
+            state->target = state->player;
+        }
     }
 
     void commander_on_event(
@@ -50,6 +55,11 @@ namespace
         if (wz_event_kind(event) != WZ_EVENT_FRAME_UPDATE) {
             return;
         }
+
+        // NB: the player is resolved in commander_init (by NAME "tank"), not here.
+        // A prefab spawn triggers a full behavior-scene rebuild that re-runs EVERY
+        // binding's init, so the player's own spawn re-runs commander_init after it
+        // exists -- init resolves it then. No per-frame retry needed.
 
         // DYNAMIC MEMBERSHIP: grow the group agent to the live squad size (a member
         // stance qubit per registered tank, star-bonded to the command). Only when
@@ -69,6 +79,32 @@ namespace
         sense_world(facts, event, state);   // gets the player's speed
 
         const double now = wz_sim_time(facts);
+
+        // SQUAD REINFORCEMENT (every frame, ahead of the re-anneal gate): the
+        // command node's decision about WHEN to spawn. While the squad is under
+        // strength it brings up one enemy_tank per cooldown AT ITS OWN position
+        // (self = the command node), so tanks roll out from HQ instead of a player
+        // key press. member_count is the live squad size (grow-only -- the dead
+        // respawn, they don't leave), so this stops on its own once at target.
+        // Reinforcements fan out laterally by slot so they don't stack on HQ.
+        {
+            using namespace agent_tank_config;
+            const int squad_count = roster ? roster->member_count : 0;
+            if (squad_count < kSquadTargetSize && now >= state->next_spawn_time) {
+                const float lateral =
+                    (static_cast<float>(squad_count)
+                        - 0.5f * static_cast<float>(kSquadTargetSize - 1))
+                    * kReinforceSpread;
+                wz_write_spawn_prefab(
+                    facts, wz_self(event), "enemy_tank",
+                    lateral, 0.0f, kReinforceSpawnAhead);
+                state->next_spawn_time = now + kReinforceCooldown;
+                wz_log_infof(
+                    facts, "[commander] reinforce -> enemy_tank (%d/%d) at HQ",
+                    squad_count + 1, kSquadTargetSize);
+            }
+        }
+
         if (now < state->next_reanneal_time) {
             return;
         }
