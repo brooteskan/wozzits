@@ -48,6 +48,7 @@ namespace
         int      pool_size;
         int      ready_count;
         int      live_count;          // currently-live instances (== count of slot_deployed)
+        int      deploy_cursor;       // round-robin start for the next deploy (rotate the pool)
         double   next_deploy_time;
         uint8_t  prewarm_submitted;
     };
@@ -188,46 +189,58 @@ namespace
                 return;   // still on cooldown
             }
 
-            for (int i = 0; i < state->pool_size; ++i) {
-                if (!state->slot_ready[i] || state->slot_deployed[i]) {
-                    continue;   // not prewarmed, or already live
+            // Pick the next available slot ROTATING from deploy_cursor, so a redeploy
+            // prefers a fresh reserve (ahead of the cursor) over the slot that just
+            // recycled (which now sits BEHIND it). Wear spreads evenly across the whole
+            // pool instead of thrashing the low indices; a recycled slot is reused only
+            // after every fresher one has had its turn.
+            int chosen = -1;
+            for (int n = 0; n < state->pool_size; ++n) {
+                const int i = (state->deploy_cursor + n) % state->pool_size;
+                if (state->slot_ready[i] && !state->slot_deployed[i]) {
+                    chosen = i;
+                    break;
                 }
-                WzBehaviorEntityId handle =
-                    (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY;
-                if (!wz_find_entity_by_authored_id(
-                        facts, state->slot_id[i], &handle)
-                    || handle == (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY)
-                {
-                    // Not resolvable this frame (mid-rebuild); try again next frame.
-                    return;
-                }
-
-                const float lateral =
-                    (static_cast<float>(state->live_count)
-                        - 0.5f * static_cast<float>(kActiveTarget - 1))
-                    * kDeploySpread;
-
-                // The deploy: unpark (fires the tank's self.activated -> claim lease +
-                // reset), show, and place it at HQ + fan. Three cheap field writes --
-                // no spawn, no rebuild.
-                wz_write_set_active(facts, handle, 1u);
-                wz_write_set_visible(facts, handle, 1u);
-                wz_write_set_local_translation(
-                    facts, handle, lateral, 0.0f, kDeployAhead);
-
-                state->slot_deployed[i] = 1u;
-                state->live_count++;
-                state->next_deploy_time = now + kDeployCooldown;
-                wz_log_infof(
-                    facts,
-                    "[pool] deploy slot %d -> %s (%d/%d live) at (%.1f, 0, %.1f)  UNPARK",
-                    i, state->slot_id[i],
-                    state->live_count, kActiveTarget,
-                    static_cast<double>(lateral),
-                    static_cast<double>(kDeployAhead));
-                return;   // one deploy per cooldown
             }
-            return;
+            if (chosen < 0) {
+                return;   // nothing available (all live or not yet prewarmed)
+            }
+
+            WzBehaviorEntityId handle =
+                (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY;
+            if (!wz_find_entity_by_authored_id(
+                    facts, state->slot_id[chosen], &handle)
+                || handle == (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY)
+            {
+                // Not resolvable this frame (mid-rebuild); try again next frame.
+                return;
+            }
+
+            const float lateral =
+                (static_cast<float>(state->live_count)
+                    - 0.5f * static_cast<float>(kActiveTarget - 1))
+                * kDeploySpread;
+
+            // The deploy: unpark (fires the tank's self.activated -> claim lease +
+            // reset), show, and place it at HQ + fan. Three cheap field writes -- no
+            // spawn, no rebuild.
+            wz_write_set_active(facts, handle, 1u);
+            wz_write_set_visible(facts, handle, 1u);
+            wz_write_set_local_translation(
+                facts, handle, lateral, 0.0f, kDeployAhead);
+
+            state->slot_deployed[chosen] = 1u;
+            state->live_count++;
+            state->deploy_cursor = (chosen + 1) % state->pool_size;
+            state->next_deploy_time = now + kDeployCooldown;
+            wz_log_infof(
+                facts,
+                "[pool] deploy slot %d -> %s (%d/%d live) at (%.1f, 0, %.1f)  UNPARK",
+                chosen, state->slot_id[chosen],
+                state->live_count, kActiveTarget,
+                static_cast<double>(lateral),
+                static_cast<double>(kDeployAhead));
+            return;   // one deploy per cooldown
         }
 
         default:
