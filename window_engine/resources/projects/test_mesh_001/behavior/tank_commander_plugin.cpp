@@ -66,7 +66,11 @@ namespace
         // the roster count changes -- reshape re-anneals the whole group.
         const SquadRoster* roster = static_cast<const SquadRoster*>(
             wz_find_shared_state(facts, kSquadRosterKey));
-        const int count = roster ? roster->member_count : 0;
+        // Live squad size = the number of LEASED slots (tanks currently deployed),
+        // which the roster caps at kSquadLeaseSlots -- so a pool larger than the group
+        // can't push the group agent past its member cap. Rises on deploy, falls on
+        // recycle; reshape re-anneals the group to match.
+        const int count = roster ? roster->active_members : 0;
         if (count != state->squad_size) {
             wz_self_reshape_group(
                 facts, event,

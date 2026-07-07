@@ -27,9 +27,12 @@ namespace
     // Pool config (set here, read once at prewarm). Kept local so the module is
     // self-contained and generic -- point kPoolPrefab at any registered prefab.
     constexpr const char* kPoolPrefab = "enemy_tank";
-    constexpr int         kPoolSize = 3;        // prewarmed instances (== squad target)
+    constexpr int         kPoolSize = 5;        // prewarmed instances (reserves included)
+    constexpr int         kActiveTarget = 3;    // how many to keep LIVE at once (<= squad
+                                                // lease slots); spares stay parked until a
+                                                // live one dies + recycles
     constexpr double      kDeployCooldown = 4.0;   // seconds between deploys (baseline cadence)
-    constexpr float       kDeploySpread = 8.0f;    // lateral fan between deployed slots
+    constexpr float       kDeploySpread = 8.0f;    // lateral fan between live slots
     constexpr float       kDeployAhead = 12.0f;    // forward offset from HQ (the pool's node)
 
     constexpr int      kMaxPoolSlots = 8;   // fixed storage cap (v1: pool_size <= this)
@@ -41,10 +44,10 @@ namespace
     {
         char     slot_id[kMaxPoolSlots][kSlotIdLen];  // stable authored id per slot
         uint8_t  slot_ready[kMaxPoolSlots];           // 1 once completion recorded + hidden
-        uint8_t  slot_deployed[kMaxPoolSlots];        // 1 once unparked
+        uint8_t  slot_deployed[kMaxPoolSlots];        // 1 while LIVE (toggles: deploy/recycle)
         int      pool_size;
         int      ready_count;
-        int      deployed_count;
+        int      live_count;          // currently-live instances (== count of slot_deployed)
         double   next_deploy_time;
         uint8_t  prewarm_submitted;
     };
@@ -151,11 +154,34 @@ namespace
 
         case WZ_EVENT_FRAME_UPDATE:
         {
-            if (state->deployed_count >= state->pool_size) {
-                return;   // whole pool is out
+            // RECYCLE sweep: a live instance that died PARKED itself (its effective
+            // active went 0). Reclaim its slot so a spare can take its place. Only
+            // acts on a resolvable handle reading inactive -- a transient resolve miss
+            // is skipped, not mistaken for a death.
+            for (int i = 0; i < state->pool_size; ++i) {
+                if (!state->slot_deployed[i]) {
+                    continue;
+                }
+                WzBehaviorEntityId handle =
+                    (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY;
+                if (wz_find_entity_by_authored_id(facts, state->slot_id[i], &handle)
+                    && handle != (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY
+                    && !wz_node_active(facts, handle))
+                {
+                    state->slot_deployed[i] = 0u;
+                    state->live_count--;
+                    wz_log_infof(
+                        facts, "[pool] recycle slot %d <- %s (%d/%d live)",
+                        i, state->slot_id[i], state->live_count, kActiveTarget);
+                }
             }
-            if (state->ready_count <= state->deployed_count) {
-                return;   // nothing new ready to deploy yet
+
+            // DEPLOY to keep kActiveTarget live, paced by the cooldown.
+            if (state->live_count >= kActiveTarget) {
+                return;   // squad at strength
+            }
+            if (state->ready_count <= 0) {
+                return;   // nothing prewarmed yet
             }
             const double now = wz_sim_time(facts);
             if (now < state->next_deploy_time) {
@@ -164,7 +190,7 @@ namespace
 
             for (int i = 0; i < state->pool_size; ++i) {
                 if (!state->slot_ready[i] || state->slot_deployed[i]) {
-                    continue;
+                    continue;   // not prewarmed, or already live
                 }
                 WzBehaviorEntityId handle =
                     (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY;
@@ -177,25 +203,26 @@ namespace
                 }
 
                 const float lateral =
-                    (static_cast<float>(state->deployed_count)
-                        - 0.5f * static_cast<float>(state->pool_size - 1))
+                    (static_cast<float>(state->live_count)
+                        - 0.5f * static_cast<float>(kActiveTarget - 1))
                     * kDeploySpread;
 
-                // The deploy: unpark (fires the tank's self.start), show, and place
-                // it at HQ + fan. Three cheap field writes -- no spawn, no rebuild.
+                // The deploy: unpark (fires the tank's self.activated -> claim lease +
+                // reset), show, and place it at HQ + fan. Three cheap field writes --
+                // no spawn, no rebuild.
                 wz_write_set_active(facts, handle, 1u);
                 wz_write_set_visible(facts, handle, 1u);
                 wz_write_set_local_translation(
                     facts, handle, lateral, 0.0f, kDeployAhead);
 
                 state->slot_deployed[i] = 1u;
-                state->deployed_count++;
+                state->live_count++;
                 state->next_deploy_time = now + kDeployCooldown;
                 wz_log_infof(
                     facts,
-                    "[pool] deploy slot %d -> %s (%d/%d) at (%.1f, 0, %.1f)  UNPARK",
+                    "[pool] deploy slot %d -> %s (%d/%d live) at (%.1f, 0, %.1f)  UNPARK",
                     i, state->slot_id[i],
-                    state->deployed_count, state->pool_size,
+                    state->live_count, kActiveTarget,
                     static_cast<double>(lateral),
                     static_cast<double>(kDeployAhead));
                 return;   // one deploy per cooldown

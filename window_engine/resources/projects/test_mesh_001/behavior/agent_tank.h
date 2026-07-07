@@ -19,13 +19,22 @@ inline constexpr float kGunElevationMin = -0.2617994f;     // 15 deg depression
 // enemy respawns at the squad command node (its HQ). Tune to taste.
 inline constexpr float kEnemyMaxHealth = 100.0f;
 
-// Shared squad roster (behavior SHARED state, key "squad"): tanks register on
-// spawn to claim a slot in the commander's group agent, and the commander reads
-// the count to size that agent. Lives in shared state so it survives rebuilds and
-// is visible to both the tank and commander plugins. (Grow-only for now -- despawn
-// isn't wired, so it never shrinks yet.)
+// The group-agent member cap: the commander's quantum group agent has a hub qubit
+// (0) plus ONE stance qubit per squad member (slot = tank_id + 1), bounded by the
+// 4-decision agent cap -> at most this many coordinated members at once. A pool may
+// prewarm MORE enemy_tank instances than this; the roster LEASE below keeps only
+// this many in the squad's shared wave function, so pool_size is free to exceed it.
+inline constexpr int kSquadLeaseSlots = 3;
+
+// Shared squad roster (behavior SHARED state, key "squad"): a LEASE over the
+// kSquadLeaseSlots group-agent member slots. A tank claims the lowest free slot when
+// it DEPLOYS (unpark) and releases it when it dies (recycles back to the pool), so
+// membership tracks the LIVE squad and never exceeds the group-agent cap regardless
+// of how many instances the pool holds. Lives in shared state so it survives
+// rebuilds and is visible to both the tank and commander plugins.
 struct SquadRoster {
-    int member_count = 0;
+    uint8_t slot_taken[kSquadLeaseSlots] = { 0, 0, 0 };  // 1 = leased
+    int     active_members = 0;   // == count of leased slots; the commander sizes to this
 
     // DOCTRINE-LEARNING squad tally (grow-only counters; the commander rewards on
     // the DELTA between re-anneals): times a squad member acquired a shot on the
@@ -36,6 +45,33 @@ struct SquadRoster {
     int fire_taken = 0;
 };
 inline constexpr const char* kSquadRosterKey = "squad";
+
+// Claim the lowest free squad slot (0..kSquadLeaseSlots-1) -> the tank's group-agent
+// member index (its qubit slot is index + 1). Returns -1 if the squad is full, in
+// which case the tank fights SOLO (uncoordinated) -- the push-goals path already
+// treats tank_id < 0 as "no group membership".
+inline int squad_roster_claim(SquadRoster* r) {
+    if (!r) {
+        return -1;
+    }
+    for (int i = 0; i < kSquadLeaseSlots; ++i) {
+        if (!r->slot_taken[i]) {
+            r->slot_taken[i] = 1u;
+            r->active_members++;
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Release a leased slot back to the squad (on death/recycle). Idempotent.
+inline void squad_roster_release(SquadRoster* r, int slot) {
+    if (!r || slot < 0 || slot >= kSquadLeaseSlots || !r->slot_taken[slot]) {
+        return;
+    }
+    r->slot_taken[slot] = 0u;
+    r->active_members--;
+}
 
 struct QuantumTankState {
 
@@ -124,9 +160,11 @@ struct QuantumTankState {
 
     float drive_speed = 6.0f; // remove soon
 
-    // Small stable per-instance id / squad slot, claimed once from the shared
-    // roster on first init ("[qtank:0]", "[qtank:1]"). -1 = unassigned (preserved
-    // across rebuilds).
+    // The tank's LEASED squad slot ("[qtank:0]", "[qtank:1]") = its group-agent
+    // member index (qubit slot = tank_id + 1). Claimed from the shared roster on
+    // DEPLOY (unpark) and released on death/recycle, so it reflects live membership,
+    // not birth order. -1 = not currently in the squad (parked reserve, or the squad
+    // was full so this tank fights solo). Preserved across rebuilds.
     int tank_id = -1;
 
     // Commander-only: the squad size it last reshaped its group agent to (-1 =

@@ -83,6 +83,7 @@
           "apply_in_editor": false,
           "events": [
             "self.start",
+            "self.activated",
             "frame.update"
           ]
         }

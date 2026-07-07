@@ -22,6 +22,7 @@ namespace
     // cached read; no cognition runs here.
     static const char* kQuantumTankEvents[] = {
         "self.start",
+        "self.activated",   // fires on unpark -- a pool DEPLOY (claim lease + reset)
         "frame.update"
     };
 
@@ -35,22 +36,16 @@ namespace
         if (!state) {
             return;
         }
-        // Claim a squad slot ONCE (first init only -- re-init returns preserved
-        // state whose id is already set). The slot = our index in the shared
-        // roster, and roster.member_count is the squad size the commander sizes its
-        // group agent to. Shared state is get-or-create by key, so all tanks share
-        // one roster.
-        if (state->tank_id < 0) {
-            SquadRoster* roster = static_cast<SquadRoster*>(
-                wz_create_shared_state(
-                    facts, kSquadRosterKey,
-                    sizeof(SquadRoster), alignof(SquadRoster)));
-            state->tank_id = roster ? roster->member_count : 0;
-            if (roster) {
-                roster->member_count++;
-            }
-            state->ammo = agent_tank_config::kAmmoMax;  // limited magazine, no resupply yet
-        }
+        // The squad slot is a LEASE now: NOT claimed here (init runs once at prewarm,
+        // while the pooled instance is parked), but on DEPLOY (self.activated /
+        // self.start) in on_event, and released on death/recycle. So a parked reserve
+        // holds no slot and can't inflate the commander's group agent past its cap.
+        // We only ENSURE the shared roster exists here (get-or-create, init context --
+        // where wz_create_shared_state lives); the lease is claimed frame-side via
+        // wz_find_shared_state.
+        (void)wz_create_shared_state(
+            facts, kSquadRosterKey, sizeof(SquadRoster), alignof(SquadRoster));
+
         // Authorable knob: how fast the tank advances when it commits to ENGAGE.
         (void)wz_config_float(facts, "drive_speed", &state->drive_speed);
 
@@ -93,12 +88,14 @@ namespace
         // solo if it isn't present.
         (void)wz_find_entity_by_authored_id(facts, "2:command", &state->command);
 
-        // Life/death: poll the hitbox tally, and on death respawn at the command
-        // node (HQ) after the destroyed beat -- falls back to the enemy's own
-        // spawn if there is no command node.
+        // Life/death: a pooled enemy RECYCLES on death (release its squad lease +
+        // park itself; the pool redeploys a spare) rather than respawning, so the
+        // lifecycle machine runs IMMORTAL here -- it captures the spawn + reports
+        // alive, but never triggers its own hide/respawn beat. The death edge is
+        // polled directly in on_event against kEnemyMaxHealth.
         wz_find_descendant_by_name(facts, self, "hitbox", &state->hitbox);
         tank_lifecycle::init(
-            state->hitbox, kEnemyMaxHealth, &state->lifecycle, state->command);
+            state->hitbox, /*immortal*/ 0.0f, &state->lifecycle, state->command);
     }
 
     // sense_world lives in agent_tank.h now -- SHARED with the commander.
@@ -245,11 +242,70 @@ namespace
             return;
         }
 
-        // Life/death first: capture spawn, poll the hitbox tally, and after a
-        // destroyed beat respawn at the command node. Sensing + cognition keep
-        // running while destroyed, but driving + firing are gated on `alive`.
+        const uint32_t kind = wz_event_kind(event);
+
+        // self.start fires at MATERIALIZATION -- which for a pooled instance is at
+        // PREWARM, while parked: the active mask isn't current during the spawn's own
+        // rebuild, so the self.start gate lets it through even though the node is
+        // parked. A parked reserve must NOT claim a lease or run combat, so just
+        // return here. The real DEPLOY is the self.activated unpark edge below (which
+        // IS driven by the current mask, so it only fires on an actual 0->1 unpark).
+        if (kind == WZ_EVENT_SELF_START) {
+            return;
+        }
+
+        // DEPLOY: self.activated fires on the unpark edge -- the pool's initial deploy
+        // AND each redeploy after a recycle. Claim a squad LEASE (lowest free slot)
+        // and reset combat state so a recycled instance re-enters fresh -- healed,
+        // full ammo, stuck to the terrain. The pool has already positioned us; the
+        // tank_id < 0 guard prevents a double-claim within one deployment.
+        if (kind == WZ_EVENT_SELF_ACTIVATED) {
+            if (state->tank_id < 0) {
+                SquadRoster* roster = static_cast<SquadRoster*>(
+                    wz_find_shared_state(facts, kSquadRosterKey));
+                state->tank_id = squad_roster_claim(roster);
+            }
+            state->ammo = agent_tank_config::kAmmoMax;
+            if (auto* tally = wz_instance_state_of<tank_damage::Tally>(
+                    facts, state->hitbox, tank_damage::kModule)) {
+                tally->total = 0.0f;   // heal on (re)deploy
+            }
+            wz_self_set_terrain_alignment_rate(
+                facts, event, agent_tank_config::kTerrainAlignRate);
+            wz_log_infof(facts, "[qtank:%d] deployed (squad lease)", state->tank_id);
+            return;
+        }
+
+        // Life/death: capture the spawn + report alive. Runs IMMORTAL (see init) --
+        // the machine never triggers its own death beat; death is a pool-recycle,
+        // handled just below.
         tank_lifecycle::tick(facts, event, &state->lifecycle);
         const uint8_t alive = tank_lifecycle::is_alive(&state->lifecycle);
+
+        // DEATH -> RECYCLE: while deployed, poll the hitbox damage tally; on death,
+        // release the squad lease + PARK ourselves (back to the pool) instead of
+        // respawning. The pool sees the vacancy and redeploys a spare. Parking stops
+        // dispatch, so this fires exactly once; the next DEPLOY heals + re-leases us.
+        if (kind == WZ_EVENT_FRAME_UPDATE && state->tank_id >= 0
+            && state->hitbox != WZ_INVALID_BEHAVIOR_ENTITY)
+        {
+            if (auto* tally = wz_instance_state_of<tank_damage::Tally>(
+                    facts, state->hitbox, tank_damage::kModule)) {
+                if (tally->total >= kEnemyMaxHealth) {
+                    SquadRoster* roster = static_cast<SquadRoster*>(
+                        wz_find_shared_state(facts, kSquadRosterKey));
+                    squad_roster_release(roster, state->tank_id);
+                    wz_log_infof(
+                        facts, "[qtank:%d] destroyed (%.0f dmg) -> recycled to pool",
+                        state->tank_id, (double)tally->total);
+                    state->tank_id = -1;
+                    tally->total = 0.0f;
+                    wz_self_set_active(facts, event, 0u);   // park -> pool reserve
+                    wz_self_set_visible(facts, event, 0u);  // hide
+                    return;
+                }
+            }
+        }
 
         // Sense the world every frame, then RE-ANNEAL the stance on a cadence the
         // COGNITION picks -- the "reconsider" meta-qubit (2): its committed VOLATILE
@@ -534,19 +590,7 @@ namespace
                 (int)(has_posture ? posture.committed : -2));
         }
 
-        switch (wz_event_kind(event)) {
-
-        case WZ_EVENT_SELF_START:
-        {
-            // Keep it low: tanks suddenly lurching to the surface looks weird.
-            wz_self_set_terrain_alignment_rate(
-                facts, event, agent_tank_config::kTerrainAlignRate);
-            return;   // set once; skip the motion code below on this event
-        }
-
-        default:
-            break;
-        }
+        // Terrain alignment is set on DEPLOY (self.start / self.activated) above.
 
         // Frozen while destroyed; the lifecycle teleports us to HQ on respawn.
         if (alive) {
