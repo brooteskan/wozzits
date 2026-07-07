@@ -62,3 +62,7 @@ add_terrain_collision_behavior_module(
 add_terrain_collision_behavior_module(
     collidable
     collidable_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    pool_manager
+    pool_manager_plugin.cpp)

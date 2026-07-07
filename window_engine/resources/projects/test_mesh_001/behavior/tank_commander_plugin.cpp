@@ -80,30 +80,12 @@ namespace
 
         const double now = wz_sim_time(facts);
 
-        // SQUAD REINFORCEMENT (every frame, ahead of the re-anneal gate): the
-        // command node's decision about WHEN to spawn. While the squad is under
-        // strength it brings up one enemy_tank per cooldown AT ITS OWN position
-        // (self = the command node), so tanks roll out from HQ instead of a player
-        // key press. member_count is the live squad size (grow-only -- the dead
-        // respawn, they don't leave), so this stops on its own once at target.
-        // Reinforcements fan out laterally by slot so they don't stack on HQ.
-        {
-            using namespace agent_tank_config;
-            const int squad_count = roster ? roster->member_count : 0;
-            if (squad_count < kSquadTargetSize && now >= state->next_spawn_time) {
-                const float lateral =
-                    (static_cast<float>(squad_count)
-                        - 0.5f * static_cast<float>(kSquadTargetSize - 1))
-                    * kReinforceSpread;
-                wz_write_spawn_prefab(
-                    facts, wz_self(event), "enemy_tank",
-                    lateral, 0.0f, kReinforceSpawnAhead);
-                state->next_spawn_time = now + kReinforceCooldown;
-                wz_log_infof(
-                    facts, "[commander] reinforce -> enemy_tank (%d/%d) at HQ",
-                    squad_count + 1, kSquadTargetSize);
-            }
-        }
+        // SQUAD REINFORCEMENT is now owned by the co-located `pool_manager` behavior
+        // (the #252 prewarm-and-park pool): it prewarms enemy_tank instances PARKED at
+        // load and DEPLOYS them by unpark on a cooldown, instead of a fresh spawn per
+        // reinforcement (each of which was an O(scene) rebuild -- the pooling baseline).
+        // The commander keeps only its quantum PRESS/HARASS order below. See
+        // pool_manager_plugin.cpp.
 
         if (now < state->next_reanneal_time) {
             return;

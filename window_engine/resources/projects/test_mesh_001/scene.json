@@ -24,6 +24,7 @@
         ]
       },
       "visible": true,
+      "active": true,
       "audio_source": {
         "audio_renderable_node_id": 38,
         "auto_play": true,
@@ -78,6 +79,7 @@
         ]
       },
       "visible": true,
+      "active": true,
       "renderable": {
         "asset_graph_node_id": 47
       },
@@ -114,6 +116,7 @@
         ]
       },
       "visible": false,
+      "active": true,
       "renderable": {
         "asset_graph_node_id": 27
       }
@@ -141,6 +144,7 @@
         ]
       },
       "visible": true,
+      "active": true,
       "behaviors": [
         {
           "id": "command.behavior.1",
@@ -169,6 +173,18 @@
             "self.start",
             "frame.update"
           ]
+        },
+        {
+          "id": "command.behavior.3",
+          "module": "pool_manager",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "spawn.completed",
+            "frame.update"
+          ]
         }
       ]
     },
@@ -195,6 +211,7 @@
         ]
       },
       "visible": true,
+      "active": true,
       "renderable": {
         "asset_graph_node_id": 67
       }
@@ -204,7 +221,7 @@
       "parent": "root",
       "transform": {
         "translation": [
-          100,
+          60,
           32,
           100
         ],
@@ -220,7 +237,8 @@
           1
         ]
       },
-      "visible": true
+      "visible": true,
+      "active": true
     }
   ],
   "defaults": {
