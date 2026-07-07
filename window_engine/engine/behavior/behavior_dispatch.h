@@ -7,10 +7,17 @@
 
 namespace wz::engine::behavior
 {
+    // Run each behavior binding's on_init. When skip_initialized is true (an
+    // APPEND-ONLY rebuild such as a prefab spawn, where survivor runtime ids stay
+    // stable), bindings already in scene.behavior_state.initialized_bindings are
+    // skipped and only newly materialized bindings init -- the #257 B1 fix for the
+    // per-spawn cost of re-running every survivor's on_init. Default false = init all
+    // (initial load, and the renumbering delete/reparent paths).
     void initialize_behaviors(
         wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,
-        wz::Logger* logger = nullptr);
+        wz::Logger* logger = nullptr,
+        bool skip_initialized = false);
 
     void dispatch_behaviors(
         wz::engine::assets::SceneInstance& scene,

@@ -173,7 +173,7 @@ namespace wz::app
             + " behavior module DLL(s) from " + resolved);
     }
 
-    void WozzitsApp_v1::rebuild_behavior_scene()
+    void WozzitsApp_v1::rebuild_behavior_scene(bool append_only)
     {
         ++rebuild_scene_count_this_frame_;
         // DIAGNOSTIC (#219): a rebuild while the scene camera is the active source
@@ -342,10 +342,15 @@ namespace wz::app
         }
 
         // Initialize behaviors (init callbacks + per-binding/shared state) once
-        // for the materialized scene, exactly as game_app does after building
-        // its scene.
+        // for the materialized scene, exactly as game_app does after building its
+        // scene. On an APPEND-ONLY rebuild (a prefab spawn) skip survivors' on_init
+        // (#257 B1): their runtime ids + cached handles are stable across a pure
+        // append, and their state is preserved above, so only the newly materialized
+        // bindings need to init -- re-running every survivor's scene-walking on_init
+        // was the dominant per-spawn cost.
         wz::engine::behavior::initialize_behaviors(
-            *behavior_scene_, registry_, &ctx_.logger);
+            *behavior_scene_, registry_, &ctx_.logger,
+            /*skip_initialized=*/append_only);
 
         // Prune carried-over instance-state blocks whose binding id is no longer
         // present among the rebuilt scene's bindings (a removed/renamed node, or a
@@ -380,6 +385,18 @@ namespace wz::app
                     == live_binding_ids.end())
                 {
                     it = next_wakes.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+
+            // And the #257 B1 init-scoping set: drop the initialized flag for a
+            // binding that is gone, so if its id is ever reused it re-inits fresh.
+            auto& initialized =
+                behavior_scene_->behavior_state.initialized_bindings;
+            for (auto it = initialized.begin(); it != initialized.end();) {
+                if (live_binding_ids.find(*it) == live_binding_ids.end()) {
+                    it = initialized.erase(it);
                 } else {
                     ++it;
                 }

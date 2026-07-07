@@ -862,7 +862,13 @@ namespace wz::app
         // Called from load_scene and after any structural scene edit so the
         // behavior runtime tracks the authored scene. Clears behavior_scene_
         // when there are no behavior bindings (nothing to run).
-        void rebuild_behavior_scene();
+        //
+        // append_only (#257 B1): pass true ONLY when the rebuild was triggered by a
+        // pure APPEND to scene_nodes_ (a prefab spawn) -- survivor runtime ids stay
+        // stable then (handle == node index), so only the newly appended bindings need
+        // their on_init run. Leave false for load / delete / reparent / flatten, which
+        // reorder scene_nodes_ and renumber, so every binding must re-init.
+        void rebuild_behavior_scene(bool append_only = false);
 
         // Apply a SPAWN_PREFAB request: resolve `prefab_name_hash` to a registered
         // prefab, compute the spawn transform T = the spawner node's world

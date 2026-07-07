@@ -292,6 +292,13 @@ namespace wz::engine::assets
         // spawn fires self.start only for genuinely new bindings; existing actors
         // keep their started flag and are not re-notified.
         std::unordered_set<std::string> started_bindings;
+        // Binding ids whose on_init has already run (#257 B1 init-scoping). Preserved
+        // across rebuild like started_bindings. On an APPEND-ONLY rebuild (a prefab
+        // spawn, where survivor runtime ids + cached handles stay stable because the
+        // spawn only appends to the node list), initialize_behaviors skips a binding
+        // already in here and re-inits ONLY the newly materialized bindings -- the
+        // dominant per-spawn cost was re-running every survivor's scene-walking on_init.
+        std::unordered_set<std::string> initialized_bindings;
         // Self-paced cognition wake times (absolute sim-seconds) per binding, for
         // the cognition.tick scheduler. Preserved across rebuild_behavior_scene
         // like started_bindings (moved with the storage); a binding with no entry

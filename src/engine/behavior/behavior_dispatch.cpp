@@ -510,13 +510,16 @@ namespace wz::engine::behavior
     void initialize_behaviors(
         wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,
-        wz::Logger* logger)
+        wz::Logger* logger,
+        bool skip_initialized)
     {
         BehaviorFrameContext context{
             .scene = &scene,
             .behavior_state = &scene.behavior_state,
             .logger = logger,
         };
+
+        auto& initialized = scene.behavior_state.initialized_bindings;
 
         for (const auto node : wz::core::graph::topo_order(
                  scene.storage.polytree))
@@ -526,6 +529,23 @@ namespace wz::engine::behavior
                 if (record.node != node
                     || !component.enabled
                     || component.module.empty())
+                {
+                    continue;
+                }
+
+                // Init-scoping (#257 B1): on an APPEND-ONLY rebuild (a prefab spawn),
+                // a binding already initialized in a prior rebuild keeps its runtime
+                // id + cached handles (the spawn only appends, so survivor ids are
+                // stable) and its preserved instance state, so re-running its on_init
+                // is pure waste -- re-walking the scene for find_entity, rebuilding a
+                // quantum agent, etc. Skip it; only newly materialized bindings init.
+                // This mirrors the started_bindings gate that already scopes self.start.
+                // When skip_initialized is false (load / delete / reparent -- paths that
+                // RENUMBER, so survivors' cached handles must be re-resolved) every
+                // binding re-inits as before.
+                if (skip_initialized
+                    && !component.binding_id.empty()
+                    && initialized.count(component.binding_id) != 0u)
                 {
                     continue;
                 }
@@ -547,6 +567,9 @@ namespace wz::engine::behavior
                     component,
                     record.node);
                 module->on_init(context, record.node, module->user_data);
+                if (!component.binding_id.empty()) {
+                    initialized.insert(component.binding_id);
+                }
             }
         }
     }

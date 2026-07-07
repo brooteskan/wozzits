@@ -682,7 +682,11 @@ namespace wz::app
             }
         }
 
-        rebuild_behavior_scene();
+        // A spawn only APPENDS to scene_nodes_ (the spawned block + its grafted
+        // scene-source children, all at the tail), so survivor runtime ids stay
+        // stable and only the newly materialized bindings need their on_init run
+        // (#257 B1 init-scoping) -- the rest of the runtime is preserved as-is.
+        rebuild_behavior_scene(/*append_only=*/true);
         // Loud, greppable spawn marker so a play log unambiguously records WHEN a
         // graft landed and its node delta -- correlate with a frame_profile CSV row
         // (scene_nodes jump + rematerialize/rebuild) to confirm a spawn (#252).
