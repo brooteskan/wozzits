@@ -640,6 +640,20 @@ target_link_libraries(wozzits_editor_host
 
 add_dependencies(wozzits_editor_host wozzits_app_v1)
 
+# ----------------------------
+# wozzits_sky_bake — pure-CPU CLI that fits a spherical-Gaussian mixture to an
+# EXR panorama and writes it as <name>.sky_gaussian.json (Seam A, issue #260).
+# No GPU / no engine boot; links the shared window_engine library only.
+# ----------------------------
+add_executable(wozzits_sky_bake
+    src/tools/sky_gaussian_bake/main.cpp
+)
+
+target_link_libraries(wozzits_sky_bake
+    PRIVATE
+        window_engine
+)
+
 add_library(wozzits_abi SHARED
     src/engine/abi/wozzits_abi.cpp
 )
@@ -1001,6 +1015,11 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(math test_camera)
     rs_add_test_group(math algo_math_spec)
     rs_add_test_group(math screen_space_metrics)
+
+    rs_add_test_group(sky_gaussian test_sg_math)
+    rs_add_test_group(sky_gaussian test_synthetic_recovery)
+    rs_add_test_group(sky_gaussian test_determinism)
+    rs_add_test_group(sky_gaussian test_serialize_roundtrip)
 
     # Graph
     rs_add_test_group(graph static_dag_tests_0)

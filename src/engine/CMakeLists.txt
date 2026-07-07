@@ -161,6 +161,10 @@ target_sources(window_engine PRIVATE
     assets/hdri/hdri_lighting_metadata.cpp
     assets/hdri/hdri_image_loader_tinyexr.cpp
 
+    assets/sky_gaussian/sky_gaussian.cpp
+    assets/sky_gaussian/sky_gaussian_fitter.cpp
+    assets/sky_gaussian/sky_gaussian_serialize.cpp
+
     assets/renderable/renderable.cpp
     assets/renderable/renderable_compilers.cpp
     assets/renderable_asset_module.cpp
