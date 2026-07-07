@@ -1102,12 +1102,26 @@ namespace wz::engine::behavior
                 return 0;
             }
 
-            // Accept an optional ":name" suffix for readability, e.g. "1:camera".
-            // The id (before the first ':') is the authoritative stable key; when
-            // a name follows, the node's CURRENT name must also match, so a typo
-            // or a stale reference (after a rename) fails loudly instead of
-            // resolving the wrong node. A plain id with no ':' matches as before.
             const std::string key{ authored_id };
+
+            // Prefer an EXACT match on the FULL id first. A spawned node carries a
+            // compound stable id whose colons are PART of the key -- e.g.
+            // "spawn:2:enemy_tank_root" (the id a pool keeps to re-resolve its
+            // instances across rebuilds). Those must resolve by their whole id, not
+            // be truncated at the first ':' by the readability convention below.
+            {
+                const auto exact = context->scene->authored_to_runtime.find(key);
+                if (exact != context->scene->authored_to_runtime.end()) {
+                    *out_entity = exact->second;
+                    return 1;
+                }
+            }
+
+            // Otherwise accept an optional ":name" suffix for readability, e.g.
+            // "1:camera". The id (before the first ':') is the authoritative stable
+            // key; when a name follows, the node's CURRENT name must also match, so
+            // a typo or a stale reference (after a rename) fails loudly instead of
+            // resolving the wrong node. A plain id with no ':' matches as before.
             const std::size_t colon = key.find(':');
             const std::string id_part =
                 (colon == std::string::npos) ? key : key.substr(0, colon);
