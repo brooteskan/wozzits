@@ -2,6 +2,7 @@ target_sources(window_engine PRIVATE
     engine.cpp
     app_context.cpp
     app/wozzits_app_v1.cpp
+    app/wozzits_app_v1_spawn.cpp
     app/editor_runtime.cpp
     project/project_manifest.cpp
     project/project_runtime_launch.cpp
