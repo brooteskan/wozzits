@@ -1865,7 +1865,7 @@ public sealed partial class ProjectOpeningTests
             // No runtime was started (startRuntime defaults false), so the verb is
             // a no-op success — but it exercises the live DLL entry point.
             var set = editorSession.SetNodeGlbSceneSource(
-                "host", "gltf/tank1.glb", sceneIndex: 0u, consumeMode: 0u);
+                "host", "gltf/sample_rig.glb", sceneIndex: 0u, consumeMode: 0u);
             Assert.True(set.Ok, set.Error);
 
             // The empty-path clear form is equally reachable.
@@ -2105,21 +2105,16 @@ public sealed partial class ProjectOpeningTests
     }
 
     // The read-only GLB hierarchy import (issue #213 Phase 3b-1) round-trips
-    // through the live v24 DLL: it imports tank1.glb (staged next to the engine
-    // DLL) and decodes the model. Also exercises a bad path -> Ok=false. The
-    // layout self-check (now v25) runs on first P/Invoke. Skips if the DLL or the
-    // staged GLB isn't built.
+    // through the live DLL: it imports a test-owned GLB fixture and decodes the
+    // model. Also exercises a bad path -> Ok=false. Skips if the engine DLL isn't
+    // built. The GLB is a frozen copy under Fixtures/ (NOT the engine's shared
+    // resources), so re-authoring a resources asset can never break this test.
     [Fact]
     public void NativeEngineClientImportsGlbSceneHierarchyWhenEngineAbiIsBuilt()
     {
         var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
-        // Resources are staged next to the engine DLL under
-        // build/<preset>/resources/gltf/tank1.glb.
-        var glbPath = Path.Combine(
-            Path.GetDirectoryName(abiPath) ?? string.Empty,
-            "resources",
-            "gltf",
-            "tank1.glb");
+        var glbDir = Path.Combine(AppContext.BaseDirectory, "Fixtures", "glb");
+        var glbPath = Path.Combine(glbDir, "sample_rig.glb");
 
         if (!File.Exists(abiPath) || !File.Exists(glbPath))
         {
@@ -2138,32 +2133,32 @@ public sealed partial class ProjectOpeningTests
         // The engine roots a resource-relative path against the supplied resource
         // root (the rooting the editor used to do itself) — same hierarchy.
         var rooted = client.ImportGlbSceneHierarchy(
-            "tank1.glb",
-            resourceRoot: Path.Combine(
-                Path.GetDirectoryName(abiPath) ?? string.Empty,
-                "resources",
-                "gltf"),
+            "sample_rig.glb",
+            resourceRoot: glbDir,
             sceneIndex: 0u);
         Assert.True(rooted.Ok, rooted.Error);
-        Assert.Equal(3, rooted.Components.Count);
+        Assert.Equal(4, rooted.Components.Count);
 
-        // tank1.glb scene 0 is a single chain body -> turret -> gun, all meshes.
-        Assert.Equal(3, hierarchy.Components.Count);
+        // sample_rig.glb scene 0 is a chain body -> turret -> gun (all meshes)
+        // -> barrel_orientation (a mesh-less orientation marker).
+        Assert.Equal(4, hierarchy.Components.Count);
         var body = Assert.Single(hierarchy.Components, c => c.Id == "body");
         Assert.Null(body.ParentId);
         Assert.True(body.HasMesh);
         var turret = Assert.Single(hierarchy.Components, c => c.Id == "turret");
         Assert.Equal("body", turret.ParentId);
+        Assert.True(turret.HasMesh);
         var gun = Assert.Single(hierarchy.Components, c => c.Id == "gun");
         Assert.Equal("turret", gun.ParentId);
+        Assert.True(gun.HasMesh);
+        var marker = Assert.Single(
+            hierarchy.Components, c => c.Id == "barrel_orientation");
+        Assert.Equal("gun", marker.ParentId);
+        Assert.False(marker.HasMesh);
 
         // A bad path returns a well-formed Ok=false model (never throws).
         var missing = client.ImportGlbSceneHierarchy(
-            Path.Combine(
-                Path.GetDirectoryName(abiPath) ?? string.Empty,
-                "resources",
-                "gltf",
-                "does_not_exist.glb"),
+            Path.Combine(glbDir, "does_not_exist.glb"),
             resourceRoot: null,
             sceneIndex: 0u);
         Assert.False(missing.Ok);
@@ -2616,13 +2611,13 @@ public sealed partial class ProjectOpeningTests
     public void NativeEngineClientSurfacesGlbSceneSourceWhenEngineAbiIsBuilt()
     {
         var abiPath = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
-        // The fixture project is staged next to the engine DLL under
-        // build/<preset>/resources/projects/glb_scene_source_fixture.
+        // A test-owned project fixture under Fixtures/ (a frozen copy, never the
+        // engine's shared resources/), so a resources scene edit cannot break this.
         var fixtureProject = Path.Combine(
-            Path.GetDirectoryName(abiPath) ?? string.Empty,
-            "resources",
+            AppContext.BaseDirectory,
+            "Fixtures",
             "projects",
-            "glb_scene_source_fixture");
+            "subtree_reference_project");
 
         if (!File.Exists(abiPath) || !Directory.Exists(fixtureProject))
         {
@@ -2644,15 +2639,15 @@ public sealed partial class ProjectOpeningTests
         var sceneSource = host!.SceneSource;
         Assert.NotNull(sceneSource);
         Assert.Equal("glb", sceneSource!.Kind);
-        Assert.Equal("gltf/tank1.glb", sceneSource.Path);
+        Assert.Equal("gltf/sample_rig.glb", sceneSource.Path);
         Assert.Equal("instance", sceneSource.ConsumeMode);
         Assert.Equal(0u, sceneSource.SceneIndex);
         Assert.Equal(1u, sceneSource.StyleOverrideCount);
         Assert.True(sceneSource.HasBaseStyle);
 
-        // Phase 3b-2: the base style + the one per-mesh override round-trip through
-        // the v25 snapshot. The fixture's base style is wireframe-on/surface-off;
-        // its mesh-index-1 override is surface-on/wireframe-off.
+        // The base style + the one per-mesh override round-trip through the
+        // snapshot. The fixture's base style is wireframe-on/surface-off; its
+        // mesh-index-1 override is surface-on/wireframe-off.
         Assert.True(sceneSource.BaseStyle.WireframeEnabled);
         Assert.False(sceneSource.BaseStyle.SurfaceEnabled);
         var fixtureOverride = Assert.Single(sceneSource.StyleOverrides);
@@ -2711,7 +2706,7 @@ public sealed partial class ProjectOpeningTests
         // project's resource root is the engine's job, not the view-model's.
         var import = Assert.Single(session.GlbHierarchyImports);
         Assert.Equal(0u, import.SceneIndex);
-        Assert.Equal("gltf/tank1.glb", import.Path);
+        Assert.Equal("gltf/sample_rig.glb", import.Path);
 
         // The tree mirrors the GLB hierarchy: a single body root -> turret -> gun.
         var body = Assert.Single(viewModel.Inspector.GlbNodes);
@@ -2732,7 +2727,7 @@ public sealed partial class ProjectOpeningTests
     }
 
     // The file node's source_path may be a "Copy as path" value wrapped in double
-    // quotes ("...gltf/tank1.glb"). The picker forwards it verbatim (only trimmed) —
+    // quotes ("...gltf/sample_rig.glb"). The picker forwards it verbatim (only trimmed) —
     // stripping the surrounding quotes is the engine's resolve_path job now, not the
     // view-model's — so the authored quotes survive the hand-off to the import.
     [Fact]
@@ -2749,7 +2744,7 @@ public sealed partial class ProjectOpeningTests
         };
         var viewModel = new MainWindowViewModel(
             ProjectSnapshot(assetGraph: GlbExtractorGraph(
-                sourcePath: "\"gltf/tank1.glb\"")),
+                sourcePath: "\"gltf/sample_rig.glb\"")),
             editorSession: session,
             projectDirectory: projectDir);
 
@@ -2761,7 +2756,7 @@ public sealed partial class ProjectOpeningTests
         // The quoted source_path is forwarded as authored; the engine strips the
         // surrounding quotes when it roots the path.
         var import = Assert.Single(session.GlbHierarchyImports);
-        Assert.Equal("\"gltf/tank1.glb\"", import.Path);
+        Assert.Equal("\"gltf/sample_rig.glb\"", import.Path);
 
         Assert.True(viewModel.Inspector.HasGlbNodes);
         Assert.False(viewModel.Inspector.HasGlbNodePickerHint);
@@ -2983,12 +2978,12 @@ public sealed partial class ProjectOpeningTests
     }
 
     // An asset graph wired file -> Scene-from-GLB (e7000711) -> Mesh-from-GLB-scene
-    // (e7000414): the file node carries source_path "gltf/tank1.glb"; the extractor's
+    // (e7000414): the file node carries source_path "gltf/sample_rig.glb"; the extractor's
     // `scene` input is fed by the Scene-from-GLB node, whose `source_file` input is
     // fed by the file node. currentNodeId, when set, authors the extractor's node_id.
     private static EngineAssetGraphSnapshotResponse GlbExtractorGraph(
         string? currentNodeId = null,
-        string sourcePath = "gltf/tank1.glb")
+        string sourcePath = "gltf/sample_rig.glb")
     {
         return new EngineAssetGraphSnapshotResponse
         {
@@ -3003,7 +2998,7 @@ public sealed partial class ProjectOpeningTests
                         Id = 10u,
                         TypeName = "GLB file",
                         Schema = "e7000713",
-                        DisplayName = "tank1.glb",
+                        DisplayName = "sample_rig.glb",
                         OutputPorts =
                         [
                             new EngineAssetGraphPort
@@ -3356,6 +3351,13 @@ public sealed partial class ProjectOpeningTests
         {
             DisconnectedEdges.Add(edgeId);
             return new EngineMutationResponse { Ok = true };
+        }
+
+        public List<bool> FrameProfilingToggles { get; } = [];
+
+        public void SetFrameProfiling(bool enabled)
+        {
+            FrameProfilingToggles.Add(enabled);
         }
 
         public List<(string NodeId, string Module)> AddedBehaviors { get; } = [];
