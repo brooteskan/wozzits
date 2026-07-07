@@ -1468,6 +1468,41 @@ static inline uint8_t wz_self_set_visible(
         visible);
 }
 
+// Set a scene node's `active` flag (issue #252, the "live?" axis). HIERARCHICAL
+// and ORTHOGONAL to visibility: `active` gates behavior DISPATCH + the COLLISION
+// frame (a node AND every ancestor must be active to tick/collide) but does NOT
+// affect rendering. This is the pool/park primitive -- deactivate a node (or a
+// whole subtree) to freeze it and drop it from collision while it may still draw.
+// Host-handled: a cheap flag write on the authored node, no behavior rebuild.
+// Deferred (applied at the next frame boundary, like the other write_command verbs).
+static inline uint8_t wz_write_set_active(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    uint8_t active)
+{
+    if (!facts || !facts->write_command) {
+        return 0;
+    }
+    const WzBehaviorCommand command = {
+        entity,
+        WZ_BEHAVIOR_COMMAND_SET_NODE_ACTIVE,
+        { active ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f },
+    };
+    return facts->write_command(facts->command_writer_user, &command);
+}
+
+// Convenience: set the active state of the event's own entity (self).
+static inline uint8_t wz_self_set_active(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    uint8_t active)
+{
+    return wz_write_set_active(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        active);
+}
+
 // Convenience: set a renderable constant by name, hashing at the call site. For
 // a hot per-frame pulse, prefer wz_write_set_renderable_param(.., wz_renderable_
 // param_hash("name"), ..) so the hash is computed at compile time.

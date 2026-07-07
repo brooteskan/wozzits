@@ -346,6 +346,19 @@ enum
      * cheap HIDE, not a pause. Use wz_write_set_visible in behavior_module_api.h.
      */
     WZ_BEHAVIOR_COMMAND_SET_NODE_VISIBLE = 19u,
+
+    /*
+     * Set a scene node's `active` flag (issue #252, the "live?" axis). Host-
+     * handled: a cheap flag write on the authored SceneNodeAsset -- no behavior-
+     * runtime rebuild. `active` is HIERARCHICAL and ORTHOGONAL to `visible`: it
+     * gates behavior DISPATCH + the COLLISION frame (a node AND every ancestor must
+     * be active to tick/collide), but does NOT affect rendering. This is the
+     * pool/park primitive -- deactivate a node (or subtree) to make it stop ticking
+     * and colliding while it may still be drawn, or hide it separately.
+     * values[0] = the new active state (nonzero = live, 0 = parked).
+     * Use wz_write_set_active in behavior_module_api.h.
+     */
+    WZ_BEHAVIOR_COMMAND_SET_NODE_ACTIVE = 20u,
 };
 
 /*

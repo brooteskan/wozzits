@@ -601,6 +601,7 @@ namespace wz::engine::collision
         for (const auto& record : scene.proximities) {
             const auto& component = record.component;
             if (!component.enabled
+                || !scene.entity_is_active(record.node)  // #252 "live?" gate
                 || component.radius <= 0.0f
                 || !std::isfinite(component.radius)
                 || record.node == wz::scene::INVALID_RUNTIME_ENTITY
@@ -885,6 +886,7 @@ namespace wz::engine::collision
         for (const auto& record : scene.collisions) {
             const auto& component = record.component;
             if (!component.enabled
+                || !scene.entity_is_active(record.node)  // #252 "live?" gate
                 || record.node == wz::scene::INVALID_RUNTIME_ENTITY
                 || record.node >= node_count)
             {
@@ -943,6 +945,7 @@ namespace wz::engine::collision
         for (const auto& record : scene.terrains) {
             const auto& component = record.component;
             if (!component.constrain_movement
+                || !scene.entity_is_active(record.node)  // #252 "live?" gate
                 || component.constraint_surface_asset == wz::asset::AssetKey{}
                 || record.node == wz::scene::INVALID_RUNTIME_ENTITY
                 || record.node >= node_count)
@@ -983,6 +986,7 @@ namespace wz::engine::collision
         for (const auto& record : scene.collisions) {
             const auto& component = record.component;
             if (!component.constrain_movement
+                || !scene.entity_is_active(record.node)  // #252 "live?" gate
                 || component.collision_asset == wz::asset::AssetKey{}
                 || record.node == wz::scene::INVALID_RUNTIME_ENTITY
                 || record.node >= node_count)

@@ -63,6 +63,12 @@ namespace wz::engine::behavior
         // the new visibility (nonzero = visible, 0 = hidden). Does NOT gate
         // dispatch/collision. See WZ_BEHAVIOR_COMMAND_SET_NODE_VISIBLE.
         SetNodeVisible,
+
+        // Set a scene node's `active` flag (the "live?" axis, hierarchical, #252).
+        // Host-handled: a cheap flag write on the authored SceneNodeAsset. values[0]
+        // = the new active state (nonzero = live, 0 = parked). Gates dispatch +
+        // collision (NOT render). See WZ_BEHAVIOR_COMMAND_SET_NODE_ACTIVE.
+        SetNodeActive,
     };
 
     struct BehaviorCommand

@@ -933,10 +933,11 @@ namespace wz::engine::behavior
             case BehaviorCommandKind::SpawnPrefab:
             case BehaviorCommandKind::SetRenderableParam:
             case BehaviorCommandKind::SetNodeVisible:
+            case BehaviorCommandKind::SetNodeActive:
                 // Not per-entity transform mutations: the host (WozzitsApp_v1)
                 // reads these directly — camera selection / audio scheduler /
-                // prefab graft / renderable-constant override / node visibility.
-                // Ignored here.
+                // prefab graft / renderable-constant override / node visibility /
+                // node active state. Ignored here.
                 break;
 
             case BehaviorCommandKind::None:

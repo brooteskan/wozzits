@@ -171,6 +171,17 @@ namespace wz::engine::behavior
             if (!component.enabled || component.module.empty()) {
                 return;
             }
+            // "Live?" gate (#252): skip a behavior on a hierarchically-inactive
+            // (parked/pooled) node, independent of visibility. The single chokepoint
+            // every module event routes through (frame-update / input / collision /
+            // proximity / gpu-compute / self-start / cognition-tick), so one check
+            // gates them all. Empty mask => all live (back-compat with callers that
+            // never populate it). Orthogonal to component.enabled (per-behavior);
+            // `active` is the whole-node axis.
+            if (context.scene
+                && !context.scene->entity_is_active(event.entity)) {
+                return;
+            }
 
             const auto module_handle = registry.find_module(component.module);
             if (!module_handle) {
@@ -552,6 +563,11 @@ namespace wz::engine::behavior
         for (const auto& record : scene.behaviors) {
             const auto& component = record.component;
             if (!component.enabled || component.name.empty()) {
+                continue;
+            }
+            // "Live?" gate (#252): the named-function path does not route through
+            // dispatch_module_event, so gate it here too.
+            if (!scene.entity_is_active(record.node)) {
                 continue;
             }
 

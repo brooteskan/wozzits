@@ -66,6 +66,7 @@ namespace wz::engine::assets::authoring
         node.parent_id = std::move(parent_id);
         node.name = std::move(name);
         node.visible = true;
+        node.active = true;
         scene.nodes.push_back(std::move(node));
         return true;
     }

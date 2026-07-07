@@ -1999,6 +1999,7 @@ namespace wz::engine::assets
             }
             add_member(*obj, "transform", transform_value(node.local));
             add_member(*obj, "visible", bool_value(node.visible));
+            add_member(*obj, "active", bool_value(node.active));
             if (node.motion_type
                 == wz::scene::TransformNode::MotionType::Animated)
             {

@@ -84,6 +84,73 @@ namespace wz::app
             return h;
         }
 
+        // Effective (inherited) "active" per authored node id (#252 live axis): a
+        // node is live only if it AND every ancestor is `active`, so parking a node
+        // parks its whole subtree (a spawn host parks its grafted children). Mirrors
+        // the renderer's effective-visibility parent-walk (rhi_scene_renderer.cpp),
+        // keyed on `active` instead of `visible`. Cycle/dangling-parent safe: an
+        // unresolved parent falls back to the node's own `active` (never spuriously
+        // parked). Returns id -> 1(live)/0(parked) so the caller projects it onto
+        // runtime entities via runtime_to_authored.
+        std::unordered_map<std::string, std::uint8_t>
+        compute_scene_node_effective_active(
+            const std::vector<wz::engine::assets::SceneNodeAsset>& nodes)
+        {
+            const std::size_t n = nodes.size();
+
+            std::unordered_map<std::string, std::size_t> index_by_id;
+            index_by_id.reserve(n);
+            for (std::size_t i = 0; i < n; ++i) {
+                index_by_id.emplace(nodes[i].id, i);
+            }
+
+            std::vector<std::size_t> parent(n, n);
+            for (std::size_t i = 0; i < n; ++i) {
+                if (!nodes[i].parent_id.has_value()) {
+                    continue;
+                }
+                const auto it = index_by_id.find(*nodes[i].parent_id);
+                if (it != index_by_id.end() && it->second != i) {
+                    parent[i] = it->second;
+                }
+            }
+
+            // effective = node.active AND parent.effective, resolved parents-first
+            // (cycle-safe chain unwind, identical to the visibility helper).
+            std::vector<std::uint8_t> effective(n, 1u);
+            std::vector<std::uint8_t> state(n, 0u);
+            std::vector<std::size_t> chain;
+            chain.reserve(n);
+            for (std::size_t start = 0; start < n; ++start) {
+                if (state[start] != 0u) {
+                    continue;
+                }
+                chain.clear();
+                std::size_t cur = start;
+                while (cur != n && state[cur] == 0u) {
+                    state[cur] = 1u;
+                    chain.push_back(cur);
+                    cur = parent[cur];
+                }
+                for (std::size_t k = chain.size(); k-- > 0;) {
+                    const std::size_t i = chain[k];
+                    const std::size_t p = parent[i];
+                    const bool parent_active = (p == n || state[p] != 2u)
+                        ? true
+                        : effective[p] != 0u;
+                    effective[i] = (nodes[i].active && parent_active) ? 1u : 0u;
+                    state[i] = 2u;
+                }
+            }
+
+            std::unordered_map<std::string, std::uint8_t> by_id;
+            by_id.reserve(n);
+            for (std::size_t i = 0; i < n; ++i) {
+                by_id.emplace(nodes[i].id, effective[i]);
+            }
+            return by_id;
+        }
+
         // Decompose a simulation-node LOCAL matrix into an authored TRS. This is
         // the same lossy Mat4 -> TRS step the old per-frame write-back did; #221
         // moved it off the frame path so it runs only when scene_nodes_ actually
@@ -2157,6 +2224,31 @@ namespace wz::app
         // game_app this is the compile_scene job; here we propagate directly.
         wz::scene::propagate_all(behavior_scene_->storage.polytree);
 
+        // Refresh the "live?" mask (#252): a node is dispatched + collides only if
+        // it AND every ancestor is `active`. Recomputed each frame from the authored
+        // scene_nodes_ (cheap O(scene)) and projected onto runtime entities via
+        // runtime_to_authored, so a park/unpark flip, a reparent, or a spawn is
+        // reflected immediately. build_collision_frame + dispatch_behaviors below
+        // read behavior_scene_->entity_active (empty => all live, so a non-active-
+        // aware caller like game_app is unaffected). Orthogonal to `visible`.
+        {
+            const std::unordered_map<std::string, std::uint8_t> effective_active =
+                compute_scene_node_effective_active(scene_nodes_);
+            const std::size_t node_count =
+                wz::core::graph::node_count(behavior_scene_->storage.polytree);
+            behavior_scene_->entity_active.assign(node_count, 1u);
+            for (std::size_t entity = 0;
+                 entity < node_count
+                     && entity < behavior_scene_->runtime_to_authored.size();
+                 ++entity)
+            {
+                const auto it = effective_active.find(
+                    behavior_scene_->runtime_to_authored[entity]);
+                behavior_scene_->entity_active[entity] =
+                    (it != effective_active.end()) ? it->second : 1u;
+            }
+        }
+
         // Build the collision frame (collision world + terrain constraint surfaces)
         // BEFORE motion/behaviors, exactly as game_app's job_build_collision_frame.
         // apply_terrain_constraints below reads frame_storage_.collision to resolve
@@ -2433,6 +2525,36 @@ namespace wz::app
                             scene_nodes_, authored_id))
                 {
                     node->visible = command.values[0] != 0.0f;
+                    scene_dirty_ = true;
+                }
+            }
+
+            // SET_NODE_ACTIVE (issue #252, the "live?" axis): flip the addressed
+            // node's authored `active` flag. Host-handled (apply ignores it) — a
+            // cheap field write, no behavior rebuild. The hierarchical effect gates
+            // dispatch + collision via the entity_active mask rebuilt each frame in
+            // dispatch_scene_behaviors (NOT render, unlike SET_NODE_VISIBLE). Same
+            // runtime->authored id resolution as above.
+            for (const wz::engine::behavior::BehaviorCommand& command :
+                 frame_storage_.behavior_commands.commands)
+            {
+                if (command.kind
+                    != wz::engine::behavior::BehaviorCommandKind::SetNodeActive)
+                {
+                    continue;
+                }
+                if (command.entity
+                    >= behavior_scene_->runtime_to_authored.size())
+                {
+                    continue;
+                }
+                const wz::scene::AuthoredEntityId authored_id =
+                    behavior_scene_->runtime_to_authored[command.entity];
+                if (wz::engine::assets::SceneNodeAsset* node =
+                        wz::engine::assets::find_scene_node(
+                            scene_nodes_, authored_id))
+                {
+                    node->active = command.values[0] != 0.0f;
                     scene_dirty_ = true;
                 }
             }

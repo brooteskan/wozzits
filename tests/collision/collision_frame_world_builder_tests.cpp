@@ -332,6 +332,76 @@ TEST(CollisionFrameWorldBuilder, DisabledEntryEmitsExitWhenItDisappears)
     EXPECT_TRUE(frame.prev_pairs.empty());
 }
 
+// #252 "live?" axis: parking a node (entity_active[node] = 0) drops its collider
+// from the world exactly as component.enabled = false does, but via the orthogonal
+// node-level active mask the host populates each frame. An empty mask = all live,
+// so the FIRST build (no mask) still sees both.
+TEST(CollisionFrameWorldBuilder, InactiveEntryDropsFromCollisionWorld)
+{
+    using namespace wz::engine::assets;
+
+    const wz::fs::Path root = test_root("wz_collision_world_inactive_drop");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, root };
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "collision/source_cube_inactive_drop",
+        .kind = ProceduralMeshKind::Cube,
+    });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto collision = assets.collisions().create_from_mesh({
+        .name = "collision/cube_inactive_drop",
+        .mesh = mesh,
+        .build_method = CollisionBuildMethod::Bounds,
+    });
+    ASSERT_TRUE(collision.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    SceneAssetData scene{};
+    scene.name = "collision_inactive_drop";
+
+    SceneNodeAsset a{};
+    a.id = "a";
+    a.collision = SceneCollisionAsset{ .collision_asset = collision.output };
+    scene.nodes.push_back(std::move(a));
+
+    SceneNodeAsset b{};
+    b.id = "b";
+    b.local.translation[0] = 0.25f;
+    b.collision = SceneCollisionAsset{ .collision_asset = collision.output };
+    scene.nodes.push_back(std::move(b));
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.collisions.size(), 2u);
+
+    // Empty mask => both colliders live => overlapping pair => Enter.
+    CollisionFrameStorage frame{};
+    build_collision_frame(result.instance, assets.collisions(), frame);
+    ASSERT_EQ(frame.world.size(), 2u);
+    ASSERT_EQ(frame.events.size(), 1u);
+    EXPECT_EQ(frame.events[0].kind, CollisionEventKind::Enter);
+
+    // Park b via the active mask (all live except b's runtime entity).
+    const auto b_runtime = result.instance.authored_to_runtime.at("b");
+    result.instance.entity_active.assign(
+        result.instance.runtime_to_authored.size(), std::uint8_t{ 1 });
+    result.instance.entity_active[b_runtime] = 0u;
+
+    build_collision_frame(result.instance, assets.collisions(), frame);
+    ASSERT_EQ(frame.world.size(), 1u)
+        << "a parked node's collider must drop from the collision world";
+    EXPECT_TRUE(frame.current_pairs.empty());
+    ASSERT_EQ(frame.events.size(), 1u);
+    EXPECT_EQ(frame.events[0].kind, CollisionEventKind::Exit);
+}
+
 TEST(CollisionFrameWorldBuilder, UnresolvedEntryEmitsExitWhenItDisappears)
 {
     using namespace wz::engine::assets;

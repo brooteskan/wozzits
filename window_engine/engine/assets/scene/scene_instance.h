@@ -469,6 +469,25 @@ namespace wz::engine::assets
         std::unordered_map<
             wz::scene::AuthoredEntityId,
             wz::scene::RuntimeEntityId> authored_to_runtime;
+
+        // Hierarchical "live" mask (#252 two-axes ruling), indexed by runtime
+        // entity: 1 = the node AND every ancestor is authored `active`, 0 = parked.
+        // EMPTY = all active, so a caller that never populates it (game_app, tests)
+        // behaves exactly as before. The host refreshes it each frame from the
+        // authored `active` flags; it gates behavior dispatch + the collision frame,
+        // NOT render ("drawn?" (visible) and "live?" (active) are orthogonal).
+        std::vector<std::uint8_t> entity_active;
+
+        // Whether `entity` is live. Fail-open: an empty mask or an out-of-range
+        // entity reads active, matching the collision loops' existing
+        // `node >= node_count` tolerance.
+        [[nodiscard]] bool entity_is_active(
+            wz::scene::RuntimeEntityId entity) const noexcept
+        {
+            return entity_active.empty()
+                || static_cast<std::size_t>(entity) >= entity_active.size()
+                || entity_active[entity] != 0u;
+        }
     };
 
     // ─── Renderable asset resolution ────────────────────────────────────

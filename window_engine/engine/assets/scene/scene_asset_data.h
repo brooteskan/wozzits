@@ -1070,6 +1070,12 @@ namespace wz::engine::assets
 
         bool visible = true;
 
+        // "Live?" axis (#252), orthogonal to `visible` ("drawn?"). Hierarchical:
+        // a node is effectively active only if it AND every ancestor is active.
+        // Gates behavior dispatch + the collision frame (a parked/pooled node
+        // stops ticking + colliding), but NOT rendering. Default true = live.
+        bool active = true;
+
         wz::scene::TransformNode::MotionType motion_type =
             wz::scene::TransformNode::MotionType::Static;
 

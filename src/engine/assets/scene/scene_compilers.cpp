@@ -1336,6 +1336,11 @@ namespace wz::engine::assets::internal
             auto vis = read_bool(node_val, "visible");
             if (vis) node.visible = *vis;
 
+            // "active" (#252 live axis) — absent keeps the struct default (true),
+            // so pre-#252 scenes load fully live (back-compat).
+            auto act = read_bool(node_val, "active");
+            if (act) node.active = *act;
+
             auto motion = read_string(node_val, "motion_type");
             if (motion && *motion == "Animated") {
                 node.motion_type = wz::scene::TransformNode::MotionType::Animated;

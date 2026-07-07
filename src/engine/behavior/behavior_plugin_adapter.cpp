@@ -179,6 +179,8 @@ namespace wz::engine::behavior
                 return BehaviorCommandKind::SetRenderableParam;
             case WZ_BEHAVIOR_COMMAND_SET_NODE_VISIBLE:
                 return BehaviorCommandKind::SetNodeVisible;
+            case WZ_BEHAVIOR_COMMAND_SET_NODE_ACTIVE:
+                return BehaviorCommandKind::SetNodeActive;
             case WZ_BEHAVIOR_COMMAND_NONE:
             default:
                 return BehaviorCommandKind::None;
