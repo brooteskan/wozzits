@@ -968,7 +968,12 @@ namespace wz::engine::behavior
         }
 
         for (auto& record : scene.motions) {
-            if (!record.component.enabled || !entity_valid(scene, record.node)) {
+            // A parked (inactive) node is frozen: its own motion does not integrate,
+            // so a pooled instance does not drift while parked. `active` is the
+            // pooling primitive; mirrors the collision frame's active gating.
+            if (!record.component.enabled
+                || !scene.entity_is_active(record.node)
+                || !entity_valid(scene, record.node)) {
                 continue;
             }
 
@@ -1048,6 +1053,7 @@ namespace wz::engine::behavior
             const auto& motion = record.component;
             if (!motion.enabled
                 || !motion.terrain_constrained
+                || !scene.entity_is_active(record.node)  // parked = frozen
                 || !std::isfinite(motion.terrain_ride_height)
                 || !entity_valid(scene, record.node))
             {

@@ -690,8 +690,17 @@ namespace wz::engine::behavior
                 .other = wz::scene::INVALID_RUNTIME_ENTITY,
                 .self_is_trigger = false,
             };
+            // Mark started only if the node is actually live -- an inactive node's
+            // self.start is dropped by the dispatch gate (same condition), so marking
+            // it started would lose the event forever (dispatch_self_start skips
+            // started bindings). Leaving it unstarted lets self.start fire on unpark.
+            const bool node_live =
+                !context.scene
+                || context.scene->entity_is_active(record.node);
             dispatch_module_event(registry, context, component, event);
-            started.insert(component.binding_id);
+            if (node_live) {
+                started.insert(component.binding_id);
+            }
         }
     }
 
@@ -728,6 +737,14 @@ namespace wz::engine::behavior
             if (!behavior_accepts_event(
                     registry, component, WZ_EVENT_COGNITION_TICK))
             {
+                continue;
+            }
+            // A parked (inactive) node must be skipped BEFORE the park-at-infinity
+            // below. The gate in dispatch_module_event would drop the tick, so the
+            // handler never runs to reschedule; parking it here would then strand it
+            // asleep forever -- it would never tick again even after being unparked.
+            // Skipping instead leaves its wake due, so it resumes on unpark.
+            if (!scene.entity_is_active(record.node)) {
                 continue;
             }
             if (now < state.next_wake_or(component.binding_id, kDueNow)) {

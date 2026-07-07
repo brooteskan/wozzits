@@ -158,3 +158,36 @@ TEST(CognitionTickDispatch, UnsubscribedNeverFires)
     run_tick(scene, registry, 5.0);
     EXPECT_EQ(g_tick_count, 0);
 }
+
+// A parked (inactive) node's cognition does not tick -- and, crucially, is NOT
+// stranded asleep by the park-at-infinity step. Regression for the ordering bug
+// where an inactive node's due wake was parked at +inf *before* the gate dropped
+// the tick, so the handler never reran to reschedule and the node never ticked
+// again even after being unparked. The active check must skip BEFORE the park, so
+// the wake stays due and the node resumes on unpark.
+TEST(CognitionTickDispatch, ParkedNodeResumesTickingAfterUnpark)
+{
+    reset_probe(/*delay=*/1.0, /*reschedule=*/true);
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_cognition_probe));
+    SceneInstance scene = scene_with_probe("cognition.tick");
+
+    run_tick(scene, registry, 0.0);   // active: fire, reschedule wake -> 1.0
+    EXPECT_EQ(g_tick_count, 1);
+
+    // Park entity 0. Its wake (1.0) comes due while parked -- it must not tick,
+    // and must not be stranded asleep.
+    scene.entity_active = { 0u };
+    run_tick(scene, registry, 1.0);   // due but parked -> no tick
+    run_tick(scene, registry, 5.0);   // still parked -> no tick
+    EXPECT_EQ(g_tick_count, 1);
+
+    // Unpark (empty mask = all live). The wake was left due, so it fires again.
+    // Before the fix this stayed at 1 forever (parked at +inf).
+    scene.entity_active.clear();
+    run_tick(scene, registry, 6.0);
+    EXPECT_EQ(g_tick_count, 2);
+    EXPECT_EQ(g_last_sim_time, 6.0);
+}

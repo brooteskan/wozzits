@@ -233,6 +233,55 @@ TEST(BehaviorCommands, MotionIntegratesLocalLinearVelocityInWorldAxes)
     EXPECT_NEAR(actor_node.world.m[14], 0.0f, 1e-5f);
 }
 
+// A parked (inactive) node is frozen: its motion does not integrate, so a pooled
+// instance does not drift while parked. Regression for the gap where `active`
+// gated dispatch + collision but integrate_motion still moved parked nodes.
+TEST(BehaviorCommands, ParkedNodeMotionDoesNotIntegrate)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_parked_motion_scene";
+
+    wz::engine::assets::SceneNodeAsset node{};
+    node.id = "actor";
+    node.motion = wz::engine::assets::SceneMotionAsset{
+        .linear_velocity = { 2.0f, 0.0f, 0.0f },
+        .space = wz::engine::assets::SceneMotionSpace::World,
+    };
+    asset.nodes.push_back(std::move(node));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    const RuntimeEntityId actor =
+        result.instance.authored_to_runtime["actor"];
+
+    // Park the actor (0 = inactive). Sized to cover it; empty would mean all live.
+    result.instance.entity_active.assign(actor + 1u, 1u);
+    result.instance.entity_active[actor] = 0u;
+
+    std::vector<RuntimeEntityId> changed;
+    const uint32_t integrated =
+        integrate_motion(result.instance, 0.5f, &changed);
+
+    EXPECT_EQ(integrated, 0u);          // parked -> nothing integrated
+    EXPECT_TRUE(changed.empty());
+    {
+        const auto& parked = wz::core::graph::node_data(
+            result.instance.storage.polytree, actor);
+        EXPECT_FLOAT_EQ(parked.world.m[12], 0.0f);  // did not drift
+    }
+
+    // Unpark -> it integrates again (guards against over-gating).
+    result.instance.entity_active[actor] = 1u;
+    changed.clear();
+    const uint32_t after_unpark =
+        integrate_motion(result.instance, 0.5f, &changed);
+    EXPECT_EQ(after_unpark, 1u);
+    const auto& moved = wz::core::graph::node_data(
+        result.instance.storage.polytree, actor);
+    EXPECT_FLOAT_EQ(moved.world.m[12], 1.0f);  // 2.0 * 0.5
+}
+
 TEST(BehaviorCommands, MotionIntegratesLocalVelocityUsingWorldHierarchy)
 {
     wz::engine::assets::SceneAssetData asset{};
