@@ -30,6 +30,7 @@
 #include <engine/behavior/drive_forward_behaviors.h>
 #include <engine/project/project_manifest.h>
 
+#include <asset/draft.h>
 #include <gpu/gpu.h>
 #include <input/input.h>
 
@@ -131,6 +132,32 @@ namespace
             root.motion = wz::engine::assets::SceneMotionAsset{};
 
             return { root };
+        }
+
+        // A 2-node DRAWABLE prefab exercising BOTH render-binding routes the tank
+        // prefabs use, against the fixture graph's pull-mesh chain: the root binds
+        // geometry (graph node 9) + program (node 10) so ASSEMBLE synthesizes its
+        // renderable, and an fx child points at a PRE-BUILT renderable (node 8)
+        // resolved only by the renderable-key bridge. A spawn must materialize BOTH,
+        // which the incremental spawn path (#252, A1) has to do itself now that the
+        // full-scene trailing rematerialize is gone -- the pre-built child is the
+        // muzzle_beam/projectile class that would go dark if the bridge were dropped.
+        static std::vector<wz::engine::assets::SceneNodeAsset> make_drawable()
+        {
+            wz::engine::assets::SceneNodeAsset root{};
+            root.id = "drawable_root";
+            root.geometry_asset_node_id =
+                static_cast<wz::asset::AssetGraphDraftNodeId>(9);
+            root.render_program_node_id =
+                static_cast<wz::asset::AssetGraphDraftNodeId>(10);
+
+            wz::engine::assets::SceneNodeAsset fx{};
+            fx.id = "drawable_fx";
+            fx.parent_id = "drawable_root";
+            fx.renderable_asset_node_id =
+                static_cast<wz::asset::AssetGraphDraftNodeId>(8);
+
+            return { root, fx };
         }
     };
 }
@@ -347,4 +374,58 @@ TEST_F(WozzitsAppPrefabFixture, SpawnedPrefabDrivesItselfOverTicks)
     }
     EXPECT_GT(last_z, start->z)
         << "spawned prefab carrying drive_forward never moved";
+}
+
+// A spawned DRAWABLE prefab must materialize its render bindings INCREMENTALLY
+// (#252, A1): the spawn path bridges + assembles + commit/resolves only the
+// spawned subtree instead of re-materializing the whole scene, and BOTH the
+// assembled-geometry root and the pre-built-renderable child come up with a
+// resolved renderable key. The pre-built child is the muzzle_beam/projectile
+// class that regressed when the full-scene trailing rematerialize was removed --
+// this test fails (fx has no key) if the spawn path forgets to bridge pre-built
+// renderables on the spawned span.
+TEST_F(WozzitsAppPrefabFixture, SpawnMaterializesDrawableSubtree)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(scene_load_desc()));
+    // Register AFTER load so this overrides the scenelet folder's auto-registered
+    // (1-node, behavior-only) "spawnling" -- the fixture spawner emits "spawnling",
+    // and we want it to graft our 2-node DRAWABLE prefab instead.
+    app.register_prefab("spawnling", make_drawable());
+
+    // The base scene draws nothing (behavior + camera nodes only), even though the
+    // graph now carries a pull-mesh render chain.
+    const std::size_t drawables_before = app.resolved_renderable_node_count();
+    EXPECT_EQ(drawables_before, 0u);
+
+    // Tick 1 spawns instance 1 (the 2-node drawable prefab). No scene_source, so no
+    // grafted children -- exactly the 2 authored prefab nodes.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    ASSERT_EQ(app.spawned_prefab_node_count(), 2u)
+        << "the 2-node drawable prefab was not grafted";
+
+    // Both render-binding routes materialized for the spawned subtree:
+    //   - the root's renderable was ASSEMBLED from geometry + program, and
+    //   - the fx child's PRE-BUILT renderable was resolved by the key bridge.
+    const auto root_key = app.node_renderable_asset("spawn:1:drawable_root");
+    const auto fx_key = app.node_renderable_asset("spawn:1:drawable_fx");
+    EXPECT_TRUE(root_key.has_value())
+        << "spawned geometry+program node did not assemble a renderable";
+    EXPECT_TRUE(fx_key.has_value())
+        << "spawned pre-built renderable was not bridged (the muzzle_beam / "
+           "projectile regression if the spawn drops the renderable-key bridge)";
+    EXPECT_EQ(app.resolved_renderable_node_count(), drawables_before + 2u);
+
+    // Incremental: a second spawn materializes its OWN subtree and leaves the first
+    // instance's resolved key untouched (content-keyed, so equality also holds).
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    ASSERT_EQ(app.spawned_prefab_node_count(), 4u);
+    EXPECT_TRUE(app.node_renderable_asset("spawn:2:drawable_root").has_value());
+    EXPECT_TRUE(app.node_renderable_asset("spawn:2:drawable_fx").has_value());
+    const auto root_key_after =
+        app.node_renderable_asset("spawn:1:drawable_root");
+    ASSERT_TRUE(root_key_after.has_value())
+        << "the second spawn disturbed the first instance's renderable";
+    EXPECT_EQ(*root_key_after, *root_key);
+    EXPECT_EQ(app.resolved_renderable_node_count(), drawables_before + 4u);
 }

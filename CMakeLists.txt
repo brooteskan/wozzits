@@ -398,10 +398,16 @@ configure_file(
     "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/.wozzits/project.json.in"
     "${WZ_PREFAB_SPAWN_FIXTURE_DST}/.wozzits/project.json"
     @ONLY)
+# #252: the graph now carries a pull-mesh render chain (nodes 1-5 = cube mesh +
+# pull shaders, 9 = geometry, 10 = program, 8 = pre-built pull-mesh renderable),
+# mirroring test_rebind_fixture, so the spawn test can register a DRAWABLE prefab
+# and verify a spawn materializes its render bindings incrementally. Configure the
+# .in so the bundled shader paths are absolute (machine-correct).
+set(WZ_FIXTURE_SHADER_DIR "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/shaders")
 configure_file(
-    "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/assets.graph.json"
+    "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/assets.graph.json.in"
     "${WZ_PREFAB_SPAWN_FIXTURE_DST}/assets.graph.json"
-    COPYONLY)
+    @ONLY)
 configure_file(
     "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/scene.json"
     "${WZ_PREFAB_SPAWN_FIXTURE_DST}/scene.json"

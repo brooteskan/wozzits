@@ -773,10 +773,15 @@ namespace wz::app
         // (0) with no asset library or no geometry bindings.
         // only_node (optional): assemble just that one node's renderable and skip
         // the rest -- the incremental path for a single-node change (a custom-form
-        // flip; later a grafted subtree). nullptr = the whole scene (#253).
+        // flip). nullptr = the whole scene (#253).
+        // only_nodes (optional): the SUBTREE form of the same filter -- assemble only
+        // the nodes in the set (a spawned subtree + its grafted children) and skip
+        // the rest (#252). Both nullptr = the whole scene; both set is redundant but
+        // safe (a node passes only if it satisfies every provided filter).
         std::size_t assemble_render_bindings(
             const wz::asset::AssetGraphDraft& draft,
-            const std::string* only_node = nullptr);
+            const std::string* only_node = nullptr,
+            const std::unordered_set<std::string>* only_nodes = nullptr);
 
         // Re-assemble renderable bindings after one was edited live (issue #213
         // increment 2): re-bridge the pre-built renderables, re-run
@@ -819,6 +824,28 @@ namespace wz::app
         // removed first, so a re-bind/re-resolve re-grafts cleanly. Returns the
         // number of children grafted. Caller rebuilds the behavior scene after.
         std::size_t graft_scene_sources();
+
+        // Incremental subset graft (#252): expand ONLY the given hosts' scene_source
+        // sub-scenes, appending their children to scene_nodes_ + grafted_node_ids_
+        // WITHOUT the drop-all the full graft does. Returns the newly grafted child
+        // ids (so the caller can assemble just that subtree). Used by spawn_prefab so
+        // a spawn touches only its own subtree; the parameterless graft_scene_sources()
+        // stays the full drop-all re-graft for the bind/edit paths. A host id that is
+        // not present or carries no resolved scene_source is skipped.
+        std::vector<std::string> graft_scene_sources_for_hosts(
+            const std::vector<std::string>& host_ids);
+
+        // Expand one host's scene_source sub-scene: append its expanded children to
+        // scene_nodes_ + grafted_node_ids_, re-apply the host's sticky per-child
+        // overrides (#213), and append the new child ids to out_new_children when
+        // non-null. Shared by graft_scene_sources() (full) and
+        // graft_scene_sources_for_hosts() (subset). `host` MUST be a copy stable
+        // across the scene_nodes_ appends (push_back may reallocate). Returns the
+        // number of children grafted.
+        std::size_t graft_host_scene_source(
+            const wz::engine::assets::SceneNodeAsset& host,
+            const wz::asset::AssetKey& scene_source,
+            std::vector<std::string>* out_new_children);
 
         // Mirror a grafted scene-source child's authored components onto its host
         // as a sticky override (issue #213), so an edit to a runtime-only grafted

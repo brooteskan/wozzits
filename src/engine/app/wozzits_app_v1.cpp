@@ -919,7 +919,8 @@ namespace wz::app
 
     std::size_t WozzitsApp_v1::assemble_render_bindings(
         const wz::asset::AssetGraphDraft& draft,
-        const std::string* only_node)
+        const std::string* only_node,
+        const std::unordered_set<std::string>* only_nodes)
     {
         if (!ctx_.assets) {
             return 0;
@@ -964,11 +965,16 @@ namespace wz::app
 
         std::size_t assembled = 0;
         for (wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
-            // Incremental (#253): when a single node is targeted, skip the rest --
-            // the bare loop + id compare is trivial; only the target does the
-            // expensive resolve/create-renderable work. Ancestor-program lookups
-            // below still scan the full span, so inheritance stays correct.
+            // Incremental (#253/#252): when a single node (only_node) or a subtree
+            // (only_nodes, the spawned block + its grafted children) is targeted,
+            // skip the rest -- the bare loop + id compare is trivial; only the
+            // targeted nodes do the expensive resolve/create-renderable work.
+            // Ancestor-program lookups below still scan the full span, so program
+            // inheritance stays correct even when the ancestor is off-target.
             if (only_node && node.id != *only_node) {
+                continue;
+            }
+            if (only_nodes && only_nodes->count(node.id) == 0) {
                 continue;
             }
             // Resolve this node's OWN program ref (companion key), if any --
@@ -1258,66 +1264,8 @@ namespace wz::app
 
         std::size_t grafted = 0;
         for (const HostRef& ref : hosts) {
-            const wz::engine::assets::SceneHandle handle =
-                ctx_.assets->scenes().get_scene(
-                    wz::engine::assets::SceneAsset{ .output = ref.scene_source });
-            const wz::engine::assets::SceneAssetData* sub =
-                ctx_.assets->scenes().get_scene_data(handle);
-            if (!sub) {
-                ctx_.logger.warn(
-                    "graft_scene_sources: scene_source for node '" + ref.host.id
-                    + "' did not resolve to a Scene asset (skipped)");
-                continue;
-            }
-
-            std::vector<wz::engine::assets::SceneNodeAsset> children =
-                wz::engine::assets::expand_scene_source_children(
-                    ref.host, *sub);
-            // Re-apply this host's sticky per-child component overrides (issue
-            // #213) onto the freshly expanded children, keyed by the child's
-            // sub-scene id ("<host>/" suffix). Applied AFTER expansion so the
-            // authored program rides on the runtime child without being folded
-            // into the GLB Scene key.
-            const std::string host_prefix = ref.host.id + "/";
-            std::unordered_set<std::string> matched_overrides;
-            for (wz::engine::assets::SceneNodeAsset& child : children) {
-                if (child.id.size() > host_prefix.size()
-                    && child.id.compare(
-                           0, host_prefix.size(), host_prefix) == 0)
-                {
-                    const std::string sub_id =
-                        child.id.substr(host_prefix.size());
-                    for (const wz::engine::assets::SceneSourceChildOverride& ov :
-                         ref.host.scene_source_child_overrides)
-                    {
-                        if (ov.child_id != sub_id) {
-                            continue;
-                        }
-                        if (ov.render_program_node_id) {
-                            child.render_program_node_id =
-                                ov.render_program_node_id;
-                        }
-                        matched_overrides.insert(sub_id);
-                        break;
-                    }
-                }
-                grafted_node_ids_.push_back(child.id);
-                scene_nodes_.push_back(std::move(child));
-                ++grafted;
-            }
-            // Sticky policy: an override whose child_id no longer expands (renamed
-            // / removed source node, or a transient resolve failure) is RETAINED,
-            // never deleted — only logged, so a later source fix re-attaches it.
-            for (const wz::engine::assets::SceneSourceChildOverride& ov :
-                 ref.host.scene_source_child_overrides)
-            {
-                if (matched_overrides.count(ov.child_id) == 0) {
-                    ctx_.logger.info(
-                        "graft_scene_sources: child override '" + ov.child_id
-                        + "' under host '" + ref.host.id
-                        + "' matched no expanded node (retained)");
-                }
-            }
+            grafted +=
+                graft_host_scene_source(ref.host, ref.scene_source, nullptr);
         }
 
         if (grafted > 0) {
@@ -1325,6 +1273,119 @@ namespace wz::app
                 "graft_scene_sources: grafted "
                 + std::to_string(grafted) + " scene-source child node(s) from "
                 + std::to_string(hosts.size()) + " host(s)");
+        }
+        return grafted;
+    }
+
+    std::vector<std::string> WozzitsApp_v1::graft_scene_sources_for_hosts(
+        const std::vector<std::string>& host_ids)
+    {
+        std::vector<std::string> new_children;
+        if (!ctx_.assets || host_ids.empty()) {
+            return new_children;
+        }
+
+        // Snapshot the target hosts up front (copies stable across the scene_nodes_
+        // appends graft_host_scene_source does): only those present AND carrying a
+        // resolved scene_source. Unlike graft_scene_sources() there is NO drop-all --
+        // existing grafted children stay put, so a spawn touches only its own subtree
+        // (#252). A later full graft_scene_sources() still drop-alls + re-expands
+        // everything (the spawned host carries a scene_source), so the two compose.
+        struct HostRef
+        {
+            wz::engine::assets::SceneNodeAsset host;  // copy (stable across append)
+            wz::asset::AssetKey scene_source;
+        };
+        const std::unordered_set<std::string> wanted(
+            host_ids.begin(), host_ids.end());
+        std::vector<HostRef> hosts;
+        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+            if (node.scene_source && wanted.count(node.id) != 0) {
+                hosts.push_back(HostRef{ node, *node.scene_source });
+            }
+        }
+
+        std::size_t grafted = 0;
+        for (const HostRef& ref : hosts) {
+            grafted += graft_host_scene_source(
+                ref.host, ref.scene_source, &new_children);
+        }
+
+        if (grafted > 0) {
+            ctx_.logger.info(
+                "graft_scene_sources_for_hosts: grafted "
+                + std::to_string(grafted) + " scene-source child node(s) from "
+                + std::to_string(hosts.size()) + " host(s)");
+        }
+        return new_children;
+    }
+
+    std::size_t WozzitsApp_v1::graft_host_scene_source(
+        const wz::engine::assets::SceneNodeAsset& host,
+        const wz::asset::AssetKey& scene_source,
+        std::vector<std::string>* out_new_children)
+    {
+        const wz::engine::assets::SceneHandle handle =
+            ctx_.assets->scenes().get_scene(
+                wz::engine::assets::SceneAsset{ .output = scene_source });
+        const wz::engine::assets::SceneAssetData* sub =
+            ctx_.assets->scenes().get_scene_data(handle);
+        if (!sub) {
+            ctx_.logger.warn(
+                "graft_scene_sources: scene_source for node '" + host.id
+                + "' did not resolve to a Scene asset (skipped)");
+            return 0;
+        }
+
+        std::vector<wz::engine::assets::SceneNodeAsset> children =
+            wz::engine::assets::expand_scene_source_children(host, *sub);
+        // Re-apply this host's sticky per-child component overrides (issue #213)
+        // onto the freshly expanded children, keyed by the child's sub-scene id
+        // ("<host>/" suffix). Applied AFTER expansion so the authored program rides
+        // on the runtime child without being folded into the GLB Scene key.
+        const std::string host_prefix = host.id + "/";
+        std::unordered_set<std::string> matched_overrides;
+        std::size_t grafted = 0;
+        for (wz::engine::assets::SceneNodeAsset& child : children) {
+            if (child.id.size() > host_prefix.size()
+                && child.id.compare(
+                       0, host_prefix.size(), host_prefix) == 0)
+            {
+                const std::string sub_id =
+                    child.id.substr(host_prefix.size());
+                for (const wz::engine::assets::SceneSourceChildOverride& ov :
+                     host.scene_source_child_overrides)
+                {
+                    if (ov.child_id != sub_id) {
+                        continue;
+                    }
+                    if (ov.render_program_node_id) {
+                        child.render_program_node_id =
+                            ov.render_program_node_id;
+                    }
+                    matched_overrides.insert(sub_id);
+                    break;
+                }
+            }
+            grafted_node_ids_.push_back(child.id);
+            if (out_new_children) {
+                out_new_children->push_back(child.id);
+            }
+            scene_nodes_.push_back(std::move(child));
+            ++grafted;
+        }
+        // Sticky policy: an override whose child_id no longer expands (renamed
+        // / removed source node, or a transient resolve failure) is RETAINED,
+        // never deleted — only logged, so a later source fix re-attaches it.
+        for (const wz::engine::assets::SceneSourceChildOverride& ov :
+             host.scene_source_child_overrides)
+        {
+            if (matched_overrides.count(ov.child_id) == 0) {
+                ctx_.logger.info(
+                    "graft_scene_sources: child override '" + ov.child_id
+                    + "' under host '" + host.id
+                    + "' matched no expanded node (retained)");
+            }
         }
         return grafted;
     }
@@ -1888,41 +1949,85 @@ namespace wz::app
         // scene dirty (and save_scene excludes "spawn:" nodes regardless), so
         // spawned instances are never written back into scene.json.
 
-        // Expand any scene_source (GLB) geometry the spawned subtree references
-        // into grafted child nodes -- the SAME bridge + graft load_scene / bind
-        // run. A prefab whose geometry comes from a scene_source (e.g. a GLB tank)
-        // carries only the host node; its meshes are the grafted children, so
-        // without this the host appends but nothing draws. bridge resolves the
-        // spawned node's scene_source_node_id -> Scene key; graft_scene_sources is
-        // idempotent (re-grafts every host) and prefixes child ids with the host
-        // id, which is unique per spawn, so each instance gets its own children.
+        // Materialize the spawned subtree's render/collision bindings INCREMENTALLY
+        // -- the same bridge + graft + assemble the load/bind path runs, but scoped
+        // to just the spawned nodes + their grafted children instead of the whole
+        // scene (#252, A1). A prefab whose geometry comes from a scene_source (e.g. a
+        // GLB tank) carries only the host node; its meshes are the grafted children,
+        // so without the graft the host appends but nothing draws.
         if (ctx_.assets) {
+            // Capture the spawned block's node ids (the contiguous "spawn:" span just
+            // appended) BEFORE graft appends its children -- these plus the grafted
+            // children are the ONLY nodes this spawn changed, so render assembly can
+            // touch just them instead of re-assembling the whole scene (#252, A1).
+            std::vector<std::string> spawned_ids;
+            spawned_ids.reserve(scene_nodes_.size() - nodes_before);
+            for (std::size_t i = nodes_before; i < scene_nodes_.size(); ++i) {
+                spawned_ids.push_back(scene_nodes_[i].id);
+            }
+
             wz::engine::assets::bridge_scene_source_keys(
                 scene_nodes_, graph_draft_);
-            graft_scene_sources();
-            // assemble_render_bindings resolves each spawned node's render_program
-            // + AudioSource anchors (node id -> key) on scene_nodes_. It MUST run
-            // BEFORE rebuild_behavior_scene, because the rebuild materializes the
-            // runtime AudioSource from node.audio_source->audio_renderable -- an
-            // unresolved (empty) key there makes a spawned tank's cannon silent
-            // (mirrors the load path, where assemble precedes the final rebuild).
-            assemble_render_bindings(graph_draft_);
+            // Incremental graft: expand ONLY the spawned host(s)' scene_source into
+            // grafted children, without the full re-graft's drop-all. A prefab whose
+            // geometry comes from a scene_source (e.g. a GLB tank) carries only the
+            // host node; its meshes are the grafted children, so without this the host
+            // appends but nothing draws. Child ids are prefixed with the (per-spawn
+            // unique) host id, so each instance gets its own children.
+            const std::vector<std::string> new_children =
+                graft_scene_sources_for_hosts(spawned_ids);
+
+            // Bridge the spawned subtree's PRE-BUILT renderables (renderable_asset_
+            // node_id -> key) -- e.g. a tank's muzzle_beam / trajectory / impact_flash
+            // / projectile, which carry a renderable but no geometry, so the assemble
+            // path below (geometry-only) never touches them. Without this bridge those
+            // nodes keep an unresolved key and draw nothing. Cheap (key lookups); it
+            // used to ride on the trailing rematerialize, now removed.
+            wz::engine::assets::bridge_scene_renderable_keys(
+                scene_nodes_, graph_draft_);
+
+            // Assemble ONLY the spawned subtree (spawned block + its grafted
+            // children). Resolves each node's render_program + AudioSource anchors
+            // (node id -> key) on scene_nodes_. MUST run BEFORE rebuild_behavior_scene,
+            // which materializes the runtime AudioSource from
+            // node.audio_source->audio_renderable -- an unresolved key there makes a
+            // spawned tank's cannon silent (mirrors the load path).
+            std::unordered_set<std::string> spawned_subtree(
+                spawned_ids.begin(), spawned_ids.end());
+            spawned_subtree.insert(new_children.begin(), new_children.end());
+            const std::size_t assembled = assemble_render_bindings(
+                graph_draft_, nullptr, &spawned_subtree);
+
             // Bridge the spawned subtree's collision_asset_node_id -> key (mirrors
-            // the load/bind path). Without this a spawned prefab's collision
-            // component keeps an unresolved key, so build_collision_frame skips it
-            // and the collider never exists -- the same spawn-gap class as the audio
-            // auto-play + active-camera passes. Runs BEFORE rebuild_behavior_scene,
-            // which materializes the runtime collider from the resolved key.
+            // the load/bind path). Without this a spawned prefab's collision component
+            // keeps an unresolved key, so build_collision_frame skips it and the
+            // collider never exists -- the same spawn-gap class as the audio auto-play
+            // + active-camera passes. Runs BEFORE rebuild_behavior_scene, which
+            // materializes the runtime collider from the resolved key.
             wz::engine::assets::bridge_scene_collision_keys(
                 scene_nodes_, graph_draft_);
+
+            // Compile the freshly registered spawn renderables. This commit()+
+            // resolve_all() is the INCREMENTAL replacement for the old full-scene
+            // trailing rematerialize_render_bindings(): commit finalizes only the new
+            // registrations and resolve_all cache-hits every pre-existing key (ms=1),
+            // so a spawn no longer re-materializes the whole scene (#252). Mirrors
+            // rematerialize_node_render_binding (#253). resolve_all (not a targeted
+            // resolve_roots) because the targeted paths evict everything not in the
+            // root set -- they would tear down the rest of the live scene.
+            if (assembled > 0) {
+                ctx_.assets->commit();
+                const wz::engine::assets::ResolveReport resolve =
+                    ctx_.assets->resolve_all();
+                if (!resolve.ok()) {
+                    ctx_.logger.warn(
+                        "spawn_prefab: resolved with errors="
+                        + std::to_string(resolve.failures.size()));
+                }
+            }
         }
 
         rebuild_behavior_scene();
-        if (ctx_.assets) {
-            // rematerialize_render_bindings: the freshly grafted GLB children's
-            // intrinsic geometry bindings (the pre-graft assemble can't see them).
-            rematerialize_render_bindings();
-        }
         // Loud, greppable spawn marker so a play log unambiguously records WHEN a
         // graft landed and its node delta -- correlate with a frame_profile CSV row
         // (scene_nodes jump + rematerialize/rebuild) to confirm a spawn (#252).
