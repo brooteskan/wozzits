@@ -935,6 +935,44 @@ namespace wz::app
         void dispatch_scene_behaviors(
             const wz::input::InputState& input, float dt);
 
+        // A SPAWN_PREFAB request resolved to the spawner's STABLE authored id,
+        // collected during the command pass and drained at the frame boundary.
+        // A spawn grafts nodes + rebuilds/renumbers the behavior runtime, so it
+        // must NOT run mid command-pass (that would strand the runtime ids the
+        // remaining commands address); apply_all_behavior_commands COLLECTS these
+        // and dispatch_scene_behaviors drains them once the pass is done.
+        struct DeferredSpawnRequest
+        {
+            wz::scene::AuthoredEntityId spawner_id;
+            uint32_t                    name_hash = 0u;
+            float                       offset[3]{ 0.0f, 0.0f, 0.0f };
+        };
+
+        // The single converged drain for a produced behavior command buffer
+        // (#256 seam A). Applies the transform/velocity kinds (through
+        // apply_behavior_commands) AND every host-handled IMMEDIATE kind -- audio
+        // (play / stop / gain / grain), SET_RENDERABLE_PARAM, SET_NODE_VISIBLE,
+        // SET_NODE_ACTIVE, SET_ACTIVE_CAMERA -- then COLLECTS the deferred
+        // SPAWN_PREFAB requests into out_spawn_requests for the caller's frame-
+        // boundary drain. The transform apply's changed entities are appended to
+        // changed_entities. Routing every command kind through this ONE method is
+        // what stops a kind from ever again being silently dropped by a pass that
+        // forgot to handle it -- the structural fix behind the #252 audit's
+        // finding #3 (a self-reset's host-handled commands were dropped).
+        //
+        // Behavior-preserving scope (#256 seam A): the MAIN per-frame drain routes
+        // here. The narrower passes keep their deliberately limited application
+        // until a separate, semantics-visible change widens them -- the self.start
+        // pass (rebuild_behavior_scene) and the WZ_EVENT_SCENE_LOADED pass apply
+        // only their own subset, and the async SPAWN_COMPLETED pass stays
+        // transforms-only (a host-state reset belongs on the pool manager's
+        // acquire, not the async completion; #252 audit). No-op if no behavior
+        // scene is live (the caller's guard already holds on the main path).
+        void apply_all_behavior_commands(
+            const std::vector<wz::engine::behavior::BehaviorCommand>& commands,
+            std::vector<wz::scene::RuntimeEntityId>&                  changed_entities,
+            std::vector<DeferredSpawnRequest>&                        out_spawn_requests);
+
         wz::engine::AppContext&                  ctx_;
         wz::engine::rendering::RhiSceneRenderer  renderer_;
         uint32_t                                 graph_epoch_ = 0;  // last bound

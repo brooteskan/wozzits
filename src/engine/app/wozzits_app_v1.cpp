@@ -2248,6 +2248,291 @@ namespace wz::app
         return names;
     }
 
+    void WozzitsApp_v1::apply_all_behavior_commands(
+        const std::vector<wz::engine::behavior::BehaviorCommand>& commands,
+        std::vector<wz::scene::RuntimeEntityId>&                  changed_entities,
+        std::vector<DeferredSpawnRequest>&                        out_spawn_requests)
+    {
+        // Precondition: a live behavior scene. The main-frame caller already holds
+        // this (dispatch_scene_behaviors returns early otherwise); guard anyway so
+        // the one applier is safe for any future dispatch site to call.
+        if (!behavior_scene_) {
+            return;
+        }
+
+        // Apply the produced command buffer, exactly as game_app's
+        // apply_behavior_commands job: transform/velocity commands mutate the
+        // instance polytree, then world Y etc. settle on the next propagate.
+        (void)wz::engine::behavior::apply_behavior_commands(
+            *behavior_scene_,
+            commands,
+            &changed_entities);
+
+        // Audio behavior commands (item 9): play/stop/set-gain the addressed
+        // entity's AudioSource through the realtime scheduler. Only while the
+        // audio runtime is live (play mode + a device); otherwise dropped (no
+        // device => no sound). apply_behavior_commands ignores these kinds —
+        // they don't mutate the entity, they post to the audio thread.
+        if (ctx_.assets && audio_runtime_.running()) {
+            namespace ea_audio = wz::engine::audio;
+            for (const wz::engine::behavior::BehaviorCommand& command :
+                 commands)
+            {
+                // Grain-param control routes to a different scheduler path
+                // (it targets a grain cloud, not a voice).
+                if (command.kind == wz::engine::behavior::
+                        BehaviorCommandKind::SetGrainParam) {
+                    ea_audio::apply_grain_param_command(
+                        *behavior_scene_, audio_runtime_.scheduler(),
+                        command.entity,
+                        static_cast<uint8_t>(command.values[0]),
+                        command.values[1],
+                        static_cast<uint32_t>(
+                            command.values[2] > 0.0f ? command.values[2]
+                                                     : 0.0f),
+                        // values[3] = source index (GrainParam::SourceWeight).
+                        static_cast<uint8_t>(
+                            command.values[3] > 0.0f ? command.values[3]
+                                                     : 0.0f));
+                    continue;
+                }
+
+                ea_audio::AudioBehaviorVerb verb;
+                switch (command.kind) {
+                case wz::engine::behavior::BehaviorCommandKind::PlaySound:
+                    verb = ea_audio::AudioBehaviorVerb::Play;
+                    break;
+                case wz::engine::behavior::BehaviorCommandKind::StopSound:
+                    verb = ea_audio::AudioBehaviorVerb::Stop;
+                    break;
+                case wz::engine::behavior::BehaviorCommandKind::SetSoundGain:
+                    verb = ea_audio::AudioBehaviorVerb::SetGain;
+                    break;
+                default:
+                    continue;
+                }
+                ea_audio::apply_audio_behavior_command(
+                    *ctx_.assets, *behavior_scene_,
+                    audio_runtime_.scheduler(), verb, command.entity,
+                    command.values[0], command.values[1]);
+            }
+        }
+
+        // SET_RENDERABLE_PARAM (issue #232): write the addressed node's
+        // per-instance renderable_constants override, which the next
+        // frame's pack merges into the draw packet (the #229 seam). Like
+        // the audio verbs this is host-handled (apply_behavior_commands
+        // ignores it) and runs in the command pass — it mutates only the
+        // authored SceneNodeAsset (no behavior-runtime rebuild, no
+        // recompile, no re-key), so it does not renumber the runtime ids
+        // the remaining commands address. `entity` (runtime) is resolved to
+        // its stable authored id here while behavior_scene_ is current.
+        for (const wz::engine::behavior::BehaviorCommand& command :
+             commands)
+        {
+            if (command.kind
+                != wz::engine::behavior::BehaviorCommandKind
+                    ::SetRenderableParam)
+            {
+                continue;
+            }
+            if (command.entity
+                >= behavior_scene_->runtime_to_authored.size())
+            {
+                continue;
+            }
+            const wz::scene::AuthoredEntityId authored_id =
+                behavior_scene_->runtime_to_authored[command.entity];
+
+            uint32_t name_hash = 0u;
+            std::memcpy(
+                &name_hash, &command.values[0], sizeof(uint32_t));
+
+            // Resolve the name hash to a real field name: prefer the
+            // synthesized recipe's declared constants (the full addressable
+            // set), then the node's authored overrides (so a look that has
+            // not compiled — e.g. no device — is still addressable by an
+            // existing override).
+            std::string name;
+            if (ctx_.assets) {
+                if (const std::optional<wz::asset::AssetKey> key =
+                        node_renderable_asset(authored_id))
+                {
+                    if (const wz::engine::assets::RhiRenderableRecipe*
+                            recipe =
+                                ctx_.assets->renderables()
+                                    .get_rhi_renderable_recipe(
+                                        wz::engine::assets::RenderableAsset{
+                                            .output = *key }))
+                    {
+                        for (const wz::engine::assets::RhiRenderableConstant&
+                                 c : recipe->constants)
+                        {
+                            if (renderable_param_name_hash(c.name)
+                                == name_hash)
+                            {
+                                name = c.name;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (name.empty()) {
+                if (const wz::engine::assets::SceneNodeAsset* node =
+                        wz::engine::assets::find_scene_node(
+                            scene_nodes_, authored_id))
+                {
+                    for (const wz::engine::assets::
+                             SceneRenderableConstantOverride& c :
+                         node->renderable_constants)
+                    {
+                        if (renderable_param_name_hash(c.name) == name_hash)
+                        {
+                            name = c.name;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (name.empty()) {
+                ctx_.logger.warn(
+                    "behavior set_renderable_param: node '" + authored_id
+                    + "' has no declared or overridden constant matching "
+                      "the command's name hash (skipped)");
+                continue;
+            }
+
+            // The command carries only x/y/z; preserve the field's fourth
+            // component (w / alpha) from any existing override, else a
+            // sensible opaque default so a first color pulse is visible.
+            float w = 1.0f;
+            if (const std::optional<std::array<float, 4>> existing =
+                    node_renderable_constant(authored_id, name))
+            {
+                w = (*existing)[3];
+            }
+            const float value[4] = {
+                command.values[1],
+                command.values[2],
+                command.values[3],
+                w,
+            };
+            (void)set_node_renderable_constant(authored_id, name, value);
+        }
+
+        // SET_NODE_VISIBLE (issue #250): flip the addressed node's authored
+        // `visible` flag. Render-only + host-handled (apply ignores it) — a
+        // cheap field write, no behavior rebuild / render re-assemble. The
+        // renderer honors visibility hierarchically, so hiding a node hides its
+        // whole subtree. Same runtime->authored id resolution as above.
+        for (const wz::engine::behavior::BehaviorCommand& command :
+             commands)
+        {
+            if (command.kind
+                != wz::engine::behavior::BehaviorCommandKind::SetNodeVisible)
+            {
+                continue;
+            }
+            if (command.entity
+                >= behavior_scene_->runtime_to_authored.size())
+            {
+                continue;
+            }
+            const wz::scene::AuthoredEntityId authored_id =
+                behavior_scene_->runtime_to_authored[command.entity];
+            if (wz::engine::assets::SceneNodeAsset* node =
+                    wz::engine::assets::find_scene_node(
+                        scene_nodes_, authored_id))
+            {
+                node->visible = command.values[0] != 0.0f;
+                scene_dirty_ = true;
+            }
+        }
+
+        // SET_NODE_ACTIVE (issue #252, the "live?" axis): flip the addressed
+        // node's authored `active` flag. Host-handled (apply ignores it) — a
+        // cheap field write, no behavior rebuild. The hierarchical effect gates
+        // dispatch + collision via the entity_active mask rebuilt each frame in
+        // dispatch_scene_behaviors (NOT render, unlike SET_NODE_VISIBLE). Same
+        // runtime->authored id resolution as above.
+        for (const wz::engine::behavior::BehaviorCommand& command :
+             commands)
+        {
+            if (command.kind
+                != wz::engine::behavior::BehaviorCommandKind::SetNodeActive)
+            {
+                continue;
+            }
+            if (command.entity
+                >= behavior_scene_->runtime_to_authored.size())
+            {
+                continue;
+            }
+            const wz::scene::AuthoredEntityId authored_id =
+                behavior_scene_->runtime_to_authored[command.entity];
+            if (wz::engine::assets::SceneNodeAsset* node =
+                    wz::engine::assets::find_scene_node(
+                        scene_nodes_, authored_id))
+            {
+                node->active = command.values[0] != 0.0f;
+                scene_dirty_ = true;
+            }
+        }
+
+        // Per-frame SET_ACTIVE_CAMERA: a behavior (e.g. spawn_player, after the
+        // deferred spawn of the player prefab) can switch the runtime camera on ANY
+        // frame, not just at scene load. The scene-load path already applies this
+        // once; mirror it here. behavior_scene_ is still current (spawns are applied
+        // at the frame boundary below), and apply_scene_active_camera caches the
+        // authored id, so any same-frame spawn renumbering is re-seated by
+        // refresh_active_camera_entity.
+        for (const wz::engine::behavior::BehaviorCommand& command :
+             commands)
+        {
+            if (command.kind
+                == wz::engine::behavior::BehaviorCommandKind::SetActiveCamera)
+            {
+                apply_scene_active_camera(command.entity);
+            }
+        }
+
+        // Collect SPAWN_PREFAB requests (runtime prefab spawning). Resolve the
+        // spawner runtime entity -> its STABLE authored id NOW, while
+        // behavior_scene_ is still the scene the command was issued against; a
+        // later spawn in the drain rebuilds + renumbers the runtime, so a
+        // runtime id would go stale. Decode values[0] (the name hash as a float
+        // BIT PATTERN, mirroring the audio clip-name trick) and values[1..3]
+        // (the offset). Drained by the caller at the frame boundary.
+        for (const wz::engine::behavior::BehaviorCommand& command :
+             commands)
+        {
+            if (command.kind
+                != wz::engine::behavior::BehaviorCommandKind::SpawnPrefab)
+            {
+                continue;
+            }
+            if (command.entity
+                >= behavior_scene_->runtime_to_authored.size())
+            {
+                continue;
+            }
+            uint32_t name_hash = 0u;
+            std::memcpy(
+                &name_hash, &command.values[0], sizeof(uint32_t));
+            out_spawn_requests.push_back(DeferredSpawnRequest{
+                .spawner_id =
+                    behavior_scene_->runtime_to_authored[command.entity],
+                .name_hash = name_hash,
+                .offset = {
+                    command.values[1],
+                    command.values[2],
+                    command.values[3],
+                },
+            });
+        }
+    }
+
     void WozzitsApp_v1::dispatch_scene_behaviors(
         const wz::input::InputState& input, float dt)
     {
@@ -2391,13 +2676,9 @@ namespace wz::app
         // runtime ids the remaining commands address). It is resolved to the
         // spawner's STABLE authored id here (while behavior_scene_ is current) and
         // drained at the frame boundary, alongside the deferred-authoring edits.
-        struct SpawnRequest
-        {
-            wz::scene::AuthoredEntityId spawner_id;
-            uint32_t name_hash = 0u;
-            float offset[3]{ 0.0f, 0.0f, 0.0f };
-        };
-        std::vector<SpawnRequest> spawn_requests;
+        // apply_all_behavior_commands collects these (DeferredSpawnRequest, hoisted
+        // to the class so the applier can name the type); drained below.
+        std::vector<DeferredSpawnRequest> spawn_requests;
 
         if (has_behaviors) {
             // Build a minimal FrameContext carrying time + input. The collision,
@@ -2453,277 +2734,17 @@ namespace wz::app
             wz::engine::behavior::dispatch_cognition_tick(
                 *behavior_scene_, registry_, behavior_ctx);
 
-            // Apply the produced command buffer, exactly as game_app's
-            // apply_behavior_commands job: transform/velocity commands mutate the
-            // instance polytree, then world Y etc. settle on the next propagate.
-            (void)wz::engine::behavior::apply_behavior_commands(
-                *behavior_scene_,
+            // Apply the produced command buffer through the single converged
+            // applier (#256 seam A): the transform/velocity kinds AND every
+            // host-handled immediate kind (audio / renderable-param / visible /
+            // active / active-camera), plus COLLECT the deferred SPAWN_PREFAB
+            // requests into spawn_requests for the frame-boundary drain below.
+            // One applier for every dispatch site means a command kind can never
+            // again be silently dropped by a pass that forgot to handle it.
+            apply_all_behavior_commands(
                 frame_storage_.behavior_commands.commands,
-                &changed_entities);
-
-            // Audio behavior commands (item 9): play/stop/set-gain the addressed
-            // entity's AudioSource through the realtime scheduler. Only while the
-            // audio runtime is live (play mode + a device); otherwise dropped (no
-            // device => no sound). apply_behavior_commands ignores these kinds —
-            // they don't mutate the entity, they post to the audio thread.
-            if (ctx_.assets && audio_runtime_.running()) {
-                namespace ea_audio = wz::engine::audio;
-                for (const wz::engine::behavior::BehaviorCommand& command :
-                     frame_storage_.behavior_commands.commands)
-                {
-                    // Grain-param control routes to a different scheduler path
-                    // (it targets a grain cloud, not a voice).
-                    if (command.kind == wz::engine::behavior::
-                            BehaviorCommandKind::SetGrainParam) {
-                        ea_audio::apply_grain_param_command(
-                            *behavior_scene_, audio_runtime_.scheduler(),
-                            command.entity,
-                            static_cast<uint8_t>(command.values[0]),
-                            command.values[1],
-                            static_cast<uint32_t>(
-                                command.values[2] > 0.0f ? command.values[2]
-                                                         : 0.0f),
-                            // values[3] = source index (GrainParam::SourceWeight).
-                            static_cast<uint8_t>(
-                                command.values[3] > 0.0f ? command.values[3]
-                                                         : 0.0f));
-                        continue;
-                    }
-
-                    ea_audio::AudioBehaviorVerb verb;
-                    switch (command.kind) {
-                    case wz::engine::behavior::BehaviorCommandKind::PlaySound:
-                        verb = ea_audio::AudioBehaviorVerb::Play;
-                        break;
-                    case wz::engine::behavior::BehaviorCommandKind::StopSound:
-                        verb = ea_audio::AudioBehaviorVerb::Stop;
-                        break;
-                    case wz::engine::behavior::BehaviorCommandKind::SetSoundGain:
-                        verb = ea_audio::AudioBehaviorVerb::SetGain;
-                        break;
-                    default:
-                        continue;
-                    }
-                    ea_audio::apply_audio_behavior_command(
-                        *ctx_.assets, *behavior_scene_,
-                        audio_runtime_.scheduler(), verb, command.entity,
-                        command.values[0], command.values[1]);
-                }
-            }
-
-            // SET_RENDERABLE_PARAM (issue #232): write the addressed node's
-            // per-instance renderable_constants override, which the next
-            // frame's pack merges into the draw packet (the #229 seam). Like
-            // the audio verbs this is host-handled (apply_behavior_commands
-            // ignores it) and runs in the command pass — it mutates only the
-            // authored SceneNodeAsset (no behavior-runtime rebuild, no
-            // recompile, no re-key), so it does not renumber the runtime ids
-            // the remaining commands address. `entity` (runtime) is resolved to
-            // its stable authored id here while behavior_scene_ is current.
-            for (const wz::engine::behavior::BehaviorCommand& command :
-                 frame_storage_.behavior_commands.commands)
-            {
-                if (command.kind
-                    != wz::engine::behavior::BehaviorCommandKind
-                        ::SetRenderableParam)
-                {
-                    continue;
-                }
-                if (command.entity
-                    >= behavior_scene_->runtime_to_authored.size())
-                {
-                    continue;
-                }
-                const wz::scene::AuthoredEntityId authored_id =
-                    behavior_scene_->runtime_to_authored[command.entity];
-
-                uint32_t name_hash = 0u;
-                std::memcpy(
-                    &name_hash, &command.values[0], sizeof(uint32_t));
-
-                // Resolve the name hash to a real field name: prefer the
-                // synthesized recipe's declared constants (the full addressable
-                // set), then the node's authored overrides (so a look that has
-                // not compiled — e.g. no device — is still addressable by an
-                // existing override).
-                std::string name;
-                if (ctx_.assets) {
-                    if (const std::optional<wz::asset::AssetKey> key =
-                            node_renderable_asset(authored_id))
-                    {
-                        if (const wz::engine::assets::RhiRenderableRecipe*
-                                recipe =
-                                    ctx_.assets->renderables()
-                                        .get_rhi_renderable_recipe(
-                                            wz::engine::assets::RenderableAsset{
-                                                .output = *key }))
-                        {
-                            for (const wz::engine::assets::RhiRenderableConstant&
-                                     c : recipe->constants)
-                            {
-                                if (renderable_param_name_hash(c.name)
-                                    == name_hash)
-                                {
-                                    name = c.name;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (name.empty()) {
-                    if (const wz::engine::assets::SceneNodeAsset* node =
-                            wz::engine::assets::find_scene_node(
-                                scene_nodes_, authored_id))
-                    {
-                        for (const wz::engine::assets::
-                                 SceneRenderableConstantOverride& c :
-                             node->renderable_constants)
-                        {
-                            if (renderable_param_name_hash(c.name) == name_hash)
-                            {
-                                name = c.name;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (name.empty()) {
-                    ctx_.logger.warn(
-                        "behavior set_renderable_param: node '" + authored_id
-                        + "' has no declared or overridden constant matching "
-                          "the command's name hash (skipped)");
-                    continue;
-                }
-
-                // The command carries only x/y/z; preserve the field's fourth
-                // component (w / alpha) from any existing override, else a
-                // sensible opaque default so a first color pulse is visible.
-                float w = 1.0f;
-                if (const std::optional<std::array<float, 4>> existing =
-                        node_renderable_constant(authored_id, name))
-                {
-                    w = (*existing)[3];
-                }
-                const float value[4] = {
-                    command.values[1],
-                    command.values[2],
-                    command.values[3],
-                    w,
-                };
-                (void)set_node_renderable_constant(authored_id, name, value);
-            }
-
-            // SET_NODE_VISIBLE (issue #250): flip the addressed node's authored
-            // `visible` flag. Render-only + host-handled (apply ignores it) — a
-            // cheap field write, no behavior rebuild / render re-assemble. The
-            // renderer honors visibility hierarchically, so hiding a node hides its
-            // whole subtree. Same runtime->authored id resolution as above.
-            for (const wz::engine::behavior::BehaviorCommand& command :
-                 frame_storage_.behavior_commands.commands)
-            {
-                if (command.kind
-                    != wz::engine::behavior::BehaviorCommandKind::SetNodeVisible)
-                {
-                    continue;
-                }
-                if (command.entity
-                    >= behavior_scene_->runtime_to_authored.size())
-                {
-                    continue;
-                }
-                const wz::scene::AuthoredEntityId authored_id =
-                    behavior_scene_->runtime_to_authored[command.entity];
-                if (wz::engine::assets::SceneNodeAsset* node =
-                        wz::engine::assets::find_scene_node(
-                            scene_nodes_, authored_id))
-                {
-                    node->visible = command.values[0] != 0.0f;
-                    scene_dirty_ = true;
-                }
-            }
-
-            // SET_NODE_ACTIVE (issue #252, the "live?" axis): flip the addressed
-            // node's authored `active` flag. Host-handled (apply ignores it) — a
-            // cheap field write, no behavior rebuild. The hierarchical effect gates
-            // dispatch + collision via the entity_active mask rebuilt each frame in
-            // dispatch_scene_behaviors (NOT render, unlike SET_NODE_VISIBLE). Same
-            // runtime->authored id resolution as above.
-            for (const wz::engine::behavior::BehaviorCommand& command :
-                 frame_storage_.behavior_commands.commands)
-            {
-                if (command.kind
-                    != wz::engine::behavior::BehaviorCommandKind::SetNodeActive)
-                {
-                    continue;
-                }
-                if (command.entity
-                    >= behavior_scene_->runtime_to_authored.size())
-                {
-                    continue;
-                }
-                const wz::scene::AuthoredEntityId authored_id =
-                    behavior_scene_->runtime_to_authored[command.entity];
-                if (wz::engine::assets::SceneNodeAsset* node =
-                        wz::engine::assets::find_scene_node(
-                            scene_nodes_, authored_id))
-                {
-                    node->active = command.values[0] != 0.0f;
-                    scene_dirty_ = true;
-                }
-            }
-
-            // Collect SPAWN_PREFAB requests (runtime prefab spawning). Resolve the
-            // spawner runtime entity -> its STABLE authored id NOW, while
-            // behavior_scene_ is still the scene the command was issued against; a
-            // later spawn in the drain rebuilds + renumbers the runtime, so a
-            // runtime id would go stale. Decode values[0] (the name hash as a float
-            // BIT PATTERN, mirroring the audio clip-name trick) and values[1..3]
-            // (the offset). Drained below at the frame boundary.
-            for (const wz::engine::behavior::BehaviorCommand& command :
-                 frame_storage_.behavior_commands.commands)
-            {
-                if (command.kind
-                    != wz::engine::behavior::BehaviorCommandKind::SpawnPrefab)
-                {
-                    continue;
-                }
-                if (command.entity
-                    >= behavior_scene_->runtime_to_authored.size())
-                {
-                    continue;
-                }
-                uint32_t name_hash = 0u;
-                std::memcpy(
-                    &name_hash, &command.values[0], sizeof(uint32_t));
-                spawn_requests.push_back(SpawnRequest{
-                    .spawner_id =
-                        behavior_scene_->runtime_to_authored[command.entity],
-                    .name_hash = name_hash,
-                    .offset = {
-                        command.values[1],
-                        command.values[2],
-                        command.values[3],
-                    },
-                });
-            }
-        }
-
-        // Per-frame SET_ACTIVE_CAMERA: a behavior (e.g. spawn_player, after the
-        // deferred spawn of the player prefab) can switch the runtime camera on ANY
-        // frame, not just at scene load. The scene-load path already applies this
-        // once; mirror it here. behavior_scene_ is still current (spawns are applied
-        // at the frame boundary below), and apply_scene_active_camera caches the
-        // authored id, so any same-frame spawn renumbering is re-seated by
-        // refresh_active_camera_entity.
-        for (const wz::engine::behavior::BehaviorCommand& command :
-             frame_storage_.behavior_commands.commands)
-        {
-            if (command.kind
-                == wz::engine::behavior::BehaviorCommandKind::SetActiveCamera)
-            {
-                apply_scene_active_camera(command.entity);
-            }
+                changed_entities,
+                spawn_requests);
         }
 
         std::vector<wz::scene::RuntimeEntityId> velocity_changed;
@@ -2864,7 +2885,7 @@ namespace wz::app
         // authored id (resolved during the command pass), so it stays valid even as
         // a prior spawn here rebuilds + renumbers the runtime. State preservation
         // in rebuild_behavior_scene leaves pre-existing bindings' state untouched.
-        for (const SpawnRequest& request : spawn_requests) {
+        for (const DeferredSpawnRequest& request : spawn_requests) {
             spawn_prefab(
                 request.spawner_id,
                 request.name_hash,
