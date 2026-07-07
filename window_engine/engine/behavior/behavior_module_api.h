@@ -2372,6 +2372,91 @@ static inline uint32_t wz_gpu_compute_output_stride_bytes(
     return output ? output->stride_bytes : 0u;
 }
 
+/* --- Spawn-with-identity (#252 pooling) --- */
+
+/* Enqueue a spawn; the host materializes it at the frame boundary and fires
+ * WZ_EVENT_SPAWN_COMPLETED to the spawner. Returns 1 (ticket written to
+ * *out_ticket) or 0 (rejected: no host, null args, or prefab hash 0). */
+static inline uint8_t wz_submit_spawn_prefab(
+    const WzBehaviorFrameFacts* facts,
+    const WzSpawnPrefabRequest* req,
+    WzSpawnTicket* out_ticket)
+{
+    if (out_ticket) {
+        out_ticket->value = 0u;
+    }
+    if (!facts || !facts->submit_spawn_prefab || !req) {
+        return 0u;
+    }
+    return facts->submit_spawn_prefab(
+        facts->spawn_prefab_user, req, out_ticket);
+}
+
+/* 1 while dispatching a WZ_EVENT_SPAWN_COMPLETED / _FAILED to the spawner. */
+static inline uint8_t wz_spawn_event_active(const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_spawn_event ? 1u : 0u;
+}
+
+static inline WzSpawnTicket wz_spawn_event_ticket(
+    const WzBehaviorFrameFacts* facts)
+{
+    WzSpawnTicket t;
+    t.value = facts && facts->active_spawn_event
+        ? facts->active_spawn_event->ticket.value
+        : 0u;
+    return t;
+}
+
+static inline WzSpawnStatus wz_spawn_event_status(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_spawn_event
+        ? facts->active_spawn_event->status
+        : WZ_SPAWN_STATUS_NONE;
+}
+
+static inline uint64_t wz_spawn_event_request_tag(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_spawn_event
+        ? facts->active_spawn_event->request_tag
+        : 0u;
+}
+
+/* The spawned root's LIVE handle this frame (renumbers on rebuild -- prefer the
+ * stable id below for anything that must survive). */
+static inline WzBehaviorEntityId wz_spawn_event_root(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_spawn_event
+        ? facts->active_spawn_event->root_entity
+        : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY;
+}
+
+/* The spawned root's STABLE authored id ("spawn:N:<root>"). Valid only during the
+ * event dispatch -- COPY it (e.g. into shared state) to keep it. */
+static inline const char* wz_spawn_event_root_authored_id(
+    const WzBehaviorFrameFacts* facts)
+{
+    return facts && facts->active_spawn_event
+        ? facts->active_spawn_event->root_authored_id
+        : 0;
+}
+
+/* Read a node's EFFECTIVE active state (#252): 1 if it AND every ancestor is
+ * active, else 0. Matches the dispatch/collision gate. 1 (fail-open) when the host
+ * wires no node-query surface. */
+static inline uint8_t wz_node_active(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity)
+{
+    if (!facts || !facts->get_node_active) {
+        return 1u;
+    }
+    return facts->get_node_active(facts->node_query_user, entity);
+}
+
 static inline uint64_t wz_gpu_compute_output_byte_count(
     const WzBehaviorFrameFacts* facts,
     const char* name)

@@ -284,6 +284,52 @@ namespace
             facts, event->entity, "spawnling", 0.0f, 0.0f, 5.0f);
     }
 
+    // Pool prewarm probe (#252 spawn-with-identity). On self.start it submits ONE
+    // spawn of "spawnling" PARKED, with request_tag 7. On spawn.completed it writes
+    // the completion payload into its OWN local translation so the test can read it
+    // back: x = 1 if a stable root_authored_id came back, y = the echoed
+    // request_tag, z = 1 if the live root handle is valid. Proves the whole submit
+    // -> frame-boundary drain -> SPAWN_COMPLETED-to-the-spawner loop end to end.
+    void pool_prewarm_probe(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event) {
+            return;
+        }
+        if (event->kind == WZ_EVENT_SELF_START) {
+            WzSpawnPrefabRequest req{};
+            req.spawner = event->entity;
+            req.prefab_name_hash = wz_prefab_hash("spawnling");
+            req.offset[0] = 0.0f;
+            req.offset[1] = 0.0f;
+            req.offset[2] = 5.0f;
+            req.request_tag = 7u;
+            req.spawn_parked = 1u;
+            WzSpawnTicket ticket{};
+            (void)wz_submit_spawn_prefab(facts, &req, &ticket);
+            return;
+        }
+        if (event->kind == WZ_EVENT_SPAWN_COMPLETED && facts->write_command) {
+            const float has_root =
+                wz_spawn_event_root_authored_id(facts) ? 1.0f : 0.0f;
+            const float tag =
+                static_cast<float>(wz_spawn_event_request_tag(facts));
+            const float root_valid =
+                wz_spawn_event_root(facts)
+                        != (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY
+                    ? 1.0f
+                    : 0.0f;
+            const WzBehaviorCommand command{
+                .entity = event->entity,
+                .kind = WZ_BEHAVIOR_COMMAND_SET_LOCAL_TRANSLATION,
+                .values = { has_root, tag, root_valid, 0.0f },
+            };
+            facts->write_command(facts->command_writer_user, &command);
+        }
+    }
+
     // Subscribed to "input.*" (NOT frame.update): writes an add-local-translation
     // of (+1, 0, 0) for each input event the runtime routes to it. The dispatch
     // test ticks with a controller-axis InputState and asserts the bound node
@@ -398,6 +444,15 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         .event_channel_count = 1u,
         .module_user_data = nullptr,
     };
+    static const char* pool_channels[] = { "self.start", "spawn.completed" };
+    const WzBehaviorModuleDesc pool_prewarm_desc{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "pool_prewarm_probe",
+        .on_event = pool_prewarm_probe,
+        .event_channels = pool_channels,
+        .event_channel_count = 2u,
+        .module_user_data = nullptr,
+    };
     static const char* input_events[] = { "input.*" };
     const WzBehaviorModuleDesc move_on_input_desc{
         .size = sizeof(WzBehaviorModuleDesc),
@@ -430,10 +485,12 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         api->register_module_desc(api->user, &accumulate_desc);
     const uint8_t spawn_prefab_ok =
         api->register_module_desc(api->user, &spawn_prefab_desc);
+    const uint8_t pool_prewarm_ok =
+        api->register_module_desc(api->user, &pool_prewarm_desc);
     return (move_ok && spawn_ok && remove_ok && set_renderable_ok
             && pulse_tint_ok && reparent_ok && add_proximity_ok
             && remove_proximity_ok && move_on_input_ok && accumulate_ok
-            && spawn_prefab_ok)
+            && spawn_prefab_ok && pool_prewarm_ok)
         ? uint8_t{ 1 }
         : uint8_t{ 0 };
 }

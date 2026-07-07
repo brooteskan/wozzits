@@ -1900,6 +1900,51 @@ namespace wz::engine::behavior
                 : uint8_t{ 0 };
         }
 
+        uint8_t submit_spawn_prefab_request(
+            void* user,
+            const WzSpawnPrefabRequest* req,
+            WzSpawnTicket* out_ticket)
+        {
+            if (out_ticket) {
+                out_ticket->value = 0u;
+            }
+            if (!user || !req) {
+                return 0u;
+            }
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context->spawn_requests || !context->scene) {
+                return 0u;
+            }
+            // Resolve the spawner (self by default) to its STABLE authored id NOW,
+            // while behavior_scene_ is current -- the frame-boundary drain rebuilds
+            // + renumbers the runtime, so a runtime id would go stale.
+            WzBehaviorEntityId spawner = req->spawner;
+            if (spawner == (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY) {
+                spawner = context->active_entity;
+            }
+            if (spawner >= context->scene->runtime_to_authored.size()) {
+                return 0u;
+            }
+            const WzSpawnTicket ticket = context->spawn_requests->submit(
+                context->scene->runtime_to_authored[spawner], *req);
+            if (out_ticket) {
+                *out_ticket = ticket;
+            }
+            return ticket.value != 0u ? 1u : 0u;
+        }
+
+        uint8_t get_node_active_query(void* user, WzBehaviorEntityId entity)
+        {
+            if (!user) {
+                return 1u;
+            }
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context->scene) {
+                return 1u;
+            }
+            return context->scene->entity_is_active(entity) ? 1u : 0u;
+        }
+
         void log_info(void* user, const char* message)
         {
             auto* logger = static_cast<wz::Logger*>(user);
@@ -2000,6 +2045,11 @@ namespace wz::engine::behavior
                 .agent_conditional_pref = agent_conditional_pref_query,
                 .set_agent_decoherence = set_agent_decoherence_request,
                 .get_instance_state_of = get_instance_state_of,
+                .active_spawn_event = context.active_spawn_payload,
+                .spawn_prefab_user = &context,
+                .submit_spawn_prefab = submit_spawn_prefab_request,
+                .node_query_user = &context,
+                .get_node_active = get_node_active_query,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -2089,6 +2139,11 @@ namespace wz::engine::behavior
                 .agent_conditional_pref = agent_conditional_pref_query,
                 .set_agent_decoherence = set_agent_decoherence_request,
                 .get_instance_state_of = get_instance_state_of,
+                .active_spawn_event = context.active_spawn_payload,
+                .spawn_prefab_user = &context,
+                .submit_spawn_prefab = submit_spawn_prefab_request,
+                .node_query_user = &context,
+                .get_node_active = get_node_active_query,
             };
         }
 

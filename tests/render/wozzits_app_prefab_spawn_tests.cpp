@@ -31,6 +31,7 @@
 #include <engine/project/project_manifest.h>
 
 #include <asset/draft.h>
+#include <file/filesystem.h>
 #include <gpu/gpu.h>
 #include <input/input.h>
 
@@ -79,6 +80,17 @@ namespace
                 .behavior_module_folder =
                     project.manifest.behavior_module_folder,
             };
+        }
+
+        // pool_scene.json (beside scene.json): a "manager" node bound to
+        // pool_prewarm_probe, which submits a PARKED spawn-with-identity on
+        // self.start (#252 pooling).
+        wz::app::WozzitsAppSceneLoadDesc pool_scene_load_desc() const
+        {
+            wz::app::WozzitsAppSceneLoadDesc desc = scene_load_desc();
+            desc.scene = wz::fs::join(
+                wz::fs::parent_path(desc.scene), "pool_scene.json");
+            return desc;
         }
 
         // A 1-node prefab whose root binds accumulate_on_frame, so after a spawn
@@ -428,4 +440,49 @@ TEST_F(WozzitsAppPrefabFixture, SpawnMaterializesDrawableSubtree)
         << "the second spawn disturbed the first instance's renderable";
     EXPECT_EQ(*root_key_after, *root_key);
     EXPECT_EQ(app.resolved_renderable_node_count(), drawables_before + 4u);
+}
+
+// Spawn-with-identity end to end (#252 pooling): a pool_prewarm_probe manager
+// submits a PARKED spawn on self.start; the frame-boundary drain materializes it
+// and fires SPAWN_COMPLETED back to the manager, which records the payload into its
+// own translation (x = root id present, y = echoed request_tag, z = root valid).
+// The spawned instance is grafted PARKED -- its own behavior does not dispatch.
+TEST_F(WozzitsAppPrefabFixture, SpawnWithIdentityPrewarmsParkedAndReportsBack)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(pool_scene_load_desc()));
+    // The manager submitted its prewarm spawn on self.start (during load); nothing
+    // has materialized yet -- the drain runs on the first tick.
+    EXPECT_EQ(app.spawned_prefab_node_count(), 0u);
+
+    // Tick 1: drain the submit -> spawn the parked spawnling -> SPAWN_COMPLETED to
+    // the manager -> it writes the payload into its own local translation.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_EQ(app.spawned_prefab_node_count(), 1u)
+        << "the prewarm submit did not materialize an instance";
+    const auto report = app.node_local_translation("manager");
+    ASSERT_TRUE(report.has_value());
+    EXPECT_FLOAT_EQ(report->x, 1.0f)
+        << "SPAWN_COMPLETED carried no stable root_authored_id";
+    EXPECT_FLOAT_EQ(report->y, 7.0f)
+        << "SPAWN_COMPLETED did not echo the request_tag";
+    EXPECT_FLOAT_EQ(report->z, 1.0f)
+        << "SPAWN_COMPLETED carried no valid live root handle";
+
+    ASSERT_TRUE(
+        app.node_local_translation("spawn:1:spawnling_root").has_value())
+        << "spawned instance missing from the scene";
+
+    // Grafted PARKED (active=0): its accumulate_on_frame never dispatches, so its Y
+    // stays 0 across ticks (a live instance's Y would climb with the frame count).
+    for (int tick = 0; tick < 3; ++tick) {
+        app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    }
+    const auto parked = app.node_local_translation("spawn:1:spawnling_root");
+    ASSERT_TRUE(parked.has_value());
+    EXPECT_FLOAT_EQ(parked->y, 0.0f)
+        << "a parked (spawn_parked) instance was still dispatched";
+
+    // The manager submits only ONCE (on self.start), so no further instances appear.
+    EXPECT_EQ(app.spawned_prefab_node_count(), 1u);
 }

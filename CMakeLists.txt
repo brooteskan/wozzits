@@ -412,6 +412,12 @@ configure_file(
     "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/scene.json"
     "${WZ_PREFAB_SPAWN_FIXTURE_DST}/scene.json"
     COPYONLY)
+# #252 pooling: a scene with a "manager" node bound to pool_prewarm_probe, which
+# submits a PARKED spawn-with-identity on self.start and records the completion.
+configure_file(
+    "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/pool_scene.json"
+    "${WZ_PREFAB_SPAWN_FIXTURE_DST}/pool_scene.json"
+    COPYONLY)
 # A scenelet auto-registered as the "spawnling" prefab on scene load (the
 # runtime-spawning glue): scenelets/<stem>.scene.json -> prefab "<stem>". Its
 # root binds accumulate_on_frame, so a spawned instance's behavior runs.
@@ -767,6 +773,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(behavior drive_forward_behavior_tests)
     rs_add_test_group(behavior terrain_align_behavior_tests)
     rs_add_test_group(behavior cognition_tick_dispatch_tests)
+    rs_add_test_group(behavior spawn_identity_dispatch_tests)
     rs_add_test_group(behavior quantum_agent_behavior_tests)
     rs_add_test_group(behavior quantum_agent_actuator_tests)
     rs_add_test_group(behavior module_params_tests)

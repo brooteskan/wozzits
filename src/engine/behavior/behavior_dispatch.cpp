@@ -135,6 +135,26 @@ namespace wz::engine::behavior
             }
         };
 
+        struct ActiveSpawnPayloadScope
+        {
+            BehaviorFrameContext& context;
+            const WzSpawnEventPayload* previous = nullptr;
+
+            ActiveSpawnPayloadScope(
+                BehaviorFrameContext& context_in,
+                const WzSpawnEventPayload& payload)
+                : context(context_in)
+                , previous(context_in.active_spawn_payload)
+            {
+                context.active_spawn_payload = &payload;
+            }
+
+            ~ActiveSpawnPayloadScope()
+            {
+                context.active_spawn_payload = previous;
+            }
+        };
+
         bool behavior_accepts_event(
             const BehaviorRegistry& registry,
             const wz::engine::assets::BehaviorComponent& component,
@@ -609,6 +629,19 @@ namespace wz::engine::behavior
         dispatch_gpu_compute_events_to_modules(scene, registry, context);
     }
 
+    bool scene_has_event_subscriber(
+        const wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        WzBehaviorEventKind kind)
+    {
+        for (const auto& record : scene.behaviors) {
+            if (behavior_accepts_event(registry, record.component, kind)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void dispatch_behavior_event(
         wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,
@@ -701,6 +734,39 @@ namespace wz::engine::behavior
             if (node_live) {
                 started.insert(component.binding_id);
             }
+        }
+    }
+
+    void dispatch_spawn_event(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context,
+        wz::scene::RuntimeEntityId spawner,
+        const WzSpawnEventPayload& payload)
+    {
+        if (!context.scene) {
+            context.scene = &scene;
+        }
+        const BehaviorEvent event{
+            .kind = static_cast<WzBehaviorEventKind>(
+                payload.status == WZ_SPAWN_STATUS_FAILED
+                    ? WZ_EVENT_SPAWN_FAILED
+                    : WZ_EVENT_SPAWN_COMPLETED),
+            .entity = spawner,
+            .other = wz::scene::INVALID_RUNTIME_ENTITY,
+            .self_is_trigger = false,
+        };
+        // Route to the spawner's subscribed modules only, payload live for the
+        // duration (read via facts.active_spawn_event). Mirrors the gpu-compute
+        // completion dispatch. The spawner is a live node, so the dispatch gate
+        // passes.
+        ActiveSpawnPayloadScope active_payload(context, payload);
+        for (const auto& record : scene.behaviors) {
+            if (record.node != spawner) {
+                continue;
+            }
+            dispatch_matching_module_event(
+                registry, context, record.component, event);
         }
     }
 

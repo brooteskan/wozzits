@@ -4,6 +4,7 @@
 
 #include <engine/behavior/behavior_commands.h>
 #include <engine/behavior/behavior_gpu_compute.h>
+#include <engine/behavior/behavior_spawn.h>
 #include <engine/behavior/event_channels.h>
 #include <engine/behavior/behavior_plugin_abi.h>
 #include <engine/engine.h>
@@ -56,8 +57,16 @@ namespace wz::engine::behavior
             wz::scene::INVALID_RUNTIME_ENTITY;
         const WzInputEventPayload* active_input_payload = nullptr;
         const WzGpuComputeEventPayload* active_gpu_compute_payload = nullptr;
+        // Set (via ActiveSpawnPayloadScope) while dispatching a spawn-with-identity
+        // completion event to the spawner, so the handler reads it through
+        // facts.active_spawn_event (#252 pooling).
+        const WzSpawnEventPayload* active_spawn_payload = nullptr;
         BehaviorCommandBuffer* commands = nullptr;
         BehaviorGpuComputeBuffer* gpu_compute = nullptr;
+        // Spawn-with-identity sink (#252 pooling): submit_spawn_prefab enqueues here
+        // mid-dispatch; the host drains it at the frame boundary. Null when the host
+        // wires no identity-spawn path (submit_spawn_prefab then rejects).
+        BehaviorSpawnBuffer* spawn_requests = nullptr;
         // Deferred runtime-authoring sink (#204): behaviors queue cheap live
         // scene-ECS authoring edits (spawn-child, remove-node, set-renderable)
         // here mid-dispatch; the runtime drains it at the frame boundary. Null

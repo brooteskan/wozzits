@@ -1,0 +1,34 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "pool_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "manager",
+      "parent": "root",
+      "name": "manager",
+      "transform": {
+        "translation": [50, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "behavior": {
+        "label": "Pool prewarm probe (#252 spawn-with-identity)",
+        "module": "pool_prewarm_probe",
+        "enabled": true,
+        "events": ["self.start", "spawn.completed"]
+      }
+    }
+  ],
+  "defaults": {}
+}

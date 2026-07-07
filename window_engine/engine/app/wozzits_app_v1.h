@@ -876,12 +876,22 @@ namespace wz::app
         // (logged) if the spawner id isn't in scene_nodes_ or the prefab hash is
         // unknown. Drained at the frame boundary (like the deferred-authoring
         // edits); play-mode oriented (the spawned subtree's behaviors run next tick).
-        void spawn_prefab(
+        // Returns the spawned root's STABLE authored id ("spawn:N:<root>") so the
+        // identity-spawn path (#252 pooling) can address the instance later.
+        // spawn_parked (#252): graft the subtree with active=0 + visible=0 (a
+        // prewarmed pool instance is inert + hidden until acquired).
+        struct SpawnPrefabResult
+        {
+            bool ok = false;
+            wz::scene::AuthoredEntityId root_authored_id;
+        };
+        SpawnPrefabResult spawn_prefab(
             const wz::scene::AuthoredEntityId& spawner_id,
             uint32_t prefab_name_hash,
             float offset_x,
             float offset_y,
-            float offset_z);
+            float offset_z,
+            bool spawn_parked = false);
 
         // One-shot WZ_EVENT_SCENE_LOADED dispatch after the scene is
         // materialized: lets a scene-setup behavior pick the active camera via
@@ -1060,6 +1070,24 @@ namespace wz::app
         // scheduler: the monotonic clock dispatch_cognition_tick compares scheduled
         // wakes against (the per-frame FrameContext only carries this frame's delta).
         double                                   behavior_sim_time_ = 0.0;
+
+        // --- WZ_EVENT_SELF_ACTIVATED edge tracking (#252 pooling) -----------------
+        // Last frame's effective-active mask keyed by STABLE authored id (runtime
+        // ids renumber on rebuild, so the edge must be diffed by id). A node whose
+        // effective active goes 0 -> 1 (an external unpark) fires SELF_ACTIVATED so
+        // a reused pool instance self-resets. Absent-in-prev is treated as live, so
+        // birth (self.start) does not masquerade as an activation edge.
+        std::unordered_map<std::string, std::uint8_t> prev_active_by_id_{};
+        // Cached on rebuild: does any behavior subscribe to self.activated? Skips
+        // the per-frame edge scan entirely when nothing listens (zero-cost unused).
+        bool                                     has_self_activated_subscriber_ = false;
+
+        // Spawn-with-identity sink (#252 pooling). A member (not per-frame) because
+        // submit can fire from self.start (in rebuild_behavior_scene) as well as
+        // frame.update; both contexts point here and dispatch_scene_behaviors drains
+        // it each frame (swap-out first, so a spawn's own self.start submit lands
+        // NEXT frame rather than re-entering the drain).
+        wz::engine::behavior::BehaviorSpawnBuffer spawn_identity_buffer_{};
 
         // --- Per-frame rebuild profiling (issue #252) -----------------------------
         // Counted during dispatch_scene_behaviors, reset each simulation_tick. More

@@ -1791,6 +1791,13 @@ namespace wz::app
             "behavior scene initialized (bindings="
             + std::to_string(behavior_scene_->behaviors.size()) + ")");
 
+        // Cache whether any behavior subscribes to self.activated, so the per-frame
+        // rising-edge scan in dispatch_scene_behaviors is skipped entirely when
+        // nothing listens (#252 pooling -- zero cost until a pool manager wires it).
+        has_self_activated_subscriber_ =
+            wz::engine::behavior::scene_has_event_subscriber(
+                *behavior_scene_, registry_, WZ_EVENT_SELF_ACTIVATED);
+
         // One-shot self.start lifecycle pass: fire WZ_EVENT_SELF_START for every
         // binding that has not started yet (tracked in behavior_state, preserved
         // across rebuilds) and apply the commands it produces. On initial load
@@ -1805,6 +1812,9 @@ namespace wz::app
                 .scene = &*behavior_scene_,
                 .behavior_state = &behavior_scene_->behavior_state,
                 .commands = &self_start_commands,
+                // A prewarm behavior submits its pool on self.start (#252 pooling);
+                // wire the sink so those submits are captured (drained next frame).
+                .spawn_requests = &spawn_identity_buffer_,
                 .logger = &ctx_.logger,
             };
             wz::engine::behavior::dispatch_self_start(
@@ -1900,12 +1910,13 @@ namespace wz::app
         return active_camera_id_;
     }
 
-    void WozzitsApp_v1::spawn_prefab(
+    WozzitsApp_v1::SpawnPrefabResult WozzitsApp_v1::spawn_prefab(
         const wz::scene::AuthoredEntityId& spawner_id,
         uint32_t prefab_name_hash,
         float offset_x,
         float offset_y,
-        float offset_z)
+        float offset_z,
+        bool spawn_parked)
     {
         // Resolve the prefab once (the registered scenelet for this name hash).
         const auto prefab_it = prefab_by_hash_.find(prefab_name_hash);
@@ -1913,11 +1924,11 @@ namespace wz::app
             ctx_.logger.warn(
                 "spawn_prefab: unknown prefab hash "
                 + std::to_string(prefab_name_hash) + " — skipped");
-            return;
+            return {};
         }
         if (prefab_it->second.empty()) {
             ctx_.logger.warn("spawn_prefab: prefab has no nodes — skipped");
-            return;
+            return {};
         }
 
         // Resolve the spawner's stable authored id -> its index in scene_nodes_ so
@@ -1942,7 +1953,7 @@ namespace wz::app
             ctx_.logger.warn(
                 "spawn_prefab: spawner node '" + spawner_id
                 + "' not in scene — skipped");
-            return;
+            return {};
         }
 
         // T = spawner world transform × the offset. mul(a, b) = a * b
@@ -2008,6 +2019,29 @@ namespace wz::app
         std::vector<wz::engine::assets::SceneNodeAsset> spawned =
             wz::engine::assets::instantiate_prefab_nodes(
                 prefab_it->second, ++spawn_counter_, root_transform);
+        // Capture the spawned root's STABLE authored id (the re-rooted node, the one
+        // instantiate_prefab_nodes left parent-less) so the identity-spawn path
+        // (#252 pooling) can address the instance after the rebuild renumbers the
+        // runtime. Fall back to the first spawned node if none is parent-less.
+        wz::scene::AuthoredEntityId root_authored_id =
+            spawned.empty() ? wz::scene::AuthoredEntityId{} : spawned.front().id;
+        for (const wz::engine::assets::SceneNodeAsset& node : spawned) {
+            if (!node.parent_id.has_value()) {
+                root_authored_id = node.id;
+                break;
+            }
+        }
+        // spawn_parked (#252 pooling): a prewarmed pool instance grafts INERT --
+        // active=0 (the effective-active mask parks its dispatch + collision from
+        // the next frame) + visible=0 (the renderer hides it immediately, so no
+        // one-frame flash). The render/collision bindings still materialize, so an
+        // acquire (active=1 + visible=1) brings it up with no re-spawn.
+        if (spawn_parked) {
+            for (wz::engine::assets::SceneNodeAsset& node : spawned) {
+                node.active = false;
+                node.visible = false;
+            }
+        }
         scene_nodes_.insert(
             scene_nodes_.end(),
             std::make_move_iterator(spawned.begin()),
@@ -2112,6 +2146,7 @@ namespace wz::app
         // auto-play pass already ran, before this instance existed, so without this
         // a spawned tank's engine grain cloud (auto_play) would never start.
         start_spawned_audio();
+        return { true, root_authored_id };
     }
 
     void WozzitsApp_v1::apply_scene_active_camera(
@@ -2247,6 +2282,58 @@ namespace wz::app
                 behavior_scene_->entity_active[entity] =
                     (it != effective_active.end()) ? it->second : 1u;
             }
+
+            // WZ_EVENT_SELF_ACTIVATED (#252 pooling): fire on the parked -> live
+            // rising edge (an external unpark, e.g. a pool acquire) so a reused
+            // instance self-resets. Diffed by authored id, since runtime ids
+            // renumber on rebuild. Absent-in-prev counts as live, so a node's BIRTH
+            // (handled by self.start) is not mistaken for an activation edge. Skipped
+            // wholesale unless a subscriber exists AND there is a prior frame to diff.
+            if (has_self_activated_subscriber_ && !prev_active_by_id_.empty()) {
+                wz::engine::behavior::BehaviorCommandBuffer activated_commands;
+                wz::engine::behavior::BehaviorFrameContext activated_ctx{
+                    .scene = &*behavior_scene_,
+                    .behavior_state = &behavior_scene_->behavior_state,
+                    .commands = &activated_commands,
+                    .logger = &ctx_.logger,
+                    .sim_time = behavior_sim_time_,
+                };
+                for (const auto& [node_id, current] : effective_active) {
+                    if (current == 0u) {
+                        continue;
+                    }
+                    const auto prev_it = prev_active_by_id_.find(node_id);
+                    const std::uint8_t previous =
+                        (prev_it != prev_active_by_id_.end())
+                            ? prev_it->second
+                            : std::uint8_t{ 1 };
+                    if (previous != 0u) {
+                        continue;  // not a 0 -> 1 rising edge
+                    }
+                    const auto rt =
+                        behavior_scene_->authored_to_runtime.find(node_id);
+                    if (rt == behavior_scene_->authored_to_runtime.end()) {
+                        continue;
+                    }
+                    wz::engine::behavior::dispatch_behavior_event(
+                        *behavior_scene_,
+                        registry_,
+                        activated_ctx,
+                        wz::engine::behavior::BehaviorEvent{
+                            .kind = WZ_EVENT_SELF_ACTIVATED,
+                            .entity = rt->second,
+                        });
+                }
+                if (!activated_commands.commands.empty()) {
+                    std::vector<wz::scene::RuntimeEntityId> activated_changed;
+                    (void)wz::engine::behavior::apply_behavior_commands(
+                        *behavior_scene_,
+                        activated_commands.commands,
+                        &activated_changed);
+                }
+            }
+
+            prev_active_by_id_ = effective_active;
         }
 
         // Build the collision frame (collision world + terrain constraint surfaces)
@@ -2325,6 +2412,7 @@ namespace wz::app
                 .behavior_state = &behavior_scene_->behavior_state,
                 .commands = &frame_storage_.behavior_commands,
                 .gpu_compute = nullptr,
+                .spawn_requests = &spawn_identity_buffer_,
                 .authoring = &authoring,
                 .logger = &ctx_.logger,
                 .sim_time = behavior_sim_time_,
@@ -2757,6 +2845,108 @@ namespace wz::app
                 request.offset[0],
                 request.offset[1],
                 request.offset[2]);
+        }
+
+        // SPAWN-WITH-IDENTITY drain (#252 pooling): same frame boundary as the
+        // fire-and-forget SPAWN_PREFAB drain above, but each spawn's identity flows
+        // BACK to the spawner via a SPAWN_COMPLETED (or _FAILED) event. Materialize
+        // each (spawn_prefab rebuilds + renumbers the runtime), collecting the
+        // completion, THEN dispatch all completions against the FINAL behavior_scene_
+        // -- resolving each spawner + spawned root from its stable authored id, so a
+        // prior spawn's renumbering doesn't strand a live handle.
+        // Swap the pending requests out first: a spawn below rebuilds the behavior
+        // runtime, which fires self.start for the new subtree -- if one of those
+        // submits, it must land in the (now-empty) buffer for NEXT frame, not
+        // re-enter this drain. next_ticket stays on the member, so tickets remain
+        // monotonic across frames.
+        std::vector<wz::engine::behavior::BehaviorSpawnRequest> pending_spawns;
+        pending_spawns.swap(spawn_identity_buffer_.requests);
+        if (!pending_spawns.empty()) {
+            struct SpawnCompletion
+            {
+                WzSpawnTicket ticket{};
+                uint64_t request_tag = 0u;
+                wz::scene::AuthoredEntityId spawner_id;
+                wz::scene::AuthoredEntityId root_id;  // empty on failure
+                WzSpawnStatus status = WZ_SPAWN_STATUS_NONE;
+            };
+            std::vector<SpawnCompletion> completions;
+            completions.reserve(pending_spawns.size());
+            for (const wz::engine::behavior::BehaviorSpawnRequest& request :
+                 pending_spawns)
+            {
+                const SpawnPrefabResult result = spawn_prefab(
+                    request.spawner_id,
+                    request.prefab_name_hash,
+                    request.offset[0],
+                    request.offset[1],
+                    request.offset[2],
+                    request.spawn_parked != 0u);
+                completions.push_back(SpawnCompletion{
+                    .ticket = request.ticket,
+                    .request_tag = request.request_tag,
+                    .spawner_id = request.spawner_id,
+                    .root_id = result.ok
+                        ? result.root_authored_id
+                        : wz::scene::AuthoredEntityId{},
+                    .status = static_cast<WzSpawnStatus>(result.ok
+                        ? WZ_SPAWN_STATUS_COMPLETED
+                        : WZ_SPAWN_STATUS_FAILED),
+                });
+            }
+
+            if (behavior_scene_) {
+                wz::engine::behavior::BehaviorCommandBuffer spawn_commands;
+                wz::engine::behavior::BehaviorFrameContext spawn_ctx{
+                    .scene = &*behavior_scene_,
+                    .behavior_state = &behavior_scene_->behavior_state,
+                    .commands = &spawn_commands,
+                    .logger = &ctx_.logger,
+                };
+                for (const SpawnCompletion& completion : completions) {
+                    const auto spawner_it =
+                        behavior_scene_->authored_to_runtime.find(
+                            completion.spawner_id);
+                    if (spawner_it
+                        == behavior_scene_->authored_to_runtime.end())
+                    {
+                        continue;  // spawner gone (removed) -- drop the completion
+                    }
+                    wz::scene::RuntimeEntityId root_entity =
+                        wz::scene::INVALID_RUNTIME_ENTITY;
+                    if (!completion.root_id.empty()) {
+                        const auto root_it =
+                            behavior_scene_->authored_to_runtime.find(
+                                completion.root_id);
+                        if (root_it
+                            != behavior_scene_->authored_to_runtime.end())
+                        {
+                            root_entity = root_it->second;
+                        }
+                    }
+                    WzSpawnEventPayload payload{};
+                    payload.ticket = completion.ticket;
+                    payload.status = completion.status;
+                    payload.request_tag = completion.request_tag;
+                    payload.root_entity = root_entity;
+                    payload.root_authored_id = completion.root_id.empty()
+                        ? nullptr
+                        : completion.root_id.c_str();
+                    wz::engine::behavior::dispatch_spawn_event(
+                        *behavior_scene_,
+                        registry_,
+                        spawn_ctx,
+                        spawner_it->second,
+                        payload);
+                }
+                if (!spawn_commands.commands.empty()) {
+                    std::vector<wz::scene::RuntimeEntityId> spawn_changed;
+                    (void)wz::engine::behavior::apply_behavior_commands(
+                        *behavior_scene_,
+                        spawn_commands.commands,
+                        &spawn_changed);
+                }
+            }
         }
     }
 

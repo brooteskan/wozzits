@@ -33,7 +33,13 @@ namespace wz::engine::behavior
         EventChannelGpuComputeRequest = 1u << 17,
         EventChannelSelfStart = 1u << 18,
         EventChannelCognitionTick = 1u << 19,
+        EventChannelSpawnCompleted = 1u << 20,
+        EventChannelSpawnFailed = 1u << 21,
+        EventChannelSelfActivated = 1u << 22,
     };
+
+    constexpr EventChannelMask kSpawnEventChannels =
+        EventChannelSpawnCompleted | EventChannelSpawnFailed;
 
     constexpr EventChannelMask kCollisionEventChannels =
         EventChannelCollisionEnter
@@ -142,6 +148,18 @@ namespace wz::engine::behavior
         if (channel == "gpu.compute.*") {
             return kGpuComputeEventChannels;
         }
+        if (channel == "spawn.completed") {
+            return EventChannelSpawnCompleted;
+        }
+        if (channel == "spawn.failed") {
+            return EventChannelSpawnFailed;
+        }
+        if (channel == "spawn.*") {
+            return kSpawnEventChannels;
+        }
+        if (channel == "self.activated") {
+            return EventChannelSelfActivated;
+        }
         return 0u;
     }
 
@@ -189,6 +207,12 @@ namespace wz::engine::behavior
             return EventChannelGpuComputeCompleted;
         case WZ_EVENT_GPU_COMPUTE_FAILED:
             return EventChannelGpuComputeFailed;
+        case WZ_EVENT_SPAWN_COMPLETED:
+            return EventChannelSpawnCompleted;
+        case WZ_EVENT_SPAWN_FAILED:
+            return EventChannelSpawnFailed;
+        case WZ_EVENT_SELF_ACTIVATED:
+            return EventChannelSelfActivated;
         default:
             return 0u;
         }

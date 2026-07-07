@@ -41,11 +41,32 @@ namespace wz::engine::behavior
         const BehaviorRegistry& registry,
         BehaviorFrameContext& context);
 
+    // Dispatch a spawn-with-identity completion to the SPAWNER node's subscribed
+    // modules (WZ_EVENT_SPAWN_COMPLETED, or _FAILED when payload.status ==
+    // WZ_SPAWN_STATUS_FAILED), with facts.active_spawn_event set to `payload`
+    // during the dispatch. Run at the frame boundary after the spawn materialized;
+    // the caller applies the produced command buffer. #252 pooling.
+    void dispatch_spawn_event(
+        wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        BehaviorFrameContext& context,
+        wz::scene::RuntimeEntityId spawner,
+        const WzSpawnEventPayload& payload);
+
     void dispatch_behavior_event(
         wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,
         BehaviorFrameContext& context,
         BehaviorEvent event);
+
+    // Whether ANY behavior in the scene subscribes to `kind` (module on_event
+    // channel accepts it). Recomputed on rebuild + used to skip a per-frame event
+    // scan entirely when nothing listens -- e.g. the WZ_EVENT_SELF_ACTIVATED edge
+    // scan is zero-cost when no behavior wires self.activated (#252 pooling).
+    bool scene_has_event_subscriber(
+        const wz::engine::assets::SceneInstance& scene,
+        const BehaviorRegistry& registry,
+        WzBehaviorEventKind kind);
 
     // Self-paced cognition.tick dispatch. Fires WZ_EVENT_COGNITION_TICK to each
     // subscribed binding whose scheduled wake (scene.behavior_state.next_wakes,

@@ -107,6 +107,17 @@ enum
     WZ_EVENT_GPU_COMPUTE_REQUEST = 399u,
     WZ_EVENT_GPU_COMPUTE_COMPLETED = 400u,
     WZ_EVENT_GPU_COMPUTE_FAILED = 401u,
+    /* Spawn-with-identity completion (#252 pooling). Fired to the SPAWNER node's
+     * subscribers after wz_submit_spawn_prefab materializes (or fails). The active
+     * WzSpawnEventPayload carries the ticket + request_tag + the spawned root's
+     * rebuild-stable authored id. See WzSpawnPrefabRequest / wz_spawn_event_*. */
+    WZ_EVENT_SPAWN_COMPLETED = 500u,
+    WZ_EVENT_SPAWN_FAILED = 501u,
+    /* Rising-edge of the "live?" axis (#252): fired to a node's own subscribers the
+     * frame its effective `active` goes parked->live (an external unpark, e.g. a
+     * pool manager acquiring a pooled instance), so a reused actor self-resets.
+     * NOT fired on birth (that is self.start) nor on the falling edge. */
+    WZ_EVENT_SELF_ACTIVATED = 502u,
 };
 
 enum
@@ -913,6 +924,61 @@ typedef struct WzGpuComputeEventPayload
     const WzGpuComputeOutputView* outputs;
 } WzGpuComputeEventPayload;
 
+/*
+ * Spawn-with-identity (#252 pooling; the identity subset of async spawn #255).
+ * wz_write_spawn_prefab is fire-and-forget: the caller never learns which instance
+ * it made, and instances share node names (only ids get the "spawn:N:" prefix),
+ * and runtime handles renumber on rebuild. This request/response lets a behavior
+ * (a pool manager prewarming a fixed pool) learn a REBUILD-STABLE id for each
+ * instance it spawns, so it can address them later. Synchronous: the host
+ * materializes the graft at the next frame boundary (reusing the incremental spawn
+ * path) and fires WZ_EVENT_SPAWN_COMPLETED the same frame. wz_submit_spawn_prefab
+ * returns a ticket the completion echoes; the payload's root_authored_id is the
+ * stable handle. Failure (unknown prefab) fires WZ_EVENT_SPAWN_FAILED.
+ */
+typedef struct WzSpawnTicket
+{
+    uint64_t value;   /* 0 = not enqueued */
+} WzSpawnTicket;
+
+typedef struct WzSpawnPrefabRequest
+{
+    WzBehaviorEntityId spawner;           /* = self; T = spawner world x offset */
+    uint32_t           prefab_name_hash;  /* wz_prefab_hash("name") */
+    float              offset[3];
+    uint64_t           request_tag;       /* caller correlation (e.g. the pool slot) */
+    uint8_t            spawn_parked;       /* 1 => graft active=0 + visible=0 (no flash) */
+} WzSpawnPrefabRequest;
+
+typedef uint32_t WzSpawnStatus;
+enum
+{
+    WZ_SPAWN_STATUS_NONE = 0u,
+    WZ_SPAWN_STATUS_COMPLETED = 1u,
+    WZ_SPAWN_STATUS_FAILED = 2u,
+};
+
+typedef struct WzSpawnEventPayload
+{
+    WzSpawnTicket      ticket;
+    WzSpawnStatus      status;
+    uint64_t           request_tag;       /* echoes the request */
+    WzBehaviorEntityId root_entity;       /* live handle THIS frame (renumbers on rebuild) */
+    const char*        root_authored_id;  /* STABLE "spawn:N:<root>"; valid during dispatch -- COPY it */
+} WzSpawnEventPayload;
+
+typedef uint8_t (*WzSubmitSpawnPrefabFn)(
+    void* user,
+    const WzSpawnPrefabRequest* req,
+    WzSpawnTicket* out_ticket);
+
+/*
+ * Read a scene node's EFFECTIVE `active` (#252): 1 if the node AND every ancestor
+ * is active, else 0 (matching the dispatch/collision gate, so a node under a parked
+ * ancestor reads parked). Lets a pool manager filter its instances by live state.
+ */
+typedef uint8_t (*WzGetNodeActiveFn)(void* user, WzBehaviorEntityId entity);
+
 typedef void (*WzBehaviorLogFn)(
     void* user,
     const char* message);
@@ -1180,6 +1246,25 @@ typedef struct WzBehaviorFrameFacts
      * when the host wires no reader. See WzGetBehaviorStateOfFn above.
      */
     WzGetBehaviorStateOfFn get_instance_state_of;
+
+    /*
+     * Spawn-with-identity (#252 pooling; APPEND-ONLY, no ABI bump). submit_spawn_
+     * prefab enqueues a spawn and returns a ticket; the host fires WZ_EVENT_SPAWN_
+     * COMPLETED / _FAILED to the spawner, with active_spawn_event set during that
+     * dispatch. Null / zero when the host wires no identity-spawn path. See
+     * WzSpawnPrefabRequest + wz_submit_spawn_prefab / wz_spawn_event_*.
+     */
+    const WzSpawnEventPayload* active_spawn_event;
+    void*                      spawn_prefab_user;
+    WzSubmitSpawnPrefabFn      submit_spawn_prefab;
+
+    /*
+     * Node "live?" query (#252; APPEND-ONLY, no ABI bump). Reads a node's EFFECTIVE
+     * active state (hierarchical, matching the gate). Null when the host wires no
+     * node-query surface. See wz_node_active.
+     */
+    void*             node_query_user;
+    WzGetNodeActiveFn get_node_active;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts
