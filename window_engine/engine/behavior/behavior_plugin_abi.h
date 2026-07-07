@@ -27,7 +27,10 @@ extern "C" {
 // v29: appended reward_agent_pair / agent_conditional_pref (CONTEXTUAL learning).
 // v30: appended set_agent_decoherence (observation-forced decoherence).
 // v31: appended get_instance_state_of (handle-based peer instance-state read).
-#define WZ_BEHAVIOR_ABI_VERSION 31u
+// v32: appended spawn-with-identity (active_spawn_event / spawn_prefab_user /
+//      submit_spawn_prefab) + node-active GET (node_query_user / get_node_active)
+//      -- #252 pooling ABI. Five appended WzBehaviorFrameFacts fields.
+#define WZ_BEHAVIOR_ABI_VERSION 32u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -1248,7 +1251,7 @@ typedef struct WzBehaviorFrameFacts
     WzGetBehaviorStateOfFn get_instance_state_of;
 
     /*
-     * Spawn-with-identity (#252 pooling; APPEND-ONLY, no ABI bump). submit_spawn_
+     * Spawn-with-identity (#252 pooling; APPEND-ONLY, bumped ABI to v32). submit_spawn_
      * prefab enqueues a spawn and returns a ticket; the host fires WZ_EVENT_SPAWN_
      * COMPLETED / _FAILED to the spawner, with active_spawn_event set during that
      * dispatch. Null / zero when the host wires no identity-spawn path. See
@@ -1259,7 +1262,7 @@ typedef struct WzBehaviorFrameFacts
     WzSubmitSpawnPrefabFn      submit_spawn_prefab;
 
     /*
-     * Node "live?" query (#252; APPEND-ONLY, no ABI bump). Reads a node's EFFECTIVE
+     * Node "live?" query (#252; APPEND-ONLY, bumped ABI to v32). Reads a node's EFFECTIVE
      * active state (hierarchical, matching the gate). Null when the host wires no
      * node-query surface. See wz_node_active.
      */

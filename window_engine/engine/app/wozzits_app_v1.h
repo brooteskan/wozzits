@@ -1089,6 +1089,19 @@ namespace wz::app
         // NEXT frame rather than re-entering the drain).
         wz::engine::behavior::BehaviorSpawnBuffer spawn_identity_buffer_{};
 
+        // Commands from the SELF_ACTIVATED pass (#252 audit). That pass runs BEFORE
+        // the frame's command buffer is cleared, so its commands were previously
+        // applied via a local apply_behavior_commands that silently DROPS every
+        // host-handled kind (visible/active/spawn/audio/param) a pooled instance's
+        // self-reset issues. Relayed here instead and injected into the SAME frame's
+        // command buffer (the pass precedes the clear + drain), so a self-reset gets
+        // the full drain -- transforms AND host-handled -- with no id staleness.
+        // Frame-local in effect (injected + cleared every frame); a member only
+        // because the pass's buffer is out of scope at the inject site. Also cleared
+        // on scene load.
+        std::vector<wz::engine::behavior::BehaviorCommand>
+            activated_pass_commands_{};
+
         // --- Per-frame rebuild profiling (issue #252) -----------------------------
         // Counted during dispatch_scene_behaviors, reset each simulation_tick. More
         // than one rematerialize/rebuild in a single frame is redundant structural

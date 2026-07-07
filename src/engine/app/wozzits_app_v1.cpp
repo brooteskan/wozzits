@@ -496,6 +496,15 @@ namespace wz::app
         // graph keys. Populate scene_nodes_ even with graph/scene compile errors
         // so a later good rebind can render.
         scene_nodes_ = scene_data->nodes;
+        // A new scene invalidates the prior scene's carried per-frame dispatch state
+        // (#252 audit): clear the SELF_ACTIVATED edge-detector's previous-active
+        // snapshot (else a reused authored id that was parked in the old scene and
+        // active in the new one fires a spurious parked->live edge on the first
+        // tick), drop any pending spawn-with-identity requests the old scene left
+        // unshipped, and drop deferred completion-handler commands bound to old ids.
+        prev_active_by_id_.clear();
+        spawn_identity_buffer_.clear();
+        activated_pass_commands_.clear();
         // Snapshot the authored node count now: the GLB scene-source resolve
         // below runs a second commit() + resolve_all() which can invalidate the
         // scene_data pointer (the scene table may move entries), so it must not
@@ -2295,6 +2304,7 @@ namespace wz::app
                     .scene = &*behavior_scene_,
                     .behavior_state = &behavior_scene_->behavior_state,
                     .commands = &activated_commands,
+                    .spawn_requests = &spawn_identity_buffer_,
                     .logger = &ctx_.logger,
                     .sim_time = behavior_sim_time_,
                 };
@@ -2324,13 +2334,16 @@ namespace wz::app
                             .entity = rt->second,
                         });
                 }
-                if (!activated_commands.commands.empty()) {
-                    std::vector<wz::scene::RuntimeEntityId> activated_changed;
-                    (void)wz::engine::behavior::apply_behavior_commands(
-                        *behavior_scene_,
-                        activated_commands.commands,
-                        &activated_changed);
-                }
+                // Relay to the frame's command buffer (injected just after the clear
+                // below, SAME frame) instead of applying transforms only here -- a
+                // SELF_ACTIVATED self-reset that sets visible/active/spawns/plays
+                // audio would otherwise be silently dropped by apply-only (#252
+                // audit). The pass runs before the clear, so this is same-frame with
+                // no id staleness.
+                activated_pass_commands_.insert(
+                    activated_pass_commands_.end(),
+                    activated_commands.commands.begin(),
+                    activated_commands.commands.end());
             }
 
             prev_active_by_id_ = effective_active;
@@ -2400,6 +2413,19 @@ namespace wz::app
             frame_context.frame.index = behavior_frame_index_++;
 
             frame_storage_.behavior_commands.clear();
+            // Seed with the SELF_ACTIVATED pass's commands (collected earlier THIS
+            // frame, before this clear) so a pooled instance's self-reset gets the
+            // SAME full drain -- transforms AND host-handled kinds (visible / active /
+            // spawn / audio / param) -- as per-frame behaviors, rather than the
+            // apply-only that silently dropped every host-handled command it issued
+            // (#252 audit). Same-frame: the pass ran before this point, drained below.
+            if (!activated_pass_commands_.empty()) {
+                frame_storage_.behavior_commands.commands.insert(
+                    frame_storage_.behavior_commands.commands.end(),
+                    activated_pass_commands_.begin(),
+                    activated_pass_commands_.end());
+                activated_pass_commands_.clear();
+            }
 
             // Advance the monotonic sim clock the self-paced cognition scheduler
             // stamps against (the FrameContext interval is per-frame, not absolute).
@@ -2901,6 +2927,7 @@ namespace wz::app
                     .scene = &*behavior_scene_,
                     .behavior_state = &behavior_scene_->behavior_state,
                     .commands = &spawn_commands,
+                    .spawn_requests = &spawn_identity_buffer_,
                     .logger = &ctx_.logger,
                 };
                 for (const SpawnCompletion& completion : completions) {
@@ -2939,6 +2966,13 @@ namespace wz::app
                         spawner_it->second,
                         payload);
                 }
+                // Apply the completion handlers' TRANSFORM commands same-frame (a
+                // completion handler's primary job is free-list bookkeeping + an
+                // optional next-spawn via the wired spawn_requests, both same-frame).
+                // NOTE: this pass runs AFTER the frame's host-command drain, so
+                // host-handled kinds (visible/active/audio/param) from a completion
+                // handler are NOT applied here -- a host-state reset belongs on the
+                // manager's acquire, not the async completion (#252 audit).
                 if (!spawn_commands.commands.empty()) {
                     std::vector<wz::scene::RuntimeEntityId> spawn_changed;
                     (void)wz::engine::behavior::apply_behavior_commands(
