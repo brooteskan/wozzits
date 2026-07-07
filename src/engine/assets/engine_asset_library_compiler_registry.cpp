@@ -104,6 +104,13 @@ namespace wz::engine::assets::internal
         register_gaussian_splat_terrain_surface_compiler(registry, ctx.logger, ctx.gaussian_splat_cloud_table, ctx.scalar_fields_table);
         register_terrain_splat_from_gaea_r32_compiler(registry, ctx.logger, ctx.gaussian_splat_cloud_table, ctx.json_table);
         register_gaussian_splat_color_lod_compiler(registry, ctx.logger, ctx.gaussian_splat_cloud_table, ctx.gaussian_splat_color_lod_table);
+        register_sky_gaussian_compilers(
+            registry,
+            ctx.logger,
+            ctx.sky_gaussian_table,
+            ctx.json_table,
+            ctx.gpu_resources,
+            ctx.rhi_resource_tracker);
         register_data_table_compilers(registry, ctx.logger, ctx.data_table);
         register_diagnostic_resampled_time_series_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_resampled_time_series_table);
         register_diagnostic_timeframe_summary_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_timeframe_summary_table);

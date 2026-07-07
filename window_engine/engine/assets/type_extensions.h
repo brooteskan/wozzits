@@ -1323,6 +1323,16 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeTonemapProfile =
         static_cast<wz::asset::AssetType>(2286);
 
+    // Implemented lighting/environment asset type (Seam B1c, issue #260).
+    // CPU-side spherical-Gaussian sky representation — a small mixture of SG
+    // lobes fit to an HDR panorama. Runtime data is owned by SkyGaussianTable;
+    // when a shared rhi registry is present the lobes are ALSO resident as a
+    // StructuredBuffer (variant "sky_gaussian") for the sky render path. Lives
+    // in the lighting/environment range: residency does not change the numeric
+    // category (the splat cloud is CPU-range 131 yet also publishes residency).
+    inline constexpr wz::asset::AssetType kAssetTypeSkyGaussian =
+        static_cast<wz::asset::AssetType>(2287);
+
     // ─── Cinematic asset types: 2300–2319 ───────────────────────────────────────
     //
     // Camera rigs, camera paths, timelines, cutscenes, sequencer tracks, and

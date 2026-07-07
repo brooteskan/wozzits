@@ -69,6 +69,9 @@
 #include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
 
+#include <engine/assets/sky_gaussian/sky_gaussian_table.h>
+#include <engine/assets/sky_gaussian_asset_module.h>
+
 #include <engine/assets/data_table_asset_module.h>
 #include <engine/assets/diagnostic_resampled_time_series_asset_module.h>
 #include <engine/assets/diagnostic_timeframe_summary_asset_module.h>
@@ -341,6 +344,9 @@ namespace wz::engine::assets
         LightAssetModule&       lights()       { return lights_; }
         const LightAssetModule& lights() const { return lights_; }
 
+        SkyGaussianAssetModule&       sky_gaussians()       { return sky_gaussians_; }
+        const SkyGaussianAssetModule& sky_gaussians() const { return sky_gaussians_; }
+
         SceneAssetModule&       scenes()       { return scenes_; }
         const SceneAssetModule& scenes() const { return scenes_; }
 
@@ -471,6 +477,7 @@ namespace wz::engine::assets
         DirectLightTable            direct_light_table_;
         AmbientLightingTable        ambient_lighting_table_;
         HDRIEnvironmentTable        hdri_environment_table_;
+        SkyGaussianTable            sky_gaussian_table_;
         SceneAssetTable             scene_table_;
 
         // Before system_: the wavelet compiler lambda captures a reference to
@@ -512,6 +519,7 @@ namespace wz::engine::assets
         RenderProgramAssetModule    render_programs_;
         ComputePipelineAssetModule  compute_pipelines_;
         LightAssetModule            lights_;
+        SkyGaussianAssetModule      sky_gaussians_;
         SceneAssetModule            scenes_;
 
         ResolveReport resolve_roots_with_report(

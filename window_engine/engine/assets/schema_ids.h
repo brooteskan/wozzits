@@ -689,4 +689,15 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kHDRIEnvironmentSchema{
         0xF11E'CA55'E7'001002ull
     };
+
+    // Sky-gaussian set compiled from a baked .sky_gaussian.json document
+    // (Seam B1c, issue #260 / umbrella #259). The spherical-Gaussian lobes fit
+    // to an HDR sky panorama, deserialized from the JSON sidecar and stored in
+    // the SkyGaussianTable; when a shared rhi registry is present the lobes are
+    // ALSO published as a resident StructuredBuffer (variant "sky_gaussian").
+    // Source dep: one compiled kAssetTypeJSONDocument. Produces
+    // kAssetTypeSkyGaussian output.
+    inline constexpr wz::asset::SchemaID kSkyGaussianFromJSONSchema{
+        0xF11E'CA55'E7'001003ull
+    };
 }

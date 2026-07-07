@@ -12,6 +12,7 @@
 //   ScalarField        → TextureSrv,    "field_texture"         (scalar_field_compilers.cpp)
 //   VectorField        → TextureSrv,    "vector_field_texture"  (vector_field_compilers.cpp)
 //   GaussianSplatCloud → StructuredSrv, "splat_cloud"           (gaussian_splat_compilers.cpp)
+//   SkyGaussian        → StructuredSrv, "sky_gaussian"          (sky_gaussian_compilers.cpp)
 //   GpuSparseMesh      → StructuredSrv, "pull_positions"        (gpu_sparse_mesh_compilers.cpp)
 //                        StructuredSrv, "pull_indices"            — variant selected by semantic
 //
@@ -62,6 +63,10 @@ namespace wz::engine::assets
         if (source_type == kAssetTypeGaussianSplatCloud) {
             return RenderBindingSource{
                 RenderBindingKind::StructuredSrv, "splat_cloud" };
+        }
+        if (source_type == kAssetTypeSkyGaussian) {
+            return RenderBindingSource{
+                RenderBindingKind::StructuredSrv, "sky_gaussian" };
         }
         if (source_type == kAssetTypeGpuSparseMesh) {
             // Two published variants; the semantic picks which buffer.

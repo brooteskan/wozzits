@@ -40,6 +40,8 @@
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_color_lod_compiler.h>
+#include <engine/assets/sky_gaussian/sky_gaussian_table.h>
+#include <engine/assets/sky_gaussian/sky_gaussian_compilers.h>
 #include <engine/assets/data_table/data_table.h>
 #include <engine/assets/data_table/data_table_compilers.h>
 #include <engine/assets/diagnostics/diagnostic_resampled_time_series.h>
@@ -140,6 +142,7 @@ namespace wz::engine::assets::internal {
         DirectLightTable&                   direct_light_table;
         AmbientLightingTable&               ambient_lighting_table;
         HDRIEnvironmentTable&               hdri_environment_table;
+        SkyGaussianTable&                   sky_gaussian_table;
         SceneAssetTable&                    scene_table;
         EngineAssetCacheSettings            cache_settings;
         wz::rhi::GpuResourceRegistry*       gpu_resources = nullptr;
