@@ -34,6 +34,9 @@ namespace
     constexpr double      kDeployCooldown = 4.0;   // seconds between deploys (baseline cadence)
     constexpr float       kDeploySpread = 8.0f;    // lateral fan between live slots
     constexpr float       kDeployAhead = 12.0f;    // forward offset from HQ (the pool's node)
+    constexpr double      kPrewarmCooldown = 0.5;  // seconds between LAZY prewarm spawns, so
+                                                   // each spawn's O(scene) rebuild lands on a
+                                                   // different frame -- no single load spike
 
     constexpr int      kMaxPoolSlots = 8;   // fixed storage cap (v1: pool_size <= this)
     constexpr unsigned kSlotIdLen = 40;     // "spawn:NNN:ROOT" + slack
@@ -46,11 +49,12 @@ namespace
         uint8_t  slot_ready[kMaxPoolSlots];           // 1 once completion recorded + hidden
         uint8_t  slot_deployed[kMaxPoolSlots];        // 1 while LIVE (toggles: deploy/recycle)
         int      pool_size;
-        int      ready_count;
+        int      submitted_count;     // parked spawns SUBMITTED so far (lazy prewarm progress)
+        int      ready_count;         // completions recorded (submitted_count catches up to this)
         int      live_count;          // currently-live instances (== count of slot_deployed)
         int      deploy_cursor;       // round-robin start for the next deploy (rotate the pool)
+        double   next_prewarm_time;   // sim_time the next lazy prewarm may submit
         double   next_deploy_time;
-        uint8_t  prewarm_submitted;
     };
 
     static const char* kPoolEvents[] = {
@@ -87,28 +91,20 @@ namespace
 
         case WZ_EVENT_SELF_START:
         {
-            if (state->prewarm_submitted) {
-                return;   // once per pool lifetime
+            if (state->pool_size > 0) {
+                return;   // already initialized (self.start fires once)
             }
-            state->prewarm_submitted = 1u;
             state->pool_size =
                 kPoolSize < kMaxPoolSlots ? kPoolSize : kMaxPoolSlots;
-
-            for (int i = 0; i < state->pool_size; ++i) {
-                WzSpawnPrefabRequest req{};
-                req.spawner = wz_self(event);
-                req.prefab_name_hash = wz_prefab_hash(kPoolPrefab);
-                req.offset[0] = 0.0f;
-                req.offset[1] = 0.0f;
-                req.offset[2] = 0.0f;
-                req.request_tag = static_cast<uint64_t>(i);
-                req.spawn_parked = 1u;   // materialize INACTIVE -- no dispatch/collision
-                WzSpawnTicket ticket{};
-                (void)wz_submit_spawn_prefab(facts, &req, &ticket);
-            }
+            state->next_prewarm_time = 0.0;   // begin the lazy prewarm next frame
+            // The prewarm spawns are submitted ONE PER kPrewarmCooldown in
+            // frame.update (below), not all here -- spreading each spawn's O(scene)
+            // rebuild across frames so there is no single load spike.
             wz_log_infof(
-                facts, "[pool] prewarm %d x '%s' (parked)",
-                state->pool_size, kPoolPrefab);
+                facts,
+                "[pool] lazily prewarming %d x '%s' (1 / %.1fs, parked)",
+                state->pool_size, kPoolPrefab,
+                static_cast<double>(kPrewarmCooldown));
             return;
         }
 
@@ -155,6 +151,33 @@ namespace
 
         case WZ_EVENT_FRAME_UPDATE:
         {
+            const double now = wz_sim_time(facts);
+
+            // LAZY PREWARM: submit one parked spawn per kPrewarmCooldown until the pool
+            // is full, so the O(scene) rebuild each spawn triggers lands on a DIFFERENT
+            // frame instead of stacking into one load spike. The reserves trickle in
+            // behind the initial squad; deploys (paced slower) are always fed.
+            if (state->submitted_count < state->pool_size
+                && now >= state->next_prewarm_time)
+            {
+                WzSpawnPrefabRequest req{};
+                req.spawner = wz_self(event);
+                req.prefab_name_hash = wz_prefab_hash(kPoolPrefab);
+                req.offset[0] = 0.0f;
+                req.offset[1] = 0.0f;
+                req.offset[2] = 0.0f;
+                req.request_tag = static_cast<uint64_t>(state->submitted_count);
+                req.spawn_parked = 1u;   // materialize INACTIVE -- no dispatch/collision
+                WzSpawnTicket ticket{};
+                if (wz_submit_spawn_prefab(facts, &req, &ticket)) {
+                    state->submitted_count++;
+                    state->next_prewarm_time = now + kPrewarmCooldown;
+                    wz_log_infof(
+                        facts, "[pool] prewarm %d/%d submitted (parked)",
+                        state->submitted_count, state->pool_size);
+                }
+            }
+
             // RECYCLE sweep: a live instance that died PARKED itself (its effective
             // active went 0). Reclaim its slot so a spare can take its place. Only
             // acts on a resolvable handle reading inactive -- a transient resolve miss
@@ -184,7 +207,6 @@ namespace
             if (state->ready_count <= 0) {
                 return;   // nothing prewarmed yet
             }
-            const double now = wz_sim_time(facts);
             if (now < state->next_deploy_time) {
                 return;   // still on cooldown
             }
