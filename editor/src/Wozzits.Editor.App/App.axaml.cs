@@ -93,6 +93,9 @@ public partial class App : Application
         if (projectSnapshot.IsValid)
         {
             editorLog.AppendLine($"[editor] Project loaded: {projectSnapshot.ProjectName}");
+            // Per-run file mirror of the whole console (engine + editor + play
+            // process). Owned by the view model, which disposes it on shutdown.
+            var fileLogSink = FileLogSink.CreateDefault();
             return new MainWindow(
                 new MainWindowViewModel(
                     projectSnapshot,
@@ -102,7 +105,8 @@ public partial class App : Application
                         logReceived: editorLog.AppendLine),
                     editorLog,
                     dispatch: action => Dispatcher.UIThread.Post(action),
-                    projectDirectory: projectDirectory.FullPath));
+                    projectDirectory: projectDirectory.FullPath,
+                    fileLogSink: fileLogSink));
         }
 
         var project = new EngineProjectResponse

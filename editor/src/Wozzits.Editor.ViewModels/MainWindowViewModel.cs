@@ -31,6 +31,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly object _pendingLogGate = new();
     private readonly List<string> _pendingLogLines = [];
     private bool _logFlushScheduled;
+
+    // Mirror every console line to a per-run, uncapped, timestamped file (the UI
+    // console keeps only the last N lines). Captures engine + editor + the separate
+    // play process, all of which converge on AppendEditorLog.
+    private readonly FileLogSink? _fileLogSink;
     private readonly StandaloneAppLauncher _standaloneLauncher = new();
     private Process? _standaloneProcess;
     private bool _shutdown;
@@ -45,7 +50,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         IWozzitsEngineEditorSession? editorSession = null,
         EditorLogBuffer? editorLog = null,
         Action<Action>? dispatch = null,
-        string? projectDirectory = null)
+        string? projectDirectory = null,
+        FileLogSink? fileLogSink = null)
     {
         _editorSession = editorSession;
         _editorSessionLifetime = editorSession as IDisposable;
@@ -76,6 +82,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // the scene tree's node lookup (the inspector holds only the selection).
         Inspector.SetSceneNodeLookup(SceneTree.FindNodeById);
         InitializeDockLayout();
+
+        // The per-run file mirror is composed at the app root (null in tests, so a
+        // test never writes a log file). Announce its path BEFORE subscribing so the
+        // console points at the full, uncapped log and the buffer's replayed preamble
+        // ("Opening project", "abi vN", "Project loaded") lands in the file too.
+        _fileLogSink = fileLogSink;
+        if (_fileLogSink?.FilePath is { } logPath)
+        {
+            AppendEditorLog($"[editor] Session log: {logPath}");
+        }
+
         _editorLogSubscription = editorLog?.Subscribe(AppendEditorLog);
 
         ProjectName = projectSnapshot?.ProjectName ?? string.Empty;
@@ -182,6 +199,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _shutdown = true;
         _editorSessionLifetime?.Dispose();
         _editorLogSubscription?.Dispose();
+        _fileLogSink?.Dispose();
     }
 
     private void SaveAll()
@@ -329,6 +347,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             return;
         }
+
+        // Mirror to the uncapped file first (its own lock; never nested with the
+        // UI-batch gate below), so a line survives even if the UI flush never runs.
+        _fileLogSink?.Write(line);
 
         bool scheduleFlush;
         lock (_pendingLogGate)
