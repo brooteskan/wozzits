@@ -1020,6 +1020,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(sky_gaussian test_synthetic_recovery)
     rs_add_test_group(sky_gaussian test_determinism)
     rs_add_test_group(sky_gaussian test_serialize_roundtrip)
+    rs_add_test_group(sky_gaussian test_fit_convergence)
+    rs_add_test_group(sky_gaussian test_creative_params)
 
     # Graph
     rs_add_test_group(graph static_dag_tests_0)

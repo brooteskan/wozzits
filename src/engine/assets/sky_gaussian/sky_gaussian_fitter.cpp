@@ -47,6 +47,23 @@ namespace wz::engine::assets::sky
             const float inv = 1.0f / len;
             return Vec3{ v.x * inv, v.y * inv, v.z * inv };
         }
+
+        // Deterministic creative grade applied to a fitted RGB value:
+        // exposure (brightness), saturation (chroma around luminance), tint
+        // (per-channel colour multiply). Identity at (1, 1, {1,1,1}).
+        Vec3 apply_grade(
+            const Vec3& c, float exposure, float saturation, const Vec3& tint)
+        {
+            Vec3 e{ c.x * exposure, c.y * exposure, c.z * exposure };
+            const float l = luminance(e);
+            e = Vec3{ l + (e.x - l) * saturation,
+                      l + (e.y - l) * saturation,
+                      l + (e.z - l) * saturation };
+            e = Vec3{ e.x * tint.x, e.y * tint.y, e.z * tint.z };
+            return Vec3{ std::max(0.0f, e.x),
+                         std::max(0.0f, e.y),
+                         std::max(0.0f, e.z) };
+        }
     } // namespace
 
     std::vector<Vec3> fibonacci_sphere(int n)
@@ -154,6 +171,18 @@ namespace wz::engine::assets::sky
         const float min_l = p.min_sharpness;
         const float max_l = std::max(p.min_sharpness, p.max_sharpness);
         const bool log_domain = p.log_domain_loss;
+        const float sharp_scale = std::max(1e-3f, p.sharpness_scale);
+
+        // Per-sample importance weight. Samples below the horizon elevation get
+        // `ground_weight` (0 => a sky-only fit that ignores the ground); this
+        // steers both lobe selection and the weighted amplitude solve.
+        const float horizon_y = std::sin(
+            clampf(p.horizon_elevation_deg, -90.0f, 90.0f) * kPi / 180.0f);
+        const float ground_w = clampf(p.ground_weight, 0.0f, 1.0f);
+        std::vector<float> wgt(static_cast<size_t>(n));
+        for (int k = 0; k < n; ++k) {
+            wgt[k] = (W[k].y < horizon_y) ? ground_w : 1.0f;
+        }
 
         // Sampled radiance and running residual.
         std::vector<Vec3> L(static_cast<size_t>(n));
@@ -163,7 +192,7 @@ namespace wz::engine::assets::sky
             R[k] = L[k];
         }
 
-        // ── Closed-form amplitude for a fixed (mu, lambda) against Res ──
+        // ── Weighted closed-form amplitude for (mu, lambda) against Res ──
         auto solve_amplitude =
             [&](const Vec3& mu, float lambda, const std::vector<Vec3>& Res) {
                 Vec3 num{ 0.0f, 0.0f, 0.0f };
@@ -171,8 +200,9 @@ namespace wz::engine::assets::sky
                 for (int k = 0; k < n; ++k) {
                     const float g =
                         std::exp(lambda * (wz::math::dot(mu, W[k]) - 1.0f));
-                    num = num + Res[k] * g;
-                    den += static_cast<double>(g) * static_cast<double>(g);
+                    const float wg = wgt[k] * g;
+                    num = num + Res[k] * wg;
+                    den += static_cast<double>(wg) * static_cast<double>(g);
                 }
                 const float inv =
                     static_cast<float>(1.0 / (den + 1e-12));
@@ -190,8 +220,9 @@ namespace wz::engine::assets::sky
         // lobes do not bias the estimate.
         auto estimate_lambda =
             [&](const Vec3& mu, const std::vector<Vec3>& Res, float peak_lum) {
+                const float fallback = clampf(64.0f * sharp_scale, min_l, max_l);
                 if (peak_lum <= 0.0f) {
-                    return clampf(64.0f, min_l, max_l);
+                    return fallback;
                 }
                 const float cutoff = 0.02f * peak_lum;
                 double sw = 0.0, swx = 0.0, swy = 0.0, swxx = 0.0, swxy = 0.0;
@@ -219,14 +250,19 @@ namespace wz::engine::assets::sky
                 }
                 const double denom = sw * swxx - swx * swx;
                 if (std::fabs(denom) < 1e-12 || sw <= 0.0) {
-                    return clampf(64.0f, min_l, max_l);
+                    return fallback;
                 }
                 const double slope = (sw * swxy - swx * swy) / denom;
-                return clampf(static_cast<float>(slope), min_l, max_l);
+                return clampf(static_cast<float>(slope) * sharp_scale, min_l, max_l);
             };
 
-        auto sel_score = [&](const Vec3& c) {
-            return log_domain ? std::log1p(safe_lum(c)) : safe_lum(c);
+        // Weighted selection score: bright residual, deprioritised by the
+        // per-sample weight so the greedy pass favours the sky over the ground.
+        auto sel = [&](int k) {
+            const float s = log_domain
+                ? std::log1p(safe_lum(R[k]))
+                : safe_lum(R[k]);
+            return wgt[k] * s;
         };
 
         // ─────────────────────────────────────────────────────────────
@@ -302,24 +338,40 @@ namespace wz::engine::assets::sky
         }
 
         // ─────────────────────────────────────────────────────────────
-        // (c) Greedy matching pursuit.
+        // (c) Greedy matching pursuit (non-negative residual).
+        //
+        // After each subtraction the residual is clamped at zero so a broad
+        // lobe's tails cannot carve negative "craters" that erase positive
+        // peaks elsewhere. That over-subtraction previously made placement
+        // unstable vs sample_count and terminated the fit far short of
+        // target_lobes (e.g. 36/1024). It also lets us drop the old
+        // lambda-escalation hack: with R >= 0 the amplitude is >= 0 by
+        // construction and never collapses on a genuine positive peak.
         // ─────────────────────────────────────────────────────────────
         const int target = std::max(0, p.target_lobes);
         float initial_peak = 0.0f;
         for (int k = 0; k < n; ++k) {
-            initial_peak = std::max(initial_peak, sel_score(R[k]));
+            initial_peak = std::max(initial_peak, sel(k));
         }
-        const float stop_score = std::max(1e-8f, 1e-6f * initial_peak);
+        // residual_floor stops the fit early when the brightest remaining
+        // residual falls below this fraction of the initial peak -- a creative
+        // "abstraction" dial (0 => keep placing until target_lobes).
+        const float floor_frac = clampf(p.residual_floor, 0.0f, 1.0f);
+        const float stop_score = std::max(1e-8f, floor_frac * initial_peak);
 
         std::vector<SkyGaussianLobe> lobes;
         lobes.reserve(static_cast<size_t>(target));
 
-        while (static_cast<int>(lobes.size()) < target) {
-            // argmax residual (tie -> lowest index).
+        const int max_iter = target + n; // safety bound including skip iters
+        for (int iter = 0;
+             iter < max_iter && static_cast<int>(lobes.size()) < target;
+             ++iter)
+        {
+            // argmax weighted residual (tie -> lowest index).
             int best_k = -1;
             float best = -1.0f;
             for (int k = 0; k < n; ++k) {
-                const float s = sel_score(R[k]);
+                const float s = sel(k);
                 if (s > best) {
                     best = s;
                     best_k = k;
@@ -331,30 +383,39 @@ namespace wz::engine::assets::sky
 
             const Vec3 mu = W[best_k];
             const float peak_lum = safe_lum(R[best_k]);
-            float lambda = estimate_lambda(mu, R, peak_lum);
-            Vec3 amp = solve_amplitude(mu, lambda, R);
+            const float lambda = estimate_lambda(mu, R, peak_lum);
+            const Vec3 amp = solve_amplitude(mu, lambda, R);
 
-            // The closed-form amplitude minimizes over the whole sphere, so a
-            // broad estimated lambda can collapse to ~0 when the surrounding
-            // residual is mixed-sign (e.g. after an earlier broad lobe
-            // over-subtracts) even though the selected peak itself is positive.
-            // Sharpen deterministically until the lobe captures that peak; a
-            // sufficiently sharp lobe has amplitude -> R[best_k] > 0.
-            const float amp_floor = 1e-6f * peak_lum;
-            while (safe_lum(amp) <= amp_floor && lambda < max_l) {
-                lambda = std::min(max_l, lambda * 4.0f);
-                amp = solve_amplitude(mu, lambda, R);
+            if (safe_lum(amp) <= 1e-12f) {
+                // Degenerate: suppress this peak's neighbourhood and continue
+                // rather than terminating the whole fit.
+                for (int k = 0; k < n; ++k) {
+                    if (wz::math::dot(mu, W[k]) > 0.99f) {
+                        R[k] = Vec3{ 0.0f, 0.0f, 0.0f };
+                    }
+                }
+                continue;
             }
 
-            if (safe_lum(amp) <= 1e-9f) {
-                break;
-            }
-
-            SkyGaussianLobe lobe{ mu, lambda, amp };
+            const SkyGaussianLobe lobe{ mu, lambda, amp };
             for (int k = 0; k < n; ++k) {
-                R[k] = R[k] - evaluate_lobe(lobe, W[k]);
+                const Vec3 r = R[k] - evaluate_lobe(lobe, W[k]);
+                R[k] = Vec3{ std::max(0.0f, r.x),
+                             std::max(0.0f, r.y),
+                             std::max(0.0f, r.z) };
             }
             lobes.push_back(lobe);
+        }
+
+        // Recompute the exact residual from the placed lobes: the clamped
+        // residual above is only a selection heuristic; refine + report need
+        // the true signed residual L - sum(lobes).
+        for (int k = 0; k < n; ++k) {
+            Vec3 m{ 0.0f, 0.0f, 0.0f };
+            for (const SkyGaussianLobe& lb : lobes) {
+                m = m + evaluate_lobe(lb, W[k]);
+            }
+            R[k] = L[k] - m;
         }
 
         // ─────────────────────────────────────────────────────────────
@@ -492,6 +553,22 @@ namespace wz::engine::assets::sky
                 lss > 1e-8f ? luminance(s_fit) / lss : 0.0f;
 
             report->lobes_placed = static_cast<int>(result.lobes.size());
+        }
+
+        // Creative grade (deterministic): applied AFTER the fidelity report, so
+        // the report measures fit accuracy while exposure/saturation/tint are a
+        // deliberate artistic deviation baked into the result.
+        const bool graded = p.exposure != 1.0f || p.saturation != 1.0f
+            || p.tint.x != 1.0f || p.tint.y != 1.0f || p.tint.z != 1.0f;
+        if (graded) {
+            for (SkyGaussianLobe& lb : result.lobes) {
+                lb.amplitude =
+                    apply_grade(lb.amplitude, p.exposure, p.saturation, p.tint);
+            }
+            for (SkyPointSource& ps : result.point_sources) {
+                ps.radiance =
+                    apply_grade(ps.radiance, p.exposure, p.saturation, p.tint);
+            }
         }
 
         return result;

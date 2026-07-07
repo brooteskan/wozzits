@@ -34,9 +34,21 @@ namespace
         int  lobes = 256;
         int  points = 1;
         int  samples = 8192;
+        int  refine = 8;
         bool log_domain = true;
         std::string reconstruct;   // optional EXR fit-preview path
         int  recon_width = 1024;   // height is width / 2
+
+        // Creative dials (see FitParams). Defaults reproduce a faithful fit.
+        float sharpness_scale = 1.0f;
+        float min_sharpness = 4.0f;
+        float max_sharpness = 4000.0f;
+        float residual_floor = 0.0f;
+        float horizon_deg = 0.0f;
+        float ground_weight = 1.0f;
+        float exposure = 1.0f;
+        float saturation = 1.0f;
+        float tint_r = 1.0f, tint_g = 1.0f, tint_b = 1.0f;
     };
 
     bool parse_options(int argc, char** argv, Options& out, std::string& error)
@@ -44,9 +56,15 @@ namespace
         if (argc < 2) {
             error =
                 "usage: wozzits_sky_bake <input.exr> "
-                "--out <path.sky_gaussian.json> "
-                "[--lobes N] [--points N] [--samples N] [--no-log] "
-                "[--reconstruct <path.exr>] [--recon-width N]";
+                "--out <path.sky_gaussian.json>\n"
+                "  structure : [--lobes N] [--samples N] [--refine N] "
+                "[--residual-floor F] [--no-log]\n"
+                "  points    : [--points N]\n"
+                "  crispness : [--sharpness-scale F] [--min-sharpness F] "
+                "[--max-sharpness F]\n"
+                "  hemisphere: [--horizon DEG] [--ground-weight F]\n"
+                "  grade     : [--exposure F] [--saturation F] [--tint R G B]\n"
+                "  preview   : [--reconstruct <path.exr>] [--recon-width N]";
             return false;
         }
 
@@ -66,8 +84,40 @@ namespace
             else if (arg == "--samples" && i + 1 < argc) {
                 out.samples = std::atoi(argv[++i]);
             }
+            else if (arg == "--refine" && i + 1 < argc) {
+                out.refine = std::atoi(argv[++i]);
+            }
             else if (arg == "--no-log") {
                 out.log_domain = false;
+            }
+            else if (arg == "--residual-floor" && i + 1 < argc) {
+                out.residual_floor = static_cast<float>(std::atof(argv[++i]));
+            }
+            else if (arg == "--sharpness-scale" && i + 1 < argc) {
+                out.sharpness_scale = static_cast<float>(std::atof(argv[++i]));
+            }
+            else if (arg == "--min-sharpness" && i + 1 < argc) {
+                out.min_sharpness = static_cast<float>(std::atof(argv[++i]));
+            }
+            else if (arg == "--max-sharpness" && i + 1 < argc) {
+                out.max_sharpness = static_cast<float>(std::atof(argv[++i]));
+            }
+            else if (arg == "--horizon" && i + 1 < argc) {
+                out.horizon_deg = static_cast<float>(std::atof(argv[++i]));
+            }
+            else if (arg == "--ground-weight" && i + 1 < argc) {
+                out.ground_weight = static_cast<float>(std::atof(argv[++i]));
+            }
+            else if (arg == "--exposure" && i + 1 < argc) {
+                out.exposure = static_cast<float>(std::atof(argv[++i]));
+            }
+            else if (arg == "--saturation" && i + 1 < argc) {
+                out.saturation = static_cast<float>(std::atof(argv[++i]));
+            }
+            else if (arg == "--tint" && i + 3 < argc) {
+                out.tint_r = static_cast<float>(std::atof(argv[++i]));
+                out.tint_g = static_cast<float>(std::atof(argv[++i]));
+                out.tint_b = static_cast<float>(std::atof(argv[++i]));
             }
             else if (arg == "--reconstruct" && i + 1 < argc) {
                 out.reconstruct = argv[++i];
@@ -129,7 +179,17 @@ int main(int argc, char** argv)
     params.target_lobes = options.lobes;
     params.point_source_count = options.points;
     params.sample_count = options.samples;
+    params.refine_iterations = options.refine;
     params.log_domain_loss = options.log_domain;
+    params.residual_floor = options.residual_floor;
+    params.sharpness_scale = options.sharpness_scale;
+    params.min_sharpness = options.min_sharpness;
+    params.max_sharpness = options.max_sharpness;
+    params.horizon_elevation_deg = options.horizon_deg;
+    params.ground_weight = options.ground_weight;
+    params.exposure = options.exposure;
+    params.saturation = options.saturation;
+    params.tint = wz::math::Vec3{ options.tint_r, options.tint_g, options.tint_b };
 
     sky::FitReport report;
     sky::SkyGaussianSet set =

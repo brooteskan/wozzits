@@ -38,15 +38,42 @@ namespace wz::engine::assets::sky
         wz::math::Vec3 sample(const wz::math::Vec3& dir) const;
     };
 
+    // Fit controls. The defaults reproduce a faithful ("correct") fit; every
+    // field is a hand-tunable dial, so "correct" is just a starting point, not
+    // a hidden black box. Groups: structure, point sources, crispness,
+    // hemisphere, and a purely creative colour grade.
     struct FitParams
     {
-        int   target_lobes = 256;
+        // ── Structure: how many lobes and how hard to keep fitting ──
+        int   target_lobes = 256;      // detail budget (now reliably reached)
+        int   sample_count = 8192;     // sphere samples the fit sees
+        int   refine_iterations = 8;   // coordinate-descent polish passes
+        float residual_floor = 0.0f;   // stop early when the brightest residual
+                                       // drops below this fraction of the start
+                                       // peak (0 = fill target_lobes; higher =
+                                       // fewer lobes, more abstract)
+
+        // ── Point sources (sun / moon) pulled out before the SG fit ──
         int   point_source_count = 1;
         float point_luminance_percentile = 0.9999f;
+
+        // ── Crispness: how sharp lobes are allowed / biased to be ──
+        float sharpness_scale = 1.0f;  // multiplies the auto lambda estimate
+                                       // (<1 softer/dreamier, >1 crisper)
         float min_sharpness = 4.0f;
         float max_sharpness = 4000.0f;
-        int   sample_count = 8192;
-        int   refine_iterations = 8;
+
+        // ── Hemisphere: fit the sky, ignore or de-weight the ground ──
+        float horizon_elevation_deg = 0.0f; // sky/ground boundary elevation
+        float ground_weight = 1.0f;         // weight for samples below it
+                                            // (0 = sky-only, 1 = full sphere)
+
+        // ── Creative grade: an intentional deviation from the source ──
+        float exposure = 1.0f;               // overall brightness
+        float saturation = 1.0f;             // 0 = grey, 1 = as-fit, >1 punchier
+        wz::math::Vec3 tint{ 1.0f, 1.0f, 1.0f }; // per-channel colour multiply
+
+        // ── Fit domain ──
         bool  log_domain_loss = true;
     };
 
