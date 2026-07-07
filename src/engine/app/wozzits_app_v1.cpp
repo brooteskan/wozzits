@@ -500,11 +500,10 @@ namespace wz::app
         // (#252 audit): clear the SELF_ACTIVATED edge-detector's previous-active
         // snapshot (else a reused authored id that was parked in the old scene and
         // active in the new one fires a spurious parked->live edge on the first
-        // tick), drop any pending spawn-with-identity requests the old scene left
-        // unshipped, and drop deferred completion-handler commands bound to old ids.
+        // tick) and drop any pending spawn-with-identity requests the old scene left
+        // unshipped.
         prev_active_by_id_.clear();
         spawn_identity_buffer_.clear();
-        activated_pass_commands_.clear();
         // Snapshot the authored node count now: the GLB scene-source resolve
         // below runs a second commit() + resolve_all() which can invalidate the
         // scene_data pointer (the scene table may move entries), so it must not
@@ -2536,108 +2535,154 @@ namespace wz::app
     void WozzitsApp_v1::dispatch_scene_behaviors(
         const wz::input::InputState& input, float dt)
     {
-        // Run the per-frame simulation whenever a runtime scene exists — behaviors
-        // are OPTIONAL. A motion-only or constraint-only actor (no behaviors) still
-        // needs integrate_motion + the collision/terrain-constraint pipeline to run
-        // so it sticks to its surface. (Mirrors game_app's job order:
-        //   build_collision_frame -> [behaviors] -> integrate_motion
-        //   -> apply_terrain_constraints.)
+        // One behavior tick, as a short sequence of named phases (#256 seam B).
+        // Mirrors game_app's job order: build_collision_frame -> [behaviors] ->
+        // integrate_motion -> apply_terrain_constraints. Behaviors are OPTIONAL -- a
+        // motion-only / constraint-only actor still needs the integrate + constraint
+        // phases to stick to its surface -- so only the dispatch phase is gated on
+        // has_behaviors; the rest run whenever a runtime scene exists.
         if (!behavior_scene_) {
             return;
         }
         const bool has_behaviors = !behavior_scene_->behaviors.empty();
 
         // World transforms must be current before dispatch: command application
-        // (set_world_translation, motion integration) reads parent world
-        // matrices, and behavior transform queries read self/other world. In
-        // game_app this is the compile_scene job; here we propagate directly.
+        // (set_world_translation, motion integration) reads parent world matrices,
+        // and behavior transform queries read self/other world. In game_app this is
+        // the compile_scene job; here we propagate directly.
         wz::scene::propagate_all(behavior_scene_->storage.polytree);
 
-        // Refresh the "live?" mask (#252): a node is dispatched + collides only if
-        // it AND every ancestor is `active`. Recomputed each frame from the authored
-        // scene_nodes_ (cheap O(scene)) and projected onto runtime entities via
-        // runtime_to_authored, so a park/unpark flip, a reparent, or a spawn is
-        // reflected immediately. build_collision_frame + dispatch_behaviors below
-        // read behavior_scene_->entity_active (empty => all live, so a non-active-
-        // aware caller like game_app is unaffected). Orthogonal to `visible`.
-        {
-            const std::unordered_map<std::string, std::uint8_t> effective_active =
-                compute_scene_node_effective_active(scene_nodes_);
-            const std::size_t node_count =
-                wz::core::graph::node_count(behavior_scene_->storage.polytree);
-            behavior_scene_->entity_active.assign(node_count, 1u);
-            for (std::size_t entity = 0;
-                 entity < node_count
-                     && entity < behavior_scene_->runtime_to_authored.size();
-                 ++entity)
-            {
-                const auto it = effective_active.find(
-                    behavior_scene_->runtime_to_authored[entity]);
-                behavior_scene_->entity_active[entity] =
-                    (it != effective_active.end()) ? it->second : 1u;
-            }
+        // Phase 1: refresh the per-frame "live?" mask and fire the SELF_ACTIVATED
+        // rising edges, returning the commands those handlers produced (seeded into
+        // the dispatch phase's buffer below, SAME frame).
+        const std::vector<wz::engine::behavior::BehaviorCommand>
+            activation_commands = compute_active_mask_and_fire_edges();
 
-            // WZ_EVENT_SELF_ACTIVATED (#252 pooling): fire on the parked -> live
-            // rising edge (an external unpark, e.g. a pool acquire) so a reused
-            // instance self-resets. Diffed by authored id, since runtime ids
-            // renumber on rebuild. Absent-in-prev counts as live, so a node's BIRTH
-            // (handled by self.start) is not mistaken for an activation edge. Skipped
-            // wholesale unless a subscriber exists AND there is a prior frame to diff.
-            if (has_self_activated_subscriber_ && !prev_active_by_id_.empty()) {
-                wz::engine::behavior::BehaviorCommandBuffer activated_commands;
-                wz::engine::behavior::BehaviorFrameContext activated_ctx{
-                    .scene = &*behavior_scene_,
-                    .behavior_state = &behavior_scene_->behavior_state,
-                    .commands = &activated_commands,
-                    .spawn_requests = &spawn_identity_buffer_,
-                    .logger = &ctx_.logger,
-                    .sim_time = behavior_sim_time_,
-                };
-                for (const auto& [node_id, current] : effective_active) {
-                    if (current == 0u) {
-                        continue;
-                    }
-                    const auto prev_it = prev_active_by_id_.find(node_id);
-                    const std::uint8_t previous =
-                        (prev_it != prev_active_by_id_.end())
-                            ? prev_it->second
-                            : std::uint8_t{ 1 };
-                    if (previous != 0u) {
-                        continue;  // not a 0 -> 1 rising edge
-                    }
-                    const auto rt =
-                        behavior_scene_->authored_to_runtime.find(node_id);
-                    if (rt == behavior_scene_->authored_to_runtime.end()) {
-                        continue;
-                    }
-                    wz::engine::behavior::dispatch_behavior_event(
-                        *behavior_scene_,
-                        registry_,
-                        activated_ctx,
-                        wz::engine::behavior::BehaviorEvent{
-                            .kind = WZ_EVENT_SELF_ACTIVATED,
-                            .entity = rt->second,
-                        });
-                }
-                // Relay to the frame's command buffer (injected just after the clear
-                // below, SAME frame) instead of applying transforms only here -- a
-                // SELF_ACTIVATED self-reset that sets visible/active/spawns/plays
-                // audio would otherwise be silently dropped by apply-only (#252
-                // audit). The pass runs before the clear, so this is same-frame with
-                // no id staleness.
-                activated_pass_commands_.insert(
-                    activated_pass_commands_.end(),
-                    activated_commands.commands.begin(),
-                    activated_commands.commands.end());
-            }
+        // Phase 2: build the collision / proximity / input event tables the dispatch
+        // and constraint phases read.
+        build_frame_event_tables(input);
 
-            prev_active_by_id_ = effective_active;
+        // Per-frame scratch shared across the remaining phases: the transform-changed
+        // entities (for the final re-propagate), the deferred-authoring sink, and the
+        // frame-boundary prefab spawns collected during the command apply.
+        std::vector<wz::scene::RuntimeEntityId> changed_entities;
+        wz::engine::behavior::BehaviorAuthoringBuffer authoring;
+        std::vector<DeferredSpawnRequest> spawn_requests;
+
+        // Phase 3: run the behaviors + cognition tick and apply the produced command
+        // buffer. Behaviors are optional; a scene with none skips straight to motion.
+        if (has_behaviors) {
+            dispatch_behaviors_and_apply(
+                input, dt, activation_commands,
+                changed_entities, authoring, spawn_requests);
         }
 
+        // Phase 4: integrate motion + snap terrain constraints, then re-propagate if
+        // anything moved.
+        integrate_motion_and_constraints(dt, changed_entities);
+
+        // Phases 5-7: frame-boundary drains, safe only now -- each may rebuild the
+        // behavior runtime out from under us, AFTER every read of behavior_scene_
+        // this tick. Deferred authoring, fire-and-forget prefab spawns, then the
+        // spawn-with-identity completions.
+        drain_deferred_authoring(authoring);
+        drain_prefab_spawns(spawn_requests);
+        drain_identity_spawns();
+    }
+
+    std::vector<wz::engine::behavior::BehaviorCommand>
+    WozzitsApp_v1::compute_active_mask_and_fire_edges()
+    {
+        // Refresh the "live?" mask (#252): a node is dispatched + collides only if it
+        // AND every ancestor is `active`. Recomputed each frame from the authored
+        // scene_nodes_ (cheap O(scene)) and projected onto runtime entities via
+        // runtime_to_authored, so a park/unpark flip, a reparent, or a spawn is
+        // reflected immediately. build_collision_frame + dispatch_behaviors read
+        // behavior_scene_->entity_active (empty => all live, so a non-active-aware
+        // caller like game_app is unaffected). Orthogonal to `visible`.
+        std::vector<wz::engine::behavior::BehaviorCommand> activation_commands;
+        const std::unordered_map<std::string, std::uint8_t> effective_active =
+            compute_scene_node_effective_active(scene_nodes_);
+        const std::size_t node_count =
+            wz::core::graph::node_count(behavior_scene_->storage.polytree);
+        behavior_scene_->entity_active.assign(node_count, 1u);
+        for (std::size_t entity = 0;
+             entity < node_count
+                 && entity < behavior_scene_->runtime_to_authored.size();
+             ++entity)
+        {
+            const auto it = effective_active.find(
+                behavior_scene_->runtime_to_authored[entity]);
+            behavior_scene_->entity_active[entity] =
+                (it != effective_active.end()) ? it->second : 1u;
+        }
+
+        // WZ_EVENT_SELF_ACTIVATED (#252 pooling): fire on the parked -> live rising
+        // edge (an external unpark, e.g. a pool acquire) so a reused instance
+        // self-resets. Diffed by authored id, since runtime ids renumber on rebuild.
+        // Absent-in-prev counts as live, so a node's BIRTH (handled by self.start) is
+        // not mistaken for an activation edge. Skipped wholesale unless a subscriber
+        // exists AND there is a prior frame to diff.
+        if (has_self_activated_subscriber_ && !prev_active_by_id_.empty()) {
+            wz::engine::behavior::BehaviorCommandBuffer activated_commands;
+            wz::engine::behavior::BehaviorFrameContext activated_ctx{
+                .scene = &*behavior_scene_,
+                .behavior_state = &behavior_scene_->behavior_state,
+                .commands = &activated_commands,
+                .spawn_requests = &spawn_identity_buffer_,
+                .logger = &ctx_.logger,
+                .sim_time = behavior_sim_time_,
+            };
+            for (const auto& [node_id, current] : effective_active) {
+                if (current == 0u) {
+                    continue;
+                }
+                const auto prev_it = prev_active_by_id_.find(node_id);
+                const std::uint8_t previous =
+                    (prev_it != prev_active_by_id_.end())
+                        ? prev_it->second
+                        : std::uint8_t{ 1 };
+                if (previous != 0u) {
+                    continue;  // not a 0 -> 1 rising edge
+                }
+                const auto rt =
+                    behavior_scene_->authored_to_runtime.find(node_id);
+                if (rt == behavior_scene_->authored_to_runtime.end()) {
+                    continue;
+                }
+                wz::engine::behavior::dispatch_behavior_event(
+                    *behavior_scene_,
+                    registry_,
+                    activated_ctx,
+                    wz::engine::behavior::BehaviorEvent{
+                        .kind = WZ_EVENT_SELF_ACTIVATED,
+                        .entity = rt->second,
+                    });
+            }
+            // Return the produced commands to the orchestrator, which seeds them into
+            // the dispatch phase's command buffer (injected just after the clear,
+            // SAME frame) -- a SELF_ACTIVATED self-reset that sets visible / active /
+            // spawns / plays audio then gets the full drain via
+            // apply_all_behavior_commands rather than being silently dropped by an
+            // apply-only pass (#252 audit). No id staleness: the edge pass ran this
+            // frame, before the dispatch phase.
+            activation_commands.insert(
+                activation_commands.end(),
+                activated_commands.commands.begin(),
+                activated_commands.commands.end());
+        }
+
+        prev_active_by_id_ = effective_active;
+        return activation_commands;
+    }
+
+    void WozzitsApp_v1::build_frame_event_tables(
+        const wz::input::InputState& input)
+    {
         // Build the collision frame (collision world + terrain constraint surfaces)
         // BEFORE motion/behaviors, exactly as game_app's job_build_collision_frame.
-        // apply_terrain_constraints below reads frame_storage_.collision to resolve
-        // the surface a terrain_constrained Motion actor sticks to. Guard the asset
+        // apply_terrain_constraints reads frame_storage_.collision to resolve the
+        // surface a terrain_constrained Motion actor sticks to. Guard the asset
         // library; if absent, the collision frame is left whatever it was (empty),
         // which makes the constraint pass a no-op rather than fabricating a surface.
         if (ctx_.assets) {
@@ -2651,102 +2696,87 @@ namespace wz::app
         // half. Needs only the scene's proximity components (no asset library).
         wz::engine::collision::build_proximity_frame(
             *behavior_scene_, frame_storage_.collision);
-        // Input events (input.* behaviors, e.g. a controller-driven tank):
-        // convert this frame's input into routed events so dispatch fires the
-        // behavior's on_event. game_app does this in job_build_input_events; the
-        // new runtime had left these tables empty, so input-driven behaviors
-        // never received events.
+        // Input events (input.* behaviors, e.g. a controller-driven tank): convert
+        // this frame's input into routed events so dispatch fires the behavior's
+        // on_event. game_app does this in job_build_input_events; the new runtime had
+        // left these tables empty, so input-driven behaviors never received events.
         wz::engine::input_events::build_input_event_frame(
             input, *behavior_scene_, frame_storage_.input_events);
-        std::vector<wz::scene::RuntimeEntityId> changed_entities;
+    }
 
-        // Per-frame deferred-authoring sink: behaviors queue cheap live
-        // scene-ECS authoring edits (spawn-child) here mid-dispatch; they are
-        // applied below at the frame boundary, AFTER the dispatch loop finishes
-        // iterating the scene (so the apply is not reentrant). The buffer is
-        // function-local — runtime-owned, per-frame, never crossing a thread or
-        // surviving past this tick — which is exactly the standalone-app
-        // semantics #204 requires (no EditorRuntimeControl involved).
-        wz::engine::behavior::BehaviorAuthoringBuffer authoring;
+    void WozzitsApp_v1::dispatch_behaviors_and_apply(
+        const wz::input::InputState& input,
+        float dt,
+        const std::vector<wz::engine::behavior::BehaviorCommand>& activation_commands,
+        std::vector<wz::scene::RuntimeEntityId>& changed_entities,
+        wz::engine::behavior::BehaviorAuthoringBuffer& authoring,
+        std::vector<DeferredSpawnRequest>& spawn_requests)
+    {
+        // Build a minimal FrameContext carrying time + input. The collision,
+        // proximity and input-event tables were populated by build_frame_event_tables,
+        // so the dispatch routes real collision/proximity/input events to behaviors.
+        wz::engine::FrameContext frame_context{};
+        frame_context.input = input;
+        frame_context.frame.interval.start = 0;
+        frame_context.frame.interval.end = static_cast<wz::time::Tick>(
+            static_cast<double>(dt)
+            * static_cast<double>(
+                wz::time::TimeSource::ticks_per_second()));
+        frame_context.frame.index = behavior_frame_index_++;
 
-        // Frame-boundary spawn requests (runtime prefab spawning). A SPAWN_PREFAB
-        // command is host-handled (apply_behavior_commands ignores it), like the
-        // audio commands; but unlike audio it grafts nodes + rebuilds the behavior
-        // runtime, so it must NOT run mid command-pass (that would renumber the
-        // runtime ids the remaining commands address). It is resolved to the
-        // spawner's STABLE authored id here (while behavior_scene_ is current) and
-        // drained at the frame boundary, alongside the deferred-authoring edits.
-        // apply_all_behavior_commands collects these (DeferredSpawnRequest, hoisted
-        // to the class so the applier can name the type); drained below.
-        std::vector<DeferredSpawnRequest> spawn_requests;
-
-        if (has_behaviors) {
-            // Build a minimal FrameContext carrying time + input. The collision,
-            // proximity and input-event tables are populated above, so the
-            // dispatch routes real collision/proximity/input events to behaviors.
-            wz::engine::FrameContext frame_context{};
-            frame_context.input = input;
-            frame_context.frame.interval.start = 0;
-            frame_context.frame.interval.end = static_cast<wz::time::Tick>(
-                static_cast<double>(dt)
-                * static_cast<double>(
-                    wz::time::TimeSource::ticks_per_second()));
-            frame_context.frame.index = behavior_frame_index_++;
-
-            frame_storage_.behavior_commands.clear();
-            // Seed with the SELF_ACTIVATED pass's commands (collected earlier THIS
-            // frame, before this clear) so a pooled instance's self-reset gets the
-            // SAME full drain -- transforms AND host-handled kinds (visible / active /
-            // spawn / audio / param) -- as per-frame behaviors, rather than the
-            // apply-only that silently dropped every host-handled command it issued
-            // (#252 audit). Same-frame: the pass ran before this point, drained below.
-            if (!activated_pass_commands_.empty()) {
-                frame_storage_.behavior_commands.commands.insert(
-                    frame_storage_.behavior_commands.commands.end(),
-                    activated_pass_commands_.begin(),
-                    activated_pass_commands_.end());
-                activated_pass_commands_.clear();
-            }
-
-            // Advance the monotonic sim clock the self-paced cognition scheduler
-            // stamps against (the FrameContext interval is per-frame, not absolute).
-            behavior_sim_time_ += static_cast<double>(dt);
-
-            wz::engine::behavior::BehaviorFrameContext behavior_ctx{
-                .frame_context = &frame_context,
-                .frame_storage = &frame_storage_,
-                .scene = &*behavior_scene_,
-                .behavior_state = &behavior_scene_->behavior_state,
-                .commands = &frame_storage_.behavior_commands,
-                .gpu_compute = nullptr,
-                .spawn_requests = &spawn_identity_buffer_,
-                .authoring = &authoring,
-                .logger = &ctx_.logger,
-                .sim_time = behavior_sim_time_,
-            };
-            wz::engine::behavior::dispatch_behaviors(
-                *behavior_scene_, registry_, behavior_ctx);
-
-            // Self-paced cognition: fire cognition.tick to agents whose own
-            // scheduled wake is due now, APPENDING any actuator commands to the
-            // same buffer (applied just below). Not a per-frame call into every
-            // agent -- only those due at behavior_sim_time_.
-            wz::engine::behavior::dispatch_cognition_tick(
-                *behavior_scene_, registry_, behavior_ctx);
-
-            // Apply the produced command buffer through the single converged
-            // applier (#256 seam A): the transform/velocity kinds AND every
-            // host-handled immediate kind (audio / renderable-param / visible /
-            // active / active-camera), plus COLLECT the deferred SPAWN_PREFAB
-            // requests into spawn_requests for the frame-boundary drain below.
-            // One applier for every dispatch site means a command kind can never
-            // again be silently dropped by a pass that forgot to handle it.
-            apply_all_behavior_commands(
-                frame_storage_.behavior_commands.commands,
-                changed_entities,
-                spawn_requests);
+        frame_storage_.behavior_commands.clear();
+        // Seed with the SELF_ACTIVATED pass's commands (collected earlier THIS frame,
+        // before this clear) so a pooled instance's self-reset gets the SAME full
+        // drain -- transforms AND host-handled kinds (visible / active / spawn /
+        // audio / param) -- as per-frame behaviors, rather than the apply-only that
+        // silently dropped every host-handled command it issued (#252 audit).
+        if (!activation_commands.empty()) {
+            frame_storage_.behavior_commands.commands.insert(
+                frame_storage_.behavior_commands.commands.end(),
+                activation_commands.begin(),
+                activation_commands.end());
         }
 
+        // Advance the monotonic sim clock the self-paced cognition scheduler stamps
+        // against (the FrameContext interval is per-frame, not absolute).
+        behavior_sim_time_ += static_cast<double>(dt);
+
+        wz::engine::behavior::BehaviorFrameContext behavior_ctx{
+            .frame_context = &frame_context,
+            .frame_storage = &frame_storage_,
+            .scene = &*behavior_scene_,
+            .behavior_state = &behavior_scene_->behavior_state,
+            .commands = &frame_storage_.behavior_commands,
+            .gpu_compute = nullptr,
+            .spawn_requests = &spawn_identity_buffer_,
+            .authoring = &authoring,
+            .logger = &ctx_.logger,
+            .sim_time = behavior_sim_time_,
+        };
+        wz::engine::behavior::dispatch_behaviors(
+            *behavior_scene_, registry_, behavior_ctx);
+
+        // Self-paced cognition: fire cognition.tick to agents whose own scheduled
+        // wake is due now, APPENDING any actuator commands to the same buffer (applied
+        // just below). Not a per-frame call into every agent -- only those due at
+        // behavior_sim_time_.
+        wz::engine::behavior::dispatch_cognition_tick(
+            *behavior_scene_, registry_, behavior_ctx);
+
+        // Apply the produced command buffer through the single converged applier
+        // (#256 seam A): the transform/velocity kinds AND every host-handled immediate
+        // kind (audio / renderable-param / visible / active / active-camera), plus
+        // COLLECT the deferred SPAWN_PREFAB requests into spawn_requests for the
+        // frame-boundary drain.
+        apply_all_behavior_commands(
+            frame_storage_.behavior_commands.commands,
+            changed_entities,
+            spawn_requests);
+    }
+
+    void WozzitsApp_v1::integrate_motion_and_constraints(
+        float dt, std::vector<wz::scene::RuntimeEntityId>& changed_entities)
+    {
         std::vector<wz::scene::RuntimeEntityId> velocity_changed;
         (void)wz::engine::behavior::integrate_motion(
             *behavior_scene_, dt, &velocity_changed);
@@ -2755,10 +2785,10 @@ namespace wz::app
             velocity_changed.begin(),
             velocity_changed.end());
 
-        // Snap terrain_constrained Motion actors to their constraint surface
-        // (from frame_storage_.collision built above), exactly as game_app's
-        // job_apply_terrain_constraints. Runs after integrate_motion so the
-        // constraint corrects the just-integrated position.
+        // Snap terrain_constrained Motion actors to their constraint surface (from
+        // frame_storage_.collision built above), exactly as game_app's
+        // job_apply_terrain_constraints. Runs after integrate_motion so the constraint
+        // corrects the just-integrated position.
         std::vector<wz::scene::RuntimeEntityId> constraint_changed;
         (void)wz::engine::behavior::apply_terrain_constraints(
             *behavior_scene_,
@@ -2776,28 +2806,31 @@ namespace wz::app
             changed_entities.end());
 
         if (!changed_entities.empty()) {
-            // Re-propagate so world matrices (and any next-frame world-space
-            // reads) reflect the applied local changes. #221: the polytree is now
-            // the single source of truth for render/audio/spawn world transforms
-            // (see scene_world_transforms()), so there is no per-frame write-back
-            // into scene_nodes_ any more -- scene_nodes_ transforms are derived
-            // from the polytree only when actually needed (save + editor
-            // read-back). The lossy Mat4->TRS->Mat4 round trip is gone from the
-            // frame path.
+            // Re-propagate so world matrices (and any next-frame world-space reads)
+            // reflect the applied local changes. #221: the polytree is now the single
+            // source of truth for render/audio/spawn world transforms (see
+            // scene_world_transforms()), so there is no per-frame write-back into
+            // scene_nodes_ any more -- scene_nodes_ transforms are derived from the
+            // polytree only when actually needed (save + editor read-back). The lossy
+            // Mat4->TRS->Mat4 round trip is gone from the frame path.
             wz::scene::propagate_all(behavior_scene_->storage.polytree);
         }
+    }
 
-        // Frame-boundary drain of behavior-issued deferred authoring (#204).
-        // This runs AFTER the dispatch loop has finished iterating the scene, so
-        // mutating it here is not reentrant. Each request goes through the SAME
-        // apply method the host's add_child uses (add_child_node) — the single
-        // converged apply path. add_child_node re-materializes the behavior
-        // runtime (rebuild_behavior_scene) on success, which is why this is the
-        // LAST thing the tick does: every read of behavior_scene_ above has
-        // already happened, and behavior_scene_ may be rebuilt out from under us
-        // here safely. Fire-and-forget: no id flows back to the behavior. The
-        // parents were resolved to authored ids at enqueue time, so they remain
-        // valid even as a prior add in this same drain renumbers runtime ids.
+    void WozzitsApp_v1::drain_deferred_authoring(
+        const wz::engine::behavior::BehaviorAuthoringBuffer& authoring)
+    {
+        // Frame-boundary drain of behavior-issued deferred authoring (#204). This runs
+        // AFTER the dispatch loop has finished iterating the scene, so mutating it
+        // here is not reentrant. Each request goes through the SAME apply method the
+        // host's add_child uses (add_child_node) -- the single converged apply path.
+        // add_child_node re-materializes the behavior runtime (rebuild_behavior_scene)
+        // on success, which is why the drains are among the LAST things the tick does:
+        // every read of behavior_scene_ above has already happened, and behavior_scene_
+        // may be rebuilt out from under us here safely. Fire-and-forget: no id flows
+        // back to the behavior. The parents were resolved to authored ids at enqueue
+        // time, so they remain valid even as a prior add in this same drain renumbers
+        // runtime ids.
         for (const wz::scene::AuthoredEntityId& parent :
              authoring.spawn_child_parents)
         {
@@ -2810,10 +2843,10 @@ namespace wz::app
             }
         }
 
-        // remove_node drain: same frame-boundary, same single converged apply
-        // path the host's remove uses (remove_node, which also rebuilds the
-        // behavior runtime on success). Authored-id targets stay valid even as a
-        // prior add/remove in this same drain renumbers runtime ids.
+        // remove_node drain: same frame-boundary, same single converged apply path the
+        // host's remove uses (remove_node, which also rebuilds the behavior runtime on
+        // success). Authored-id targets stay valid even as a prior add/remove in this
+        // same drain renumbers runtime ids.
         for (const wz::scene::AuthoredEntityId& target :
              authoring.remove_node_targets)
         {
@@ -2823,10 +2856,10 @@ namespace wz::app
             }
         }
 
-        // set_renderable_asset drain: same frame-boundary, same apply method the
-        // host uses (set_node_renderable_asset). This is a cheap field write +
-        // dirty flag (no behavior-runtime rebuild, no asset-DAG recompile), so it
-        // is order-independent of the structural drains above.
+        // set_renderable_asset drain: same frame-boundary, same apply method the host
+        // uses (set_node_renderable_asset). This is a cheap field write + dirty flag
+        // (no behavior-runtime rebuild, no asset-DAG recompile), so it is
+        // order-independent of the structural drains above.
         for (const wz::engine::behavior::BehaviorSetRenderableRequest& request :
              authoring.set_renderable_requests)
         {
@@ -2838,11 +2871,11 @@ namespace wz::app
             }
         }
 
-        // reparent drain: same frame-boundary, same apply method the host's
-        // reparent uses (reparent_node, which rebuilds the behavior runtime on
-        // success like add_child/remove). Both ids were resolved to authored
-        // ids at enqueue time (an empty new_parent_id = top level), so they stay
-        // valid even as a prior structural drain entry renumbers runtime ids.
+        // reparent drain: same frame-boundary, same apply method the host's reparent
+        // uses (reparent_node, which rebuilds the behavior runtime on success like
+        // add_child/remove). Both ids were resolved to authored ids at enqueue time
+        // (an empty new_parent_id = top level), so they stay valid even as a prior
+        // structural drain entry renumbers runtime ids.
         for (const wz::engine::behavior::BehaviorReparentRequest& request :
              authoring.reparent_requests)
         {
@@ -2853,12 +2886,12 @@ namespace wz::app
             }
         }
 
-        // add/remove-component drains: same frame-boundary, same apply methods
-        // the host uses (add_node_component / remove_node_component). These are
-        // cheap field edits (no behavior-runtime rebuild, no asset-DAG
-        // recompile), so they are order-independent of the structural drains
-        // above. The kind was copied into each request at enqueue time (the
-        // behavior's transient const char* is long gone by now).
+        // add/remove-component drains: same frame-boundary, same apply methods the
+        // host uses (add_node_component / remove_node_component). These are cheap field
+        // edits (no behavior-runtime rebuild, no asset-DAG recompile), so they are
+        // order-independent of the structural drains above. The kind was copied into
+        // each request at enqueue time (the behavior's transient const char* is long
+        // gone by now).
         for (const wz::engine::behavior::BehaviorComponentRequest& request :
              authoring.add_component_requests)
         {
@@ -2877,14 +2910,18 @@ namespace wz::app
                     + request.node_id + "' kind '" + request.kind + "'");
             }
         }
+    }
 
+    void WozzitsApp_v1::drain_prefab_spawns(
+        const std::vector<DeferredSpawnRequest>& spawn_requests)
+    {
         // SPAWN_PREFAB drain (runtime prefab spawning): same frame-boundary as the
-        // deferred-authoring edits above, AFTER every read of behavior_scene_ this
-        // tick — each spawn grafts nodes + rebuilds the behavior runtime out from
-        // under us, so it is safe only now. The spawner is addressed by its stable
-        // authored id (resolved during the command pass), so it stays valid even as
-        // a prior spawn here rebuilds + renumbers the runtime. State preservation
-        // in rebuild_behavior_scene leaves pre-existing bindings' state untouched.
+        // deferred-authoring edits, AFTER every read of behavior_scene_ this tick --
+        // each spawn grafts nodes + rebuilds the behavior runtime out from under us, so
+        // it is safe only now. The spawner is addressed by its stable authored id
+        // (resolved during the command pass), so it stays valid even as a prior spawn
+        // here rebuilds + renumbers the runtime. State preservation in
+        // rebuild_behavior_scene leaves pre-existing bindings' state untouched.
         for (const DeferredSpawnRequest& request : spawn_requests) {
             spawn_prefab(
                 request.spawner_id,
@@ -2893,115 +2930,119 @@ namespace wz::app
                 request.offset[1],
                 request.offset[2]);
         }
+    }
 
+    void WozzitsApp_v1::drain_identity_spawns()
+    {
         // SPAWN-WITH-IDENTITY drain (#252 pooling): same frame boundary as the
-        // fire-and-forget SPAWN_PREFAB drain above, but each spawn's identity flows
-        // BACK to the spawner via a SPAWN_COMPLETED (or _FAILED) event. Materialize
-        // each (spawn_prefab rebuilds + renumbers the runtime), collecting the
-        // completion, THEN dispatch all completions against the FINAL behavior_scene_
-        // -- resolving each spawner + spawned root from its stable authored id, so a
-        // prior spawn's renumbering doesn't strand a live handle.
+        // fire-and-forget SPAWN_PREFAB drain, but each spawn's identity flows BACK to
+        // the spawner via a SPAWN_COMPLETED (or _FAILED) event. Materialize each
+        // (spawn_prefab rebuilds + renumbers the runtime), collecting the completion,
+        // THEN dispatch all completions against the FINAL behavior_scene_ -- resolving
+        // each spawner + spawned root from its stable authored id, so a prior spawn's
+        // renumbering doesn't strand a live handle.
         // Swap the pending requests out first: a spawn below rebuilds the behavior
         // runtime, which fires self.start for the new subtree -- if one of those
-        // submits, it must land in the (now-empty) buffer for NEXT frame, not
-        // re-enter this drain. next_ticket stays on the member, so tickets remain
-        // monotonic across frames.
+        // submits, it must land in the (now-empty) buffer for NEXT frame, not re-enter
+        // this drain. next_ticket stays on the member, so tickets remain monotonic
+        // across frames.
         std::vector<wz::engine::behavior::BehaviorSpawnRequest> pending_spawns;
         pending_spawns.swap(spawn_identity_buffer_.requests);
-        if (!pending_spawns.empty()) {
-            struct SpawnCompletion
-            {
-                WzSpawnTicket ticket{};
-                uint64_t request_tag = 0u;
-                wz::scene::AuthoredEntityId spawner_id;
-                wz::scene::AuthoredEntityId root_id;  // empty on failure
-                WzSpawnStatus status = WZ_SPAWN_STATUS_NONE;
-            };
-            std::vector<SpawnCompletion> completions;
-            completions.reserve(pending_spawns.size());
-            for (const wz::engine::behavior::BehaviorSpawnRequest& request :
-                 pending_spawns)
-            {
-                const SpawnPrefabResult result = spawn_prefab(
-                    request.spawner_id,
-                    request.prefab_name_hash,
-                    request.offset[0],
-                    request.offset[1],
-                    request.offset[2],
-                    request.spawn_parked != 0u);
-                completions.push_back(SpawnCompletion{
-                    .ticket = request.ticket,
-                    .request_tag = request.request_tag,
-                    .spawner_id = request.spawner_id,
-                    .root_id = result.ok
-                        ? result.root_authored_id
-                        : wz::scene::AuthoredEntityId{},
-                    .status = static_cast<WzSpawnStatus>(result.ok
-                        ? WZ_SPAWN_STATUS_COMPLETED
-                        : WZ_SPAWN_STATUS_FAILED),
-                });
-            }
+        if (pending_spawns.empty()) {
+            return;
+        }
+        struct SpawnCompletion
+        {
+            WzSpawnTicket ticket{};
+            uint64_t request_tag = 0u;
+            wz::scene::AuthoredEntityId spawner_id;
+            wz::scene::AuthoredEntityId root_id;  // empty on failure
+            WzSpawnStatus status = WZ_SPAWN_STATUS_NONE;
+        };
+        std::vector<SpawnCompletion> completions;
+        completions.reserve(pending_spawns.size());
+        for (const wz::engine::behavior::BehaviorSpawnRequest& request :
+             pending_spawns)
+        {
+            const SpawnPrefabResult result = spawn_prefab(
+                request.spawner_id,
+                request.prefab_name_hash,
+                request.offset[0],
+                request.offset[1],
+                request.offset[2],
+                request.spawn_parked != 0u);
+            completions.push_back(SpawnCompletion{
+                .ticket = request.ticket,
+                .request_tag = request.request_tag,
+                .spawner_id = request.spawner_id,
+                .root_id = result.ok
+                    ? result.root_authored_id
+                    : wz::scene::AuthoredEntityId{},
+                .status = static_cast<WzSpawnStatus>(result.ok
+                    ? WZ_SPAWN_STATUS_COMPLETED
+                    : WZ_SPAWN_STATUS_FAILED),
+            });
+        }
 
-            if (behavior_scene_) {
-                wz::engine::behavior::BehaviorCommandBuffer spawn_commands;
-                wz::engine::behavior::BehaviorFrameContext spawn_ctx{
-                    .scene = &*behavior_scene_,
-                    .behavior_state = &behavior_scene_->behavior_state,
-                    .commands = &spawn_commands,
-                    .spawn_requests = &spawn_identity_buffer_,
-                    .logger = &ctx_.logger,
-                };
-                for (const SpawnCompletion& completion : completions) {
-                    const auto spawner_it =
-                        behavior_scene_->authored_to_runtime.find(
-                            completion.spawner_id);
-                    if (spawner_it
-                        == behavior_scene_->authored_to_runtime.end())
-                    {
-                        continue;  // spawner gone (removed) -- drop the completion
-                    }
-                    wz::scene::RuntimeEntityId root_entity =
-                        wz::scene::INVALID_RUNTIME_ENTITY;
-                    if (!completion.root_id.empty()) {
-                        const auto root_it =
-                            behavior_scene_->authored_to_runtime.find(
-                                completion.root_id);
-                        if (root_it
-                            != behavior_scene_->authored_to_runtime.end())
-                        {
-                            root_entity = root_it->second;
-                        }
-                    }
-                    WzSpawnEventPayload payload{};
-                    payload.ticket = completion.ticket;
-                    payload.status = completion.status;
-                    payload.request_tag = completion.request_tag;
-                    payload.root_entity = root_entity;
-                    payload.root_authored_id = completion.root_id.empty()
-                        ? nullptr
-                        : completion.root_id.c_str();
-                    wz::engine::behavior::dispatch_spawn_event(
-                        *behavior_scene_,
-                        registry_,
-                        spawn_ctx,
-                        spawner_it->second,
-                        payload);
-                }
-                // Apply the completion handlers' TRANSFORM commands same-frame (a
-                // completion handler's primary job is free-list bookkeeping + an
-                // optional next-spawn via the wired spawn_requests, both same-frame).
-                // NOTE: this pass runs AFTER the frame's host-command drain, so
-                // host-handled kinds (visible/active/audio/param) from a completion
-                // handler are NOT applied here -- a host-state reset belongs on the
-                // manager's acquire, not the async completion (#252 audit).
-                if (!spawn_commands.commands.empty()) {
-                    std::vector<wz::scene::RuntimeEntityId> spawn_changed;
-                    (void)wz::engine::behavior::apply_behavior_commands(
-                        *behavior_scene_,
-                        spawn_commands.commands,
-                        &spawn_changed);
+        if (!behavior_scene_) {
+            return;
+        }
+        wz::engine::behavior::BehaviorCommandBuffer spawn_commands;
+        wz::engine::behavior::BehaviorFrameContext spawn_ctx{
+            .scene = &*behavior_scene_,
+            .behavior_state = &behavior_scene_->behavior_state,
+            .commands = &spawn_commands,
+            .spawn_requests = &spawn_identity_buffer_,
+            .logger = &ctx_.logger,
+        };
+        for (const SpawnCompletion& completion : completions) {
+            const auto spawner_it =
+                behavior_scene_->authored_to_runtime.find(
+                    completion.spawner_id);
+            if (spawner_it
+                == behavior_scene_->authored_to_runtime.end())
+            {
+                continue;  // spawner gone (removed) -- drop the completion
+            }
+            wz::scene::RuntimeEntityId root_entity =
+                wz::scene::INVALID_RUNTIME_ENTITY;
+            if (!completion.root_id.empty()) {
+                const auto root_it =
+                    behavior_scene_->authored_to_runtime.find(
+                        completion.root_id);
+                if (root_it
+                    != behavior_scene_->authored_to_runtime.end())
+                {
+                    root_entity = root_it->second;
                 }
             }
+            WzSpawnEventPayload payload{};
+            payload.ticket = completion.ticket;
+            payload.status = completion.status;
+            payload.request_tag = completion.request_tag;
+            payload.root_entity = root_entity;
+            payload.root_authored_id = completion.root_id.empty()
+                ? nullptr
+                : completion.root_id.c_str();
+            wz::engine::behavior::dispatch_spawn_event(
+                *behavior_scene_,
+                registry_,
+                spawn_ctx,
+                spawner_it->second,
+                payload);
+        }
+        // Apply the completion handlers' TRANSFORM commands same-frame (a completion
+        // handler's primary job is free-list bookkeeping + an optional next-spawn via
+        // the wired spawn_requests, both same-frame). NOTE: this pass runs AFTER the
+        // frame's host-command drain, so host-handled kinds (visible/active/audio/
+        // param) from a completion handler are NOT applied here -- a host-state reset
+        // belongs on the manager's acquire, not the async completion (#252 audit).
+        if (!spawn_commands.commands.empty()) {
+            std::vector<wz::scene::RuntimeEntityId> spawn_changed;
+            (void)wz::engine::behavior::apply_behavior_commands(
+                *behavior_scene_,
+                spawn_commands.commands,
+                &spawn_changed);
         }
     }
 

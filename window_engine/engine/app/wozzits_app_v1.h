@@ -973,6 +973,64 @@ namespace wz::app
             std::vector<wz::scene::RuntimeEntityId>&                  changed_entities,
             std::vector<DeferredSpawnRequest>&                        out_spawn_requests);
 
+        // ─── dispatch_scene_behaviors phases (#256 seam B) ────────────────────
+        // dispatch_scene_behaviors reads as a short sequence over these; each is a
+        // private phase with a named responsibility. All assume a live
+        // behavior_scene_ (the orchestrator's early-out guard holds it).
+
+        // Phase 1: recompute behavior_scene_->entity_active (the hierarchical "live?"
+        // mask) from the authored scene, fire WZ_EVENT_SELF_ACTIVATED on each
+        // parked->live rising edge, and roll prev_active_by_id_ forward. Returns the
+        // commands the activation handlers produced -- empty unless a self.activated
+        // subscriber exists AND a prior frame is on record -- for the dispatch phase
+        // to seed into the frame's command buffer (same frame, no id staleness).
+        [[nodiscard]] std::vector<wz::engine::behavior::BehaviorCommand>
+        compute_active_mask_and_fire_edges();
+
+        // Phase 2: populate frame_storage_'s collision, proximity, and input-event
+        // tables from the current scene + this frame's input, so the dispatch +
+        // constraint phases route real events.
+        void build_frame_event_tables(const wz::input::InputState& input);
+
+        // Phase 3 (has-behaviors only): seed the frame command buffer with
+        // activation_commands, dispatch the frame behaviors + the self-paced cognition
+        // tick, then apply the produced buffer via apply_all_behavior_commands --
+        // appending its transform-changed entities to changed_entities, filling the
+        // deferred-authoring sink, and collecting the frame-boundary prefab spawns.
+        void dispatch_behaviors_and_apply(
+            const wz::input::InputState& input,
+            float dt,
+            const std::vector<wz::engine::behavior::BehaviorCommand>&
+                activation_commands,
+            std::vector<wz::scene::RuntimeEntityId>& changed_entities,
+            wz::engine::behavior::BehaviorAuthoringBuffer& authoring,
+            std::vector<DeferredSpawnRequest>& spawn_requests);
+
+        // Phase 4: integrate motion + snap terrain constraints (appending their
+        // changed entities to changed_entities), dedup, then re-propagate the polytree
+        // if anything moved.
+        void integrate_motion_and_constraints(
+            float dt, std::vector<wz::scene::RuntimeEntityId>& changed_entities);
+
+        // Phase 5: drain the behavior-issued deferred-authoring buffer (#204) --
+        // spawn-child / remove / set-renderable / reparent / add+remove-component --
+        // each through the host's own apply method. Frame-boundary: a structural entry
+        // may rebuild the behavior runtime, so this runs after every behavior_scene_
+        // read this tick.
+        void drain_deferred_authoring(
+            const wz::engine::behavior::BehaviorAuthoringBuffer& authoring);
+
+        // Phase 6: drain the fire-and-forget SPAWN_PREFAB requests collected during
+        // the command apply (each grafts a subtree + rebuilds the runtime).
+        void drain_prefab_spawns(
+            const std::vector<DeferredSpawnRequest>& spawn_requests);
+
+        // Phase 7: drain the spawn-with-identity buffer (#252 pooling) -- materialize
+        // each pending spawn, then dispatch its SPAWN_COMPLETED/_FAILED back to the
+        // spawner against the final runtime and apply the completion handlers'
+        // transform commands (host-handled kinds deliberately excluded; #252 audit).
+        void drain_identity_spawns();
+
         wz::engine::AppContext&                  ctx_;
         wz::engine::rendering::RhiSceneRenderer  renderer_;
         uint32_t                                 graph_epoch_ = 0;  // last bound
@@ -1126,19 +1184,6 @@ namespace wz::app
         // it each frame (swap-out first, so a spawn's own self.start submit lands
         // NEXT frame rather than re-entering the drain).
         wz::engine::behavior::BehaviorSpawnBuffer spawn_identity_buffer_{};
-
-        // Commands from the SELF_ACTIVATED pass (#252 audit). That pass runs BEFORE
-        // the frame's command buffer is cleared, so its commands were previously
-        // applied via a local apply_behavior_commands that silently DROPS every
-        // host-handled kind (visible/active/spawn/audio/param) a pooled instance's
-        // self-reset issues. Relayed here instead and injected into the SAME frame's
-        // command buffer (the pass precedes the clear + drain), so a self-reset gets
-        // the full drain -- transforms AND host-handled -- with no id staleness.
-        // Frame-local in effect (injected + cleared every frame); a member only
-        // because the pass's buffer is out of scope at the inject site. Also cleared
-        // on scene load.
-        std::vector<wz::engine::behavior::BehaviorCommand>
-            activated_pass_commands_{};
 
         // --- Per-frame rebuild profiling (issue #252) -----------------------------
         // Counted during dispatch_scene_behaviors, reset each simulation_tick. More
