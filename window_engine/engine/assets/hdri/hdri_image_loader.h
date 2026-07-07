@@ -2,9 +2,10 @@
 
 // engine/assets/hdri/hdri_image_loader.h
 //
-// Engine-facing HDR image decode boundary. Third-party EXR/HDR loaders stay
-// behind this interface so HDRI assets can work with decoded float pixels
-// without depending on a particular library's API or allocation rules.
+// Engine-facing HDR image decode/encode boundary. Third-party EXR/HDR codecs
+// stay behind this interface so engine code works with decoded float pixels
+// without depending on a particular library's API or allocation rules. The
+// TinyEXR include lives in exactly one place (hdri_image_loader_tinyexr.cpp).
 
 #include <cstdint>
 #include <memory>
@@ -46,6 +47,15 @@ namespace wz::engine::assets
     [[nodiscard]] bool openexr_image_file_identity_key(
         const std::string& path,
         std::string& out,
+        std::string& error);
+
+    // Encode `image` (interleaved RGB or RGBA float, per its `channels`) as an
+    // fp32 OpenEXR and write it to `path`. Encoding stays behind this boundary
+    // (TinyEXR); the file write goes through wz::fs, mirroring the load path.
+    // Returns false and sets `error` on failure.
+    [[nodiscard]] bool save_openexr_image_to_file(
+        const std::string& path,
+        const HDRImageData& image,
         std::string& error);
 
 } // namespace wz::engine::assets

@@ -149,6 +149,57 @@ namespace wz::engine::assets
         return true;
     }
 
+    bool save_openexr_image_to_file(
+        const std::string& path,
+        const HDRImageData& image,
+        std::string& error)
+    {
+        error.clear();
+
+        if (path.empty()) {
+            error = "OpenEXR output path is empty";
+            return false;
+        }
+        if (!image.valid()) {
+            error = "OpenEXR image to save is invalid";
+            return false;
+        }
+        if (image.channels != 3 && image.channels != 4) {
+            error = "OpenEXR save requires 3 (RGB) or 4 (RGBA) channels";
+            return false;
+        }
+
+        unsigned char* encoded = nullptr;
+        TinyEXRError tiny_error{};
+        const int size = SaveEXRToMemory(
+            image.pixels.data(),
+            static_cast<int>(image.width),
+            static_cast<int>(image.height),
+            static_cast<int>(image.channels),
+            0, // save_as_fp16 == 0 -> full fp32
+            &encoded,
+            &tiny_error.message);
+
+        if (size <= 0 || !encoded) {
+            std::free(encoded);
+            error = tiny_error.message
+                ? tiny_error.message
+                : "TinyEXR failed to encode OpenEXR image";
+            return false;
+        }
+
+        wz::fs::Buffer bytes(encoded, encoded + static_cast<size_t>(size));
+        std::free(encoded);
+
+        const wz::fs::FileError write_error =
+            wz::fs::write_file(path, bytes, true);
+        if (write_error != wz::fs::FileError::None) {
+            error = "failed to write OpenEXR file: " + path;
+            return false;
+        }
+        return true;
+    }
+
     bool load_openexr_image_from_file_cached(
         const std::string& path,
         std::shared_ptr<const HDRImageData>& out,

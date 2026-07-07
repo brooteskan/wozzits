@@ -5,6 +5,10 @@
 //
 //   wozzits_sky_bake <input.exr> --out <path.sky_gaussian.json>
 //       [--lobes N] [--points N] [--samples N] [--no-log]
+//       [--reconstruct <path.exr>] [--recon-width N]
+//
+// --reconstruct renders the fitted set back to an equirectangular EXR so the
+// fit can be eyeballed against the source panorama (no GPU, no engine boot).
 //
 // Exit codes: 0 ok, 1 runtime error, 2 usage error.
 
@@ -31,6 +35,8 @@ namespace
         int  points = 1;
         int  samples = 8192;
         bool log_domain = true;
+        std::string reconstruct;   // optional EXR fit-preview path
+        int  recon_width = 1024;   // height is width / 2
     };
 
     bool parse_options(int argc, char** argv, Options& out, std::string& error)
@@ -39,7 +45,8 @@ namespace
             error =
                 "usage: wozzits_sky_bake <input.exr> "
                 "--out <path.sky_gaussian.json> "
-                "[--lobes N] [--points N] [--samples N] [--no-log]";
+                "[--lobes N] [--points N] [--samples N] [--no-log] "
+                "[--reconstruct <path.exr>] [--recon-width N]";
             return false;
         }
 
@@ -61,6 +68,12 @@ namespace
             }
             else if (arg == "--no-log") {
                 out.log_domain = false;
+            }
+            else if (arg == "--reconstruct" && i + 1 < argc) {
+                out.reconstruct = argv[++i];
+            }
+            else if (arg == "--recon-width" && i + 1 < argc) {
+                out.recon_width = std::atoi(argv[++i]);
             }
             else {
                 error = "unknown or incomplete option: " + arg;
@@ -151,5 +164,21 @@ int main(int argc, char** argv)
               << "\n";
     std::cout << "[sky_bake] energy_ratio:     " << report.energy_ratio
               << "\n";
+
+    if (!options.reconstruct.empty()) {
+        const int rw = options.recon_width > 0 ? options.recon_width : 1024;
+        const int rh = rw / 2;
+        const HDRImageData preview = sky::reconstruct_equirect(set, rw, rh);
+        std::string recon_error;
+        if (!save_openexr_image_to_file(
+                options.reconstruct, preview, recon_error)) {
+            std::cerr << "[error] failed to write reconstruction '"
+                      << options.reconstruct << "': " << recon_error << "\n";
+            return 1;
+        }
+        std::cout << "[sky_bake] reconstruction:   " << options.reconstruct
+                  << " (" << rw << "x" << rh << ")\n";
+    }
+
     return 0;
 }

@@ -7,6 +7,7 @@
 // Fibonacci lattice and every tie is broken by lowest index (Seam A, #260).
 
 #include <engine/assets/sky_gaussian/sky_gaussian.h>
+#include <engine/assets/hdri/hdri_image_loader.h>
 
 #include <math/math_types.h>
 
@@ -64,5 +65,14 @@ namespace wz::engine::assets::sky
         const EquirectSampler& src,
         const FitParams& p,
         FitReport* report = nullptr);
+
+    // Render a fitted set back into an equirectangular RGB (3-channel) fp32
+    // panorama, inverting EquirectSampler's mapping -- for visual fit-vs-source
+    // comparison (bake to EXR via save_openexr_image_to_file). Lobes are summed;
+    // each point source is splatted as a small bright angular cap, floored to a
+    // few texels so a near-delta sun stays visible. Deterministic. `height`
+    // should be `width / 2` for a standard lat-long panorama.
+    HDRImageData reconstruct_equirect(
+        const SkyGaussianSet& set, int width, int height);
 
 } // namespace wz::engine::assets::sky

@@ -497,4 +497,62 @@ namespace wz::engine::assets::sky
         return result;
     }
 
+    HDRImageData reconstruct_equirect(
+        const SkyGaussianSet& set, int width, int height)
+    {
+        HDRImageData image{};
+        if (width <= 0 || height <= 0) {
+            return image;
+        }
+        image.width = static_cast<uint32_t>(width);
+        image.height = static_cast<uint32_t>(height);
+        image.channels = 3;
+        image.pixels.assign(
+            static_cast<size_t>(width) * static_cast<size_t>(height) * 3u, 0.0f);
+
+        // A point source is near-delta; floor its cap to a couple of texels so
+        // the sun renders as a visible disk rather than vanishing sub-pixel.
+        const float texel_angle = kPi / static_cast<float>(height);
+        const float max_cos = std::cos(2.0f * texel_angle);
+        struct Cap { Vec3 dir; Vec3 radiance; float cos_r; };
+        std::vector<Cap> caps;
+        caps.reserve(set.point_sources.size());
+        for (const SkyPointSource& ps : set.point_sources) {
+            // Cap solid angle Omega = 2*pi*(1 - cos r)  ->  cos r = 1 - Omega/2pi.
+            float cos_r = clampf(1.0f - ps.solid_angle / kTwoPi, -1.0f, 1.0f);
+            cos_r = std::min(cos_r, max_cos); // enforce the visibility floor
+            caps.push_back({ ps.direction, ps.radiance, cos_r });
+        }
+
+        for (int py = 0; py < height; ++py) {
+            const float v =
+                (static_cast<float>(py) + 0.5f) / static_cast<float>(height);
+            const float phi = (0.5f - v) * kPi;
+            const float sp = std::sin(phi);
+            const float cp = std::cos(phi);
+            for (int px = 0; px < width; ++px) {
+                const float u =
+                    (static_cast<float>(px) + 0.5f) / static_cast<float>(width);
+                const float theta = (u - 0.5f) * kTwoPi;
+                const Vec3 dir{ cp * std::sin(theta), sp, cp * std::cos(theta) };
+
+                Vec3 c = evaluate_set(set, dir);
+                for (const Cap& cap : caps) {
+                    if (wz::math::dot(dir, cap.dir) >= cap.cos_r) {
+                        c = c + cap.radiance;
+                    }
+                }
+
+                const size_t idx =
+                    (static_cast<size_t>(py) * static_cast<size_t>(width)
+                        + static_cast<size_t>(px)) * 3u;
+                image.pixels[idx + 0] = c.x;
+                image.pixels[idx + 1] = c.y;
+                image.pixels[idx + 2] = c.z;
+            }
+        }
+
+        return image;
+    }
+
 } // namespace wz::engine::assets::sky
