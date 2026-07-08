@@ -1,0 +1,112 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "night_sky",
+  "defaults": {
+    "active_camera": "1"
+  },
+  "scene_editor_metadata": {
+    "schema": "wozzits.scene_editor_metadata.v1",
+    "version": 1,
+    "note": "Editor-only metadata; not part of the authored game scene.",
+    "camera": {
+      "position": [
+        280.6208190917969,
+        428.0027770996094,
+        415.98797607421875
+      ],
+      "orientation": [
+        -0.30387383699417114,
+        -0.3328815996646881,
+        0.10529301315546036,
+        -0.8864333033561707
+      ],
+      "move_speed": 8,
+      "look_speed": 0.0005000000237487257,
+      "boost_multiplier": 4,
+      "roll_speed": 1.5
+    }
+  },
+  "nodes": [
+    {
+      "id": "root",
+      "name": null,
+      "parent": null,
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true
+    },
+    {
+      "id": "sky",
+      "name": "night_sky",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 91
+      }
+    },
+    {
+      "id": "stars",
+      "name": "stars",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 100
+      }
+    }
+  ]
+}

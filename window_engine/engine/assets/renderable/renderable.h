@@ -191,13 +191,16 @@ namespace wz::engine::assets
         float splat_size = 1.0f;
     };
 
-    // Per-recipe render dials for a star field (issue #266). The star VS
-    // billboards a small camera-facing quad per resident star; star_size scales
-    // its base angular footprint (packed into camera_and_diameter.w, the same
-    // slot the splat cloud uses for sphere diameter).
+    // Per-recipe render dials for a star field (issue #266). Both are live,
+    // authored render knobs (not baked in the shader): star_size scales each
+    // billboard's angular footprint; intensity scales the emitted star radiance
+    // so the whole projection can be dimmed / brightened without re-importing the
+    // catalog. The scene node's transform additionally orients the field (a free
+    // celestial->world rotation), applied to each star direction in the VS.
     struct StarFieldRenderSettings
     {
         float star_size = 1.0f;
+        float intensity = 1.0f;
     };
 
     // The SHADING constants baked from an (optional) MeshRenderStyle dependency

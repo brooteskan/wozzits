@@ -198,6 +198,7 @@ namespace wz::engine::assets::internal
         {
             StarFieldRenderSettings s{};
             s.star_size = params.get<float>("star_size", s.star_size);
+            s.intensity = params.get<float>("intensity", s.intensity);
             return s;
         }
 
@@ -1429,6 +1430,9 @@ namespace wz::engine::assets::internal
             .parameters = {
                 { .name = "star_size", .type = wz::asset::ParamType::Float,
                   .label = "Star size", .default_num = 1.0,
+                  .min = 0.0, .max = 100000.0 },
+                { .name = "intensity", .type = wz::asset::ParamType::Float,
+                  .label = "Intensity", .default_num = 1.0,
                   .min = 0.0, .max = 100000.0 },
             },
             .compile = [logger, render_program_table, rhi_renderable_table](

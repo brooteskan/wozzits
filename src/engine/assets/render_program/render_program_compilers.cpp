@@ -363,11 +363,15 @@ namespace wz::engine::assets::internal
                 // reused verbatim, mirrored by the StarView cbuffer in
                 // star_field_vs.hlsl); no index/position pull buffers -- the draw
                 // is a non-indexed vertex-id expansion of 6 * star_count vertices.
+                // 40 dwords: world[16] + view_proj[16] + camera_and_size[4]
+                // (xyz cam, w star_size) + star_params[4] (x intensity, rest
+                // spare) -- StarFieldDrawConstants, mirrored by the StarView
+                // cbuffer in star_field_vs.hlsl.
                 desc.root_constants.push_back(RootConstantBinding{
                     .visibility = ShaderVisibility::Vertex,
                     .shader_register = 0,
                     .register_space = 2,
-                    .value_count = 36,
+                    .value_count = 40,
                     .semantic = "star_view",
                 });
                 desc.descriptor_bindings.push_back(DescriptorBinding{

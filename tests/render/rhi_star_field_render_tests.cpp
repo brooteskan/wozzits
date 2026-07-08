@@ -66,7 +66,8 @@ cbuffer StarView : register(b0, space2)
 {
     float4x4 world;
     float4x4 view_proj;
-    float4   camera_and_diameter;
+    float4   camera_and_size;
+    float4   star_params;
 };
 
 struct Star
@@ -98,12 +99,12 @@ VSOutput main(uint vertex_id : SV_VertexID)
     };
     float2 corner = quad[vertex_id % 6u];
 
-    float3 dir = normalize(s.direction);
-    float3 center = camera_and_diameter.xyz + dir;
+    float3 dir = normalize(mul((float3x3)world, s.direction));
+    float3 center = camera_and_size.xyz + dir;
     float3 up0 = (abs(dir.y) < 0.99f) ? float3(0,1,0) : float3(1,0,0);
     float3 right = normalize(cross(up0, dir));
     float3 up    = cross(dir, right);
-    float h = max(camera_and_diameter.w, 0.0001f) * 0.01f;
+    float h = max(camera_and_size.w, 0.0001f) * 0.01f;
     float3 corner_ws = center + corner.x * h * right + corner.y * h * up;
 
     float4 clip = mul(view_proj, float4(corner_ws, 1.0f));
@@ -111,7 +112,7 @@ VSOutput main(uint vertex_id : SV_VertexID)
 
     VSOutput o;
     o.position = clip;
-    o.color    = s.radiance;
+    o.color    = s.radiance * star_params.x;
     o.uv       = corner;
     return o;
 }
@@ -161,7 +162,7 @@ float4 main(PSInput input) : SV_TARGET
             .visibility = ea::ShaderVisibility::Vertex,
             .shader_register = 0,
             .register_space = 2,
-            .value_count = 36,
+            .value_count = 40,
             .semantic = "star_view",
         });
         desc.descriptor_bindings.push_back(ea::DescriptorBinding{
@@ -248,6 +249,7 @@ TEST(RhiStarFieldRender, RealizesAndRecordsADraw)
         // 3) The 0x70B star-field renderable binding the two.
         ea::StarFieldRenderSettings settings{};
         settings.star_size = 2.0f;
+        settings.intensity = 1.5f;
         const ea::RenderableAsset renderable =
             assets.renderables().create_star_field_rhi(
                 ea::StarFieldRhiRenderableDesc{

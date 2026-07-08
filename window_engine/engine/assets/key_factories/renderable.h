@@ -163,6 +163,9 @@ namespace wz::engine::assets
         uint32_t size_bits = 0;
         std::memcpy(&size_bits, &settings.star_size, sizeof(size_bits));
         h = detail::mix64(h, static_cast<uint64_t>(size_bits));
+        uint32_t intensity_bits = 0;
+        std::memcpy(&intensity_bits, &settings.intensity, sizeof(intensity_bits));
+        h = detail::mix64(h, static_cast<uint64_t>(intensity_bits));
 
         const wz::asset::Hash catalog_dep =
             detail::key_to_dep_hash(star_catalog_key);

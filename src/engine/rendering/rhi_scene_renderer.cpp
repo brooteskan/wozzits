@@ -586,6 +586,41 @@ namespace wz::engine::rendering
             return out;
         }
 
+        // Per-draw root constants for a star field (#266). The splat block plus a
+        // star_params float4 (x = authored intensity, rest spare for future dials
+        // like twinkle). 40 dwords; matches the binding_layout==5 "star_view"
+        // value_count and the StarView cbuffer in star_field_vs.hlsl. `world` is
+        // the node's world transform: the VS rotates each star direction by it,
+        // so the scene node orients the whole celestial sphere.
+        struct StarFieldDrawConstants
+        {
+            float world[16];
+            float view_proj[16];
+            float camera_and_size[4];   // xyz = camera world pos, w = star_size
+            float star_params[4];       // x = intensity, yzw = spare
+        };
+        static_assert(sizeof(StarFieldDrawConstants) == 160,
+            "star root constants must be 160 bytes (40 dwords) to match the "
+            "binding_layout==5 SRG and the HLSL StarView cbuffer");
+
+        StarFieldDrawConstants make_star_field_draw_constants(
+            const wz::math::Mat4& world,
+            const wz::math::Mat4& view_projection,
+            const wz::math::Vec3& camera_world_pos,
+            float star_size,
+            float intensity)
+        {
+            StarFieldDrawConstants out{};
+            std::memcpy(out.world, world.m, sizeof(out.world));
+            std::memcpy(out.view_proj, view_projection.m, sizeof(out.view_proj));
+            out.camera_and_size[0] = camera_world_pos.x;
+            out.camera_and_size[1] = camera_world_pos.y;
+            out.camera_and_size[2] = camera_world_pos.z;
+            out.camera_and_size[3] = star_size;
+            out.star_params[0] = intensity;
+            return out;
+        }
+
         // Per-draw root constants for a styled RHI pull mesh (issue #195 slice A).
         // Packed BYTE-FOR-BYTE to match the MeshStyle cbuffer in
         // mesh_style_pull_vs/ps.hlsl and the binding_layout==4 "mesh_style"
@@ -1167,7 +1202,7 @@ namespace wz::engine::rendering
             wz::rhi::GeometryView geometry;
             geometry.vertex_count = star.star_count * 6u;
 
-            const SplatCloudDrawConstants initial_star{};
+            const StarFieldDrawConstants initial_star{};
             wz::rhi::DrawPacketAllocator allocator;
             wz::rhi::DrawPacketBuilder builder =
                 wz::rhi::DrawPacketBuilder::begin(allocator);
@@ -1686,18 +1721,19 @@ namespace wz::engine::rendering
                     bytes, bytes + sizeof(constants));
             }
             else if (realized->is_star_field) {
-                // Same 36-dword WorldViewProjCamera block as the splat cloud
-                // (world + view_proj + camera pos), with star_size packed into
-                // the trailing "diameter" slot as the billboard's base angular
-                // footprint. The star VS places each star on the far sphere
-                // relative to the camera, so it needs world + view_proj separate
-                // and the camera world position.
+                // world + view_proj + camera pos + (star_size, intensity). The
+                // star VS rotates each star direction by `world` (so the scene
+                // node orients the celestial sphere), places it on the far
+                // sphere relative to the camera, sizes the billboard by
+                // star_size, and scales its radiance by intensity -- both live
+                // authored dials, not shader constants.
                 const wz::math::Mat4& world =
                     node_worlds[static_cast<std::size_t>(&node - nodes.data())];
-                const SplatCloudDrawConstants constants =
-                    make_splat_cloud_draw_constants(
+                const StarFieldDrawConstants constants =
+                    make_star_field_draw_constants(
                         world, view_projection, camera_world_pos,
-                        realized->star_settings.star_size);
+                        realized->star_settings.star_size,
+                        realized->star_settings.intensity);
                 const auto* bytes =
                     reinterpret_cast<const uint8_t*>(&constants);
                 realized->packet.root_constants.assign(

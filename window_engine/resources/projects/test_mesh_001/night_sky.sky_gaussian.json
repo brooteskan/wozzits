@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "source_name": "night",
+  "source_width": 4,
+  "source_height": 2,
+  "lobes": [
+    {
+      "direction": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "sharpness": 0.7,
+      "amplitude": [
+        0.006,
+        0.01,
+        0.022
+      ]
+    },
+    {
+      "direction": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "sharpness": 1.1,
+      "amplitude": [
+        0.012,
+        0.02,
+        0.04
+      ]
+    },
+    {
+      "direction": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "sharpness": 1.1,
+      "amplitude": [
+        0.01,
+        0.017,
+        0.036
+      ]
+    },
+    {
+      "direction": [
+        -1.0,
+        0.0,
+        0.0
+      ],
+      "sharpness": 1.1,
+      "amplitude": [
+        0.01,
+        0.017,
+        0.036
+      ]
+    },
+    {
+      "direction": [
+        0.0,
+        0.0,
+        -1.0
+      ],
+      "sharpness": 1.1,
+      "amplitude": [
+        0.012,
+        0.02,
+        0.04
+      ]
+    },
+    {
+      "direction": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "sharpness": 0.7,
+      "amplitude": [
+        0.003,
+        0.004,
+        0.007
+      ]
+    }
+  ],
+  "point_sources": [
+    {
+      "direction": [
+        0.3391400513665329,
+        0.79132678652191,
+        0.5087100770497993
+      ],
+      "radiance": [
+        0.55,
+        0.55,
+        0.6
+      ],
+      "solid_angle": 0.0007
+    }
+  ]
+}
