@@ -370,3 +370,87 @@ TEST(SgLighting, SpecularInBallparkOfCookTorrance)
     EXPECT_GT(analytic, 0.33f * static_cast<float>(numeric));
     EXPECT_LT(analytic, 3.0f * static_cast<float>(numeric));
 }
+
+// ---------------------------------------------------------------------------
+// Emitters (source B): distant delta lights via the exact Cook-Torrance BRDF
+// ---------------------------------------------------------------------------
+
+TEST(SgLighting, EmitterZeroBehindAndBelowHorizon)
+{
+    // Surface viewed from behind (n.v <= 0).
+    SurfaceSample behind = glossy_surface(0.3f);
+    behind.view = Vec3{ 0.0f, -1.0f, 0.0f };
+    const std::array<DistantLight, 1> overhead = {
+        DistantLight{ Vec3{ 0.0f, 1.0f, 0.0f }, Vec3{ 5.0f, 5.0f, 5.0f }, 0.001f } };
+    EXPECT_FLOAT_EQ(emitter_radiance(overhead, behind).x, 0.0f);
+
+    // Emitter below the surface's horizon (n.l <= 0).
+    const SurfaceSample s = glossy_surface(0.3f);
+    const std::array<DistantLight, 1> below = {
+        DistantLight{ Vec3{ 0.0f, -1.0f, 0.0f }, Vec3{ 5.0f, 5.0f, 5.0f }, 0.001f } };
+    EXPECT_FLOAT_EQ(emitter_radiance(below, s).x, 0.0f);
+}
+
+TEST(SgLighting, EmitterDiffuseLambertScalesLinearlyAndTints)
+{
+    SurfaceSample s;
+    s.normal = Vec3{ 0.0f, 1.0f, 0.0f };
+    s.view = Vec3{ 0.0f, 1.0f, 0.0f };
+    s.albedo = Vec3{ 0.8f, 0.4f, 0.2f };
+    s.roughness = 1.0f;
+    s.metalness = 0.0f;
+
+    const auto lit = [&](float radiance) {
+        return std::array<DistantLight, 1>{ DistantLight{
+            Vec3{ 0.0f, 1.0f, 0.0f },
+            Vec3{ radiance, radiance, radiance }, 0.01f } };
+    };
+    const Vec3 a = emitter_radiance(lit(2.0f), s);
+    const Vec3 b = emitter_radiance(lit(4.0f), s);
+
+    EXPECT_GT(a.x, 0.0f);
+    EXPECT_NEAR(b.x, 2.0f * a.x, 1e-5f);   // linear in radiance
+    EXPECT_GT(a.x, a.z);                   // albedo tint carries through
+}
+
+TEST(SgLighting, EmitterSpecularPeaksAtMirror)
+{
+    const SurfaceSample s = glossy_surface(0.2f);
+    const std::array<DistantLight, 1> on = {
+        DistantLight{ reflect_view(s), Vec3{ 5.0f, 5.0f, 5.0f }, 0.001f } };
+    const std::array<DistantLight, 1> off = {
+        DistantLight{ s.normal, Vec3{ 5.0f, 5.0f, 5.0f }, 0.001f } };
+    EXPECT_GT(emitter_radiance(on, s).x, emitter_radiance(off, s).x);
+}
+
+TEST(SgLighting, EmitterRoughnessLowersMirrorPeak)
+{
+    const SurfaceSample lo = glossy_surface(0.1f);
+    const SurfaceSample hi = glossy_surface(0.5f);
+    const std::array<DistantLight, 1> el = {
+        DistantLight{ reflect_view(lo), Vec3{ 5.0f, 5.0f, 5.0f }, 0.001f } };
+    const std::array<DistantLight, 1> eh = {
+        DistantLight{ reflect_view(hi), Vec3{ 5.0f, 5.0f, 5.0f }, 0.001f } };
+    EXPECT_GT(emitter_radiance(el, lo).x, emitter_radiance(eh, hi).x);
+}
+
+TEST(SgLighting, EmitterDiffuseFallsOffWithAngle)
+{
+    SurfaceSample s;
+    s.view = Vec3{ 0.0f, 1.0f, 0.0f };
+    s.albedo = Vec3{ 1.0f, 1.0f, 1.0f };
+    s.roughness = 1.0f;
+    s.metalness = 0.0f;
+    s.normal = Vec3{ 0.0f, 1.0f, 0.0f };
+
+    const std::array<DistantLight, 1> e = {
+        DistantLight{ Vec3{ 0.0f, 1.0f, 0.0f }, Vec3{ 3.0f, 3.0f, 3.0f }, 0.01f } };
+    const Vec3 straight = emitter_radiance(e, s);
+
+    SurfaceSample tilted = s;
+    tilted.normal = wz::math::normalize(Vec3{ std::sin(1.0f), std::cos(1.0f), 0.0f });
+    const Vec3 dim = emitter_radiance(e, tilted);
+
+    EXPECT_GT(straight.x, dim.x);
+    EXPECT_GT(dim.x, 0.0f);
+}

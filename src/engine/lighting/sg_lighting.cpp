@@ -59,6 +59,20 @@ namespace wz::engine::lighting
             const float x = std::max(n_dot_x, 1e-4f);
             return 1.0f / (x + std::sqrt(m2 + (1.0f - m2) * x * x));
         }
+
+        // Scalar GGX NDF for the exact (punctual) microfacet BRDF.
+        float ggx_ndf(float n_dot_h, float m2)
+        {
+            const float d = n_dot_h * n_dot_h * (m2 - 1.0f) + 1.0f;
+            return m2 / (kPi * d * d + 1e-9f);
+        }
+
+        // Smith GGX geometry term G1 (height form): 2(n.x) / (n.x + sqrt(...)).
+        float smith_g1(float n_dot_x, float m2)
+        {
+            const float x = std::max(n_dot_x, 0.0f);
+            return 2.0f * x / (x + std::sqrt(m2 + (1.0f - m2) * x * x) + 1e-9f);
+        }
     }
 
     Vec3 evaluate(const SphericalGaussian& g, const Vec3& w)
@@ -201,6 +215,65 @@ namespace wz::engine::lighting
         const Vec3 diffuse  = diffuse_radiance(lights, diffuse_surface);
         const Vec3 specular = specular_radiance(lights, surface, f0);
         return diffuse + specular;
+    }
+
+    Vec3 emitter_radiance(
+        std::span<const DistantLight> emitters, const SurfaceSample& surface)
+    {
+        const Vec3  n = surface.normal;
+        const Vec3  v = surface.view;
+        const float n_dot_v = wz::math::dot(n, v);
+        if (n_dot_v <= 0.0f) {
+            return Vec3{ 0.0f, 0.0f, 0.0f };   // surface faces away from the eye
+        }
+
+        const float mtl = std::clamp(surface.metalness, 0.0f, 1.0f);
+        const Vec3  f0{
+            kDielectricF0 + (surface.albedo.x - kDielectricF0) * mtl,
+            kDielectricF0 + (surface.albedo.y - kDielectricF0) * mtl,
+            kDielectricF0 + (surface.albedo.z - kDielectricF0) * mtl,
+        };
+        const Vec3  diff_albedo = surface.albedo * (1.0f - mtl);
+        const float m2 = std::max(surface.roughness * surface.roughness,
+                                  kMinRoughnessSq);
+        const float inv_pi = 1.0f / kPi;
+
+        Vec3 out{ 0.0f, 0.0f, 0.0f };
+        for (const DistantLight& e : emitters) {
+            const Vec3  l = e.direction;
+            const float n_dot_l = wz::math::dot(n, l);
+            if (n_dot_l <= 0.0f) {
+                continue;   // emitter below the surface's horizon
+            }
+
+            // Perpendicular irradiance from the emitter's cone.
+            const Vec3 irr = e.radiance * e.solid_angle;
+
+            // Lambert diffuse.
+            const Vec3 diffuse{
+                diff_albedo.x * irr.x * n_dot_l * inv_pi,
+                diff_albedo.y * irr.y * n_dot_l * inv_pi,
+                diff_albedo.z * irr.z * n_dot_l * inv_pi,
+            };
+
+            // Cook-Torrance specular. The rendering-equation (n.l) cancels the
+            // (n.l) in the microfacet denominator 4(n.l)(n.v).
+            const Vec3  h = wz::math::normalize(l + v);
+            const float n_dot_h = std::max(wz::math::dot(n, h), 0.0f);
+            const float v_dot_h = std::max(wz::math::dot(v, h), 0.0f);
+            const float dterm = ggx_ndf(n_dot_h, m2);
+            const float gterm = smith_g1(n_dot_l, m2) * smith_g1(n_dot_v, m2);
+            const Vec3  fterm = fresnel_schlick(f0, v_dot_h);
+            const float scale = dterm * gterm / (4.0f * n_dot_v);
+            const Vec3  specular{
+                fterm.x * irr.x * scale,
+                fterm.y * irr.y * scale,
+                fterm.z * irr.z * scale,
+            };
+
+            out = out + diffuse + specular;
+        }
+        return out;
     }
 
 } // namespace wz::engine::lighting

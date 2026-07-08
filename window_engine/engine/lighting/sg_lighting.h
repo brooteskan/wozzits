@@ -114,4 +114,26 @@ namespace wz::engine::lighting
         std::span<const SphericalGaussian> lights,
         const SurfaceSample& surface);
 
+    // ---- Source B: distant emitters (sun / moon / bright stars) ---------------
+    //
+    // The far end of the frequency split (umbrella #259): points too sharp to fit
+    // as SG dome lobes. Treated as directional delta lights, so they feed the
+    // EXACT Cook-Torrance GGX BRDF -- no SG convolution, no single-lobe NDF
+    // approximation. Layout-mirrors assets::sky::SkyPointSource so the fit's
+    // point_sources convert trivially.
+    struct DistantLight
+    {
+        wz::math::Vec3 direction{ 0.0f, 1.0f, 0.0f };   // unit, toward the emitter
+        wz::math::Vec3 radiance{ 0.0f, 0.0f, 0.0f };    // RGB
+        float          solid_angle = 0.0f;              // steradians subtended
+    };
+
+    // Diffuse + specular from distant emitters (perpendicular irradiance =
+    // radiance * solid_angle), under the same metalness convention as shade().
+    // Additive with shade()'s environment term: total = shade(env) +
+    // emitter_radiance(emitters).
+    wz::math::Vec3 emitter_radiance(
+        std::span<const DistantLight> emitters,
+        const SurfaceSample& surface);
+
 } // namespace wz::engine::lighting
