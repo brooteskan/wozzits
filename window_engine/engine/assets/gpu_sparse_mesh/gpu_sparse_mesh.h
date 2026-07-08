@@ -57,6 +57,7 @@ namespace wz::engine::assets
         wz::asset::AssetKey source_mesh_key{};
         wz::asset::AssetKey sparse_operator_key{};
         wz::asset::ResourceHandle positions{};       // float3
+        wz::asset::ResourceHandle normals{};         // float3, one per vertex; empty when the mesh has no normals
         wz::asset::ResourceHandle indices{};         // uint
         wz::asset::ResourceHandle source_vertices{}; // uint, one per vertex
         uint32_t vertex_count = 0;

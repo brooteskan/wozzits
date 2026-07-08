@@ -108,6 +108,7 @@ namespace wz::engine::assets
         for (GpuResidentSparseMeshEntry& entry : entries_) {
             for (wz::asset::ResourceHandle* handle : {
                 &entry.positions,
+                &entry.normals,
                 &entry.indices,
                 &entry.source_vertices })
             {

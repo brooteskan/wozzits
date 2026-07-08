@@ -256,8 +256,40 @@ TEST(GpuSparseMeshAssetModule, ResolvePublishesPullBuffersIntoRhiRegistry)
             wz::gpu::readback_buffer(device, indices_gpu),
             std::array<uint32_t, 6>{ 0u, 1u, 2u, 0u, 2u, 3u });
 
+        // Per-vertex normals ride a parallel "pull_normals" buffer (the quad's
+        // four vertices all face +Z).
+        const wz::rhi::ResourceIdentity normals_identity{
+            wz::engine::assets::rhi_asset_identity(
+                sparse_mesh.output,
+                "pull_normals"),
+            {},
+        };
+        const wz::rhi::GpuResourceHandle normals =
+            gpu.resources.find(normals_identity);
+        ASSERT_TRUE(normals.valid());
+        const wz::rhi::GpuResource* normals_resource =
+            gpu.resources.get(normals);
+        ASSERT_NE(normals_resource, nullptr);
+        EXPECT_EQ(normals_resource->desc.identity, normals_identity);
+        EXPECT_EQ(normals_resource->desc.usage,
+            wz::rhi::ResourceUsage_Sampled);
+        EXPECT_EQ(normals_resource->desc.stride_bytes, 3u * sizeof(float));
+
+        const wz::gpu::GPUHandle normals_gpu =
+            gpu.backend.gpu_handle_for(normals_resource->backend);
+        ASSERT_TRUE(normals_gpu.valid());
+        expect_readback_bytes_eq(
+            wz::gpu::readback_buffer(device, normals_gpu),
+            std::array<float, 12>{
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+                0.0f, 0.0f, 1.0f,
+            });
+
         gpu.resources.release(positions);
         gpu.resources.release(indices);
+        gpu.resources.release(normals);
         gpu.resources.collect(UINT64_MAX);
     }
 

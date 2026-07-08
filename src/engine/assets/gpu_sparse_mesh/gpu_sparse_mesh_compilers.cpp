@@ -107,6 +107,24 @@ namespace wz::engine::assets::internal
                 positions.push_back(out);
             }
 
+            // Per-vertex normals ride the same float3 upload as positions, but
+            // ONLY when the source mesh actually carries them. A mesh without
+            // normals publishes no "pull_normals" buffer; a lit program that
+            // needs one then fails to resolve (rather than shading garbage).
+            const bool has_normals =
+                mesh.has_normals && !mesh.vertices.empty();
+            std::vector<GpuPosition3> normals;
+            if (has_normals) {
+                normals.reserve(mesh.vertices.size());
+                for (const MeshVertex& vertex : mesh.vertices) {
+                    GpuPosition3 out{};
+                    out.position[0] = vertex.normal[0];
+                    out.position[1] = vertex.normal[1];
+                    out.position[2] = vertex.normal[2];
+                    normals.push_back(out);
+                }
+            }
+
             const auto started = std::chrono::steady_clock::now();
             if (gpu_resources) {
                 wz::rhi::GpuResourceDesc positions_desc =
@@ -149,24 +167,60 @@ namespace wz::engine::assets::internal
                         indices_handle,
                         mesh.indices.data(),
                         indices_desc.size_bytes);
-                if (!positions_uploaded || !indices_uploaded) {
+                // Optional per-vertex normals buffer (variant "pull_normals").
+                wz::rhi::GpuResourceHandle normals_handle{};
+                bool normals_uploaded = true;
+                if (has_normals) {
+                    wz::rhi::GpuResourceDesc normals_desc =
+                        wz::rhi::GpuResourceDesc::buffer(
+                            static_cast<uint64_t>(
+                                normals.size() * sizeof(GpuPosition3)),
+                            sizeof(GpuPosition3),
+                            wz::rhi::ResourceUsage_Sampled,
+                            wz::rhi::ResourceCpuAccess::WriteOnce);
+                    normals_desc.identity = wz::rhi::ResourceIdentity{
+                        rhi_asset_identity(sparse_mesh_key, "pull_normals"),
+                        {},
+                    };
+                    normals_handle = gpu_resources->acquire(normals_desc);
+                    normals_uploaded =
+                        normals_handle.valid()
+                        && gpu_resources->update(
+                            normals_handle,
+                            normals.data(),
+                            normals_desc.size_bytes);
+                }
+
+                if (!positions_uploaded
+                    || !indices_uploaded
+                    || !normals_uploaded)
+                {
                     if (positions_handle.valid()) {
                         gpu_resources->release(positions_handle);
                     }
                     if (indices_handle.valid()) {
                         gpu_resources->release(indices_handle);
                     }
+                    if (normals_handle.valid()) {
+                        gpu_resources->release(normals_handle);
+                    }
                     logger.warn(
                         "GPU sparse mesh RHI resident upload failed");
                     return false;
                 }
                 if (rhi_resource_tracker) {
-                    rhi_resource_tracker(
-                        sparse_mesh_key,
-                        {
-                            positions_desc.identity,
-                            indices_desc.identity,
+                    std::vector<wz::rhi::ResourceIdentity> tracked = {
+                        positions_desc.identity,
+                        indices_desc.identity,
+                    };
+                    if (has_normals) {
+                        tracked.push_back(wz::rhi::ResourceIdentity{
+                            rhi_asset_identity(
+                                sparse_mesh_key, "pull_normals"),
+                            {},
                         });
+                    }
+                    rhi_resource_tracker(sparse_mesh_key, std::move(tracked));
                 }
 
                 const auto elapsed_ms =
@@ -218,15 +272,28 @@ namespace wz::engine::assets::internal
                         static_cast<uint64_t>(
                             source_vertices.size() * sizeof(uint32_t)),
                 });
+            const wz::asset::ResourceHandle normals_buffer =
+                has_normals
+                    ? compute.create_structured_buffer({
+                        .element_count = mesh.vertex_count(),
+                        .stride_bytes = sizeof(GpuPosition3),
+                        .initial_data = normals.data(),
+                        .initial_data_bytes =
+                            static_cast<uint64_t>(
+                                normals.size() * sizeof(GpuPosition3)),
+                    })
+                    : wz::asset::ResourceHandle{};
 
             if (!positions_buffer.valid()
                 || !indices_buffer.valid()
-                || !source_vertices_buffer.valid())
+                || !source_vertices_buffer.valid()
+                || (has_normals && !normals_buffer.valid()))
             {
                 for (wz::asset::ResourceHandle handle : {
                     positions_buffer,
                     indices_buffer,
-                    source_vertices_buffer })
+                    source_vertices_buffer,
+                    normals_buffer })
                 {
                     if (handle.valid()) {
                         compute.release_buffer(handle);
@@ -242,11 +309,15 @@ namespace wz::engine::assets::internal
                 compute.release_buffer(positions_buffer);
                 compute.release_buffer(indices_buffer);
                 compute.release_buffer(source_vertices_buffer);
+                if (normals_buffer.valid()) {
+                    compute.release_buffer(normals_buffer);
+                }
                 return false;
             }
 
             for (wz::asset::ResourceHandle* handle : {
                 &entry->positions,
+                &entry->normals,
                 &entry->indices,
                 &entry->source_vertices })
             {
@@ -259,6 +330,7 @@ namespace wz::engine::assets::internal
             entry->source_mesh_key = data.source_mesh_key;
             entry->sparse_operator_key = data.sparse_operator_key;
             entry->positions = positions_buffer;
+            entry->normals = normals_buffer;
             entry->indices = indices_buffer;
             entry->source_vertices = source_vertices_buffer;
             entry->vertex_count = data.vertex_count;
