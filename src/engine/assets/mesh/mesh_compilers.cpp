@@ -422,6 +422,41 @@ namespace wz::engine::assets::internal
             return compiled_mesh_node(input, handle);
         }
 
+        wz::asset::AssetNode compile_sphere_mesh_node(
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
+            wz::Logger& logger,
+            MeshTable& mesh_table)
+        {
+            if (!dep_nodes.empty()) {
+                logger.error(
+                    "procedural sphere mesh node should not have dependencies");
+                return compile_failed_node(input);
+            }
+
+            uint32_t subdivisions = 2u;
+            float radius = 1.0f;
+            if (const auto* params =
+                    std::any_cast<wz::asset::ParamBlock>(&input.meta))
+            {
+                subdivisions =
+                    params->get<uint32_t>("subdivisions", subdivisions);
+                radius = params->get<float>("radius", radius);
+            }
+
+            MeshData data = make_sphere_mesh(subdivisions, radius);
+            if (!data.valid()) {
+                logger.error(
+                    "procedural sphere mesh builder produced invalid mesh data");
+                return compile_failed_node(input);
+            }
+
+            wz::asset::ResourceHandle handle =
+                mesh_table.add(std::move(data));
+
+            return compiled_mesh_node(input, handle);
+        }
+
         wz::asset::AssetNode compile_glb_mesh_node(
             const wz::asset::AssetNode& input,
             std::span<const wz::asset::AssetNode> dep_nodes,
@@ -911,6 +946,42 @@ namespace wz::engine::assets::internal
             {
                 return compile_procedural_mesh_node(
                     input, dep_nodes, logger, mesh_table, &make_cube_mesh);
+            }
+            });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kProceduralSphereMeshSchema,
+            .output_type = kAssetTypeMesh,
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "subdivisions",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Subdivisions",
+                    .default_num = 2,
+                    .min = 0,
+                    .max = 6,
+                },
+                {
+                    .name = "radius",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Radius",
+                    .default_num = 1.0,
+                    .min = 0.0001,
+                    .max = 1000000.0,
+                },
+            },
+            .compile = [&logger, &mesh_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                return compile_sphere_mesh_node(
+                    input, dep_nodes, logger, mesh_table);
             }
             });
 

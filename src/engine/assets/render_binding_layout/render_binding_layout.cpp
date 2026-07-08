@@ -377,6 +377,23 @@ namespace wz::engine::assets
                 + visibility_note_of(row.visibility) + "\n";
         }
 
+        // Standard helper library — pure HLSL functions with no bindings, so
+        // they compile regardless of what the layout declares. Emitted into
+        // EVERY prelude so custom programs consume common projections via a
+        // one-liner. Placed after the binding declarations so it always
+        // compiles; guarded so a shader that (unexpectedly) sees the prelude
+        // twice does not redefine the helpers.
+        out +=
+            "\n"
+            "// --- wozzits standard helpers ---\n"
+            "#ifndef WZ_STANDARD_HELPERS\n"
+            "#define WZ_STANDARD_HELPERS\n"
+            "float3 wz_origin_relative_direction(float3 world_pos, float3 origin)\n"
+            "{\n"
+            "    return normalize(world_pos - origin);\n"
+            "}\n"
+            "#endif // WZ_STANDARD_HELPERS\n";
+
         return true;
     }
 

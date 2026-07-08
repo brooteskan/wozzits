@@ -484,6 +484,29 @@ TEST(RenderBindingPrelude, FailsOnInvalidLayoutWithReason)
     EXPECT_TRUE(prelude.empty());
 }
 
+TEST(RenderBindingPrelude, EmitsStandardHelperLibrary)
+{
+    // The standard-helper block is layout-independent: it must appear in every
+    // generated prelude so custom programs can consume common projections via a
+    // one-liner. A minimal (empty) layout still carries it.
+    RenderBindingLayoutData layout{};
+
+    std::string prelude;
+    std::string error;
+    ASSERT_TRUE(generate_hlsl_binding_prelude(layout, prelude, error)) << error;
+
+    EXPECT_NE(
+        prelude.find("// --- wozzits standard helpers ---"), std::string::npos);
+    EXPECT_NE(
+        prelude.find(
+            "float3 wz_origin_relative_direction(float3 world_pos, "
+            "float3 origin)"),
+        std::string::npos);
+    EXPECT_NE(
+        prelude.find("return normalize(world_pos - origin);"),
+        std::string::npos);
+}
+
 TEST(RenderBindingPrelude, CameraSnappedTerrainHeadEmitsNamedTerrainMembers)
 {
     // clipmap_layout() carries the CameraSnappedTerrain head (issue #233): the

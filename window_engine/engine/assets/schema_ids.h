@@ -520,6 +520,14 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000402ull
     };
 
+    // Procedural icosphere mesh recipe. Generates a unit-ish sphere by
+    // subdividing a regular icosahedron `subdivisions` times and projecting
+    // each vertex onto the sphere of `radius`. Compiled directly from authored
+    // parameters; has no dependency. Produces kAssetTypeMesh output.
+    inline constexpr wz::asset::SchemaID kProceduralSphereMeshSchema{
+        0xF11E'CA55'E7'000415ull
+    };
+
     // Procedural geometry-clipmap lattice mesh recipe.
     // Generates a static, reusable nested-LOD-ring lattice in the XZ plane
     // (y = 0), centered at the origin in grid-unit space: a full m x m quad

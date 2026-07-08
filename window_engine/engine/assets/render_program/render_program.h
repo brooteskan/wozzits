@@ -106,6 +106,7 @@ namespace wz::engine::assets
         PulledMeshPositions,
         PulledMeshIndices,
         PulledMeshSourceVertices,
+        SkyGaussian,
     };
 
     // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
@@ -113,7 +114,7 @@ namespace wz::engine::assets
     // it as a Tag (enum → name), and authored render-binding-layout rows name
     // their semantic as a string that resolves back to the enum (name → enum).
     // Index == enum value; a new DescriptorSemantic member extends this array.
-    inline constexpr std::array<std::string_view, 9> kDescriptorSemanticNames = {
+    inline constexpr std::array<std::string_view, 10> kDescriptorSemanticNames = {
         "unknown",
         "splat_cloud",
         "sorted_splat_indices",
@@ -123,6 +124,7 @@ namespace wz::engine::assets
         "pulled_mesh_positions",
         "pulled_mesh_indices",
         "pulled_mesh_source_vertices",
+        "sky_gaussian",
     };
 
     [[nodiscard]] constexpr std::string_view descriptor_semantic_name(
