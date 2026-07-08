@@ -1333,6 +1333,15 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeSkyGaussian =
         static_cast<wz::asset::AssetType>(2287);
 
+    // Star catalog compiled from a baked .star_catalog.json (Seam C-2, issue
+    // #266). Render-ready stars (the far end of the frequency split) built from
+    // a real catalog; runtime data owned by StarCatalogTable and, when a shared
+    // rhi registry is present, published as a resident point-source
+    // StructuredBuffer (variant "star_catalog"). Same lighting/environment range
+    // as kAssetTypeSkyGaussian.
+    inline constexpr wz::asset::AssetType kAssetTypeStarCatalog =
+        static_cast<wz::asset::AssetType>(2288);
+
     // ─── Cinematic asset types: 2300–2319 ───────────────────────────────────────
     //
     // Camera rigs, camera paths, timelines, cutscenes, sequencer tracks, and

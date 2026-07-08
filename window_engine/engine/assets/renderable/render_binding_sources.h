@@ -14,6 +14,7 @@
 //   GaussianSplatCloud → StructuredSrv, "splat_cloud"           (gaussian_splat_compilers.cpp)
 //   SkyGaussian        → StructuredSrv, "sky_gaussian"          (sky_gaussian_compilers.cpp)
 //                        StructuredSrv, "sky_gaussian_points"     — variant selected by semantic (present only when the fit has point sources)
+//   StarCatalog        → StructuredSrv, "star_catalog"           (star_catalog_compilers.cpp)
 //   GpuSparseMesh      → StructuredSrv, "pull_positions"        (gpu_sparse_mesh_compilers.cpp)
 //                        StructuredSrv, "pull_indices"            — variant selected by semantic
 //                        StructuredSrv, "pull_normals"            — present only when the mesh has normals
@@ -74,6 +75,10 @@ namespace wz::engine::assets
             }
             return RenderBindingSource{
                 RenderBindingKind::StructuredSrv, "sky_gaussian" };
+        }
+        if (source_type == kAssetTypeStarCatalog) {
+            return RenderBindingSource{
+                RenderBindingKind::StructuredSrv, "star_catalog" };
         }
         if (source_type == kAssetTypeGpuSparseMesh) {
             // Two published variants; the semantic picks which buffer.

@@ -160,6 +160,7 @@ float4 main(PSIn input) : SV_TARGET
             { kProceduralTriangleMeshSchema, kAssetTypeMesh },
             { kProceduralQuadMeshSchema, kAssetTypeMesh },
             { kProceduralCubeMeshSchema, kAssetTypeMesh },
+            { kProceduralSphereMeshSchema, kAssetTypeMesh },
             { kProceduralClipmapLatticeMeshSchema, kAssetTypeMesh },
             { kGLBMeshSchema, kAssetTypeMesh },
             { kMeshFromGLBSceneSchema, kAssetTypeMesh },
@@ -233,6 +234,7 @@ float4 main(PSIn input) : SV_TARGET
             { kCollisionFromHeightFieldSchema, kAssetTypeCollisionAsset },
 
             { kPlacementSchema, kAssetTypePlacement },
+            { kPlacedFieldSchema, kAssetTypePlacedField },
 
             { kJSONDocumentSchema, kAssetTypeJSONDocument },
             { kTOMLDocumentSchema, kAssetTypeTOMLDocument },
@@ -260,6 +262,11 @@ float4 main(PSIn input) : SV_TARGET
             { kDirectLightSchema, kAssetTypeDirectLight },
             { kAmbientLightingSchema, kAssetTypeAmbientLighting },
             { kHDRIEnvironmentSchema, kAssetTypeEnvironmentMap },
+            // SG-sky track (umbrella #259): the fitted sky lobes and the star
+            // catalog both key through the generic draft path (make_*_from_json
+            // key, content_hash empty), same standing as the recipes above.
+            { kSkyGaussianFromJSONSchema, kAssetTypeSkyGaussian },
+            { kStarCatalogFromJSONSchema, kAssetTypeStarCatalog },
 
             // Audio family — CPU-resident (no GPU resource); like every recipe
             // above, the module assigns keys via its key_factories/audio_*.h

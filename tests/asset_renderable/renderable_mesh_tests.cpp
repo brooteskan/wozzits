@@ -187,6 +187,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     AmbientLightingTable ambient_lighting_table;
     HDRIEnvironmentTable hdri_environment_table;
     SkyGaussianTable sky_gaussian_table;
+    wz::engine::starfield::StarCatalogTable star_catalog_table;
     SceneAssetTable scene_table;
     EngineAssetCacheSettings cache_settings{};
 
@@ -310,6 +311,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         .ambient_lighting_table = ambient_lighting_table,
         .hdri_environment_table = hdri_environment_table,
         .sky_gaussian_table = sky_gaussian_table,
+        .star_catalog_table = star_catalog_table,
         .scene_table = scene_table,
         .cache_settings = cache_settings,
     };
@@ -561,6 +563,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
     AmbientLightingTable ambient_lighting_table;
     HDRIEnvironmentTable hdri_environment_table;
     SkyGaussianTable sky_gaussian_table;
+    wz::engine::starfield::StarCatalogTable star_catalog_table;
     SceneAssetTable scene_table;
     EngineAssetCacheSettings cache_settings{};
 
@@ -678,6 +681,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
         .ambient_lighting_table = ambient_lighting_table,
         .hdri_environment_table = hdri_environment_table,
         .sky_gaussian_table = sky_gaussian_table,
+        .star_catalog_table = star_catalog_table,
         .scene_table = scene_table,
         .cache_settings = cache_settings,
     };

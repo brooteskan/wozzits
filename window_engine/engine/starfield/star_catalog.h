@@ -27,6 +27,7 @@
 #include <math/math_types.h>
 
 #include <span>
+#include <string>
 #include <vector>
 
 namespace wz::engine::starfield
@@ -117,5 +118,16 @@ namespace wz::engine::starfield
     std::vector<Star> build_catalog(
         std::span<const CatalogRecord> records,
         const StarImportParams& params);
+
+    // A built star field: the render-ready stars plus provenance. This is the set
+    // the StarCatalogTable stores and the resident point buffer is published
+    // from (Seam C-2). Pure -- no asset-system types (the table wraps it).
+    struct StarCatalog
+    {
+        std::string       source_name;
+        std::vector<Star> stars;
+
+        bool valid() const noexcept { return !stars.empty(); }
+    };
 
 } // namespace wz::engine::starfield

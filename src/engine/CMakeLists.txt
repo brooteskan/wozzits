@@ -170,6 +170,9 @@ target_sources(window_engine PRIVATE
     lighting/sg_lighting.cpp
 
     starfield/star_catalog.cpp
+    starfield/star_catalog_serialize.cpp
+    starfield/star_catalog_compilers.cpp
+    assets/star_catalog_asset_module.cpp
 
     assets/renderable/renderable.cpp
     assets/renderable/renderable_compilers.cpp

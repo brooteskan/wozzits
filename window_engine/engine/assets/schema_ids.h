@@ -708,4 +708,15 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kSkyGaussianFromJSONSchema{
         0xF11E'CA55'E7'001003ull
     };
+
+    // Star catalog compiled from a baked .star_catalog.json document (Seam C-2,
+    // issue #266 / umbrella #259). Raw catalog rows (RA / Dec / magnitude / B-V)
+    // plus grade dials are deserialized, run through the starfield astronomy
+    // kernel at compile time, and stored in the StarCatalogTable; when a shared
+    // rhi registry is present the built stars are ALSO published as a resident
+    // point-source StructuredBuffer (variant "star_catalog"). Source dep: one
+    // compiled kAssetTypeJSONDocument. Produces kAssetTypeStarCatalog output.
+    inline constexpr wz::asset::SchemaID kStarCatalogFromJSONSchema{
+        0xF11E'CA55'E7'001004ull
+    };
 }

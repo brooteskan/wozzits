@@ -294,6 +294,7 @@ namespace wz::engine::assets
             WZ_ADD_TYPE(kAssetTypeExposureProfile);
             WZ_ADD_TYPE(kAssetTypeTonemapProfile);
             WZ_ADD_TYPE(kAssetTypeSkyGaussian);
+            WZ_ADD_TYPE(kAssetTypeStarCatalog);
             WZ_ADD_TYPE(kAssetTypeCameraRig);
             WZ_ADD_TYPE(kAssetTypeCameraPath);
             WZ_ADD_TYPE(kAssetTypeTimeline);
@@ -385,6 +386,7 @@ namespace wz::engine::assets
             WZ_SET_TYPE_NAME(kAssetTypeAmbientLighting, "Ambient lighting");
             WZ_SET_TYPE_NAME(kAssetTypeEnvironmentMap, "Environment");
             WZ_SET_TYPE_NAME(kAssetTypeSkyGaussian, "Sky gaussian");
+            WZ_SET_TYPE_NAME(kAssetTypeStarCatalog, "Star catalog");
             WZ_SET_TYPE_NAME(kAssetTypeDataTable, "Data table");
             WZ_SET_TYPE_NAME(
                 kAssetTypeDiagnosticResampledTimeSeries,
@@ -549,6 +551,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kAmbientLightingSchema, "Ambient lighting");
             WZ_ADD_SCHEMA(kHDRIEnvironmentSchema, "HDRI environment");
             WZ_ADD_SCHEMA(kSkyGaussianFromJSONSchema, "Sky gaussian from JSON");
+            WZ_ADD_SCHEMA(kStarCatalogFromJSONSchema, "Star catalog from JSON");
 
 #undef WZ_ADD_SCHEMA
 

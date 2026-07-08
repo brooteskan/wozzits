@@ -111,6 +111,13 @@ namespace wz::engine::assets::internal
             ctx.json_table,
             ctx.gpu_resources,
             ctx.rhi_resource_tracker);
+        register_star_catalog_compilers(
+            registry,
+            ctx.logger,
+            ctx.star_catalog_table,
+            ctx.json_table,
+            ctx.gpu_resources,
+            ctx.rhi_resource_tracker);
         register_data_table_compilers(registry, ctx.logger, ctx.data_table);
         register_diagnostic_resampled_time_series_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_resampled_time_series_table);
         register_diagnostic_timeframe_summary_compilers(registry, ctx.logger, ctx.data_table, ctx.diagnostic_timeframe_summary_table);
