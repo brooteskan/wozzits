@@ -167,6 +167,8 @@ target_sources(window_engine PRIVATE
     assets/sky_gaussian/sky_gaussian_compilers.cpp
     assets/sky_gaussian_asset_module.cpp
 
+    lighting/sg_lighting.cpp
+
     assets/renderable/renderable.cpp
     assets/renderable/renderable_compilers.cpp
     assets/renderable_asset_module.cpp
