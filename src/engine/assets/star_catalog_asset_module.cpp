@@ -3,6 +3,7 @@
 #include <engine/assets/star_catalog_asset_module.h>
 
 #include <engine/assets/key_factories/star_catalog_from_json.h>
+#include <engine/assets/key_factories/star_catalog_from_ply.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -45,6 +46,38 @@ namespace wz::engine::assets
         if (!system_.register_asset(std::move(node), { desc.json_key })) {
             logger_.error(
                 "failed to register star catalog from JSON: " + desc.name);
+            return {};
+        }
+
+        out.output = key;
+        return out;
+    }
+
+    StarCatalogAsset StarCatalogAssetModule::create_from_ply(
+        const StarCatalogFromPLYDesc& desc)
+    {
+        StarCatalogAsset out{};
+
+        if (desc.source_file == wz::asset::AssetKey{}) {
+            logger_.error(
+                "star catalog from PLY has empty source file key: " + desc.name);
+            return out;
+        }
+
+        const wz::asset::AssetKey key =
+            make_star_catalog_from_ply_key(desc.source_file, desc.params);
+
+        wz::asset::AssetNode node{};
+        node.key     = key;
+        node.type    = kAssetTypeStarCatalog;
+        node.schema  = kStarCatalogFromPLYSchema;
+        node.stage   = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta    = desc.params;   // typed dials the compiler reads
+
+        if (!system_.register_asset(std::move(node), { desc.source_file })) {
+            logger_.error(
+                "failed to register star catalog from PLY: " + desc.name);
             return {};
         }
 

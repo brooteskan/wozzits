@@ -40,6 +40,17 @@ namespace wz::engine::assets
         wz::asset::AssetKey json_key{};  // from JSONAsset::output
     };
 
+    // Star catalog imported from a baked PLY point cloud (tycho2_prep output).
+    // source_file names a kAssetTypeRawFile (register it via
+    // FileCarrierAssetModule::register_file_node). The creative dials ride the
+    // desc and fold into the asset key, so re-tuning re-imports.
+    struct StarCatalogFromPLYDesc
+    {
+        std::string                            name;
+        wz::asset::AssetKey                    source_file{};
+        wz::engine::starfield::StarImportParams params{};
+    };
+
     class StarCatalogAssetModule
     {
     public:
@@ -49,6 +60,8 @@ namespace wz::engine::assets
             wz::engine::starfield::StarCatalogTable& table);
 
         StarCatalogAsset create_from_json(const StarCatalogFromJSONDesc& desc);
+
+        StarCatalogAsset create_from_ply(const StarCatalogFromPLYDesc& desc);
 
         StarCatalogHandle get_catalog(const StarCatalogAsset& asset) const;
 

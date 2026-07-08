@@ -14,6 +14,7 @@
 
 #include <engine/starfield/star_catalog_compilers.h>
 #include <engine/starfield/star_catalog_serialize.h>
+#include <engine/starfield/star_catalog_ply_importer.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/schema_ids.h>
@@ -24,9 +25,11 @@
 #include <wozzits/rhi/gpu_resource.h>
 #include <wozzits/rhi/gpu_resource_registry.h>
 
+#include <any>
 #include <cstdint>
 #include <span>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace wz::engine::assets::internal
@@ -119,6 +122,32 @@ namespace wz::engine::assets::internal
             }
         }
 
+        // Build the import dials from an authored node ParamBlock (the graph
+        // path). The typed create_from_ply path passes a StarImportParams in
+        // meta directly; this covers a graph-authored StarCatalogFromPLY node.
+        sf::StarImportParams star_import_params_from_block(
+            const wz::asset::ParamBlock& pb)
+        {
+            sf::StarImportParams p;
+            p.reference_magnitude =
+                pb.get<double>("reference_magnitude", p.reference_magnitude);
+            p.exposure = pb.get<double>("exposure", p.exposure);
+            p.color_saturation =
+                pb.get<double>("color_saturation", p.color_saturation);
+            p.magnitude_min = pb.get<double>("magnitude_min", p.magnitude_min);
+            p.magnitude_max = pb.get<double>("magnitude_max", p.magnitude_max);
+            p.magnitude_pivot =
+                pb.get<double>("magnitude_pivot", p.magnitude_pivot);
+            p.magnitude_contrast =
+                pb.get<double>("magnitude_contrast", p.magnitude_contrast);
+            p.warp_amplitude =
+                pb.get<double>("warp_amplitude", p.warp_amplitude);
+            p.warp_frequency =
+                pb.get<double>("warp_frequency", p.warp_frequency);
+            p.solid_angle = pb.get<double>("solid_angle", p.solid_angle);
+            return p;
+        }
+
     } // anonymous namespace
 
     void register_star_catalog_compilers(
@@ -195,6 +224,74 @@ namespace wz::engine::assets::internal
                 wz::asset::ResourceHandle handle = table.add(std::move(catalog));
                 if (!handle.valid()) {
                     logger.error("star catalog: failed to store catalog");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage   = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+            });
+
+        // StarCatalogFromPLY (Seam T-2, #266): import a baked PLY point cloud
+        // (stage-1 tycho2_prep output) with the creative dials into the same
+        // StarCatalogTable + resident buffer as the JSON path. The dials arrive
+        // as a typed StarImportParams in meta (create_from_ply) or an authored
+        // node ParamBlock; the PLY bytes come from the raw-file dep's payload.
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kStarCatalogFromPLYSchema,
+            .output_type  = kAssetTypeStarCatalog,
+            .input_ports = {
+                { "source_file", kAssetTypeRawFile },
+            },
+            .compile = [&logger, &table, gpu_resources, rhi_resource_tracker](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                if (dep_nodes.size() != 1) {
+                    logger.error(
+                        "star catalog PLY: expected exactly one file dependency");
+                    return compile_failed_node(input);
+                }
+                const auto* bytes =
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                if (!bytes || bytes->empty()) {
+                    logger.error(
+                        "star catalog PLY: file dependency has no bytes");
+                    return compile_failed_node(input);
+                }
+
+                sf::StarImportParams params;
+                if (const auto* typed =
+                        std::any_cast<sf::StarImportParams>(&input.meta)) {
+                    params = *typed;
+                } else if (const auto* pb =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta)) {
+                    params = star_import_params_from_block(*pb);
+                }
+
+                const sf::StarCatalogPlyImportResult imported =
+                    sf::import_star_catalog_ply_bytes(
+                        { bytes->data(), bytes->size() }, params);
+                if (!imported.ok) {
+                    logger.error(
+                        "star catalog PLY: import failed: " + imported.error);
+                    return compile_failed_node(input, imported.error);
+                }
+
+                sf::StarCatalog catalog = imported.catalog;
+
+                if (gpu_resources) {
+                    publish_resident_star_catalog(
+                        input.key, catalog, *gpu_resources,
+                        rhi_resource_tracker, logger);
+                }
+
+                wz::asset::ResourceHandle handle = table.add(std::move(catalog));
+                if (!handle.valid()) {
+                    logger.error("star catalog PLY: failed to store catalog");
                     return compile_failed_node(input);
                 }
 

@@ -552,6 +552,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kHDRIEnvironmentSchema, "HDRI environment");
             WZ_ADD_SCHEMA(kSkyGaussianFromJSONSchema, "Sky gaussian from JSON");
             WZ_ADD_SCHEMA(kStarCatalogFromJSONSchema, "Star catalog from JSON");
+            WZ_ADD_SCHEMA(kStarCatalogFromPLYSchema, "Star catalog from PLY");
 
 #undef WZ_ADD_SCHEMA
 

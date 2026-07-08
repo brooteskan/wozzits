@@ -172,6 +172,8 @@ target_sources(window_engine PRIVATE
     starfield/star_catalog.cpp
     starfield/star_catalog_serialize.cpp
     starfield/star_catalog_compilers.cpp
+    starfield/star_catalog_ply_importer.cpp
+    starfield/tycho2.cpp
     assets/star_catalog_asset_module.cpp
 
     assets/renderable/renderable.cpp

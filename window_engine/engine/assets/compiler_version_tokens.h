@@ -129,6 +129,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kHDRIEnvironmentCompilerVersion = 4;
     inline constexpr uint64_t kSkyGaussianFromJSONCompilerVersion = 1;
     inline constexpr uint64_t kStarCatalogFromJSONCompilerVersion = 1;
+    inline constexpr uint64_t kStarCatalogFromPLYCompilerVersion = 1;
     inline constexpr uint64_t kAudioClipCompilerVersion = 1;
     inline constexpr uint64_t kAudioRenderableCompilerVersion = 1;
     inline constexpr uint64_t kAudioClipBankCompilerVersion = 1;

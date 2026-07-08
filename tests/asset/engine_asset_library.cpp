@@ -268,6 +268,7 @@ float4 main(PSIn input) : SV_TARGET
             // key, content_hash empty), same standing as the recipes above.
             { kSkyGaussianFromJSONSchema, kAssetTypeSkyGaussian },
             { kStarCatalogFromJSONSchema, kAssetTypeStarCatalog },
+            { kStarCatalogFromPLYSchema, kAssetTypeStarCatalog },
 
             // Audio family — CPU-resident (no GPU resource); like every recipe
             // above, the module assigns keys via its key_factories/audio_*.h

@@ -134,6 +134,14 @@ namespace wz::engine::starfield
     // neutral (A0, bv = 0).
     wz::math::Vec3 tint_from_bv(double bv, bool has_bv, double color_saturation);
 
+    // Assemble a render-ready star from a unit direction + magnitude/color and
+    // the grade dials (warp, remap, flux, tint). The PLY / Tycho-2 path stores
+    // directions directly, so this is the shared assembly the record path also
+    // delegates to. `dir` need not be normalized.
+    Star star_from_direction(
+        const wz::math::Vec3& dir, double vmag, double bv, bool has_bv,
+        const StarImportParams& params);
+
     // Assemble one render-ready star from a catalog row + grade dials.
     Star star_from_record(const CatalogRecord& record, const StarImportParams& params);
 

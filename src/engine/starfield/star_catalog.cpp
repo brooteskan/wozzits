@@ -159,24 +159,31 @@ namespace wz::engine::starfield
         return normalize_luminance(pushed);
     }
 
-    Star star_from_record(const CatalogRecord& record, const StarImportParams& params)
+    Star star_from_direction(
+        const Vec3& dir, double vmag, double bv, bool has_bv,
+        const StarImportParams& params)
     {
         Star star;
-        const Vec3 base_dir =
-            direction_from_ra_dec(record.ra_hours, record.dec_deg);
-        star.direction = warp_direction(base_dir, params);
+        star.direction = warp_direction(normalize(dir), params);
 
         // Remap the magnitude, then derive both flux and the carried magnitude
         // (which drives sprite size) from the remapped value so the appearance
         // dials stay consistent.
-        const double remapped = remap_magnitude(record.vmag, params);
+        const double remapped = remap_magnitude(vmag, params);
         const float flux = static_cast<float>(flux_from_magnitude(remapped, params));
-        const Vec3 tint = tint_from_bv(record.bv, record.has_bv, params.color_saturation);
+        const Vec3 tint = tint_from_bv(bv, has_bv, params.color_saturation);
         star.radiance = tint * flux;
 
         star.solid_angle = static_cast<float>(params.solid_angle);
         star.magnitude = static_cast<float>(remapped);
         return star;
+    }
+
+    Star star_from_record(const CatalogRecord& record, const StarImportParams& params)
+    {
+        return star_from_direction(
+            direction_from_ra_dec(record.ra_hours, record.dec_deg),
+            record.vmag, record.bv, record.has_bv, params);
     }
 
     std::vector<Star> build_catalog(

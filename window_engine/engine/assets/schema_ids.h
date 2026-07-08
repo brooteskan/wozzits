@@ -728,4 +728,13 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kStarCatalogFromJSONSchema{
         0xF11E'CA55'E7'001004ull
     };
+
+    // Star catalog compiled from a baked PLY point cloud (Seam C-2/T-2, issue
+    // #266 -- the two-stage Tycho-2 path). The stage-1 tycho2_prep tool bakes a
+    // compact binary PLY (per-vertex direction + vmag + bv); this imports it with
+    // the creative dials (authored as node params) and publishes the resident
+    // star buffer. Source dep: one kAssetTypeRawFile. Produces kAssetTypeStarCatalog.
+    inline constexpr wz::asset::SchemaID kStarCatalogFromPLYSchema{
+        0xF11E'CA55'E7'001005ull
+    };
 }

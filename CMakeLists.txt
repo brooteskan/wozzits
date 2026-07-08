@@ -660,6 +660,15 @@ target_link_libraries(wozzits_sky_bake
         window_engine
 )
 
+add_executable(wozzits_tycho2_prep
+    src/tools/tycho2_prep/main.cpp
+)
+
+target_link_libraries(wozzits_tycho2_prep
+    PRIVATE
+        window_engine
+)
+
 add_library(wozzits_abi SHARED
     src/engine/abi/wozzits_abi.cpp
 )
@@ -863,6 +872,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset gaussian_splat_cloud_rhi_residency_test)
     rs_add_test_group(asset sky_gaussian_rhi_residency_test)
     rs_add_test_group(asset star_catalog_rhi_residency_test)
+    rs_add_test_group(asset star_catalog_ply_residency_test)
     rs_add_test_group(asset scalar_field_set_tests)
     rs_add_test_group(asset foundational_assets)
     rs_add_test_group(asset key_utils)
@@ -1033,6 +1043,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     rs_add_test_group(lighting test_sg_lighting)
     rs_add_test_group(starfield test_star_catalog)
+    rs_add_test_group(starfield test_tycho2)
 
     # Graph
     rs_add_test_group(graph static_dag_tests_0)
