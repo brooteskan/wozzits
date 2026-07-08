@@ -186,6 +186,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     DirectLightTable direct_light_table;
     AmbientLightingTable ambient_lighting_table;
     HDRIEnvironmentTable hdri_environment_table;
+    SkyGaussianTable sky_gaussian_table;
     SceneAssetTable scene_table;
     EngineAssetCacheSettings cache_settings{};
 
@@ -308,6 +309,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         .direct_light_table = direct_light_table,
         .ambient_lighting_table = ambient_lighting_table,
         .hdri_environment_table = hdri_environment_table,
+        .sky_gaussian_table = sky_gaussian_table,
         .scene_table = scene_table,
         .cache_settings = cache_settings,
     };
@@ -558,6 +560,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
     DirectLightTable direct_light_table;
     AmbientLightingTable ambient_lighting_table;
     HDRIEnvironmentTable hdri_environment_table;
+    SkyGaussianTable sky_gaussian_table;
     SceneAssetTable scene_table;
     EngineAssetCacheSettings cache_settings{};
 
@@ -674,6 +677,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
         .direct_light_table = direct_light_table,
         .ambient_lighting_table = ambient_lighting_table,
         .hdri_environment_table = hdri_environment_table,
+        .sky_gaussian_table = sky_gaussian_table,
         .scene_table = scene_table,
         .cache_settings = cache_settings,
     };
