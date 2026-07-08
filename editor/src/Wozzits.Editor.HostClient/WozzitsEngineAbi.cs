@@ -385,6 +385,18 @@ internal static partial class WozzitsEngineAbi
         string nodeIdUtf8,
         string newParentIdUtf8);
 
+    // Move nodeId to just BEFORE beforeNodeId in the flat draw list (empty
+    // before-id => move to the end / drawn last). Draw order only; nesting stays
+    // parent_id-based. New export, no struct change => WZ_ABI_VERSION unchanged.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_reorder_node",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeReorderNode(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        string beforeNodeIdUtf8);
+
     [LibraryImport(
         LibraryName,
         EntryPoint = "wz_host_runtime_remove_node",

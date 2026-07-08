@@ -254,6 +254,15 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.RemoveNode(runtime.Handle, nodeId);
     }
 
+    public EngineMutationResponse ReorderNode(string nodeId, string beforeNodeId)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.ReorderNode(runtime.Handle, nodeId, beforeNodeId);
+    }
+
     public EngineMutationResponse SaveScene()
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)

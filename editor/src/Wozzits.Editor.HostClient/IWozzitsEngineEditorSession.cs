@@ -91,6 +91,13 @@ public interface IWozzitsEngineEditorSession
     // scene; no-op when no viewport is running. The engine re-validates.
     EngineMutationResponse ReparentNode(string nodeId, string newParentId);
 
+    // Move nodeId to just before beforeNodeId in the flat DRAW order (empty
+    // before-id => move to the end / drawn last). Draw order only — nesting is
+    // parent_id-based and untouched; no-op when no viewport is running. The
+    // engine re-applies the render_order layer sort, so a reorder is within a
+    // layer.
+    EngineMutationResponse ReorderNode(string nodeId, string beforeNodeId);
+
     // Remove a node and its subtree from the running scene; no-op when no
     // viewport is running.
     EngineMutationResponse RemoveNode(string nodeId);

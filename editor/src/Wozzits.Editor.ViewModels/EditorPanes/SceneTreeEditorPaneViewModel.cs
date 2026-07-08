@@ -348,6 +348,94 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         SelectNode(node);
     }
 
+    // Whether `node` can move earlier / later in DRAW order among its same-parent
+    // siblings (false at the ends of its sibling group). Drives the context
+    // menu's enabled state.
+    public bool CanMoveUp(SceneTreeNodeViewModel node)
+    {
+        var siblings = SiblingsOf(node);
+        return siblings is not null && siblings.IndexOf(node) > 0;
+    }
+
+    public bool CanMoveDown(SceneTreeNodeViewModel node)
+    {
+        var siblings = SiblingsOf(node);
+        if (siblings is null)
+        {
+            return false;
+        }
+        var index = siblings.IndexOf(node);
+        return index >= 0 && index < siblings.Count - 1;
+    }
+
+    // Move `node` one slot earlier (up) / later (down) in DRAW order among its
+    // same-parent siblings, via the engine reorder verb, then mirror the move in
+    // the tree. Draw order only — nesting/transforms are parent_id-based and
+    // untouched. No-op at the corresponding end of the sibling group.
+    public void MoveUp(SceneTreeNodeViewModel node) => MoveWithinSiblings(node, -1);
+
+    public void MoveDown(SceneTreeNodeViewModel node) => MoveWithinSiblings(node, +1);
+
+    private void MoveWithinSiblings(SceneTreeNodeViewModel node, int delta)
+    {
+        if (_editorSession is null || node is null)
+        {
+            return;
+        }
+        if (!RequireRuntime(delta < 0 ? "Move up" : "Move down"))
+        {
+            return;
+        }
+
+        var siblings = SiblingsOf(node);
+        if (siblings is null)
+        {
+            return;
+        }
+        var index = siblings.IndexOf(node);
+        var target = index + delta;
+        if (index < 0 || target < 0 || target >= siblings.Count)
+        {
+            return;  // already at that end of its sibling group
+        }
+
+        // The engine reorder places `node` just BEFORE `beforeId` in the flat
+        // draw list. Move up => before the previous sibling. Move down => before
+        // the sibling AFTER the next one (empty => move to the end / drawn last),
+        // so `node` lands just past its next sibling.
+        var beforeId = delta < 0
+            ? siblings[index - 1].Id
+            : (target + 1 < siblings.Count ? siblings[target + 1].Id : string.Empty);
+
+        var response = _editorSession.ReorderNode(node.Id, beforeId);
+        if (!response.Ok)
+        {
+            EmptyState = response.Error;
+            OnPropertyChanged(nameof(EmptyState));
+            return;
+        }
+
+        siblings.Move(index, target);
+        SelectNode(node);
+    }
+
+    // The observable collection holding `node`'s siblings in draw order: the
+    // top-level Nodes when it has no parent, else its parent's Children. Null if
+    // the parent is not in the tree (defensive).
+    private ObservableCollection<SceneTreeNodeViewModel>? SiblingsOf(
+        SceneTreeNodeViewModel node)
+    {
+        if (node is null)
+        {
+            return null;
+        }
+        if (string.IsNullOrEmpty(node.ParentId))
+        {
+            return Nodes;
+        }
+        return FindNodeById(node.ParentId)?.Children;
+    }
+
     // Delete `node` (and its subtree) via the engine, then drop it from the tree.
     public void Remove(SceneTreeNodeViewModel node)
     {

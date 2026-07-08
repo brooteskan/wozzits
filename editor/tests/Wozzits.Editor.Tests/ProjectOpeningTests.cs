@@ -2519,6 +2519,85 @@ public sealed partial class ProjectOpeningTests
     }
 
     [Fact]
+    public void SceneTreeMoveUpDownReordersSiblingsViaEngine()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(TopLevelScene("a", "b", "c"));
+
+        // Move 'a' down past 'b': the engine reorder places it just before 'c'
+        // (the sibling after 'b'); the tree becomes b, a, c.
+        sceneTree.MoveDown(sceneTree.Nodes[0]);
+        Assert.Equal(("a", "c"), Assert.Single(session.Reorders));
+        Assert.Equal("b", sceneTree.Nodes[0].Id);
+        Assert.Equal("a", sceneTree.Nodes[1].Id);
+        Assert.Equal("c", sceneTree.Nodes[2].Id);
+
+        // Move 'c' up one: before its new predecessor 'a'; tree becomes b, c, a.
+        sceneTree.MoveUp(sceneTree.Nodes[2]);
+        Assert.Equal(("c", "a"), session.Reorders[1]);
+        Assert.Equal("b", sceneTree.Nodes[0].Id);
+        Assert.Equal("c", sceneTree.Nodes[1].Id);
+        Assert.Equal("a", sceneTree.Nodes[2].Id);
+    }
+
+    [Fact]
+    public void SceneTreeMoveDownToEndUsesEmptyBeforeAndBoundariesAreNoOps()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(TopLevelScene("a", "b"));
+
+        var a = sceneTree.Nodes[0];
+        var b = sceneTree.Nodes[1];
+        Assert.True(sceneTree.CanMoveDown(a));
+        Assert.False(sceneTree.CanMoveUp(a));   // first: cannot move up
+        Assert.True(sceneTree.CanMoveUp(b));
+        Assert.False(sceneTree.CanMoveDown(b)); // last: cannot move down
+
+        // Moving 'a' down past the last sibling => move to the end (empty before).
+        sceneTree.MoveDown(a);
+        Assert.Equal(("a", string.Empty), Assert.Single(session.Reorders));
+        Assert.Equal("b", sceneTree.Nodes[0].Id);
+        Assert.Equal("a", sceneTree.Nodes[1].Id);
+
+        // Moving the now-first node up is a no-op at the boundary: no engine call.
+        sceneTree.MoveUp(sceneTree.Nodes[0]);
+        Assert.Single(session.Reorders);
+    }
+
+    [Fact]
+    public void SceneTreeReorderIsSkippedAndLoggedWhenViewportNotRunning()
+    {
+        var logs = new List<string>();
+        var session = new RecordingEditorSession { RuntimeRunning = false };
+        var sceneTree = new SceneTreeEditorPaneViewModel(session, log: logs.Add);
+        sceneTree.LoadSnapshot(TopLevelScene("a", "b"));
+
+        sceneTree.MoveDown(sceneTree.Nodes[0]);
+
+        Assert.Empty(session.Reorders);
+        Assert.Equal("a", sceneTree.Nodes[0].Id);  // tree untouched
+        Assert.Contains(logs, line => line.Contains("requires the running viewport"));
+    }
+
+    // A flat scene of top-level nodes (draw order = this order), for the reorder
+    // tests.
+    private static EngineSceneSnapshotResponse TopLevelScene(params string[] ids)
+    {
+        return new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots = ids
+                    .Select(id => new EngineSceneNode { Id = id, Kind = "node" })
+                    .ToList(),
+            },
+        };
+    }
+
+    [Fact]
     public void SceneTreeRemoveDropsNodeAndClearsSelection()
     {
         var session = new RecordingEditorSession();
@@ -3385,6 +3464,8 @@ public sealed partial class ProjectOpeningTests
 
         public List<(string NodeId, string NewParentId)> Reparents { get; } = [];
 
+        public List<(string NodeId, string BeforeNodeId)> Reorders { get; } = [];
+
         public List<CameraEdit> Cameras { get; } = [];
 
         public EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot()
@@ -3861,6 +3942,12 @@ public sealed partial class ProjectOpeningTests
         public EngineMutationResponse ReparentNode(string nodeId, string newParentId)
         {
             Reparents.Add((nodeId, newParentId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse ReorderNode(string nodeId, string beforeNodeId)
+        {
+            Reorders.Add((nodeId, beforeNodeId));
             return new EngineMutationResponse { Ok = true };
         }
 

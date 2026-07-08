@@ -63,9 +63,36 @@ public partial class SceneTreeEditorPaneView : UserControl
         }
 
         var canEdit = sceneTree.CanEditScene;
+        var node = menu.DataContext as SceneTreeNodeViewModel;
         foreach (var item in menu.Items.OfType<MenuItem>())
         {
-            item.IsEnabled = canEdit;
+            // The reorder items additionally grey out at the ends of the node's
+            // sibling group (nothing to move past); everything else is gated only
+            // by whether the viewport is running.
+            item.IsEnabled = (item.Tag as string) switch
+            {
+                "reorder-up" => canEdit && node is not null && sceneTree.CanMoveUp(node),
+                "reorder-down" => canEdit && node is not null && sceneTree.CanMoveDown(node),
+                _ => canEdit,
+            };
+        }
+    }
+
+    private void MoveUpClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: SceneTreeNodeViewModel node } &&
+            DataContext is SceneTreeEditorPaneViewModel sceneTree)
+        {
+            sceneTree.MoveUp(node);
+        }
+    }
+
+    private void MoveDownClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { DataContext: SceneTreeNodeViewModel node } &&
+            DataContext is SceneTreeEditorPaneViewModel sceneTree)
+        {
+            sceneTree.MoveDown(node);
         }
     }
 

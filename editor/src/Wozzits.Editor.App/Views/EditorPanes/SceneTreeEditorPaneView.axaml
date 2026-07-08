@@ -29,6 +29,15 @@
                                     <ContextMenu Opening="SceneNodeContextMenuOpening">
                                         <MenuItem Header="Add Child"
                                                   Click="AddChildClicked"/>
+                                        <!-- Draw-order (flat array) reorder among
+                                             same-parent siblings; Tag lets the
+                                             Opening handler gate them at the ends. -->
+                                        <MenuItem Header="Move Up (draw earlier)"
+                                                  Tag="reorder-up"
+                                                  Click="MoveUpClicked"/>
+                                        <MenuItem Header="Move Down (draw later)"
+                                                  Tag="reorder-down"
+                                                  Click="MoveDownClicked"/>
                                         <MenuItem Header="Export subtree as scene…"
                                                   Click="ExportSubtreeClicked"/>
                                         <MenuItem Header="Delete"
