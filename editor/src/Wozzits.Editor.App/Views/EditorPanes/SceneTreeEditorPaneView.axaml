@@ -58,6 +58,24 @@
                         </TreeDataTemplate>
                     </TreeView.DataTemplates>
                 </TreeView>
+
+                <!-- Drag-drop drop indicator, overlaid on the tree (hit-invisible
+                     so it never blocks a drop): an insertion line for a between-
+                     rows reorder, or an outline around a row for an onto-node
+                     reparent. Positioned + shown from the drag handlers. -->
+                <Canvas x:Name="DropIndicatorCanvas"
+                        Grid.Row="1"
+                        IsHitTestVisible="False">
+                    <Border x:Name="DropIntoHighlight"
+                            IsVisible="False"
+                            BorderBrush="#3B82F6"
+                            BorderThickness="2"
+                            CornerRadius="3"/>
+                    <Border x:Name="DropInsertionLine"
+                            IsVisible="False"
+                            Height="2"
+                            Background="#3B82F6"/>
+                </Canvas>
             </Grid>
         </Border>
     </Grid>

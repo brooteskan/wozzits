@@ -5,6 +5,16 @@ using System.IO;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 
+// Where a scene-tree drag released relative to the target row: onto it (reparent
+// as a child), or between rows above/below it (reorder to that draw-order slot,
+// as a sibling of the target).
+public enum SceneTreeDropPosition
+{
+    Into,
+    Before,
+    After,
+}
+
 public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
 {
     // Default subfolder under the project root where exported scenelets land.
@@ -434,6 +444,109 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
             return Nodes;
         }
         return FindNodeById(node.ParentId)?.Children;
+    }
+
+    // Apply a scene-tree drag-drop. `position` (from where the pointer released on
+    // the `target` row) selects the intent:
+    //   Into           => reparent `dragged` as a child of `target` (top level
+    //                     when target is null / dropped on empty space).
+    //   Before / After => place `dragged` as a sibling of `target` at that
+    //                     draw-order slot, reparenting to target's parent first
+    //                     if it currently sits elsewhere.
+    // Draw order is the flat array; nesting is parent_id — a between-drop can move
+    // both (reparent to the level, then reorder into the slot). Rejects dropping a
+    // node into its own subtree.
+    public void DropNode(
+        SceneTreeNodeViewModel dragged,
+        SceneTreeNodeViewModel? target,
+        SceneTreeDropPosition position)
+    {
+        if (_editorSession is null || dragged is null)
+        {
+            return;
+        }
+        if (!RequireRuntime("Move"))
+        {
+            return;
+        }
+
+        // Onto a node (or empty space) is a pure reparent — the existing verb
+        // handles the engine call, tree move, and selection.
+        if (position == SceneTreeDropPosition.Into || target is null)
+        {
+            Reparent(dragged, target);
+            return;
+        }
+        if (ReferenceEquals(dragged, target))
+        {
+            return;
+        }
+
+        // The sibling group `dragged` is joining: target's parent (null => top).
+        var newParent = string.IsNullOrEmpty(target.ParentId)
+            ? null
+            : FindNodeById(target.ParentId);
+        // Reject a drop that would nest a node under itself/its own descendant.
+        if (newParent is not null && dragged.IsSelfOrDescendant(newParent))
+        {
+            return;
+        }
+
+        var siblings = newParent is null ? Nodes : newParent.Children;
+
+        // The node that must end up right AFTER dragged (its reorder anchor),
+        // computed excluding dragged itself: Before => target; After => the
+        // sibling following target (empty => end of the draw list / drawn last).
+        var beforeId = target.Id;
+        if (position == SceneTreeDropPosition.After)
+        {
+            beforeId = string.Empty;
+            var targetIndex = siblings.IndexOf(target);
+            for (var i = targetIndex + 1; i < siblings.Count; i++)
+            {
+                if (!ReferenceEquals(siblings[i], dragged))
+                {
+                    beforeId = siblings[i].Id;
+                    break;
+                }
+            }
+        }
+
+        // Engine: reparent to the new level if it changed, then reorder into slot.
+        var newParentId = newParent?.Id ?? string.Empty;
+        if ((dragged.ParentId ?? string.Empty) != newParentId)
+        {
+            var reparented = _editorSession.ReparentNode(dragged.Id, newParentId);
+            if (!reparented.Ok)
+            {
+                EmptyState = reparented.Error;
+                OnPropertyChanged(nameof(EmptyState));
+                return;
+            }
+        }
+        var reordered = _editorSession.ReorderNode(dragged.Id, beforeId);
+        if (!reordered.Ok)
+        {
+            EmptyState = reordered.Error;
+            OnPropertyChanged(nameof(EmptyState));
+            return;
+        }
+
+        // Mirror in the tree: pull dragged out, then insert relative to target's
+        // (post-removal) index under the new parent, and keep it selected.
+        RemoveFromTree(dragged);
+        var insertIndex = siblings.IndexOf(target);
+        if (insertIndex < 0)
+        {
+            insertIndex = siblings.Count;  // defensive: target vanished
+        }
+        else if (position == SceneTreeDropPosition.After)
+        {
+            insertIndex += 1;
+        }
+        siblings.Insert(insertIndex, dragged);
+        dragged.ParentId = newParent?.Id;
+        SelectNode(dragged);
     }
 
     // Delete `node` (and its subtree) via the engine, then drop it from the tree.

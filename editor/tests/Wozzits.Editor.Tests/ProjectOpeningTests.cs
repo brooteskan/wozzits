@@ -2598,6 +2598,152 @@ public sealed partial class ProjectOpeningTests
     }
 
     [Fact]
+    public void SceneTreeDropBetweenSiblingsReordersWithoutReparent()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(TopLevelScene("a", "b", "c"));
+
+        // Drop 'a' AFTER 'b' (same level): reorder before 'c'; no reparent.
+        sceneTree.DropNode(
+            sceneTree.Nodes[0], sceneTree.Nodes[1], SceneTreeDropPosition.After);
+        Assert.Empty(session.Reparents);
+        Assert.Equal(("a", "c"), Assert.Single(session.Reorders));
+        Assert.Equal("b", sceneTree.Nodes[0].Id);
+        Assert.Equal("a", sceneTree.Nodes[1].Id);
+        Assert.Equal("c", sceneTree.Nodes[2].Id);
+    }
+
+    [Fact]
+    public void SceneTreeDropBeforeFirstMovesToFrontAndAfterLastToEnd()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(TopLevelScene("a", "b", "c"));
+
+        // Before the first sibling => reorder before it (drawn first).
+        sceneTree.DropNode(
+            sceneTree.Nodes[2], sceneTree.Nodes[0], SceneTreeDropPosition.Before);
+        Assert.Equal(("c", "a"), Assert.Single(session.Reorders));
+        Assert.Equal("c", sceneTree.Nodes[0].Id);
+
+        // After the last sibling => empty before-id (drawn last).
+        sceneTree.DropNode(
+            sceneTree.Nodes[0], sceneTree.Nodes[2], SceneTreeDropPosition.After);
+        Assert.Equal(("c", string.Empty), session.Reorders[1]);
+        Assert.Equal("c", sceneTree.Nodes[2].Id);  // c now drawn last
+    }
+
+    [Fact]
+    public void SceneTreeDropIntoNodeReparentsWithoutReorder()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(TopLevelScene("a", "b"));
+
+        var b = sceneTree.Nodes.Single(n => n.Id == "b");
+        sceneTree.DropNode(sceneTree.Nodes[0], b, SceneTreeDropPosition.Into);
+
+        Assert.Equal(("a", "b"), Assert.Single(session.Reparents));
+        Assert.Empty(session.Reorders);
+        Assert.Same(b, Assert.Single(sceneTree.Nodes));  // only b at top level
+        Assert.Equal("a", Assert.Single(b.Children).Id);
+    }
+
+    [Fact]
+    public void SceneTreeDropBetweenAcrossParentsReparentsThenReorders()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode { Id = "x", Kind = "node" },
+                    new EngineSceneNode
+                    {
+                        Id = "p",
+                        Kind = "node",
+                        Children =
+                        [
+                            new EngineSceneNode { Id = "b", ParentId = "p", Kind = "node" },
+                            new EngineSceneNode { Id = "c", ParentId = "p", Kind = "node" },
+                        ],
+                    },
+                ],
+            },
+        });
+
+        var x = sceneTree.Nodes.Single(n => n.Id == "x");
+        var p = sceneTree.Nodes.Single(n => n.Id == "p");
+        var b = p.Children.Single(n => n.Id == "b");
+
+        // Drop 'x' BEFORE 'b' (a child of 'p'): reparent x under p, reorder before b.
+        sceneTree.DropNode(x, b, SceneTreeDropPosition.Before);
+
+        Assert.Equal(("x", "p"), Assert.Single(session.Reparents));
+        Assert.Equal(("x", "b"), Assert.Single(session.Reorders));
+        Assert.DoesNotContain(sceneTree.Nodes, n => n.Id == "x");  // left top level
+        Assert.Equal("x", p.Children[0].Id);                        // before b
+        Assert.Equal("b", p.Children[1].Id);
+        Assert.Equal("c", p.Children[2].Id);
+        Assert.Equal("p", x.ParentId);
+    }
+
+    [Fact]
+    public void SceneTreeDropBetweenRejectsDropIntoOwnSubtree()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode
+                    {
+                        Id = "p",
+                        Kind = "node",
+                        Children =
+                        [
+                            new EngineSceneNode { Id = "c", ParentId = "p", Kind = "node" },
+                        ],
+                    },
+                ],
+            },
+        });
+        var p = Assert.Single(sceneTree.Nodes);
+        var c = Assert.Single(p.Children);
+
+        // Dropping 'p' beside its own child 'c' would nest p under itself => reject.
+        sceneTree.DropNode(p, c, SceneTreeDropPosition.Before);
+        Assert.Empty(session.Reparents);
+        Assert.Empty(session.Reorders);
+        Assert.Same(p, Assert.Single(sceneTree.Nodes));
+    }
+
+    [Fact]
+    public void SceneTreeDropIsSkippedWhenViewportNotRunning()
+    {
+        var logs = new List<string>();
+        var session = new RecordingEditorSession { RuntimeRunning = false };
+        var sceneTree = new SceneTreeEditorPaneViewModel(session, log: logs.Add);
+        sceneTree.LoadSnapshot(TopLevelScene("a", "b"));
+
+        sceneTree.DropNode(
+            sceneTree.Nodes[0], sceneTree.Nodes[1], SceneTreeDropPosition.After);
+
+        Assert.Empty(session.Reorders);
+        Assert.Empty(session.Reparents);
+        Assert.Contains(logs, line => line.Contains("requires the running viewport"));
+    }
+
+    [Fact]
     public void SceneTreeRemoveDropsNodeAndClearsSelection()
     {
         var session = new RecordingEditorSession();

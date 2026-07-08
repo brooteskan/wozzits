@@ -36,6 +36,7 @@ public partial class SceneTreeEditorPaneView : UserControl
             handledEventsToo: true);
         AddHandler(DragDrop.DragOverEvent, TreeDragOver);
         AddHandler(DragDrop.DropEvent, TreeDrop);
+        AddHandler(DragDrop.DragLeaveEvent, TreeDragLeave);
     }
 
     private void SceneTreeSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -223,34 +224,119 @@ public partial class SceneTreeEditorPaneView : UserControl
 
     private void TreeDragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = e.DataTransfer.Contains(SceneTreeDrag.NodeFormat)
-            ? DragDropEffects.Move
-            : DragDropEffects.None;
         e.Handled = true;
+        if (!e.DataTransfer.Contains(SceneTreeDrag.NodeFormat))
+        {
+            e.DragEffects = DragDropEffects.None;
+            HideDropIndicator();
+            return;
+        }
+
+        e.DragEffects = DragDropEffects.Move;
+        var (row, _, position) = ResolveDrop(e);
+        if (row is null)
+        {
+            HideDropIndicator();  // empty space => reparent to top level, no marker
+            return;
+        }
+        UpdateDropIndicator(row, position);
     }
 
     private void TreeDrop(object? sender, DragEventArgs e)
     {
+        HideDropIndicator();
         if (DataContext is not SceneTreeEditorPaneViewModel sceneTree
             || e.DataTransfer.TryGetValue(SceneTreeDrag.NodeFormat) is not { } dragged)
         {
             return;
         }
 
-        // Drop target is the node under the pointer, or null (top level) when the
-        // drop lands on empty tree space.
-        sceneTree.Reparent(dragged, FindNode(e.Source));
+        // Onto a row => reparent under that node; between rows => reorder to that
+        // draw slot. Empty space (no row) => reparent to the top level.
+        var (_, target, position) = ResolveDrop(e);
+        sceneTree.DropNode(dragged, target, position);
         e.Handled = true;
     }
 
-    private static SceneTreeNodeViewModel? FindNode(object? source)
+    private void TreeDragLeave(object? sender, DragEventArgs e)
+    {
+        HideDropIndicator();
+    }
+
+    // Resolve the drop under the pointer: the target row control, its node, and
+    // whether the pointer is in the row's top band (Before), bottom band (After),
+    // or middle (Into). No row (dropped on empty tree space) => (null, null, Into),
+    // which the drop treats as "reparent to top level".
+    private (Control? Row, SceneTreeNodeViewModel? Node, SceneTreeDropPosition Position)
+        ResolveDrop(DragEventArgs e)
+    {
+        var row = FindRow(e.Source);
+        if (row is null || row.DataContext is not SceneTreeNodeViewModel node)
+        {
+            return (null, null, SceneTreeDropPosition.Into);
+        }
+
+        var height = row.Bounds.Height;
+        var y = e.GetPosition(row).Y;
+        // Generous middle band so onto-node (reparent) stays easy to hit; the
+        // top/bottom ~30% are the between-rows (reorder) zones.
+        var position = height <= 0.0
+            ? SceneTreeDropPosition.Into
+            : y < height * 0.3
+                ? SceneTreeDropPosition.Before
+                : y > height * 0.7
+                    ? SceneTreeDropPosition.After
+                    : SceneTreeDropPosition.Into;
+        return (row, node, position);
+    }
+
+    private void UpdateDropIndicator(Control row, SceneTreeDropPosition position)
+    {
+        if (row.TranslatePoint(new Point(0, 0), DropIndicatorCanvas) is not { } topLeft)
+        {
+            HideDropIndicator();
+            return;
+        }
+
+        if (position == SceneTreeDropPosition.Into)
+        {
+            DropInsertionLine.IsVisible = false;
+            Canvas.SetLeft(DropIntoHighlight, topLeft.X);
+            Canvas.SetTop(DropIntoHighlight, topLeft.Y);
+            DropIntoHighlight.Width = row.Bounds.Width;
+            DropIntoHighlight.Height = row.Bounds.Height;
+            DropIntoHighlight.IsVisible = true;
+            return;
+        }
+
+        DropIntoHighlight.IsVisible = false;
+        var lineY = position == SceneTreeDropPosition.Before
+            ? topLeft.Y
+            : topLeft.Y + row.Bounds.Height;
+        Canvas.SetLeft(DropInsertionLine, 0);
+        Canvas.SetTop(DropInsertionLine, lineY - 1.0);  // centre the 2px line
+        DropInsertionLine.Width = DropIndicatorCanvas.Bounds.Width;
+        DropInsertionLine.IsVisible = true;
+    }
+
+    private void HideDropIndicator()
+    {
+        DropInsertionLine.IsVisible = false;
+        DropIntoHighlight.IsVisible = false;
+    }
+
+    // The row content control (the template-root StackPanel carrying the node as
+    // its DataContext) at or above `source`; null when the pointer is not over a
+    // row. Walks the logical tree like the old FindNode, but returns the row
+    // element (for its bounds) rather than just the node.
+    private static Control? FindRow(object? source)
     {
         var current = source as StyledElement;
         while (current is not null)
         {
-            if (current.DataContext is SceneTreeNodeViewModel node)
+            if (current is StackPanel { DataContext: SceneTreeNodeViewModel } row)
             {
-                return node;
+                return row;
             }
             current = current.Parent;
         }
