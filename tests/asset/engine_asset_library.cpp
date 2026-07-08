@@ -218,6 +218,7 @@ float4 main(PSIn input) : SV_TARGET
                 kGaussianSplatCloudRhiRenderableSchema,
                 kAssetTypeRenderable,
             },
+            { kStarFieldRhiRenderableSchema, kAssetTypeRenderable },
             // Custom renderable (#228/#229): the module's typed create API
             // keys via make_custom_renderable_key, but graph-authored nodes
             // still materialize through the generic draft key path — same

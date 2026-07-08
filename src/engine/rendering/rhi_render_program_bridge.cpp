@@ -118,6 +118,7 @@ namespace wz::engine::rendering
             switch (b) {
             case ea::BlendMode::Opaque:     return wz::rhi::BlendMode::Opaque;
             case ea::BlendMode::AlphaBlend: return wz::rhi::BlendMode::AlphaBlend;
+            case ea::BlendMode::Additive:   return wz::rhi::BlendMode::Additive;
             }
             return wz::rhi::BlendMode::Opaque;
         }

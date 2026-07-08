@@ -323,6 +323,60 @@ namespace wz::engine::assets
         return RenderableAsset{ .output = key };
     }
 
+    RenderableAsset
+    RenderableAssetModule::create_star_field_rhi(
+        const StarFieldRhiRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("star field RHI renderable has empty name");
+            return {};
+        }
+
+        if (!desc.star_catalog.valid()) {
+            logger_.error(
+                "star field RHI renderable has invalid star catalog: "
+                + desc.name);
+            return {};
+        }
+
+        if (!desc.program.valid()) {
+            logger_.error(
+                "star field RHI renderable has invalid render program: "
+                + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_star_field_rhi_renderable_key(
+                desc.name,
+                desc.star_catalog.output,
+                desc.program.key,
+                desc.settings);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kStarFieldRhiRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = StarFieldRhiRenderableCompileDesc{
+            .star_catalog_asset = desc.star_catalog.output,
+            .render_program_asset = desc.program.key,
+            .settings = desc.settings,
+        };
+
+        // Dependency order must match the compiler's input ports:
+        // star catalog, render program.
+        (void)system_.register_asset(
+            std::move(node),
+            {
+                desc.star_catalog.output,
+                desc.program.key,
+            });
+
+        return RenderableAsset{ .output = key };
+    }
+
     RenderableAsset RenderableAssetModule::create_custom_renderable(
         const CustomRenderableDesc& desc)
     {
@@ -389,6 +443,7 @@ namespace wz::engine::assets
             return schema == kRhiPullMeshRenderableSchema
                 || schema == kGpuSparseMeshRenderableSchema
                 || schema == kGaussianSplatCloudRhiRenderableSchema
+                || schema == kStarFieldRhiRenderableSchema
                 || schema == kCustomRenderableSchema;
         }
     }

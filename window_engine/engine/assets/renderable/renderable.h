@@ -191,6 +191,15 @@ namespace wz::engine::assets
         float splat_size = 1.0f;
     };
 
+    // Per-recipe render dials for a star field (issue #266). The star VS
+    // billboards a small camera-facing quad per resident star; star_size scales
+    // its base angular footprint (packed into camera_and_diameter.w, the same
+    // slot the splat cloud uses for sphere diameter).
+    struct StarFieldRenderSettings
+    {
+        float star_size = 1.0f;
+    };
+
     // The SHADING constants baked from an (optional) MeshRenderStyle dependency
     // into an rhi mesh renderable recipe (issue #195 slice A). This is the
     // absorbed subset of MeshRenderStyleData that the RHI pull-mesh path flows to
@@ -272,6 +281,14 @@ namespace wz::engine::assets
         wz::asset::AssetKey gaussian_splat_cloud_key{};
         GaussianSplatCloudRenderSettings splat{};
 
+        // Optional star-field source (issue #266). Like the splat cloud, the
+        // renderable has no pull mesh: the renderer binds the resident star point
+        // StructuredBuffer (rhi_asset_identity(key, "star_catalog")) into the
+        // object SRG at the StarCatalog semantic and records a non-indexed draw of
+        // 6 * star_count vertices (camera-facing billboards).
+        wz::asset::AssetKey star_catalog_key{};
+        StarFieldRenderSettings star{};
+
         // Optional baked mesh-render-style shading (issue #195 slice A). Only the
         // CPU pull-mesh path (mesh_key) consumes it: when style.has_style is set
         // AND the recipe's program declares the "mesh_style" root constant
@@ -303,7 +320,8 @@ namespace wz::engine::assets
             const bool has_geometry =
                 !(mesh_key == wz::asset::AssetKey{})
                 || !(gpu_sparse_mesh_key == wz::asset::AssetKey{})
-                || !(gaussian_splat_cloud_key == wz::asset::AssetKey{});
+                || !(gaussian_splat_cloud_key == wz::asset::AssetKey{})
+                || !(star_catalog_key == wz::asset::AssetKey{});
             return has_geometry
                 && !(program_key == wz::asset::AssetKey{});
         }
@@ -387,6 +405,17 @@ namespace wz::engine::assets
         wz::asset::AssetKey render_program_asset{};
         // Per-cloud render settings (splat size).
         GaussianSplatCloudRenderSettings settings{};
+    };
+
+    struct StarFieldRhiRenderableCompileDesc
+    {
+        // Star catalog (kAssetTypeStarCatalog), resident as a decoded point
+        // StructuredBuffer under "star_catalog" (#266).
+        wz::asset::AssetKey star_catalog_asset{};
+        // Render program (kAssetTypeRenderProgram, SplatPull binding model).
+        wz::asset::AssetKey render_program_asset{};
+        // Per-field render settings (star size).
+        StarFieldRenderSettings settings{};
     };
 
     // Typed compile desc for the custom renderable recipe (issue #228, schema

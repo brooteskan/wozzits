@@ -11,6 +11,7 @@
 #include <engine/assets/gpu_sparse_mesh_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
+#include <engine/assets/star_catalog_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/placement_asset_module.h>
 #include <engine/assets/terrain_asset_module.h>
@@ -90,6 +91,16 @@ namespace wz::engine::assets
         GaussianSplatCloudRenderSettings settings{};
     };
 
+    struct StarFieldRhiRenderableDesc
+    {
+        std::string name;
+        // Star catalog, resident as a decoded point StructuredBuffer (#266).
+        StarCatalogAsset star_catalog{};
+        // SplatPull render program.
+        RenderProgramAsset program{};
+        StarFieldRenderSettings settings{};
+    };
+
     // Custom renderable (issue #229): the programmatic form of a 0x70A node.
     // Bindings/constants are AUTHORED rows validated at compile against the
     // program's layout (#228); rows pass through even half-authored so the
@@ -150,6 +161,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_gaussian_splat_cloud_rhi(
             const GaussianSplatCloudRhiRenderableDesc& desc);
+
+        RenderableAsset create_star_field_rhi(
+            const StarFieldRhiRenderableDesc& desc);
 
         RenderableAsset create_custom_renderable(
             const CustomRenderableDesc& desc);

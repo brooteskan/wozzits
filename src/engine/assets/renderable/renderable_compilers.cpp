@@ -179,6 +179,28 @@ namespace wz::engine::assets::internal
             return s;
         }
 
+        StarFieldRhiRenderableCompileDesc
+        star_field_rhi_renderable_desc_from_deps(
+            std::span<const wz::asset::AssetNode> dep_nodes)
+        {
+            // Dependency order matches the create API + compiler input ports:
+            // star catalog, render program. The star size arrives via a
+            // ParamBlock (editor/JSON) or the typed compile desc (create API).
+            StarFieldRhiRenderableCompileDesc desc{};
+            desc.star_catalog_asset = dep_key(dep_nodes, 0);
+            desc.render_program_asset = dep_key(dep_nodes, 1);
+            return desc;
+        }
+
+        StarFieldRenderSettings
+        star_field_render_settings_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            StarFieldRenderSettings s{};
+            s.star_size = params.get<float>("star_size", s.star_size);
+            return s;
+        }
+
         // The 0x708 clipmap-landscape desc/settings builders were retired with
         // the schema (issue #234); the clipmap is a 0x70A custom renderable.
         ScalarFieldDebugRenderableCompileDesc
@@ -1380,6 +1402,93 @@ namespace wz::engine::assets::internal
                     logger->error(
                         "failed to store gaussian splat cloud RHI renderable "
                         "recipe");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            },
+        });
+
+        // Star-field RHI renderable (issue #266). A near-verbatim mirror of the
+        // gaussian-splat-cloud recipe above: a StarCatalog (resident under
+        // "star_catalog") + a SplatPull program, emitted as an RhiRenderableRecipe
+        // carrying star_catalog_key so the renderer takes the star branch and
+        // records the instanced billboard draw. The star count is recovered at
+        // render time from the catalog, so no catalog-table lookup is needed here
+        // (the dep is type-enforced to kAssetTypeStarCatalog by the input port).
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kStarFieldRhiRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "star_catalog", kAssetTypeStarCatalog },
+                { "program", kAssetTypeRenderProgram },
+            },
+            .parameters = {
+                { .name = "star_size", .type = wz::asset::ParamType::Float,
+                  .label = "Star size", .default_num = 1.0,
+                  .min = 0.0, .max = 100000.0 },
+            },
+            .compile = [logger, render_program_table, rhi_renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                StarFieldRhiRenderableCompileDesc editor_desc{};
+                const auto* desc =
+                    std::any_cast<StarFieldRhiRenderableCompileDesc>(
+                        &input.meta);
+
+                if (!desc) {
+                    editor_desc =
+                        star_field_rhi_renderable_desc_from_deps(dep_nodes);
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                    {
+                        editor_desc.settings =
+                            star_field_render_settings_from_params(*params);
+                    }
+                    desc = &editor_desc;
+
+                    if (dep_handles.size() != 2) {
+                        logger->error(
+                            "star field RHI renderable missing compile desc");
+                        return compile_failed_node(input);
+                    }
+                }
+
+                if (dep_handles.size() != 2) {
+                    logger->error(
+                        "star field RHI renderable requires star catalog and "
+                        "program dependencies");
+                    return compile_failed_node(input);
+                }
+
+                const RenderProgramData* program =
+                    render_program_table->get(dep_handles[1]);
+                if (!program || !program->valid()) {
+                    logger->error(
+                        "star field RHI renderable program is invalid");
+                    return compile_failed_node(input);
+                }
+                if (program->binding_model != RenderBindingModel::SplatPull) {
+                    logger->error(
+                        "star field RHI renderable program must use SplatPull");
+                    return compile_failed_node(input);
+                }
+
+                const wz::asset::ResourceHandle handle =
+                    rhi_renderable_table->add(RhiRenderableRecipe{
+                        .program_key = desc->render_program_asset,
+                        .star_catalog_key = desc->star_catalog_asset,
+                        .star = desc->settings,
+                    });
+                if (!handle.valid()) {
+                    logger->error(
+                        "failed to store star field RHI renderable recipe");
                     return compile_failed_node(input);
                 }
 

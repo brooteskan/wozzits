@@ -53,6 +53,7 @@ namespace wz::engine::assets
     {
         Opaque,
         AlphaBlend,
+        Additive,   // src*ONE + dst*ONE -- glow accumulation (stars, particles)
     };
 
     enum class DepthMode : uint8_t
@@ -114,6 +115,9 @@ namespace wz::engine::assets
         // The SG sky's high-frequency point sources (sun/moon/stars), a second
         // resident buffer alongside the "sky_gaussian" dome lobes (source B).
         SkyGaussianPoints,
+        // A star catalog's resident point buffer (source C, #266), bound by the
+        // star-field render branch and expanded to instanced billboards.
+        StarCatalog,
     };
 
     // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
@@ -121,7 +125,7 @@ namespace wz::engine::assets
     // it as a Tag (enum → name), and authored render-binding-layout rows name
     // their semantic as a string that resolves back to the enum (name → enum).
     // Index == enum value; a new DescriptorSemantic member extends this array.
-    inline constexpr std::array<std::string_view, 12> kDescriptorSemanticNames = {
+    inline constexpr std::array<std::string_view, 13> kDescriptorSemanticNames = {
         "unknown",
         "splat_cloud",
         "sorted_splat_indices",
@@ -134,6 +138,7 @@ namespace wz::engine::assets
         "sky_gaussian",
         "pulled_mesh_normals",
         "sky_gaussian_points",
+        "star_catalog",
     };
 
     [[nodiscard]] constexpr std::string_view descriptor_semantic_name(

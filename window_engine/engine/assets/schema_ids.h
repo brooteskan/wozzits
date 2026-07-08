@@ -662,6 +662,15 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'00070Aull
     };
 
+    // Star-field RHI renderable recipe (issue #266): a StarCatalog (resident as a
+    // decoded point StructuredBuffer under "star_catalog") + a SplatPull render
+    // program, rendered as instanced billboards through RhiSceneRenderer. Mirrors
+    // the gaussian-splat-cloud recipe (0x709) with star_catalog_key in place of
+    // gaussian_splat_cloud_key. Produces kAssetTypeRenderable output.
+    inline constexpr wz::asset::SchemaID kStarFieldRhiRenderableSchema{
+        0xF11E'CA55'E7'00070Bull
+    };
+
     inline constexpr wz::asset::SchemaID kScalarFieldDebugRenderableSchema{
     0xF11E'CA55'E7'000702ull
     };

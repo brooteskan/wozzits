@@ -182,6 +182,17 @@ namespace wz::engine::rendering
             uint32_t splat_count = 0;
         };
 
+        // A star-field recipe (#266) mirrors the splat cloud: no pull mesh, the
+        // renderer binds the resident star point StructuredBuffer (published
+        // under rhi_asset_identity(key, "star_catalog")) at the StarCatalog
+        // semantic and records a non-indexed draw of 6 * star_count vertices.
+        struct StarFieldBinding
+        {
+            wz::asset::AssetKey star_catalog_key{};
+            ea::StarFieldRenderSettings settings{};
+            uint32_t star_count = 0;
+        };
+
         struct PullMeshSource
         {
             wz::asset::AssetKey mesh_key{};
@@ -206,6 +217,10 @@ namespace wz::engine::rendering
             // source has NO pull mesh — mesh_key is empty — and ensure_renderable
             // takes the splat branch instead of the mesh-pull SRG/geometry.
             std::optional<SplatCloudBinding> splat{};
+
+            // Set for a star-field recipe (#266). Same "no pull mesh" contract as
+            // splat; ensure_renderable takes the star branch.
+            std::optional<StarFieldBinding> star{};
 
             // Baked mesh-style shading (issue #195 slice A). Carried from the
             // recipe; when style.has_style is set the renderer packs the 28-dword
@@ -315,6 +330,31 @@ namespace wz::engine::rendering
                 return PullMeshSource{
                     .program_key = recipe->program_key,
                     .splat = binding,
+                };
+            }
+
+            // Star-field geometry (#266): no pull mesh. The decoded star point
+            // StructuredBuffer is asset-published resident; surface the catalog
+            // key + settings + star count so ensure_renderable binds it at the
+            // StarCatalog semantic and records the instanced-billboard draw.
+            if (!(recipe->star_catalog_key == wz::asset::AssetKey{})) {
+                const ea::StarCatalogHandle catalog_handle =
+                    assets.star_catalogs().get_catalog(
+                        ea::StarCatalogAsset{
+                            .output = recipe->star_catalog_key });
+                const wz::engine::starfield::StarCatalog* catalog =
+                    assets.star_catalogs().get_catalog_data(catalog_handle);
+                if (!catalog || catalog->stars.empty()) {
+                    return std::nullopt;
+                }
+                StarFieldBinding binding;
+                binding.star_catalog_key = recipe->star_catalog_key;
+                binding.settings = recipe->star;
+                binding.star_count =
+                    static_cast<uint32_t>(catalog->stars.size());
+                return PullMeshSource{
+                    .program_key = recipe->program_key,
+                    .star = binding,
                 };
             }
 
@@ -1073,6 +1113,86 @@ namespace wz::engine::rendering
             return &srealized;
         }
 
+        // ── Star-field branch (#266) ────────────────────────────────────────
+        // Mirror of the splat branch: no pull mesh; bind the resident star point
+        // StructuredBuffer (asset-owned, found by the identity the star compiler
+        // published under "star_catalog") at the StarCatalog semantic and record
+        // a non-indexed vertex-id draw (vertex_count = 6 * star_count). The star
+        // VS billboards a camera-facing quad per star; blend/depth are authored
+        // on the program (additive, no depth write for a sky layer).
+        if (source->star) {
+            const StarFieldBinding& star = *source->star;
+            if (star.star_count == 0u) {
+                logger_.error("RhiSceneRenderer: star field has zero stars");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+            const wz::rhi::GpuResourceHandle star_buffer =
+                gpu_.resources.find(wz::rhi::ResourceIdentity{
+                    ea::rhi_asset_identity(star.star_catalog_key, "star_catalog"),
+                    {} });
+            if (!star_buffer.valid()) {
+                logger_.error(
+                    "RhiSceneRenderer: star catalog buffer not resident");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+
+            auto [tit, tinserted] =
+                realized_renderables_.try_emplace(renderable_key);
+            RealizedRenderable& trealized = tit->second;
+            trealized.renderable_key = renderable_key;
+            trealized.program = program->program;
+            trealized.owns_buffers = false;  // buffer is asset-owned
+            trealized.is_star_field = true;
+            trealized.star_settings = star.settings;
+            trealized.object_srg.reset(*slot2_layout);
+
+            const wz::rhi::Tag star_semantic =
+                gpu_.descriptor_semantics.find("star_catalog");
+            const bool tsrg_ok =
+                trealized.object_srg.set(star_semantic, star_buffer)
+                    .has_value();
+            if (!tsrg_ok || !trealized.object_srg.satisfies(*slot2_layout)) {
+                realized_renderables_.erase(tit);
+                logger_.error(
+                    "RhiSceneRenderer: star object SRG build failed");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+
+            // 6 verts per star (two self-contained triangles), one non-indexed
+            // draw of 6 * star_count. TriangleList program; the VS pulls each
+            // star from the StarCatalog SRV by SV_VertexID.
+            wz::rhi::GeometryView geometry;
+            geometry.vertex_count = star.star_count * 6u;
+
+            const SplatCloudDrawConstants initial_star{};
+            wz::rhi::DrawPacketAllocator allocator;
+            wz::rhi::DrawPacketBuilder builder =
+                wz::rhi::DrawPacketBuilder::begin(allocator);
+            builder
+                .set_geometry(geometry)
+                .set_root_constants(std::span<const uint8_t>{
+                    reinterpret_cast<const uint8_t*>(&initial_star),
+                    sizeof(initial_star) })
+                .add_shader_resource_group(trealized.object_srg);
+            if (!builder.add_draw_item(wz::rhi::DrawRequest{
+                    forward_, trealized.program, nullptr,
+                    wz::rhi::StreamBufferIndices{}, 0,
+                    wz::rhi::DrawListMask::from(forward_) }))
+            {
+                realized_renderables_.erase(tit);
+                logger_.error(
+                    "RhiSceneRenderer: star draw packet build failed");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+            trealized.packet = builder.end();
+            (void)tinserted;
+            return &trealized;
+        }
+
         // Prefer the asset-published GPU-resident pull buffers (gpu_sparse_mesh),
         // found by the identity the compiler used. Those are asset-owned, so the
         // renderer binds but never releases them. Fall back to a per-realize CPU
@@ -1560,6 +1680,24 @@ namespace wz::engine::rendering
                     make_splat_cloud_draw_constants(
                         world, view_projection, camera_world_pos,
                         realized->splat_settings.splat_size);
+                const auto* bytes =
+                    reinterpret_cast<const uint8_t*>(&constants);
+                realized->packet.root_constants.assign(
+                    bytes, bytes + sizeof(constants));
+            }
+            else if (realized->is_star_field) {
+                // Same 36-dword WorldViewProjCamera block as the splat cloud
+                // (world + view_proj + camera pos), with star_size packed into
+                // the trailing "diameter" slot as the billboard's base angular
+                // footprint. The star VS places each star on the far sphere
+                // relative to the camera, so it needs world + view_proj separate
+                // and the camera world position.
+                const wz::math::Mat4& world =
+                    node_worlds[static_cast<std::size_t>(&node - nodes.data())];
+                const SplatCloudDrawConstants constants =
+                    make_splat_cloud_draw_constants(
+                        world, view_projection, camera_world_pos,
+                        realized->star_settings.star_size);
                 const auto* bytes =
                     reinterpret_cast<const uint8_t*>(&constants);
                 realized->packet.root_constants.assign(

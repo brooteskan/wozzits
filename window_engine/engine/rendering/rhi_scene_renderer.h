@@ -193,6 +193,14 @@ namespace wz::engine::rendering
             bool is_splat_cloud = false;
             wz::engine::assets::GaussianSplatCloudRenderSettings splat_settings{};
 
+            // Star-field renderables (#266) bind the resident star point
+            // StructuredBuffer (StarCatalog semantic, asset-owned) and record a
+            // non-indexed draw of 6 * star_count vertices. is_star_field gates the
+            // per-frame SplatCloudDrawConstants packing (reused verbatim) in
+            // render_scene; star_settings.star_size drives the billboard size.
+            bool is_star_field = false;
+            wz::engine::assets::StarFieldRenderSettings star_settings{};
+
             // Baked mesh-render-style shading (issue #195 slice A). When
             // has_style is set, render_scene packs MeshStyleDrawConstants (MVP +
             // 12 floats of style) into this renderable's root constants instead of

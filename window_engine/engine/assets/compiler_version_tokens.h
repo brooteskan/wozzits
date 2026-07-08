@@ -61,6 +61,7 @@ namespace wz::engine::assets {
     // kClipmapLandscapeRenderableCompilerVersion retired with the 0x708 schema
     // (issue #234); the clipmap is now a 0x70A CameraSnappedTerrain renderable.
     inline constexpr uint64_t kGaussianSplatCloudRhiRenderableCompilerVersion = 1;
+    inline constexpr uint64_t kStarFieldRhiRenderableCompilerVersion = 1;
     inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;
     inline constexpr uint64_t kTerrainDebugRenderableCompilerVersion = 1;
     inline constexpr uint64_t kTerrainSurfaceRenderableCompilerVersion = 6;

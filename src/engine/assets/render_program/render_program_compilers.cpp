@@ -73,9 +73,10 @@ namespace wz::engine::assets::internal
             "Gaussian splat vertex",
         };
 
-        constexpr std::array<std::string_view, 2> kBlendModeOptions = {
+        constexpr std::array<std::string_view, 3> kBlendModeOptions = {
             "Opaque",
             "Alpha blend",
+            "Additive",
         };
 
         constexpr std::array<std::string_view, 3> kDepthModeOptions = {
@@ -93,12 +94,13 @@ namespace wz::engine::assets::internal
         // One label per implemented numbered preset (values 0-4 below). These
         // presets remain the port-less fallback; the authored path is the
         // optional binding_layout port (issue #227).
-        constexpr std::array<std::string_view, 5> kBindingLayoutOptions = {
+        constexpr std::array<std::string_view, 6> kBindingLayoutOptions = {
             "Manual",
             "RHI pull mesh MVP",
             "Clipmap landscape",
             "Gaussian splat cloud",
             "Styled RHI pull mesh",
+            "Star field",
         };
 
         template<class Enum, std::size_t Count>
@@ -346,6 +348,33 @@ namespace wz::engine::assets::internal
                     .visibility = ShaderVisibility::Vertex,
                     .semantic = DescriptorSemantic::PulledMeshIndices,
                     .shader_register = 1,
+                    .register_space = 2,
+                    .descriptor_count = 1,
+                });
+            }
+            else if (binding_layout == 5) {
+                // Star field (issue #266). Byte-for-byte the binding_layout==3
+                // splat-cloud shape -- a SplatPull program on the SAME object SRG
+                // (space2) RhiSceneRenderer binds -- but the StructuredBuffer is
+                // the resident star point buffer at the StarCatalog semantic, so
+                // the star render branch resolves rhi_asset_identity(key,
+                // "star_catalog"). One 36-float root-constant block (world[16] +
+                // view_proj[16] + camera_and_diameter[4], SplatCloudDrawConstants
+                // reused verbatim, mirrored by the StarView cbuffer in
+                // star_field_vs.hlsl); no index/position pull buffers -- the draw
+                // is a non-indexed vertex-id expansion of 6 * star_count vertices.
+                desc.root_constants.push_back(RootConstantBinding{
+                    .visibility = ShaderVisibility::Vertex,
+                    .shader_register = 0,
+                    .register_space = 2,
+                    .value_count = 36,
+                    .semantic = "star_view",
+                });
+                desc.descriptor_bindings.push_back(DescriptorBinding{
+                    .kind = DescriptorKind::StructuredBufferSRV,
+                    .visibility = ShaderVisibility::Vertex,
+                    .semantic = DescriptorSemantic::StarCatalog,
+                    .shader_register = 0,
                     .register_space = 2,
                     .descriptor_count = 1,
                 });

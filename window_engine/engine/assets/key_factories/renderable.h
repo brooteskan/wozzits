@@ -150,6 +150,38 @@ namespace wz::engine::assets
         };
     }
 
+    // Star-field RHI renderable key (issue #266). Mirror of the splat-cloud key:
+    // content folds name + star_size; deps fold the catalog + program keys.
+    [[nodiscard]] inline wz::asset::AssetKey
+    make_star_field_rhi_renderable_key(
+        std::string_view name,
+        const wz::asset::AssetKey& star_catalog_key,
+        const wz::asset::AssetKey& render_program_key,
+        const StarFieldRenderSettings& settings = {}) noexcept
+    {
+        uint64_t h = detail::fnv1a_64(name);
+        uint32_t size_bits = 0;
+        std::memcpy(&size_bits, &settings.star_size, sizeof(size_bits));
+        h = detail::mix64(h, static_cast<uint64_t>(size_bits));
+
+        const wz::asset::Hash catalog_dep =
+            detail::key_to_dep_hash(star_catalog_key);
+        const wz::asset::Hash program_dep =
+            detail::key_to_dep_hash(render_program_key);
+
+        return wz::asset::AssetKey{
+            .content_hash = detail::hash_u64(h),
+            .schema_hash =
+                detail::hash_u64(kStarFieldRhiRenderableSchema.value),
+            .compiler_hash = detail::hash_u64(
+                kStarFieldRhiRenderableCompilerVersion),
+            .deps_hash = wz::asset::Hash{
+                detail::mix64(catalog_dep.lo, program_dep.lo),
+                detail::mix64(catalog_dep.hi, program_dep.hi),
+            },
+        };
+    }
+
     // make_clipmap_landscape_renderable_key (+ its settings-folding helpers) was
     // retired with the 0x708 schema (issue #234). The clipmap is now a 0x70A
     // custom renderable; make_custom_renderable_key below folds its deps
