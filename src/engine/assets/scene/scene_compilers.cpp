@@ -1341,6 +1341,12 @@ namespace wz::engine::assets::internal
             auto act = read_bool(node_val, "active");
             if (act) node.active = *act;
 
+            // Draw-order layer key — absent keeps the default 0 (the "World"
+            // layer), so pre-existing scenes render unchanged.
+            if (auto order = read_number(node_val, "render_order")) {
+                node.render_order = static_cast<int>(*order);
+            }
+
             auto motion = read_string(node_val, "motion_type");
             if (motion && *motion == "Animated") {
                 node.motion_type = wz::scene::TransformNode::MotionType::Animated;

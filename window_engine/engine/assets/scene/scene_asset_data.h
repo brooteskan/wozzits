@@ -1070,6 +1070,15 @@ namespace wz::engine::assets
 
         bool visible = true;
 
+        // Draw-order key. The renderer walks the flat node array in order (no
+        // sort, no tree traversal), so draw order is purely array position. This
+        // is an explicit, tree-position-independent layer key: the node list is
+        // stable-sorted by render_order when it is (re)built, LOWER draws FIRST.
+        // Ties keep authored array order, so default 0 everywhere renders exactly
+        // as before. Editor exposes it as a coarse layer (Background/World/
+        // Overlay); a future RHI layering pass can drive it with richer rules.
+        int render_order = 0;
+
         // "Live?" axis (#252), orthogonal to `visible` ("drawn?"). Hierarchical:
         // a node is effectively active only if it AND every ancestor is active.
         // Gates behavior dispatch + the collision frame (a parked/pooled node
@@ -2075,6 +2084,44 @@ namespace wz::engine::assets
         }
         nodes.push_back(std::move(node));
         return SceneAddChildResult{ .ok = true, .new_id = new_id, .error = {} };
+    }
+
+    // Coarse, pass-aligned draw layers -- the semantic buckets render_order is
+    // meant to hold. Guardrail (issue: RHI layer compositing): keep authored draw
+    // order a SMALL NAMED set ("which layer/pass this belongs to"), NOT a per-node
+    // z-nudge -- so a future RHI compositor routes each layer to a pass with no
+    // rework, and so the single-sorted-forward-list model this replaces does not
+    // get re-entrenched. The editor authors these (a coarse dropdown maps its
+    // labels to them); the engine only stable-sorts by the stored int. Named after
+    // the passes we expect. Spaced by 100 so a later pass can interleave
+    // sub-orders without renumbering; negative Sky keeps the distant background
+    // behind default-0 world geometry.
+    namespace render_layer
+    {
+        inline constexpr int Sky         = -200;  // sky dome, stars -- distant, drawn first
+        inline constexpr int World       =    0;  // lit opaque geometry (the default)
+        inline constexpr int Transparent =  100;  // blended surfaces, after opaque
+        inline constexpr int Overlay     =  200;  // gizmos / UI, on top
+    }
+
+    // Bake draw order into the flat node list: STABLE-sort by render_order so
+    // lower layers draw first, ties keeping their existing array order. Stable is
+    // load-bearing — it preserves authored order within a layer, and makes the
+    // sort a no-op for an all-default-0 scene (byte-identical render + save). The
+    // renderer stays a plain linear walk; this is the single choke point that
+    // "produces the flat array order", called whenever the list is (re)built
+    // (load after materialize, and after each live render_order edit). Transforms
+    // and visibility are resolved by parent-id lookup, not array position, so
+    // reordering here never disturbs the transform hierarchy.
+    inline void sort_scene_nodes_by_render_order(
+        std::vector<SceneNodeAsset>& nodes)
+    {
+        std::stable_sort(
+            nodes.begin(),
+            nodes.end(),
+            [](const SceneNodeAsset& a, const SceneNodeAsset& b) {
+                return a.render_order < b.render_order;
+            });
     }
 
     // Set a node's editable label (name) and visibility in a flat node list.

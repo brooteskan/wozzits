@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/authoring/scene_authoring.h>
+#include <engine/assets/scene/scene_compilers.h>
 #include <engine/assets/scene/scene_json_export.h>
 
 #include <external/json/json_parser.h>
 #include <external/json/json_writer.h>
+
+#include <logging/logger.h>
 
 #include <array>
 #include <optional>
@@ -290,6 +293,71 @@ TEST(SceneNodeList, RemoveNodeDropsSubtree)
     EXPECT_NE(find_scene_node(nodes, "c"), nullptr);     // sibling kept
 
     EXPECT_TRUE(remove_scene_node(nodes, "missing").empty());
+}
+
+TEST(SceneNodeList, SortByRenderOrderIsStableAndLowerFirst)
+{
+    std::vector<SceneNodeAsset> nodes(4);
+    nodes[0].id = "terrain"; nodes[0].render_order = 0;
+    nodes[1].id = "overlay"; nodes[1].render_order = 100;
+    nodes[2].id = "sky";     nodes[2].render_order = -100;
+    nodes[3].id = "stars";   nodes[3].render_order = -100;  // ties sky, authored after
+
+    sort_scene_nodes_by_render_order(nodes);
+
+    // Lower render_order draws first; ties keep authored array order, so sky
+    // stays ahead of stars within the background layer.
+    EXPECT_EQ(nodes[0].id, "sky");
+    EXPECT_EQ(nodes[1].id, "stars");
+    EXPECT_EQ(nodes[2].id, "terrain");
+    EXPECT_EQ(nodes[3].id, "overlay");
+}
+
+TEST(SceneNodeList, SortByRenderOrderIsNoOpForAllDefault)
+{
+    // An all-default (0) scene must be left byte-identical: same order, so
+    // existing scenes render exactly as before.
+    std::vector<SceneNodeAsset> nodes(3);
+    nodes[0].id = "a";
+    nodes[1].id = "b";
+    nodes[2].id = "c";
+
+    sort_scene_nodes_by_render_order(nodes);
+
+    EXPECT_EQ(nodes[0].id, "a");
+    EXPECT_EQ(nodes[1].id, "b");
+    EXPECT_EQ(nodes[2].id, "c");
+}
+
+TEST(SceneJsonExport, RenderOrderRoundTripsAndDefaultIsOmitted)
+{
+    std::vector<SceneNodeAsset> nodes(2);
+    nodes[0].id = "bg";    nodes[0].render_order = -100;
+    nodes[1].id = "world"; nodes[1].render_order = 0;  // default
+
+    auto parsed = wz::json::parse_json_string(
+        "{ \"schema\": \"wozzits.scene.v0\", \"name\": \"t\", \"nodes\": [] }");
+    ASSERT_TRUE(parsed.ok);
+    set_scene_document_nodes(parsed.document, nodes);
+    const std::string out = wz::json::serialize_json(parsed.document);
+
+    // The non-default node emits the key; a default (0) node omits it.
+    EXPECT_NE(out.find("\"render_order\""), std::string::npos);
+
+    // Re-parse the emitted document: the value survives and the default stays 0.
+    auto reparsed = wz::json::parse_json_string(out);
+    ASSERT_TRUE(reparsed.ok);
+    wz::Logger logger;
+    const auto scene =
+        wz::engine::assets::internal::parse_scene_data_from_json(
+            reparsed.document, logger);
+    ASSERT_TRUE(scene.has_value());
+    const SceneNodeAsset* bg = find_scene_node(scene->nodes, "bg");
+    const SceneNodeAsset* world = find_scene_node(scene->nodes, "world");
+    ASSERT_NE(bg, nullptr);
+    ASSERT_NE(world, nullptr);
+    EXPECT_EQ(bg->render_order, -100);
+    EXPECT_EQ(world->render_order, 0);
 }
 
 TEST(SceneJsonExport, SetDocumentNodesReplacesNodesPreservingOthers)

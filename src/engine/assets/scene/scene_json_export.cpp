@@ -2000,6 +2000,12 @@ namespace wz::engine::assets
             add_member(*obj, "transform", transform_value(node.local));
             add_member(*obj, "visible", bool_value(node.visible));
             add_member(*obj, "active", bool_value(node.active));
+            // Draw-order layer key — emitted only when non-default so existing
+            // scenes (all 0) round-trip byte-identically; parse defaults to 0.
+            if (node.render_order != 0) {
+                add_member(*obj, "render_order",
+                    number_value(static_cast<double>(node.render_order)));
+            }
             if (node.motion_type
                 == wz::scene::TransformNode::MotionType::Animated)
             {

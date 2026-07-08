@@ -551,6 +551,13 @@ namespace wz::app
         // game_app's load -> register sequence; here the modules come from the
         // project manifest's behavior_module_folder rather than only built-ins.
         load_behavior_modules(desc.behavior_module_folder);
+        // Bake draw order into the flat node array: the renderer walks it linearly
+        // (no per-frame sort), so ordering must live in the array itself. Stable +
+        // default-0 => scenes without render_order keys are unchanged. Done once
+        // here, after all authored nodes are present and before the polytree is
+        // built from them; live render_order edits re-apply this via their own
+        // full rebuild.
+        wz::engine::assets::sort_scene_nodes_by_render_order(scene_nodes_);
         rebuild_behavior_scene();
 
         // Auto-register the project's scenelets as spawnable prefabs (runtime
