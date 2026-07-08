@@ -59,7 +59,6 @@
     {
       "id": "sky",
       "parent": "root",
-      "name": "sky",
       "transform": {
         "translation": [
           0,
@@ -185,8 +184,8 @@
             "goal": 0,
             "gamma_start": 2,
             "anneal_seconds": 2,
-            "confidence": 0.7,
-            "decoherence": 0.3,
+            "confidence": 0.69999999999999996,
+            "decoherence": 0.29999999999999999,
             "think_interval": 0.25,
             "memory": 1
           }
@@ -278,18 +277,18 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        262.19024658203125,
-        706.193359375,
-        501.13397216796875
+        280.62081909179688,
+        428.00277709960938,
+        415.98797607421875
       ],
       "orientation": [
-        0.6741485595703125,
-        -0.2197239100933075,
-        0.23449678719043732,
-        0.6650236248970032
+        -0.30387383699417114,
+        -0.33288159966468811,
+        0.10529301315546036,
+        -0.88643330335617065
       ],
       "move_speed": 8,
-      "look_speed": 0.0005000000237487257,
+      "look_speed": 0.00050000002374872565,
       "boost_multiplier": 4,
       "roll_speed": 1.5
     }
