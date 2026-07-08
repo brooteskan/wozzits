@@ -230,3 +230,80 @@ TEST(StarCatalog, RealStarsRankAndColor)
     const Vec3& betelgeuse = stars[3].radiance;
     EXPECT_GT(betelgeuse.x / betelgeuse.z, rigel.x / rigel.z);
 }
+
+// ---------------------------------------------------------------------------
+// Creative dials: magnitude remap + warp field (Seam C-4)
+// ---------------------------------------------------------------------------
+
+TEST(StarCatalog, RemapDefaultIsNoOp)
+{
+    StarImportParams p;   // pivot 0, contrast 1
+    for (double m : { -1.46, 0.0, 2.5, 6.0 }) {
+        EXPECT_NEAR(remap_magnitude(m, p), m, 1e-9);
+    }
+}
+
+TEST(StarCatalog, RemapContrastCompressesAboutPivot)
+{
+    StarImportParams p;
+    p.magnitude_pivot = 3.0;
+    p.magnitude_contrast = 0.5;
+
+    // The pivot is a fixed point.
+    EXPECT_NEAR(remap_magnitude(3.0, p), 3.0, 1e-9);
+    // A faint star (mag 5) is pulled halfway to the pivot -> brighter (lower mag).
+    EXPECT_NEAR(remap_magnitude(5.0, p), 4.0, 1e-9);
+    // A bright star (mag 1) is pulled up toward the pivot -> dimmer.
+    EXPECT_NEAR(remap_magnitude(1.0, p), 2.0, 1e-9);
+}
+
+TEST(StarCatalog, RemapMakesFaintStarsPopInFlux)
+{
+    // contrast < 1 compresses the range, so a faint star ends up with more flux.
+    StarImportParams faithful;
+    StarImportParams popped;
+    popped.magnitude_pivot = 0.0;
+    popped.magnitude_contrast = 0.5;
+
+    const CatalogRecord faint{ 3.0, 10.0, 5.0, 0.0, true };
+    const Star a = star_from_record(faint, faithful);
+    const Star b = star_from_record(faint, popped);
+
+    EXPECT_GT(lum(b.radiance), lum(a.radiance));
+    // The carried magnitude (drives sprite size) reflects the remap.
+    EXPECT_NEAR(b.magnitude, 2.5f, 1e-4f);
+}
+
+TEST(StarCatalog, WarpZeroIsIdentity)
+{
+    StarImportParams p;   // warp_amplitude 0
+    for (const CatalogRecord& r : { kSirius, kVega, kPolaris }) {
+        const Vec3 d = direction_from_ra_dec(r.ra_hours, r.dec_deg);
+        const Vec3 w = warp_direction(d, p);
+        EXPECT_NEAR(w.x, d.x, 1e-6f);
+        EXPECT_NEAR(w.y, d.y, 1e-6f);
+        EXPECT_NEAR(w.z, d.z, 1e-6f);
+    }
+}
+
+TEST(StarCatalog, WarpDisplacesButStaysUnitAndDeterministic)
+{
+    StarImportParams p;
+    p.warp_amplitude = 0.2;
+    p.warp_frequency = 3.0;
+
+    const Vec3 d = direction_from_ra_dec(kVega.ra_hours, kVega.dec_deg);
+    const Vec3 w1 = warp_direction(d, p);
+    const Vec3 w2 = warp_direction(d, p);
+
+    // Unit length preserved.
+    EXPECT_NEAR(vlen(w1), 1.0f, 1e-5f);
+    // Actually moved.
+    const float moved =
+        std::abs(w1.x - d.x) + std::abs(w1.y - d.y) + std::abs(w1.z - d.z);
+    EXPECT_GT(moved, 1e-3f);
+    // Deterministic (no RNG): identical inputs -> identical output.
+    EXPECT_FLOAT_EQ(w1.x, w2.x);
+    EXPECT_FLOAT_EQ(w1.y, w2.y);
+    EXPECT_FLOAT_EQ(w1.z, w2.z);
+}

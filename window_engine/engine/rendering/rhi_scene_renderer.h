@@ -286,6 +286,10 @@ namespace wz::engine::rendering
 
         // See render_time_program_bridge_count().
         std::size_t render_time_program_bridges_ = 0;
+
+        // Monotonic render-call counter -- the only "clock" the renderer has.
+        // Drives the star-field twinkle phase (#266) at a nominal 60 fps.
+        uint64_t render_scene_calls_ = 0;
     };
 
     // Compose each scene node's world transform from its local TRS and its

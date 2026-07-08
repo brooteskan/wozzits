@@ -28,6 +28,18 @@ namespace wz::engine::starfield
             if (auto v = wz::json::read_number(obj, "magnitude_max")) {
                 p.magnitude_max = *v;
             }
+            if (auto v = wz::json::read_number(obj, "magnitude_pivot")) {
+                p.magnitude_pivot = *v;
+            }
+            if (auto v = wz::json::read_number(obj, "magnitude_contrast")) {
+                p.magnitude_contrast = *v;
+            }
+            if (auto v = wz::json::read_number(obj, "warp_amplitude")) {
+                p.warp_amplitude = *v;
+            }
+            if (auto v = wz::json::read_number(obj, "warp_frequency")) {
+                p.warp_frequency = *v;
+            }
             if (auto v = wz::json::read_number(obj, "solid_angle")) {
                 p.solid_angle = *v;
             }

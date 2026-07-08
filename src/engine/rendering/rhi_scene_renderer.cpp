@@ -597,7 +597,7 @@ namespace wz::engine::rendering
             float world[16];
             float view_proj[16];
             float camera_and_size[4];   // xyz = camera world pos, w = star_size
-            float star_params[4];       // x = intensity, yzw = spare
+            float star_params[4];       // intensity, time, twinkle_amount, twinkle_speed
         };
         static_assert(sizeof(StarFieldDrawConstants) == 160,
             "star root constants must be 160 bytes (40 dwords) to match the "
@@ -608,7 +608,10 @@ namespace wz::engine::rendering
             const wz::math::Mat4& view_projection,
             const wz::math::Vec3& camera_world_pos,
             float star_size,
-            float intensity)
+            float intensity,
+            float time_seconds,
+            float twinkle_amount,
+            float twinkle_speed)
         {
             StarFieldDrawConstants out{};
             std::memcpy(out.world, world.m, sizeof(out.world));
@@ -618,6 +621,9 @@ namespace wz::engine::rendering
             out.camera_and_size[2] = camera_world_pos.z;
             out.camera_and_size[3] = star_size;
             out.star_params[0] = intensity;
+            out.star_params[1] = time_seconds;
+            out.star_params[2] = twinkle_amount;
+            out.star_params[3] = twinkle_speed;
             return out;
         }
 
@@ -1640,6 +1646,8 @@ namespace wz::engine::rendering
             return false;
         }
 
+        ++render_scene_calls_;   // the renderer's only clock (star twinkle, #266)
+
         // Per-frame precise reclamation: drain any pending release whose last
         // touch the GPU has now passed, then tag this frame's timeline onto the
         // recorder so every resource it resolves is kept resident until this
@@ -1729,11 +1737,19 @@ namespace wz::engine::rendering
                 // authored dials, not shader constants.
                 const wz::math::Mat4& world =
                     node_worlds[static_cast<std::size_t>(&node - nodes.data())];
+                // No wall clock reaches the renderer, so drive twinkle from the
+                // render-call counter at a nominal 60 fps. twinkle_speed absorbs
+                // any framerate difference; a still frame (tests) sees time ~0.
+                const float time_seconds =
+                    static_cast<float>(render_scene_calls_) * (1.0f / 60.0f);
                 const StarFieldDrawConstants constants =
                     make_star_field_draw_constants(
                         world, view_projection, camera_world_pos,
                         realized->star_settings.star_size,
-                        realized->star_settings.intensity);
+                        realized->star_settings.intensity,
+                        time_seconds,
+                        realized->star_settings.twinkle_amount,
+                        realized->star_settings.twinkle_speed);
                 const auto* bytes =
                     reinterpret_cast<const uint8_t*>(&constants);
                 realized->packet.root_constants.assign(

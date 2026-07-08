@@ -65,6 +65,32 @@ namespace wz::engine::starfield
             * std::pow(10.0, -0.4 * (vmag - params.reference_magnitude));
     }
 
+    double remap_magnitude(double vmag, const StarImportParams& params)
+    {
+        return params.magnitude_pivot
+            + (vmag - params.magnitude_pivot) * params.magnitude_contrast;
+    }
+
+    Vec3 warp_direction(const Vec3& dir, const StarImportParams& params)
+    {
+        if (params.warp_amplitude <= 0.0) {
+            return dir;
+        }
+        // A smooth sum-of-sines field: deterministic, low-frequency, curl-like.
+        // Each output component reads two of the input axes at incommensurate
+        // scales, so the displacement swirls rather than shifts uniformly.
+        const double f = params.warp_frequency;
+        const double ox = std::sin(dir.y * f * 1.7 + dir.z * f * 2.3);
+        const double oy = std::sin(dir.z * f * 1.9 + dir.x * f * 2.1);
+        const double oz = std::sin(dir.x * f * 2.5 + dir.y * f * 1.3);
+        const double a = params.warp_amplitude;
+        return normalize(Vec3{
+            static_cast<float>(dir.x + a * ox),
+            static_cast<float>(dir.y + a * oy),
+            static_cast<float>(dir.z + a * oz),
+        });
+    }
+
     double temperature_from_bv(double bv)
     {
         // Ballesteros 2012 (arXiv:1201.1809): a blackbody two-band model.
@@ -136,14 +162,20 @@ namespace wz::engine::starfield
     Star star_from_record(const CatalogRecord& record, const StarImportParams& params)
     {
         Star star;
-        star.direction = direction_from_ra_dec(record.ra_hours, record.dec_deg);
+        const Vec3 base_dir =
+            direction_from_ra_dec(record.ra_hours, record.dec_deg);
+        star.direction = warp_direction(base_dir, params);
 
-        const float flux = static_cast<float>(flux_from_magnitude(record.vmag, params));
+        // Remap the magnitude, then derive both flux and the carried magnitude
+        // (which drives sprite size) from the remapped value so the appearance
+        // dials stay consistent.
+        const double remapped = remap_magnitude(record.vmag, params);
+        const float flux = static_cast<float>(flux_from_magnitude(remapped, params));
         const Vec3 tint = tint_from_bv(record.bv, record.has_bv, params.color_saturation);
         star.radiance = tint * flux;
 
         star.solid_angle = static_cast<float>(params.solid_angle);
-        star.magnitude = static_cast<float>(record.vmag);
+        star.magnitude = static_cast<float>(remapped);
         return star;
     }
 

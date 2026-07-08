@@ -75,9 +75,24 @@ namespace wz::engine::starfield
         double color_saturation    = 1.0;
 
         // Inclusive apparent-magnitude window; rows outside are dropped. This is
-        // the coarse cull / perf lever until the general filter node exists.
+        // the coarse cull / perf lever until the general filter node exists. The
+        // cull tests the ORIGINAL catalog magnitude, before the remap below.
         double magnitude_min       = -30.0;  // brighter bound (e.g. the Sun)
         double magnitude_max       =  30.0;  // fainter bound (cull faint stars)
+
+        // Magnitude remap: reshape the apparent-magnitude scale about a pivot
+        // before it becomes flux / sprite size. remapped = pivot + (vmag - pivot)
+        // * contrast. contrast < 1 compresses the range so faint stars "pop"; > 1
+        // exaggerates it. Purely an appearance dial (the cull uses the original).
+        double magnitude_pivot     = 0.0;
+        double magnitude_contrast  = 1.0;
+
+        // Warp field: displace each star direction by a smooth, deterministic
+        // field so the sky keeps a real feel but forms ORIGINAL constellations.
+        // warp_amplitude is the peak displacement (0 = faithful positions),
+        // warp_frequency the spatial scale of the swirl.
+        double warp_amplitude      = 0.0;
+        double warp_frequency      = 3.0;
 
         // Nominal angular size assigned to every star (steradians). Real stars
         // are sub-arcsecond; the render seam scales the sprite by magnitude, so
@@ -95,6 +110,15 @@ namespace wz::engine::starfield
     //   flux = exposure * 10^(-0.4 * (vmag - reference_magnitude)).
     // A 5-magnitude step is exactly a factor of 100.
     double flux_from_magnitude(double vmag, const StarImportParams& params);
+
+    // Reshape apparent magnitude about the pivot (the magnitude-remap dial):
+    //   remapped = magnitude_pivot + (vmag - magnitude_pivot) * magnitude_contrast.
+    double remap_magnitude(double vmag, const StarImportParams& params);
+
+    // Displace a unit direction by the smooth deterministic warp field and
+    // renormalize. warp_amplitude == 0 returns the direction unchanged.
+    wz::math::Vec3 warp_direction(
+        const wz::math::Vec3& dir, const StarImportParams& params);
 
     // Ballesteros (2012): B-V color index -> effective temperature in Kelvin.
     // Monotonically decreasing in B-V (bluer / more negative -> hotter).

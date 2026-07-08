@@ -22,7 +22,7 @@ cbuffer StarView : register(b0, space2)
     float4x4 world;               // scene-node transform (orients the sphere)
     float4x4 view_proj;
     float4   camera_and_size;     // xyz = camera world pos, w = star_size
-    float4   star_params;         // x = intensity, yzw = spare
+    float4   star_params;         // x=intensity, y=time, z=twinkle_amount, w=twinkle_speed
 };
 
 struct Star
@@ -79,9 +79,16 @@ VSOutput main(uint vertex_id : SV_VertexID)
     float4 clip = mul(view_proj, float4(corner_ws, 1.0));
     clip.z = clip.w;   // far plane
 
+    // Twinkle: an independent per-star phase (hash of the star index) modulates
+    // brightness over time, so the field shimmers instead of pulsing in unison.
+    // twinkle_amount 0 leaves it steady.
+    const float phase = frac(sin(float(star_index) * 12.9898) * 43758.5453) * 6.2831853;
+    const float twinkle =
+        1.0 + star_params.z * sin(star_params.y * star_params.w + phase);
+
     VSOutput o;
     o.position = clip;
-    o.color = s.radiance * star_params.x;   // authored intensity dial
+    o.color = s.radiance * star_params.x * max(twinkle, 0.0);   // intensity + twinkle dials
     o.uv = corner;
     return o;
 }

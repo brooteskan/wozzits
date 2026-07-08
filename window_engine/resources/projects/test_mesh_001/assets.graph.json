@@ -4518,6 +4518,16 @@
             "value": 3.5
           },
           {
+            "name": "twinkle_amount",
+            "type": "float",
+            "value": 0.45
+          },
+          {
+            "name": "twinkle_speed",
+            "type": "float",
+            "value": 2.5
+          },
+          {
             "name": "name",
             "type": "string",
             "value": "stars"

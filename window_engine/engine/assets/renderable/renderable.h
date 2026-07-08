@@ -201,6 +201,11 @@ namespace wz::engine::assets
     {
         float star_size = 1.0f;
         float intensity = 1.0f;
+        // Per-star brightness flicker. twinkle_amount is the modulation depth
+        // (0 = steady); twinkle_speed the rate. The VS gives each star an
+        // independent phase, so the field shimmers rather than pulsing in unison.
+        float twinkle_amount = 0.0f;
+        float twinkle_speed  = 3.0f;
     };
 
     // The SHADING constants baked from an (optional) MeshRenderStyle dependency

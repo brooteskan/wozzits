@@ -3,7 +3,10 @@
   "source_name": "procedural_night",
   "params": {
     "exposure": 1.0,
-    "magnitude_max": 6.5
+    "magnitude_max": 6.5,
+    "magnitude_contrast": 0.85,
+    "warp_amplitude": 0.14,
+    "warp_frequency": 2.5
   },
   "stars": [
     {

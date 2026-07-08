@@ -166,6 +166,12 @@ namespace wz::engine::assets
         uint32_t intensity_bits = 0;
         std::memcpy(&intensity_bits, &settings.intensity, sizeof(intensity_bits));
         h = detail::mix64(h, static_cast<uint64_t>(intensity_bits));
+        uint32_t twinkle_a_bits = 0;
+        std::memcpy(&twinkle_a_bits, &settings.twinkle_amount, sizeof(twinkle_a_bits));
+        h = detail::mix64(h, static_cast<uint64_t>(twinkle_a_bits));
+        uint32_t twinkle_s_bits = 0;
+        std::memcpy(&twinkle_s_bits, &settings.twinkle_speed, sizeof(twinkle_s_bits));
+        h = detail::mix64(h, static_cast<uint64_t>(twinkle_s_bits));
 
         const wz::asset::Hash catalog_dep =
             detail::key_to_dep_hash(star_catalog_key);
