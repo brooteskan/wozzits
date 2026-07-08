@@ -175,6 +175,9 @@ namespace wz::engine::editor
         std::optional<std::string> parent_id;
         std::string kind;
         std::optional<bool> visible;
+        // Draw-order layer key (render_layer), surfaced so the inspector's layer
+        // dropdown shows the node's current layer. Default 0 = World.
+        int render_order = 0;
         SceneSnapshotRenderableSource renderable_source;
         std::optional<SceneSnapshotTransform> transform;
         std::optional<SceneSnapshotCamera> camera;

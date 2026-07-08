@@ -722,6 +722,7 @@ namespace wz::engine::editor
                 node.parent_id = *source.parent_id;
             }
             node.visible = source.visible;
+            node.render_order = source.render_order;
             node.transform = transform_from_authored(source.local);
 
             // Surface renderable presence so the row reads as a renderable (a
@@ -858,6 +859,8 @@ namespace wz::engine::editor
                 node.parent_id = std::string(*parent);
             }
             node.visible = wz::json::read_bool(value, "visible").value_or(true);
+            node.render_order = static_cast<int>(
+                wz::json::read_number(value, "render_order").value_or(0.0));
             node.transform = read_transform(value);
             node.camera = read_camera(value);
             node.renderable = read_renderable(value);

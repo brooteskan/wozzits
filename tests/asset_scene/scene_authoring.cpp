@@ -406,6 +406,20 @@ TEST(SceneNodeList, BakeDefaultsToTreeOrderThenRenderOrderOverrides)
     EXPECT_EQ(ids, (std::vector<std::string>{ "sky", "root", "world_a" }));
 }
 
+TEST(SceneNodeList, SetRenderOrderChangesValueAndReportsNoOp)
+{
+    std::vector<SceneNodeAsset> nodes(2);
+    nodes[0].id = "a";
+    nodes[1].id = "b";
+
+    EXPECT_TRUE(set_scene_node_render_order(nodes, "a", render_layer::Sky));
+    EXPECT_EQ(find_scene_node(nodes, "a")->render_order, render_layer::Sky);
+    // Same value => no-op (returns false so the caller can skip the re-bake).
+    EXPECT_FALSE(set_scene_node_render_order(nodes, "a", render_layer::Sky));
+    // Missing node => false.
+    EXPECT_FALSE(set_scene_node_render_order(nodes, "missing", 5));
+}
+
 TEST(SceneNodeList, ReorderMovesArraySlotWithoutTouchingHierarchy)
 {
     std::vector<SceneNodeAsset> nodes(4);

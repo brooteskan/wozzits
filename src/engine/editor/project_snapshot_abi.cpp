@@ -227,6 +227,9 @@ namespace wz::engine::editor
                 }
             }
 
+            // Draw-order layer key (always valid; default 0 = World).
+            out.render_order = node.render_order;
+
             if (node.transform) {
                 out.flags |= WZ_EDITOR_SCENE_NODE_HAS_TRANSFORM;
                 out.transform = transform_abi(builder, *node.transform);

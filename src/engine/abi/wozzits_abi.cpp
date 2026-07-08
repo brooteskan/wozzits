@@ -1373,6 +1373,38 @@ extern "C"
         }
     }
 
+    WzResult wz_host_runtime_set_node_render_order(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        int32_t render_order)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_render_order(
+                wz::app::SceneNodeRenderOrderEdit{
+                    .id = node_id_utf8,
+                    .render_order = static_cast<int>(render_order),
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "scene node render_order post failed");
+        }
+    }
+
     WzResult wz_host_runtime_remove_node(
         WzHostRuntime* runtime,
         const char* node_id_utf8)

@@ -70,6 +70,15 @@ namespace wz::app
         wz::scene::AuthoredEntityId before_id;
     };
 
+    // A live render_order (draw-order LAYER) edit (fire-and-forget, coalesced by
+    // id — a dropdown/drag streams values, latest wins). Changes which layer a
+    // node draws in; the engine re-bakes draw order on apply.
+    struct SceneNodeRenderOrderEdit
+    {
+        wz::scene::AuthoredEntityId id;
+        int render_order = 0;
+    };
+
     // A live edit to one of a node's behavior bindings, posted from the owner
     // thread to the engine thread (fire-and-forget). Unlike the transform queue
     // these are NOT coalesced: each op (set-enabled, set-fields, set-events,
@@ -414,6 +423,13 @@ namespace wz::app
         void service_pending_scene_node_reorders(
             const std::function<void(const SceneNodeReorderEdit&)>& applier);
 
+        // Owner thread: queue a render_order (draw-layer) edit (non-blocking,
+        // coalesced by id), mirroring post_scene_node_reorder.
+        void post_scene_node_render_order(SceneNodeRenderOrderEdit edit);
+
+        void service_pending_scene_node_render_orders(
+            const std::function<void(const SceneNodeRenderOrderEdit&)>& applier);
+
         // Owner thread: queue a node removal (non-blocking; deduped by id).
         void post_scene_node_remove(wz::scene::AuthoredEntityId id);
 
@@ -635,6 +651,7 @@ namespace wz::app
         std::vector<SceneNodePropertiesEdit> pending_properties_;
         std::vector<SceneNodeReparentEdit> pending_reparents_;
         std::vector<SceneNodeReorderEdit> pending_reorders_;
+        std::vector<SceneNodeRenderOrderEdit> pending_render_orders_;
         std::vector<wz::scene::AuthoredEntityId> pending_removes_;
         std::vector<SceneNodeBehaviorEdit> pending_behavior_edits_;
         std::vector<SceneNodeComponentEdit> pending_component_edits_;

@@ -306,6 +306,36 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_render_order(
+        SceneNodeRenderOrderEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (SceneNodeRenderOrderEdit& pending : pending_render_orders_) {
+            if (pending.id == edit.id) {
+                pending.render_order = edit.render_order;
+                return;
+            }
+        }
+        pending_render_orders_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_render_orders(
+        const std::function<void(const SceneNodeRenderOrderEdit&)>& applier)
+    {
+        std::vector<SceneNodeRenderOrderEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_render_orders_.empty()) {
+                return;
+            }
+            edits.swap(pending_render_orders_);
+        }
+
+        for (const SceneNodeRenderOrderEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_remove(
         wz::scene::AuthoredEntityId id)
     {
@@ -1134,6 +1164,10 @@ namespace wz::app
                     control->service_pending_scene_node_reorders(
                         [&app](const SceneNodeReorderEdit& edit) {
                             app.reorder_node(edit.id, edit.before_id);
+                        });
+                    control->service_pending_scene_node_render_orders(
+                        [&app](const SceneNodeRenderOrderEdit& edit) {
+                            app.set_node_render_order(edit.id, edit.render_order);
                         });
                     control->service_pending_scene_node_removes(
                         [&app](const wz::scene::AuthoredEntityId& id) {

@@ -1346,6 +1346,24 @@ namespace wz::app
         return moved;
     }
 
+    bool WozzitsApp_v1::set_node_render_order(
+        const wz::scene::AuthoredEntityId& id,
+        int render_order)
+    {
+        const bool changed = wz::engine::assets::set_scene_node_render_order(
+            scene_nodes_, id, render_order);
+        if (changed) {
+            // Layer changed: re-bake so the node moves into its layer (the sort
+            // is by render_order; ties keep the tree pre-order).
+            wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
+            scene_dirty_ = true;
+            if (behavior_scene_) {
+                rebuild_behavior_scene();
+            }
+        }
+        return changed;
+    }
+
     // ─── Live behavior-binding authoring ────────────────────────────────────
     // Each applies the matching scene_asset_data.h helper to scene_nodes_, then
     // (on success) marks the scene dirty and re-materializes the behavior

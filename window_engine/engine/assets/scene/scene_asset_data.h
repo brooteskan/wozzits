@@ -2291,6 +2291,23 @@ namespace wz::engine::assets
         return true;
     }
 
+    // Set a node's render_order (draw-order layer key) in a flat node list.
+    // Returns true iff a node with that id exists AND the value changed (so the
+    // caller can skip a re-bake on a no-op). The in-memory apply behind the
+    // editor's render-layer dropdown; the caller re-bakes draw order afterward.
+    inline bool set_scene_node_render_order(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& id,
+        int render_order)
+    {
+        SceneNodeAsset* node = find_scene_node(nodes, id);
+        if (!node || node->render_order == render_order) {
+            return false;
+        }
+        node->render_order = render_order;
+        return true;
+    }
+
     // Reparent a node in a flat node list: set its parent to new_parent_id
     // (empty => detach to top level). Rejects a missing node, a missing/self new
     // parent, or a new parent that is a descendant of the node (cycle). Returns

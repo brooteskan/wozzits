@@ -159,6 +159,15 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& id,
             const wz::scene::AuthoredEntityId& before_id);
 
+        // Live render_order (draw-order LAYER) edit: set the node's render_order
+        // key and re-bake draw order, so the node moves to its layer. This is the
+        // cross-cutting layer override (within a layer, order is the tree /
+        // reorder). Returns false when nothing changed (missing id or same value).
+        // The apply behind the editor's render-layer dropdown.
+        bool set_node_render_order(
+            const wz::scene::AuthoredEntityId& id,
+            int render_order);
+
         // ─── Live behavior-binding authoring ─────────────────────────────────
         // Apply behind the host ABI's behavior verbs. Each mutates the matching
         // node's behavior binding(s) in scene_nodes_, marks the scene dirty, and

@@ -10,7 +10,10 @@ extern "C" {
 // 28 -> 29 (issue #230): WzEditorSceneNode grew the custom-renderable
 // ingredient tables (renderable_bindings / renderable_constants) — a struct
 // layout change, so readers must match.
-#define WZ_ABI_VERSION 29u
+// 29 -> 30: WzEditorSceneNode grew a render_order int (the draw-order layer key,
+// surfaced so the editor's layer dropdown reads it back) — a struct layout
+// change, so readers must match.
+#define WZ_ABI_VERSION 30u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -442,6 +445,10 @@ typedef struct WzEditorSceneNode
     // that is the WZ_ABI_VERSION 29 bump).
     WzEditorTableSpan renderable_bindings;
     WzEditorTableSpan renderable_constants;
+    // Draw-order layer key (render_layer): the node's stored render_order, always
+    // valid (default 0 = World). Appended last; the added int is the
+    // WZ_ABI_VERSION 30 bump. The editor's layer dropdown reads it back.
+    int32_t render_order;
 } WzEditorSceneNode;
 
 typedef struct WzEditorSceneSnapshot
@@ -696,7 +703,7 @@ static_assert(sizeof(WzEditorSceneRenderableConstant) == 32);
 static_assert(offsetof(WzEditorSceneRenderableConstant, name) == 0);
 static_assert(offsetof(WzEditorSceneRenderableConstant, value) == 16);
 
-static_assert(sizeof(WzEditorSceneNode) == 664);
+static_assert(sizeof(WzEditorSceneNode) == 672);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -718,6 +725,7 @@ static_assert(offsetof(WzEditorSceneNode, motion) == 600);
 static_assert(offsetof(WzEditorSceneNode, audio_source) == 616);
 static_assert(offsetof(WzEditorSceneNode, renderable_bindings) == 632);
 static_assert(offsetof(WzEditorSceneNode, renderable_constants) == 648);
+static_assert(offsetof(WzEditorSceneNode, render_order) == 664);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);
@@ -1004,6 +1012,19 @@ WZ_ABI_API WzResult wz_host_runtime_reorder_node(
     WzHostRuntime* runtime,
     const char* node_id_utf8,
     const char* before_node_id_utf8);
+
+// Live render_order (draw-order LAYER) edit posted to the running engine (non-
+// blocking, applied next frame, no disk write). Sets the node's render_order key
+// and re-bakes draw order, so the node moves to its layer (lower draws first).
+// This is the cross-cutting layer override; within a layer, order is the tree /
+// reorder. An unknown/missing node is a logged engine-thread no-op.
+// WZ_RESULT_INVALID_ARGUMENT for a null runtime or an empty node id. NEW exported
+// fn; the WZ_ABI_VERSION 30 bump is the WzEditorSceneNode.render_order field, not
+// this function.
+WZ_ABI_API WzResult wz_host_runtime_set_node_render_order(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    int32_t render_order);
 
 // Live delete posted to the running engine (non-blocking, applied next frame).
 // Removes the node and its subtree. WZ_RESULT_INVALID_ARGUMENT for a null
