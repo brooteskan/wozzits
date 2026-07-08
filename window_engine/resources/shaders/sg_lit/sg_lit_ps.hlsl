@@ -23,7 +23,16 @@ struct SkyLobe
     float  pad;         // -> 32 bytes
 };
 
-StructuredBuffer<SkyLobe> sky_gaussian : register(t3, space2);
+struct SkyPoint
+{
+    float3 direction;   // unit axis toward the emitter
+    float  solid_angle; // steradians
+    float3 radiance;    // RGB
+    float  pad;         // -> 32 bytes, matches ResidentSkyPoint
+};
+
+StructuredBuffer<SkyLobe>  sky_gaussian        : register(t3, space2);
+StructuredBuffer<SkyPoint> sky_gaussian_points : register(t4, space2);
 
 static const float PI = 3.14159265358979323846f;
 
@@ -49,6 +58,20 @@ float smith_ggx_v1(float m2, float n_dot_x)
 {
     float x = max(n_dot_x, 1e-4f);
     return 1.0f / (x + sqrt(m2 + (1.0f - m2) * x * x));
+}
+
+// Scalar GGX NDF + Smith G1 (height form) for the EXACT punctual BRDF used by
+// the emitter (sun) layer -- delta lights need no SG convolution.
+float ggx_ndf(float n_dot_h, float m2)
+{
+    float d = n_dot_h * n_dot_h * (m2 - 1.0f) + 1.0f;
+    return m2 / (PI * d * d + 1e-9f);
+}
+
+float smith_g1(float n_dot_x, float m2)
+{
+    float x = max(n_dot_x, 0.0f);
+    return 2.0f * x / (x + sqrt(m2 + (1.0f - m2) * x * x) + 1e-9f);
 }
 
 struct PSInput
@@ -115,5 +138,34 @@ float4 main(PSInput input) : SV_TARGET
     }
 
     float3 color = diff_albedo * irradiance / PI + specular;
+
+    // Source B: distant emitters (the sun). Delta lights -> exact Cook-Torrance,
+    // a port of emitter_radiance() from sg_lighting.cpp.
+    uint pcount, pstride;
+    sky_gaussian_points.GetDimensions(pcount, pstride);
+    for (uint j = 0u; j < pcount; ++j)
+    {
+        SkyPoint p = sky_gaussian_points[j];
+        const float3 l = p.direction;
+        const float  n_dot_l = dot(n, l);
+        if (n_dot_l <= 0.0f) {
+            continue;
+        }
+
+        const float3 irr = p.radiance * p.solid_angle;   // perpendicular irradiance
+
+        const float3 diffuse = diff_albedo * irr * (n_dot_l / PI);
+
+        const float3 hh = normalize(l + v);
+        const float  n_dot_h = max(dot(n, hh), 0.0f);
+        const float  v_dot_h = max(dot(v, hh), 0.0f);
+        const float  Dp = ggx_ndf(n_dot_h, m2);
+        const float  Gp = smith_g1(n_dot_l, m2) * smith_g1(n_dot_v, m2);
+        const float3 Fp = fresnel_schlick(f0, v_dot_h);
+        const float3 spec = Fp * irr * (Dp * Gp / (4.0f * n_dot_v));
+
+        color += diffuse + spec;
+    }
+
     return float4(color, 1.0f);
 }

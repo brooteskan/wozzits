@@ -10,9 +10,12 @@
 // The lobe count comes from the buffer itself (GetDimensions), so nothing has to
 // be authored to match the baked asset.
 //
-// NOTE (v1): the sun lives in the fit's point_sources, which B1c left out of the
-// resident buffer (lobes-only). So this renders the sky DOME + glow but not the
-// crisp sun -- expected, not a bug. Point-source rendering is a follow-up.
+// The high-frequency layer (sun/moon/stars) rides a SECOND resident buffer
+// (variant "sky_gaussian_points", Seam 4-B-ii): each is drawn as a bright
+// angular cap around its direction. Omega = 2*pi*(1-cos r), so a point is inside
+// the disc when dot(viewdir, ps.dir) >= cos r.
+
+static const float PI = 3.14159265358979323846f;
 
 struct SkyLobe
 {
@@ -22,7 +25,16 @@ struct SkyLobe
     float  pad;         // -> 32 bytes, matches ResidentSkyLobe
 };
 
-StructuredBuffer<SkyLobe> sky_gaussian : register(t2, space2);
+struct SkyPoint
+{
+    float3 direction;   // unit axis
+    float  solid_angle; // steradians
+    float3 radiance;    // RGB
+    float  pad;         // -> 32 bytes, matches ResidentSkyPoint
+};
+
+StructuredBuffer<SkyLobe>  sky_gaussian        : register(t2, space2);
+StructuredBuffer<SkyPoint> sky_gaussian_points : register(t3, space2);
 
 struct PSInput
 {
@@ -42,6 +54,18 @@ float4 main(PSInput input) : SV_TARGET
     {
         SkyLobe g = sky_gaussian[i];
         c += g.amplitude * exp(g.sharpness * (dot(g.direction, d) - 1.0f));
+    }
+
+    // Point sources (the sun): a soft-edged bright disc per emitter.
+    uint pcount, pstride;
+    sky_gaussian_points.GetDimensions(pcount, pstride);
+    for (uint j = 0u; j < pcount; ++j)
+    {
+        SkyPoint p = sky_gaussian_points[j];
+        const float cos_r = 1.0f - p.solid_angle / (2.0f * PI);      // disc edge
+        const float cos_c = 1.0f - (1.0f - cos_r) * 0.5f;           // solid core
+        const float disc  = smoothstep(cos_r, cos_c, dot(d, p.direction));
+        c += p.radiance * disc;
     }
 
     return float4(c, 1.0f);

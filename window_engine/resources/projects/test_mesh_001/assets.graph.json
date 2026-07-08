@@ -2718,7 +2718,6 @@
     },
     {
       "node_id": 78,
-      "key": "asset-key:f1ca5addc54f4bd3:ce451934a2d75d18:f11eca55e7000104:0000000000000000:9e3779b97f4b8001:0000000000000000:0000000000000000:0000000000000000",
       "type": 1052,
       "schema": "0xf11eca55e7000104",
       "stage": 0,
@@ -2776,12 +2775,12 @@
           {
             "name": "binding3_kind",
             "type": "int",
-            "value": 0
+            "value": 1
           },
           {
             "name": "binding3_semantic",
             "type": "string",
-            "value": ""
+            "value": "sky_gaussian_points"
           },
           {
             "name": "binding3_visibility",
@@ -2978,7 +2977,6 @@
     },
     {
       "node_id": 79,
-      "key": "asset-key:9384cd1d234456b0:7fcc9b653200ee25:f11eca55e7000103:0000000000000000:9e3779b97f4b8745:0000000000000000:a6399e28fe9a64fd:ced06b5d963577d2",
       "type": 1049,
       "schema": "0xf11eca55e7000103",
       "stage": 0,
@@ -3056,7 +3054,6 @@
     },
     {
       "node_id": 80,
-      "key": "asset-key:6aca048a288b9cb0:0e2547f4cf84ac8a:f11eca55e700070a:0000000000000000:9e3779b97f4b8704:0000000000000000:b1092c26914b2783:c68b79ad7f5eca97",
       "type": 1048,
       "schema": "0xf11eca55e700070a",
       "stage": 0,
@@ -3075,6 +3072,10 @@
         {
           "from_node_id": 72,
           "to_input_port": 2
+        },
+        {
+          "from_node_id": 72,
+          "to_input_port": 3
         }
       ],
       "meta": {
@@ -3087,7 +3088,7 @@
           {
             "name": "binding1_semantic",
             "type": "string",
-            "value": ""
+            "value": "sky_gaussian_points"
           },
           {
             "name": "binding2_semantic",
@@ -3469,12 +3470,12 @@
           {
             "name": "binding4_kind",
             "type": "int",
-            "value": 0
+            "value": 1
           },
           {
             "name": "binding4_semantic",
             "type": "string",
-            "value": ""
+            "value": "sky_gaussian_points"
           },
           {
             "name": "binding4_visibility",
@@ -3751,6 +3752,10 @@
         {
           "from_node_id": 72,
           "to_input_port": 2
+        },
+        {
+          "from_node_id": 72,
+          "to_input_port": 3
         }
       ],
       "meta": {
@@ -3763,7 +3768,7 @@
           {
             "name": "binding1_semantic",
             "type": "string",
-            "value": ""
+            "value": "sky_gaussian_points"
           },
           {
             "name": "binding2_semantic",
