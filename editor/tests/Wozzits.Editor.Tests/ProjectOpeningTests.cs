@@ -2559,6 +2559,79 @@ public sealed partial class ProjectOpeningTests
         Assert.Null(sceneTree.SelectedNode);  // selection was in the removed subtree
     }
 
+    // Scene-tree structural edits run against the live viewport runtime. With no
+    // viewport running the edit must NOT silently do nothing: it is skipped (no
+    // engine call, tree untouched) AND logged so the user knows why (rather than
+    // the old behavior where a right-click "Add Child" appeared to do nothing).
+    [Fact]
+    public void SceneTreeEditsAreSkippedAndLoggedWhenViewportNotRunning()
+    {
+        var logs = new List<string>();
+        var session = new RecordingEditorSession { RuntimeRunning = false };
+        var sceneTree = new SceneTreeEditorPaneViewModel(session, log: logs.Add);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode { Id = "root", Kind = "node" },
+                ],
+            },
+        });
+
+        var root = Assert.Single(sceneTree.Nodes);
+        Assert.False(sceneTree.CanEditScene);
+
+        sceneTree.AddChild(root);
+        sceneTree.Remove(root);
+
+        // No engine mutation was attempted and the tree is untouched...
+        Assert.Empty(session.AddChildParents);
+        Assert.Empty(session.Removed);
+        Assert.Same(root, Assert.Single(sceneTree.Nodes));
+        Assert.Empty(root.Children);
+        // ...and each attempt logged that the viewport is required.
+        Assert.Equal(2, logs.Count);
+        Assert.All(
+            logs,
+            line => Assert.Contains("requires the running viewport", line));
+    }
+
+    // Inspector scene-node edits are gated the same way as the scene tree: with
+    // no viewport running the edit surface is disabled (CanEditNode) AND any edit
+    // that slips through (e.g. the runtime stopped after selection) no-ops + logs
+    // via EnsureCanApply, rather than silently succeeding as a {Ok=true} no-op.
+    [Fact]
+    public void InspectorEditsAreDisabledAndLoggedWhenViewportNotRunning()
+    {
+        var logs = new List<string>();
+        var session = new RecordingEditorSession { RuntimeRunning = false };
+        var inspector = new InspectorPaneViewModel(session, logs.Add);
+        inspector.Inspect(new SceneTreeNodeViewModel(new EngineSceneNode
+        {
+            Id = "node",
+            DisplayName = "node",
+            Kind = "node",
+            Visible = true,
+        }));
+
+        Assert.True(inspector.HasSceneNodeSelection);
+        Assert.False(inspector.CanEditNode);  // edit surface disabled in the view
+
+        // A command edit that slips through is refused before touching the engine.
+        inspector.AddComponentCommand.Execute("proximity");
+
+        Assert.Empty(session.AddedComponents);
+        Assert.Contains(logs, line => line.Contains("requires the running viewport"));
+
+        // Bringing the viewport back re-enables editing after a refresh.
+        session.RuntimeRunning = true;
+        inspector.RefreshEditAvailability();
+        Assert.True(inspector.CanEditNode);
+    }
+
     [Fact]
     public void AssetBrowserSearchFiltersTypesByNameAndSchema()
     {
@@ -3239,6 +3312,12 @@ public sealed partial class ProjectOpeningTests
 
     private sealed class RecordingEditorSession : IWozzitsEngineEditorSession
     {
+        // Defaults to a live viewport so the existing edit tests exercise the
+        // happy path; a test flips it off to assert the runtime-down gating.
+        public bool RuntimeRunning { get; set; } = true;
+
+        public bool IsRuntimeRunning => RuntimeRunning;
+
         public EngineAssetGraphSnapshotResponse AssetGraphSnapshot { get; set; } = new()
         {
             Ok = false,

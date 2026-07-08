@@ -41,6 +41,32 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
 
     public bool HasNoScene => !HasScene;
 
+    // Scene-tree structural edits (add child / reparent / delete / export) run
+    // against the live viewport runtime, so they are only available while it is
+    // running. Evaluated live (the runtime can stop asynchronously when its
+    // window is closed, with no push notification) — the context menu reads it
+    // on open to disable its items, and each edit method re-checks it via
+    // RequireRuntime so the drag-drop and Delete-key paths are gated too.
+    public bool CanEditScene => _editorSession?.IsRuntimeRunning ?? false;
+
+    // Gate a runtime-requiring scene-tree edit: returns true when the viewport is
+    // running, otherwise logs why the edit was skipped and returns false. This is
+    // the single place the "requires the running viewport" message is written, so
+    // every editing path (menu, Delete key, drag-drop) reports it consistently
+    // rather than silently doing nothing.
+    private bool RequireRuntime(string action)
+    {
+        if (CanEditScene)
+        {
+            return true;
+        }
+
+        _log?.Invoke(
+            $"[editor] {action} requires the running viewport, which is not "
+            + "running; reopen it (Restart Viewport) and try again.");
+        return false;
+    }
+
     public SceneTreeNodeViewModel? SelectedNode
     {
         get => _selectedNode;
@@ -214,6 +240,10 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         {
             return;
         }
+        if (!RequireRuntime("Add child"))
+        {
+            return;
+        }
 
         var response = _editorSession.AddChildNode(parent?.Id ?? string.Empty);
         if (!response.Ok)
@@ -290,6 +320,10 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         {
             return;
         }
+        if (!RequireRuntime("Reparent"))
+        {
+            return;
+        }
 
         var response = _editorSession.ReparentNode(
             node.Id,
@@ -318,6 +352,10 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
     public void Remove(SceneTreeNodeViewModel node)
     {
         if (_editorSession is null || node is null)
+        {
+            return;
+        }
+        if (!RequireRuntime("Delete"))
         {
             return;
         }
@@ -399,6 +437,10 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
     {
         if (_editorSession is null || node is null
             || string.IsNullOrWhiteSpace(outPath))
+        {
+            return;
+        }
+        if (!RequireRuntime("Export subtree"))
         {
             return;
         }

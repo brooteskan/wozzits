@@ -23,7 +23,10 @@
                             <StackPanel Orientation="Horizontal" Spacing="8"
                                         PointerPressed="NodePointerPressed">
                                 <StackPanel.ContextMenu>
-                                    <ContextMenu>
+                                    <!-- Opening re-evaluates viewport availability
+                                         and disables these edits when it is down
+                                         (they run against the live runtime). -->
+                                    <ContextMenu Opening="SceneNodeContextMenuOpening">
                                         <MenuItem Header="Add Child"
                                                   Click="AddChildClicked"/>
                                         <MenuItem Header="Export subtree as scene…"

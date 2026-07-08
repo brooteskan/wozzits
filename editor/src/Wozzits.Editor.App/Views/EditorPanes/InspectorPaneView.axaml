@@ -39,7 +39,11 @@
 
                 <ScrollViewer Grid.Row="1"
                               IsVisible="{Binding HasSceneNodeSelection}">
-                    <StackPanel Spacing="12">
+                    <!-- Scene-node edits act on the live viewport runtime, so the
+                         whole edit surface is disabled when it is down; fields stay
+                         readable but non-interactive (mirrors the scene tree). -->
+                    <StackPanel Spacing="12"
+                                IsEnabled="{Binding CanEditNode}">
                         <TextBlock Text="{Binding Header}"
                                    Classes="InspectorHeader"/>
                         <TextBlock Text="{Binding LastEditError}"

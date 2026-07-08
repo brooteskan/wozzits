@@ -8,6 +8,12 @@ public sealed record SceneletInfo(string Name, string Path);
 
 public interface IWozzitsEngineEditorSession
 {
+    // True while the engine's viewport runtime is alive. Scene-tree structural
+    // edits (add child / reparent / delete / export subtree) run against that
+    // live runtime, so callers gate on this: false means the viewport was never
+    // started or its window was closed, and those edits are unavailable.
+    bool IsRuntimeRunning { get; }
+
     EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot();
 
     // Device-free authoring catalog of asset-graph node types (project- and

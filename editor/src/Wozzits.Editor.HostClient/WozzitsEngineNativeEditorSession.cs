@@ -29,6 +29,11 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         Dispose();
     }
 
+    // True only while the in-process viewport runtime is actually alive (polls
+    // the engine, so a closed viewport window reads false). The scene-tree edit
+    // path gates on this before calling the runtime-only mutation ABIs.
+    public bool IsRuntimeRunning => _runtime is { } runtime && runtime.IsRunning;
+
     public EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot()
     {
         return HasNativeSession(out var error)

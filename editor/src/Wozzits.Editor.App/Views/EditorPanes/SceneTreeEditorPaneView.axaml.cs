@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -45,6 +47,26 @@ public partial class SceneTreeEditorPaneView : UserControl
         }
 
         sceneTree.SelectNode(node);
+    }
+
+    // Before the scene-node context menu opens, disable its editing items when no
+    // viewport runtime is running — those edits (add child / export / delete) act
+    // on the live runtime. Re-evaluated each open because the runtime can stop
+    // asynchronously (its window closed) with no push notification. The VM re-
+    // checks too, so the Delete-key and drag-drop paths stay gated as well.
+    private void SceneNodeContextMenuOpening(object? sender, CancelEventArgs e)
+    {
+        if (sender is not ContextMenu menu
+            || DataContext is not SceneTreeEditorPaneViewModel sceneTree)
+        {
+            return;
+        }
+
+        var canEdit = sceneTree.CanEditScene;
+        foreach (var item in menu.Items.OfType<MenuItem>())
+        {
+            item.IsEnabled = canEdit;
+        }
     }
 
     private void AddChildClicked(object? sender, RoutedEventArgs e)

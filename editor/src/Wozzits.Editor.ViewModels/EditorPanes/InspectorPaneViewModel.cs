@@ -262,6 +262,19 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     public bool HasAssetGraphNodeSelection => _selectionKind == InspectorSelectionKind.AssetGraphNode;
 
+    // Scene-node edits run against the live viewport runtime, so the whole
+    // scene-node edit surface is disabled when it is down (mirrors the scene
+    // tree's CanEditScene; the view binds the section's IsEnabled to this).
+    // Evaluated live and re-notified on selection (Inspect) and after a viewport
+    // restart; command edits also re-check via EnsureCanApply, so an edit
+    // attempted after the viewport stopped mid-session is still logged + skipped.
+    public bool CanEditNode => _editorSession?.IsRuntimeRunning ?? false;
+
+    // Re-raise CanEditNode so the bound edit surface re-evaluates (there is no
+    // push notification when the runtime starts/stops). Called from Inspect and
+    // by the host after Restart Viewport.
+    public void RefreshEditAvailability() => OnPropertyChanged(nameof(CanEditNode));
+
     public string NodeId
     {
         get => _nodeId;
@@ -856,6 +869,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphParams.Clear();
         ClearGlbNodePicker();
         LastEditError = string.Empty;
+        // Re-evaluate whether editing is available for the freshly-selected node
+        // (the viewport may have started/stopped since the last selection).
+        RefreshEditAvailability();
 
         if (node is null)
         {
@@ -922,6 +938,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphParams.Clear();
         ClearGlbNodePicker();
         LastEditError = string.Empty;
+        // Re-evaluate whether editing is available for the freshly-selected node
+        // (the viewport may have started/stopped since the last selection).
+        RefreshEditAvailability();
 
         if (node is null)
         {
@@ -1143,6 +1162,20 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         if (_editorSession is null)
         {
             LastEditError = "Engine editor session is not available.";
+            return false;
+        }
+        // Scene-node edits run against the live viewport runtime; with it down
+        // they would silently no-op. Refuse and log instead so the user knows
+        // why, mirroring the scene tree's RequireRuntime. (The edit surface is
+        // also disabled via CanEditNode; this is the always-fresh safety net for
+        // the case where the viewport stopped after the node was selected.)
+        if (!_editorSession.IsRuntimeRunning)
+        {
+            LastEditError =
+                "The viewport is not running; scene-node edits are unavailable.";
+            _log?.Invoke(
+                "[editor] Scene-node edit requires the running viewport, which "
+                + "is not running; reopen it (Restart Viewport) and try again.");
             return false;
         }
         return true;

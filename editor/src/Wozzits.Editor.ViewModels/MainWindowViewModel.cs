@@ -284,6 +284,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void RestartViewport()
     {
         _editorSession?.RestartRuntime();
+        // The runtime is back (or gone): re-enable the inspector's edit surface.
+        // The scene tree self-heals (it re-checks on context-menu open).
+        Inspector.RefreshEditAvailability();
     }
 
     // Launch the project as a SEPARATE process (the shipped-app play path),
