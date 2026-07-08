@@ -990,6 +990,21 @@ WZ_ABI_API WzResult wz_host_runtime_reparent_node(
     const char* node_id_utf8,
     const char* new_parent_id_utf8);
 
+// Live scene-tree reorder posted to the running engine (non-blocking, applied
+// next frame, no disk write): move `node_id_utf8` to just BEFORE
+// `before_node_id_utf8` in the flat draw list. A NULL/empty before-id moves the
+// node to the END (drawn last). This changes DRAW ORDER only — nesting is
+// parent_id-based (use wz_host_runtime_reparent_node to change nesting). The
+// engine re-applies the render_order layer sort, so a reorder is within a layer;
+// moving across layers is a render_order edit. The engine ignores an invalid
+// reorder (missing node, absent target, or already in place); the editor pre-
+// validates for drag UX. WZ_RESULT_INVALID_ARGUMENT for a null runtime or an
+// empty node id. NEW exported fn — WZ_ABI_VERSION unchanged (no struct change).
+WZ_ABI_API WzResult wz_host_runtime_reorder_node(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    const char* before_node_id_utf8);
+
 // Live delete posted to the running engine (non-blocking, applied next frame).
 // Removes the node and its subtree. WZ_RESULT_INVALID_ARGUMENT for a null
 // runtime or an empty node id.

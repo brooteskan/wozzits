@@ -1313,6 +1313,27 @@ namespace wz::app
         return removed;
     }
 
+    bool WozzitsApp_v1::reorder_node(
+        const wz::scene::AuthoredEntityId& id,
+        const wz::scene::AuthoredEntityId& before_id)
+    {
+        const bool moved = wz::engine::assets::reorder_scene_node(
+            scene_nodes_, id, before_id);
+        if (moved) {
+            // The reorder is a within-layer draw-order edit; re-baking the
+            // render_order sort keeps the coarse layers dominant (a stable sort
+            // preserves the new order within a layer, and snaps a cross-layer
+            // drag back into its own layer -- changing layers is a render_order
+            // edit, not a reorder).
+            wz::engine::assets::sort_scene_nodes_by_render_order(scene_nodes_);
+            scene_dirty_ = true;
+            if (behavior_scene_) {
+                rebuild_behavior_scene();
+            }
+        }
+        return moved;
+    }
+
     // ─── Live behavior-binding authoring ────────────────────────────────────
     // Each applies the matching scene_asset_data.h helper to scene_nodes_, then
     // (on success) marks the scene dirty and re-materializes the behavior

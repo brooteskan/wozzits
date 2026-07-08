@@ -2124,6 +2124,57 @@ namespace wz::engine::assets
             });
     }
 
+    // Move node `id` to just BEFORE `before_id` in the flat node list, changing
+    // ONLY its array position — i.e. its draw order. Nesting and transforms are
+    // resolved by parent_id, never array index (see reparent_scene_node, which
+    // leaves the array slot untouched), so this reorders draw order without
+    // disturbing the hierarchy. An empty `before_id` moves the node to the END
+    // (drawn last). Returns true iff the array actually changed (false if `id`
+    // is missing, `before_id` is a non-empty id that isn't present, before_id ==
+    // id, or the node is already in that position).
+    //
+    // This is the in-memory apply behind the editor's scene-tree reorder. The
+    // caller re-applies sort_scene_nodes_by_render_order afterward so the coarse
+    // render_layer key still dominates: a reorder is WITHIN a layer (ties keep
+    // the new array order under the stable sort); moving a node ACROSS layers is
+    // a render_order edit, not a reorder, and the stable re-sort snaps a cross-
+    // layer drag back into its own layer.
+    inline bool reorder_scene_node(
+        std::vector<SceneNodeAsset>& nodes,
+        const wz::scene::AuthoredEntityId& id,
+        const wz::scene::AuthoredEntityId& before_id)
+    {
+        if (id.empty() || before_id == id) {
+            return false;
+        }
+        SceneNodeAsset* from = find_scene_node(nodes, id);
+        if (!from) {
+            return false;
+        }
+        std::size_t dest = nodes.size();  // empty before_id => move to the end
+        if (!before_id.empty()) {
+            const SceneNodeAsset* before = find_scene_node(nodes, before_id);
+            if (!before) {
+                return false;
+            }
+            dest = static_cast<std::size_t>(before - nodes.data());
+        }
+        const std::size_t src = static_cast<std::size_t>(from - nodes.data());
+        // Already immediately before `before_id` (or already last): no change.
+        if (dest == src || dest == src + 1u) {
+            return false;
+        }
+        SceneNodeAsset moved = std::move(nodes[src]);
+        nodes.erase(nodes.begin() + static_cast<std::ptrdiff_t>(src));
+        if (dest > src) {
+            --dest;  // erase shifted everything after src left by one
+        }
+        nodes.insert(
+            nodes.begin() + static_cast<std::ptrdiff_t>(dest),
+            std::move(moved));
+        return true;
+    }
+
     // Set a node's editable label (name) and visibility in a flat node list.
     // Returns false if no node has that id. The in-memory apply behind the
     // editor's live name/visibility edits; persistence is a separate path.

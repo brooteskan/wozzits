@@ -149,6 +149,16 @@ namespace wz::app
         // Returns false if no node had that id.
         bool remove_node(const wz::scene::AuthoredEntityId& id);
 
+        // Live reorder: move `id` to just before `before_id` in the flat scene
+        // list (empty => move to the end), changing only its draw order (array
+        // position); nesting/transforms are parent_id-based and untouched. Re-
+        // applies the render_order sort so coarse layers stay dominant. Returns
+        // false when nothing changed (missing id, absent target, or already in
+        // place). The apply behind the editor's scene-tree reorder.
+        bool reorder_node(
+            const wz::scene::AuthoredEntityId& id,
+            const wz::scene::AuthoredEntityId& before_id);
+
         // ─── Live behavior-binding authoring ─────────────────────────────────
         // Apply behind the host ABI's behavior verbs. Each mutates the matching
         // node's behavior binding(s) in scene_nodes_, marks the scene dirty, and

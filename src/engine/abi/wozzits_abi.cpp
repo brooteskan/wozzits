@@ -1340,6 +1340,39 @@ extern "C"
         }
     }
 
+    WzResult wz_host_runtime_reorder_node(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        const char* before_node_id_utf8)
+    {
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "node_id_utf8 must not be empty");
+        }
+
+        try {
+            runtime->control.post_scene_node_reorder(
+                wz::app::SceneNodeReorderEdit{
+                    .id = node_id_utf8,
+                    .before_id =
+                        before_node_id_utf8 ? before_node_id_utf8 : "",
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "scene node reorder post failed");
+        }
+    }
+
     WzResult wz_host_runtime_remove_node(
         WzHostRuntime* runtime,
         const char* node_id_utf8)

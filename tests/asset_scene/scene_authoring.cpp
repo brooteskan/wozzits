@@ -329,6 +329,68 @@ TEST(SceneNodeList, SortByRenderOrderIsNoOpForAllDefault)
     EXPECT_EQ(nodes[2].id, "c");
 }
 
+TEST(SceneNodeList, ReorderMovesArraySlotWithoutTouchingHierarchy)
+{
+    std::vector<SceneNodeAsset> nodes(4);
+    nodes[0].id = "a";
+    nodes[1].id = "b";
+    nodes[2].id = "c";
+    nodes[2].parent_id = "a";  // c nests under a; reorder must not disturb this
+    nodes[3].id = "d";
+
+    // Move "d" to just before "b": [a, d, b, c].
+    EXPECT_TRUE(reorder_scene_node(nodes, "d", "b"));
+    EXPECT_EQ(nodes[0].id, "a");
+    EXPECT_EQ(nodes[1].id, "d");
+    EXPECT_EQ(nodes[2].id, "b");
+    EXPECT_EQ(nodes[3].id, "c");
+    // Nesting is by parent_id, untouched by the array move.
+    EXPECT_EQ(find_scene_node(nodes, "c")->parent_id, "a");
+
+    // Move "a" to the end (empty before_id): [d, b, c, a].
+    EXPECT_TRUE(reorder_scene_node(nodes, "a", {}));
+    EXPECT_EQ(nodes[0].id, "d");
+    EXPECT_EQ(nodes[3].id, "a");
+}
+
+TEST(SceneNodeList, ReorderNoOpAndInvalidReturnFalse)
+{
+    std::vector<SceneNodeAsset> nodes(3);
+    nodes[0].id = "a";
+    nodes[1].id = "b";
+    nodes[2].id = "c";
+
+    EXPECT_FALSE(reorder_scene_node(nodes, "a", "a"));       // before == id
+    EXPECT_FALSE(reorder_scene_node(nodes, "missing", "b")); // id absent
+    EXPECT_FALSE(reorder_scene_node(nodes, "a", "missing")); // target absent
+    EXPECT_FALSE(reorder_scene_node(nodes, "a", "b"));       // already before b
+    EXPECT_FALSE(reorder_scene_node(nodes, "c", {}));        // already last
+
+    // The list is untouched by every rejected reorder.
+    EXPECT_EQ(nodes[0].id, "a");
+    EXPECT_EQ(nodes[1].id, "b");
+    EXPECT_EQ(nodes[2].id, "c");
+}
+
+TEST(SceneNodeList, ReorderWithinLayerSurvivesRenderOrderResort)
+{
+    // The editor path is reorder + re-sort. A within-layer reorder must stick
+    // (stable sort keeps the new array order among equal render_order), and the
+    // coarse layers stay separated.
+    std::vector<SceneNodeAsset> nodes(3);
+    nodes[0].id = "sky";   nodes[0].render_order = render_layer::Sky;
+    nodes[1].id = "x";     nodes[1].render_order = render_layer::World;
+    nodes[2].id = "y";     nodes[2].render_order = render_layer::World;
+
+    // Author "y" ahead of "x" within the World layer, then re-sort.
+    EXPECT_TRUE(reorder_scene_node(nodes, "y", "x"));
+    sort_scene_nodes_by_render_order(nodes);
+
+    EXPECT_EQ(nodes[0].id, "sky");  // Sky still first
+    EXPECT_EQ(nodes[1].id, "y");    // reorder within World survived the sort
+    EXPECT_EQ(nodes[2].id, "x");
+}
+
 TEST(SceneJsonExport, RenderOrderRoundTripsAndDefaultIsOmitted)
 {
     std::vector<SceneNodeAsset> nodes(2);

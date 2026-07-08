@@ -109,6 +109,36 @@ TEST(EditorRuntimeControl, PropertiesPostCoalescesByIdAndDrainsOnce)
     EXPECT_TRUE(again.empty());
 }
 
+TEST(EditorRuntimeControl, ReorderPostCoalescesByIdAndDrainsOnce)
+{
+    using wz::app::SceneNodeReorderEdit;
+
+    EditorRuntimeControl control;
+    control.post_scene_node_reorder(
+        SceneNodeReorderEdit{ .id = "n", .before_id = "a" });
+    control.post_scene_node_reorder(
+        SceneNodeReorderEdit{ .id = "n", .before_id = "b" });  // latest dest
+    control.post_scene_node_reorder(
+        SceneNodeReorderEdit{ .id = "m", .before_id = {} });   // distinct node
+
+    std::vector<SceneNodeReorderEdit> applied;
+    control.service_pending_scene_node_reorders(
+        [&applied](const SceneNodeReorderEdit& edit) {
+            applied.push_back(edit);
+        });
+
+    ASSERT_EQ(applied.size(), 2u);  // n coalesced to one, m distinct
+    EXPECT_EQ(applied[0].id, "n");
+    EXPECT_EQ(applied[0].before_id, "b");  // latest destination wins
+    EXPECT_EQ(applied[1].id, "m");
+    EXPECT_TRUE(applied[1].before_id.empty());  // empty => move to end
+
+    std::vector<SceneNodeReorderEdit> again;
+    control.service_pending_scene_node_reorders(
+        [&again](const SceneNodeReorderEdit& edit) { again.push_back(edit); });
+    EXPECT_TRUE(again.empty());
+}
+
 // Custom-renderable ingredient edits (issue #229/#230): NOT coalesced — an
 // upsert then a remove of the same semantic must both land, in order — and
 // each queue drains exactly once.

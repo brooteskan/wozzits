@@ -276,6 +276,36 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_reorder(
+        SceneNodeReorderEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (SceneNodeReorderEdit& pending : pending_reorders_) {
+            if (pending.id == edit.id) {
+                pending.before_id = std::move(edit.before_id);
+                return;
+            }
+        }
+        pending_reorders_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_reorders(
+        const std::function<void(const SceneNodeReorderEdit&)>& applier)
+    {
+        std::vector<SceneNodeReorderEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_reorders_.empty()) {
+                return;
+            }
+            edits.swap(pending_reorders_);
+        }
+
+        for (const SceneNodeReorderEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_remove(
         wz::scene::AuthoredEntityId id)
     {
@@ -1100,6 +1130,10 @@ namespace wz::app
                     control->service_pending_scene_node_reparents(
                         [&app](const SceneNodeReparentEdit& edit) {
                             app.reparent_node(edit.id, edit.new_parent_id);
+                        });
+                    control->service_pending_scene_node_reorders(
+                        [&app](const SceneNodeReorderEdit& edit) {
+                            app.reorder_node(edit.id, edit.before_id);
                         });
                     control->service_pending_scene_node_removes(
                         [&app](const wz::scene::AuthoredEntityId& id) {
