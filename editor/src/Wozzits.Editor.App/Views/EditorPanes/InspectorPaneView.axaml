@@ -89,6 +89,21 @@
                                           IsChecked="{Binding NodeVisible}"
                                           Classes="InspectorCheck"/>
 
+                                <!-- Draw-order layer (render_order). Selecting a
+                                     layer sets it live; within a layer, order is
+                                     the tree / drag reorder. -->
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Render layer"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding RenderLayers}"
+                                              SelectedItem="{Binding SelectedRenderLayer}"
+                                              DisplayMemberBinding="{Binding Label}"/>
+                                </Grid>
+
                                 <Grid ColumnDefinitions="Auto,*"
                                       ColumnSpacing="10"
                                       Classes="InspectorPropertyRow">

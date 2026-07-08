@@ -8,7 +8,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 29;
+    internal const uint AbiVersion = 30;
 
     private static int _resolverRegistered;
 
@@ -396,6 +396,18 @@ internal static partial class WozzitsEngineAbi
         IntPtr runtime,
         string nodeIdUtf8,
         string beforeNodeIdUtf8);
+
+    // Set a node's render_order (draw-order LAYER); the engine re-bakes draw
+    // order so the node moves to its layer. New export; the v30 bump is the
+    // snapshot struct's render_order field, not this function.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_render_order",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeRenderOrder(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        int renderOrder);
 
     [LibraryImport(
         LibraryName,
@@ -1159,7 +1171,7 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneRenderableConstantAbi.Value0),
             16);
 
-        AssertSize<WzEditorSceneNodeAbi>(664);
+        AssertSize<WzEditorSceneNodeAbi>(672);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -1223,6 +1235,9 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.RenderableConstants),
             648);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.RenderOrder),
+            664);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -1565,6 +1580,10 @@ internal readonly struct WzEditorSceneNodeAbi
     // mirror the native struct (the node STRIDE change is the ABI v29 bump).
     public readonly WzEditorTableSpanAbi RenderableBindings;
     public readonly WzEditorTableSpanAbi RenderableConstants;
+    // Draw-order layer key (render_layer); always valid, default 0 = World.
+    // Appended last to mirror the native struct (the added int is the ABI v30
+    // bump). Read by the inspector's layer dropdown.
+    public readonly int RenderOrder;
 }
 
 // One authored semantic resource binding of a node's custom-renderable

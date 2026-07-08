@@ -1403,6 +1403,27 @@ public sealed partial class WozzitsEngineNativeClient
             beforeNodeId ?? string.Empty));
     }
 
+    internal EngineMutationResponse SetNodeRenderOrder(
+        IntPtr runtime,
+        string nodeId,
+        int renderOrder)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };  // no live viewport
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        return InvokeMutation(() =>
+            WozzitsEngineAbi.WzEditorRuntimeSetNodeRenderOrder(
+                runtime,
+                nodeId,
+                renderOrder));
+    }
+
     internal EngineMutationResponse RemoveNode(IntPtr runtime, string nodeId)
     {
         if (runtime == IntPtr.Zero)

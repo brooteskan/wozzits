@@ -698,6 +698,7 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         Kind = node.Kind;
         KindLabel = node.Kind;
         Visible = node.Visible;
+        RenderOrder = node.RenderOrder;
         RenderableSource = node.RenderableSource;
         Transform = node.Transform;
         Camera = node.Camera;
@@ -755,6 +756,11 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     // tree node (like DisplayName/Transform) — otherwise re-selecting the node
     // re-reads the stale snapshot value and the checkbox reverts (issue #213).
     public bool? Visible { get; internal set; }
+
+    // Draw-order layer key, mirrored writable like Visible so the inspector's
+    // layer dropdown reflects a live change on re-select instead of the stale
+    // snapshot value.
+    public int RenderOrder { get; internal set; }
 
     public EngineSceneRenderableSource RenderableSource { get; }
 

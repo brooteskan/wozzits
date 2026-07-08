@@ -263,6 +263,15 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.ReorderNode(runtime.Handle, nodeId, beforeNodeId);
     }
 
+    public EngineMutationResponse SetNodeRenderOrder(string nodeId, int renderOrder)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeRenderOrder(runtime.Handle, nodeId, renderOrder);
+    }
+
     public EngineMutationResponse SaveScene()
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)

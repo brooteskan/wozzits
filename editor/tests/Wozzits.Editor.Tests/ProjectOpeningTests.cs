@@ -2894,6 +2894,31 @@ public sealed partial class ProjectOpeningTests
     }
 
     [Fact]
+    public void InspectorRenderLayerReflectsNodeAndSetsLive()
+    {
+        var session = new RecordingEditorSession();  // viewport running by default
+        var inspector = new InspectorPaneViewModel(session);
+        inspector.Inspect(new SceneTreeNodeViewModel(new EngineSceneNode
+        {
+            Id = "sky",
+            DisplayName = "sky",
+            Kind = "node",
+            Visible = true,
+            RenderOrder = -200,  // Background (Sky) layer
+        }));
+
+        // The dropdown reflects the node's current layer; populating writes nothing.
+        Assert.NotNull(inspector.SelectedRenderLayer);
+        Assert.Equal(-200, inspector.SelectedRenderLayer!.Value);
+        Assert.Empty(session.RenderOrders);
+
+        // Selecting the World layer pushes render_order 0 to the engine live.
+        inspector.SelectedRenderLayer =
+            inspector.RenderLayers.Single(option => option.Value == 0);
+        Assert.Equal(("sky", 0), Assert.Single(session.RenderOrders));
+    }
+
+    [Fact]
     public void AssetBrowserSearchFiltersTypesByNameAndSchema()
     {
         var browser = new AssetBrowserPaneViewModel();
@@ -3648,6 +3673,8 @@ public sealed partial class ProjectOpeningTests
 
         public List<(string NodeId, string BeforeNodeId)> Reorders { get; } = [];
 
+        public List<(string NodeId, int RenderOrder)> RenderOrders { get; } = [];
+
         public List<CameraEdit> Cameras { get; } = [];
 
         public EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot()
@@ -4130,6 +4157,12 @@ public sealed partial class ProjectOpeningTests
         public EngineMutationResponse ReorderNode(string nodeId, string beforeNodeId)
         {
             Reorders.Add((nodeId, beforeNodeId));
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        public EngineMutationResponse SetNodeRenderOrder(string nodeId, int renderOrder)
+        {
+            RenderOrders.Add((nodeId, renderOrder));
             return new EngineMutationResponse { Ok = true };
         }
 

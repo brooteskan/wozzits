@@ -317,6 +317,11 @@ public sealed record EngineSceneNode
 
     public bool? Visible { get; init; }
 
+    // Draw-order layer key (render_layer): -200 Sky / 0 World / 100 Transparent /
+    // 200 Overlay. Default 0. Surfaced so the inspector's layer dropdown shows the
+    // node's current layer.
+    public int RenderOrder { get; init; }
+
     public EngineSceneRenderableSource RenderableSource { get; init; } = new();
 
     public EngineSceneTransform? Transform { get; init; }

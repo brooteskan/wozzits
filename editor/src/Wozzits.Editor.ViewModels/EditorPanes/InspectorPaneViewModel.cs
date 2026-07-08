@@ -20,6 +20,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _nodeName = string.Empty;
     private string _parentId = string.Empty;
     private bool _nodeVisible;
+    private InspectorRenderLayerOption? _selectedRenderLayer;
     private string _renderableSource = string.Empty;
     private string _renderableSourceKind = string.Empty;
     private string _renderableAssetGraphNodeId = string.Empty;
@@ -297,6 +298,38 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         get => _nodeVisible;
         set { if (SetProperty(ref _nodeVisible, value)) OnNodePropertiesEdited(); }
+    }
+
+    // Draw-order LAYER options for the node's render_order dropdown. Values mirror
+    // the engine's render_layer constants; lower draws first. This is the cross-
+    // cutting layer override — within a layer, draw order is the tree / reorder.
+    public IReadOnlyList<InspectorRenderLayerOption> RenderLayers { get; } =
+    [
+        new InspectorRenderLayerOption("Background (Sky)", -200),
+        new InspectorRenderLayerOption("World", 0),
+        new InspectorRenderLayerOption("Transparent", 100),
+        new InspectorRenderLayerOption("Overlay", 200),
+    ];
+
+    // The selected node's current layer (the option whose value == its
+    // render_order, or null when the node's value is non-standard). Setting it
+    // pushes the layer live to the running engine, which re-bakes draw order.
+    public InspectorRenderLayerOption? SelectedRenderLayer
+    {
+        get => _selectedRenderLayer;
+        set { if (SetProperty(ref _selectedRenderLayer, value)) OnRenderLayerEdited(); }
+    }
+
+    private InspectorRenderLayerOption? RenderLayerFor(int renderOrder)
+    {
+        foreach (var option in RenderLayers)
+        {
+            if (option.Value == renderOrder)
+            {
+                return option;
+            }
+        }
+        return null;  // non-standard value => no named layer selected
     }
 
     public string RenderableSource
@@ -898,6 +931,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             NodeName = node.DisplayName;
             ParentId = node.ParentId ?? string.Empty;
             NodeVisible = node.Visible ?? false;
+            SelectedRenderLayer = RenderLayerFor(node.RenderOrder);
 
             HasRenderableReference = node.Renderable is not null;
             RenderableSource = node.RenderableSource.DisplayName;
@@ -1068,6 +1102,28 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         _editorSession.SetSceneNodePropertiesLive(NodeId, NodeName, NodeVisible);
     }
 
+    // Live render-layer push: as the dropdown changes, set the node's render_order
+    // in the running engine (which re-bakes draw order) and mirror it onto the
+    // tree node so a re-select shows the new layer. Suppressed while populating,
+    // and no-op'd (with a log) when the viewport is down, via EnsureCanApply.
+    private void OnRenderLayerEdited()
+    {
+        if (_suppressLiveEdits || _selectedRenderLayer is null)
+        {
+            return;
+        }
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+        SetEditResponse(
+            _editorSession!.SetNodeRenderOrder(NodeId, _selectedRenderLayer.Value));
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.RenderOrder = _selectedRenderLayer.Value;
+        }
+    }
+
     // Live preview push: as the transform fields change, mirror them into the
     // running viewport engine. Suppressed while a node's values are being
     // loaded into the fields so selecting a node doesn't echo back.
@@ -1196,6 +1252,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             NodeName = string.Empty;
             ParentId = string.Empty;
             NodeVisible = false;
+            SelectedRenderLayer = null;
             HasRenderableReference = false;
             RenderableSource = string.Empty;
             RenderableSourceKind = string.Empty;
@@ -3020,6 +3077,21 @@ public sealed class InspectorSceneSourceOptionViewModel
 // One asset-graph node offered by the "Render program" picker (issue #213).
 // Carries the node id (what the render-program verb is pointed at) and a human
 // label, which falls back to the node id so the combo is never blank.
+// One option in the node's render-layer (draw-order) dropdown: a display label
+// and the render_order value it maps to (the engine's render_layer constant).
+public sealed class InspectorRenderLayerOption
+{
+    public InspectorRenderLayerOption(string label, int value)
+    {
+        Label = label;
+        Value = value;
+    }
+
+    public string Label { get; }
+
+    public int Value { get; }
+}
+
 public sealed class InspectorAssetGraphRefOptionViewModel
 {
     public InspectorAssetGraphRefOptionViewModel(ulong id, string? displayName)

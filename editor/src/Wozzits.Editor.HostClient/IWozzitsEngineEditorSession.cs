@@ -98,6 +98,12 @@ public interface IWozzitsEngineEditorSession
     // layer.
     EngineMutationResponse ReorderNode(string nodeId, string beforeNodeId);
 
+    // Set a node's render_order (draw-order LAYER: -200 Sky / 0 World / 100
+    // Transparent / 200 Overlay); the engine re-bakes draw order so the node
+    // moves to its layer. No-op when no viewport is running. This is the cross-
+    // cutting layer override (within a layer, order is the tree / reorder).
+    EngineMutationResponse SetNodeRenderOrder(string nodeId, int renderOrder);
+
     // Remove a node and its subtree from the running scene; no-op when no
     // viewport is running.
     EngineMutationResponse RemoveNode(string nodeId);

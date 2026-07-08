@@ -290,6 +290,7 @@ public sealed partial class WozzitsEngineNativeClient
             Visible = HasFlag(node.Flags, WzEditorSceneNodeFlags.HasVisible)
                 ? HasFlag(node.Flags, WzEditorSceneNodeFlags.Visible)
                 : null,
+            RenderOrder = node.RenderOrder,
             RenderableSource = ReadSceneRenderableSource(
                 bytes,
                 node.RenderableSource),
