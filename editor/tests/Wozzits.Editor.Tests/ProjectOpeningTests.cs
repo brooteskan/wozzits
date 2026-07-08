@@ -2635,7 +2635,7 @@ public sealed partial class ProjectOpeningTests
     }
 
     [Fact]
-    public void SceneTreeDropIntoNodeReparentsWithoutReorder()
+    public void SceneTreeDropIntoNodeReparentsAndAppendsInDrawOrder()
     {
         var session = new RecordingEditorSession();
         var sceneTree = new SceneTreeEditorPaneViewModel(session);
@@ -2644,10 +2644,46 @@ public sealed partial class ProjectOpeningTests
         var b = sceneTree.Nodes.Single(n => n.Id == "b");
         sceneTree.DropNode(sceneTree.Nodes[0], b, SceneTreeDropPosition.Into);
 
+        // Reparent under b, plus an append (reorder to end) so the tree-derived
+        // engine draw order matches the VM showing 'a' as b's last child.
         Assert.Equal(("a", "b"), Assert.Single(session.Reparents));
-        Assert.Empty(session.Reorders);
+        Assert.Equal(("a", string.Empty), Assert.Single(session.Reorders));
         Assert.Same(b, Assert.Single(sceneTree.Nodes));  // only b at top level
         Assert.Equal("a", Assert.Single(b.Children).Id);
+    }
+
+    [Fact]
+    public void SceneTreeDropIntoOwnDescendantIsRejected()
+    {
+        var session = new RecordingEditorSession();
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode
+                    {
+                        Id = "p",
+                        Kind = "node",
+                        Children =
+                        [
+                            new EngineSceneNode { Id = "c", ParentId = "p", Kind = "node" },
+                        ],
+                    },
+                ],
+            },
+        });
+        var p = Assert.Single(sceneTree.Nodes);
+        var c = Assert.Single(p.Children);
+
+        // Dropping 'p' onto its own child 'c' would nest p under itself: no engine
+        // call at all (in particular, no stray append).
+        sceneTree.DropNode(p, c, SceneTreeDropPosition.Into);
+        Assert.Empty(session.Reparents);
+        Assert.Empty(session.Reorders);
     }
 
     [Fact]

@@ -470,11 +470,22 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
             return;
         }
 
-        // Onto a node (or empty space) is a pure reparent — the existing verb
-        // handles the engine call, tree move, and selection.
+        // Onto a node (or empty space) => reparent, and make the node the LAST
+        // child in draw order too. The engine derives draw order from the tree
+        // (pre-order), so the reparent alone would land the node by its stale
+        // array slot; appending it (reorder to the end of the draw list, which
+        // flattens to last child of the new parent) keeps the drawn order in step
+        // with where the tree shows it — mirroring the VM's append.
         if (position == SceneTreeDropPosition.Into || target is null)
         {
+            // Guard the cycle here so the append doesn't run on a rejected drop
+            // (Reparent no-ops on a self/descendant target).
+            if (target is not null && dragged.IsSelfOrDescendant(target))
+            {
+                return;
+            }
             Reparent(dragged, target);
+            _editorSession.ReorderNode(dragged.Id, string.Empty);
             return;
         }
         if (ReferenceEquals(dragged, target))
