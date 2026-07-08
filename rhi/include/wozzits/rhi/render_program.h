@@ -61,7 +61,7 @@ namespace wz::rhi
 
     enum class VertexStepRate : uint8_t { PerVertex, PerInstance };
 
-    enum class BlendMode : uint8_t { Opaque, AlphaBlend };
+    enum class BlendMode : uint8_t { Opaque, AlphaBlend, Additive };
     enum class DepthMode : uint8_t { Disabled, TestNoWrite, TestWrite };
     enum class RasterMode : uint8_t { SolidCullBack, SolidCullNone, WireframeCullNone };
     // ── Vertex input (data, not an enum) ───────────────────────────────────────
