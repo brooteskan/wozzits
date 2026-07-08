@@ -93,6 +93,36 @@ namespace
             return desc;
         }
 
+        // pool_deploy_scene.json: a "manager" bound to pool_deploy_probe, which
+        // prewarms a PARKED instance then UNPARKS its root two frames later (#252).
+        wz::app::WozzitsAppSceneLoadDesc pool_deploy_scene_load_desc() const
+        {
+            wz::app::WozzitsAppSceneLoadDesc desc = scene_load_desc();
+            desc.scene = wz::fs::join(
+                wz::fs::parent_path(desc.scene), "pool_deploy_scene.json");
+            return desc;
+        }
+
+        // A 2-node prefab: a bare root + a CHILD bound to accumulate_on_frame. Used
+        // to prove that unparking a spawn_parked instance's ROOT revives its CHILD
+        // (the child's accumulate Y climbs only once the whole subtree is live).
+        static std::vector<wz::engine::assets::SceneNodeAsset> make_parked_multinode()
+        {
+            wz::engine::assets::SceneNodeAsset root{};
+            root.id = "pool_root";
+
+            wz::engine::assets::SceneNodeAsset child{};
+            child.id = "pool_child";
+            child.parent_id = "pool_root";
+            wz::engine::assets::SceneBehaviorAsset behavior{};
+            behavior.module = "accumulate_on_frame";
+            behavior.enabled = true;
+            behavior.events = { "frame.update" };
+            child.behavior = behavior;
+
+            return { root, child };
+        }
+
         // A 1-node prefab whose root binds accumulate_on_frame, so after a spawn
         // the spawned root's behavior initializes (counter 0) and its first tick
         // moves its Y to 1 — observable proof the spawned subtree's behavior runs.
@@ -485,4 +515,39 @@ TEST_F(WozzitsAppPrefabFixture, SpawnWithIdentityPrewarmsParkedAndReportsBack)
 
     // The manager submits only ONCE (on self.start), so no further instances appear.
     EXPECT_EQ(app.spawned_prefab_node_count(), 1u);
+}
+
+// Regression (#252): unparking a spawn_parked instance's ROOT must revive the
+// WHOLE subtree, including CHILD behaviors + colliders. The bug set active=0 on
+// every spawned node, so an acquire (which flips active on the ROOT handle only)
+// left each child effectively inactive -- a deployed tank drove + made sound but
+// its hitbox / projectile children never rejoined the collision frame. The fix
+// parks only the top-level node; children inherit parked and revive on unpark.
+TEST_F(WozzitsAppPrefabFixture, ParkedSpawnRevivesChildBehaviorOnUnpark)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(pool_deploy_scene_load_desc()));
+    // Override the auto-registered 1-node spawnling with a 2-node prefab (root +
+    // accumulate child) BEFORE tick 1 drains the prewarm submit.
+    app.register_prefab("spawnling", make_parked_multinode());
+
+    // Tick 1: drain -> spawn the multi-node prefab PARKED. The child never
+    // dispatches while the subtree is parked.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    ASSERT_EQ(app.spawned_prefab_node_count(), 2u);
+    const auto parked = app.node_local_translation("spawn:1:pool_child");
+    ASSERT_TRUE(parked.has_value())
+        << "spawned child missing from the scene";
+    EXPECT_FLOAT_EQ(parked->y, 0.0f)
+        << "the parked child dispatched (subtree should be inherited-parked)";
+
+    // The manager unparks the ROOT at frame 2. From then the CHILD must revive and
+    // its accumulate Y climb. Pre-fix (child carried active=0) it stayed 0 forever.
+    for (int tick = 0; tick < 5; ++tick) {
+        app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    }
+    const auto revived = app.node_local_translation("spawn:1:pool_child");
+    ASSERT_TRUE(revived.has_value());
+    EXPECT_GT(revived->y, 0.0f)
+        << "unparking the root did not revive the child (parked-subtree bug)";
 }

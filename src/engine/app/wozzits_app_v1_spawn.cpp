@@ -586,14 +586,21 @@ namespace wz::app
             }
         }
         // spawn_parked (#252 pooling): a prewarmed pool instance grafts INERT --
-        // active=0 (the effective-active mask parks its dispatch + collision from
-        // the next frame) + visible=0 (the renderer hides it immediately, so no
-        // one-frame flash). The render/collision bindings still materialize, so an
-        // acquire (active=1 + visible=1) brings it up with no re-spawn.
+        // active=0 parks its dispatch + collision, visible=0 hides it (no one-frame
+        // flash). Both axes are HIERARCHICAL, so set them ONLY on the re-rooted
+        // top-level node(s): the whole subtree inherits parked+hidden. Setting every
+        // node would be WRONG -- an acquire unparks the root (wz_set_active on the
+        // one handle it has), and a child that carried its OWN active=0 would stay
+        // effectively inactive, so its collider (hitbox / projectile) would never
+        // rejoin the collision frame. Root-only means the acquire revives the whole
+        // instance. The render/collision bindings still materialize, so the acquire
+        // (active=1 + visible=1) brings it up with no re-spawn.
         if (spawn_parked) {
             for (wz::engine::assets::SceneNodeAsset& node : spawned) {
-                node.active = false;
-                node.visible = false;
+                if (!node.parent_id.has_value()) {
+                    node.active = false;
+                    node.visible = false;
+                }
             }
         }
         scene_nodes_.insert(

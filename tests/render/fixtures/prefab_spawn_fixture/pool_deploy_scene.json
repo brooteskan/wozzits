@@ -1,0 +1,34 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "pool_deploy_scene",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "manager",
+      "parent": "root",
+      "name": "manager",
+      "transform": {
+        "translation": [50, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "behavior": {
+        "label": "Pool prewarm-and-deploy probe (#252)",
+        "module": "pool_deploy_probe",
+        "enabled": true,
+        "events": ["self.start", "spawn.completed", "frame.update"]
+      }
+    }
+  ],
+  "defaults": {}
+}

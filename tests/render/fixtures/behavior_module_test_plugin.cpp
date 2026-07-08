@@ -330,6 +330,87 @@ namespace
         }
     }
 
+    // Prewarm-and-DEPLOY probe (#252 pooling): like the prewarm probe, but it also
+    // UNPARKS the instance (root only, as a real pool manager does) two frames
+    // after recording its stable id. The parked-instance regression test spawns a
+    // MULTI-node prefab through it and checks that unparking the ROOT revives a
+    // CHILD behavior -- the exact case the "park only the root" fix restores (the
+    // bug set active=0 on every node, so a child stayed inert after the unpark).
+    struct PoolDeployState
+    {
+        char    root_id[48];
+        uint8_t have_root;
+        uint8_t deployed;
+        int     frames;
+    };
+
+    void pool_deploy_init(
+        const WzBehaviorInitFacts* facts, WzBehaviorEntityId, void*)
+    {
+        (void)wz_instance_state<PoolDeployState>(facts);
+    }
+
+    void pool_deploy_probe(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event) {
+            return;
+        }
+        PoolDeployState* s = wz_instance_state<PoolDeployState>(facts);
+        if (!s) {
+            return;
+        }
+        switch (wz_event_kind(event)) {
+        case WZ_EVENT_SELF_START:
+        {
+            WzSpawnPrefabRequest req{};
+            req.spawner = wz_self(event);
+            req.prefab_name_hash = wz_prefab_hash("spawnling");
+            req.request_tag = 0u;
+            req.spawn_parked = 1u;
+            WzSpawnTicket ticket{};
+            (void)wz_submit_spawn_prefab(facts, &req, &ticket);
+            return;
+        }
+        case WZ_EVENT_SPAWN_COMPLETED:
+        {
+            const char* id = wz_spawn_event_root_authored_id(facts);
+            if (!id) {
+                return;
+            }
+            unsigned n = 0u;
+            for (; n + 1u < sizeof(s->root_id) && id[n]; ++n) {
+                s->root_id[n] = id[n];
+            }
+            s->root_id[n] = '\0';
+            s->have_root = 1u;
+            return;
+        }
+        case WZ_EVENT_FRAME_UPDATE:
+        {
+            s->frames++;
+            if (s->have_root && !s->deployed && s->frames >= 2) {
+                WzBehaviorEntityId handle =
+                    (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY;
+                if (wz_find_entity_by_authored_id(facts, s->root_id, &handle)
+                    && handle
+                        != (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY)
+                {
+                    // Unpark the ROOT only -- the whole subtree must revive.
+                    wz_write_set_active(facts, handle, 1u);
+                    wz_write_set_visible(facts, handle, 1u);
+                    s->deployed = 1u;
+                }
+            }
+            return;
+        }
+        default:
+            return;
+        }
+    }
+
     // Subscribed to "input.*" (NOT frame.update): writes an add-local-translation
     // of (+1, 0, 0) for each input event the runtime routes to it. The dispatch
     // test ticks with a controller-axis InputState and asserts the bound node
@@ -453,6 +534,17 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         .event_channel_count = 2u,
         .module_user_data = nullptr,
     };
+    static const char* pool_deploy_channels[] = {
+        "self.start", "spawn.completed", "frame.update" };
+    const WzBehaviorModuleDesc pool_deploy_desc{
+        .size = sizeof(WzBehaviorModuleDesc),
+        .module = "pool_deploy_probe",
+        .on_event = pool_deploy_probe,
+        .on_init = pool_deploy_init,
+        .event_channels = pool_deploy_channels,
+        .event_channel_count = 3u,
+        .module_user_data = nullptr,
+    };
     static const char* input_events[] = { "input.*" };
     const WzBehaviorModuleDesc move_on_input_desc{
         .size = sizeof(WzBehaviorModuleDesc),
@@ -487,10 +579,12 @@ extern "C" WZ_TEST_EXPORT uint8_t wz_register_behaviors(
         api->register_module_desc(api->user, &spawn_prefab_desc);
     const uint8_t pool_prewarm_ok =
         api->register_module_desc(api->user, &pool_prewarm_desc);
+    const uint8_t pool_deploy_ok =
+        api->register_module_desc(api->user, &pool_deploy_desc);
     return (move_ok && spawn_ok && remove_ok && set_renderable_ok
             && pulse_tint_ok && reparent_ok && add_proximity_ok
             && remove_proximity_ok && move_on_input_ok && accumulate_ok
-            && spawn_prefab_ok && pool_prewarm_ok)
+            && spawn_prefab_ok && pool_prewarm_ok && pool_deploy_ok)
         ? uint8_t{ 1 }
         : uint8_t{ 0 };
 }

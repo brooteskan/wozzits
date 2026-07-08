@@ -418,6 +418,12 @@ configure_file(
     "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/pool_scene.json"
     "${WZ_PREFAB_SPAWN_FIXTURE_DST}/pool_scene.json"
     COPYONLY)
+# #252 pooling regression: a scene whose manager PREWARMS a parked instance then
+# UNPARKS its ROOT -- the parked-subtree fix must revive a CHILD behavior.
+configure_file(
+    "${WZ_PREFAB_SPAWN_FIXTURE_SRC}/pool_deploy_scene.json"
+    "${WZ_PREFAB_SPAWN_FIXTURE_DST}/pool_deploy_scene.json"
+    COPYONLY)
 # A scenelet auto-registered as the "spawnling" prefab on scene load (the
 # runtime-spawning glue): scenelets/<stem>.scene.json -> prefab "<stem>". Its
 # root binds accumulate_on_frame, so a spawned instance's behavior runs.
