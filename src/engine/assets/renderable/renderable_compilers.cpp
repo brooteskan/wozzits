@@ -372,7 +372,8 @@ namespace wz::engine::assets::internal
                 [](DescriptorSemantic semantic) noexcept
                 {
                     return semantic == DescriptorSemantic::PulledMeshPositions
-                        || semantic == DescriptorSemantic::PulledMeshIndices;
+                        || semantic == DescriptorSemantic::PulledMeshIndices
+                        || semantic == DescriptorSemantic::PulledMeshNormals;
                 };
 
             std::vector<DescriptorSemantic> bound;

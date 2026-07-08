@@ -184,8 +184,8 @@
             "goal": 0,
             "gamma_start": 2,
             "anneal_seconds": 2,
-            "confidence": 0.69999999999999996,
-            "decoherence": 0.29999999999999999,
+            "confidence": 0.7,
+            "decoherence": 0.3,
             "think_interval": 0.25,
             "memory": 1
           }
@@ -266,6 +266,34 @@
       },
       "visible": true,
       "active": true
+    },
+    {
+      "id": "lit_sphere",
+      "parent": "root",
+      "name": "lit_sphere",
+      "transform": {
+        "translation": [
+          236.0,
+          349.0,
+          353.0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          18.0,
+          18.0,
+          18.0
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 87
+      }
     }
   ],
   "defaults": {
@@ -277,18 +305,18 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        280.62081909179688,
-        428.00277709960938,
+        280.6208190917969,
+        428.0027770996094,
         415.98797607421875
       ],
       "orientation": [
         -0.30387383699417114,
-        -0.33288159966468811,
+        -0.3328815996646881,
         0.10529301315546036,
-        -0.88643330335617065
+        -0.8864333033561707
       ],
       "move_speed": 8,
-      "look_speed": 0.00050000002374872565,
+      "look_speed": 0.0005000000237487257,
       "boost_multiplier": 4,
       "roll_speed": 1.5
     }

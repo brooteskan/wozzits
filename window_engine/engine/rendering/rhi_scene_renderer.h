@@ -150,6 +150,7 @@ namespace wz::engine::rendering
             wz::rhi::Tag                program{};
             wz::rhi::GpuResourceHandle  positions{};
             wz::rhi::GpuResourceHandle  indices{};
+            wz::rhi::GpuResourceHandle  normals{};   // empty unless a lit layout pulls them
             wz::rhi::ShaderResourceGroup object_srg{};
             wz::rhi::DrawPacket         packet{};
             // True only for the CPU-upload fallback path, where the renderer

@@ -59,6 +59,18 @@ namespace wz::engine::rendering
             return out;
         }
 
+        std::vector<float> tight_mesh_normals(const ea::MeshData& mesh)
+        {
+            std::vector<float> out;
+            out.reserve(mesh.vertices.size() * 3u);
+            for (const ea::MeshVertex& vertex : mesh.vertices) {
+                out.push_back(vertex.normal[0]);
+                out.push_back(vertex.normal[1]);
+                out.push_back(vertex.normal[2]);
+            }
+            return out;
+        }
+
         // Recover the clipmap lattice's (base_resolution, level_count) from a
         // generated lattice mesh, independent of cell_size. The generator
         // (make_clipmap_lattice_mesh) tags every vertex with its LOD level in
@@ -106,13 +118,17 @@ namespace wz::engine::rendering
         void release_unrealized_pull_buffers(
             wz::rhi::GpuResourceRegistry& resources,
             wz::rhi::GpuResourceHandle positions,
-            wz::rhi::GpuResourceHandle indices)
+            wz::rhi::GpuResourceHandle indices,
+            wz::rhi::GpuResourceHandle normals = {})
         {
             if (positions.valid()) {
                 resources.release(positions);
             }
             if (indices.valid()) {
                 resources.release(indices);
+            }
+            if (normals.valid()) {
+                resources.release(normals);
             }
             // No collect() here. This runs mid-frame, with no wait_idle, while
             // other renderables may still reference resources the GPU has not
@@ -776,6 +792,9 @@ namespace wz::engine::rendering
             if (renderable.indices.valid()) {
                 gpu_.resources.release(renderable.indices);
             }
+            if (renderable.normals.valid()) {
+                gpu_.resources.release(renderable.normals);
+            }
         }
 
         // Reclaim the just-released buffers. The GPU is idle (wait_idle above),
@@ -1059,8 +1078,19 @@ namespace wz::engine::rendering
         // renderer binds but never releases them. Fall back to a per-realize CPU
         // upload for sources without resident buffers (e.g. the rhi pull-mesh
         // recipe) — those the renderer owns and releases.
+        // Resolve a normals pull buffer ONLY when the program's layout declares
+        // the pulled_mesh_normals row (a lit program). Otherwise skip it — a
+        // mesh's normals are irrelevant to a program that never binds them, and
+        // uploading one would be a renderer-owned buffer nothing consumes.
+        const wz::rhi::Tag pulled_normals_semantic =
+            gpu_.descriptor_semantics.find("pulled_mesh_normals");
+        const bool wants_normals = pulled_normals_semantic.valid()
+            && wz::rhi::find_descriptor_binding_index(
+                   *slot2_layout, pulled_normals_semantic);
+
         wz::rhi::GpuResourceHandle positions_handle{};
         wz::rhi::GpuResourceHandle indices_handle{};
+        wz::rhi::GpuResourceHandle normals_handle{};
         bool owns_buffers = false;
         uint32_t index_count = 0;
         uint32_t vertex_count = 0;
@@ -1072,6 +1102,11 @@ namespace wz::engine::rendering
             indices_handle = gpu_.resources.find(wz::rhi::ResourceIdentity{
                 ea::rhi_asset_identity(*source->resident_key, "pull_indices"),
                 {} });
+            if (wants_normals) {
+                normals_handle = gpu_.resources.find(wz::rhi::ResourceIdentity{
+                    ea::rhi_asset_identity(*source->resident_key, "pull_normals"),
+                    {} });
+            }
         }
 
         if (positions_handle.valid() && indices_handle.valid()) {
@@ -1115,6 +1150,18 @@ namespace wz::engine::rendering
             index_count = mesh->index_count();
             vertex_count = mesh->vertex_count();
 
+            // Optional normals: a lit program pulls them; other recipes don't.
+            // Best-effort — a failure here surfaces as an unsatisfied SRG below.
+            if (wants_normals && mesh->has_normals) {
+                const wz::rhi::Tag normal_variant =
+                    ctx_.resource_variants.acquire("mesh.pull_normals");
+                const std::vector<float> normals = tight_mesh_normals(*mesh);
+                normals_handle = acquire_pull_buffer(
+                    gpu_.resources, source->buffer_identity, normal_variant,
+                    normals.data(), normals.size() * sizeof(float),
+                    3u * sizeof(float));
+            }
+
             // Recover the lattice resolution from the mesh's level tags so the
             // per-frame view-transform packing can size the morph band. Only the
             // clipmap recipe rides this CPU-pull path with a lattice mesh.
@@ -1136,6 +1183,7 @@ namespace wz::engine::rendering
         realized.program = program->program;
         realized.positions = positions_handle;
         realized.indices = indices_handle;
+        realized.normals = normals_handle;
         realized.owns_buffers = owns_buffers;
         // Baked mesh-style shading (issue #195 slice A): mutually exclusive with
         // the clipmap pack branch below (a clipmap recipe never carries a style).
@@ -1206,6 +1254,8 @@ namespace wz::engine::rendering
             gpu_.descriptor_semantics.find("pulled_mesh_positions");
         const wz::rhi::Tag pulled_indices =
             gpu_.descriptor_semantics.find("pulled_mesh_indices");
+        const wz::rhi::Tag pulled_normals =
+            gpu_.descriptor_semantics.find("pulled_mesh_normals");
         bool srg_ok = true;
         if (source->custom) {
             // Generic bind (issue #228): the pull buffers go in only when the
@@ -1226,6 +1276,15 @@ namespace wz::engine::rendering
             {
                 srg_ok = realized.object_srg.set(
                     pulled_indices, realized.indices).has_value();
+            }
+            // Normals bind the same way, but only when the layout declares them
+            // (a lit program); other custom programs never see this.
+            if (srg_ok
+                && wz::rhi::find_descriptor_binding_index(
+                    *slot2_layout, pulled_normals))
+            {
+                srg_ok = realized.object_srg.set(
+                    pulled_normals, realized.normals).has_value();
             }
             for (const ea::RhiRenderableBinding& binding :
                  source->custom_bindings)
@@ -1261,7 +1320,8 @@ namespace wz::engine::rendering
         if (!srg_ok || !realized.object_srg.satisfies(*slot2_layout)) {
             if (realized.owns_buffers) {
                 release_unrealized_pull_buffers(
-                    gpu_.resources, realized.positions, realized.indices);
+                    gpu_.resources, realized.positions, realized.indices,
+                    realized.normals);
             }
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: object SRG build failed");
@@ -1315,7 +1375,8 @@ namespace wz::engine::rendering
         {
             if (realized.owns_buffers) {
                 release_unrealized_pull_buffers(
-                    gpu_.resources, realized.positions, realized.indices);
+                    gpu_.resources, realized.positions, realized.indices,
+                    realized.normals);
             }
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: draw packet build failed");
