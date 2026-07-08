@@ -57,6 +57,34 @@
       ]
     },
     {
+      "id": "sky",
+      "parent": "root",
+      "name": "sky",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 80
+      }
+    },
+    {
       "id": "clipmap_landscape",
       "parent": "root",
       "name": "clipmap landscape",
@@ -157,8 +185,8 @@
             "goal": 0,
             "gamma_start": 2,
             "anneal_seconds": 2,
-            "confidence": 0.69999999999999996,
-            "decoherence": 0.29999999999999999,
+            "confidence": 0.7,
+            "decoherence": 0.3,
             "think_interval": 0.25,
             "memory": 1
           }
@@ -258,10 +286,10 @@
         0.6741485595703125,
         -0.2197239100933075,
         0.23449678719043732,
-        0.66502362489700317
+        0.6650236248970032
       ],
       "move_speed": 8,
-      "look_speed": 0.00050000002374872565,
+      "look_speed": 0.0005000000237487257,
       "boost_multiplier": 4,
       "roll_speed": 1.5
     }
