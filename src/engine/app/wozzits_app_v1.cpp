@@ -552,12 +552,11 @@ namespace wz::app
         // project manifest's behavior_module_folder rather than only built-ins.
         load_behavior_modules(desc.behavior_module_folder);
         // Bake draw order into the flat node array: the renderer walks it linearly
-        // (no per-frame sort), so ordering must live in the array itself. Stable +
-        // default-0 => scenes without render_order keys are unchanged. Done once
-        // here, after all authored nodes are present and before the polytree is
-        // built from them; live render_order edits re-apply this via their own
-        // full rebuild.
-        wz::engine::assets::sort_scene_nodes_by_render_order(scene_nodes_);
+        // (no per-frame sort), so ordering must live in the array itself. Draw
+        // order defaults to the tree's pre-order and render_order overrides it as
+        // a coarse layer. Done once here, after all authored nodes are present and
+        // before the polytree is built from them; structural edits re-bake below.
+        wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
         rebuild_behavior_scene();
 
         // Auto-register the project's scenelets as spawnable prefabs (runtime
@@ -1269,7 +1268,12 @@ namespace wz::app
     {
         wz::engine::assets::SceneAddChildResult result =
             wz::engine::assets::add_child_scene_node(scene_nodes_, parent_id);
-        scene_dirty_ = scene_dirty_ || result.ok;
+        if (result.ok) {
+            // The new child is appended; re-bake so it flattens into pre-order
+            // right after its parent's existing subtree (draw order = tree order).
+            wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
+            scene_dirty_ = true;
+        }
         // A structural change invalidates the behavior runtime's entity ids; if
         // behaviors are live, re-materialize so their runtime tracks the edit.
         if (result.ok && behavior_scene_) {
@@ -1295,9 +1299,17 @@ namespace wz::app
     {
         const bool ok = wz::engine::assets::reparent_scene_node(
             scene_nodes_, id, new_parent_id);
-        scene_dirty_ = scene_dirty_ || ok;
-        if (ok && behavior_scene_) {
-            rebuild_behavior_scene();
+        if (ok) {
+            // Nesting now drives draw order (draw order = tree pre-order), so a
+            // reparent MUST re-bake: the moved subtree flattens under its new
+            // parent, landing among the new siblings by its current array slot
+            // (the editor sets that slot with a following reorder for a precise
+            // drop). render_order still overrides as a layer.
+            wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
+            scene_dirty_ = true;
+            if (behavior_scene_) {
+                rebuild_behavior_scene();
+            }
         }
         return ok;
     }
@@ -1320,12 +1332,12 @@ namespace wz::app
         const bool moved = wz::engine::assets::reorder_scene_node(
             scene_nodes_, id, before_id);
         if (moved) {
-            // The reorder is a within-layer draw-order edit; re-baking the
-            // render_order sort keeps the coarse layers dominant (a stable sort
-            // preserves the new order within a layer, and snaps a cross-layer
-            // drag back into its own layer -- changing layers is a render_order
-            // edit, not a reorder).
-            wz::engine::assets::sort_scene_nodes_by_render_order(scene_nodes_);
+            // Re-bake: the reorder set this node's slot among its siblings; the
+            // flatten keeps the tree pre-order and the render_order sort keeps the
+            // coarse layers dominant (ties keep the new sibling order). A cross-
+            // layer drag snaps back into its own layer -- changing layers is a
+            // render_order edit, not a reorder.
+            wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
             scene_dirty_ = true;
             if (behavior_scene_) {
                 rebuild_behavior_scene();

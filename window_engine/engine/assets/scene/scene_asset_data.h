@@ -2124,6 +2124,104 @@ namespace wz::engine::assets
             });
     }
 
+    // Reorder `nodes` into a stable PRE-ORDER flatten of the parent_id tree: each
+    // node immediately precedes its whole subtree, sibling order = the order the
+    // siblings currently appear in the array (IMPLICIT sibling order), and root
+    // order = the current array order of the roots. This is what makes the tree
+    // structure itself define draw order — rearranging the tree (reparent, or
+    // reordering siblings) moves a node's draw slot, with no per-node ordering
+    // key. Robust: a dangling/empty/self parent id is treated as a root, and a
+    // parent cycle can't strand a node (any node the walk doesn't reach is
+    // appended in array order), so every node appears exactly once.
+    inline void flatten_scene_nodes_preorder(std::vector<SceneNodeAsset>& nodes)
+    {
+        const std::size_t n = nodes.size();
+        if (n < 2u) {
+            return;
+        }
+
+        std::unordered_map<std::string, std::size_t> index_by_id;
+        index_by_id.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            index_by_id.emplace(nodes[i].id, i);
+        }
+
+        // Children per parent index + the roots, both in array order (so sibling
+        // and root order come straight from the current array).
+        std::vector<std::vector<std::size_t>> children(n);
+        std::vector<std::size_t> roots;
+        for (std::size_t i = 0; i < n; ++i) {
+            std::size_t parent = n;
+            if (nodes[i].parent_id && !nodes[i].parent_id->empty()) {
+                const auto it = index_by_id.find(*nodes[i].parent_id);
+                if (it != index_by_id.end() && it->second != i) {
+                    parent = it->second;
+                }
+            }
+            if (parent == n) {
+                roots.push_back(i);
+            }
+            else {
+                children[parent].push_back(i);
+            }
+        }
+
+        // Iterative pre-order DFS (deep trees can't overflow the stack). Push in
+        // reverse so siblings/roots pop in array order; emit a node before its
+        // children.
+        std::vector<std::size_t> order;
+        order.reserve(n);
+        std::vector<std::uint8_t> visited(n, 0u);
+        std::vector<std::size_t> stack;
+        stack.reserve(n);
+        for (std::size_t r = roots.size(); r-- > 0;) {
+            stack.push_back(roots[r]);
+        }
+        while (!stack.empty()) {
+            const std::size_t cur = stack.back();
+            stack.pop_back();
+            if (visited[cur]) {
+                continue;
+            }
+            visited[cur] = 1u;
+            order.push_back(cur);
+            const std::vector<std::size_t>& kids = children[cur];
+            for (std::size_t k = kids.size(); k-- > 0;) {
+                if (!visited[kids[k]]) {
+                    stack.push_back(kids[k]);
+                }
+            }
+        }
+        // Any node unreached by the DFS (stranded in a parent cycle) is kept, in
+        // array order, so the flatten never drops nodes.
+        for (std::size_t i = 0; i < n; ++i) {
+            if (!visited[i]) {
+                order.push_back(i);
+            }
+        }
+
+        std::vector<SceneNodeAsset> reordered;
+        reordered.reserve(n);
+        for (const std::size_t idx : order) {
+            reordered.push_back(std::move(nodes[idx]));
+        }
+        nodes = std::move(reordered);
+    }
+
+    // Bake the final draw order into `nodes` — the single choke point that
+    // "produces the flat array order" the renderer walks. Draw order defaults to
+    // the tree's pre-order (flatten_scene_nodes_preorder), then a stable sort by
+    // render_order lets the coarse render_layer key OVERRIDE it (ties keep the
+    // pre-order). With render_order 0 everywhere, draw order IS the tree order.
+    // Idempotent: an already-baked array is left unchanged. Called wherever the
+    // node list is (re)built or structurally edited (load, add-child, reparent,
+    // reorder).
+    inline void bake_scene_node_draw_order(std::vector<SceneNodeAsset>& nodes)
+    {
+        flatten_scene_nodes_preorder(nodes);
+        sort_scene_nodes_by_render_order(nodes);
+    }
+
     // Move node `id` to just BEFORE `before_id` in the flat node list, changing
     // ONLY its array position — i.e. its draw order. Nesting and transforms are
     // resolved by parent_id, never array index (see reparent_scene_node, which

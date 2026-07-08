@@ -329,6 +329,83 @@ TEST(SceneNodeList, SortByRenderOrderIsNoOpForAllDefault)
     EXPECT_EQ(nodes[2].id, "c");
 }
 
+TEST(SceneNodeList, FlattenPreorderGroupsSubtreesKeepingSiblingOrder)
+{
+    // Interleaved array (children not adjacent to parents): [root,a,b,a1,b1].
+    std::vector<SceneNodeAsset> nodes(5);
+    nodes[0].id = "root";
+    nodes[1].id = "a";  nodes[1].parent_id = "root";
+    nodes[2].id = "b";  nodes[2].parent_id = "root";
+    nodes[3].id = "a1"; nodes[3].parent_id = "a";
+    nodes[4].id = "b1"; nodes[4].parent_id = "b";
+
+    flatten_scene_nodes_preorder(nodes);
+
+    // Pre-order: each subtree contiguous, sibling order a<b preserved.
+    std::vector<std::string> ids;
+    for (const auto& n : nodes) ids.push_back(n.id);
+    EXPECT_EQ(ids, (std::vector<std::string>{ "root", "a", "a1", "b", "b1" }));
+
+    // Idempotent: flattening an already-pre-order array changes nothing.
+    flatten_scene_nodes_preorder(nodes);
+    std::vector<std::string> again;
+    for (const auto& n : nodes) again.push_back(n.id);
+    EXPECT_EQ(ids, again);
+}
+
+TEST(SceneNodeList, FlattenReflectsSiblingArrayOrder)
+{
+    std::vector<SceneNodeAsset> nodes(5);
+    nodes[0].id = "root";
+    nodes[1].id = "a";  nodes[1].parent_id = "root";
+    nodes[2].id = "b";  nodes[2].parent_id = "root";
+    nodes[3].id = "a1"; nodes[3].parent_id = "a";
+    nodes[4].id = "b1"; nodes[4].parent_id = "b";
+
+    // Reorder the draw slot so sibling 'b' precedes 'a'; the flatten follows.
+    EXPECT_TRUE(reorder_scene_node(nodes, "b", "a"));
+    flatten_scene_nodes_preorder(nodes);
+
+    std::vector<std::string> ids;
+    for (const auto& n : nodes) ids.push_back(n.id);
+    EXPECT_EQ(ids, (std::vector<std::string>{ "root", "b", "b1", "a", "a1" }));
+}
+
+TEST(SceneNodeList, FlattenKeepsAllNodesUnderAParentCycle)
+{
+    // a <-> b form a parent cycle (neither is a root); c is a real root.
+    std::vector<SceneNodeAsset> nodes(3);
+    nodes[0].id = "a"; nodes[0].parent_id = "b";
+    nodes[1].id = "b"; nodes[1].parent_id = "a";
+    nodes[2].id = "c";
+
+    flatten_scene_nodes_preorder(nodes);
+
+    // No node is dropped; the cyclic pair is kept (falls to the end).
+    EXPECT_EQ(nodes.size(), 3u);
+    EXPECT_NE(find_scene_node(nodes, "a"), nullptr);
+    EXPECT_NE(find_scene_node(nodes, "b"), nullptr);
+    EXPECT_NE(find_scene_node(nodes, "c"), nullptr);
+}
+
+TEST(SceneNodeList, BakeDefaultsToTreeOrderThenRenderOrderOverrides)
+{
+    // Tree root -> [world_a, sky]; sky lifted to the Sky layer.
+    std::vector<SceneNodeAsset> nodes(3);
+    nodes[0].id = "root";
+    nodes[1].id = "world_a"; nodes[1].parent_id = "root";
+    nodes[2].id = "sky";     nodes[2].parent_id = "root";
+    nodes[2].render_order = render_layer::Sky;
+
+    bake_scene_node_draw_order(nodes);
+
+    // Tree pre-order is root, world_a, sky; the Sky layer pulls sky to the front,
+    // the rest keep tree order.
+    std::vector<std::string> ids;
+    for (const auto& n : nodes) ids.push_back(n.id);
+    EXPECT_EQ(ids, (std::vector<std::string>{ "sky", "root", "world_a" }));
+}
+
 TEST(SceneNodeList, ReorderMovesArraySlotWithoutTouchingHierarchy)
 {
     std::vector<SceneNodeAsset> nodes(4);
