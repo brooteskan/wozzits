@@ -243,13 +243,21 @@ namespace
                     - 0.5f * static_cast<float>(kActiveTarget - 1))
                 * kDeploySpread;
 
+            // HQ (this pool node) world position: the deploy fan is placed RELATIVE
+            // to HQ. A deployed instance is a TOP-LEVEL spawn node, so its local ==
+            // world -- setting a bare local (lateral, 0, ahead) would land the fan at
+            // the WORLD ORIGIN, not at HQ (the "spawn at 0,0" bug). Add HQ's world.
+            WzVec3 hq{};
+            (void)wz_read_world_position(facts, wz_self(event), &hq);
+
             // The deploy: unpark (fires the tank's self.activated -> claim lease +
             // reset), show, and place it at HQ + fan. Three cheap field writes -- no
             // spawn, no rebuild.
             wz_write_set_active(facts, handle, 1u);
             wz_write_set_visible(facts, handle, 1u);
-            wz_write_set_local_translation(
-                facts, handle, lateral, 0.0f, kDeployAhead);
+            wz_write_set_world_translation(
+                facts, handle,
+                hq.x + lateral, hq.y, hq.z + kDeployAhead);
 
             state->slot_deployed[chosen] = 1u;
             state->live_count++;
