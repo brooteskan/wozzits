@@ -41,7 +41,10 @@ namespace
     { "direction": [0.0, 1.0, 0.0], "sharpness": 2.0, "amplitude": [1.0, 0.9, 0.8] },
     { "direction": [1.0, 0.0, 0.0], "sharpness": 4.0, "amplitude": [0.2, 0.3, 0.4] }
   ],
-  "point_sources": []
+  "point_sources": [
+    { "direction": [0.0, 1.0, 0.0], "radiance": [10.0, 9.0, 8.0], "solid_angle": 0.001 },
+    { "direction": [0.6, 0.8, 0.0], "radiance": [1.0, 2.0, 3.0], "solid_angle": 0.002 }
+  ]
 })JSON";
 
     wz::fs::Path make_root(const char* suffix)
@@ -57,7 +60,7 @@ namespace
     }
 }
 
-TEST(SkyGaussianRhiResidency, ResolvePublishesLobeBufferIntoRhiRegistry)
+TEST(SkyGaussianRhiResidency, ResolvePublishesLobeAndPointBuffersIntoRhiRegistry)
 {
     wz::window::WindowDesc window_desc{};
     window_desc.title = "sky_gaussian_rhi_residency_test";
@@ -141,6 +144,30 @@ TEST(SkyGaussianRhiResidency, ResolvePublishesLobeBufferIntoRhiRegistry)
             gpu.backend.gpu_handle_for(resource->backend);
         ASSERT_TRUE(gpu_handle.valid());
 
+        // The high-frequency point sources publish as a SECOND resident buffer
+        // under the "sky_gaussian_points" variant (source B / #262): two points
+        // at a 32-byte ResidentSkyPoint stride.
+        const wz::rhi::ResourceIdentity points_identity{
+            ea::rhi_asset_identity(sky.output, "sky_gaussian_points"),
+            {},
+        };
+        const wz::rhi::GpuResourceHandle points_handle =
+            gpu.resources.find(points_identity);
+        ASSERT_TRUE(points_handle.valid())
+            << "sky-gaussian point sources did not become resident";
+        const wz::rhi::GpuResource* points_resource =
+            gpu.resources.get(points_handle);
+        ASSERT_NE(points_resource, nullptr);
+        EXPECT_EQ(points_resource->desc.identity, points_identity);
+        EXPECT_EQ(points_resource->desc.dimension,
+            wz::rhi::ResourceDimension::Buffer);
+        EXPECT_EQ(points_resource->desc.usage, wz::rhi::ResourceUsage_Sampled);
+        EXPECT_EQ(points_resource->desc.stride_bytes, 32u);
+        EXPECT_EQ(points_resource->desc.size_bytes, 2u * 32u);
+        ASSERT_TRUE(
+            gpu.backend.gpu_handle_for(points_resource->backend).valid());
+
+        gpu.resources.release(points_handle);
         gpu.resources.release(handle);
         gpu.resources.collect(UINT64_MAX);
     }

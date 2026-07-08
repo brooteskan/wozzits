@@ -7,10 +7,10 @@
 //            (Seam A schema v1: version / source_* / lobes[] / point_sources[]).
 //
 // Output: kAssetTypeSkyGaussian — a handle into the SkyGaussianTable. When a
-// shared wozzits-rhi registry is present the decoded lobes are ALSO published
-// as a resident StructuredBuffer (variant "sky_gaussian"), the byte-for-byte
-// mirror of publish_resident_gaussian_splat_cloud (#208). point_sources are
-// deferred; v1 residency is lobes only.
+// shared wozzits-rhi registry is present the decoded set is ALSO published as
+// resident StructuredBuffers: the low-frequency SG lobes (variant
+// "sky_gaussian") and, when the fit extracted any, the high-frequency point
+// sources (variant "sky_gaussian_points" — sun/moon/stars, source B / #262).
 
 #include <engine/assets/sky_gaussian/sky_gaussian_compilers.h>
 #include <engine/assets/sky_gaussian/sky_gaussian_serialize.h>
@@ -65,6 +65,35 @@ namespace wz::engine::assets::internal
             return out;
         }
 
+        // The decoded per-point-source record (sun / moon / bright stars), the
+        // high-frequency layer of the frequency split. 32-byte stride, matching
+        // an HLSL DistantLight: direction+solid_angle in one 16-byte register,
+        // radiance+pad in the next. Published under variant "sky_gaussian_points".
+        struct ResidentSkyPoint
+        {
+            float direction[3] = { 0.0f, 1.0f, 0.0f };
+            float solid_angle  = 0.0f;
+            float radiance[3]  = { 0.0f, 0.0f, 0.0f };
+            float pad0         = 0.0f;
+        };
+        static_assert(sizeof(ResidentSkyPoint) == 32,
+            "ResidentSkyPoint must be 32 bytes to match the sky-gaussian-points "
+            "StructuredBuffer stride");
+
+        ResidentSkyPoint encode_resident_point(const sky::SkyPointSource& src)
+        {
+            ResidentSkyPoint out{};
+            out.direction[0] = src.direction.x;
+            out.direction[1] = src.direction.y;
+            out.direction[2] = src.direction.z;
+            out.solid_angle  = src.solid_angle;
+            out.radiance[0]  = src.radiance.x;
+            out.radiance[1]  = src.radiance.y;
+            out.radiance[2]  = src.radiance.z;
+            out.pad0         = 0.0f;
+            return out;
+        }
+
         // Publish the SG lobe set's GPU residency onto the shared wozzits-rhi
         // registry as a StructuredBuffer (the surrogate pattern — the registry
         // owns the GPU buffer, the asset is its surrogate). Byte-for-byte mirror
@@ -83,48 +112,79 @@ namespace wz::engine::assets::internal
                 return;
             }
 
-            const auto started = std::chrono::steady_clock::now();
+            std::vector<wz::rhi::ResourceIdentity> tracked;
 
-            std::vector<ResidentSkyLobe> resident;
-            resident.reserve(set.lobes.size());
-            for (const sky::SkyGaussianLobe& lobe : set.lobes) {
-                resident.push_back(encode_resident_lobe(lobe));
+            // --- low-frequency dome: SG lobes (variant "sky_gaussian") --------
+            {
+                std::vector<ResidentSkyLobe> resident;
+                resident.reserve(set.lobes.size());
+                for (const sky::SkyGaussianLobe& lobe : set.lobes) {
+                    resident.push_back(encode_resident_lobe(lobe));
+                }
+
+                wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::buffer(
+                    static_cast<uint64_t>(resident.size()) * sizeof(ResidentSkyLobe),
+                    static_cast<uint32_t>(sizeof(ResidentSkyLobe)),
+                    wz::rhi::ResourceUsage_Sampled,
+                    wz::rhi::ResourceCpuAccess::WriteOnce);
+                desc.identity = wz::rhi::ResourceIdentity{
+                    rhi_asset_identity(key, "sky_gaussian"), {} };
+
+                const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
+                const bool uploaded = handle.valid()
+                    && gpu_resources.update(handle, resident.data(), desc.size_bytes);
+                if (!uploaded) {
+                    if (handle.valid()) {
+                        gpu_resources.release(handle);
+                    }
+                    logger.warn("sky gaussian RHI resident upload failed");
+                    return;
+                }
+                tracked.push_back(desc.identity);
+                logger.info(
+                    "asset compile: sky gaussian RHI resident upload lobes="
+                    + std::to_string(resident.size()));
             }
 
-            wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::buffer(
-                static_cast<uint64_t>(resident.size()) * sizeof(ResidentSkyLobe),
-                static_cast<uint32_t>(sizeof(ResidentSkyLobe)),
-                wz::rhi::ResourceUsage_Sampled,
-                wz::rhi::ResourceCpuAccess::WriteOnce);
-            desc.identity = wz::rhi::ResourceIdentity{
-                rhi_asset_identity(key, "sky_gaussian"),
-                {},
-            };
-
-            const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
-            const bool uploaded =
-                handle.valid()
-                && gpu_resources.update(
-                    handle, resident.data(), desc.size_bytes);
-            if (!uploaded) {
-                if (handle.valid()) {
-                    gpu_resources.release(handle);
+            // --- high-frequency points: sun/moon/stars (variant
+            //     "sky_gaussian_points"), optional -- source B, #262 -----------
+            if (!set.point_sources.empty()) {
+                std::vector<ResidentSkyPoint> resident;
+                resident.reserve(set.point_sources.size());
+                for (const sky::SkyPointSource& src : set.point_sources) {
+                    resident.push_back(encode_resident_point(src));
                 }
-                logger.warn("sky gaussian RHI resident upload failed");
-                return;
+
+                wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::buffer(
+                    static_cast<uint64_t>(resident.size()) * sizeof(ResidentSkyPoint),
+                    static_cast<uint32_t>(sizeof(ResidentSkyPoint)),
+                    wz::rhi::ResourceUsage_Sampled,
+                    wz::rhi::ResourceCpuAccess::WriteOnce);
+                desc.identity = wz::rhi::ResourceIdentity{
+                    rhi_asset_identity(key, "sky_gaussian_points"), {} };
+
+                const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
+                const bool uploaded = handle.valid()
+                    && gpu_resources.update(handle, resident.data(), desc.size_bytes);
+                if (uploaded) {
+                    tracked.push_back(desc.identity);
+                    logger.info(
+                        "asset compile: sky gaussian RHI resident upload points="
+                        + std::to_string(resident.size()));
+                }
+                else {
+                    if (handle.valid()) {
+                        gpu_resources.release(handle);
+                    }
+                    // Non-fatal: the dome already published. A program that binds
+                    // the points layer will just fail to resolve it.
+                    logger.warn("sky gaussian points RHI resident upload failed");
+                }
             }
 
             if (rhi_resource_tracker) {
-                rhi_resource_tracker(key, { desc.identity });
+                rhi_resource_tracker(key, std::move(tracked));
             }
-
-            const auto elapsed_ms =
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - started).count();
-            logger.info(
-                "asset compile: sky gaussian RHI resident upload lobes="
-                + std::to_string(resident.size())
-                + " upload_ms=" + std::to_string(elapsed_ms));
         }
 
     } // anonymous namespace

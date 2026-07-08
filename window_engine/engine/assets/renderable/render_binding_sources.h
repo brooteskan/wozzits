@@ -13,6 +13,7 @@
 //   VectorField        → TextureSrv,    "vector_field_texture"  (vector_field_compilers.cpp)
 //   GaussianSplatCloud → StructuredSrv, "splat_cloud"           (gaussian_splat_compilers.cpp)
 //   SkyGaussian        → StructuredSrv, "sky_gaussian"          (sky_gaussian_compilers.cpp)
+//                        StructuredSrv, "sky_gaussian_points"     — variant selected by semantic (present only when the fit has point sources)
 //   GpuSparseMesh      → StructuredSrv, "pull_positions"        (gpu_sparse_mesh_compilers.cpp)
 //                        StructuredSrv, "pull_indices"            — variant selected by semantic
 //                        StructuredSrv, "pull_normals"            — present only when the mesh has normals
@@ -66,6 +67,11 @@ namespace wz::engine::assets
                 RenderBindingKind::StructuredSrv, "splat_cloud" };
         }
         if (source_type == kAssetTypeSkyGaussian) {
+            // Two published variants; the semantic picks the dome vs the points.
+            if (semantic == DescriptorSemantic::SkyGaussianPoints) {
+                return RenderBindingSource{
+                    RenderBindingKind::StructuredSrv, "sky_gaussian_points" };
+            }
             return RenderBindingSource{
                 RenderBindingKind::StructuredSrv, "sky_gaussian" };
         }
