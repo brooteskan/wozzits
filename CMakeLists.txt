@@ -1044,6 +1044,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(lighting test_sg_lighting)
     rs_add_test_group(starfield test_star_catalog)
     rs_add_test_group(starfield test_tycho2)
+    rs_add_test_group(motion test_motion_filter)
 
     # Graph
     rs_add_test_group(graph static_dag_tests_0)

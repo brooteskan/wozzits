@@ -169,6 +169,8 @@ target_sources(window_engine PRIVATE
 
     lighting/sg_lighting.cpp
 
+    motion/motion_filter.cpp
+
     starfield/star_catalog.cpp
     starfield/star_catalog_serialize.cpp
     starfield/star_catalog_compilers.cpp
