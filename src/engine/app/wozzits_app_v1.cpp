@@ -1271,6 +1271,16 @@ namespace wz::app
                 rebuild_behavior_scene();
             }
             break;
+        case SceneChangeKind::BehaviorBinding:
+            // A behavior-binding edit re-materializes UNCONDITIONALLY: adding the
+            // first binding to a scene that had none must create the runtime.
+            rebuild_behavior_scene();
+            break;
+        case SceneChangeKind::RenderBinding:
+            // The renderable recipe changed; re-assemble the bindings. The verb's
+            // call site rides in the descriptor so the #252 profile still names it.
+            rematerialize_render_bindings(change.caller);
+            break;
         }
     }
 
@@ -1392,8 +1402,9 @@ namespace wz::app
             wz::engine::assets::add_node_behavior(scene_nodes_, node_id, module);
         if (result.ok) {
             scene_dirty_ = true;
-            rebuild_behavior_scene();
         }
+        apply_scene_change(
+            result.ok ? SceneChange::behavior_binding() : SceneChange::none());
         return result;
     }
 
@@ -1405,8 +1416,9 @@ namespace wz::app
             scene_nodes_, node_id, binding_id);
         if (ok) {
             scene_dirty_ = true;
-            rebuild_behavior_scene();
         }
+        apply_scene_change(
+            ok ? SceneChange::behavior_binding() : SceneChange::none());
         return ok;
     }
 
@@ -1419,8 +1431,9 @@ namespace wz::app
             scene_nodes_, node_id, binding_id, enabled);
         if (ok) {
             scene_dirty_ = true;
-            rebuild_behavior_scene();
         }
+        apply_scene_change(
+            ok ? SceneChange::behavior_binding() : SceneChange::none());
         return ok;
     }
 
@@ -1434,8 +1447,9 @@ namespace wz::app
             scene_nodes_, node_id, binding_id, label, module);
         if (ok) {
             scene_dirty_ = true;
-            rebuild_behavior_scene();
         }
+        apply_scene_change(
+            ok ? SceneChange::behavior_binding() : SceneChange::none());
         return ok;
     }
 
@@ -1448,8 +1462,9 @@ namespace wz::app
             scene_nodes_, node_id, binding_id, events);
         if (ok) {
             scene_dirty_ = true;
-            rebuild_behavior_scene();
         }
+        apply_scene_change(
+            ok ? SceneChange::behavior_binding() : SceneChange::none());
         return ok;
     }
 
@@ -1462,8 +1477,9 @@ namespace wz::app
             scene_nodes_, node_id, binding_id, value);
         if (ok) {
             scene_dirty_ = true;
-            rebuild_behavior_scene();
         }
+        apply_scene_change(
+            ok ? SceneChange::behavior_binding() : SceneChange::none());
         return ok;
     }
 
@@ -1476,8 +1492,9 @@ namespace wz::app
             scene_nodes_, node_id, binding_id, key);
         if (ok) {
             scene_dirty_ = true;
-            rebuild_behavior_scene();
         }
+        apply_scene_change(
+            ok ? SceneChange::behavior_binding() : SceneChange::none());
         return ok;
     }
 
@@ -1631,7 +1648,7 @@ namespace wz::app
             node->renderable_asset.reset();
         }
         scene_dirty_ = true;
-        rematerialize_render_bindings();
+        apply_scene_change(SceneChange::render_binding());
         return true;
     }
 
@@ -1658,10 +1675,11 @@ namespace wz::app
         // If this targets a runtime-only grafted scene-source child, mirror the
         // program onto its host as a sticky override (issue #213) so it survives
         // reload (save_scene excludes grafted children). No-op for authored nodes.
+        // (A cross-node document write -- part of the mutation, not the reaction.)
         capture_grafted_child_override(node_id);
         // A program change cascades to descendants via inheritance, so
         // re-assemble every binding (assemble walks ancestors per node).
-        rematerialize_render_bindings();
+        apply_scene_change(SceneChange::render_binding());
         return true;
     }
 
@@ -1712,7 +1730,7 @@ namespace wz::app
         scene_dirty_ = true;
         // A binding decides whether the assembled renderable is the custom
         // (0x70A) form, so re-assemble like the geometry/program seams.
-        rematerialize_render_bindings();
+        apply_scene_change(SceneChange::render_binding());
         return true;
     }
 
