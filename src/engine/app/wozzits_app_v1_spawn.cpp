@@ -461,7 +461,7 @@ namespace wz::app
     const wz::scene::AuthoredEntityId&
     WozzitsApp_v1::active_scene_camera_id() const
     {
-        return active_camera_id_;
+        return view_.active_scene_camera_id();
     }
 
     WozzitsApp_v1::SpawnPrefabResult WozzitsApp_v1::spawn_prefab(

@@ -24,6 +24,7 @@
 // previous one. No incremental diffing is assumed.
 
 #include <engine/app_context.h>
+#include <engine/app/view_controller.h>
 #include <engine/rendering/rhi_scene_renderer.h>
 
 #include <engine/assets/scene/scene_asset_data.h>
@@ -720,16 +721,15 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& id) const;
 
     private:
-        // Materialize the single active view (view-projection + world position)
-        // render_scene draws with, from the currently selected camera source.
-        // Called once per simulation_tick after both sources are current (the
-        // free-fly camera was updated from input and behaviors moved the scene
-        // camera node). The Scene source reads the camera node's live world
-        // transform; if it can't be resolved this frame (e.g. mid-rebuild) the
-        // previous active view is kept rather than dropping to free-fly, so a
-        // transient invalid handle cannot flip the camera. No per-frame branch
-        // or validity guard survives into the render path.
-        void update_active_view();
+        // Resolve the selected scene camera's live world transform (from the
+        // behavior scene's polytree, when the Scene source is active) and hand it
+        // to view_.update_active_view() so it materializes the single active view
+        // render_scene draws with. Called once per simulation_tick after both
+        // sources are current (the free-fly camera was updated from input and
+        // behaviors moved the scene camera node). This is the app's REACTION half
+        // of the view seam: the scene lookup lives here, the camera math in
+        // ViewController.
+        void materialize_active_view();
 
         // #221 single edit seam for transforms: write `transform` as the LOCAL
         // pose of node `id` into the live simulation polytree (the same const_cast
@@ -947,18 +947,18 @@ namespace wz::app
         void start_spawned_audio();
 
         // Apply a SET_ACTIVE_CAMERA command: resolve the runtime entity to its
-        // authored node and record it as the scene-camera selection anchor
-        // (id + live polytree handle + SceneCameraAsset params). Flips
-        // camera_source_ to Scene only when prefer_scene_camera_ is set (play);
-        // in the editor the anchor is recorded but the free-fly source stays
-        // active. The view itself is built later by update_active_view().
+        // authored node, look up its SceneCameraAsset params in the scene document
+        // (the app's half), then hand id + entity + params to
+        // view_.select_scene_camera() which records the anchor and flips the source
+        // to Scene when prefer_scene_camera is set. The view itself is built later
+        // by materialize_active_view().
         void apply_scene_active_camera(wz::scene::RuntimeEntityId runtime_entity);
 
-        // Re-point active_camera_entity_ at active_camera_id_'s runtime entity in
-        // the current behavior scene. Called once after each rebuild (NOT per
-        // frame), so the Scene camera source survives a behavior-scene rebuild
-        // (e.g. a behavior spawning a child). No-op when no camera is selected or
-        // the node is gone.
+        // Re-seat view_'s live camera entity handle at the anchored authored id's
+        // runtime entity in the current behavior scene. Called once after each
+        // rebuild (NOT per frame), so the Scene camera source survives a
+        // behavior-scene rebuild (e.g. a behavior spawning a child). Passes INVALID
+        // when no camera is selected or the node is gone.
         void refresh_active_camera_entity();
 
         // One behavior tick: propagate transforms, dispatch frame/input events,
@@ -1069,57 +1069,16 @@ namespace wz::app
         uint32_t                                 graph_epoch_ = 0;  // last bound
 
 
-        // The app's own free-fly camera (game-app parity), and the editor's edit
-        // camera: updated from input in simulation_tick (when the host arms
-        // drive_camera) and used as the FreeFly camera source. Projection params
-        // mirror the scene camera defaults; aspect tracks the window reported by
-        // the latest input.
-        wz::bench::FlyingCamera        camera_{};
-        float                          camera_fov_y_ = 1.0472f;       // ~60 deg
-        float                          camera_near_  = 0.1f;
-        float                          camera_far_   = 100000.0f;
-        float                          aspect_       = 1280.0f / 720.0f;
-
-        // The single active view rendering consumes -- materialized each
-        // simulation_tick by update_active_view() from the selected source. The
-        // render path references THIS and nothing else (no override, no
-        // per-frame scene-tree lookup, no fallback branch).
-        struct ActiveView
-        {
-            wz::math::Mat4 view_projection = wz::math::Mat4::identity();
-            wz::math::Vec3 world_position{};   // clipmap lattice snap reads this
-        };
-        ActiveView active_view_{};
-
-        // Which source update_active_view() materializes from. FreeFly = the
-        // editor/standalone fly-cam (camera_); Scene = the selected scene-authored
-        // camera (active_camera_* below). Defaults to FreeFly; flipped to Scene
-        // only when a scene camera is selected AND prefer_scene_camera_ is set.
-        enum class CameraSource { FreeFly, Scene };
-        CameraSource camera_source_ = CameraSource::FreeFly;
-
-        // Diagnostic (#219): whether the Scene source resolved its handle the
-        // last time update_active_view() ran, so it logs only the transition
-        // edges (a flip to/from "holding last view") rather than per frame.
-        bool scene_source_resolved_ = false;
-
-        // Host policy (set_prefer_scene_camera): standalone/play sets this true so
-        // a selected scene camera becomes active on load; the editor leaves it
-        // false so the free-fly edit camera stays active.
-        bool prefer_scene_camera_ = false;
-
-        // Active scene-camera SELECTION ANCHOR, recorded when a scene-setup
-        // behavior selects it on WZ_EVENT_SCENE_LOADED (SET_ACTIVE_CAMERA).
-        // active_camera_id_ is the stable anchor; active_camera_entity_ is its
-        // live polytree handle, re-resolved only when the behavior scene is
-        // rebuilt (never per frame) so the Scene source survives a rebuild.
-        // Recorded regardless of camera_source_, so the editor can later switch
-        // the source to Scene to preview. Projection params are captured at
-        // selection (a reload re-reads them).
-        wz::scene::AuthoredEntityId          active_camera_id_{};
-        wz::scene::RuntimeEntityId           active_camera_entity_ =
-            wz::scene::INVALID_RUNTIME_ENTITY;
-        wz::engine::assets::SceneCameraAsset active_camera_params_{};
+        // View/camera unit (#258 avenue 4). Owns the free-fly edit/standalone
+        // camera, projection params + aspect, the single active view render_scene
+        // consumes, the camera-source policy (free-fly vs. a selected scene
+        // camera), and the scene-camera selection anchor. This app is its host: it
+        // feeds view_ input (update_free_fly), the selected camera's params
+        // (apply_scene_active_camera -> view_.select_scene_camera) and per frame
+        // the selected node's live world matrix (materialize_active_view), then
+        // reads back view_.active_view() in render_scene. See
+        // engine/app/view_controller.h.
+        ViewController view_{};
 
         // The current graph draft (kept for the renderable_asset_node_id -> key
         // bridge) and the loaded scene's nodes (with the bridged renderable_asset).
@@ -1159,13 +1118,6 @@ namespace wz::app
         // Source scene file + a dirty flag, for save_scene (persist live edits).
         wz::fs::Path  scene_source_path_{};
         bool          scene_dirty_ = false;
-
-        // Editor viewport free-fly camera dirty flag: set when simulation_tick
-        // moves camera_ in the edit viewport (never in standalone play). Its pose
-        // is unsaved state INDEPENDENT of scene_dirty_ (moving the camera is not a
-        // scene edit), so save_scene persists scene_editor_metadata.camera when
-        // this is set even with no authored change. Cleared on load / save.
-        bool          editor_camera_dirty_ = false;
 
         // The asset-graph + behavior-module paths the last load_scene used, so
         // open_scene can swap the WORKING SCENE (e.g. to a scenelet for in-editor

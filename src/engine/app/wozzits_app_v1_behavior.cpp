@@ -180,10 +180,10 @@ namespace wz::app
         // renumbers polytree handles; refresh_active_camera_entity re-seats the
         // handle below, but logging the event tells us whether an unexpected
         // per-frame rebuild (not pure movement) is what correlates with the flip.
-        if (camera_source_ == CameraSource::Scene) {
+        if (view_.scene_source_active()) {
             ctx_.logger.warn(
                 "rebuild_behavior_scene while scene camera active (anchor='"
-                + active_camera_id_ + "')");
+                + view_.active_scene_camera_id() + "')");
         }
 
         // Capture the outgoing instance's behavior state BEFORE the reset so a
@@ -499,9 +499,7 @@ namespace wz::app
         // Re-decide the active camera on every (re)load: drop the prior anchor
         // and fall back to the free-fly source until a scene-setup behavior
         // selects a camera (and, in play, prefer_scene_camera_ flips the source).
-        active_camera_id_.clear();
-        active_camera_entity_ = wz::scene::INVALID_RUNTIME_ENTITY;
-        camera_source_ = CameraSource::FreeFly;
+        view_.clear_scene_camera();
         wz::engine::behavior::dispatch_scene_loaded(
             *behavior_scene_, registry_, ctx);
 
@@ -517,7 +515,7 @@ namespace wz::app
 
         // Materialize the active view once now so the first render after a load
         // (before the first simulation_tick) draws through the selected camera.
-        update_active_view();
+        materialize_active_view();
     }
 
     void WozzitsApp_v1::apply_scene_active_camera(
@@ -548,34 +546,27 @@ namespace wz::app
             return;
         }
 
-        active_camera_id_ = authored_id;
-        active_camera_entity_ = runtime_entity;
-        active_camera_params_ = *it->camera;
-
-        // Play hosts (standalone) flip the active source to the scene camera; the
-        // editor records the anchor but stays on the free-fly edit camera so you
-        // can navigate (a later editor toggle can switch the source to Scene).
-        if (prefer_scene_camera_) {
-            camera_source_ = CameraSource::Scene;
-        }
-        ctx_.logger.info(
-            "scene_camera: active camera selected on node '" + authored_id
-            + "' (source="
-            + (camera_source_ == CameraSource::Scene ? "scene" : "free-fly")
-            + ")");
+        // Record the anchor (id + live entity + captured projection params) in
+        // view_, which flips the source to Scene when prefer_scene_camera is set
+        // and logs the selection. The scene-document lookup above was the app's
+        // half; the view policy is view_'s.
+        view_.select_scene_camera(
+            authored_id, runtime_entity, *it->camera, ctx_.logger);
     }
 
     void WozzitsApp_v1::refresh_active_camera_entity()
     {
-        if (active_camera_id_.empty() || !behavior_scene_) {
-            active_camera_entity_ = wz::scene::INVALID_RUNTIME_ENTITY;
+        const wz::scene::AuthoredEntityId& anchor_id =
+            view_.active_scene_camera_id();
+        if (anchor_id.empty() || !behavior_scene_) {
+            view_.set_active_camera_entity(wz::scene::INVALID_RUNTIME_ENTITY);
             return;
         }
-        const auto it =
-            behavior_scene_->authored_to_runtime.find(active_camera_id_);
-        active_camera_entity_ = it != behavior_scene_->authored_to_runtime.end()
-            ? it->second
-            : wz::scene::INVALID_RUNTIME_ENTITY;
+        const auto it = behavior_scene_->authored_to_runtime.find(anchor_id);
+        view_.set_active_camera_entity(
+            it != behavior_scene_->authored_to_runtime.end()
+                ? it->second
+                : wz::scene::INVALID_RUNTIME_ENTITY);
     }
 
     void WozzitsApp_v1::reload_behavior_modules(

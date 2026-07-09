@@ -580,7 +580,7 @@ namespace wz::app
         // straight from the raw scene file -- it is intentionally NOT part of the
         // SceneAssetData game-scene model -- and an absent/partial block leaves the
         // camera at its current pose (its default on first load).
-        if (!prefer_scene_camera_) {
+        if (!view_.prefer_scene_camera()) {
             const wz::fs::Path resource_root =
                 ctx_.assets ? ctx_.assets->resource_root() : wz::fs::Path{};
             const wz::fs::Path scene_file =
@@ -602,23 +602,24 @@ namespace wz::app
                                     read_scene_document_editor_camera(
                                         parsed.document))
                     {
-                        camera_.x = meta->position[0];
-                        camera_.y = meta->position[1];
-                        camera_.z = meta->position[2];
-                        camera_.orientation = { meta->orientation[0],
+                        wz::bench::FlyingCamera& camera = view_.free_fly_camera();
+                        camera.x = meta->position[0];
+                        camera.y = meta->position[1];
+                        camera.z = meta->position[2];
+                        camera.orientation = { meta->orientation[0],
                             meta->orientation[1], meta->orientation[2],
                             meta->orientation[3] };
-                        camera_.move_speed       = meta->move_speed;
-                        camera_.look_speed       = meta->look_speed;
-                        camera_.boost_multiplier = meta->boost_multiplier;
-                        camera_.roll_speed       = meta->roll_speed;
+                        camera.move_speed       = meta->move_speed;
+                        camera.look_speed       = meta->look_speed;
+                        camera.boost_multiplier = meta->boost_multiplier;
+                        camera.roll_speed       = meta->roll_speed;
                         ctx_.logger.info(
                             "load_scene: restored editor viewport camera");
                     }
                 }
             }
         }
-        editor_camera_dirty_ = false;
+        view_.clear_editor_camera_dirty();
 
         return graph_ok && scene_resolve.ok();
     }
@@ -635,26 +636,14 @@ namespace wz::app
         // The fly-cam consumes input only when the host arms it (drive_camera);
         // behaviors below always get the input, so a controller can drive the
         // scene without panning the camera. aspect tracking is independent.
+        // update_free_fly moves the camera and marks the editor-camera-dirty flag
+        // on a real pose change (editor mode only).
         if (drive_camera) {
-            const wz::bench::FlyingCamera before = camera_;
-            wz::bench::update_flying_camera(camera_, input, dt);
-            // Editor viewport only: a moved free-fly camera is unsaved viewport
-            // state, so flag it for save_scene (standalone play does not author
-            // the editor camera). Compare pose so a hold-still frame stays clean.
-            if (!prefer_scene_camera_
-                && (camera_.x != before.x || camera_.y != before.y
-                    || camera_.z != before.z
-                    || camera_.orientation.x != before.orientation.x
-                    || camera_.orientation.y != before.orientation.y
-                    || camera_.orientation.z != before.orientation.z
-                    || camera_.orientation.w != before.orientation.w))
-            {
-                editor_camera_dirty_ = true;
-            }
+            view_.update_free_fly(input, dt);
         }
         if (input.window.width > 0 && input.window.height > 0) {
-            aspect_ = static_cast<float>(input.window.width)
-                / static_cast<float>(input.window.height);
+            view_.set_aspect(static_cast<float>(input.window.width)
+                / static_cast<float>(input.window.height));
         }
 
         // Run the scene's behaviors before render prep so this frame draws the
@@ -669,7 +658,7 @@ namespace wz::app
         // behaviors moved the scene-camera node in dispatch_scene_behaviors).
         // Materialize the single active view render_scene reads -- no work happens
         // in the render path.
-        update_active_view();
+        materialize_active_view();
 
         // Per-tick audio spatialization (play mode only, and only when the audio
         // device is actually running). Retunes already-playing Clip AudioSources
@@ -677,8 +666,8 @@ namespace wz::app
         // never starts a voice, so it's a harmless no-op for finished one-shots.
         // Needs the behavior scene (the runtime audio_sources/audio_listeners +
         // the runtime→authored map) and the nodes' world transforms.
-        if (prefer_scene_camera_ && audio_runtime_.running() && behavior_scene_
-            && ctx_.assets) {
+        if (view_.prefer_scene_camera() && audio_runtime_.running()
+            && behavior_scene_ && ctx_.assets) {
             // #221: the pass reads source/listener world poses straight from the
             // behavior scene's polytree (the same single source of truth
             // scene_world_transforms() draws from), so it needs neither the
@@ -2561,8 +2550,9 @@ namespace wz::app
         // The editor viewport's free-fly camera pose is unsaved state independent
         // of scene edits; persist it alongside authored changes. Standalone play
         // never authors the editor camera (prefer_scene_camera_).
-        const bool want_editor_camera = !prefer_scene_camera_;
-        if (!scene_dirty_ && !(want_editor_camera && editor_camera_dirty_)) {
+        const bool want_editor_camera = !view_.prefer_scene_camera();
+        if (!scene_dirty_
+            && !(want_editor_camera && view_.editor_camera_dirty())) {
             return true;  // nothing changed since load / last save
         }
         if (scene_source_path_.empty()) {
@@ -2640,18 +2630,19 @@ namespace wz::app
         // Persist the editor viewport camera (editor only). Upserts just the
         // scene_editor_metadata.camera block, leaving nodes + other data intact.
         if (want_editor_camera && document.root) {
+            const wz::bench::FlyingCamera& camera = view_.free_fly_camera();
             wz::engine::assets::SceneEditorCameraMetadata meta;
-            meta.position[0] = camera_.x;
-            meta.position[1] = camera_.y;
-            meta.position[2] = camera_.z;
-            meta.orientation[0] = camera_.orientation.x;
-            meta.orientation[1] = camera_.orientation.y;
-            meta.orientation[2] = camera_.orientation.z;
-            meta.orientation[3] = camera_.orientation.w;
-            meta.move_speed       = camera_.move_speed;
-            meta.look_speed       = camera_.look_speed;
-            meta.boost_multiplier = camera_.boost_multiplier;
-            meta.roll_speed       = camera_.roll_speed;
+            meta.position[0] = camera.x;
+            meta.position[1] = camera.y;
+            meta.position[2] = camera.z;
+            meta.orientation[0] = camera.orientation.x;
+            meta.orientation[1] = camera.orientation.y;
+            meta.orientation[2] = camera.orientation.z;
+            meta.orientation[3] = camera.orientation.w;
+            meta.move_speed       = camera.move_speed;
+            meta.look_speed       = camera.look_speed;
+            meta.boost_multiplier = camera.boost_multiplier;
+            meta.roll_speed       = camera.roll_speed;
             wz::engine::assets::set_scene_document_editor_camera(document, meta);
         }
 
@@ -2665,7 +2656,7 @@ namespace wz::app
         }
 
         scene_dirty_ = false;
-        editor_camera_dirty_ = false;
+        view_.clear_editor_camera_dirty();
         ctx_.logger.info("save_scene: scene persisted");
         return true;
     }
@@ -2783,7 +2774,7 @@ namespace wz::app
         if (!ctx_.assets) {
             return true;
         }
-        // The single active view is kept current by update_active_view() each
+        // The single active view is kept current by materialize_active_view() each
         // simulation_tick. render_scene just reads it -- no branch, no scene-tree
         // lookup, no fallback. world_position drives the clipmap lattice snap and
         // tracks whichever camera (free-fly or scene) is active.
@@ -2795,13 +2786,13 @@ namespace wz::app
         const std::vector<wz::math::Mat4> world_transforms =
             scene_world_transforms();
         return renderer_.render_scene(
-            scene_nodes_, *ctx_.assets, active_view_.view_projection,
-            active_view_.world_position, world_transforms);
+            scene_nodes_, *ctx_.assets, view_.active_view().view_projection,
+            view_.active_view().world_position, world_transforms);
     }
 
     void WozzitsApp_v1::set_prefer_scene_camera(bool prefer)
     {
-        prefer_scene_camera_ = prefer;
+        view_.set_prefer_scene_camera(prefer);
 
         // Leaving play silences the runtime; entering play defers device start to
         // the next scene load (start_scene_audio).
@@ -2814,7 +2805,7 @@ namespace wz::app
     {
         // Editor stays silent (audition is a later editor path); only play mode
         // auto-plays. Audio is optional — a missing device must not fail the app.
-        if (!prefer_scene_camera_)
+        if (!view_.prefer_scene_camera())
             return;
         if (!ctx_.assets || !behavior_scene_)
             return;
@@ -2855,7 +2846,7 @@ namespace wz::app
     {
         // Only play mode has an open device + the auto-play policy; the editor is
         // silent and never spawns into a running mixer.
-        if (!prefer_scene_camera_)
+        if (!view_.prefer_scene_camera())
             return;
         if (!ctx_.assets || !behavior_scene_)
             return;
@@ -2880,79 +2871,37 @@ namespace wz::app
         }
     }
 
-    void WozzitsApp_v1::update_active_view()
+    void WozzitsApp_v1::materialize_active_view()
     {
-        if (camera_source_ == CameraSource::Scene) {
-            // Read the selected camera node's already-maintained world transform
-            // straight from the live scene graph through its handle. A camera
-            // parented under a moving node (e.g. a tank) follows it because the
-            // graph keeps that node's world matrix current. If the handle can't
-            // be resolved this frame (e.g. mid-rebuild), keep the previous active
-            // view rather than dropping to free-fly -- so a transient invalid
-            // handle cannot flip the camera.
-            const std::size_t node_count = behavior_scene_
-                ? wz::core::graph::node_count(behavior_scene_->storage.polytree)
-                : 0;
-            const bool resolved = behavior_scene_
-                && active_camera_entity_ != wz::scene::INVALID_RUNTIME_ENTITY
-                && active_camera_entity_ < node_count;
+        // The app's REACTION half of the view seam (#258): resolve the selected
+        // scene camera's live world transform from the behavior scene's polytree,
+        // then hand it to view_, which owns the camera math + source policy. The
+        // free-fly source needs no scene data (view_ ignores it there).
+        const std::size_t node_count = behavior_scene_
+            ? wz::core::graph::node_count(behavior_scene_->storage.polytree)
+            : 0;
 
-            // DIAGNOSTIC (#219): log only the resolve/unresolve EDGES, so a flip
-            // shows up as a single line instead of per-frame spam.
-            if (resolved != scene_source_resolved_) {
-                ctx_.logger.warn(
-                    std::string("scene camera source ")
-                    + (resolved ? "RESOLVED" : "UNRESOLVED (holding last view)")
-                    + " entity=" + std::to_string(active_camera_entity_)
-                    + " node_count=" + std::to_string(node_count)
-                    + " behavior_scene="
-                    + (behavior_scene_ ? "live" : "null"));
-                scene_source_resolved_ = resolved;
-            }
-
-            if (resolved) {
-                const wz::math::Mat4& world = wz::core::graph::node_data(
-                    behavior_scene_->storage.polytree,
-                    active_camera_entity_).world;
-
-                // Extract the camera node's rigid pose from its world matrix
-                // robustly. decompose_trs is intentionally NOT used here -- its
-                // tight orthogonality/determinant gates reject the matrix on the
-                // tiny FP drift accumulated through the tank's per-frame terrain-
-                // alignment rotation, and a rejected decompose leaves an identity
-                // pose, snapping the camera to the origin (the intermittent
-                // "flip"). rigid_pose_from_matrix normalizes the basis (dropping
-                // the parent's scale, e.g. the tank's 0.5) without that gate.
-                const wz::math::Transform pose =
-                    wz::math::rigid_pose_from_matrix(world);
-
-                wz::bench::FlyingCamera cam{};
-                cam.x = pose.position.x;
-                cam.y = pose.position.y;
-                cam.z = pose.position.z;
-                cam.orientation = pose.rotation;
-
-                const wz::math::Mat4 view = wz::bench::view_matrix(cam);
-                const wz::math::Mat4 proj = wz::math::projection_perspective_dx(
-                    active_camera_params_.fov_y,
-                    aspect_,
-                    active_camera_params_.near_plane,
-                    active_camera_params_.far_plane);
-                active_view_.view_projection = wz::math::mul(proj, view);
-                active_view_.world_position =
-                    wz::math::Vec3{ world.m[12], world.m[13], world.m[14] };
-            }
-            return;
+        // Read the selected camera node's already-maintained world transform
+        // straight from the live scene graph through its handle. A camera parented
+        // under a moving node (e.g. a tank) follows it because the graph keeps
+        // that node's world matrix current. std::nullopt when the handle can't be
+        // resolved this frame (e.g. mid-rebuild) -> view_ holds the previous view
+        // rather than dropping to free-fly, so a transient invalid handle cannot
+        // flip the camera. Only read in the Scene source (matches the original).
+        std::optional<wz::math::Mat4> scene_camera_world;
+        const wz::scene::RuntimeEntityId camera_entity =
+            view_.active_camera_entity();
+        if (view_.scene_source_active() && behavior_scene_
+            && camera_entity != wz::scene::INVALID_RUNTIME_ENTITY
+            && camera_entity < node_count)
+        {
+            scene_camera_world = wz::core::graph::node_data(
+                behavior_scene_->storage.polytree, camera_entity).world;
         }
 
-        // Free-fly source -> left-handed DX view-projection (the renderer's
-        // convention). aspect tracks the window from the latest input.
-        const wz::math::Mat4 view = wz::bench::view_matrix(camera_);
-        const wz::math::Mat4 proj = wz::math::projection_perspective_dx(
-            camera_fov_y_, aspect_, camera_near_, camera_far_);
-        active_view_.view_projection = wz::math::mul(proj, view);
-        active_view_.world_position =
-            wz::math::Vec3{ camera_.x, camera_.y, camera_.z };
+        view_.update_active_view(
+            scene_camera_world, node_count, behavior_scene_.has_value(),
+            ctx_.logger);
     }
 
     std::size_t WozzitsApp_v1::resident_gpu_resource_count() const
