@@ -1252,22 +1252,44 @@ namespace wz::app
         return true;
     }
 
+    void WozzitsApp_v1::apply_scene_change(const SceneChange& change)
+    {
+        // Map a document edit's SceneChange to the reaction that keeps the runtime
+        // + renderer consistent (#258 avenue 2). Kinds are handled as the edit
+        // verbs are converted to emit descriptors; a verb still reacting inline
+        // does not route through here yet.
+        switch (change.kind) {
+        case SceneChangeKind::None:
+            // Pure document edit: the renderer + behavior runtime read the authored
+            // fields fresh next frame, so there is nothing to do now.
+            break;
+        case SceneChangeKind::Structural:
+            // A structural edit invalidates the behavior runtime's entity ids;
+            // re-materialize it when one is live (an edit to a scene with no live
+            // runtime just settles into the authored document).
+            if (behavior_scene_) {
+                rebuild_behavior_scene();
+            }
+            break;
+        }
+    }
+
     wz::engine::assets::SceneAddChildResult WozzitsApp_v1::add_child_node(
         const wz::scene::AuthoredEntityId& parent_id)
     {
         wz::engine::assets::SceneAddChildResult result =
             wz::engine::assets::add_child_scene_node(scene_nodes_, parent_id);
+        SceneChange change = SceneChange::none();
         if (result.ok) {
             // The new child is appended; re-bake so it flattens into pre-order
             // right after its parent's existing subtree (draw order = tree order).
             wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
             scene_dirty_ = true;
+            change = SceneChange::structural();
         }
-        // A structural change invalidates the behavior runtime's entity ids; if
-        // behaviors are live, re-materialize so their runtime tracks the edit.
-        if (result.ok && behavior_scene_) {
-            rebuild_behavior_scene();
-        }
+        // A structural change invalidates the behavior runtime's entity ids; the
+        // dispatch re-materializes it when behaviors are live.
+        apply_scene_change(change);
         return result;
     }
 
@@ -1279,6 +1301,8 @@ namespace wz::app
         const bool ok = wz::engine::assets::set_scene_node_properties(
             scene_nodes_, id, std::move(name), visible);
         scene_dirty_ = scene_dirty_ || ok;
+        // Pure document edit: the renderer reads name/visible fresh next frame.
+        apply_scene_change(SceneChange::none());
         return ok;
     }
 
@@ -1288,6 +1312,7 @@ namespace wz::app
     {
         const bool ok = wz::engine::assets::reparent_scene_node(
             scene_nodes_, id, new_parent_id);
+        SceneChange change = SceneChange::none();
         if (ok) {
             // Nesting now drives draw order (draw order = tree pre-order), so a
             // reparent MUST re-bake: the moved subtree flattens under its new
@@ -1296,10 +1321,9 @@ namespace wz::app
             // drop). render_order still overrides as a layer.
             wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
             scene_dirty_ = true;
-            if (behavior_scene_) {
-                rebuild_behavior_scene();
-            }
+            change = SceneChange::structural();
         }
+        apply_scene_change(change);
         return ok;
     }
 
@@ -1308,9 +1332,8 @@ namespace wz::app
         const bool removed =
             !wz::engine::assets::remove_scene_node(scene_nodes_, id).empty();
         scene_dirty_ = scene_dirty_ || removed;
-        if (removed && behavior_scene_) {
-            rebuild_behavior_scene();
-        }
+        apply_scene_change(
+            removed ? SceneChange::structural() : SceneChange::none());
         return removed;
     }
 
@@ -1320,6 +1343,7 @@ namespace wz::app
     {
         const bool moved = wz::engine::assets::reorder_scene_node(
             scene_nodes_, id, before_id);
+        SceneChange change = SceneChange::none();
         if (moved) {
             // Re-bake: the reorder set this node's slot among its siblings; the
             // flatten keeps the tree pre-order and the render_order sort keeps the
@@ -1328,10 +1352,9 @@ namespace wz::app
             // render_order edit, not a reorder.
             wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
             scene_dirty_ = true;
-            if (behavior_scene_) {
-                rebuild_behavior_scene();
-            }
+            change = SceneChange::structural();
         }
+        apply_scene_change(change);
         return moved;
     }
 
@@ -1341,15 +1364,15 @@ namespace wz::app
     {
         const bool changed = wz::engine::assets::set_scene_node_render_order(
             scene_nodes_, id, render_order);
+        SceneChange change = SceneChange::none();
         if (changed) {
             // Layer changed: re-bake so the node moves into its layer (the sort
             // is by render_order; ties keep the tree pre-order).
             wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
             scene_dirty_ = true;
-            if (behavior_scene_) {
-                rebuild_behavior_scene();
-            }
+            change = SceneChange::structural();
         }
+        apply_scene_change(change);
         return changed;
     }
 

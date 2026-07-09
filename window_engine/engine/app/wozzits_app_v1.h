@@ -24,6 +24,7 @@
 // previous one. No incremental diffing is assumed.
 
 #include <engine/app_context.h>
+#include <engine/app/scene_change.h>
 #include <engine/app/view_controller.h>
 #include <engine/rendering/rhi_scene_renderer.h>
 
@@ -833,6 +834,15 @@ namespace wz::app
             const wz::asset::AssetGraphDraft& draft,
             const std::string* only_node = nullptr,
             const std::unordered_set<std::string>* only_nodes = nullptr);
+
+        // Dispatch the REACTION for a document edit (#258 avenue 2). Each edit verb
+        // mutates the authored document and produces a SceneChange; this maps the
+        // change kind to the reaction that keeps the runtime/renderer consistent
+        // (Structural -> rebuild the behavior runtime when live; None -> nothing).
+        // The mutation/reaction split is what lets the document logic move to the
+        // engine while the reactions -- which touch behavior_scene_ / renderer_ /
+        // the bound graph -- stay here. Kinds are handled as verbs are converted.
+        void apply_scene_change(const SceneChange& change);
 
         // Re-assemble renderable bindings after one was edited live (issue #213
         // increment 2): re-bridge the pre-built renderables, re-run
