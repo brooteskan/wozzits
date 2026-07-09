@@ -304,6 +304,17 @@ namespace wz::app
         float alignment_strength = 1.0f;
     };
 
+    // A live edit to a node's Motion Filter component (the whole component per
+    // change — it is small, ~20 fields, so the host sends it all rather than
+    // per-field). Non-blocking and coalesced by id (a slider drag streams many;
+    // only the latest matters). Applied via WozzitsApp_v1::set_node_motion_filter,
+    // which rebuilds the runtime scene so apply_motion_filters sees the change.
+    struct SceneNodeMotionFilterEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        wz::engine::assets::SceneMotionFilterAsset filter;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -531,6 +542,15 @@ namespace wz::app
             const std::function<
                 void(const SceneNodeMotionTerrainEdit&)>& applier);
 
+        // Owner thread: queue a set of a node's Motion Filter component
+        // (non-blocking; coalesced by id -- a slider drag streams many, latest
+        // wins). Applied on the engine thread's next frame.
+        void post_scene_node_motion_filter(SceneNodeMotionFilterEdit edit);
+
+        void service_pending_scene_node_motion_filters(
+            const std::function<
+                void(const SceneNodeMotionFilterEdit&)>& applier);
+
         // Owner thread: queue a set/clear of a node's preferred Scene source
         // (non-blocking; appended in order — NOT coalesced). Applied on the
         // engine thread's next frame, like the renderable edits (issue #213).
@@ -665,6 +685,7 @@ namespace wz::app
             pending_renderable_param_edits_;
         std::vector<SceneNodeCollisionEdit> pending_collision_edits_;
         std::vector<SceneNodeMotionTerrainEdit> pending_motion_terrain_edits_;
+        std::vector<SceneNodeMotionFilterEdit> pending_motion_filter_edits_;
         std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
         std::vector<SceneNodeGlbSceneSourceEdit> pending_glb_scene_source_edits_;
         std::vector<SceneNodeGlbStyleEdit> pending_glb_style_edits_;

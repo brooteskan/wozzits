@@ -2138,6 +2138,64 @@ extern "C"
         }
     }
 
+    WzResult wz_host_runtime_set_node_motion_filter(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        const WzEditorSceneMotionFilter* filter)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+        if (!filter) {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "filter must not be null");
+        }
+
+        try {
+            const auto axis =
+                [](const WzEditorSceneMotionFilterRotationAxis& a) {
+                    wz::engine::assets::SceneMotionFilterRotationAxis out;
+                    out.smoothing_time = a.smoothing_time;
+                    out.level = a.level != 0;
+                    out.limit = a.limit != 0;
+                    out.limit_min_degrees = a.limit_min_degrees;
+                    out.limit_max_degrees = a.limit_max_degrees;
+                    return out;
+                };
+            wz::engine::assets::SceneMotionFilterAsset f;
+            f.translation_smoothing[0] = filter->translation_smoothing[0];
+            f.translation_smoothing[1] = filter->translation_smoothing[1];
+            f.translation_smoothing[2] = filter->translation_smoothing[2];
+            f.terrain_floor = filter->terrain_floor != 0;
+            f.terrain_floor_offset = filter->terrain_floor_offset;
+            f.roll = axis(filter->roll);
+            f.pitch = axis(filter->pitch);
+            f.yaw = axis(filter->yaw);
+            f.enabled = filter->enabled != 0;
+
+            runtime->control.post_scene_node_motion_filter(
+                wz::app::SceneNodeMotionFilterEdit{
+                    .node_id = node_id_utf8,
+                    .filter = f,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node motion filter post failed");
+        }
+    }
+
     WzResult wz_host_runtime_set_node_scene_source(
         WzHostRuntime* runtime,
         const char* node_id_utf8,

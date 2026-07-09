@@ -1889,6 +1889,43 @@ namespace wz::app
         return true;
     }
 
+    bool WozzitsApp_v1::set_node_motion_filter(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneMotionFilterAsset& filter)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_motion_filter: no-op (node '" + node_id
+                + "' missing)");
+            return false;
+        }
+        const bool adding_component = !node->motion_filter.has_value();
+        node->motion_filter = filter;
+        scene_dirty_ = true;
+
+        // Patch the LIVE motion_filter record in place when it already exists (a
+        // field tweak must not rebuild + snap sim actors). The filter STATE lives
+        // in motion_filter_states_ (keyed by stable id), so it is untouched either
+        // way. Adding the component needs a rebuild so the record is materialized
+        // into behavior_scene_->motion_filters.
+        if (!adding_component && behavior_scene_) {
+            const auto it = behavior_scene_->authored_to_runtime.find(node_id);
+            if (it != behavior_scene_->authored_to_runtime.end()) {
+                for (auto& record : behavior_scene_->motion_filters) {
+                    if (record.node == it->second) {
+                        record.component = filter;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        rebuild_behavior_scene();
+        return true;
+    }
+
     // Extract a short seam identifier from a source_location function name --
     // "void wz::app::WozzitsApp_v1::set_node_renderable_program(...)" -> the bare
     // "set_node_renderable_program". CSV-safe (a bare identifier: no comma) and

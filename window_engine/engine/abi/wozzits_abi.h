@@ -13,7 +13,10 @@ extern "C" {
 // 29 -> 30: WzEditorSceneNode grew a render_order int (the draw-order layer key,
 // surfaced so the editor's layer dropdown reads it back) — a struct layout
 // change, so readers must match.
-#define WZ_ABI_VERSION 30u
+// 30 -> 31: WzEditorSceneNode grew a motion_filter struct (the Motion Filter
+// component's per-DOF fields, surfaced read-back so the inspector restores them
+// on select + reload) — a struct layout change, so readers must match.
+#define WZ_ABI_VERSION 31u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -212,6 +215,9 @@ enum
     WZ_EDITOR_SCENE_NODE_HAS_COLLISION = 1u << 11u,
     WZ_EDITOR_SCENE_NODE_HAS_MOTION = 1u << 12u,
     WZ_EDITOR_SCENE_NODE_HAS_AUDIO_SOURCE = 1u << 13u,
+    // Motion Filter component present: the node's `motion_filter` struct carries
+    // the authored per-DOF fields so the inspector restores them (read-back).
+    WZ_EDITOR_SCENE_NODE_HAS_MOTION_FILTER = 1u << 14u,
 };
 
 typedef uint32_t WzEditorSceneCameraFlags;
@@ -340,6 +346,40 @@ typedef struct WzEditorSceneMotion
     float alignment_strength;
 } WzEditorSceneMotion;
 
+// One local-axis rotation channel (roll/pitch/yaw) of a node's Motion Filter,
+// surfaced read-back and also the shape the live-edit verb carries. `level` and
+// `limit` are 0/1; the rest are the authored floats. Mirrors
+// SceneMotionFilterRotationAxis.
+typedef struct WzEditorSceneMotionFilterRotationAxis
+{
+    float smoothing_time;
+    uint8_t level;
+    uint8_t limit;
+    uint8_t reserved0;
+    uint8_t reserved1;
+    float limit_min_degrees;
+    float limit_max_degrees;
+} WzEditorSceneMotionFilterRotationAxis;
+
+// Authored Motion-Filter-component field values (present iff WZ_EDITOR_SCENE_
+// NODE_HAS_MOTION_FILTER). The SAME struct is the payload of the live-edit verb
+// wz_host_runtime_set_node_motion_filter (the editor sends the whole component
+// on any change). Translation channels are WORLD axes (index 0/1/2 = X/Y/Z);
+// rotation channels are node-LOCAL. `terrain_floor`/`enabled` are 0/1. Mirrors
+// SceneMotionFilterAsset.
+typedef struct WzEditorSceneMotionFilter
+{
+    float translation_smoothing[3];
+    uint8_t terrain_floor;
+    uint8_t enabled;
+    uint8_t reserved0;
+    uint8_t reserved1;
+    float terrain_floor_offset;
+    WzEditorSceneMotionFilterRotationAxis roll;
+    WzEditorSceneMotionFilterRotationAxis pitch;
+    WzEditorSceneMotionFilterRotationAxis yaw;
+} WzEditorSceneMotionFilter;
+
 // Authored AudioSource-component field values surfaced read-back so the inspector
 // restores them on select + after reload (present iff WZ_EDITOR_SCENE_NODE_HAS_
 // AUDIO_SOURCE). `has_renderable_ref` is 0/1; `audio_renderable_node_id` is the
@@ -449,6 +489,10 @@ typedef struct WzEditorSceneNode
     // valid (default 0 = World). Appended last; the added int is the
     // WZ_ABI_VERSION 30 bump. The editor's layer dropdown reads it back.
     int32_t render_order;
+    // Motion Filter component field values, valid iff WZ_EDITOR_SCENE_NODE_HAS_
+    // MOTION_FILTER. Appended last so existing field offsets are unchanged (the
+    // node STRIDE changed — that is the WZ_ABI_VERSION 31 bump).
+    WzEditorSceneMotionFilter motion_filter;
 } WzEditorSceneNode;
 
 typedef struct WzEditorSceneSnapshot
@@ -672,6 +716,27 @@ static_assert(offsetof(WzEditorSceneMotion, ride_height) == 4);
 static_assert(offsetof(WzEditorSceneMotion, footprint_radius) == 8);
 static_assert(offsetof(WzEditorSceneMotion, alignment_strength) == 12);
 
+static_assert(sizeof(WzEditorSceneMotionFilterRotationAxis) == 16);
+static_assert(
+    offsetof(WzEditorSceneMotionFilterRotationAxis, smoothing_time) == 0);
+static_assert(offsetof(WzEditorSceneMotionFilterRotationAxis, level) == 4);
+static_assert(offsetof(WzEditorSceneMotionFilterRotationAxis, limit) == 5);
+static_assert(
+    offsetof(WzEditorSceneMotionFilterRotationAxis, limit_min_degrees) == 8);
+static_assert(
+    offsetof(WzEditorSceneMotionFilterRotationAxis, limit_max_degrees) == 12);
+
+static_assert(sizeof(WzEditorSceneMotionFilter) == 68);
+static_assert(
+    offsetof(WzEditorSceneMotionFilter, translation_smoothing) == 0);
+static_assert(offsetof(WzEditorSceneMotionFilter, terrain_floor) == 12);
+static_assert(offsetof(WzEditorSceneMotionFilter, enabled) == 13);
+static_assert(
+    offsetof(WzEditorSceneMotionFilter, terrain_floor_offset) == 16);
+static_assert(offsetof(WzEditorSceneMotionFilter, roll) == 20);
+static_assert(offsetof(WzEditorSceneMotionFilter, pitch) == 36);
+static_assert(offsetof(WzEditorSceneMotionFilter, yaw) == 52);
+
 static_assert(sizeof(WzEditorSceneAudioSource) == 16);
 static_assert(offsetof(WzEditorSceneAudioSource, audio_renderable_node_id) == 0);
 static_assert(offsetof(WzEditorSceneAudioSource, has_renderable_ref) == 8);
@@ -703,7 +768,7 @@ static_assert(sizeof(WzEditorSceneRenderableConstant) == 32);
 static_assert(offsetof(WzEditorSceneRenderableConstant, name) == 0);
 static_assert(offsetof(WzEditorSceneRenderableConstant, value) == 16);
 
-static_assert(sizeof(WzEditorSceneNode) == 672);
+static_assert(sizeof(WzEditorSceneNode) == 736);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -726,6 +791,7 @@ static_assert(offsetof(WzEditorSceneNode, audio_source) == 616);
 static_assert(offsetof(WzEditorSceneNode, renderable_bindings) == 632);
 static_assert(offsetof(WzEditorSceneNode, renderable_constants) == 648);
 static_assert(offsetof(WzEditorSceneNode, render_order) == 664);
+static_assert(offsetof(WzEditorSceneNode, motion_filter) == 668);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);
@@ -1303,6 +1369,20 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_motion_terrain(
     float footprint_radius,
     uint8_t align_to_surface,
     float alignment_strength);
+
+// Author node `node_id_utf8`'s Motion Filter component: set the WHOLE component
+// from `filter` (the editor sends it all on any change). Creates the component
+// if absent. DEFERRED (applied next frame) and NON-BLOCKING; the engine patches
+// the live record in place (or rebuilds when adding) so apply_motion_filters
+// sees it. Marks the scene dirty. A null `filter`, unknown/missing node is a
+// logged engine-thread no-op. HOST-CAPABILITY GATE (require_host_scene_authoring):
+// WZ_RESULT_INVALID_ARGUMENT for a null runtime, an empty node id, or a non-host
+// caller. NEW exported fn — WZ_ABI_VERSION 31 bump is the WzEditorSceneNode.
+// motion_filter read-back field, NOT this verb.
+WZ_ABI_API WzResult wz_host_runtime_set_node_motion_filter(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    const WzEditorSceneMotionFilter* filter);
 
 // Author the PREFERRED asset-graph-backed Scene-source component on node
 // `node_id_utf8` (issue #213): point it at the authored "Scene from GLB"

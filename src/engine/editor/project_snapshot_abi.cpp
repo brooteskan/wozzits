@@ -376,6 +376,32 @@ namespace wz::engine::editor
                 out.motion.footprint_radius = node.motion->footprint_radius;
                 out.motion.alignment_strength = node.motion->alignment_strength;
             }
+            if (node.motion_filter) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_MOTION_FILTER;
+                const auto& f = *node.motion_filter;
+                const auto pack_axis =
+                    [](const SceneSnapshotMotionFilterRotationAxis& src) {
+                        WzEditorSceneMotionFilterRotationAxis a{};
+                        a.smoothing_time = src.smoothing_time;
+                        a.level = src.level ? 1u : 0u;
+                        a.limit = src.limit ? 1u : 0u;
+                        a.limit_min_degrees = src.limit_min_degrees;
+                        a.limit_max_degrees = src.limit_max_degrees;
+                        return a;
+                    };
+                out.motion_filter.translation_smoothing[0] =
+                    f.translation_smoothing[0];
+                out.motion_filter.translation_smoothing[1] =
+                    f.translation_smoothing[1];
+                out.motion_filter.translation_smoothing[2] =
+                    f.translation_smoothing[2];
+                out.motion_filter.terrain_floor = f.terrain_floor ? 1u : 0u;
+                out.motion_filter.enabled = f.enabled ? 1u : 0u;
+                out.motion_filter.terrain_floor_offset = f.terrain_floor_offset;
+                out.motion_filter.roll = pack_axis(f.roll);
+                out.motion_filter.pitch = pack_axis(f.pitch);
+                out.motion_filter.yaw = pack_axis(f.yaw);
+            }
             if (node.audio_source) {
                 out.flags |= WZ_EDITOR_SCENE_NODE_HAS_AUDIO_SOURCE;
                 out.audio_source.has_renderable_ref =

@@ -513,6 +513,25 @@ TEST(SceneJsonExport, RenderOrderRoundTripsAndDefaultIsOmitted)
     EXPECT_EQ(world->render_order, 0);
 }
 
+TEST(SceneNodeList, MotionFilterIsAnAddableOptionalComponent)
+{
+    std::vector<SceneNodeAsset> nodes(1);
+    nodes[0].id = "cam";
+
+    EXPECT_TRUE(is_optional_component_kind("motion_filter"));
+    EXPECT_FALSE(node_has_optional_component(nodes, "cam", "motion_filter"));
+
+    // Add default-constructs the component (all no-op fields).
+    EXPECT_TRUE(add_node_optional_component(nodes, "cam", "motion_filter"));
+    ASSERT_TRUE(find_scene_node(nodes, "cam")->motion_filter.has_value());
+    EXPECT_TRUE(node_has_optional_component(nodes, "cam", "motion_filter"));
+
+    // Remove resets it to nullopt.
+    EXPECT_TRUE(remove_node_optional_component(nodes, "cam", "motion_filter"));
+    EXPECT_FALSE(find_scene_node(nodes, "cam")->motion_filter.has_value());
+    EXPECT_FALSE(node_has_optional_component(nodes, "cam", "motion_filter"));
+}
+
 TEST(SceneJsonExport, MotionFilterRoundTripsAllChannels)
 {
     std::vector<SceneNodeAsset> nodes(1);

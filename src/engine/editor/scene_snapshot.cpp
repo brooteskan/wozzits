@@ -577,6 +577,71 @@ namespace wz::engine::editor
             return out;
         }
 
+        // Read the authored Motion-Filter-component field values from a node's
+        // "motion_filter" object (read-back). Tolerant: a missing block is absent
+        // (nullopt), missing fields keep defaults. Shape matches scene_json_
+        // export's motion_filter_value.
+        std::optional<SceneSnapshotMotionFilter> read_motion_filter(
+            const wz::json::JSONValue& obj)
+        {
+            const auto* filter = wz::json::find_member(obj, "motion_filter");
+            if (!filter || filter->kind != wz::json::JSONValueKind::Object) {
+                return std::nullopt;
+            }
+            SceneSnapshotMotionFilter out;
+            if (const auto* translation =
+                    wz::json::find_member(*filter, "translation");
+                translation
+                && translation->kind == wz::json::JSONValueKind::Object)
+            {
+                const std::vector<double> smoothing =
+                    read_number_array(*translation, "smoothing");
+                for (std::size_t i = 0; i < 3u && i < smoothing.size(); ++i) {
+                    out.translation_smoothing[i] =
+                        static_cast<float>(smoothing[i]);
+                }
+                out.terrain_floor =
+                    wz::json::read_bool(*translation, "terrain_floor")
+                        .value_or(false);
+                out.terrain_floor_offset = static_cast<float>(
+                    wz::json::read_number(*translation, "terrain_floor_offset")
+                        .value_or(0.0));
+            }
+            if (const auto* rotation =
+                    wz::json::find_member(*filter, "rotation");
+                rotation && rotation->kind == wz::json::JSONValueKind::Object)
+            {
+                const auto read_axis =
+                    [&](const char* name,
+                        SceneSnapshotMotionFilterRotationAxis& axis) {
+                        const auto* a = wz::json::find_member(*rotation, name);
+                        if (!a
+                            || a->kind != wz::json::JSONValueKind::Object)
+                        {
+                            return;
+                        }
+                        axis.smoothing_time = static_cast<float>(
+                            wz::json::read_number(*a, "smoothing_time")
+                                .value_or(0.0));
+                        axis.level =
+                            wz::json::read_bool(*a, "level").value_or(false);
+                        axis.limit =
+                            wz::json::read_bool(*a, "limit").value_or(false);
+                        axis.limit_min_degrees = static_cast<float>(
+                            wz::json::read_number(*a, "limit_min_degrees")
+                                .value_or(0.0));
+                        axis.limit_max_degrees = static_cast<float>(
+                            wz::json::read_number(*a, "limit_max_degrees")
+                                .value_or(0.0));
+                    };
+                read_axis("roll", out.roll);
+                read_axis("pitch", out.pitch);
+                read_axis("yaw", out.yaw);
+            }
+            out.enabled = wz::json::read_bool(*filter, "enabled").value_or(true);
+            return out;
+        }
+
         // Read the authored AudioSource-component field values from a node's
         // "audio_source" object (read-back). Tolerant: a missing block is absent.
         // Field names match scene_json_export's audio_source export.
@@ -799,6 +864,31 @@ namespace wz::engine::editor
                         source.motion->terrain_alignment_strength,
                 };
             }
+            if (source.motion_filter) {
+                const auto& f = *source.motion_filter;
+                const auto axis =
+                    [](const wz::engine::assets::SceneMotionFilterRotationAxis&
+                            src) {
+                        return SceneSnapshotMotionFilterRotationAxis{
+                            .smoothing_time = src.smoothing_time,
+                            .level = src.level,
+                            .limit = src.limit,
+                            .limit_min_degrees = src.limit_min_degrees,
+                            .limit_max_degrees = src.limit_max_degrees,
+                        };
+                    };
+                SceneSnapshotMotionFilter mf;
+                mf.translation_smoothing[0] = f.translation_smoothing[0];
+                mf.translation_smoothing[1] = f.translation_smoothing[1];
+                mf.translation_smoothing[2] = f.translation_smoothing[2];
+                mf.terrain_floor = f.terrain_floor;
+                mf.terrain_floor_offset = f.terrain_floor_offset;
+                mf.roll = axis(f.roll);
+                mf.pitch = axis(f.pitch);
+                mf.yaw = axis(f.yaw);
+                mf.enabled = f.enabled;
+                node.motion_filter = mf;
+            }
             if (source.audio_source) {
                 node.audio_source = SceneSnapshotAudioSource{
                     .audio_renderable_node_id =
@@ -900,6 +990,12 @@ namespace wz::engine::editor
                     .display_name = "Motion",
                 });
             }
+            if (has_component_object(value, "motion_filter")) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "motion_filter",
+                    .display_name = "Motion Filter",
+                });
+            }
             if (has_component_object(value, "audio_source")) {
                 node.components.push_back(SceneSnapshotComponent{
                     .kind = "audio_source",
@@ -918,6 +1014,7 @@ namespace wz::engine::editor
             // fix): surface so the inspector restores them on select + reload.
             node.collision = read_collision(value);
             node.motion = read_motion(value);
+            node.motion_filter = read_motion_filter(value);
             node.audio_source = read_audio_source(value);
             // Authored render-binding refs (issue #213): surface the persisted
             // node ids so the inspector reveals + pre-selects these sections.

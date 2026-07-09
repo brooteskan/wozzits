@@ -369,6 +369,13 @@ namespace wz::app
             bool align_to_surface,
             float alignment_strength);
 
+        // Live edit: set the node's whole Motion Filter component. Adds the
+        // component if absent. Patches the live record in place when it exists
+        // (no rebuild); adding it rebuilds so apply_motion_filters sees it.
+        bool set_node_motion_filter(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneMotionFilterAsset& filter);
+
         // Flatten the node's referenced Scene asset into the live scene (#213):
         // resolve the node's scene_source, expand its GLB-named nodes as real,
         // persistent children of the node in scene_nodes_ (id "<host>/<glbname>",

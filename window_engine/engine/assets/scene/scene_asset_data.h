@@ -2604,6 +2604,7 @@ namespace wz::engine::assets
             || kind == "proximity"
             || kind == "collision"
             || kind == "motion"
+            || kind == "motion_filter"
             || kind == "audio_source"
             || kind == "audio_listener";
     }
@@ -2631,6 +2632,9 @@ namespace wz::engine::assets
         }
         if (kind == "motion") {
             return node->motion.has_value();
+        }
+        if (kind == "motion_filter") {
+            return node->motion_filter.has_value();
         }
         if (kind == "audio_source") {
             return node->audio_source.has_value();
@@ -2671,6 +2675,10 @@ namespace wz::engine::assets
             node->motion = SceneMotionAsset{};
             return true;
         }
+        if (kind == "motion_filter") {
+            node->motion_filter = SceneMotionFilterAsset{};
+            return true;
+        }
         if (kind == "audio_source") {
             node->audio_source = SceneAudioSourceAsset{};
             return true;
@@ -2709,6 +2717,10 @@ namespace wz::engine::assets
         }
         if (kind == "motion") {
             node->motion.reset();
+            return true;
+        }
+        if (kind == "motion_filter") {
+            node->motion_filter.reset();
             return true;
         }
         if (kind == "audio_source") {

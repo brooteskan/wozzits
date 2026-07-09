@@ -617,6 +617,37 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_motion_filter(
+        SceneNodeMotionFilterEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Coalesce by id -- a slider drag streams many, only the latest matters.
+        for (SceneNodeMotionFilterEdit& pending : pending_motion_filter_edits_) {
+            if (pending.node_id == edit.node_id) {
+                pending.filter = edit.filter;
+                return;
+            }
+        }
+        pending_motion_filter_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_motion_filters(
+        const std::function<void(const SceneNodeMotionFilterEdit&)>& applier)
+    {
+        std::vector<SceneNodeMotionFilterEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_motion_filter_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_motion_filter_edits_);
+        }
+
+        for (const SceneNodeMotionFilterEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_scene_source(
         SceneNodeSceneSourceEdit edit)
     {
@@ -1317,6 +1348,13 @@ namespace wz::app
                                 edit.footprint_radius,
                                 edit.align_to_surface,
                                 edit.alignment_strength);
+                        });
+                    control->service_pending_scene_node_motion_filters(
+                        [&app](const SceneNodeMotionFilterEdit& edit) {
+                            // Set the whole Motion Filter component; the apply
+                            // rebuilds the runtime scene so apply_motion_filters
+                            // sees the new fields next frame.
+                            app.set_node_motion_filter(edit.node_id, edit.filter);
                         });
                     control->service_pending_scene_node_scene_sources(
                         [&app](const SceneNodeSceneSourceEdit& edit) {

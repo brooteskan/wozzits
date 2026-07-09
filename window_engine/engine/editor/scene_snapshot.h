@@ -80,6 +80,30 @@ namespace wz::engine::editor
         float alignment_strength = 1.0f;
     };
 
+    // Authored Motion-Filter-component field values surfaced read-back so the
+    // editor inspector restores them on select + after reload. Mirrors
+    // SceneMotionFilterAsset (translation channels are world axes; rotation
+    // channels roll/pitch/yaw are node-local).
+    struct SceneSnapshotMotionFilterRotationAxis
+    {
+        float smoothing_time = 0.0f;
+        bool level = false;
+        bool limit = false;
+        float limit_min_degrees = 0.0f;
+        float limit_max_degrees = 0.0f;
+    };
+
+    struct SceneSnapshotMotionFilter
+    {
+        float translation_smoothing[3] = { 0.0f, 0.0f, 0.0f };
+        bool terrain_floor = false;
+        float terrain_floor_offset = 0.0f;
+        SceneSnapshotMotionFilterRotationAxis roll;
+        SceneSnapshotMotionFilterRotationAxis pitch;
+        SceneSnapshotMotionFilterRotationAxis yaw;
+        bool enabled = true;
+    };
+
     // Authored AudioSource-component field values surfaced read-back so the editor
     // inspector restores them on select + after reload. audio_renderable_node_id
     // is the authored audio-renderable asset-graph node id (unset when absent).
@@ -198,6 +222,7 @@ namespace wz::engine::editor
         // surfaced so the inspector restores them on select + after reload.
         std::optional<SceneSnapshotCollision> collision;
         std::optional<SceneSnapshotMotion> motion;
+        std::optional<SceneSnapshotMotionFilter> motion_filter;
         std::optional<SceneSnapshotAudioSource> audio_source;
         // Custom-renderable ingredients (issue #229/#230), surfaced read-back
         // (possibly empty) so the inspector pre-fills its binding rows +
