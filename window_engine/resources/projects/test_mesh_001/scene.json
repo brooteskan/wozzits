@@ -3,6 +3,63 @@
   "name": "scene_editor_scene",
   "nodes": [
     {
+      "id": "sky",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "render_order": -200,
+      "renderable": {
+        "asset_graph_node_id": 91
+      }
+    },
+    {
+      "id": "5",
+      "parent": "root",
+      "name": "stars",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "render_order": -200,
+      "renderable": {
+        "asset_graph_node_id": 100
+      }
+    },
+    {
       "id": "root",
       "parent": null,
       "transform": {
@@ -57,13 +114,13 @@
       ]
     },
     {
-      "id": "sky",
+      "id": "lit_sphere",
       "parent": "root",
       "transform": {
         "translation": [
-          0,
-          0,
-          0
+          236,
+          675,
+          353
         ],
         "rotation_quat": [
           0,
@@ -72,15 +129,15 @@
           1
         ],
         "scale": [
-          1,
-          1,
-          1
+          200,
+          200,
+          200
         ]
       },
       "visible": true,
       "active": true,
       "renderable": {
-        "asset_graph_node_id": 80
+        "asset_graph_node_id": 87
       }
     },
     {
@@ -149,6 +206,31 @@
       }
     },
     {
+      "id": "4",
+      "parent": "root",
+      "name": "base 1",
+      "transform": {
+        "translation": [
+          60,
+          32,
+          100
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true
+    },
+    {
       "id": "2",
       "parent": "4",
       "name": "command",
@@ -184,8 +266,8 @@
             "goal": 0,
             "gamma_start": 2,
             "anneal_seconds": 2,
-            "confidence": 0.7,
-            "decoherence": 0.3,
+            "confidence": 0.69999999999999996,
+            "decoherence": 0.29999999999999999,
             "think_interval": 0.25,
             "memory": 1
           }
@@ -217,7 +299,7 @@
     },
     {
       "id": "3",
-      "parent": "4",
+      "parent": "2",
       "name": "hut",
       "transform": {
         "translation": [
@@ -242,58 +324,6 @@
       "renderable": {
         "asset_graph_node_id": 67
       }
-    },
-    {
-      "id": "4",
-      "parent": "root",
-      "transform": {
-        "translation": [
-          60,
-          32,
-          100
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          1,
-          1,
-          1
-        ]
-      },
-      "visible": true,
-      "active": true
-    },
-    {
-      "id": "lit_sphere",
-      "parent": "root",
-      "name": "lit_sphere",
-      "transform": {
-        "translation": [
-          236.0,
-          349.0,
-          353.0
-        ],
-        "rotation_quat": [
-          0,
-          0,
-          0,
-          1
-        ],
-        "scale": [
-          18.0,
-          18.0,
-          18.0
-        ]
-      },
-      "visible": true,
-      "active": true,
-      "renderable": {
-        "asset_graph_node_id": 87
-      }
     }
   ],
   "defaults": {
@@ -305,18 +335,18 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        280.6208190917969,
-        428.0027770996094,
-        415.98797607421875
+        9.2347288131713867,
+        354.65274047851562,
+        398.66329956054688
       ],
       "orientation": [
-        -0.30387383699417114,
-        -0.3328815996646881,
-        0.10529301315546036,
-        -0.8864333033561707
+        -0.046852491796016693,
+        0.93002331256866455,
+        0.15601477026939392,
+        0.32942512631416321
       ],
       "move_speed": 8,
-      "look_speed": 0.0005000000237487257,
+      "look_speed": 0.00050000002374872565,
       "boost_multiplier": 4,
       "roll_speed": 1.5
     }
