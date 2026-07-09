@@ -16,8 +16,8 @@
 // the reaction (behavior dispatch, scene-node lookup, entity resolution) and this
 // unit keeps the mechanism (the camera math + source policy).
 //
-// Two hosts compose it: WozzitsApp_v1 (editor viewport + standalone play) and the
-// standalone game_app, differing only in the prefer_scene_camera policy knob.
+// WozzitsApp_v1 composes it in both roles (editor viewport + standalone play),
+// which differ only in the prefer_scene_camera policy knob.
 
 #include <engine/assets/scene/scene_asset_data.h>   // SceneCameraAsset
 

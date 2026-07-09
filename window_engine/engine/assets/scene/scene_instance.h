@@ -485,7 +485,7 @@ namespace wz::engine::assets
 
         // Hierarchical "live" mask (#252 two-axes ruling), indexed by runtime
         // entity: 1 = the node AND every ancestor is authored `active`, 0 = parked.
-        // EMPTY = all active, so a caller that never populates it (game_app, tests)
+        // EMPTY = all active, so a caller that never populates it (e.g. tests)
         // behaves exactly as before. The host refreshes it each frame from the
         // authored `active` flags; it gates behavior dispatch + the collision frame,
         // NOT render ("drawn?" (visible) and "live?" (active) are orthogonal).

@@ -1157,10 +1157,10 @@ namespace wz::app
         // editor's "back to the scene" without the caller tracking the path.
         wz::fs::Path  main_scene_path_{};
 
-        // Behavior runtime. This is the same load -> register -> initialize ->
-        // per-frame dispatch -> apply-command-buffer sequence the standalone
-        // game_app runs, hosted inside this shared runtime so a scene's behavior
-        // bindings execute in both the editor viewport and a shipped app.
+        // Behavior runtime: the load -> register -> initialize -> per-frame
+        // dispatch -> apply-command-buffer sequence, hosted inside this shared
+        // runtime so a scene's behavior bindings execute in both the editor
+        // viewport and a shipped app.
         //   - registry_ / plugins_ own the registered modules (built-ins + the
         //     project DLLs loaded from behavior_module_folder).
         //   - behavior_scene_ is the runtime SceneInstance materialized from the
@@ -1168,7 +1168,7 @@ namespace wz::app
         //     apply mutates it, then changed transforms are written back to
         //     scene_nodes_ (the renderer's source of truth).
         //   - frame_storage_ holds the per-frame behavior command buffer; reused
-        //     each tick (matching game_app's FrameStorage).
+        //     each tick (the shared wz::engine::FrameStorage).
         wz::engine::behavior::BehaviorRegistry   registry_{};
         wz::engine::behavior::BehaviorPluginHost plugins_{};
         wz::engine::FrameStorage                 frame_storage_{};

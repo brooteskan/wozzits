@@ -342,8 +342,8 @@ namespace wz::app
         }
 
         // Initialize behaviors (init callbacks + per-binding/shared state) once
-        // for the materialized scene, exactly as game_app does after building its
-        // scene. On an APPEND-ONLY rebuild (a prefab spawn) skip survivors' on_init
+        // for the materialized scene, right after it is built. On an APPEND-ONLY
+        // rebuild (a prefab spawn) skip survivors' on_init
         // (#257 B1): their runtime ids + cached handles are stable across a pure
         // append, and their state is preserved above, so only the newly materialized
         // bindings need to init -- re-running every survivor's scene-walking on_init
@@ -613,9 +613,8 @@ namespace wz::app
             return;
         }
 
-        // Apply the produced command buffer, exactly as game_app's
-        // apply_behavior_commands job: transform/velocity commands mutate the
-        // instance polytree, then world Y etc. settle on the next propagate.
+        // Apply the produced command buffer: transform/velocity commands mutate
+        // the instance polytree, then world Y etc. settle on the next propagate.
         (void)wz::engine::behavior::apply_behavior_commands(
             *behavior_scene_,
             commands,
@@ -890,7 +889,7 @@ namespace wz::app
         const wz::input::InputState& input, float dt)
     {
         // One behavior tick, as a short sequence of named phases (#256 seam B).
-        // Mirrors game_app's job order: build_collision_frame -> [behaviors] ->
+        // The canonical per-tick order: build_collision_frame -> [behaviors] ->
         // integrate_motion -> apply_terrain_constraints. Behaviors are OPTIONAL -- a
         // motion-only / constraint-only actor still needs the integrate + constraint
         // phases to stick to its surface -- so only the dispatch phase is gated on
@@ -908,8 +907,7 @@ namespace wz::app
 
         // World transforms must be current before dispatch: command application
         // (set_world_translation, motion integration) reads parent world matrices,
-        // and behavior transform queries read self/other world. In game_app this is
-        // the compile_scene job; here we propagate directly. Always run -- it is
+        // and behavior transform queries read self/other world. Always run -- it is
         // transform composition (it also settles a live edit), not simulation.
         wz::scene::propagate_all(behavior_scene_->storage.polytree);
 
@@ -971,8 +969,8 @@ namespace wz::app
         // scene_nodes_ (cheap O(scene)) and projected onto runtime entities via
         // runtime_to_authored, so a park/unpark flip, a reparent, or a spawn is
         // reflected immediately. build_collision_frame + dispatch_behaviors read
-        // behavior_scene_->entity_active (empty => all live, so a non-active-aware
-        // caller like game_app is unaffected). Orthogonal to `visible`.
+        // behavior_scene_->entity_active (empty => all live, so a caller that never
+        // populates it is unaffected). Orthogonal to `visible`.
         std::vector<wz::engine::behavior::BehaviorCommand> activation_commands;
         const std::unordered_map<std::string, std::uint8_t> effective_active =
             compute_scene_node_effective_active(scene_nodes_);
@@ -1054,8 +1052,8 @@ namespace wz::app
         const wz::input::InputState& input)
     {
         // Build the collision frame (collision world + terrain constraint surfaces)
-        // BEFORE motion/behaviors, exactly as game_app's job_build_collision_frame.
-        // apply_terrain_constraints reads frame_storage_.collision to resolve the
+        // BEFORE motion/behaviors. apply_terrain_constraints reads
+        // frame_storage_.collision to resolve the
         // surface a terrain_constrained Motion actor sticks to. Guard the asset
         // library; if absent, the collision frame is left whatever it was (empty),
         // which makes the constraint pass a no-op rather than fabricating a surface.
@@ -1066,14 +1064,14 @@ namespace wz::app
                 frame_storage_.collision);
         }
         // Proximity events (proximity.* behaviors): same per-frame build +
-        // enter/stay/exit advance as game_app's job_build_collision_frame second
-        // half. Needs only the scene's proximity components (no asset library).
+        // enter/stay/exit advance, right after the collision world. Needs only the
+        // scene's proximity components (no asset library).
         wz::engine::collision::build_proximity_frame(
             *behavior_scene_, frame_storage_.collision);
         // Input events (input.* behaviors, e.g. a controller-driven tank): convert
         // this frame's input into routed events so dispatch fires the behavior's
-        // on_event. game_app does this in job_build_input_events; the new runtime had
-        // left these tables empty, so input-driven behaviors never received events.
+        // on_event. The runtime originally left these tables empty, so input-driven
+        // behaviors never received events until this build was added.
         wz::engine::input_events::build_input_event_frame(
             input, *behavior_scene_, frame_storage_.input_events);
     }
@@ -1160,9 +1158,8 @@ namespace wz::app
             velocity_changed.end());
 
         // Snap terrain_constrained Motion actors to their constraint surface (from
-        // frame_storage_.collision built above), exactly as game_app's
-        // job_apply_terrain_constraints. Runs after integrate_motion so the constraint
-        // corrects the just-integrated position.
+        // frame_storage_.collision built above). Runs after integrate_motion so the
+        // constraint corrects the just-integrated position.
         std::vector<wz::scene::RuntimeEntityId> constraint_changed;
         (void)wz::engine::behavior::apply_terrain_constraints(
             *behavior_scene_,

@@ -90,9 +90,9 @@ namespace wz::app
         : ctx_(ctx)
         , renderer_(*ctx.gpu, ctx.logger)
     {
-        // Register the engine's built-in behavior modules up front (mirrors
-        // game_app::init). Project DLLs are loaded later, in load_scene, from the
-        // manifest's behavior_module_folder.
+        // Register the engine's built-in behavior modules up front. Project DLLs
+        // are loaded later, in load_scene, from the manifest's
+        // behavior_module_folder.
         wz::engine::behavior::register_builtin_behaviors(
             registry_, plugins_, ctx_.logger);
     }
@@ -548,9 +548,9 @@ namespace wz::app
             + ", renderables bridged=" + std::to_string(bridged) + ")");
 
         // Load the project's behavior-module DLLs (if any) and register their
-        // modules, then materialize the scene's behavior runtime. Mirrors
-        // game_app's load -> register sequence; here the modules come from the
-        // project manifest's behavior_module_folder rather than only built-ins.
+        // modules, then materialize the scene's behavior runtime. The modules come
+        // from the project manifest's behavior_module_folder (the built-ins were
+        // already registered in the ctor).
         load_behavior_modules(desc.behavior_module_folder);
         // Bake draw order into the flat node array: the renderer walks it linearly
         // (no per-frame sort), so ordering must live in the array itself. Draw
@@ -648,9 +648,8 @@ namespace wz::app
         }
 
         // Run the scene's behaviors before render prep so this frame draws the
-        // post-behavior transforms (game_app dispatches behaviors then applies
-        // their command buffer ahead of build_render_*). No-op without a live
-        // behavior scene.
+        // post-behavior transforms (dispatch + command-apply happen ahead of render
+        // binding assembly). No-op without a live behavior scene.
         dispatch_scene_behaviors(input, dt);
 
         renderer_.simulation_tick();

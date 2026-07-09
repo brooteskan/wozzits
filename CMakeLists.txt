@@ -554,7 +554,6 @@ function(rs_add_test_group category name)
     test_window
     test_mesh_wireframe
     test_gaussian_splat
-    game_app_main
     rhi_scene_renderer_rebind_tests
     )
 
@@ -1015,7 +1014,6 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_scene scene_materialize_default_scene_tests)
 
     rs_add_test_group(asset_gltf gltf_importer)
-    # rs_add_test_group(game_app game_app_main)
 
     # Containers
     rs_add_test_group(containers mpsc_queue)
