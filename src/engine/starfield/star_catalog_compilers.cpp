@@ -245,6 +245,90 @@ namespace wz::engine::assets::internal
             .input_ports = {
                 { "source_file", kAssetTypeRawFile },
             },
+            // Authorable import dials (StarImportParams). Declaring them here is
+            // what surfaces them in the editor inspector AND makes the editor
+            // write them as typed floats -- without this schema the values are
+            // stored as strings and star_import_params_from_block's
+            // pb.get<double> silently falls back to the defaults, so every dial
+            // is a no-op. Defaults MUST match StarImportParams so an untouched
+            // node keeps its content hash. The brightness knobs
+            // (exposure / reference_magnitude / magnitude_contrast) lift the
+            // faint Tycho-2 majority into view; the magnitude window
+            // (magnitude_min / magnitude_max) is the coarse brightness cull.
+            .parameters = {
+                {
+                    .name = "exposure",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Exposure",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 100.0,
+                },
+                {
+                    .name = "reference_magnitude",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Reference magnitude (unit flux)",
+                    .default_num = 0.0,
+                    .min = -5.0,
+                    .max = 15.0,
+                },
+                {
+                    .name = "magnitude_min",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Magnitude min (brighter cull)",
+                    .default_num = -30.0,
+                    .min = -30.0,
+                    .max = 15.0,
+                },
+                {
+                    .name = "magnitude_max",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Magnitude max (fainter cull)",
+                    .default_num = 30.0,
+                    .min = -5.0,
+                    .max = 30.0,
+                },
+                {
+                    .name = "magnitude_pivot",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Magnitude remap pivot",
+                    .default_num = 0.0,
+                    .min = -5.0,
+                    .max = 15.0,
+                },
+                {
+                    .name = "magnitude_contrast",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Magnitude remap contrast",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 3.0,
+                },
+                {
+                    .name = "color_saturation",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Color saturation",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 3.0,
+                },
+                {
+                    .name = "warp_amplitude",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Warp amplitude",
+                    .default_num = 0.0,
+                    .min = 0.0,
+                    .max = 1.0,
+                },
+                {
+                    .name = "warp_frequency",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Warp frequency",
+                    .default_num = 3.0,
+                    .min = 0.0,
+                    .max = 20.0,
+                },
+            },
             .compile = [&logger, &table, gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode> dep_nodes,
