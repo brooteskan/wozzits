@@ -152,20 +152,23 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     const std::size_t resident_after_first = app.resident_gpu_resource_count();
     const std::size_t programs_after_first = app.registered_program_count();
     // Step 2: the renderer binds the asset-published resident pull buffers
-    // (positions + indices) by identity — it does NOT re-upload CPU mesh data.
-    // So exactly the 2 resident buffers exist (plus the #229 fixture's
-    // procedural scalar field, published resident as an R32 texture at
-    // resolve — graph node 17, unreferenced by THIS scene); a silent
-    // CPU-upload fallback would acquire 2 more (different identity), giving 5.
-    EXPECT_EQ(resident_after_first, 3u)
-        << "renderer should bind the 2 resident pull buffers (+ the resident "
-           "field texture), not re-upload";
+    // (positions + indices + normals) by identity — it does NOT re-upload CPU
+    // mesh data. The gpu_sparse_mesh compiler publishes a third pull buffer,
+    // "pull_normals", for any mesh with has_normals (#259); the fixture's
+    // procedural cube carries normals, so 3 resident pull buffers exist. Plus
+    // the #229 fixture's procedural scalar field, published resident as an R32
+    // texture at resolve (graph node 17, unreferenced by THIS scene), that is 4.
+    // A silent CPU-upload fallback would acquire duplicates under a different
+    // identity, inflating the count past 4.
+    EXPECT_EQ(resident_after_first, 4u)
+        << "renderer should bind the 3 resident pull buffers (positions + "
+           "indices + normals) + the resident field texture, not re-upload";
     EXPECT_GT(programs_after_first, 0u);
     // #192: the fixture's custom render program (schema 0x103) must come from the
     // asset compiler — which registers the rhi program under program_ref during
     // resolve — not the renderer's render-time bridge. Zero render-time bridges
     // proves the compiler-produced path is taken, the analog of
-    // resident_after_first == 2 proving the resident-buffer path in #190.
+    // resident_after_first == 4 proving the resident-buffer path in #190.
     EXPECT_EQ(app.render_time_program_bridge_count(), 0u)
         << "custom render program was bridged at render time, not produced by "
            "the asset compiler";
@@ -183,10 +186,10 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
         << "scene renderable was not re-bridged to the new graph";
 
     // Renderer-owned upload buffers were released + collected. The rebound
-    // graph has already resolved its gpu_sparse_mesh asset (+ the #229 field
-    // texture), so those asset-published resources remain resident before
-    // render consumes them.
-    EXPECT_EQ(app.resident_gpu_resource_count(), 3u)
+    // graph has already resolved its gpu_sparse_mesh asset (3 pull buffers:
+    // positions + indices + normals, #259) + the #229 field texture, so those
+    // asset-published resources remain resident before render consumes them.
+    EXPECT_EQ(app.resident_gpu_resource_count(), 4u)
         << "rebind should retain only the resolved asset-published resources";
 
     // Render the rebound graph: it re-realizes against the new keys.
