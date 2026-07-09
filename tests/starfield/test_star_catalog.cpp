@@ -4,6 +4,7 @@
 
 #include <math/vec3.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -306,4 +307,59 @@ TEST(StarCatalog, WarpDisplacesButStaysUnitAndDeterministic)
     EXPECT_FLOAT_EQ(w1.x, w2.x);
     EXPECT_FLOAT_EQ(w1.y, w2.y);
     EXPECT_FLOAT_EQ(w1.z, w2.z);
+}
+
+// The warp is divergence-free on the sphere (issue #269), so it advects the
+// star field without compressing it: no caustics. Verify density preservation
+// directly -- warp a near-uniform direction set and check the busiest bin does
+// not spike. A folding displacement field (the old sum-of-sines) would pile
+// stars onto its compression ridges and blow one bin far past this bound.
+TEST(StarCatalog, WarpPreservesDensityNoCaustics)
+{
+    constexpr int kN = 20000;       // deterministic Fibonacci-sphere points
+    constexpr int kBands = 16;      // equal-area bins: bands by y (hat-box) x
+    constexpr int kLon = 16;        // longitude by atan2(z, x)
+    constexpr double kPi = 3.14159265358979323846;
+    const double golden = kPi * (3.0 - std::sqrt(5.0));
+
+    StarImportParams p;
+    p.warp_amplitude = 0.15;
+    p.warp_frequency = 3.0;
+
+    const auto bin_max = [&](bool warp) {
+        std::array<int, kBands * kLon> bins{};
+        for (int i = 0; i < kN; ++i) {
+            const double y = 1.0 - 2.0 * (i + 0.5) / kN;
+            const double r = std::sqrt(std::max(0.0, 1.0 - y * y));
+            const double theta = i * golden;
+            Vec3 d{
+                static_cast<float>(r * std::cos(theta)),
+                static_cast<float>(y),
+                static_cast<float>(r * std::sin(theta)),
+            };
+            if (warp) {
+                d = warp_direction(d, p);
+                EXPECT_NEAR(vlen(d), 1.0f, 1e-4f);  // stays on the sphere
+            }
+            // Equal-solid-angle bin: area between parallels ∝ Δy (Archimedes),
+            // and equal Δlongitude within a band is equal area.
+            int band = static_cast<int>((d.y + 1.0f) * 0.5f * kBands);
+            band = std::clamp(band, 0, kBands - 1);
+            double lon = std::atan2(d.z, d.x);            // [-pi, pi]
+            int lon_bin = static_cast<int>(
+                (lon + kPi) / (2.0 * kPi) * kLon);
+            lon_bin = std::clamp(lon_bin, 0, kLon - 1);
+            ++bins[band * kLon + lon_bin];
+        }
+        return *std::max_element(bins.begin(), bins.end());
+    };
+
+    const int unwarped_max = bin_max(false);
+    const int warped_max = bin_max(true);
+
+    // A divergence-free flow keeps the busiest bin within a small factor of the
+    // unwarped field's; a caustic would multiply it many-fold.
+    EXPECT_LE(warped_max, unwarped_max * 2)
+        << "warped busiest bin " << warped_max
+        << " vs unwarped " << unwarped_max << " -- density not preserved";
 }

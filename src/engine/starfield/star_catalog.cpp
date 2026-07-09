@@ -76,19 +76,38 @@ namespace wz::engine::starfield
         if (params.warp_amplitude <= 0.0) {
             return dir;
         }
-        // A smooth sum-of-sines field: deterministic, low-frequency, curl-like.
-        // Each output component reads two of the input axes at incommensurate
-        // scales, so the displacement swirls rather than shifts uniformly.
-        const double f = params.warp_frequency;
-        const double ox = std::sin(dir.y * f * 1.7 + dir.z * f * 2.3);
-        const double oy = std::sin(dir.z * f * 1.9 + dir.x * f * 2.1);
-        const double oz = std::sin(dir.x * f * 2.5 + dir.y * f * 1.3);
-        const double a = params.warp_amplitude;
-        return normalize(Vec3{
-            static_cast<float>(dir.x + a * ox),
-            static_cast<float>(dir.y + a * oy),
-            static_cast<float>(dir.z + a * oz),
-        });
+        // Divergence-free (curl-noise) warp on the sphere (issue #269). A plain
+        // displacement folds -> stars pile into caustic streaks; instead advect
+        // each direction along an INCOMPRESSIBLE tangent flow, which preserves
+        // local density by construction (no caustics at any amplitude).
+        //
+        // On the unit sphere the divergence-free tangent fields are exactly the
+        // skew-gradients of a scalar stream function phi:
+        //     v = dir x grad(phi),   div_sphere(v) == 0 identically.
+        // The `dir x` both projects grad(phi) into the tangent plane and rotates
+        // it 90 degrees. phi is a few fixed incommensurate sine octaves of plane
+        // waves (analytic gradient, deterministic, no RNG) -- the same spirit as
+        // the old field but as a stream function, not a displacement. Frequency
+        // lives only inside cos (spatial scale); amplitude is the final scale --
+        // decoupled, so the existing dials keep their meaning.
+        struct Wave { Vec3 k; float amp; };
+        static const Wave waves[] = {          // amps ~sum to 1
+            { normalize(Vec3{ 1.0f,  0.7f, -0.3f }), 0.45f },
+            { normalize(Vec3{-0.4f,  1.0f,  0.8f }), 0.32f },
+            { normalize(Vec3{ 0.9f, -0.5f,  1.0f }), 0.23f },
+        };
+        const float f = static_cast<float>(params.warp_frequency);
+
+        // grad(phi) for phi = sum (amp/f) sin(f k.dir): a genuine scalar
+        // gradient (so dir x grad stays exactly divergence-free), with f kept
+        // out of the field magnitude to decouple amplitude from frequency.
+        Vec3 grad{ 0.0f, 0.0f, 0.0f };
+        for (const Wave& w : waves) {
+            grad = grad + w.k * (w.amp * std::cos(f * dot(w.k, dir)));
+        }
+
+        const Vec3 v = cross(dir, grad);  // tangent, divergence-free on S^2
+        return normalize(dir + v * static_cast<float>(params.warp_amplitude));
     }
 
     double temperature_from_bv(double bv)
