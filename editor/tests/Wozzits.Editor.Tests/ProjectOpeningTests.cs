@@ -3926,6 +3926,17 @@ public sealed partial class ProjectOpeningTests
             return new EngineMutationResponse { Ok = true };
         }
 
+        public List<(string NodeId, EngineSceneNodeMotionFilter Filter)>
+            MotionFilters { get; } = [];
+
+        public EngineMutationResponse SetNodeMotionFilter(
+            string nodeId,
+            EngineSceneNodeMotionFilter filter)
+        {
+            MotionFilters.Add((nodeId, filter));
+            return new EngineMutationResponse { Ok = true };
+        }
+
         public List<(string NodeId, ulong AssetGraphNodeId, uint ConsumeMode)>
             SceneSources { get; } = [];
 

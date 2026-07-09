@@ -65,6 +65,31 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _motionFootprintRadius = string.Empty;
     private bool _motionAlignToSurface;
     private string _motionAlignmentStrength = string.Empty;
+    // "Motion Filter" section (secondary-motion camera damping): per-DOF smoothing
+    // + clamp of the node's driven transform. Optimistic/session-local display,
+    // same pattern as Motion. Float fields are strings (parsed on commit).
+    private bool _hasMotionFilterComponent;
+    private bool _motionFilterEnabled = true;
+    private string _motionFilterTranslationSmoothingX = string.Empty;
+    private string _motionFilterTranslationSmoothingY = string.Empty;
+    private string _motionFilterTranslationSmoothingZ = string.Empty;
+    private bool _motionFilterTerrainFloor;
+    private string _motionFilterTerrainFloorOffset = string.Empty;
+    private string _motionFilterRollSmoothing = string.Empty;
+    private bool _motionFilterRollLevel;
+    private bool _motionFilterRollLimit;
+    private string _motionFilterRollLimitMin = string.Empty;
+    private string _motionFilterRollLimitMax = string.Empty;
+    private string _motionFilterPitchSmoothing = string.Empty;
+    private bool _motionFilterPitchLevel;
+    private bool _motionFilterPitchLimit;
+    private string _motionFilterPitchLimitMin = string.Empty;
+    private string _motionFilterPitchLimitMax = string.Empty;
+    private string _motionFilterYawSmoothing = string.Empty;
+    private bool _motionFilterYawLevel;
+    private bool _motionFilterYawLimit;
+    private string _motionFilterYawLimitMin = string.Empty;
+    private string _motionFilterYawLimitMax = string.Empty;
     // "Audio Source" section (audio-track item 10): the audio-renderable asset-graph
     // node this node references + per-entity play policy (auto_play / enabled). The
     // picked reference stores the STABLE asset-graph node id; the section shows when
@@ -143,6 +168,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // component via the generic remove verb and hides the section, like camera.
         RemoveCollisionComponentCommand = new RelayCommand(RemoveCollisionComponent);
         RemoveMotionComponentCommand = new RelayCommand(RemoveMotionComponent);
+        RemoveMotionFilterComponentCommand =
+            new RelayCommand(RemoveMotionFilterComponent);
         // "Audio Source" (audio-track item 10): the header ✕ removes the component
         // via the generic remove verb and hides the section, like collision.
         RemoveAudioSourceComponentCommand =
@@ -233,6 +260,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public IRelayCommand RemoveCollisionComponentCommand { get; }
 
     public IRelayCommand RemoveMotionComponentCommand { get; }
+
+    public IRelayCommand RemoveMotionFilterComponentCommand { get; }
 
     // "Audio Source" (audio-track item 10).
     public IRelayCommand RemoveAudioSourceComponentCommand { get; }
@@ -677,6 +706,143 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         get => _motionAlignmentStrength;
         set { if (SetProperty(ref _motionAlignmentStrength, value)) OnMotionFieldEdited(); }
+    }
+
+    // ─── Motion Filter (secondary-motion camera damping) ─────────────────────────
+
+    // Gates the "Motion Filter" section: shown when the node HAS the component.
+    public bool HasMotionFilterComponent
+    {
+        get => _hasMotionFilterComponent;
+        private set => SetProperty(ref _hasMotionFilterComponent, value);
+    }
+
+    public bool MotionFilterEnabled
+    {
+        get => _motionFilterEnabled;
+        set { if (SetProperty(ref _motionFilterEnabled, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    // Translation smoothing per world axis (seconds; 0 = pass through).
+    public string MotionFilterTranslationSmoothingX
+    {
+        get => _motionFilterTranslationSmoothingX;
+        set { if (SetProperty(ref _motionFilterTranslationSmoothingX, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterTranslationSmoothingY
+    {
+        get => _motionFilterTranslationSmoothingY;
+        set { if (SetProperty(ref _motionFilterTranslationSmoothingY, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterTranslationSmoothingZ
+    {
+        get => _motionFilterTranslationSmoothingZ;
+        set { if (SetProperty(ref _motionFilterTranslationSmoothingZ, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public bool MotionFilterTerrainFloor
+    {
+        get => _motionFilterTerrainFloor;
+        set { if (SetProperty(ref _motionFilterTerrainFloor, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterTerrainFloorOffset
+    {
+        get => _motionFilterTerrainFloorOffset;
+        set { if (SetProperty(ref _motionFilterTerrainFloorOffset, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    // Rotation channels (node-local roll/pitch/yaw).
+    public string MotionFilterRollSmoothing
+    {
+        get => _motionFilterRollSmoothing;
+        set { if (SetProperty(ref _motionFilterRollSmoothing, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public bool MotionFilterRollLevel
+    {
+        get => _motionFilterRollLevel;
+        set { if (SetProperty(ref _motionFilterRollLevel, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public bool MotionFilterRollLimit
+    {
+        get => _motionFilterRollLimit;
+        set { if (SetProperty(ref _motionFilterRollLimit, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterRollLimitMin
+    {
+        get => _motionFilterRollLimitMin;
+        set { if (SetProperty(ref _motionFilterRollLimitMin, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterRollLimitMax
+    {
+        get => _motionFilterRollLimitMax;
+        set { if (SetProperty(ref _motionFilterRollLimitMax, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterPitchSmoothing
+    {
+        get => _motionFilterPitchSmoothing;
+        set { if (SetProperty(ref _motionFilterPitchSmoothing, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public bool MotionFilterPitchLevel
+    {
+        get => _motionFilterPitchLevel;
+        set { if (SetProperty(ref _motionFilterPitchLevel, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public bool MotionFilterPitchLimit
+    {
+        get => _motionFilterPitchLimit;
+        set { if (SetProperty(ref _motionFilterPitchLimit, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterPitchLimitMin
+    {
+        get => _motionFilterPitchLimitMin;
+        set { if (SetProperty(ref _motionFilterPitchLimitMin, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterPitchLimitMax
+    {
+        get => _motionFilterPitchLimitMax;
+        set { if (SetProperty(ref _motionFilterPitchLimitMax, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterYawSmoothing
+    {
+        get => _motionFilterYawSmoothing;
+        set { if (SetProperty(ref _motionFilterYawSmoothing, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public bool MotionFilterYawLevel
+    {
+        get => _motionFilterYawLevel;
+        set { if (SetProperty(ref _motionFilterYawLevel, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public bool MotionFilterYawLimit
+    {
+        get => _motionFilterYawLimit;
+        set { if (SetProperty(ref _motionFilterYawLimit, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterYawLimitMin
+    {
+        get => _motionFilterYawLimitMin;
+        set { if (SetProperty(ref _motionFilterYawLimitMin, value)) OnMotionFilterFieldEdited(); }
+    }
+
+    public string MotionFilterYawLimitMax
+    {
+        get => _motionFilterYawLimitMax;
+        set { if (SetProperty(ref _motionFilterYawLimitMax, value)) OnMotionFilterFieldEdited(); }
     }
 
     public bool HasTransform
@@ -1264,6 +1430,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             ResetRenderableIngredientsState();
             ResetCollisionState();
             ResetMotionState();
+            ResetMotionFilterState();
             ComponentsHeader = "Components";
             SetTransformFields(null);
             HasCameraComponent = false;
@@ -1330,6 +1497,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             if (string.Equals(component.Kind, "camera", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "collision", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "motion", StringComparison.Ordinal)
+                || string.Equals(component.Kind, "motion_filter", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "audio_source", StringComparison.Ordinal))
             {
                 continue;
@@ -1347,6 +1515,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // (held by Inspect) so populating the fields doesn't echo a live edit.
         RestoreCollisionState(node);
         RestoreMotionState(node);
+        RestoreMotionFilterState(node);
         RestoreAudioSourceState(node);
 
         if (node.Camera is not null)
@@ -1588,6 +1757,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             HasMotionComponent = true;
             MirrorComponentAdded(kind);
         }
+        else if (string.Equals(kind, "motion_filter", StringComparison.Ordinal))
+        {
+            HasMotionFilterComponent = true;
+            MirrorComponentAdded(kind);
+        }
         else if (string.Equals(kind, "audio_source", StringComparison.Ordinal))
         {
             HasAudioSourceComponent = true;
@@ -1681,6 +1855,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             "proximity" => "Proximity",
             "collision" => "Collision",
             "motion" => "Motion",
+            "motion_filter" => "Motion Filter",
             "audio_source" => "Audio Source",
             "audio_listener" => "Audio Listener",
             _ => kind,
@@ -2333,6 +2508,197 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         _motionAlignmentStrength = string.Empty;
         OnPropertyChanged(nameof(MotionAlignmentStrength));
         HasMotionComponent = false;
+    }
+
+    // Push the whole Motion Filter component live on any field change (the engine
+    // sends it all + patches the live record in place), and mirror onto the cached
+    // tree-node VM so an immediate reselect shows the edit, not the stale snapshot.
+    private void OnMotionFilterFieldEdited()
+    {
+        if (_suppressLiveEdits || !EnsureCanApply())
+        {
+            return;
+        }
+
+        var filter = BuildMotionFilterFromFields();
+        SetEditResponse(_editorSession!.SetNodeMotionFilter(NodeId, filter));
+
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.MotionFilter = filter;
+        }
+    }
+
+    private EngineSceneNodeMotionFilter BuildMotionFilterFromFields()
+    {
+        EngineSceneNodeMotionFilterRotationAxis Axis(
+            string smoothing, bool level, bool limit, string min, string max) =>
+            new()
+            {
+                SmoothingTime = ParseFloatOrZero(smoothing),
+                Level = level,
+                Limit = limit,
+                LimitMinDegrees = ParseFloatOrZero(min),
+                LimitMaxDegrees = ParseFloatOrZero(max),
+            };
+
+        return new EngineSceneNodeMotionFilter
+        {
+            TranslationSmoothing =
+            [
+                ParseFloatOrZero(MotionFilterTranslationSmoothingX),
+                ParseFloatOrZero(MotionFilterTranslationSmoothingY),
+                ParseFloatOrZero(MotionFilterTranslationSmoothingZ),
+            ],
+            TerrainFloor = MotionFilterTerrainFloor,
+            TerrainFloorOffset = ParseFloatOrZero(MotionFilterTerrainFloorOffset),
+            Roll = Axis(
+                MotionFilterRollSmoothing, MotionFilterRollLevel,
+                MotionFilterRollLimit, MotionFilterRollLimitMin,
+                MotionFilterRollLimitMax),
+            Pitch = Axis(
+                MotionFilterPitchSmoothing, MotionFilterPitchLevel,
+                MotionFilterPitchLimit, MotionFilterPitchLimitMin,
+                MotionFilterPitchLimitMax),
+            Yaw = Axis(
+                MotionFilterYawSmoothing, MotionFilterYawLevel,
+                MotionFilterYawLimit, MotionFilterYawLimitMin,
+                MotionFilterYawLimitMax),
+            Enabled = MotionFilterEnabled,
+        };
+    }
+
+    // Remove the Motion Filter component (the section's ✕), mirroring Motion.
+    private void RemoveMotionFilterComponent()
+    {
+        if (EnsureCanApply())
+        {
+            SetEditResponse(
+                _editorSession!.RemoveNodeComponent(NodeId, "motion_filter"));
+        }
+
+        MirrorComponentRemoved("motion_filter");
+        ResetMotionFilterState();
+    }
+
+    // Reveal the "Motion Filter" section + restore its persisted fields from the
+    // snapshot. Runs under _suppressLiveEdits so populating doesn't echo an edit.
+    private void RestoreMotionFilterState(SceneTreeNodeViewModel node)
+    {
+        var has = node.Components.Any(
+            c => string.Equals(
+                c.Kind, "motion_filter", StringComparison.Ordinal));
+        if (!has)
+        {
+            ResetMotionFilterState();
+            return;
+        }
+
+        HasMotionFilterComponent = true;
+
+        var f = node.MotionFilter;
+        var t = f?.TranslationSmoothing;
+
+        _motionFilterEnabled = f?.Enabled ?? true;
+        OnPropertyChanged(nameof(MotionFilterEnabled));
+        _motionFilterTranslationSmoothingX = FormatAxis(t, 0);
+        OnPropertyChanged(nameof(MotionFilterTranslationSmoothingX));
+        _motionFilterTranslationSmoothingY = FormatAxis(t, 1);
+        OnPropertyChanged(nameof(MotionFilterTranslationSmoothingY));
+        _motionFilterTranslationSmoothingZ = FormatAxis(t, 2);
+        OnPropertyChanged(nameof(MotionFilterTranslationSmoothingZ));
+        _motionFilterTerrainFloor = f?.TerrainFloor ?? false;
+        OnPropertyChanged(nameof(MotionFilterTerrainFloor));
+        _motionFilterTerrainFloorOffset =
+            f is not null ? FormatFloat(f.TerrainFloorOffset) : string.Empty;
+        OnPropertyChanged(nameof(MotionFilterTerrainFloorOffset));
+
+        RestoreMotionFilterAxis(
+            f?.Roll,
+            ref _motionFilterRollSmoothing, nameof(MotionFilterRollSmoothing),
+            ref _motionFilterRollLevel, nameof(MotionFilterRollLevel),
+            ref _motionFilterRollLimit, nameof(MotionFilterRollLimit),
+            ref _motionFilterRollLimitMin, nameof(MotionFilterRollLimitMin),
+            ref _motionFilterRollLimitMax, nameof(MotionFilterRollLimitMax));
+        RestoreMotionFilterAxis(
+            f?.Pitch,
+            ref _motionFilterPitchSmoothing, nameof(MotionFilterPitchSmoothing),
+            ref _motionFilterPitchLevel, nameof(MotionFilterPitchLevel),
+            ref _motionFilterPitchLimit, nameof(MotionFilterPitchLimit),
+            ref _motionFilterPitchLimitMin, nameof(MotionFilterPitchLimitMin),
+            ref _motionFilterPitchLimitMax, nameof(MotionFilterPitchLimitMax));
+        RestoreMotionFilterAxis(
+            f?.Yaw,
+            ref _motionFilterYawSmoothing, nameof(MotionFilterYawSmoothing),
+            ref _motionFilterYawLevel, nameof(MotionFilterYawLevel),
+            ref _motionFilterYawLimit, nameof(MotionFilterYawLimit),
+            ref _motionFilterYawLimitMin, nameof(MotionFilterYawLimitMin),
+            ref _motionFilterYawLimitMax, nameof(MotionFilterYawLimitMax));
+    }
+
+    private void RestoreMotionFilterAxis(
+        EngineSceneNodeMotionFilterRotationAxis? axis,
+        ref string smoothing, string smoothingName,
+        ref bool level, string levelName,
+        ref bool limit, string limitName,
+        ref string min, string minName,
+        ref string max, string maxName)
+    {
+        smoothing = axis is not null ? FormatFloat(axis.SmoothingTime) : string.Empty;
+        OnPropertyChanged(smoothingName);
+        level = axis?.Level ?? false;
+        OnPropertyChanged(levelName);
+        limit = axis?.Limit ?? false;
+        OnPropertyChanged(limitName);
+        min = axis is not null ? FormatFloat(axis.LimitMinDegrees) : string.Empty;
+        OnPropertyChanged(minName);
+        max = axis is not null ? FormatFloat(axis.LimitMaxDegrees) : string.Empty;
+        OnPropertyChanged(maxName);
+    }
+
+    private static string FormatAxis(float[]? values, int index) =>
+        values is not null && index < values.Length
+            ? FormatFloat(values[index])
+            : string.Empty;
+
+    private void ResetMotionFilterState()
+    {
+        _motionFilterEnabled = true;
+        OnPropertyChanged(nameof(MotionFilterEnabled));
+        _motionFilterTranslationSmoothingX = string.Empty;
+        OnPropertyChanged(nameof(MotionFilterTranslationSmoothingX));
+        _motionFilterTranslationSmoothingY = string.Empty;
+        OnPropertyChanged(nameof(MotionFilterTranslationSmoothingY));
+        _motionFilterTranslationSmoothingZ = string.Empty;
+        OnPropertyChanged(nameof(MotionFilterTranslationSmoothingZ));
+        _motionFilterTerrainFloor = false;
+        OnPropertyChanged(nameof(MotionFilterTerrainFloor));
+        _motionFilterTerrainFloorOffset = string.Empty;
+        OnPropertyChanged(nameof(MotionFilterTerrainFloorOffset));
+
+        RestoreMotionFilterAxis(
+            null,
+            ref _motionFilterRollSmoothing, nameof(MotionFilterRollSmoothing),
+            ref _motionFilterRollLevel, nameof(MotionFilterRollLevel),
+            ref _motionFilterRollLimit, nameof(MotionFilterRollLimit),
+            ref _motionFilterRollLimitMin, nameof(MotionFilterRollLimitMin),
+            ref _motionFilterRollLimitMax, nameof(MotionFilterRollLimitMax));
+        RestoreMotionFilterAxis(
+            null,
+            ref _motionFilterPitchSmoothing, nameof(MotionFilterPitchSmoothing),
+            ref _motionFilterPitchLevel, nameof(MotionFilterPitchLevel),
+            ref _motionFilterPitchLimit, nameof(MotionFilterPitchLimit),
+            ref _motionFilterPitchLimitMin, nameof(MotionFilterPitchLimitMin),
+            ref _motionFilterPitchLimitMax, nameof(MotionFilterPitchLimitMax));
+        RestoreMotionFilterAxis(
+            null,
+            ref _motionFilterYawSmoothing, nameof(MotionFilterYawSmoothing),
+            ref _motionFilterYawLevel, nameof(MotionFilterYawLevel),
+            ref _motionFilterYawLimit, nameof(MotionFilterYawLimit),
+            ref _motionFilterYawLimitMin, nameof(MotionFilterYawLimitMin),
+            ref _motionFilterYawLimitMax, nameof(MotionFilterYawLimitMax));
+
+        HasMotionFilterComponent = false;
     }
 
     // The Collision verb takes a uint asset-graph node id; clamp the option's ulong

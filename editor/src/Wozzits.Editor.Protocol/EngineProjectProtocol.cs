@@ -353,6 +353,10 @@ public sealed record EngineSceneNode
 
     public EngineSceneNodeMotion? Motion { get; init; }
 
+    // Motion Filter component field values (read-back), null when the node has no
+    // Motion Filter. The inspector restores its per-DOF fields on select + reload.
+    public EngineSceneNodeMotionFilter? MotionFilter { get; init; }
+
     // Persisted AudioSource component field values (read-back), null when the node
     // has no AudioSource. The inspector restores the renderable reference + play
     // policy on select + after reload.
@@ -412,6 +416,44 @@ public sealed record EngineSceneNodeMotion
     public bool AlignToSurface { get; init; }
 
     public float AlignmentStrength { get; init; }
+}
+
+// One local-axis rotation channel (roll/pitch/yaw) of a node's Motion Filter.
+// SmoothingTime 0 = instant; Level eases the axis toward world-level instead of
+// the target; Limit clamps the resulting angle to [LimitMinDegrees, LimitMax-
+// Degrees].
+public sealed record EngineSceneNodeMotionFilterRotationAxis
+{
+    public float SmoothingTime { get; init; }
+
+    public bool Level { get; init; }
+
+    public bool Limit { get; init; }
+
+    public float LimitMinDegrees { get; init; }
+
+    public float LimitMaxDegrees { get; init; }
+}
+
+// Motion Filter component field values surfaced read-back: per-DOF smoothing +
+// clamp of a node's driven transform (secondary-motion camera damping).
+// TranslationSmoothing is world X/Y/Z (0 = pass through); TerrainFloor clamps
+// world Y to >= terrain + offset; roll/pitch/yaw are node-local channels.
+public sealed record EngineSceneNodeMotionFilter
+{
+    public float[] TranslationSmoothing { get; init; } = new float[3];
+
+    public bool TerrainFloor { get; init; }
+
+    public float TerrainFloorOffset { get; init; }
+
+    public EngineSceneNodeMotionFilterRotationAxis Roll { get; init; } = new();
+
+    public EngineSceneNodeMotionFilterRotationAxis Pitch { get; init; } = new();
+
+    public EngineSceneNodeMotionFilterRotationAxis Yaw { get; init; } = new();
+
+    public bool Enabled { get; init; } = true;
 }
 
 // Authored AudioSource-component field values surfaced read-back.

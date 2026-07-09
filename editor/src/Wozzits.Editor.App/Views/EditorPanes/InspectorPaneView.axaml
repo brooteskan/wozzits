@@ -210,6 +210,9 @@
                                                 <MenuItem Header="Motion"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="motion"/>
+                                                <MenuItem Header="Motion Filter"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="motion_filter"/>
                                                 <MenuItem Header="Audio Source"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="audio_source"/>
@@ -671,6 +674,164 @@
                                                Classes="InspectorPropertyName"/>
                                     <TextBox Grid.Column="1"
                                              Text="{Binding MotionAlignmentStrength}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Motion Filter (secondary-motion camera damping): per-DOF
+                             smoothing + clamp of the node's driven transform. Translation
+                             channels are WORLD axes (0 smoothing = pass through, e.g. keep
+                             the bob); rotation channels roll/pitch/yaw are node-LOCAL. Shown
+                             when the node has the component; every change applies live. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasMotionFilterComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Motion Filter"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveMotionFilterComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove motion filter"/>
+                                </Grid>
+
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding MotionFilterEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="Translation smoothing (s, world axes; 0 = off)"
+                                           Classes="InspectorPropertyName"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="X" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterTranslationSmoothingX}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Y" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterTranslationSmoothingY}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Z" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterTranslationSmoothingZ}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <CheckBox Content="Terrain floor (clamp world Y above terrain)"
+                                          IsChecked="{Binding MotionFilterTerrainFloor}"
+                                          Classes="InspectorCheck"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Floor offset"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterTerrainFloorOffset}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <TextBlock Text="Roll (about forward)"
+                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Smoothing (s)"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterRollSmoothing}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <CheckBox Content="Level (ease to horizon)"
+                                          IsChecked="{Binding MotionFilterRollLevel}"
+                                          Classes="InspectorCheck"/>
+                                <CheckBox Content="Limit angle"
+                                          IsChecked="{Binding MotionFilterRollLimit}"
+                                          Classes="InspectorCheck"/>
+                                <Grid ColumnDefinitions="Auto,*,Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Min°" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterRollLimitMin}"
+                                             Classes="InspectorInput"/>
+                                    <TextBlock Grid.Column="2" Text="Max°"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding MotionFilterRollLimitMax}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <TextBlock Text="Pitch (about right)"
+                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Smoothing (s)"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterPitchSmoothing}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <CheckBox Content="Level (ease to horizon)"
+                                          IsChecked="{Binding MotionFilterPitchLevel}"
+                                          Classes="InspectorCheck"/>
+                                <CheckBox Content="Limit angle"
+                                          IsChecked="{Binding MotionFilterPitchLimit}"
+                                          Classes="InspectorCheck"/>
+                                <Grid ColumnDefinitions="Auto,*,Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Min°" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterPitchLimitMin}"
+                                             Classes="InspectorInput"/>
+                                    <TextBlock Grid.Column="2" Text="Max°"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding MotionFilterPitchLimitMax}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <TextBlock Text="Yaw (about up)"
+                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Smoothing (s)"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterYawSmoothing}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <CheckBox Content="Level"
+                                          IsChecked="{Binding MotionFilterYawLevel}"
+                                          Classes="InspectorCheck"/>
+                                <CheckBox Content="Limit angle"
+                                          IsChecked="{Binding MotionFilterYawLimit}"
+                                          Classes="InspectorCheck"/>
+                                <Grid ColumnDefinitions="Auto,*,Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Min°" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterYawLimitMin}"
+                                             Classes="InspectorInput"/>
+                                    <TextBlock Grid.Column="2" Text="Max°"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding MotionFilterYawLimitMax}"
                                              Classes="InspectorInput"/>
                                 </Grid>
 

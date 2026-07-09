@@ -1238,6 +1238,49 @@ public sealed partial class WozzitsEngineNativeClient
             alignmentStrength));
     }
 
+    internal EngineMutationResponse SetNodeMotionFilter(
+        IntPtr runtime,
+        string nodeId,
+        EngineSceneNodeMotionFilter filter)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+        if (filter is null)
+        {
+            return InvalidMutation("Motion filter is null.");
+        }
+
+        static WzEditorSceneMotionFilterRotationAxisAbi Axis(
+            EngineSceneNodeMotionFilterRotationAxis a) => new(
+            a.SmoothingTime,
+            a.Level ? (byte)1 : (byte)0,
+            a.Limit ? (byte)1 : (byte)0,
+            a.LimitMinDegrees,
+            a.LimitMaxDegrees);
+
+        float[] t = filter.TranslationSmoothing;
+        var abi = new WzEditorSceneMotionFilterAbi(
+            t.Length > 0 ? t[0] : 0f,
+            t.Length > 1 ? t[1] : 0f,
+            t.Length > 2 ? t[2] : 0f,
+            filter.TerrainFloor ? (byte)1 : (byte)0,
+            filter.Enabled ? (byte)1 : (byte)0,
+            filter.TerrainFloorOffset,
+            Axis(filter.Roll),
+            Axis(filter.Pitch),
+            Axis(filter.Yaw));
+
+        return InvokeMutation(() =>
+            WozzitsEngineAbi.WzEditorRuntimeSetNodeMotionFilter(
+                runtime, nodeId, in abi));
+    }
+
     internal EngineMutationResponse SetNodeSceneSource(
         IntPtr runtime,
         string nodeId,

@@ -8,7 +8,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 30;
+    internal const uint AbiVersion = 31;
 
     private static int _resolverRegistered;
 
@@ -686,6 +686,18 @@ internal static partial class WozzitsEngineAbi
         byte alignToSurface,
         float alignmentStrength);
 
+    // Author a node's MOTION FILTER component: set the whole component (the
+    // editor sends it all on any change). Live + host-gated, no-op success when
+    // no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_motion_filter",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeMotionFilter(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        in WzEditorSceneMotionFilterAbi filter);
+
     // Point a node at a "Scene from GLB" asset-graph node so the runtime grafts
     // that GLB's hierarchy as the node's children (issue #213 piece 2). The id is
     // the asset-graph node's id (0 = clear); consumeMode uses the WZ_SCENE_SOURCE_*
@@ -1138,6 +1150,34 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneMotionAbi.AlignmentStrength),
             12);
 
+        AssertSize<WzEditorSceneMotionFilterRotationAxisAbi>(16);
+        AssertOffset<WzEditorSceneMotionFilterRotationAxisAbi>(
+            nameof(WzEditorSceneMotionFilterRotationAxisAbi.SmoothingTime), 0);
+        AssertOffset<WzEditorSceneMotionFilterRotationAxisAbi>(
+            nameof(WzEditorSceneMotionFilterRotationAxisAbi.Level), 4);
+        AssertOffset<WzEditorSceneMotionFilterRotationAxisAbi>(
+            nameof(WzEditorSceneMotionFilterRotationAxisAbi.Limit), 5);
+        AssertOffset<WzEditorSceneMotionFilterRotationAxisAbi>(
+            nameof(WzEditorSceneMotionFilterRotationAxisAbi.LimitMinDegrees), 8);
+        AssertOffset<WzEditorSceneMotionFilterRotationAxisAbi>(
+            nameof(WzEditorSceneMotionFilterRotationAxisAbi.LimitMaxDegrees), 12);
+
+        AssertSize<WzEditorSceneMotionFilterAbi>(68);
+        AssertOffset<WzEditorSceneMotionFilterAbi>(
+            nameof(WzEditorSceneMotionFilterAbi.TranslationSmoothing0), 0);
+        AssertOffset<WzEditorSceneMotionFilterAbi>(
+            nameof(WzEditorSceneMotionFilterAbi.TerrainFloor), 12);
+        AssertOffset<WzEditorSceneMotionFilterAbi>(
+            nameof(WzEditorSceneMotionFilterAbi.Enabled), 13);
+        AssertOffset<WzEditorSceneMotionFilterAbi>(
+            nameof(WzEditorSceneMotionFilterAbi.TerrainFloorOffset), 16);
+        AssertOffset<WzEditorSceneMotionFilterAbi>(
+            nameof(WzEditorSceneMotionFilterAbi.Roll), 20);
+        AssertOffset<WzEditorSceneMotionFilterAbi>(
+            nameof(WzEditorSceneMotionFilterAbi.Pitch), 36);
+        AssertOffset<WzEditorSceneMotionFilterAbi>(
+            nameof(WzEditorSceneMotionFilterAbi.Yaw), 52);
+
         AssertSize<WzEditorSceneAudioSourceAbi>(16);
         AssertOffset<WzEditorSceneAudioSourceAbi>(
             nameof(WzEditorSceneAudioSourceAbi.AudioRenderableNodeId),
@@ -1171,7 +1211,7 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneRenderableConstantAbi.Value0),
             16);
 
-        AssertSize<WzEditorSceneNodeAbi>(672);
+        AssertSize<WzEditorSceneNodeAbi>(736);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -1238,6 +1278,9 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.RenderOrder),
             664);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.MotionFilter),
+            668);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -1584,6 +1627,9 @@ internal readonly struct WzEditorSceneNodeAbi
     // Appended last to mirror the native struct (the added int is the ABI v30
     // bump). Read by the inspector's layer dropdown.
     public readonly int RenderOrder;
+    // Motion Filter component field values, valid iff HasMotionFilter. Appended
+    // last to mirror the native struct (the added struct is the ABI v31 bump).
+    public readonly WzEditorSceneMotionFilterAbi MotionFilter;
 }
 
 // One authored semantic resource binding of a node's custom-renderable
@@ -1647,6 +1693,80 @@ internal readonly struct WzEditorSceneMotionAbi
     public readonly float RideHeight;
     public readonly float FootprintRadius;
     public readonly float AlignmentStrength;
+}
+
+// One local-axis rotation channel (roll/pitch/yaw) of a node's Motion Filter.
+// Mirrors WzEditorSceneMotionFilterRotationAxis. Also the shape carried by the
+// live-edit verb. Level/Limit are 0/1.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneMotionFilterRotationAxisAbi
+{
+    public readonly float SmoothingTime;
+    public readonly byte Level;
+    public readonly byte Limit;
+    public readonly byte Reserved0;
+    public readonly byte Reserved1;
+    public readonly float LimitMinDegrees;
+    public readonly float LimitMaxDegrees;
+
+    public WzEditorSceneMotionFilterRotationAxisAbi(
+        float smoothingTime,
+        byte level,
+        byte limit,
+        float limitMinDegrees,
+        float limitMaxDegrees)
+    {
+        SmoothingTime = smoothingTime;
+        Level = level;
+        Limit = limit;
+        Reserved0 = 0;
+        Reserved1 = 0;
+        LimitMinDegrees = limitMinDegrees;
+        LimitMaxDegrees = limitMaxDegrees;
+    }
+}
+
+// Mirrors WzEditorSceneMotionFilter. Present iff HasMotionFilter. The SAME
+// struct is the payload of wz_host_runtime_set_node_motion_filter. TerrainFloor
+// /Enabled are 0/1; TranslationSmoothing0/1/2 are world X/Y/Z.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneMotionFilterAbi
+{
+    public readonly float TranslationSmoothing0;
+    public readonly float TranslationSmoothing1;
+    public readonly float TranslationSmoothing2;
+    public readonly byte TerrainFloor;
+    public readonly byte Enabled;
+    public readonly byte Reserved0;
+    public readonly byte Reserved1;
+    public readonly float TerrainFloorOffset;
+    public readonly WzEditorSceneMotionFilterRotationAxisAbi Roll;
+    public readonly WzEditorSceneMotionFilterRotationAxisAbi Pitch;
+    public readonly WzEditorSceneMotionFilterRotationAxisAbi Yaw;
+
+    public WzEditorSceneMotionFilterAbi(
+        float translationSmoothing0,
+        float translationSmoothing1,
+        float translationSmoothing2,
+        byte terrainFloor,
+        byte enabled,
+        float terrainFloorOffset,
+        WzEditorSceneMotionFilterRotationAxisAbi roll,
+        WzEditorSceneMotionFilterRotationAxisAbi pitch,
+        WzEditorSceneMotionFilterRotationAxisAbi yaw)
+    {
+        TranslationSmoothing0 = translationSmoothing0;
+        TranslationSmoothing1 = translationSmoothing1;
+        TranslationSmoothing2 = translationSmoothing2;
+        TerrainFloor = terrainFloor;
+        Enabled = enabled;
+        Reserved0 = 0;
+        Reserved1 = 0;
+        TerrainFloorOffset = terrainFloorOffset;
+        Roll = roll;
+        Pitch = pitch;
+        Yaw = yaw;
+    }
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -1813,6 +1933,9 @@ internal static class WzEditorSceneNodeFlags
     public const uint HasCollision = 1u << 11;
     public const uint HasMotion = 1u << 12;
     public const uint HasAudioSource = 1u << 13;
+    // Motion Filter component present: the node's MotionFilter struct carries
+    // the authored per-DOF fields (read-back).
+    public const uint HasMotionFilter = 1u << 14;
 }
 
 internal static class WzEditorSceneCameraFlags

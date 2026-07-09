@@ -323,6 +323,10 @@ public sealed partial class WozzitsEngineNativeClient
             Motion = HasFlag(node.Flags, WzEditorSceneNodeFlags.HasMotion)
                 ? ReadSceneMotion(node.Motion)
                 : null,
+            MotionFilter =
+                HasFlag(node.Flags, WzEditorSceneNodeFlags.HasMotionFilter)
+                    ? ReadSceneMotionFilter(node.MotionFilter)
+                    : null,
             AudioSource =
                 HasFlag(node.Flags, WzEditorSceneNodeFlags.HasAudioSource)
                     ? ReadSceneAudioSource(node.AudioSource)
@@ -427,6 +431,36 @@ public sealed partial class WozzitsEngineNativeClient
             FootprintRadius = motion.FootprintRadius,
             AlignToSurface = motion.AlignToSurface != 0,
             AlignmentStrength = motion.AlignmentStrength,
+        };
+    }
+
+    private static EngineSceneNodeMotionFilter ReadSceneMotionFilter(
+        WzEditorSceneMotionFilterAbi filter)
+    {
+        static EngineSceneNodeMotionFilterRotationAxis Axis(
+            WzEditorSceneMotionFilterRotationAxisAbi a) => new()
+            {
+                SmoothingTime = a.SmoothingTime,
+                Level = a.Level != 0,
+                Limit = a.Limit != 0,
+                LimitMinDegrees = a.LimitMinDegrees,
+                LimitMaxDegrees = a.LimitMaxDegrees,
+            };
+
+        return new EngineSceneNodeMotionFilter
+        {
+            TranslationSmoothing =
+            [
+                filter.TranslationSmoothing0,
+                filter.TranslationSmoothing1,
+                filter.TranslationSmoothing2,
+            ],
+            TerrainFloor = filter.TerrainFloor != 0,
+            TerrainFloorOffset = filter.TerrainFloorOffset,
+            Roll = Axis(filter.Roll),
+            Pitch = Axis(filter.Pitch),
+            Yaw = Axis(filter.Yaw),
+            Enabled = filter.Enabled != 0,
         };
     }
 

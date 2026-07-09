@@ -287,6 +287,13 @@ public interface IWozzitsEngineEditorSession
         bool alignToSurface,
         float alignmentStrength);
 
+    // Author the node's whole MOTION FILTER component (per-DOF smoothing/clamp
+    // for secondary-motion camera damping). Live + host-gated, no-op success
+    // when no viewport is running.
+    EngineMutationResponse SetNodeMotionFilter(
+        string nodeId,
+        EngineSceneNodeMotionFilter filter);
+
     // Point (0 clears) the node at a "Scene from GLB" asset-graph node by its node
     // id; the runtime grafts that GLB's hierarchy as the node's children (issue
     // #213 piece 2). consumeMode: 0 instance / 1 flatten. Live + host-gated, no-op

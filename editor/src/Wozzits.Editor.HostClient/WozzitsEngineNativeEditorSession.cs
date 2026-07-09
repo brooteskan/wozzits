@@ -606,6 +606,17 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             alignmentStrength);
     }
 
+    public EngineMutationResponse SetNodeMotionFilter(
+        string nodeId,
+        EngineSceneNodeMotionFilter filter)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeMotionFilter(runtime.Handle, nodeId, filter);
+    }
+
     public EngineMutationResponse SetNodeSceneSource(
         string nodeId,
         ulong assetGraphNodeId,

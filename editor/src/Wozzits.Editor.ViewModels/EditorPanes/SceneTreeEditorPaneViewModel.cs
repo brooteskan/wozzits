@@ -709,6 +709,7 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         RenderProgramNodeId = node.RenderProgramNodeId;
         Collision = node.Collision;
         Motion = node.Motion;
+        MotionFilter = node.MotionFilter;
         AudioSource = node.AudioSource;
         RenderableBindings = node.RenderableBindings;
         RenderableConstants = node.RenderableConstants;
@@ -803,6 +804,10 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     public EngineSceneNodeCollision? Collision { get; internal set; }
 
     public EngineSceneNodeMotion? Motion { get; internal set; }
+
+    // Motion Filter component field values (read-back); settable so the inspector's
+    // live edits mirror back onto the cached node (like Motion).
+    public EngineSceneNodeMotionFilter? MotionFilter { get; internal set; }
 
     // Persisted AudioSource component field values (read-back); settable so the
     // inspector's live edits mirror back onto the cached node (like Collision).
