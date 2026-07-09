@@ -33,12 +33,12 @@ namespace wz::app
         // runtime to rebuild).
         Structural,
 
-        // A binding or sim component that must be materialized into the runtime
-        // changed (a behavior binding add/remove/enable/fields/events/config, or a
-        // Motion component being ADDED). Like Structural, but re-materializes
-        // UNCONDITIONALLY: adding the first such binding/component to a scene that
-        // had no runtime must CREATE it. (The natural hook for #257 incremental
-        // behavior rebuild.)
+        // A change that must (re)materialize the runtime UNCONDITIONALLY (create it
+        // if none is live): a behavior binding (add/remove/enable/fields/events/
+        // config), a Motion component being ADDED, or a structural expansion like
+        // flatten. Unlike Structural, it does not skip when no runtime exists --
+        // the first such edit to a runtime-less scene must create it. (The natural
+        // hook for #257 incremental behavior rebuild.)
         RuntimeRebuild,
 
         // A renderable's assembly recipe changed (geometry / render-program /
@@ -55,6 +55,17 @@ namespace wz::app
         // against the bound graph, then re-materialize the runtime (unconditional,
         // so the runtime's collision world picks up the constraint surface).
         Collision,
+
+        // A node-referenced scene source changed: re-bridge its key, re-graft the
+        // host's children (a document mutation -- see #258 avenue-2 notes), assemble
+        // the grafted subtree's bindings, then rebuild the runtime (the graft
+        // changed the entity set). Carries the verb call site for the #252 log.
+        SceneSource,
+
+        // A GLB scene-source descriptor or per-mesh style changed: re-resolve the
+        // descriptor into a Scene, re-graft + assemble + rebuild
+        // (rematerialize_glb_scene_sources runs the whole sequence).
+        GlbSource,
     };
 
     struct SceneChange
@@ -76,6 +87,12 @@ namespace wz::app
             return { SceneChangeKind::RuntimeRebuild };
         }
         static SceneChange collision() { return { SceneChangeKind::Collision }; }
+        static SceneChange scene_source(
+            std::source_location caller = std::source_location::current())
+        {
+            return { SceneChangeKind::SceneSource, caller };
+        }
+        static SceneChange glb_source() { return { SceneChangeKind::GlbSource }; }
         // Default arg captures the VERB's call site (default args evaluate at the
         // caller), so the #252 log names the verb, not this factory.
         static SceneChange render_binding(

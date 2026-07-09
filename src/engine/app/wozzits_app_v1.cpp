@@ -1284,6 +1284,19 @@ namespace wz::app
                 scene_nodes_, graph_draft_);
             rebuild_behavior_scene();
             break;
+        case SceneChangeKind::SceneSource:
+            // Re-bridge the node-ref key, re-graft the host's children (mutates the
+            // document), assemble the grafted subtree, then rebuild the runtime.
+            wz::engine::assets::bridge_scene_source_keys(
+                scene_nodes_, graph_draft_);
+            graft_scene_sources();
+            rematerialize_render_bindings(change.caller);
+            rebuild_behavior_scene();
+            break;
+        case SceneChangeKind::GlbSource:
+            // Re-resolve the GLB descriptor -> Scene, re-graft + assemble + rebuild.
+            rematerialize_glb_scene_sources();
+            break;
         case SceneChangeKind::RenderBinding:
             // The renderable recipe changed; re-assemble the bindings. The verb's
             // call site rides in the descriptor so the #252 profile still names it.
@@ -1621,18 +1634,11 @@ namespace wz::app
         }
         scene_dirty_ = true;
         // Re-resolve the new (or absent) scene source against the bound graph,
-        // then re-graft so the host's children reflect the change immediately,
-        // and re-materialize the behavior runtime (the grafted children change
-        // the entity set). bridge_scene_source_keys clears the key when the
-        // authored node id was cleared, so graft_scene_sources drops the stale
-        // graft and adds nothing — the children disappear, as intended.
-        wz::engine::assets::bridge_scene_source_keys(scene_nodes_, graph_draft_);
-        graft_scene_sources();
-        // The grafted children carry intrinsic GLB-part geometry bindings (#213
-        // increment 3); assemble them into renderables (inheriting the host's
-        // program) so the subtree draws.
-        rematerialize_render_bindings();
-        rebuild_behavior_scene();
+        // re-graft the host's children, assemble the grafted subtree, and rebuild
+        // the runtime (the SceneSource reaction; bridge clears the key when the
+        // authored id was cleared, so the graft drops the stale children and adds
+        // nothing -- they disappear, as intended).
+        apply_scene_change(SceneChange::scene_source());
         return true;
     }
 
@@ -2086,11 +2092,11 @@ namespace wz::app
         }
         scene_dirty_ = true;
 
-        // Re-materialize so the change shows on the next frame. Mirror the
-        // descriptor-route sequence load_scene runs (NOT the node-ref bridge that
-        // set_node_scene_source uses): re-resolve the descriptor into a Scene
-        // asset, compile the freshly registered assets, then re-graft + rebuild.
-        rematerialize_glb_scene_sources();
+        // Re-materialize so the change shows on the next frame. The GlbSource
+        // reaction mirrors the descriptor-route sequence load_scene runs (NOT the
+        // node-ref bridge that set_node_scene_source uses): re-resolve the
+        // descriptor into a Scene, compile, then re-graft + rebuild.
+        apply_scene_change(SceneChange::glb_source());
         return true;
     }
 
@@ -2146,7 +2152,7 @@ namespace wz::app
 
         node->glb_scene_source->base_style = style;
         scene_dirty_ = true;
-        rematerialize_glb_scene_sources();
+        apply_scene_change(SceneChange::glb_source());
         return true;
     }
 
@@ -2186,7 +2192,7 @@ namespace wz::app
         }
 
         scene_dirty_ = true;
-        rematerialize_glb_scene_sources();
+        apply_scene_change(SceneChange::glb_source());
         return true;
     }
 
@@ -2218,10 +2224,12 @@ namespace wz::app
         // Even a no-op clear (no such override) returns true: the requested state
         // — "no override for this mesh" — holds. Only re-materialize + mark dirty
         // when something actually changed.
-        if (overrides.size() != before) {
+        const bool changed = overrides.size() != before;
+        if (changed) {
             scene_dirty_ = true;
-            rematerialize_glb_scene_sources();
         }
+        apply_scene_change(
+            changed ? SceneChange::glb_source() : SceneChange::none());
         return true;
     }
 
@@ -2318,7 +2326,8 @@ namespace wz::app
         }
 
         scene_dirty_ = true;
-        rebuild_behavior_scene();
+        // The expansion changed the entity set; re-materialize unconditionally.
+        apply_scene_change(SceneChange::runtime_rebuild());
         ctx_.logger.info(
             "flatten_scene_source: expanded " + std::to_string(count)
             + " node(s) under '" + node_id + "' (scene source dropped)");
