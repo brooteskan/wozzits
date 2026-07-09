@@ -881,6 +881,13 @@ namespace wz::engine::assets
                 });
             }
 
+            if (node.motion_filter) {
+                inst.motion_filters.push_back({
+                    .node = h,
+                    .component = *node.motion_filter,
+                });
+            }
+
             if (node.behavior) {
                 const std::string binding_id =
                     effective_behavior_binding_id(

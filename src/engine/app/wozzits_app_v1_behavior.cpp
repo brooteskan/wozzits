@@ -1178,6 +1178,22 @@ namespace wz::app
             // Mat4->TRS->Mat4 round trip is gone from the frame path.
             wz::scene::propagate_all(behavior_scene_->storage.polytree);
         }
+
+        // Motion Filter pass (secondary-motion camera damping): the LAST transform
+        // step of the tick, AFTER the propagate above so it reads each filtered
+        // node's clean world as the target, and overwrites that world IN PLACE
+        // with the damped pose (never touching local -- see apply_motion_filters).
+        // Runs every frame (unconditional on changed_entities) so a filtered node
+        // keeps easing even when nothing else moved; the state map is app-owned so
+        // it survives scene rebuilds. Downstream reads (camera view, render, audio)
+        // all read the polytree, so they see the damped pose with no other wiring.
+        if (!behavior_scene_->motion_filters.empty()) {
+            (void)wz::engine::behavior::apply_motion_filters(
+                *behavior_scene_,
+                frame_storage_.collision,
+                dt,
+                motion_filter_states_);
+        }
     }
 
     void WozzitsApp_v1::drain_deferred_authoring(

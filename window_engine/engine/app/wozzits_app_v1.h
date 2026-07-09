@@ -33,6 +33,7 @@
 #include <engine/behavior/behavior_plugin_adapter.h>
 #include <engine/behavior/behavior_registry.h>
 #include <engine/frame_storage.h>
+#include <engine/motion/motion_filter.h>
 
 #include <asset/dag.h>
 #include <asset/draft.h>
@@ -1191,6 +1192,14 @@ namespace wz::app
         // scheduler: the monotonic clock dispatch_cognition_tick compares scheduled
         // wakes against (the per-frame FrameContext only carries this frame's delta).
         double                                   behavior_sim_time_ = 0.0;
+
+        // Motion Filter per-node state (secondary-motion camera damping), keyed by
+        // STABLE authored id so the smoothing survives scene rebuilds/spawns (like
+        // prev_active_by_id_). apply_motion_filters advances it as the last
+        // transform step each tick; a node absent here seeds on first sight.
+        std::unordered_map<
+            wz::scene::AuthoredEntityId,
+            wz::engine::motion::MotionFilterState> motion_filter_states_{};
 
         // --- WZ_EVENT_SELF_ACTIVATED edge tracking (#252 pooling) -----------------
         // Last frame's effective-active mask keyed by STABLE authored id (runtime

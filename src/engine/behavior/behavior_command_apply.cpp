@@ -1165,6 +1165,79 @@ namespace wz::engine::behavior
         return applied;
     }
 
+    uint32_t apply_motion_filters(
+        wz::engine::assets::SceneInstance& scene,
+        const wz::engine::collision::CollisionFrameStorage& collision,
+        float delta_seconds,
+        std::unordered_map<
+            wz::scene::AuthoredEntityId,
+            wz::engine::motion::MotionFilterState>& states)
+    {
+        uint32_t applied = 0;
+
+        for (const auto& record : scene.motion_filters) {
+            const wz::engine::assets::SceneMotionFilterAsset& filter =
+                record.component;
+            if (!filter.enabled
+                || !scene.entity_is_active(record.node)  // parked = frozen
+                || !entity_valid(scene, record.node))
+            {
+                continue;
+            }
+            if (static_cast<std::size_t>(record.node)
+                >= scene.runtime_to_authored.size())
+            {
+                continue;
+            }
+
+            auto& node = const_cast<wz::scene::TransformNode&>(
+                wz::core::graph::node_data(
+                    scene.storage.polytree,
+                    record.node));
+
+            // Persistent state keyed by STABLE authored id (survives rebuild),
+            // so the smoothing continues across scene rebuilds/spawns.
+            wz::engine::motion::MotionFilterState& state =
+                states[scene.runtime_to_authored[record.node]];
+
+            // Optional terrain-floor sampler: world-Y ground under (x, z). The
+            // ray origin Y is the node's current target height; only x/z matter
+            // for a heightfield.
+            wz::engine::motion::TerrainFloorSampler sampler;
+            if (filter.terrain_floor) {
+                const float ray_y = node.world.m[13];
+                sampler =
+                    [&scene, &collision, ray_y](float x, float z)
+                        -> std::optional<float> {
+                        const auto support = sample_constraint_support(
+                            scene, collision,
+                            wz::math::Vec3{ x, ray_y, z }, 0.0f);
+                        if (support.center_found) {
+                            return support.center.position.y;
+                        }
+                        if (support.found) {
+                            return support.highest.position.y;
+                        }
+                        return std::nullopt;
+                    };
+            }
+
+            // node.world is the CLEAN rigid target (the tick's final propagate
+            // set it, and we never touch node.local -- so it is uncontaminated).
+            // Overwrite node.world with the filtered pose IN PLACE -- NOT via
+            // set_world_* (which mutate local and would wind up across frames).
+            // No propagate follows: next frame's propagate recomputes the clean
+            // target again from the untouched local.
+            const wz::math::Transform filtered =
+                wz::engine::motion::apply_motion_filter(
+                    node.world, filter, state, delta_seconds, sampler);
+            node.world = wz::math::transform(filtered);
+            ++applied;
+        }
+
+        return applied;
+    }
+
     uint32_t integrate_linear_velocity(
         wz::engine::assets::SceneInstance& scene,
         float delta_seconds,

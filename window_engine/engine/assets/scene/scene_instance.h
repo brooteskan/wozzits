@@ -460,6 +460,12 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
         std::vector<SceneComponentRecord<ProximityComponent>> proximities;
         std::vector<SceneComponentRecord<MotionComponent>> motions;
+        // Motion Filter records (per-DOF smoothing/clamp of a node's driven
+        // transform). The authored asset is plain runtime-usable data, so it is
+        // the component directly (no separate mirror). The persistent filter
+        // STATE lives in the host (keyed by stable id, survives rebuild), NOT
+        // here -- the SceneInstance is rebuilt on structural edits.
+        std::vector<SceneComponentRecord<SceneMotionFilterAsset>> motion_filters;
         std::vector<SceneComponentRecord<BehaviorComponent>> behaviors;
         uint32_t compute_kernels = 0;
         uint32_t render_shaders = 0;
