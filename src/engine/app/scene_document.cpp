@@ -201,4 +201,165 @@ namespace wz::app
         }
         return { changed, change };
     }
+
+    // --- behavior-binding mutators -------------------------------------------
+    // Each applies the matching scene_asset_data.h helper, marks dirty on success,
+    // and asks for an UNCONDITIONAL rebuild (adding the first binding to a scene
+    // that had no runtime must create it).
+
+    SceneEdit<wz::engine::assets::SceneAddBehaviorResult>
+    SceneDocument::add_behavior(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& module)
+    {
+        wz::engine::assets::SceneAddBehaviorResult result =
+            wz::engine::assets::add_node_behavior(nodes_, node_id, module);
+        SceneChange change = SceneChange::none();
+        if (result.ok) {
+            dirty_ = true;
+            change = SceneChange::runtime_rebuild();
+        }
+        return { std::move(result), change };
+    }
+
+    SceneEdit<bool> SceneDocument::remove_behavior(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id)
+    {
+        const bool ok = wz::engine::assets::remove_node_behavior(
+            nodes_, node_id, binding_id);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, ok ? SceneChange::runtime_rebuild() : SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_behavior_enabled(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        bool enabled)
+    {
+        const bool ok = wz::engine::assets::set_node_behavior_enabled(
+            nodes_, node_id, binding_id, enabled);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, ok ? SceneChange::runtime_rebuild() : SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_behavior_fields(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        const std::string& label,
+        const std::string& module)
+    {
+        const bool ok = wz::engine::assets::set_node_behavior_fields(
+            nodes_, node_id, binding_id, label, module);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, ok ? SceneChange::runtime_rebuild() : SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_behavior_events(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        const std::vector<std::string>& events)
+    {
+        const bool ok = wz::engine::assets::set_node_behavior_events(
+            nodes_, node_id, binding_id, events);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, ok ? SceneChange::runtime_rebuild() : SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_behavior_config(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        const wz::engine::assets::SceneBehaviorConfigValue& value)
+    {
+        const bool ok = wz::engine::assets::set_node_behavior_config(
+            nodes_, node_id, binding_id, value);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, ok ? SceneChange::runtime_rebuild() : SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::clear_behavior_config(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& binding_id,
+        const std::string& key)
+    {
+        const bool ok = wz::engine::assets::clear_node_behavior_config(
+            nodes_, node_id, binding_id, key);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, ok ? SceneChange::runtime_rebuild() : SceneChange::none() };
+    }
+
+    // --- optional-component mutators (None: no runtime reaction) -------------
+
+    SceneEdit<bool> SceneDocument::add_component(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& kind)
+    {
+        const bool ok = wz::engine::assets::add_node_optional_component(
+            nodes_, node_id, kind);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::remove_component(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& kind)
+    {
+        const bool ok = wz::engine::assets::remove_node_optional_component(
+            nodes_, node_id, kind);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_renderable_asset(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        const bool ok = wz::engine::assets::set_node_renderable_asset(
+            nodes_, node_id, asset_graph_node_id);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_audio_renderable(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        const bool ok = wz::engine::assets::set_node_audio_renderable(
+            nodes_, node_id, asset_graph_node_id);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_audio_source_play(
+        const wz::scene::AuthoredEntityId& node_id,
+        bool auto_play,
+        bool enabled)
+    {
+        const bool ok = wz::engine::assets::set_node_audio_source_play(
+            nodes_, node_id, auto_play, enabled);
+        if (ok) {
+            dirty_ = true;
+        }
+        return { ok, SceneChange::none() };
+    }
 }

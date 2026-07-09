@@ -1374,32 +1374,26 @@ namespace wz::app
     // behavior scene already exists — because adding the first binding to a node
     // that had none must create the behavior runtime where there was none.
 
+    // The behavior-binding verbs delegate the mutation to document_ and dispatch
+    // the RuntimeRebuild it asks for on success.
     wz::engine::assets::SceneAddBehaviorResult WozzitsApp_v1::add_node_behavior(
         const wz::scene::AuthoredEntityId& node_id,
         const std::string& module)
     {
-        wz::engine::assets::SceneAddBehaviorResult result =
-            wz::engine::assets::add_node_behavior(document_.nodes(), node_id, module);
-        if (result.ok) {
-            document_.dirty() = true;
-        }
-        apply_scene_change(
-            result.ok ? SceneChange::runtime_rebuild() : SceneChange::none());
-        return result;
+        SceneEdit<wz::engine::assets::SceneAddBehaviorResult> edit =
+            document_.add_behavior(node_id, module);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::remove_node_behavior(
         const wz::scene::AuthoredEntityId& node_id,
         const std::string& binding_id)
     {
-        const bool ok = wz::engine::assets::remove_node_behavior(
-            document_.nodes(), node_id, binding_id);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        apply_scene_change(
-            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
-        return ok;
+        const SceneEdit<bool> edit =
+            document_.remove_behavior(node_id, binding_id);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_behavior_enabled(
@@ -1407,14 +1401,10 @@ namespace wz::app
         const std::string& binding_id,
         bool enabled)
     {
-        const bool ok = wz::engine::assets::set_node_behavior_enabled(
-            document_.nodes(), node_id, binding_id, enabled);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        apply_scene_change(
-            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
-        return ok;
+        const SceneEdit<bool> edit =
+            document_.set_behavior_enabled(node_id, binding_id, enabled);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_behavior_fields(
@@ -1423,14 +1413,10 @@ namespace wz::app
         const std::string& label,
         const std::string& module)
     {
-        const bool ok = wz::engine::assets::set_node_behavior_fields(
-            document_.nodes(), node_id, binding_id, label, module);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        apply_scene_change(
-            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
-        return ok;
+        const SceneEdit<bool> edit =
+            document_.set_behavior_fields(node_id, binding_id, label, module);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_behavior_events(
@@ -1438,14 +1424,10 @@ namespace wz::app
         const std::string& binding_id,
         const std::vector<std::string>& events)
     {
-        const bool ok = wz::engine::assets::set_node_behavior_events(
-            document_.nodes(), node_id, binding_id, events);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        apply_scene_change(
-            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
-        return ok;
+        const SceneEdit<bool> edit =
+            document_.set_behavior_events(node_id, binding_id, events);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_behavior_config(
@@ -1453,14 +1435,10 @@ namespace wz::app
         const std::string& binding_id,
         const wz::engine::assets::SceneBehaviorConfigValue& value)
     {
-        const bool ok = wz::engine::assets::set_node_behavior_config(
-            document_.nodes(), node_id, binding_id, value);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        apply_scene_change(
-            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
-        return ok;
+        const SceneEdit<bool> edit =
+            document_.set_behavior_config(node_id, binding_id, value);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::clear_node_behavior_config(
@@ -1468,14 +1446,10 @@ namespace wz::app
         const std::string& binding_id,
         const std::string& key)
     {
-        const bool ok = wz::engine::assets::clear_node_behavior_config(
-            document_.nodes(), node_id, binding_id, key);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        apply_scene_change(
-            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
-        return ok;
+        const SceneEdit<bool> edit =
+            document_.clear_behavior_config(node_id, binding_id, key);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     // ─── Live optional-component authoring ──────────────────────────────────
@@ -1487,75 +1461,67 @@ namespace wz::app
     // each frame, so the next render reflects the change. An unknown kind (or
     // missing node) is a logged no-op (fail closed).
 
+    // The optional-component verbs delegate the mutation to document_ (a None
+    // change: no runtime reaction) and keep their own no-op warning log.
     bool WozzitsApp_v1::add_node_component(
         const wz::scene::AuthoredEntityId& node_id,
         const std::string& kind)
     {
-        const bool ok = wz::engine::assets::add_node_optional_component(
-            document_.nodes(), node_id, kind);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        else {
+        const SceneEdit<bool> edit = document_.add_component(node_id, kind);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "add_node_component: no-op (node '" + node_id
                 + "' missing or unknown component kind '" + kind + "')");
         }
-        return ok;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::remove_node_component(
         const wz::scene::AuthoredEntityId& node_id,
         const std::string& kind)
     {
-        const bool ok = wz::engine::assets::remove_node_optional_component(
-            document_.nodes(), node_id, kind);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        else {
+        const SceneEdit<bool> edit = document_.remove_component(node_id, kind);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "remove_node_component: no-op (node '" + node_id
                 + "' missing or unknown component kind '" + kind + "')");
         }
-        return ok;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_renderable_asset(
         const wz::scene::AuthoredEntityId& node_id,
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
-        const bool ok = wz::engine::assets::set_node_renderable_asset(
-            document_.nodes(), node_id, asset_graph_node_id);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        else {
+        const SceneEdit<bool> edit =
+            document_.set_renderable_asset(node_id, asset_graph_node_id);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_renderable_asset: no-op (node '" + node_id
                 + "' missing)");
         }
-        return ok;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_audio_renderable(
         const wz::scene::AuthoredEntityId& node_id,
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
-        const bool ok = wz::engine::assets::set_node_audio_renderable(
-            document_.nodes(), node_id, asset_graph_node_id);
-        if (ok) {
-            document_.dirty() = true;
-            // The node id resolves to the audio_renderable key in
-            // assemble_render_bindings on the next bind; nothing to draw, so no
-            // immediate rematerialize is needed (mirrors set_node_renderable_asset).
-        }
-        else {
+        // The node id resolves to the audio_renderable key in
+        // assemble_render_bindings on the next bind; nothing to draw, so no
+        // immediate rematerialize is needed (mirrors set_node_renderable_asset).
+        const SceneEdit<bool> edit =
+            document_.set_audio_renderable(node_id, asset_graph_node_id);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_audio_renderable: no-op (node '" + node_id
                 + "' missing)");
         }
-        return ok;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_audio_source_play(
@@ -1563,17 +1529,15 @@ namespace wz::app
         bool auto_play,
         bool enabled)
     {
-        const bool ok = wz::engine::assets::set_node_audio_source_play(
-            document_.nodes(), node_id, auto_play, enabled);
-        if (ok) {
-            document_.dirty() = true;
-        }
-        else {
+        const SceneEdit<bool> edit =
+            document_.set_audio_source_play(node_id, auto_play, enabled);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_audio_source_play: no-op (node '" + node_id
                 + "' missing or has no AudioSource)");
         }
-        return ok;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_scene_source(

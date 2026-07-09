@@ -101,6 +101,55 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& id,
             int render_order);
 
+        // --- behavior-binding mutators (RuntimeRebuild on success) -------------
+        SceneEdit<wz::engine::assets::SceneAddBehaviorResult> add_behavior(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& module);
+        SceneEdit<bool> remove_behavior(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id);
+        SceneEdit<bool> set_behavior_enabled(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            bool enabled);
+        SceneEdit<bool> set_behavior_fields(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            const std::string& label,
+            const std::string& module);
+        SceneEdit<bool> set_behavior_events(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            const std::vector<std::string>& events);
+        SceneEdit<bool> set_behavior_config(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            const wz::engine::assets::SceneBehaviorConfigValue& value);
+        SceneEdit<bool> clear_behavior_config(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& binding_id,
+            const std::string& key);
+
+        // --- optional-component mutators (None: no runtime reaction) -----------
+        // Return { ok, None }; the host verb keeps its own no-op warning log (the
+        // document has no logger) and dispatches the None change (a no-op).
+        SceneEdit<bool> add_component(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& kind);
+        SceneEdit<bool> remove_component(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& kind);
+        SceneEdit<bool> set_renderable_asset(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+        SceneEdit<bool> set_audio_renderable(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+        SceneEdit<bool> set_audio_source_play(
+            const wz::scene::AuthoredEntityId& node_id,
+            bool auto_play,
+            bool enabled);
+
     private:
         std::vector<wz::engine::assets::SceneNodeAsset> nodes_{};
         std::vector<wz::scene::AuthoredEntityId>        grafted_ids_{};
