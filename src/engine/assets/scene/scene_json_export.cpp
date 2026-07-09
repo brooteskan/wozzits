@@ -1909,6 +1909,47 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr motion_filter_rotation_axis_value(
+            const SceneMotionFilterRotationAxis& axis)
+        {
+            auto obj = object_value();
+            add_member(*obj, "smoothing_time",
+                number_value(axis.smoothing_time));
+            add_member(*obj, "level", bool_value(axis.level));
+            add_member(*obj, "limit", bool_value(axis.limit));
+            add_member(*obj, "limit_min_degrees",
+                number_value(axis.limit_min_degrees));
+            add_member(*obj, "limit_max_degrees",
+                number_value(axis.limit_max_degrees));
+            return obj;
+        }
+
+        JSONValuePtr motion_filter_value(const SceneMotionFilterAsset& filter)
+        {
+            auto obj = object_value();
+
+            auto translation = object_value();
+            add_member(*translation, "smoothing",
+                float_array(filter.translation_smoothing, 3));
+            add_member(*translation, "terrain_floor",
+                bool_value(filter.terrain_floor));
+            add_member(*translation, "terrain_floor_offset",
+                number_value(filter.terrain_floor_offset));
+            add_member(*obj, "translation", std::move(translation));
+
+            auto rotation = object_value();
+            add_member(*rotation, "roll",
+                motion_filter_rotation_axis_value(filter.roll));
+            add_member(*rotation, "pitch",
+                motion_filter_rotation_axis_value(filter.pitch));
+            add_member(*rotation, "yaw",
+                motion_filter_rotation_axis_value(filter.yaw));
+            add_member(*obj, "rotation", std::move(rotation));
+
+            add_member(*obj, "enabled", bool_value(filter.enabled));
+            return obj;
+        }
+
         JSONValuePtr behavior_value(const SceneBehaviorAsset& behavior)
         {
             auto obj = object_value();
@@ -2274,6 +2315,10 @@ namespace wz::engine::assets
             }
             if (node.motion) {
                 add_member(*obj, "motion", motion_value(*node.motion));
+            }
+            if (node.motion_filter) {
+                add_member(*obj, "motion_filter",
+                    motion_filter_value(*node.motion_filter));
             }
             if (node.behavior) {
                 add_member(*obj, "behavior",

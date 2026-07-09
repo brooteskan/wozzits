@@ -4596,6 +4596,83 @@ namespace wz::engine::assets::internal
                 node.motion = component;
             }
 
+            const auto* motion_filter_component =
+                find_member(node_val, "motion_filter");
+            if (motion_filter_component
+                && motion_filter_component->kind
+                    == wz::json::JSONValueKind::Object)
+            {
+                SceneMotionFilterAsset component{};
+                if (const auto* translation =
+                        find_member(*motion_filter_component, "translation");
+                    translation
+                    && translation->kind == wz::json::JSONValueKind::Object)
+                {
+                    if (find_member(*translation, "smoothing")) {
+                        if (!read_float3(
+                                *translation,
+                                "smoothing",
+                                component.translation_smoothing))
+                        {
+                            logger.error("motion_filter on node '" + node.id
+                                + "' has invalid translation.smoothing");
+                            return std::nullopt;
+                        }
+                    }
+                    if (auto floor = read_bool(*translation, "terrain_floor")) {
+                        component.terrain_floor = *floor;
+                    }
+                    if (auto offset =
+                            read_number(*translation, "terrain_floor_offset"))
+                    {
+                        component.terrain_floor_offset =
+                            static_cast<float>(*offset);
+                    }
+                }
+                if (const auto* rotation =
+                        find_member(*motion_filter_component, "rotation");
+                    rotation
+                    && rotation->kind == wz::json::JSONValueKind::Object)
+                {
+                    const auto read_axis =
+                        [&](const char* name,
+                            SceneMotionFilterRotationAxis& axis) {
+                            const auto* a = find_member(*rotation, name);
+                            if (!a
+                                || a->kind != wz::json::JSONValueKind::Object)
+                            {
+                                return;
+                            }
+                            if (auto s = read_number(*a, "smoothing_time")) {
+                                axis.smoothing_time = static_cast<float>(*s);
+                            }
+                            if (auto l = read_bool(*a, "level")) {
+                                axis.level = *l;
+                            }
+                            if (auto lim = read_bool(*a, "limit")) {
+                                axis.limit = *lim;
+                            }
+                            if (auto mn = read_number(*a, "limit_min_degrees")) {
+                                axis.limit_min_degrees =
+                                    static_cast<float>(*mn);
+                            }
+                            if (auto mx = read_number(*a, "limit_max_degrees")) {
+                                axis.limit_max_degrees =
+                                    static_cast<float>(*mx);
+                            }
+                        };
+                    read_axis("roll", component.roll);
+                    read_axis("pitch", component.pitch);
+                    read_axis("yaw", component.yaw);
+                }
+                if (auto filter_enabled =
+                        read_bool(*motion_filter_component, "enabled"))
+                {
+                    component.enabled = *filter_enabled;
+                }
+                node.motion_filter = component;
+            }
+
             std::optional<wz::asset::AssetKey> terrain_asset;
             if (!parse_asset_reference_object(
                     node_val,

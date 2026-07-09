@@ -513,6 +513,83 @@ TEST(SceneJsonExport, RenderOrderRoundTripsAndDefaultIsOmitted)
     EXPECT_EQ(world->render_order, 0);
 }
 
+TEST(SceneJsonExport, MotionFilterRoundTripsAllChannels)
+{
+    std::vector<SceneNodeAsset> nodes(1);
+    nodes[0].id = "cam";
+    SceneMotionFilterAsset f{};
+    f.translation_smoothing[0] = 0.0f;   // X pass-through (keep bob)
+    f.translation_smoothing[1] = 0.25f;  // Y damped
+    f.translation_smoothing[2] = 0.0f;   // Z pass-through
+    f.terrain_floor = true;
+    f.terrain_floor_offset = 1.5f;
+    f.roll.smoothing_time = 0.4f;        // damp roll about forward
+    f.pitch.limit = true;                // clamp pitch, no smoothing
+    f.pitch.limit_min_degrees = -80.0f;
+    f.pitch.limit_max_degrees = 80.0f;
+    f.yaw.level = true;                  // yaw eases to level (exercise the flag)
+    f.enabled = true;
+    nodes[0].motion_filter = f;
+
+    auto parsed = wz::json::parse_json_string(
+        "{ \"schema\": \"wozzits.scene.v0\", \"name\": \"t\", \"nodes\": [] }");
+    ASSERT_TRUE(parsed.ok);
+    set_scene_document_nodes(parsed.document, nodes);
+    const std::string out = wz::json::serialize_json(parsed.document);
+    EXPECT_NE(out.find("\"motion_filter\""), std::string::npos);
+
+    auto reparsed = wz::json::parse_json_string(out);
+    ASSERT_TRUE(reparsed.ok);
+    wz::Logger logger;
+    const auto scene =
+        wz::engine::assets::internal::parse_scene_data_from_json(
+            reparsed.document, logger);
+    ASSERT_TRUE(scene.has_value());
+    const SceneNodeAsset* cam = find_scene_node(scene->nodes, "cam");
+    ASSERT_NE(cam, nullptr);
+    ASSERT_TRUE(cam->motion_filter.has_value());
+    const SceneMotionFilterAsset& g = *cam->motion_filter;
+
+    EXPECT_FLOAT_EQ(g.translation_smoothing[0], 0.0f);
+    EXPECT_FLOAT_EQ(g.translation_smoothing[1], 0.25f);
+    EXPECT_FLOAT_EQ(g.translation_smoothing[2], 0.0f);
+    EXPECT_TRUE(g.terrain_floor);
+    EXPECT_FLOAT_EQ(g.terrain_floor_offset, 1.5f);
+    EXPECT_FLOAT_EQ(g.roll.smoothing_time, 0.4f);
+    EXPECT_FALSE(g.roll.limit);
+    EXPECT_TRUE(g.pitch.limit);
+    EXPECT_FLOAT_EQ(g.pitch.limit_min_degrees, -80.0f);
+    EXPECT_FLOAT_EQ(g.pitch.limit_max_degrees, 80.0f);
+    EXPECT_TRUE(g.yaw.level);
+    EXPECT_TRUE(g.enabled);
+}
+
+TEST(SceneJsonExport, MotionFilterAbsentByDefault)
+{
+    // A node with no motion_filter must not emit the block, and re-parsing a
+    // plain node must leave the optional empty -- existing scenes unchanged.
+    std::vector<SceneNodeAsset> nodes(1);
+    nodes[0].id = "plain";
+
+    auto parsed = wz::json::parse_json_string(
+        "{ \"schema\": \"wozzits.scene.v0\", \"name\": \"t\", \"nodes\": [] }");
+    ASSERT_TRUE(parsed.ok);
+    set_scene_document_nodes(parsed.document, nodes);
+    const std::string out = wz::json::serialize_json(parsed.document);
+    EXPECT_EQ(out.find("\"motion_filter\""), std::string::npos);
+
+    auto reparsed = wz::json::parse_json_string(out);
+    ASSERT_TRUE(reparsed.ok);
+    wz::Logger logger;
+    const auto scene =
+        wz::engine::assets::internal::parse_scene_data_from_json(
+            reparsed.document, logger);
+    ASSERT_TRUE(scene.has_value());
+    const SceneNodeAsset* plain = find_scene_node(scene->nodes, "plain");
+    ASSERT_NE(plain, nullptr);
+    EXPECT_FALSE(plain->motion_filter.has_value());
+}
+
 TEST(SceneJsonExport, SetDocumentNodesReplacesNodesPreservingOthers)
 {
     // Persistence patch: replace only the "nodes" array, keep everything else.

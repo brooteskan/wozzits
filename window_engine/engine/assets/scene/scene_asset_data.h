@@ -848,6 +848,57 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    // ─── Motion Filter component (per-DOF smoothing + clamp) ────────────────
+    // A behavior (or a moving parent) drives a node's transform; the Motion
+    // Filter smooths and/or clamps the RESULT per axis before it reaches the
+    // node's subtree + camera. It lets an attached camera EASE into its target
+    // pose (secondary motion, so the followed object doesn't look locked in
+    // space), optionally hold a level horizon, stay above the terrain, and keep
+    // rotation within limits -- each axis configured independently. Frames are
+    // deliberately mixed to match intent: translation channels are WORLD axes
+    // (vertical bob = world Y, terrain floor = world Y); rotation channels are
+    // the node's LOCAL axes (roll = about forward, pitch = right, yaw = up), so
+    // "damp the roll" is a single channel. Every field defaults to a no-op, so
+    // the component present-but-untouched behaves as if absent. This is the
+    // authored data (seam 1); the runtime filter pass + editor UI are later
+    // seams.
+
+    // One local-axis rotation channel (roll / pitch / yaw).
+    struct SceneMotionFilterRotationAxis
+    {
+        // Critically-damped chase time toward the target, in seconds. 0 =
+        // instant (the axis tracks its target rigidly, no damping).
+        float smoothing_time = 0.0f;
+        // Target the axis eases toward: false = FOLLOW the driven/attached
+        // orientation; true = LEVEL (ease toward world-level / the horizon).
+        bool level = false;
+        // Optional hard clamp on the resulting axis angle (world-referenced
+        // degrees, e.g. pitch in [-80, 80] so the camera never flips over).
+        bool limit = false;
+        float limit_min_degrees = 0.0f;
+        float limit_max_degrees = 0.0f;
+    };
+
+    struct SceneMotionFilterAsset
+    {
+        // Per world-axis translation chase time, seconds; index 0/1/2 = X/Y/Z.
+        // 0 = pass straight through (e.g. keep the vertical bob live on Y).
+        float translation_smoothing[3]{ 0.0f, 0.0f, 0.0f };
+        // Terrain floor on world Y: keep the node at or above the terrain height
+        // beneath it plus this offset. A ONE-SIDED clamp (free to rise, blocked
+        // from sinking) -- distinct from the Motion component's rigid terrain
+        // stick.
+        bool terrain_floor = false;
+        float terrain_floor_offset = 0.0f;
+
+        // Local-axis rotation channels.
+        SceneMotionFilterRotationAxis roll;   // about local forward
+        SceneMotionFilterRotationAxis pitch;  // about local right
+        SceneMotionFilterRotationAxis yaw;    // about local up
+
+        bool enabled = true;
+    };
+
     enum class SceneBehaviorConfigValueKind : uint8_t
     {
         Bool = 0,
@@ -1209,6 +1260,7 @@ namespace wz::engine::assets
         std::optional<SceneEventTriggerAsset> event_trigger;
         std::optional<SceneProximityAsset> proximity;
         std::optional<SceneMotionAsset> motion;
+        std::optional<SceneMotionFilterAsset> motion_filter;
         std::optional<SceneBehaviorAsset> behavior;
         std::vector<SceneBehaviorAsset> behaviors;
         std::optional<SceneComputeKernelAsset> compute_kernel;
