@@ -25,6 +25,7 @@
 
 #include <engine/app_context.h>
 #include <engine/app/scene_change.h>
+#include <engine/app/scene_document.h>
 #include <engine/app/view_controller.h>
 #include <engine/rendering/rhi_scene_renderer.h>
 
@@ -118,7 +119,7 @@ namespace wz::app
         // Live scene-node edit: overwrite the local transform of the node with
         // `id`, returning false if no node has that id. #221: the edit lands in
         // the live simulation polytree through the single apply_node_local_-
-        // transform seam (NOT scene_nodes_) — the polytree is the source of truth
+        // transform seam (NOT document_.nodes()) — the polytree is the source of truth
         // the next render_scene() draws from and save_scene derives from, so one
         // write covers render, save, and editor read-back with no GPU rebuild.
         // Persisting the edit to the scene file on disk is a separate path.
@@ -173,7 +174,7 @@ namespace wz::app
 
         // ─── Live behavior-binding authoring ─────────────────────────────────
         // Apply behind the host ABI's behavior verbs. Each mutates the matching
-        // node's behavior binding(s) in scene_nodes_, marks the scene dirty, and
+        // node's behavior binding(s) in document_.nodes(), marks the scene dirty, and
         // re-materializes the behavior runtime (rebuild_behavior_scene) so the
         // change takes effect on the next dispatch. All return false if no
         // node/binding matched (add_node_behavior returns {ok,id,error}).
@@ -219,8 +220,8 @@ namespace wz::app
         // Apply behind the host ABI's component verbs. Add/remove one of the
         // five editor-managed optional node components by a kind token
         // ("camera", "renderable", "proximity", "collision", "motion") on the
-        // in-memory scene (scene_nodes_), and mark the scene dirty on success.
-        // The renderer consumes scene_nodes_ fresh each frame, so the next
+        // in-memory scene (document_.nodes()), and mark the scene dirty on success.
+        // The renderer consumes document_.nodes() fresh each frame, so the next
         // render reflects the change with no GPU rebuild; persistence is a
         // separate path. None of these five participate in the behavior runtime,
         // so neither rebuilds the behavior scene. Both return false (no-op) if
@@ -241,7 +242,7 @@ namespace wz::app
         // at the authored asset-graph node `asset_graph_node_id`, or clear the
         // renderable when the id is 0. The resolved AssetKey is reset so it
         // re-resolves; the legacy embedded renderable slot is left untouched.
-        // Marks the scene dirty on success; the renderer reads scene_nodes_ each
+        // Marks the scene dirty on success; the renderer reads document_.nodes() each
         // frame so the next render reflects it, and the behavior runtime is not
         // rebuilt. Returns false (logged no-op) if the node is missing.
         bool set_node_renderable_asset(
@@ -271,7 +272,7 @@ namespace wz::app
         // resolved Scene AssetKey is reset so it re-resolves; the renderable slot
         // is left untouched. Marks the scene dirty on success and, if the graph
         // is bound, re-bridges + re-grafts so the referenced sub-scene's named
-        // children appear under the host immediately (renderer reads scene_nodes_
+        // children appear under the host immediately (renderer reads document_.nodes()
         // each frame; the behavior runtime is rebuilt so the children are
         // addressable). Returns false (logged no-op) if the node is missing.
         bool set_node_scene_source(
@@ -380,7 +381,7 @@ namespace wz::app
 
         // Flatten the node's referenced Scene asset into the live scene (#213):
         // resolve the node's scene_source, expand its GLB-named nodes as real,
-        // persistent children of the node in scene_nodes_ (id "<host>/<glbname>",
+        // persistent children of the node in document_.nodes() (id "<host>/<glbname>",
         // sub-scene parenting preserved, transforms composed under the host), and
         // then DROP the node's scene_source reference (the expansion is now the
         // authored content — fully editable, no live link). Marks the scene dirty
@@ -444,7 +445,7 @@ namespace wz::app
 
         // Number of live scene nodes whose direct parent is `parent_id`. Lets
         // the behavior-driven add_child test observe a spawned child landing in
-        // scene_nodes_ without a snapshot (mirrors node_has_component). Counts
+        // document_.nodes() without a snapshot (mirrors node_has_component). Counts
         // direct children only.
         [[nodiscard]] std::size_t child_node_count(
             const wz::scene::AuthoredEntityId& parent_id) const;
@@ -477,7 +478,7 @@ namespace wz::app
         // if the node is missing or has none. Lets the Phase 3b-2 style test
         // observe the authored base_style / style_overrides without a snapshot
         // round-trip (mirrors node_has_glb_scene_source). The pointer is into
-        // scene_nodes_ — valid only until the next scene mutation.
+        // document_.nodes() — valid only until the next scene mutation.
         [[nodiscard]] const wz::engine::assets::SceneGLBSceneSource*
         node_glb_scene_source(
             const wz::scene::AuthoredEntityId& node_id) const;
@@ -486,7 +487,7 @@ namespace wz::app
         // the node is missing or has none. Lets the collision-authoring test
         // observe set_node_collision_asset's effect (the bridged collision_asset
         // key + constrain_movement) without a snapshot. The pointer is into
-        // scene_nodes_ — valid only until the next scene mutation.
+        // document_.nodes() — valid only until the next scene mutation.
         [[nodiscard]] const wz::engine::assets::SceneCollisionAsset*
         node_collision(const wz::scene::AuthoredEntityId& node_id) const;
 
@@ -498,7 +499,7 @@ namespace wz::app
         node_motion(const wz::scene::AuthoredEntityId& node_id) const;
 
         // A COPY of just the runtime-grafted scene nodes (issue #213): the
-        // entries of scene_nodes_ whose id is in grafted_node_ids_ — the
+        // entries of document_.nodes() whose id is in document_.grafted_ids() — the
         // instance-mode sub-trees appended by graft_scene_sources. These live
         // only in the live runtime (an instanced scene_source re-imports from its
         // reference; the children are never persisted as authored nodes), so the
@@ -506,12 +507,12 @@ namespace wz::app
         // this (as a scene snapshot) so the editor can merge the grafts under
         // their hosts. Each entry keeps its parent_id (the host's id, or a deeper
         // graft's id) so the merger can place it. Engine-thread only (reads
-        // scene_nodes_); the editor reaches it through the blocking
+        // document_.nodes()); the editor reaches it through the blocking
         // request_grafted_scene_nodes handshake. Empty when nothing is grafted.
         [[nodiscard]] std::vector<wz::engine::assets::SceneNodeAsset>
         grafted_scene_nodes() const;
 
-        // The AUTHORED scene nodes (scene_nodes_ minus the runtime-only grafted +
+        // The AUTHORED scene nodes (document_.nodes() minus the runtime-only grafted +
         // "spawn:" nodes, the same set save_scene persists) -- a snapshot of the
         // working scene for the editor to reload its tree after open_scene swaps the
         // scene. Engine-thread only; the editor reaches it through the blocking
@@ -574,12 +575,12 @@ namespace wz::app
         // become the new scene's nodes, with the root re-rooted to the origin so
         // a future spawn places the prefab purely by the spawn transform (see
         // extract_scene_subtree). Runtime-grafted scene_source children (#213,
-        // grafted_node_ids_) are excluded, mirroring save_scene — a prefab keeps
+        // document_.grafted_ids()) are excluded, mirroring save_scene — a prefab keeps
         // a scene_source host's reference, not its grafted subtree. `out_path` is
         // resolved like save_scene's (absolute as-is, else joined onto the
         // resource root). Emits a FRESH document (a prefab is self-contained; no
         // merge into an existing file). Does NOT touch the live scene or
-        // scene_dirty_. Returns false (and logs) if `root_node_id` doesn't
+        // document_.dirty(). Returns false (and logs) if `root_node_id` doesn't
         // resolve or the write fails.
         bool export_subtree_as_scene(
             std::string_view root_node_id,
@@ -600,7 +601,7 @@ namespace wz::app
             std::vector<wz::engine::assets::SceneNodeAsset> nodes);
 
         // Number of live scene nodes spawned from prefabs (the spawn graft).
-        // Lets the spawn end-to-end test observe a prefab landing in scene_nodes_
+        // Lets the spawn end-to-end test observe a prefab landing in document_.nodes()
         // / the behavior runtime without a snapshot. Counts every node whose id
         // carries the "spawn:" prefix this milestone mints.
         [[nodiscard]] std::size_t spawned_prefab_node_count() const;
@@ -649,14 +650,14 @@ namespace wz::app
         bool render_scene();      // record scene draws (between begin/end frame)
 
         // The world transform every render-side consumer draws with, one matrix
-        // per scene_nodes_ entry (index-aligned). #221's single source of truth:
+        // per document_.nodes() entry (index-aligned). #221's single source of truth:
         //   - with a live behavior scene, each node's world matrix is read from
         //     the simulation polytree (authored id -> runtime entity ->
         //     node_data().world), so behavior/motion/terrain-constraint movement
-        //     is visible without ever mutating scene_nodes_. A node absent from
+        //     is visible without ever mutating document_.nodes(). A node absent from
         //     the runtime map falls back to its authored composition.
         //   - with no behavior scene (nothing needs simulation), it is exactly
-        //     compute_scene_node_world_transforms(scene_nodes_), as before.
+        //     compute_scene_node_world_transforms(document_.nodes()), as before.
         // render_scene(), the audio spatialization, and prefab spawn anchoring
         // all read this so they never diverge.
         [[nodiscard]] std::vector<wz::math::Mat4> scene_world_transforms() const;
@@ -729,8 +730,8 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& id) const;
 
         // The STORED authored local translation of scene node `id` — read
-        // straight from scene_nodes_, never derived from the sim polytree. #221:
-        // scene_nodes_ transforms are no longer mutated per frame, so this lets a
+        // straight from document_.nodes(), never derived from the sim polytree. #221:
+        // document_.nodes() transforms are no longer mutated per frame, so this lets a
         // test assert the authored data stays put while the render/sim pose
         // (node_local_translation / scene_world_transforms) moves. std::nullopt if
         // no node has that id.
@@ -759,12 +760,12 @@ namespace wz::app
         // #221 single edit seam for transforms: write `transform` as the LOCAL
         // pose of node `id` into the live simulation polytree (the same const_cast
         // idiom the constraint pipeline / behavior_command_apply use), then set
-        // scene_dirty_. The polytree is now the single source of truth for the
+        // document_.dirty(). The polytree is now the single source of truth for the
         // drawn + saved pose (scene_world_transforms / derived_authored_transform
         // read it), so this ONE write covers render, save, and editor read-back —
-        // no scene_nodes_ transform mutation. DEGENERATE fallback: if there is no
+        // no document_.nodes() transform mutation. DEGENERATE fallback: if there is no
         // live polytree at all (a failed instantiate left behavior_scene_ null, so
-        // the editor must still recover), the seam writes scene_nodes_.local
+        // the editor must still recover), the seam writes document_.nodes().local
         // directly so the authored transform is not lost. set_node_transform and
         // the future authoring pokes route through here so there is one place a
         // transform edit lands. Assumes the node exists (the caller resolved it).
@@ -776,7 +777,7 @@ namespace wz::app
         // saved. #221: with a live behavior scene the transform is derived from
         // the simulation polytree's LOCAL matrix (decomposed to TRS), so the
         // editor read-back + save capture the sim-current pose without a per-frame
-        // write-back into scene_nodes_. With no live sim (or a node absent from
+        // write-back into document_.nodes(). With no live sim (or a node absent from
         // the runtime map, or a matrix decompose_trs rejects) it is the node's own
         // stored authored transform. Returns std::nullopt only if no node has `id`.
         [[nodiscard]] std::optional<wz::engine::assets::AuthoredTransform>
@@ -848,7 +849,7 @@ namespace wz::app
         // increment 2): re-bridge the pre-built renderables, re-run
         // assemble_render_bindings against the bound graph, then compile the
         // freshly created renderables (commit + resolve_all). The renderer reads
-        // scene_nodes_ each frame, so the next render reflects it. No-op without
+        // document_.nodes() each frame, so the next render reflects it. No-op without
         // an asset library.
         // caller defaults at the call site (source_location) so the per-frame
         // perf log names WHICH edit forced a re-materialize -- pins the spurious
@@ -858,7 +859,7 @@ namespace wz::app
         // Incremental single-node variant (#253): re-assemble ONLY node_id's
         // renderable (its recipe changed, e.g. a custom-form flip) + commit +
         // resolve. Skips the O(scene) full re-bridge + re-assemble; the renderer
-        // reads scene_nodes_ each frame, so the next render reflects it. No-op
+        // reads document_.nodes() each frame, so the next render reflects it. No-op
         // without an asset library.
         void rematerialize_node_render_binding(const std::string& node_id);
         // Write the accumulated per-frame profile to
@@ -875,11 +876,11 @@ namespace wz::app
         // No-op without an asset library (resolve/graft are guarded).
         void rematerialize_glb_scene_sources();
 
-        // Graft every scene_source reference's sub-scene into scene_nodes_ as
+        // Graft every scene_source reference's sub-scene into document_.nodes() as
         // children of its host (issue #213, instance mode). For each host node
         // carrying a resolved scene_source key, resolve the referenced Scene
         // asset and append its expanded GLB-named children (via
-        // expand_scene_source_children) so they render (scene_nodes_ is the
+        // expand_scene_source_children) so they render (document_.nodes() is the
         // renderer's source of truth) and are behavior-addressable. Idempotent
         // within a load: previously grafted children (id "<host>/...") are
         // removed first, so a re-bind/re-resolve re-grafts cleanly. Returns the
@@ -887,7 +888,7 @@ namespace wz::app
         std::size_t graft_scene_sources();
 
         // Incremental subset graft (#252): expand ONLY the given hosts' scene_source
-        // sub-scenes, appending their children to scene_nodes_ + grafted_node_ids_
+        // sub-scenes, appending their children to document_.nodes() + document_.grafted_ids()
         // WITHOUT the drop-all the full graft does. Returns the newly grafted child
         // ids (so the caller can assemble just that subtree). Used by spawn_prefab so
         // a spawn touches only its own subtree; the parameterless graft_scene_sources()
@@ -897,11 +898,11 @@ namespace wz::app
             const std::vector<std::string>& host_ids);
 
         // Expand one host's scene_source sub-scene: append its expanded children to
-        // scene_nodes_ + grafted_node_ids_, re-apply the host's sticky per-child
+        // document_.nodes() + document_.grafted_ids(), re-apply the host's sticky per-child
         // overrides (#213), and append the new child ids to out_new_children when
         // non-null. Shared by graft_scene_sources() (full) and
         // graft_scene_sources_for_hosts() (subset). `host` MUST be a copy stable
-        // across the scene_nodes_ appends (push_back may reallocate). Returns the
+        // across the document_.nodes() appends (push_back may reallocate). Returns the
         // number of children grafted.
         std::size_t graft_host_scene_source(
             const wz::engine::assets::SceneNodeAsset& host,
@@ -918,29 +919,29 @@ namespace wz::app
         void capture_grafted_child_override(
             const wz::scene::AuthoredEntityId& child_id);
 
-        // Materialize the live authored scene (scene_nodes_) into a runtime
+        // Materialize the live authored scene (document_.nodes()) into a runtime
         // SceneInstance and (re)initialize its behaviors against the registry.
         // Called from load_scene and after any structural scene edit so the
         // behavior runtime tracks the authored scene. Clears behavior_scene_
         // when there are no behavior bindings (nothing to run).
         //
         // append_only (#257 B1): pass true ONLY when the rebuild was triggered by a
-        // pure APPEND to scene_nodes_ (a prefab spawn) -- survivor runtime ids stay
+        // pure APPEND to document_.nodes() (a prefab spawn) -- survivor runtime ids stay
         // stable then (handle == node index), so only the newly appended bindings need
         // their on_init run. Leave false for load / delete / reparent / flatten, which
-        // reorder scene_nodes_ and renumber, so every binding must re-init.
+        // reorder document_.nodes() and renumber, so every binding must re-init.
         void rebuild_behavior_scene(bool append_only = false);
 
         // Apply a SPAWN_PREFAB request: resolve `prefab_name_hash` to a registered
         // prefab, compute the spawn transform T = the spawner node's world
         // transform × the offset (offset applied in the spawner's frame), clone the
         // prefab nodes with conflict-free ids (instantiate_prefab_nodes), append
-        // them to scene_nodes_, then rebuild the behavior runtime (now state-
+        // them to document_.nodes(), then rebuild the behavior runtime (now state-
         // preserving, so pre-existing bindings are untouched) and re-assemble
         // render bindings. The spawner is addressed by its STABLE authored id (not
         // a runtime entity), so the request stays valid even as a prior spawn in
         // the same frame-boundary drain rebuilds + renumbers the runtime. No-op
-        // (logged) if the spawner id isn't in scene_nodes_ or the prefab hash is
+        // (logged) if the spawner id isn't in document_.nodes() or the prefab hash is
         // unknown. Drained at the frame boundary (like the deferred-authoring
         // edits); play-mode oriented (the spawned subtree's behaviors run next tick).
         // Returns the spawned root's STABLE authored id ("spawn:N:<root>") so the
@@ -997,7 +998,7 @@ namespace wz::app
 
         // One behavior tick: propagate transforms, dispatch frame/input events,
         // apply the produced command buffer + integrate motion, then write the
-        // changed node transforms back into scene_nodes_ so the next
+        // changed node transforms back into document_.nodes() so the next
         // render_scene() draws them. No-op when no behavior scene is live.
         void dispatch_scene_behaviors(
             const wz::input::InputState& input, float dt);
@@ -1121,13 +1122,13 @@ namespace wz::app
         // bridge) and the loaded scene's nodes (with the bridged renderable_asset).
         wz::asset::AssetGraphDraft                       graph_draft_{};
 
-        // #221 OWNERSHIP CONTRACT — scene_nodes_ is the AUTHORED / SERIALIZED
-        // DOCUMENT of the scene, and the settled single source of truth for its
-        // NON-transform authoring data:
+        // #221 OWNERSHIP CONTRACT — document_ (a SceneDocument, see
+        // scene_document.h) holds the AUTHORED / SERIALIZED node array, the settled
+        // single source of truth for the scene's NON-transform authoring data:
         //   - SINGLE WRITER: the edit verbs (set_node_*, add/remove_node_*,
-        //     graft/spawn, load). The simulation NEVER mutates scene_nodes_. There
-        //     are no parallel per-frame runtime copies of these fields — that is
-        //     what keeps them sync-free.
+        //     graft/spawn, load). The simulation NEVER mutates document_.nodes().
+        //     There are no parallel per-frame runtime copies of these fields — that
+        //     is what keeps them sync-free.
         //   - TRANSFORM / HIERARCHY are NOT owned here: their live truth is the
         //     simulation polytree (behavior_scene_->storage.polytree). Reads go
         //     through scene_world_transforms() / node_world_transform(); the ONE
@@ -1137,24 +1138,20 @@ namespace wz::app
         //   - NON-transform fields (visible, renderable_asset keys, camera params,
         //     scene_source, audio anchors) are read per-frame BY DESIGN as document
         //     data — the renderer consumes visible + renderable_asset fresh each
-        //     frame; the sim never writes them, so scene_nodes_ IS their truth.
+        //     frame; the sim never writes them, so the document IS their truth.
         //   - COMPONENTS (collision/motion/audio/…) are PROJECTED into the
         //     SceneInstance at rebuild_behavior_scene; a per-frame field tweak that
         //     already has a live record patches BOTH the authored field here (so
         //     save persists) AND the runtime record in place (so no rebuild).
-        std::vector<wz::engine::assets::SceneNodeAsset>  scene_nodes_{};
+        // document_.grafted_ids() tracks nodes grafted from a scene_source
+        // reference (#213 instance mode): runtime-only children appended to
+        // document_.nodes() by graft_scene_sources, so a re-graft drops the prior
+        // graft and save_scene excludes them (not populated for flatten — those
+        // become authored). document_.dirty() is the unsaved-edit flag.
+        SceneDocument document_{};
 
-        // Ids of scene nodes currently grafted from a scene_source reference
-        // (issue #213, instance mode). These are runtime-only children appended
-        // to scene_nodes_ by graft_scene_sources; tracked so a re-graft can drop
-        // the previous graft cleanly and so save_scene can exclude them (an
-        // instanced sub-scene re-imports from the reference, it is not persisted
-        // as authored nodes). NOT populated for flatten (those become authored).
-        std::vector<wz::scene::AuthoredEntityId>         grafted_node_ids_{};
-
-        // Source scene file + a dirty flag, for save_scene (persist live edits).
+        // Source scene file, for save_scene (persist live edits).
         wz::fs::Path  scene_source_path_{};
-        bool          scene_dirty_ = false;
 
         // The asset-graph + behavior-module paths the last load_scene used, so
         // open_scene can swap the WORKING SCENE (e.g. to a scenelet for in-editor
@@ -1174,9 +1171,9 @@ namespace wz::app
         //   - registry_ / plugins_ own the registered modules (built-ins + the
         //     project DLLs loaded from behavior_module_folder).
         //   - behavior_scene_ is the runtime SceneInstance materialized from the
-        //     authored scene_nodes_; behaviors read its polytree and the command
+        //     authored document_.nodes(); behaviors read its polytree and the command
         //     apply mutates it, then changed transforms are written back to
-        //     scene_nodes_ (the renderer's source of truth).
+        //     document_.nodes() (the renderer's source of truth).
         //   - frame_storage_ holds the per-frame behavior command buffer; reused
         //     each tick (the shared wz::engine::FrameStorage).
         wz::engine::behavior::BehaviorRegistry   registry_{};

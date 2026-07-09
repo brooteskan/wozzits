@@ -206,9 +206,9 @@ namespace wz::app
         // behavior_state survives by binding id.
         std::unordered_map<std::string, float> preserved_alignment_rate;
         // #221: sim-accumulated LOCAL transforms don't live on the authored asset
-        // either — scene_nodes_ stays at its authored pose now that the per-frame
+        // either — document_.nodes() stays at its authored pose now that the per-frame
         // write-back is gone. Rebuilding materializes the polytree from
-        // scene_nodes_, which would snap every actor back to its authored start
+        // document_.nodes(), which would snap every actor back to its authored start
         // (losing the motion a surviving binding accrued). Capture each live
         // node's LOCAL matrix keyed by STABLE authored id and restore it after
         // materialization, so a binding present in both the old and rebuilt scenes
@@ -257,17 +257,17 @@ namespace wz::app
 
         // Materialize a runtime SceneInstance from the authored scene. The
         // renderable resolver is intentionally null: WozzitsApp_v1 renders from
-        // scene_nodes_, so the instance is used only for its polytree + behavior
+        // document_.nodes(), so the instance is used only for its polytree + behavior
         // tables (renderables in the instance are unused). Because instantiate_
         // scene FAILS a node that carries a renderable_asset when no resolver is
         // provided, strip the renderable references from the instance's node
         // copies first — otherwise a renderable-carrying node (notably the
         // GLB-grafted scene-source children, #213) would fail materialization and
         // the whole behavior runtime (incl. those children's addressability)
-        // would not come up. The strip is on the COPY only; scene_nodes_ (the
+        // would not come up. The strip is on the COPY only; document_.nodes() (the
         // renderer's source of truth) keeps its renderables.
         wz::engine::assets::SceneAssetData scene_data;
-        scene_data.nodes = scene_nodes_;
+        scene_data.nodes = document_.nodes();
         for (wz::engine::assets::SceneNodeAsset& node : scene_data.nodes) {
             node.renderable.reset();
             node.renderable_asset.reset();
@@ -320,7 +320,7 @@ namespace wz::app
         // keeps the authored local it just materialized with. This preserves the
         // pre-#221 semantic that a surviving actor continues from its accrued pose
         // across a rebuild — the write-back used to achieve it by keeping
-        // scene_nodes_ sim-current; now the transform is carried directly.
+        // document_.nodes() sim-current; now the transform is carried directly.
         if (!preserved_local.empty()) {
             const std::size_t live_node_count =
                 wz::core::graph::node_count(behavior_scene_->storage.polytree);
@@ -534,12 +534,12 @@ namespace wz::app
         // node by id + live polytree handle. update_active_view() then reads the
         // node's already-maintained world transform through the handle.
         const auto it = std::find_if(
-            scene_nodes_.begin(),
-            scene_nodes_.end(),
+            document_.nodes().begin(),
+            document_.nodes().end(),
             [&](const wz::engine::assets::SceneNodeAsset& node) {
                 return node.id == authored_id;
             });
-        if (it == scene_nodes_.end() || !it->camera) {
+        if (it == document_.nodes().end() || !it->camera) {
             ctx_.logger.warn(
                 "scene_camera: node '" + authored_id
                 + "' has no camera component; active camera unchanged");
@@ -733,7 +733,7 @@ namespace wz::app
             if (name.empty()) {
                 if (const wz::engine::assets::SceneNodeAsset* node =
                         wz::engine::assets::find_scene_node(
-                            scene_nodes_, authored_id))
+                            document_.nodes(), authored_id))
                 {
                     for (const wz::engine::assets::
                              SceneRenderableConstantOverride& c :
@@ -795,10 +795,10 @@ namespace wz::app
                 behavior_scene_->runtime_to_authored[command.entity];
             if (wz::engine::assets::SceneNodeAsset* node =
                     wz::engine::assets::find_scene_node(
-                        scene_nodes_, authored_id))
+                        document_.nodes(), authored_id))
             {
                 node->visible = command.values[0] != 0.0f;
-                scene_dirty_ = true;
+                document_.dirty() = true;
             }
         }
 
@@ -825,10 +825,10 @@ namespace wz::app
                 behavior_scene_->runtime_to_authored[command.entity];
             if (wz::engine::assets::SceneNodeAsset* node =
                     wz::engine::assets::find_scene_node(
-                        scene_nodes_, authored_id))
+                        document_.nodes(), authored_id))
             {
                 node->active = command.values[0] != 0.0f;
-                scene_dirty_ = true;
+                document_.dirty() = true;
             }
         }
 
@@ -966,14 +966,14 @@ namespace wz::app
     {
         // Refresh the "live?" mask (#252): a node is dispatched + collides only if it
         // AND every ancestor is `active`. Recomputed each frame from the authored
-        // scene_nodes_ (cheap O(scene)) and projected onto runtime entities via
+        // document_.nodes() (cheap O(scene)) and projected onto runtime entities via
         // runtime_to_authored, so a park/unpark flip, a reparent, or a spawn is
         // reflected immediately. build_collision_frame + dispatch_behaviors read
         // behavior_scene_->entity_active (empty => all live, so a caller that never
         // populates it is unaffected). Orthogonal to `visible`.
         std::vector<wz::engine::behavior::BehaviorCommand> activation_commands;
         const std::unordered_map<std::string, std::uint8_t> effective_active =
-            compute_scene_node_effective_active(scene_nodes_);
+            compute_scene_node_effective_active(document_.nodes());
         const std::size_t node_count =
             wz::core::graph::node_count(behavior_scene_->storage.polytree);
         behavior_scene_->entity_active.assign(node_count, 1u);
@@ -1181,7 +1181,7 @@ namespace wz::app
             // reflect the applied local changes. #221: the polytree is now the single
             // source of truth for render/audio/spawn world transforms (see
             // scene_world_transforms()), so there is no per-frame write-back into
-            // scene_nodes_ any more -- scene_nodes_ transforms are derived from the
+            // document_.nodes() any more -- document_.nodes() transforms are derived from the
             // polytree only when actually needed (save + editor read-back). The lossy
             // Mat4->TRS->Mat4 round trip is gone from the frame path.
             wz::scene::propagate_all(behavior_scene_->storage.polytree);

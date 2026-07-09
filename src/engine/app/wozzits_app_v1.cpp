@@ -60,7 +60,7 @@ namespace wz::app
 
         // Decompose a simulation-node LOCAL matrix into an authored TRS. This is
         // the same lossy Mat4 -> TRS step the old per-frame write-back did; #221
-        // moved it off the frame path so it runs only when scene_nodes_ actually
+        // moved it off the frame path so it runs only when document_.nodes() actually
         // needs an authored transform (save + editor read-back). Returns false
         // (leave the authored transform untouched) when decompose_trs rejects the
         // matrix, matching the write-back's skip-on-failure.
@@ -149,8 +149,8 @@ namespace wz::app
         // present when graft_scene_sources() reads scene_source at the end. This
         // is how they survive the wholesale replace (the GLB scenes are not part
         // of the draft): they are re-registered on every (re)bind. On the first
-        // bind during load_scene, scene_nodes_ is still empty, so this is a no-op
-        // there; load_scene re-resolves after populating scene_nodes_.
+        // bind during load_scene, document_.nodes() is still empty, so this is a no-op
+        // there; load_scene re-resolves after populating document_.nodes().
         resolve_glb_scene_sources();
 
         // Rebuild the DAG with the newly registered set (commit() only
@@ -235,13 +235,13 @@ namespace wz::app
         // them. (On the first bind during load_scene the scene is not loaded
         // yet, so this is a no-op there and load_scene re-runs it after.)
         const uint32_t bridged =
-            wz::engine::assets::bridge_scene_renderable_keys(scene_nodes_, draft);
+            wz::engine::assets::bridge_scene_renderable_keys(document_.nodes(), draft);
         // Re-assemble geometry+program bindings into renderables on every
         // (re)bind (#213 increment 2): mirrors bridge for the binding path, AFTER
         // it so the binding overrides a pre-built renderable on the same node. The
         // created renderables need their own commit()+resolve_all() (the main
         // resolve above already ran). No-op on the first bind during load_scene
-        // (scene_nodes_ empty); load_scene re-assembles after populating nodes.
+        // (document_.nodes() empty); load_scene re-assembles after populating nodes.
         const std::size_t render_bindings_assembled =
             assemble_render_bindings(draft);
         if (render_bindings_assembled > 0) {
@@ -260,14 +260,14 @@ namespace wz::app
         // On the first bind during load_scene the scene is not loaded yet, so
         // this is a no-op there; load_scene re-runs it after populating nodes.
         const uint32_t scene_sources_bridged =
-            wz::engine::assets::bridge_scene_source_keys(scene_nodes_, draft);
+            wz::engine::assets::bridge_scene_source_keys(document_.nodes(), draft);
         (void)scene_sources_bridged;
         // Re-point authored collision references at the freshly committed graph's
         // collision keys (issue #216/#217), mirroring the renderable/source
-        // bridges above. No-op on the first bind during load_scene (scene_nodes_
+        // bridges above. No-op on the first bind during load_scene (document_.nodes()
         // empty); load_scene re-runs it after populating nodes.
         const uint32_t collisions_bridged =
-            wz::engine::assets::bridge_scene_collision_keys(scene_nodes_, draft);
+            wz::engine::assets::bridge_scene_collision_keys(document_.nodes(), draft);
         (void)collisions_bridged;
         const std::size_t bind_grafted = graft_scene_sources();
         // Assemble the freshly grafted children's intrinsic geometry bindings
@@ -370,9 +370,9 @@ namespace wz::app
             }
         }
         // Note: do NOT bail when the graph bind reported errors. Load the scene
-        // anyway so scene_nodes_ is populated; the user can then fix the graph in
+        // anyway so document_.nodes() is populated; the user can then fix the graph in
         // the editor and a later successful rebind will render. Bailing here left
-        // scene_nodes_ empty, so even a subsequent good compile drew nothing.
+        // document_.nodes() empty, so even a subsequent good compile drew nothing.
 
         const wz::engine::assets::SceneAsset scene =
             ctx_.assets->scenes().create_scene_from_json(
@@ -398,11 +398,11 @@ namespace wz::app
             return false;
         }
 
-        // bind_asset_graph already ran above, but scene_nodes_ was empty then;
+        // bind_asset_graph already ran above, but document_.nodes() was empty then;
         // now the scene is loaded, so bridge its renderables to the committed
-        // graph keys. Populate scene_nodes_ even with graph/scene compile errors
+        // graph keys. Populate document_.nodes() even with graph/scene compile errors
         // so a later good rebind can render.
-        scene_nodes_ = scene_data->nodes;
+        document_.nodes() = scene_data->nodes;
         // A new scene invalidates the prior scene's carried per-frame dispatch state
         // (#252 audit): clear the SELF_ACTIVATED edge-detector's previous-active
         // snapshot (else a reused authored id that was parked in the old scene and
@@ -430,7 +430,7 @@ namespace wz::app
         // scene without any authored sources is a clean no-op.
         {
             wz::engine::assets::SceneAssetData materialize_scene;
-            materialize_scene.nodes = scene_nodes_;
+            materialize_scene.nodes = document_.nodes();
             const wz::engine::assets::SceneAuthoringMaterializeReport
                 materialize =
                     wz::engine::assets::materialize_scene_authoring_components(
@@ -450,7 +450,7 @@ namespace wz::app
             // constraint_surface_asset, collision_asset, scalar_field_asset, ...)
             // then compile the freshly registered assets so the instance + the
             // collision frame can resolve them.
-            scene_nodes_ = std::move(materialize_scene.nodes);
+            document_.nodes() = std::move(materialize_scene.nodes);
             ctx_.assets->commit();
             const wz::engine::assets::ResolveReport materialize_resolve =
                 ctx_.assets->resolve_all();
@@ -462,23 +462,23 @@ namespace wz::app
             }
         }
         scene_source_path_ = desc.scene;
-        scene_dirty_ = false;
-        grafted_node_ids_.clear();
+        document_.dirty() = false;
+        document_.grafted_ids().clear();
         const uint32_t bridged =
             wz::engine::assets::bridge_scene_renderable_keys(
-                scene_nodes_, graph_draft_);
+                document_.nodes(), graph_draft_);
         // Assemble renderables from geometry+program bindings now that
-        // scene_nodes_ is populated (#213 increment 1b): create the matching RHI
+        // document_.nodes() is populated (#213 increment 1b): create the matching RHI
         // renderable per geometry node + set renderable_asset, the render program
         // inherited down the scene tree. The created assets compile in the shared
         // commit()+resolve_all() below (alongside the GLB scene sources).
         const std::size_t render_bindings_assembled =
             assemble_render_bindings(graph_draft_);
-        // Resolve GLB scene-source DESCRIPTORS now that scene_nodes_ is populated
+        // Resolve GLB scene-source DESCRIPTORS now that document_.nodes() is populated
         // (#213, the descriptor route): register each glb_scene_source's GLB +
         // produced Scene asset and write the Scene key into the node's
         // scene_source. The scene-from-json commit/resolve above already ran
-        // (descriptors live on scene_nodes_, only available now), so compile the
+        // (descriptors live on document_.nodes(), only available now), so compile the
         // freshly registered GLB scenes with their own commit() + resolve_all()
         // before grafting. Same content => same key => cache hit on re-load.
         const std::size_t glb_sources_resolved = resolve_glb_scene_sources();
@@ -501,19 +501,19 @@ namespace wz::app
         // resolve_glb_scene_sources just set on glb_scene_source nodes intact.
         const uint32_t scene_sources_bridged =
             wz::engine::assets::bridge_scene_source_keys(
-                scene_nodes_, graph_draft_);
+                document_.nodes(), graph_draft_);
         // Re-point authored collision references at the bound graph's collision
         // keys (issue #216/#217), mirroring the renderable/source bridges; the
         // graph is committed by now (materialize ran above), so the referenced
         // collision node's key resolves.
         wz::engine::assets::bridge_scene_collision_keys(
-            scene_nodes_, graph_draft_);
+            document_.nodes(), graph_draft_);
         // Flatten any glb_scene_source node authored with consume_mode=Flatten:
         // expand persistently (and drop the descriptor), exactly like the editor
         // "bake" action, so a Flatten-authored scene loads as real nodes. The
         // remaining Instance descriptors are grafted as live children below.
         for (const wz::engine::assets::SceneNodeAsset& node :
-             std::vector<wz::engine::assets::SceneNodeAsset>(scene_nodes_))
+             std::vector<wz::engine::assets::SceneNodeAsset>(document_.nodes()))
         {
             if (node.glb_scene_source
                 && node.glb_scene_source->consume_mode
@@ -557,7 +557,7 @@ namespace wz::app
         // order defaults to the tree's pre-order and render_order overrides it as
         // a coarse layer. Done once here, after all authored nodes are present and
         // before the polytree is built from them; structural edits re-bake below.
-        wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
+        wz::engine::assets::bake_scene_node_draw_order(document_.nodes());
         rebuild_behavior_scene();
 
         // Auto-register the project's scenelets as spawnable prefabs (runtime
@@ -671,7 +671,7 @@ namespace wz::app
             // #221: the pass reads source/listener world poses straight from the
             // behavior scene's polytree (the same single source of truth
             // scene_world_transforms() draws from), so it needs neither the
-            // scene_nodes_ span nor a precomputed world-transform vector here.
+            // document_.nodes() span nor a precomputed world-transform vector here.
             wz::engine::audio::update_scene_audio_spatialization(
                 *ctx_.assets, *behavior_scene_,
                 dt, audio_runtime_.output_sample_rate(),
@@ -699,7 +699,7 @@ namespace wz::app
                 .frame = behavior_frame_index_,
                 .dt_ms = static_cast<double>(dt) * 1000.0,
                 .sim_ms = sim_ms,
-                .scene_nodes = scene_nodes_.size(),
+                .scene_nodes = document_.nodes().size(),
                 .rematerialize = rematerialize_count_this_frame_,
                 .rebuild = rebuild_scene_count_this_frame_,
                 .callers = remat_callers_this_frame_,
@@ -719,7 +719,7 @@ namespace wz::app
         }
 
         std::size_t resolved = 0;
-        for (wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+        for (wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
             if (!node.glb_scene_source) {
                 continue;
             }
@@ -812,7 +812,7 @@ namespace wz::app
         const auto find_node =
             [this](const std::string& id)
                 -> const wz::engine::assets::SceneNodeAsset* {
-                for (const auto& n : scene_nodes_) {
+                for (const auto& n : document_.nodes()) {
                     if (n.id == id) {
                         return &n;
                     }
@@ -821,7 +821,7 @@ namespace wz::app
             };
 
         std::size_t assembled = 0;
-        for (wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+        for (wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
             // Incremental (#253/#252): when a single node (only_node) or a subtree
             // (only_nodes, the spawned block + its grafted children) is targeted,
             // skip the rest -- the bare loop + id compare is trivial; only the
@@ -962,7 +962,7 @@ namespace wz::app
             bool has_program = false;
             const wz::engine::assets::SceneNodeAsset* cur = &node;
             for (std::size_t guard = 0;
-                 cur && guard <= scene_nodes_.size();
+                 cur && guard <= document_.nodes().size();
                  ++guard)
             {
                 if (cur->render_program_node_id) {
@@ -1085,7 +1085,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, id);
+            wz::engine::assets::find_scene_node(document_.nodes(), id);
         if (!node) {
             return std::nullopt;
         }
@@ -1144,12 +1144,12 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, id);
+            wz::engine::assets::find_scene_node(document_.nodes(), id);
         if (!node) {
             return std::nullopt;
         }
         // The raw stored authored transform — deliberately NOT derived from the
-        // sim polytree (#221), so a test can prove scene_nodes_ stays put while
+        // sim polytree (#221), so a test can prove document_.nodes() stays put while
         // the sim moves the node.
         return wz::math::Vec3{
             node->local.translation[0],
@@ -1162,7 +1162,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, id);
+            wz::engine::assets::find_scene_node(document_.nodes(), id);
         if (!node || !node->renderable_asset) {
             return std::nullopt;
         }
@@ -1177,7 +1177,7 @@ namespace wz::app
         // source of truth for the drawn + saved pose (scene_world_transforms /
         // derived_authored_transform read it, and rebuild_behavior_scene restores
         // a surviving node's live local by authored id), so write the LOCAL there
-        // and do NOT touch scene_nodes_'s stored transform. For a sim-driven node
+        // and do NOT touch document_.nodes()'s stored transform. For a sim-driven node
         // (e.g. a terrain_constrained actor) the next tick's propagate_all settles
         // world matrices and the scale-preserving constraint keeps the authored
         // scale — an edit is no longer reverted by any per-frame write-back
@@ -1219,7 +1219,7 @@ namespace wz::app
                 // only after the next simulation_tick's propagate_all. Cheap for a
                 // single edit; a sim-driven node re-settles on the next tick.
                 wz::scene::propagate_all(behavior_scene_->storage.polytree);
-                scene_dirty_ = true;
+                document_.dirty() = true;
                 return;
             }
         }
@@ -1227,12 +1227,12 @@ namespace wz::app
         // DEGENERATE fallback: no live polytree entry for this node (a failed
         // instantiate_scene left behavior_scene_ null, or the node is absent from
         // the runtime map). scene_world_transforms / derived_authored_transform
-        // fall back to scene_nodes_ in exactly that case, so write the stored
+        // fall back to document_.nodes() in exactly that case, so write the stored
         // transform here so the edit still takes effect and the editor recovers.
         if (wz::engine::assets::SceneNodeAsset* node =
-                wz::engine::assets::find_scene_node(scene_nodes_, id)) {
+                wz::engine::assets::find_scene_node(document_.nodes(), id)) {
             wz::engine::assets::set_transform(*node, transform);
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
     }
 
@@ -1241,11 +1241,11 @@ namespace wz::app
         const wz::engine::assets::AuthoredTransform& transform)
     {
         // Resolve existence, then route through the single #221 edit seam. The
-        // scene_nodes_ transform write is gone from the edit path: Phase 1's
+        // document_.nodes() transform write is gone from the edit path: Phase 1's
         // derivation covers persistence (save_scene + authored_scene_nodes derive
         // from the polytree) and rebuilds restore live locals via the
         // preservation map, so the polytree write the seam does is sufficient.
-        if (!wz::engine::assets::find_scene_node(scene_nodes_, id)) {
+        if (!wz::engine::assets::find_scene_node(document_.nodes(), id)) {
             return false;
         }
         apply_node_local_transform(id, transform);
@@ -1281,14 +1281,14 @@ namespace wz::app
             // Re-bridge the collision refs to the bound graph's keys, then
             // re-materialize so the runtime's collision world has the surface.
             wz::engine::assets::bridge_scene_collision_keys(
-                scene_nodes_, graph_draft_);
+                document_.nodes(), graph_draft_);
             rebuild_behavior_scene();
             break;
         case SceneChangeKind::SceneSource:
             // Re-bridge the node-ref key, re-graft the host's children (mutates the
             // document), assemble the grafted subtree, then rebuild the runtime.
             wz::engine::assets::bridge_scene_source_keys(
-                scene_nodes_, graph_draft_);
+                document_.nodes(), graph_draft_);
             graft_scene_sources();
             rematerialize_render_bindings(change.caller);
             rebuild_behavior_scene();
@@ -1313,13 +1313,13 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& parent_id)
     {
         wz::engine::assets::SceneAddChildResult result =
-            wz::engine::assets::add_child_scene_node(scene_nodes_, parent_id);
+            wz::engine::assets::add_child_scene_node(document_.nodes(), parent_id);
         SceneChange change = SceneChange::none();
         if (result.ok) {
             // The new child is appended; re-bake so it flattens into pre-order
             // right after its parent's existing subtree (draw order = tree order).
-            wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
-            scene_dirty_ = true;
+            wz::engine::assets::bake_scene_node_draw_order(document_.nodes());
+            document_.dirty() = true;
             change = SceneChange::structural();
         }
         // A structural change invalidates the behavior runtime's entity ids; the
@@ -1334,8 +1334,8 @@ namespace wz::app
         bool visible)
     {
         const bool ok = wz::engine::assets::set_scene_node_properties(
-            scene_nodes_, id, std::move(name), visible);
-        scene_dirty_ = scene_dirty_ || ok;
+            document_.nodes(), id, std::move(name), visible);
+        document_.dirty() = document_.dirty() || ok;
         // Pure document edit: the renderer reads name/visible fresh next frame.
         apply_scene_change(SceneChange::none());
         return ok;
@@ -1346,7 +1346,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& new_parent_id)
     {
         const bool ok = wz::engine::assets::reparent_scene_node(
-            scene_nodes_, id, new_parent_id);
+            document_.nodes(), id, new_parent_id);
         SceneChange change = SceneChange::none();
         if (ok) {
             // Nesting now drives draw order (draw order = tree pre-order), so a
@@ -1354,8 +1354,8 @@ namespace wz::app
             // parent, landing among the new siblings by its current array slot
             // (the editor sets that slot with a following reorder for a precise
             // drop). render_order still overrides as a layer.
-            wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
-            scene_dirty_ = true;
+            wz::engine::assets::bake_scene_node_draw_order(document_.nodes());
+            document_.dirty() = true;
             change = SceneChange::structural();
         }
         apply_scene_change(change);
@@ -1365,8 +1365,8 @@ namespace wz::app
     bool WozzitsApp_v1::remove_node(const wz::scene::AuthoredEntityId& id)
     {
         const bool removed =
-            !wz::engine::assets::remove_scene_node(scene_nodes_, id).empty();
-        scene_dirty_ = scene_dirty_ || removed;
+            !wz::engine::assets::remove_scene_node(document_.nodes(), id).empty();
+        document_.dirty() = document_.dirty() || removed;
         apply_scene_change(
             removed ? SceneChange::structural() : SceneChange::none());
         return removed;
@@ -1377,7 +1377,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& before_id)
     {
         const bool moved = wz::engine::assets::reorder_scene_node(
-            scene_nodes_, id, before_id);
+            document_.nodes(), id, before_id);
         SceneChange change = SceneChange::none();
         if (moved) {
             // Re-bake: the reorder set this node's slot among its siblings; the
@@ -1385,8 +1385,8 @@ namespace wz::app
             // coarse layers dominant (ties keep the new sibling order). A cross-
             // layer drag snaps back into its own layer -- changing layers is a
             // render_order edit, not a reorder.
-            wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
-            scene_dirty_ = true;
+            wz::engine::assets::bake_scene_node_draw_order(document_.nodes());
+            document_.dirty() = true;
             change = SceneChange::structural();
         }
         apply_scene_change(change);
@@ -1398,13 +1398,13 @@ namespace wz::app
         int render_order)
     {
         const bool changed = wz::engine::assets::set_scene_node_render_order(
-            scene_nodes_, id, render_order);
+            document_.nodes(), id, render_order);
         SceneChange change = SceneChange::none();
         if (changed) {
             // Layer changed: re-bake so the node moves into its layer (the sort
             // is by render_order; ties keep the tree pre-order).
-            wz::engine::assets::bake_scene_node_draw_order(scene_nodes_);
-            scene_dirty_ = true;
+            wz::engine::assets::bake_scene_node_draw_order(document_.nodes());
+            document_.dirty() = true;
             change = SceneChange::structural();
         }
         apply_scene_change(change);
@@ -1412,7 +1412,7 @@ namespace wz::app
     }
 
     // ─── Live behavior-binding authoring ────────────────────────────────────
-    // Each applies the matching scene_asset_data.h helper to scene_nodes_, then
+    // Each applies the matching scene_asset_data.h helper to document_.nodes(), then
     // (on success) marks the scene dirty and re-materializes the behavior
     // runtime so the change takes effect. The rebuild is UNCONDITIONAL on
     // success — unlike the structural edits above, which rebuild only when a
@@ -1424,9 +1424,9 @@ namespace wz::app
         const std::string& module)
     {
         wz::engine::assets::SceneAddBehaviorResult result =
-            wz::engine::assets::add_node_behavior(scene_nodes_, node_id, module);
+            wz::engine::assets::add_node_behavior(document_.nodes(), node_id, module);
         if (result.ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         apply_scene_change(
             result.ok ? SceneChange::runtime_rebuild() : SceneChange::none());
@@ -1438,9 +1438,9 @@ namespace wz::app
         const std::string& binding_id)
     {
         const bool ok = wz::engine::assets::remove_node_behavior(
-            scene_nodes_, node_id, binding_id);
+            document_.nodes(), node_id, binding_id);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         apply_scene_change(
             ok ? SceneChange::runtime_rebuild() : SceneChange::none());
@@ -1453,9 +1453,9 @@ namespace wz::app
         bool enabled)
     {
         const bool ok = wz::engine::assets::set_node_behavior_enabled(
-            scene_nodes_, node_id, binding_id, enabled);
+            document_.nodes(), node_id, binding_id, enabled);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         apply_scene_change(
             ok ? SceneChange::runtime_rebuild() : SceneChange::none());
@@ -1469,9 +1469,9 @@ namespace wz::app
         const std::string& module)
     {
         const bool ok = wz::engine::assets::set_node_behavior_fields(
-            scene_nodes_, node_id, binding_id, label, module);
+            document_.nodes(), node_id, binding_id, label, module);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         apply_scene_change(
             ok ? SceneChange::runtime_rebuild() : SceneChange::none());
@@ -1484,9 +1484,9 @@ namespace wz::app
         const std::vector<std::string>& events)
     {
         const bool ok = wz::engine::assets::set_node_behavior_events(
-            scene_nodes_, node_id, binding_id, events);
+            document_.nodes(), node_id, binding_id, events);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         apply_scene_change(
             ok ? SceneChange::runtime_rebuild() : SceneChange::none());
@@ -1499,9 +1499,9 @@ namespace wz::app
         const wz::engine::assets::SceneBehaviorConfigValue& value)
     {
         const bool ok = wz::engine::assets::set_node_behavior_config(
-            scene_nodes_, node_id, binding_id, value);
+            document_.nodes(), node_id, binding_id, value);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         apply_scene_change(
             ok ? SceneChange::runtime_rebuild() : SceneChange::none());
@@ -1514,9 +1514,9 @@ namespace wz::app
         const std::string& key)
     {
         const bool ok = wz::engine::assets::clear_node_behavior_config(
-            scene_nodes_, node_id, binding_id, key);
+            document_.nodes(), node_id, binding_id, key);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         apply_scene_change(
             ok ? SceneChange::runtime_rebuild() : SceneChange::none());
@@ -1525,10 +1525,10 @@ namespace wz::app
 
     // ─── Live optional-component authoring ──────────────────────────────────
     // Add/remove one of the five editor-managed optional components on a node in
-    // scene_nodes_, then (on success) mark the scene dirty. Unlike the behavior
+    // document_.nodes(), then (on success) mark the scene dirty. Unlike the behavior
     // verbs above, these do NOT rebuild_behavior_scene(): none of camera /
     // renderable / proximity / collision / motion creates a behavior binding, so
-    // the behavior runtime is unaffected. The renderer reads scene_nodes_ fresh
+    // the behavior runtime is unaffected. The renderer reads document_.nodes() fresh
     // each frame, so the next render reflects the change. An unknown kind (or
     // missing node) is a logged no-op (fail closed).
 
@@ -1537,9 +1537,9 @@ namespace wz::app
         const std::string& kind)
     {
         const bool ok = wz::engine::assets::add_node_optional_component(
-            scene_nodes_, node_id, kind);
+            document_.nodes(), node_id, kind);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         else {
             ctx_.logger.warn(
@@ -1554,9 +1554,9 @@ namespace wz::app
         const std::string& kind)
     {
         const bool ok = wz::engine::assets::remove_node_optional_component(
-            scene_nodes_, node_id, kind);
+            document_.nodes(), node_id, kind);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         else {
             ctx_.logger.warn(
@@ -1571,9 +1571,9 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
         const bool ok = wz::engine::assets::set_node_renderable_asset(
-            scene_nodes_, node_id, asset_graph_node_id);
+            document_.nodes(), node_id, asset_graph_node_id);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         else {
             ctx_.logger.warn(
@@ -1588,9 +1588,9 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
         const bool ok = wz::engine::assets::set_node_audio_renderable(
-            scene_nodes_, node_id, asset_graph_node_id);
+            document_.nodes(), node_id, asset_graph_node_id);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
             // The node id resolves to the audio_renderable key in
             // assemble_render_bindings on the next bind; nothing to draw, so no
             // immediate rematerialize is needed (mirrors set_node_renderable_asset).
@@ -1609,9 +1609,9 @@ namespace wz::app
         bool enabled)
     {
         const bool ok = wz::engine::assets::set_node_audio_source_play(
-            scene_nodes_, node_id, auto_play, enabled);
+            document_.nodes(), node_id, auto_play, enabled);
         if (ok) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         else {
             ctx_.logger.warn(
@@ -1626,13 +1626,13 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
         const bool ok = wz::engine::assets::set_node_scene_source(
-            scene_nodes_, node_id, asset_graph_node_id);
+            document_.nodes(), node_id, asset_graph_node_id);
         if (!ok) {
             ctx_.logger.warn(
                 "set_node_scene_source: no-op (node '" + node_id + "' missing)");
             return false;
         }
-        scene_dirty_ = true;
+        document_.dirty() = true;
         // Re-resolve the new (or absent) scene source against the bound graph,
         // re-graft the host's children, assemble the grafted subtree, and rebuild
         // the runtime (the SceneSource reaction; bridge clears the key when the
@@ -1647,7 +1647,7 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             ctx_.logger.warn(
                 "set_node_geometry_asset: no-op (node '" + node_id
@@ -1665,7 +1665,7 @@ namespace wz::app
             // rematerialize restores a pre-built renderable_asset_node_id if any).
             node->renderable_asset.reset();
         }
-        scene_dirty_ = true;
+        document_.dirty() = true;
         apply_scene_change(SceneChange::render_binding());
         return true;
     }
@@ -1675,7 +1675,7 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             ctx_.logger.warn(
                 "set_node_render_program: no-op (node '" + node_id
@@ -1689,7 +1689,7 @@ namespace wz::app
         else {
             wz::engine::assets::detach_render_program_node(*node);
         }
-        scene_dirty_ = true;
+        document_.dirty() = true;
         // If this targets a runtime-only grafted scene-source child, mirror the
         // program onto its host as a sticky override (issue #213) so it survives
         // reload (save_scene excludes grafted children). No-op for authored nodes.
@@ -1707,7 +1707,7 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             ctx_.logger.warn(
                 "set_node_renderable_binding: no-op (node '" + node_id
@@ -1745,7 +1745,7 @@ namespace wz::app
             bindings.erase(it);
         }
 
-        scene_dirty_ = true;
+        document_.dirty() = true;
         // A binding decides whether the assembled renderable is the custom
         // (0x70A) form, so re-assemble like the geometry/program seams.
         apply_scene_change(SceneChange::render_binding());
@@ -1758,7 +1758,7 @@ namespace wz::app
         const float* value)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             ctx_.logger.warn(
                 "set_node_renderable_constant: no-op (node '" + node_id
@@ -1807,7 +1807,7 @@ namespace wz::app
             && node->renderable_bindings.empty()
             && ((value && !existed && constants.size() == 1u)
                 || (!value && existed && constants.empty()));
-        scene_dirty_ = true;
+        document_.dirty() = true;
         // The kind is decided by POST-mutation document state: only the custom-
         // form flip needs a re-assemble (of just this node, #253); a plain
         // override merges at pack time with no reaction.
@@ -1824,7 +1824,7 @@ namespace wz::app
         const std::string& name) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             return std::nullopt;
         }
@@ -1845,7 +1845,7 @@ namespace wz::app
         bool constrain_movement)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             ctx_.logger.warn(
                 "set_node_collision_asset: no-op (node '" + node_id
@@ -1864,7 +1864,7 @@ namespace wz::app
                 node->collision->constrain_movement = constrain_movement;
             }
         }
-        scene_dirty_ = true;
+        document_.dirty() = true;
         // Re-point the (possibly new) reference at the bound graph's collision
         // key, then re-materialize so the runtime scene picks up the constraint
         // surface (the Collision reaction re-bridges + rebuilds the SceneInstance
@@ -1882,7 +1882,7 @@ namespace wz::app
         float alignment_strength)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             ctx_.logger.warn(
                 "set_node_motion_terrain_fields: no-op (node '" + node_id
@@ -1898,7 +1898,7 @@ namespace wz::app
         node->motion->terrain_footprint_radius = footprint_radius;
         node->motion->terrain_align_to_surface = align_to_surface;
         node->motion->terrain_alignment_strength = alignment_strength;
-        scene_dirty_ = true;
+        document_.dirty() = true;
 
         // #221: patch the LIVE Motion record in place instead of rebuilding the
         // whole runtime for a field tweak (a full rebuild_behavior_scene would
@@ -1947,7 +1947,7 @@ namespace wz::app
         const wz::engine::assets::SceneMotionFilterAsset& filter)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             ctx_.logger.warn(
                 "set_node_motion_filter: no-op (node '" + node_id
@@ -1956,7 +1956,7 @@ namespace wz::app
         }
         const bool adding_component = !node->motion_filter.has_value();
         node->motion_filter = filter;
-        scene_dirty_ = true;
+        document_.dirty() = true;
 
         // Patch the LIVE motion_filter record in place when it already exists (a
         // field tweak must not rebuild + snap sim actors). The filter STATE lives
@@ -2030,7 +2030,7 @@ namespace wz::app
         // geometry can fall back to renderable_asset_node_id if it has one), then
         // re-assemble the ingredient bindings (which override for geometry nodes).
         wz::engine::assets::bridge_scene_renderable_keys(
-            scene_nodes_, graph_draft_);
+            document_.nodes(), graph_draft_);
         const std::size_t assembled = assemble_render_bindings(graph_draft_);
         if (assembled > 0) {
             ctx_.assets->commit();
@@ -2073,7 +2073,7 @@ namespace wz::app
         const wz::engine::assets::SceneGLBSceneSource& descriptor)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             ctx_.logger.warn(
                 "set_node_glb_scene_source: no-op (node '" + node_id
@@ -2090,7 +2090,7 @@ namespace wz::app
         else {
             wz::engine::assets::attach_glb_scene_source(*node, descriptor);
         }
-        scene_dirty_ = true;
+        document_.dirty() = true;
 
         // Re-materialize so the change shows on the next frame. The GlbSource
         // reaction mirrors the descriptor-route sequence load_scene runs (NOT the
@@ -2142,7 +2142,7 @@ namespace wz::app
         const wz::engine::assets::MeshRenderStyleData& style)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node || !node->glb_scene_source) {
             ctx_.logger.warn(
                 "set_node_glb_base_style: no-op (node '" + node_id
@@ -2151,7 +2151,7 @@ namespace wz::app
         }
 
         node->glb_scene_source->base_style = style;
-        scene_dirty_ = true;
+        document_.dirty() = true;
         apply_scene_change(SceneChange::glb_source());
         return true;
     }
@@ -2162,7 +2162,7 @@ namespace wz::app
         const wz::engine::assets::MeshRenderStyleData& style)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node || !node->glb_scene_source) {
             ctx_.logger.warn(
                 "set_node_glb_mesh_style: no-op (node '" + node_id
@@ -2191,7 +2191,7 @@ namespace wz::app
                 });
         }
 
-        scene_dirty_ = true;
+        document_.dirty() = true;
         apply_scene_change(SceneChange::glb_source());
         return true;
     }
@@ -2201,7 +2201,7 @@ namespace wz::app
         uint32_t mesh_index)
     {
         wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node || !node->glb_scene_source) {
             ctx_.logger.warn(
                 "clear_node_glb_mesh_style: no-op (node '" + node_id
@@ -2226,7 +2226,7 @@ namespace wz::app
         // when something actually changed.
         const bool changed = overrides.size() != before;
         if (changed) {
-            scene_dirty_ = true;
+            document_.dirty() = true;
         }
         apply_scene_change(
             changed ? SceneChange::glb_source() : SceneChange::none());
@@ -2242,7 +2242,7 @@ namespace wz::app
         }
 
         wz::engine::assets::SceneNodeAsset* host =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!host) {
             ctx_.logger.warn(
                 "flatten_scene_source: no-op (node '" + node_id + "' missing)");
@@ -2253,8 +2253,8 @@ namespace wz::app
         // bridge from the authored node id against the bound graph.
         if (!host->scene_source && host->scene_source_node_id) {
             wz::engine::assets::bridge_scene_source_keys(
-                scene_nodes_, graph_draft_);
-            host = wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+                document_.nodes(), graph_draft_);
+            host = wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         }
         if (!host || !host->scene_source) {
             ctx_.logger.warn(
@@ -2279,53 +2279,53 @@ namespace wz::app
         // children first so flatten does not duplicate them (the persistent
         // expansion below replaces them as authored nodes with the same ids).
         const std::string prefix = node_id + "/";
-        if (!grafted_node_ids_.empty()) {
+        if (!document_.grafted_ids().empty()) {
             std::unordered_set<std::string> stale;
-            for (const auto& id : grafted_node_ids_) {
+            for (const auto& id : document_.grafted_ids()) {
                 if (id.rfind(prefix, 0) == 0) {
                     stale.insert(id);
                 }
             }
             if (!stale.empty()) {
-                scene_nodes_.erase(
+                document_.nodes().erase(
                     std::remove_if(
-                        scene_nodes_.begin(),
-                        scene_nodes_.end(),
+                        document_.nodes().begin(),
+                        document_.nodes().end(),
                         [&stale](
                             const wz::engine::assets::SceneNodeAsset& n) {
                             return stale.count(n.id) != 0;
                         }),
-                    scene_nodes_.end());
-                grafted_node_ids_.erase(
+                    document_.nodes().end());
+                document_.grafted_ids().erase(
                     std::remove_if(
-                        grafted_node_ids_.begin(),
-                        grafted_node_ids_.end(),
+                        document_.grafted_ids().begin(),
+                        document_.grafted_ids().end(),
                         [&stale](const wz::scene::AuthoredEntityId& id) {
                             return stale.count(id) != 0;
                         }),
-                    grafted_node_ids_.end());
+                    document_.grafted_ids().end());
             }
-            host = wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            host = wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         }
 
         // Expand persistently: the children become real authored nodes (NOT
-        // tracked in grafted_node_ids_, so they persist + save), and the host's
+        // tracked in document_.grafted_ids(), so they persist + save), and the host's
         // scene-source reference is dropped — the expansion is now the content.
         // Snapshot the host BEFORE the appends (push_back may reallocate
-        // scene_nodes_ and invalidate `host`), then re-find it to detach.
+        // document_.nodes() and invalidate `host`), then re-find it to detach.
         const wz::engine::assets::SceneNodeAsset host_snapshot = *host;
         std::vector<wz::engine::assets::SceneNodeAsset> children =
             wz::engine::assets::expand_scene_source_children(host_snapshot, *sub);
         const std::size_t count = children.size();
         for (wz::engine::assets::SceneNodeAsset& child : children) {
-            scene_nodes_.push_back(std::move(child));
+            document_.nodes().push_back(std::move(child));
         }
-        host = wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+        host = wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (host) {
             wz::engine::assets::detach_scene_source(*host);
         }
 
-        scene_dirty_ = true;
+        document_.dirty() = true;
         // The expansion changed the entity set; re-materialize unconditionally.
         apply_scene_change(SceneChange::runtime_rebuild());
         ctx_.logger.info(
@@ -2339,14 +2339,14 @@ namespace wz::app
         const std::string& kind) const
     {
         return wz::engine::assets::node_has_optional_component(
-            scene_nodes_, node_id, kind);
+            document_.nodes(), node_id, kind);
     }
 
     std::size_t WozzitsApp_v1::child_node_count(
         const wz::scene::AuthoredEntityId& parent_id) const
     {
         std::size_t count = 0;
-        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+        for (const wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
             if (node.parent_id && *node.parent_id == parent_id) {
                 ++count;
             }
@@ -2359,7 +2359,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             return std::nullopt;
         }
@@ -2371,7 +2371,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node) {
             return std::nullopt;
         }
@@ -2382,7 +2382,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         return node && node->glb_scene_source.has_value();
     }
 
@@ -2391,7 +2391,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node || !node->glb_scene_source) {
             return nullptr;
         }
@@ -2403,7 +2403,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node || !node->collision) {
             return nullptr;
         }
@@ -2415,7 +2415,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id) const
     {
         const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(scene_nodes_, node_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
         if (!node || !node->motion) {
             return nullptr;
         }
@@ -2425,15 +2425,15 @@ namespace wz::app
     std::vector<wz::engine::assets::SceneNodeAsset>
     WozzitsApp_v1::grafted_scene_nodes() const
     {
-        if (grafted_node_ids_.empty()) {
+        if (document_.grafted_ids().empty()) {
             return {};
         }
 
         const std::unordered_set<std::string> grafted(
-            grafted_node_ids_.begin(), grafted_node_ids_.end());
+            document_.grafted_ids().begin(), document_.grafted_ids().end());
         std::vector<wz::engine::assets::SceneNodeAsset> out;
         out.reserve(grafted.size());
-        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+        for (const wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
             if (grafted.count(node.id) != 0) {
                 out.push_back(node);  // copy: the seam hands a snapshot back
             }
@@ -2447,17 +2447,17 @@ namespace wz::app
         // Same filter as save_scene: drop runtime-only grafted (#213) + "spawn:"
         // prefab-instance nodes, leaving the authored scene the editor edits.
         const std::unordered_set<std::string> grafted(
-            grafted_node_ids_.begin(), grafted_node_ids_.end());
+            document_.grafted_ids().begin(), document_.grafted_ids().end());
         std::vector<wz::engine::assets::SceneNodeAsset> authored;
-        authored.reserve(scene_nodes_.size());
-        for (const wz::engine::assets::SceneNodeAsset& n : scene_nodes_) {
+        authored.reserve(document_.nodes().size());
+        for (const wz::engine::assets::SceneNodeAsset& n : document_.nodes()) {
             if (grafted.count(n.id) != 0 || n.id.rfind("spawn:", 0) == 0) {
                 continue;
             }
             authored.push_back(n);
             // #221: report the sim-current pose. With a live behavior scene the
             // node's transform is derived from the polytree (the old write-back
-            // used to keep scene_nodes_ current); with no sim this is the stored
+            // used to keep document_.nodes() current); with no sim this is the stored
             // authored transform unchanged.
             if (const std::optional<wz::engine::assets::AuthoredTransform>
                     derived = derived_authored_transform(n.id)) {
@@ -2608,7 +2608,7 @@ namespace wz::app
         // of scene edits; persist it alongside authored changes. Standalone play
         // never authors the editor camera (prefer_scene_camera_).
         const bool want_editor_camera = !view_.prefer_scene_camera();
-        if (!scene_dirty_
+        if (!document_.dirty()
             && !(want_editor_camera && view_.editor_camera_dirty())) {
             return true;  // nothing changed since load / last save
         }
@@ -2633,16 +2633,16 @@ namespace wz::app
         std::vector<wz::engine::assets::SceneNodeAsset> persisted_nodes;
         {
             const std::unordered_set<std::string> grafted(
-                grafted_node_ids_.begin(), grafted_node_ids_.end());
-            persisted_nodes.reserve(scene_nodes_.size());
-            for (const wz::engine::assets::SceneNodeAsset& n : scene_nodes_) {
+                document_.grafted_ids().begin(), document_.grafted_ids().end());
+            persisted_nodes.reserve(document_.nodes().size());
+            for (const wz::engine::assets::SceneNodeAsset& n : document_.nodes()) {
                 if (grafted.count(n.id) != 0
                     || n.id.rfind("spawn:", 0) == 0) {
                     continue;
                 }
                 persisted_nodes.push_back(n);
                 // #221: derive-on-save. The per-frame write-back that used to keep
-                // scene_nodes_ transforms sim-current is gone, so decompose the
+                // document_.nodes() transforms sim-current is gone, so decompose the
                 // live polytree pose into the saved node here (one lossy decompose
                 // at save, not per frame). No sim => the stored authored transform.
                 if (const std::optional<wz::engine::assets::AuthoredTransform>
@@ -2671,7 +2671,7 @@ namespace wz::app
         if (document.root) {
             // A camera-only save (scene not dirty) leaves the authored nodes
             // untouched so panning the viewport never churns the node array.
-            if (scene_dirty_) {
+            if (document_.dirty()) {
                 wz::engine::assets::set_scene_document_nodes(
                     document, persisted_nodes);
             }
@@ -2712,7 +2712,7 @@ namespace wz::app
             return false;
         }
 
-        scene_dirty_ = false;
+        document_.dirty() = false;
         view_.clear_editor_camera_dirty();
         ctx_.logger.info("save_scene: scene persisted");
         return true;
@@ -2726,7 +2726,7 @@ namespace wz::app
         // subtree — bail (the caller treats it as a failure).
         std::optional<wz::engine::assets::SceneAssetData> subtree =
             wz::engine::assets::extract_scene_subtree(
-                scene_nodes_, root_node_id);
+                document_.nodes(), root_node_id);
         if (!subtree) {
             ctx_.logger.error(
                 "export_subtree_as_scene: root node not found");
@@ -2737,9 +2737,9 @@ namespace wz::app
         // save_scene: a prefab keeps a scene_source host's reference but not the
         // sub-tree it grafts at load (that re-imports from the reference). The
         // host node itself (with its scene_source) stays if it is in the subtree.
-        if (!grafted_node_ids_.empty()) {
+        if (!document_.grafted_ids().empty()) {
             const std::unordered_set<std::string> grafted(
-                grafted_node_ids_.begin(), grafted_node_ids_.end());
+                document_.grafted_ids().begin(), document_.grafted_ids().end());
             std::vector<wz::engine::assets::SceneNodeAsset> kept;
             kept.reserve(subtree->nodes.size());
             for (wz::engine::assets::SceneNodeAsset& n : subtree->nodes) {
@@ -2784,27 +2784,27 @@ namespace wz::app
     std::vector<wz::math::Mat4> WozzitsApp_v1::scene_world_transforms() const
     {
         // No live simulation: the authored composition IS the truth (nothing
-        // moves scene_nodes_'s transforms), so compose from the nodes exactly as
+        // moves document_.nodes()'s transforms), so compose from the nodes exactly as
         // the renderer used to.
         if (!behavior_scene_) {
             return wz::engine::rendering::compute_scene_node_world_transforms(
-                scene_nodes_);
+                document_.nodes());
         }
 
         // Live simulation: the polytree carries the composed world matrices the
         // sim advanced this frame (propagate_all runs in simulation_tick). Read
         // each node's world straight from it, mapped by stable authored id. Seed
         // from the authored composition so any node missing from the runtime map
-        // (defensive — the instance mirrors scene_nodes_ 1:1, so this should not
+        // (defensive — the instance mirrors document_.nodes() 1:1, so this should not
         // happen) still gets a sensible transform rather than identity.
         std::vector<wz::math::Mat4> world =
             wz::engine::rendering::compute_scene_node_world_transforms(
-                scene_nodes_);
+                document_.nodes());
         const std::size_t node_count =
             wz::core::graph::node_count(behavior_scene_->storage.polytree);
-        for (std::size_t i = 0; i < scene_nodes_.size(); ++i) {
+        for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
             const auto it =
-                behavior_scene_->authored_to_runtime.find(scene_nodes_[i].id);
+                behavior_scene_->authored_to_runtime.find(document_.nodes()[i].id);
             if (it == behavior_scene_->authored_to_runtime.end()
                 || it->second >= node_count) {
                 continue;
@@ -2818,8 +2818,8 @@ namespace wz::app
     std::optional<wz::math::Mat4> WozzitsApp_v1::node_world_transform(
         const wz::scene::AuthoredEntityId& id) const
     {
-        for (std::size_t i = 0; i < scene_nodes_.size(); ++i) {
-            if (scene_nodes_[i].id == id) {
+        for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
+            if (document_.nodes()[i].id == id) {
                 return scene_world_transforms()[i];
             }
         }
@@ -2839,11 +2839,11 @@ namespace wz::app
         // #221: hand the renderer the world transforms from the single source of
         // truth (the live polytree when simulating, the authored composition
         // otherwise) so the drawn pose is the sim-current one -- the per-frame
-        // Mat4->TRS->Mat4 write-back into scene_nodes_ is gone.
+        // Mat4->TRS->Mat4 write-back into document_.nodes() is gone.
         const std::vector<wz::math::Mat4> world_transforms =
             scene_world_transforms();
         return renderer_.render_scene(
-            scene_nodes_, *ctx_.assets, view_.active_view().view_projection,
+            document_.nodes(), *ctx_.assets, view_.active_view().view_projection,
             view_.active_view().world_position, world_transforms);
     }
 
@@ -2969,7 +2969,7 @@ namespace wz::app
     std::size_t WozzitsApp_v1::resolved_renderable_node_count() const
     {
         std::size_t count = 0;
-        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+        for (const wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
             if (node.renderable_asset) {
                 ++count;
             }

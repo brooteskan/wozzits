@@ -183,22 +183,22 @@ namespace wz::app
         // Idempotent re-graft: drop the previously grafted children first so a
         // re-bind/re-resolve (new Scene keys) or a scene-source edit re-expands
         // cleanly rather than accumulating duplicates.
-        if (!grafted_node_ids_.empty()) {
+        if (!document_.grafted_ids().empty()) {
             std::unordered_set<std::string> stale(
-                grafted_node_ids_.begin(), grafted_node_ids_.end());
-            scene_nodes_.erase(
+                document_.grafted_ids().begin(), document_.grafted_ids().end());
+            document_.nodes().erase(
                 std::remove_if(
-                    scene_nodes_.begin(),
-                    scene_nodes_.end(),
+                    document_.nodes().begin(),
+                    document_.nodes().end(),
                     [&stale](const wz::engine::assets::SceneNodeAsset& n) {
                         return stale.count(n.id) != 0;
                     }),
-                scene_nodes_.end());
-            grafted_node_ids_.clear();
+                document_.nodes().end());
+            document_.grafted_ids().clear();
         }
 
         // Snapshot the host nodes carrying a resolved scene_source up front: we
-        // mutate scene_nodes_ (append children) while iterating, and grafted
+        // mutate document_.nodes() (append children) while iterating, and grafted
         // children never themselves carry a scene_source (the expander clears
         // it), so a single non-recursive pass over the current hosts is enough.
         struct HostRef
@@ -207,7 +207,7 @@ namespace wz::app
             wz::asset::AssetKey scene_source;
         };
         std::vector<HostRef> hosts;
-        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+        for (const wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
             if (node.scene_source) {
                 hosts.push_back(HostRef{ node, *node.scene_source });
             }
@@ -236,7 +236,7 @@ namespace wz::app
             return new_children;
         }
 
-        // Snapshot the target hosts up front (copies stable across the scene_nodes_
+        // Snapshot the target hosts up front (copies stable across the document_.nodes()
         // appends graft_host_scene_source does): only those present AND carrying a
         // resolved scene_source. Unlike graft_scene_sources() there is NO drop-all --
         // existing grafted children stay put, so a spawn touches only its own subtree
@@ -250,7 +250,7 @@ namespace wz::app
         const std::unordered_set<std::string> wanted(
             host_ids.begin(), host_ids.end());
         std::vector<HostRef> hosts;
-        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+        for (const wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
             if (node.scene_source && wanted.count(node.id) != 0) {
                 hosts.push_back(HostRef{ node, *node.scene_source });
             }
@@ -318,11 +318,11 @@ namespace wz::app
                     break;
                 }
             }
-            grafted_node_ids_.push_back(child.id);
+            document_.grafted_ids().push_back(child.id);
             if (out_new_children) {
                 out_new_children->push_back(child.id);
             }
-            scene_nodes_.push_back(std::move(child));
+            document_.nodes().push_back(std::move(child));
             ++grafted;
         }
         // Sticky policy: an override whose child_id no longer expands (renamed
@@ -347,13 +347,13 @@ namespace wz::app
         // Only runtime-only grafted children need a sticky override; authored
         // nodes persist their components directly.
         if (std::find(
-                grafted_node_ids_.begin(), grafted_node_ids_.end(), child_id)
-            == grafted_node_ids_.end())
+                document_.grafted_ids().begin(), document_.grafted_ids().end(), child_id)
+            == document_.grafted_ids().end())
         {
             return;
         }
         const wz::engine::assets::SceneNodeAsset* child =
-            wz::engine::assets::find_scene_node(scene_nodes_, child_id);
+            wz::engine::assets::find_scene_node(document_.nodes(), child_id);
         if (!child) {
             return;
         }
@@ -362,11 +362,11 @@ namespace wz::app
         // that carries the scene source this child was expanded from). All grafted
         // children are descendants of their host, and the host is not grafted.
         const std::unordered_set<std::string> grafted(
-            grafted_node_ids_.begin(), grafted_node_ids_.end());
+            document_.grafted_ids().begin(), document_.grafted_ids().end());
         wz::engine::assets::SceneNodeAsset* host = nullptr;
         const wz::engine::assets::SceneNodeAsset* cursor = child;
         for (std::size_t guard = 0;
-             cursor && guard <= scene_nodes_.size();
+             cursor && guard <= document_.nodes().size();
              ++guard)
         {
             if (!cursor->parent_id || cursor->parent_id->empty()) {
@@ -374,7 +374,7 @@ namespace wz::app
             }
             wz::engine::assets::SceneNodeAsset* parent =
                 wz::engine::assets::find_scene_node(
-                    scene_nodes_, *cursor->parent_id);
+                    document_.nodes(), *cursor->parent_id);
             if (!parent) {
                 break;
             }
@@ -418,7 +418,7 @@ namespace wz::app
         if (carries_nothing) {
             if (it != overrides.end()) {
                 overrides.erase(it);
-                scene_dirty_ = true;
+                document_.dirty() = true;
             }
             return;
         }
@@ -428,7 +428,7 @@ namespace wz::app
         else {
             overrides.push_back(std::move(next));
         }
-        scene_dirty_ = true;
+        document_.dirty() = true;
     }
 
     void WozzitsApp_v1::register_prefab(
@@ -448,9 +448,9 @@ namespace wz::app
     std::size_t WozzitsApp_v1::spawned_prefab_node_count() const
     {
         // The spawn graft mints ids with a "spawn:" prefix (instantiate_prefab_-
-        // nodes); count them so a test can observe a prefab landing in scene_nodes_.
+        // nodes); count them so a test can observe a prefab landing in document_.nodes().
         std::size_t count = 0;
-        for (const wz::engine::assets::SceneNodeAsset& node : scene_nodes_) {
+        for (const wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
             if (node.id.rfind("spawn:", 0) == 0) {
                 ++count;
             }
@@ -485,9 +485,9 @@ namespace wz::app
             return {};
         }
 
-        // Resolve the spawner's stable authored id -> its index in scene_nodes_ so
+        // Resolve the spawner's stable authored id -> its index in document_.nodes() so
         // the spawn anchor is the spawner's live world transform. #221:
-        // scene_world_transforms() is index-aligned with scene_nodes_ and, with a
+        // scene_world_transforms() is index-aligned with document_.nodes() and, with a
         // live behavior scene, reads the sim-current pose from the polytree (this
         // drain runs after propagate_all). Addressing by authored id (not runtime
         // entity) keeps this valid across the rebuild a prior spawn in this drain
@@ -496,8 +496,8 @@ namespace wz::app
             scene_world_transforms();
         wz::math::Mat4 spawner_world = wz::math::Mat4::identity();
         bool found_spawner = false;
-        for (std::size_t i = 0; i < scene_nodes_.size(); ++i) {
-            if (scene_nodes_[i].id == spawner_id) {
+        for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
+            if (document_.nodes()[i].id == spawner_id) {
                 spawner_world = world_transforms[i];
                 found_spawner = true;
                 break;
@@ -564,12 +564,12 @@ namespace wz::app
         root_transform.scale[2] = trs.scale.z;
 
         // Clone the prefab with conflict-free ids under the spawn transform, then
-        // graft: append to scene_nodes_ (the renderer's + behavior runtime's
+        // graft: append to document_.nodes() (the renderer's + behavior runtime's
         // source of truth), rebuild the behavior runtime (now state-preserving, so
         // pre-existing bindings keep their state and the spawned subtree's
         // behaviors initialize fresh), and re-assemble render bindings (so a
         // spawned renderable draws). Mirrors add_child_node's append->rebuild.
-        const std::size_t nodes_before = scene_nodes_.size();
+        const std::size_t nodes_before = document_.nodes().size();
         std::vector<wz::engine::assets::SceneNodeAsset> spawned =
             wz::engine::assets::instantiate_prefab_nodes(
                 prefab_it->second, ++spawn_counter_, root_transform);
@@ -603,8 +603,8 @@ namespace wz::app
                 }
             }
         }
-        scene_nodes_.insert(
-            scene_nodes_.end(),
+        document_.nodes().insert(
+            document_.nodes().end(),
             std::make_move_iterator(spawned.begin()),
             std::make_move_iterator(spawned.end()));
         // A runtime spawn is ephemeral, NOT an authoring edit -- do not mark the
@@ -623,13 +623,13 @@ namespace wz::app
             // children are the ONLY nodes this spawn changed, so render assembly can
             // touch just them instead of re-assembling the whole scene (#252, A1).
             std::vector<std::string> spawned_ids;
-            spawned_ids.reserve(scene_nodes_.size() - nodes_before);
-            for (std::size_t i = nodes_before; i < scene_nodes_.size(); ++i) {
-                spawned_ids.push_back(scene_nodes_[i].id);
+            spawned_ids.reserve(document_.nodes().size() - nodes_before);
+            for (std::size_t i = nodes_before; i < document_.nodes().size(); ++i) {
+                spawned_ids.push_back(document_.nodes()[i].id);
             }
 
             wz::engine::assets::bridge_scene_source_keys(
-                scene_nodes_, graph_draft_);
+                document_.nodes(), graph_draft_);
             // Incremental graft: expand ONLY the spawned host(s)' scene_source into
             // grafted children, without the full re-graft's drop-all. A prefab whose
             // geometry comes from a scene_source (e.g. a GLB tank) carries only the
@@ -646,11 +646,11 @@ namespace wz::app
             // nodes keep an unresolved key and draw nothing. Cheap (key lookups); it
             // used to ride on the trailing rematerialize, now removed.
             wz::engine::assets::bridge_scene_renderable_keys(
-                scene_nodes_, graph_draft_);
+                document_.nodes(), graph_draft_);
 
             // Assemble ONLY the spawned subtree (spawned block + its grafted
             // children). Resolves each node's render_program + AudioSource anchors
-            // (node id -> key) on scene_nodes_. MUST run BEFORE rebuild_behavior_scene,
+            // (node id -> key) on document_.nodes(). MUST run BEFORE rebuild_behavior_scene,
             // which materializes the runtime AudioSource from
             // node.audio_source->audio_renderable -- an unresolved key there makes a
             // spawned tank's cannon silent (mirrors the load path).
@@ -667,7 +667,7 @@ namespace wz::app
             // + active-camera passes. Runs BEFORE rebuild_behavior_scene, which
             // materializes the runtime collider from the resolved key.
             wz::engine::assets::bridge_scene_collision_keys(
-                scene_nodes_, graph_draft_);
+                document_.nodes(), graph_draft_);
 
             // Compile the freshly registered spawn renderables. This commit()+
             // resolve_all() is the INCREMENTAL replacement for the old full-scene
@@ -689,7 +689,7 @@ namespace wz::app
             }
         }
 
-        // A spawn only APPENDS to scene_nodes_ (the spawned block + its grafted
+        // A spawn only APPENDS to document_.nodes() (the spawned block + its grafted
         // scene-source children, all at the tail), so survivor runtime ids stay
         // stable and only the newly materialized bindings need their on_init run
         // (#257 B1 init-scoping) -- the rest of the runtime is preserved as-is.
@@ -701,7 +701,7 @@ namespace wz::app
             "[perf] SPAWN instance " + std::to_string(spawn_counter_)
             + " from '" + spawner_id + "' -- scene_nodes "
             + std::to_string(nodes_before) + " -> "
-            + std::to_string(scene_nodes_.size()) + " (frame "
+            + std::to_string(document_.nodes().size()) + " (frame "
             + std::to_string(behavior_frame_index_) + ")");
         ctx_.logger.info(
             "spawn_prefab: grafted prefab as instance "
