@@ -11,6 +11,7 @@
 #include <engine/assets/scene/prefab_instantiate.h>
 #include <engine/assets/scene/scene_subtree_export.h>
 #include <engine/assets/scene_asset_module.h>
+#include <engine/assets/data_table_csv_export.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/renderable/render_binding_sources.h>
 #include <engine/assets/renderable_asset_module.h>
@@ -2449,11 +2450,9 @@ namespace wz::app
             frame_profile_run_tag_ = stamp;
         }
 
-        // Rows = frames, columns = the recorded metrics. Built as a data_table asset
-        // and exported via csv_export -- the same chain the diagnostic tables use
-        // (issue #252). Runs at save/shutdown; the commit re-registers the graph,
-        // but resolve is cache-hit for the existing scene, so only the two profile
-        // nodes do real work.
+        // Rows = frames, columns = the recorded metrics. The schema is
+        // app-specific (the #252 structural-work metrics); the shared engine helper
+        // owns the data_table -> csv_export -> file plumbing. Runs at save/shutdown.
         wz::engine::assets::DataTableData table;
         table.columns.push_back({ .name = "frame" });
         table.columns.push_back({ .name = "dt_ms" });
@@ -2475,43 +2474,32 @@ namespace wz::app
             } });
         }
 
-        const wz::engine::assets::DataTableAsset table_asset =
-            ctx_.assets->data_tables().create_inline_table(
-                { .name = "profile/frame_profile", .table = std::move(table) });
-        if (!table_asset.valid()) {
-            ctx_.logger.warn("flush_frame_profile_csv: data table invalid");
-            return;
-        }
-        const wz::engine::assets::CSVExportAsset csv_asset =
-            ctx_.assets->csv_export().create_csv_export(
-                { .name = "profile/frame_profile_csv", .source = table_asset });
-        if (!csv_asset.valid()) {
-            ctx_.logger.warn("flush_frame_profile_csv: csv export invalid");
-            return;
-        }
-
-        ctx_.assets->commit();
-        (void)ctx_.assets->resolve_all();
-
-        const wz::engine::assets::CSVExportHandle handle =
-            ctx_.assets->csv_export().get_export(csv_asset);
-        if (!handle.valid()) {
-            ctx_.logger.warn("flush_frame_profile_csv: csv export unresolved");
-            return;
-        }
         const wz::fs::Path path =
             wz::fs::join(
                 ctx_.assets->resource_root(),
                 "frame_profile_" + frame_profile_run_tag_ + ".csv");
-        if (ctx_.assets->csv_export().write_export_to_file(handle, path)
-            != wz::fs::FileError::None)
+
+        using Status = wz::engine::assets::DataTableCsvExportStatus;
+        switch (wz::engine::assets::write_data_table_to_csv_file(
+                    *ctx_.assets, "profile/frame_profile", std::move(table), path))
         {
+        case Status::TableInvalid:
+            ctx_.logger.warn("flush_frame_profile_csv: data table invalid");
+            break;
+        case Status::ExportInvalid:
+            ctx_.logger.warn("flush_frame_profile_csv: csv export invalid");
+            break;
+        case Status::ExportUnresolved:
+            ctx_.logger.warn("flush_frame_profile_csv: csv export unresolved");
+            break;
+        case Status::WriteFailed:
             ctx_.logger.warn("flush_frame_profile_csv: write failed for " + path);
-        }
-        else {
+            break;
+        case Status::Ok:
             ctx_.logger.info(
                 "flush_frame_profile_csv: wrote " + path + " ("
                 + std::to_string(frame_profile_.size()) + " frames)");
+            break;
         }
     }
 

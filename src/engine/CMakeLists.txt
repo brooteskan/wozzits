@@ -148,6 +148,7 @@ target_sources(window_engine PRIVATE
     assets/csv_export/csv_export.cpp
     assets/csv_export/csv_export_compilers.cpp
     assets/csv_export_asset_module.cpp
+    assets/data_table_csv_export.cpp
 
     assets/mesh_render_style/mesh_render_style.cpp
     assets/mesh_render_style/mesh_render_style_compilers.cpp
