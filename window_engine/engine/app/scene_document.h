@@ -18,9 +18,10 @@
 // SceneChange to its reaction (apply_scene_change) — reactions touch the behavior
 // runtime / renderer / bound graph and stay with the host.
 
-#include <engine/assets/scene/scene_asset_data.h>   // SceneNodeAsset
+#include <engine/app/scene_change.h>                 // SceneChange, SceneEdit
+#include <engine/assets/scene/scene_asset_data.h>    // SceneNodeAsset
 #include <asset/draft.h>                             // AssetGraphDraftNodeId
-#include <scene/scene_ecs.h>                         // AuthoredEntityId
+#include <scene/scene_ecs.h>                          // AuthoredEntityId
 
 #include <optional>
 #include <string>
@@ -78,6 +79,27 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id) const;
         // A snapshot copy of the grafted (scene-source instance) children.
         std::vector<wz::engine::assets::SceneNodeAsset> grafted_nodes() const;
+
+        // --- structural mutators (mutate nodes()/dirty(), return a SceneEdit) ---
+        // Each performs the pure document mutation and returns the mutation result
+        // plus the SceneChange the host dispatches. No runtime/renderer contact —
+        // the reaction (rebuild etc.) is the host's, via apply_scene_change.
+        SceneEdit<wz::engine::assets::SceneAddChildResult> add_child(
+            const wz::scene::AuthoredEntityId& parent_id);
+        SceneEdit<bool> set_properties(
+            const wz::scene::AuthoredEntityId& id,
+            std::string name,
+            bool visible);
+        SceneEdit<bool> reparent(
+            const wz::scene::AuthoredEntityId& id,
+            const wz::scene::AuthoredEntityId& new_parent_id);
+        SceneEdit<bool> remove(const wz::scene::AuthoredEntityId& id);
+        SceneEdit<bool> reorder(
+            const wz::scene::AuthoredEntityId& id,
+            const wz::scene::AuthoredEntityId& before_id);
+        SceneEdit<bool> set_render_order(
+            const wz::scene::AuthoredEntityId& id,
+            int render_order);
 
     private:
         std::vector<wz::engine::assets::SceneNodeAsset> nodes_{};

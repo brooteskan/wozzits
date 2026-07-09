@@ -108,4 +108,17 @@ namespace wz::app
             return change;
         }
     };
+
+    // Result of a SceneDocument mutator: the verb-specific mutation result (a bool,
+    // or a richer SceneAddChildResult / SceneAddBehaviorResult) paired with the
+    // SceneChange the host must dispatch. The host verb is then just:
+    //   auto edit = document_.mutate(...);
+    //   apply_scene_change(edit.change);
+    //   return edit.result;
+    template <class Result>
+    struct SceneEdit
+    {
+        Result      result{};
+        SceneChange change{};
+    };
 }

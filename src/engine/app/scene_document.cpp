@@ -4,6 +4,7 @@
 
 #include <string>
 #include <unordered_set>
+#include <utility>
 
 namespace wz::app
 {
@@ -110,5 +111,94 @@ namespace wz::app
             }
         }
         return out;
+    }
+
+    // --- structural mutators -------------------------------------------------
+
+    SceneEdit<wz::engine::assets::SceneAddChildResult> SceneDocument::add_child(
+        const wz::scene::AuthoredEntityId& parent_id)
+    {
+        wz::engine::assets::SceneAddChildResult result =
+            wz::engine::assets::add_child_scene_node(nodes_, parent_id);
+        SceneChange change = SceneChange::none();
+        if (result.ok) {
+            // Re-bake so the new child flattens into pre-order right after its
+            // parent's subtree (draw order = tree order).
+            wz::engine::assets::bake_scene_node_draw_order(nodes_);
+            dirty_ = true;
+            change = SceneChange::structural();
+        }
+        return { std::move(result), change };
+    }
+
+    SceneEdit<bool> SceneDocument::set_properties(
+        const wz::scene::AuthoredEntityId& id,
+        std::string name,
+        bool visible)
+    {
+        const bool ok = wz::engine::assets::set_scene_node_properties(
+            nodes_, id, std::move(name), visible);
+        dirty_ = dirty_ || ok;
+        // Pure document edit: the renderer reads name/visible fresh next frame.
+        return { ok, SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::reparent(
+        const wz::scene::AuthoredEntityId& id,
+        const wz::scene::AuthoredEntityId& new_parent_id)
+    {
+        const bool ok = wz::engine::assets::reparent_scene_node(
+            nodes_, id, new_parent_id);
+        SceneChange change = SceneChange::none();
+        if (ok) {
+            // Nesting drives draw order (pre-order); a reparent re-bakes so the
+            // moved subtree flattens under its new parent by its array slot.
+            wz::engine::assets::bake_scene_node_draw_order(nodes_);
+            dirty_ = true;
+            change = SceneChange::structural();
+        }
+        return { ok, change };
+    }
+
+    SceneEdit<bool> SceneDocument::remove(const wz::scene::AuthoredEntityId& id)
+    {
+        const bool removed =
+            !wz::engine::assets::remove_scene_node(nodes_, id).empty();
+        dirty_ = dirty_ || removed;
+        return { removed,
+                 removed ? SceneChange::structural() : SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::reorder(
+        const wz::scene::AuthoredEntityId& id,
+        const wz::scene::AuthoredEntityId& before_id)
+    {
+        const bool moved = wz::engine::assets::reorder_scene_node(
+            nodes_, id, before_id);
+        SceneChange change = SceneChange::none();
+        if (moved) {
+            // The reorder set this node's sibling slot; re-bake keeps tree
+            // pre-order with render_order as the dominant layer.
+            wz::engine::assets::bake_scene_node_draw_order(nodes_);
+            dirty_ = true;
+            change = SceneChange::structural();
+        }
+        return { moved, change };
+    }
+
+    SceneEdit<bool> SceneDocument::set_render_order(
+        const wz::scene::AuthoredEntityId& id,
+        int render_order)
+    {
+        const bool changed = wz::engine::assets::set_scene_node_render_order(
+            nodes_, id, render_order);
+        SceneChange change = SceneChange::none();
+        if (changed) {
+            // Layer changed: re-bake so the node moves into its render_order layer.
+            wz::engine::assets::bake_scene_node_draw_order(nodes_);
+            dirty_ = true;
+            change = SceneChange::structural();
+        }
+        return { changed, change };
     }
 }

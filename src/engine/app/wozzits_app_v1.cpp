@@ -1309,23 +1309,16 @@ namespace wz::app
         }
     }
 
+    // The structural edit verbs delegate the document mutation to document_ (which
+    // returns a SceneEdit: the mutation result + the SceneChange), then dispatch
+    // the reaction. Mutation lives in SceneDocument, reaction in the host.
     wz::engine::assets::SceneAddChildResult WozzitsApp_v1::add_child_node(
         const wz::scene::AuthoredEntityId& parent_id)
     {
-        wz::engine::assets::SceneAddChildResult result =
-            wz::engine::assets::add_child_scene_node(document_.nodes(), parent_id);
-        SceneChange change = SceneChange::none();
-        if (result.ok) {
-            // The new child is appended; re-bake so it flattens into pre-order
-            // right after its parent's existing subtree (draw order = tree order).
-            wz::engine::assets::bake_scene_node_draw_order(document_.nodes());
-            document_.dirty() = true;
-            change = SceneChange::structural();
-        }
-        // A structural change invalidates the behavior runtime's entity ids; the
-        // dispatch re-materializes it when behaviors are live.
-        apply_scene_change(change);
-        return result;
+        SceneEdit<wz::engine::assets::SceneAddChildResult> edit =
+            document_.add_child(parent_id);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_properties(
@@ -1333,82 +1326,44 @@ namespace wz::app
         std::string name,
         bool visible)
     {
-        const bool ok = wz::engine::assets::set_scene_node_properties(
-            document_.nodes(), id, std::move(name), visible);
-        document_.dirty() = document_.dirty() || ok;
-        // Pure document edit: the renderer reads name/visible fresh next frame.
-        apply_scene_change(SceneChange::none());
-        return ok;
+        const SceneEdit<bool> edit =
+            document_.set_properties(id, std::move(name), visible);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::reparent_node(
         const wz::scene::AuthoredEntityId& id,
         const wz::scene::AuthoredEntityId& new_parent_id)
     {
-        const bool ok = wz::engine::assets::reparent_scene_node(
-            document_.nodes(), id, new_parent_id);
-        SceneChange change = SceneChange::none();
-        if (ok) {
-            // Nesting now drives draw order (draw order = tree pre-order), so a
-            // reparent MUST re-bake: the moved subtree flattens under its new
-            // parent, landing among the new siblings by its current array slot
-            // (the editor sets that slot with a following reorder for a precise
-            // drop). render_order still overrides as a layer.
-            wz::engine::assets::bake_scene_node_draw_order(document_.nodes());
-            document_.dirty() = true;
-            change = SceneChange::structural();
-        }
-        apply_scene_change(change);
-        return ok;
+        const SceneEdit<bool> edit = document_.reparent(id, new_parent_id);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::remove_node(const wz::scene::AuthoredEntityId& id)
     {
-        const bool removed =
-            !wz::engine::assets::remove_scene_node(document_.nodes(), id).empty();
-        document_.dirty() = document_.dirty() || removed;
-        apply_scene_change(
-            removed ? SceneChange::structural() : SceneChange::none());
-        return removed;
+        const SceneEdit<bool> edit = document_.remove(id);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::reorder_node(
         const wz::scene::AuthoredEntityId& id,
         const wz::scene::AuthoredEntityId& before_id)
     {
-        const bool moved = wz::engine::assets::reorder_scene_node(
-            document_.nodes(), id, before_id);
-        SceneChange change = SceneChange::none();
-        if (moved) {
-            // Re-bake: the reorder set this node's slot among its siblings; the
-            // flatten keeps the tree pre-order and the render_order sort keeps the
-            // coarse layers dominant (ties keep the new sibling order). A cross-
-            // layer drag snaps back into its own layer -- changing layers is a
-            // render_order edit, not a reorder.
-            wz::engine::assets::bake_scene_node_draw_order(document_.nodes());
-            document_.dirty() = true;
-            change = SceneChange::structural();
-        }
-        apply_scene_change(change);
-        return moved;
+        const SceneEdit<bool> edit = document_.reorder(id, before_id);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_render_order(
         const wz::scene::AuthoredEntityId& id,
         int render_order)
     {
-        const bool changed = wz::engine::assets::set_scene_node_render_order(
-            document_.nodes(), id, render_order);
-        SceneChange change = SceneChange::none();
-        if (changed) {
-            // Layer changed: re-bake so the node moves into its layer (the sort
-            // is by render_order; ties keep the tree pre-order).
-            wz::engine::assets::bake_scene_node_draw_order(document_.nodes());
-            document_.dirty() = true;
-            change = SceneChange::structural();
-        }
-        apply_scene_change(change);
-        return changed;
+        const SceneEdit<bool> edit = document_.set_render_order(id, render_order);
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     // ─── Live behavior-binding authoring ────────────────────────────────────
