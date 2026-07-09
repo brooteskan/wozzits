@@ -127,6 +127,63 @@ TEST_F(WozzitsAppBehaviorFixture, FrameUpdateDispatchAppliesTransformCommand)
         << "behaviors did not dispatch on the second frame";
 }
 
+// #258 start/stop gate: set_behaviors_enabled(false) freezes the behavior-driven
+// mover in place; re-enabling resumes it, advancing exactly one step per tick --
+// the paused frames do NOT accumulate into a resume burst.
+TEST_F(WozzitsAppBehaviorFixture, BehaviorsDisabledPausesAndResumes)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+
+    // One live tick -> the mover rises to y=1.
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    ASSERT_TRUE(app.node_local_translation("mover").has_value());
+    ASSERT_FLOAT_EQ(app.node_local_translation("mover")->y, 1.0f);
+
+    // Pause behaviors: two ticks must leave the mover exactly where it was.
+    app.set_behaviors_enabled(false);
+    EXPECT_FALSE(app.behaviors_enabled());
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_FLOAT_EQ(app.node_local_translation("mover")->y, 1.0f)
+        << "behaviors disabled but the mover still advanced";
+
+    // Resume: the next tick advances exactly ONE step (no catch-up burst for the
+    // paused frames), and it keeps advancing thereafter.
+    app.set_behaviors_enabled(true);
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_FLOAT_EQ(app.node_local_translation("mover")->y, 2.0f)
+        << "resuming behaviors did not advance the mover exactly one step";
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    EXPECT_FLOAT_EQ(app.node_local_translation("mover")->y, 3.0f);
+}
+
+// #258: the two gates are INDEPENDENT axes. Pausing SIMULATION (motion) alone
+// leaves behavior dispatch running, so the behavior-driven mover still advances
+// -- only set_behaviors_enabled(false) stops it.
+TEST_F(WozzitsAppBehaviorFixture, SimulationDisabledStillDispatchesBehaviors)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+    ASSERT_EQ(app.active_behavior_binding_count(), 1u);
+
+    app.set_simulation_enabled(false);
+    EXPECT_FALSE(app.simulation_enabled());
+    EXPECT_TRUE(app.behaviors_enabled());
+
+    app.simulation_tick(wz::input::InputState{}, 1.0f / 60.0f);
+    ASSERT_TRUE(app.node_local_translation("mover").has_value());
+    EXPECT_FLOAT_EQ(app.node_local_translation("mover")->y, 1.0f)
+        << "simulation paused must not stop behavior dispatch";
+}
+
 // #221 core invariant: a sim-driven transform change is visible in the render
 // world transforms WITHOUT scene_nodes_ ever being mutated. The renderer now
 // reads the live polytree (scene_world_transforms), and the per-frame Mat4->TRS

@@ -535,6 +535,30 @@ namespace wz::app
             return frame_profiling_enabled_;
         }
 
+        // Scene-simulation start/stop gates (#258) — pause the running scene in
+        // place without unloading it, for a future editor play/pause button. The
+        // two axes are independent:
+        //   - simulation = motion integration + terrain constraints + motion
+        //     filters (the physics advance).
+        //   - behaviors  = behavior dispatch + cognition + SELF_ACTIVATED edges +
+        //     command apply + spawn/authoring drains (the AI/scripts).
+        // Both default ON (normal play + edit). Behaviors OFF freezes AI/scripts;
+        // simulation OFF freezes motion; BOTH off leaves the static authored
+        // composition (free-fly navigation + live edit still work). The live-mask
+        // is refreshed every tick regardless (collision + a resumed dispatch read
+        // it) and prev-active is rolled every tick, so resuming behaviors does NOT
+        // replay a burst of activation edges accrued while paused.
+        void set_simulation_enabled(bool enabled) { simulation_enabled_ = enabled; }
+        [[nodiscard]] bool simulation_enabled() const noexcept
+        {
+            return simulation_enabled_;
+        }
+        void set_behaviors_enabled(bool enabled) { behaviors_enabled_ = enabled; }
+        [[nodiscard]] bool behaviors_enabled() const noexcept
+        {
+            return behaviors_enabled_;
+        }
+
         // Swap the WORKING SCENE to a different scene file (the prefab-editor's
         // open: point the editor at a scenelet, edit it with the normal tools, then
         // save_scene() writes back to it; open_scene the main scene again to switch
@@ -1017,8 +1041,11 @@ namespace wz::app
         // commands the activation handlers produced -- empty unless a self.activated
         // subscriber exists AND a prior frame is on record -- for the dispatch phase
         // to seed into the frame's command buffer (same frame, no id staleness).
+        // The mask recompute + prev_active roll always run (collision reads the mask,
+        // and rolling keeps a paused->resumed dispatch edge-free); fire_edges gates
+        // ONLY the SELF_ACTIVATED firing, so behaviors OFF fires no behavior code.
         [[nodiscard]] std::vector<wz::engine::behavior::BehaviorCommand>
-        compute_active_mask_and_fire_edges();
+        compute_active_mask_and_fire_edges(bool fire_edges);
 
         // Phase 2: populate frame_storage_'s collision, proximity, and input-event
         // tables from the current scene + this frame's input, so the dispatch +
@@ -1177,6 +1204,12 @@ namespace wz::app
         // it each frame (swap-out first, so a spawn's own self.start submit lands
         // NEXT frame rather than re-entering the drain).
         wz::engine::behavior::BehaviorSpawnBuffer spawn_identity_buffer_{};
+
+        // Scene-simulation start/stop gates (#258), read by dispatch_scene_behaviors.
+        // See set_simulation_enabled / set_behaviors_enabled for the semantics. Both
+        // default ON so normal play + edit and every existing test are unchanged.
+        bool                                     simulation_enabled_ = true;
+        bool                                     behaviors_enabled_  = true;
 
         // --- Per-frame rebuild profiling (issue #252) -----------------------------
         // Counted during dispatch_scene_behaviors, reset each simulation_tick. More

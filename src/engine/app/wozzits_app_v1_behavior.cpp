@@ -900,21 +900,35 @@ namespace wz::app
         }
         const bool has_behaviors = !behavior_scene_->behaviors.empty();
 
+        // Scene-simulation start/stop gates (#258). run_behaviors also requires the
+        // scene to actually have behaviors bound; advance_motion is the physics axis.
+        // With both enabled (the default) every phase runs exactly as before.
+        const bool run_behaviors = behaviors_enabled_ && has_behaviors;
+        const bool advance_motion = simulation_enabled_;
+
         // World transforms must be current before dispatch: command application
         // (set_world_translation, motion integration) reads parent world matrices,
         // and behavior transform queries read self/other world. In game_app this is
-        // the compile_scene job; here we propagate directly.
+        // the compile_scene job; here we propagate directly. Always run -- it is
+        // transform composition (it also settles a live edit), not simulation.
         wz::scene::propagate_all(behavior_scene_->storage.polytree);
 
-        // Phase 1: refresh the per-frame "live?" mask and fire the SELF_ACTIVATED
-        // rising edges, returning the commands those handlers produced (seeded into
-        // the dispatch phase's buffer below, SAME frame).
+        // Phase 1: refresh the per-frame "live?" mask and, when behaviors are
+        // enabled, fire the SELF_ACTIVATED rising edges, returning the commands
+        // those handlers produced (seeded into the dispatch phase's buffer below,
+        // SAME frame). The mask + prev-active roll run regardless -- collision reads
+        // the mask and a resumed dispatch must see it current, edge-free.
         const std::vector<wz::engine::behavior::BehaviorCommand>
-            activation_commands = compute_active_mask_and_fire_edges();
+            activation_commands =
+                compute_active_mask_and_fire_edges(behaviors_enabled_);
 
         // Phase 2: build the collision / proximity / input event tables the dispatch
-        // and constraint phases read.
-        build_frame_event_tables(input);
+        // (behaviors) and constraint (motion) phases read. Skipped only when BOTH
+        // axes are paused; whenever either resumes it is rebuilt this frame before
+        // any consumer reads it, so there is no stale-table hazard.
+        if (run_behaviors || advance_motion) {
+            build_frame_event_tables(input);
+        }
 
         // Per-frame scratch shared across the remaining phases: the transform-changed
         // entities (for the final re-propagate), the deferred-authoring sink, and the
@@ -924,28 +938,33 @@ namespace wz::app
         std::vector<DeferredSpawnRequest> spawn_requests;
 
         // Phase 3: run the behaviors + cognition tick and apply the produced command
-        // buffer. Behaviors are optional; a scene with none skips straight to motion.
-        if (has_behaviors) {
+        // buffer. Gated on behaviors being enabled AND the scene having any bound.
+        if (run_behaviors) {
             dispatch_behaviors_and_apply(
                 input, dt, activation_commands,
                 changed_entities, authoring, spawn_requests);
         }
 
         // Phase 4: integrate motion + snap terrain constraints, then re-propagate if
-        // anything moved.
-        integrate_motion_and_constraints(dt, changed_entities);
+        // anything moved. Gated on the simulation axis.
+        if (advance_motion) {
+            integrate_motion_and_constraints(dt, changed_entities);
+        }
 
         // Phases 5-7: frame-boundary drains, safe only now -- each may rebuild the
         // behavior runtime out from under us, AFTER every read of behavior_scene_
-        // this tick. Deferred authoring, fire-and-forget prefab spawns, then the
-        // spawn-with-identity completions.
-        drain_deferred_authoring(authoring);
-        drain_prefab_spawns(spawn_requests);
-        drain_identity_spawns();
+        // this tick. These are behavior-produced, so gated with the behaviors axis
+        // (the buffers are empty when dispatch did not run). Deferred authoring,
+        // fire-and-forget prefab spawns, then the spawn-with-identity completions.
+        if (behaviors_enabled_) {
+            drain_deferred_authoring(authoring);
+            drain_prefab_spawns(spawn_requests);
+            drain_identity_spawns();
+        }
     }
 
     std::vector<wz::engine::behavior::BehaviorCommand>
-    WozzitsApp_v1::compute_active_mask_and_fire_edges()
+    WozzitsApp_v1::compute_active_mask_and_fire_edges(bool fire_edges)
     {
         // Refresh the "live?" mask (#252): a node is dispatched + collides only if it
         // AND every ancestor is `active`. Recomputed each frame from the authored
@@ -977,7 +996,8 @@ namespace wz::app
         // Absent-in-prev counts as live, so a node's BIRTH (handled by self.start) is
         // not mistaken for an activation edge. Skipped wholesale unless a subscriber
         // exists AND there is a prior frame to diff.
-        if (has_self_activated_subscriber_ && !prev_active_by_id_.empty()) {
+        if (fire_edges && has_self_activated_subscriber_
+            && !prev_active_by_id_.empty()) {
             wz::engine::behavior::BehaviorCommandBuffer activated_commands;
             wz::engine::behavior::BehaviorFrameContext activated_ctx{
                 .scene = &*behavior_scene_,
