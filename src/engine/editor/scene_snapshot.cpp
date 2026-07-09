@@ -914,6 +914,43 @@ namespace wz::engine::editor
                     snapshot_behavior_from_asset(behavior));
             }
 
+            // Removable optional components (present iff the node carries them):
+            // surface them so the inspector reveals + gates their sections after
+            // an open_scene / grafted rebuild, matching read_node's list. Without
+            // this the live path filled the field structs but the sections stayed
+            // hidden (they gate on node.components), so a prefab re-open showed no
+            // Motion/Collision/Motion Filter/Audio section and re-adding the
+            // component overwrote the still-present saved fields with defaults.
+            if (source.camera) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "camera", .display_name = "Camera" });
+            }
+            if (source.proximity) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "proximity", .display_name = "Proximity" });
+            }
+            if (source.collision) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "collision", .display_name = "Collision" });
+            }
+            if (source.motion) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "motion", .display_name = "Motion" });
+            }
+            if (source.motion_filter) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "motion_filter", .display_name = "Motion Filter" });
+            }
+            if (source.audio_source) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "audio_source", .display_name = "Audio Source" });
+            }
+            if (source.audio_listener) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "audio_listener",
+                    .display_name = "Audio Listener" });
+            }
+
             node.kind = node_kind(node);
             node.renderable_source = node.renderable
                 ? node.renderable->source

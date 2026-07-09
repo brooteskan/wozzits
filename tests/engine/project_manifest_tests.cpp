@@ -522,6 +522,41 @@ TEST(ProjectSceneSnapshot, SurfacesBehaviorsFromNodes)
     EXPECT_EQ(behavior.config[1].value, "24");
 }
 
+// Prefab re-open regression: after open_scene the editor rebuilds its tree from
+// live SceneNodeAssets via build_scene_snapshot_from_nodes. That path must
+// surface an optional component BOTH as a removable entry in `components` (the
+// inspector gates its section on this) AND with its field values -- else a
+// re-opened prefab hides the Motion Filter section though the data loaded, and
+// re-adding overwrites the saved fields with defaults.
+TEST(ProjectSceneSnapshot, SurfacesMotionFilterComponentAndFieldsFromNodes)
+{
+    wz::engine::assets::SceneNodeAsset cam;
+    cam.id = "cam";
+    wz::engine::assets::SceneMotionFilterAsset f;
+    f.roll.smoothing_time = 0.4f;
+    f.terrain_floor = true;
+    f.terrain_floor_offset = 1.5f;
+    cam.motion_filter = f;
+
+    const wz::engine::editor::SceneSnapshot snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes({ cam });
+
+    ASSERT_EQ(snapshot.roots.size(), 1u);
+    const auto& node = snapshot.roots[0];
+
+    // Present as a removable component (the section's gate).
+    const bool listed = std::any_of(
+        node.components.begin(), node.components.end(),
+        [](const auto& c) { return c.kind == "motion_filter"; });
+    EXPECT_TRUE(listed);
+
+    // And the field values are surfaced (restored on select, not reset).
+    ASSERT_TRUE(node.motion_filter.has_value());
+    EXPECT_FLOAT_EQ(node.motion_filter->roll.smoothing_time, 0.4f);
+    EXPECT_TRUE(node.motion_filter->terrain_floor);
+    EXPECT_FLOAT_EQ(node.motion_filter->terrain_floor_offset, 1.5f);
+}
+
 // issue #213: an empty grafted set yields a valid-but-empty snapshot (no roots),
 // which the editor treats as "nothing to merge" — never a crash or a fallback to
 // "everything is a root".
