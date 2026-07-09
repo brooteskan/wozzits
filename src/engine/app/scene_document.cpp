@@ -362,4 +362,67 @@ namespace wz::app
         }
         return { ok, SceneChange::none() };
     }
+
+    // --- renderable / collision / scene-source mutators ----------------------
+
+    SceneEdit<bool> SceneDocument::set_geometry_asset(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        if (asset_graph_node_id != 0) {
+            wz::engine::assets::attach_geometry_asset_node(
+                *node, asset_graph_node_id);
+        }
+        else {
+            wz::engine::assets::detach_geometry_asset_node(*node);
+            // No geometry => the binding no longer drives this node; drop the
+            // renderable it assembled so it stops drawing.
+            node->renderable_asset.reset();
+        }
+        dirty_ = true;
+        return { true, SceneChange::render_binding() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_collision_asset(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id,
+        bool constrain_movement)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        if (asset_graph_node_id != 0) {
+            wz::engine::assets::attach_collision_asset_node(
+                *node, asset_graph_node_id, constrain_movement);
+        }
+        else {
+            wz::engine::assets::detach_collision_asset_node(*node);
+            // A cleared reference also clears constrain_movement (no surface).
+            if (node->collision) {
+                node->collision->constrain_movement = constrain_movement;
+            }
+        }
+        dirty_ = true;
+        return { true, SceneChange::collision() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_scene_source(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        const bool ok = wz::engine::assets::set_node_scene_source(
+            nodes_, node_id, asset_graph_node_id);
+        if (!ok) {
+            return { false, SceneChange::none() };
+        }
+        dirty_ = true;
+        return { true, SceneChange::scene_source() };
+    }
 }

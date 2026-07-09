@@ -150,6 +150,23 @@ namespace wz::app
             bool auto_play,
             bool enabled);
 
+        // --- renderable / collision / scene-source mutators --------------------
+        // Reaction-bearing edits (RenderBinding / Collision / SceneSource) whose
+        // MUTATION is pure document. The reaction stays with the host. Each returns
+        // { ok, change }; ok=false (node missing) keeps the host's warning log.
+        // (For the RenderBinding/SceneSource kinds the #252 remat-caller log now
+        // names the SceneDocument mutator rather than the host verb — immaterial.)
+        SceneEdit<bool> set_geometry_asset(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+        SceneEdit<bool> set_collision_asset(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id,
+            bool constrain_movement);
+        SceneEdit<bool> set_scene_source(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+
     private:
         std::vector<wz::engine::assets::SceneNodeAsset> nodes_{};
         std::vector<wz::scene::AuthoredEntityId>        grafted_ids_{};

@@ -1544,49 +1544,32 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id,
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
-        const bool ok = wz::engine::assets::set_node_scene_source(
-            document_.nodes(), node_id, asset_graph_node_id);
-        if (!ok) {
+        // The SceneSource reaction re-resolves the source against the bound graph,
+        // re-grafts the host's children, assembles the grafted subtree, and
+        // rebuilds the runtime (a cleared id drops the stale children).
+        const SceneEdit<bool> edit =
+            document_.set_scene_source(node_id, asset_graph_node_id);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_scene_source: no-op (node '" + node_id + "' missing)");
-            return false;
         }
-        document_.dirty() = true;
-        // Re-resolve the new (or absent) scene source against the bound graph,
-        // re-graft the host's children, assemble the grafted subtree, and rebuild
-        // the runtime (the SceneSource reaction; bridge clears the key when the
-        // authored id was cleared, so the graft drops the stale children and adds
-        // nothing -- they disappear, as intended).
-        apply_scene_change(SceneChange::scene_source());
-        return true;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_geometry_asset(
         const wz::scene::AuthoredEntityId& node_id,
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        const SceneEdit<bool> edit =
+            document_.set_geometry_asset(node_id, asset_graph_node_id);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_geometry_asset: no-op (node '" + node_id
                 + "' missing)");
-            return false;
         }
-        if (asset_graph_node_id != 0) {
-            wz::engine::assets::attach_geometry_asset_node(
-                *node, asset_graph_node_id);
-        }
-        else {
-            wz::engine::assets::detach_geometry_asset_node(*node);
-            // No geometry => the binding no longer drives this node; drop the
-            // renderable it assembled so it stops drawing (the re-bridge in
-            // rematerialize restores a pre-built renderable_asset_node_id if any).
-            node->renderable_asset.reset();
-        }
-        document_.dirty() = true;
-        apply_scene_change(SceneChange::render_binding());
-        return true;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_render_program(
@@ -1763,33 +1746,17 @@ namespace wz::app
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id,
         bool constrain_movement)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        // The Collision reaction re-bridges the collision key + rebuilds the
+        // SceneInstance whose collision world the constraint loop reads.
+        const SceneEdit<bool> edit = document_.set_collision_asset(
+            node_id, asset_graph_node_id, constrain_movement);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_collision_asset: no-op (node '" + node_id
                 + "' missing)");
-            return false;
         }
-        if (asset_graph_node_id != 0) {
-            wz::engine::assets::attach_collision_asset_node(
-                *node, asset_graph_node_id, constrain_movement);
-        }
-        else {
-            wz::engine::assets::detach_collision_asset_node(*node);
-            // A cleared reference also clears constrain_movement so the node
-            // stops constraining (it has no surface to stick to).
-            if (node->collision) {
-                node->collision->constrain_movement = constrain_movement;
-            }
-        }
-        document_.dirty() = true;
-        // Re-point the (possibly new) reference at the bound graph's collision
-        // key, then re-materialize so the runtime scene picks up the constraint
-        // surface (the Collision reaction re-bridges + rebuilds the SceneInstance
-        // whose collision world the constraint loop reads).
-        apply_scene_change(SceneChange::collision());
-        return true;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_motion_terrain_fields(
