@@ -33,11 +33,13 @@ namespace wz::app
         // runtime to rebuild).
         Structural,
 
-        // A behavior binding changed (add / remove / enable / fields / events /
-        // config). Like Structural, but re-materializes UNCONDITIONALLY: adding the
-        // first binding to a scene that had none must CREATE the behavior runtime
-        // where there was none. (The natural hook for #257 incremental rebuild.)
-        BehaviorBinding,
+        // A binding or sim component that must be materialized into the runtime
+        // changed (a behavior binding add/remove/enable/fields/events/config, or a
+        // Motion component being ADDED). Like Structural, but re-materializes
+        // UNCONDITIONALLY: adding the first such binding/component to a scene that
+        // had no runtime must CREATE it. (The natural hook for #257 incremental
+        // behavior rebuild.)
+        RuntimeRebuild,
 
         // A renderable's assembly recipe changed (geometry / render-program /
         // semantic binding). The render bindings must be re-materialized so the
@@ -48,6 +50,11 @@ namespace wz::app
         // / last renderable-constant override). Re-assemble just that node's
         // binding, not the whole scene (#253). Carries the node id.
         RenderBindingNode,
+
+        // A collision reference changed: re-bridge the scene's collision keys
+        // against the bound graph, then re-materialize the runtime (unconditional,
+        // so the runtime's collision world picks up the constraint surface).
+        Collision,
     };
 
     struct SceneChange
@@ -64,10 +71,11 @@ namespace wz::app
 
         static SceneChange none()        { return { SceneChangeKind::None }; }
         static SceneChange structural()  { return { SceneChangeKind::Structural }; }
-        static SceneChange behavior_binding()
+        static SceneChange runtime_rebuild()
         {
-            return { SceneChangeKind::BehaviorBinding };
+            return { SceneChangeKind::RuntimeRebuild };
         }
+        static SceneChange collision() { return { SceneChangeKind::Collision }; }
         // Default arg captures the VERB's call site (default args evaluate at the
         // caller), so the #252 log names the verb, not this factory.
         static SceneChange render_binding(

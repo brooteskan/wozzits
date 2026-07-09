@@ -1271,9 +1271,17 @@ namespace wz::app
                 rebuild_behavior_scene();
             }
             break;
-        case SceneChangeKind::BehaviorBinding:
-            // A behavior-binding edit re-materializes UNCONDITIONALLY: adding the
-            // first binding to a scene that had none must create the runtime.
+        case SceneChangeKind::RuntimeRebuild:
+            // A behavior binding or added sim component re-materializes
+            // UNCONDITIONALLY: adding the first to a scene that had no runtime must
+            // create it.
+            rebuild_behavior_scene();
+            break;
+        case SceneChangeKind::Collision:
+            // Re-bridge the collision refs to the bound graph's keys, then
+            // re-materialize so the runtime's collision world has the surface.
+            wz::engine::assets::bridge_scene_collision_keys(
+                scene_nodes_, graph_draft_);
             rebuild_behavior_scene();
             break;
         case SceneChangeKind::RenderBinding:
@@ -1408,7 +1416,7 @@ namespace wz::app
             scene_dirty_ = true;
         }
         apply_scene_change(
-            result.ok ? SceneChange::behavior_binding() : SceneChange::none());
+            result.ok ? SceneChange::runtime_rebuild() : SceneChange::none());
         return result;
     }
 
@@ -1422,7 +1430,7 @@ namespace wz::app
             scene_dirty_ = true;
         }
         apply_scene_change(
-            ok ? SceneChange::behavior_binding() : SceneChange::none());
+            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
         return ok;
     }
 
@@ -1437,7 +1445,7 @@ namespace wz::app
             scene_dirty_ = true;
         }
         apply_scene_change(
-            ok ? SceneChange::behavior_binding() : SceneChange::none());
+            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
         return ok;
     }
 
@@ -1453,7 +1461,7 @@ namespace wz::app
             scene_dirty_ = true;
         }
         apply_scene_change(
-            ok ? SceneChange::behavior_binding() : SceneChange::none());
+            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
         return ok;
     }
 
@@ -1468,7 +1476,7 @@ namespace wz::app
             scene_dirty_ = true;
         }
         apply_scene_change(
-            ok ? SceneChange::behavior_binding() : SceneChange::none());
+            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
         return ok;
     }
 
@@ -1483,7 +1491,7 @@ namespace wz::app
             scene_dirty_ = true;
         }
         apply_scene_change(
-            ok ? SceneChange::behavior_binding() : SceneChange::none());
+            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
         return ok;
     }
 
@@ -1498,7 +1506,7 @@ namespace wz::app
             scene_dirty_ = true;
         }
         apply_scene_change(
-            ok ? SceneChange::behavior_binding() : SceneChange::none());
+            ok ? SceneChange::runtime_rebuild() : SceneChange::none());
         return ok;
     }
 
@@ -1853,11 +1861,9 @@ namespace wz::app
         scene_dirty_ = true;
         // Re-point the (possibly new) reference at the bound graph's collision
         // key, then re-materialize so the runtime scene picks up the constraint
-        // surface (rebuild_behavior_scene rebuilds the SceneInstance whose
-        // collision world the constraint loop reads).
-        wz::engine::assets::bridge_scene_collision_keys(
-            scene_nodes_, graph_draft_);
-        rebuild_behavior_scene();
+        // surface (the Collision reaction re-bridges + rebuilds the SceneInstance
+        // whose collision world the constraint loop reads).
+        apply_scene_change(SceneChange::collision());
         return true;
     }
 
@@ -1898,6 +1904,7 @@ namespace wz::app
         // behavior set (SetTerrainAlignmentRate) that does NOT live on the
         // authored asset, and it rides the SAME MotionComponent record; wiping it
         // here would reset a self.start-configured actor to instant alignment.
+        bool patched = false;
         if (!adding_component && behavior_scene_) {
             const auto it = behavior_scene_->authored_to_runtime.find(node_id);
             if (it != behavior_scene_->authored_to_runtime.end()) {
@@ -1906,22 +1913,26 @@ namespace wz::app
                         continue;
                     }
                     // Only the authored terrain-stick fields; terrain_alignment_-
-                    // rate (runtime-only) and velocities are untouched.
+                    // rate (runtime-only) and velocities are untouched. This dual
+                    // write (authored field + live record) stays inline: it mutates
+                    // the runtime, which the document has no handle on.
                     record.component.terrain_constrained = terrain_constrained;
                     record.component.terrain_ride_height = ride_height;
                     record.component.terrain_footprint_radius = footprint_radius;
                     record.component.terrain_align_to_surface = align_to_surface;
                     record.component.terrain_alignment_strength =
                         alignment_strength;
-                    return true;
+                    patched = true;
+                    break;
                 }
             }
         }
 
-        // Adding the component (or, defensively, no matching live record) needs a
-        // rebuild so the Motion record participates in integrate_motion +
-        // apply_terrain_constraints.
-        rebuild_behavior_scene();
+        // Patched the live record in place -> no reaction. Otherwise adding the
+        // component (or, defensively, no matching live record) needs a rebuild so
+        // the Motion record participates in integrate_motion + constraints.
+        apply_scene_change(
+            patched ? SceneChange::none() : SceneChange::runtime_rebuild());
         return true;
     }
 
@@ -1946,19 +1957,22 @@ namespace wz::app
         // in motion_filter_states_ (keyed by stable id), so it is untouched either
         // way. Adding the component needs a rebuild so the record is materialized
         // into behavior_scene_->motion_filters.
+        bool patched = false;
         if (!adding_component && behavior_scene_) {
             const auto it = behavior_scene_->authored_to_runtime.find(node_id);
             if (it != behavior_scene_->authored_to_runtime.end()) {
                 for (auto& record : behavior_scene_->motion_filters) {
                     if (record.node == it->second) {
                         record.component = filter;
-                        return true;
+                        patched = true;
+                        break;
                     }
                 }
             }
         }
 
-        rebuild_behavior_scene();
+        apply_scene_change(
+            patched ? SceneChange::none() : SceneChange::runtime_rebuild());
         return true;
     }
 
