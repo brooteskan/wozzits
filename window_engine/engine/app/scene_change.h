@@ -16,6 +16,8 @@
 // still doing its reaction inline simply does not emit a SceneChange yet.
 
 #include <source_location>
+#include <string>
+#include <utility>
 
 namespace wz::app
 {
@@ -41,6 +43,11 @@ namespace wz::app
         // semantic binding). The render bindings must be re-materialized so the
         // renderer draws the new form.
         RenderBinding,
+
+        // ONE node's renderable recipe changed (the custom-form flip on the first
+        // / last renderable-constant override). Re-assemble just that node's
+        // binding, not the whole scene (#253). Carries the node id.
+        RenderBindingNode,
     };
 
     struct SceneChange
@@ -51,6 +58,9 @@ namespace wz::app
         // rematerialize's #252 caller log so the per-frame profile still names
         // WHICH edit forced the re-materialize (unused for the other kinds).
         std::source_location caller = std::source_location::current();
+
+        // For RenderBindingNode: the single node whose recipe changed.
+        std::string node_id;
 
         static SceneChange none()        { return { SceneChangeKind::None }; }
         static SceneChange structural()  { return { SceneChangeKind::Structural }; }
@@ -64,6 +74,13 @@ namespace wz::app
             std::source_location caller = std::source_location::current())
         {
             return { SceneChangeKind::RenderBinding, caller };
+        }
+        static SceneChange render_binding_node(std::string node_id)
+        {
+            SceneChange change;
+            change.kind = SceneChangeKind::RenderBindingNode;
+            change.node_id = std::move(node_id);
+            return change;
         }
     };
 }

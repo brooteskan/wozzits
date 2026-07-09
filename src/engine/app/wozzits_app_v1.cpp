@@ -1281,6 +1281,10 @@ namespace wz::app
             // call site rides in the descriptor so the #252 profile still names it.
             rematerialize_render_bindings(change.caller);
             break;
+        case SceneChangeKind::RenderBindingNode:
+            // Only one node's recipe changed; re-assemble just it (#253).
+            rematerialize_node_render_binding(change.node_id);
+            break;
         }
     }
 
@@ -1790,11 +1794,13 @@ namespace wz::app
             && ((value && !existed && constants.size() == 1u)
                 || (!value && existed && constants.empty()));
         scene_dirty_ = true;
-        if (custom_form_flipped) {
-            // Only THIS node's recipe changed (plain pull-mesh <-> custom 0x70A);
-            // re-assemble just it, not the whole scene (#253).
-            rematerialize_node_render_binding(node->id);
-        }
+        // The kind is decided by POST-mutation document state: only the custom-
+        // form flip needs a re-assemble (of just this node, #253); a plain
+        // override merges at pack time with no reaction.
+        apply_scene_change(
+            custom_form_flipped
+                ? SceneChange::render_binding_node(node->id)
+                : SceneChange::none());
         return true;
     }
 
