@@ -2334,111 +2334,67 @@ namespace wz::app
         return true;
     }
 
+    // The pure-document query accessors delegate to document_ (their logic moved
+    // to SceneDocument, #258 avenue-2 stage 2). WozzitsApp_v1 keeps the public
+    // methods as its ABI surface; the document IS the queryable editing model.
     bool WozzitsApp_v1::node_has_component(
         const wz::scene::AuthoredEntityId& node_id,
         const std::string& kind) const
     {
-        return wz::engine::assets::node_has_optional_component(
-            document_.nodes(), node_id, kind);
+        return document_.node_has_component(node_id, kind);
     }
 
     std::size_t WozzitsApp_v1::child_node_count(
         const wz::scene::AuthoredEntityId& parent_id) const
     {
-        std::size_t count = 0;
-        for (const wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
-            if (node.parent_id && *node.parent_id == parent_id) {
-                ++count;
-            }
-        }
-        return count;
+        return document_.child_node_count(parent_id);
     }
 
     std::optional<wz::asset::AssetGraphDraftNodeId>
     WozzitsApp_v1::node_renderable_asset_node_id(
         const wz::scene::AuthoredEntityId& node_id) const
     {
-        const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
-            return std::nullopt;
-        }
-        return node->renderable_asset_node_id;
+        return document_.node_renderable_asset_node_id(node_id);
     }
 
     std::optional<wz::asset::AssetGraphDraftNodeId>
     WozzitsApp_v1::node_scene_source_node_id(
         const wz::scene::AuthoredEntityId& node_id) const
     {
-        const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
-            return std::nullopt;
-        }
-        return node->scene_source_node_id;
+        return document_.node_scene_source_node_id(node_id);
     }
 
     bool WozzitsApp_v1::node_has_glb_scene_source(
         const wz::scene::AuthoredEntityId& node_id) const
     {
-        const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        return node && node->glb_scene_source.has_value();
+        return document_.node_has_glb_scene_source(node_id);
     }
 
     const wz::engine::assets::SceneGLBSceneSource*
     WozzitsApp_v1::node_glb_scene_source(
         const wz::scene::AuthoredEntityId& node_id) const
     {
-        const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node || !node->glb_scene_source) {
-            return nullptr;
-        }
-        return &*node->glb_scene_source;
+        return document_.node_glb_scene_source(node_id);
     }
 
     const wz::engine::assets::SceneCollisionAsset*
     WozzitsApp_v1::node_collision(
         const wz::scene::AuthoredEntityId& node_id) const
     {
-        const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node || !node->collision) {
-            return nullptr;
-        }
-        return &*node->collision;
+        return document_.node_collision(node_id);
     }
 
     const wz::engine::assets::SceneMotionAsset*
     WozzitsApp_v1::node_motion(
         const wz::scene::AuthoredEntityId& node_id) const
     {
-        const wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node || !node->motion) {
-            return nullptr;
-        }
-        return &*node->motion;
+        return document_.node_motion(node_id);
     }
 
     std::vector<wz::engine::assets::SceneNodeAsset>
     WozzitsApp_v1::grafted_scene_nodes() const
     {
-        if (document_.grafted_ids().empty()) {
-            return {};
-        }
-
-        const std::unordered_set<std::string> grafted(
-            document_.grafted_ids().begin(), document_.grafted_ids().end());
-        std::vector<wz::engine::assets::SceneNodeAsset> out;
-        out.reserve(grafted.size());
-        for (const wz::engine::assets::SceneNodeAsset& node : document_.nodes()) {
-            if (grafted.count(node.id) != 0) {
-                out.push_back(node);  // copy: the seam hands a snapshot back
-            }
-        }
-        return out;
+        return document_.grafted_nodes();
     }
 
     std::vector<wz::engine::assets::SceneNodeAsset>

@@ -19,8 +19,11 @@
 // runtime / renderer / bound graph and stay with the host.
 
 #include <engine/assets/scene/scene_asset_data.h>   // SceneNodeAsset
+#include <asset/draft.h>                             // AssetGraphDraftNodeId
 #include <scene/scene_ecs.h>                         // AuthoredEntityId
 
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace wz::app
@@ -50,6 +53,31 @@ namespace wz::app
         // working; a later stage narrows this to mark/clear.
         bool& dirty() { return dirty_; }
         bool  dirty() const { return dirty_; }
+
+        // --- pure-document queries (read nodes()/grafted_ids() only) ------------
+        // The read side of the editing model: any host or tool holding a document
+        // can query it directly. WozzitsApp_v1's node_* accessors delegate here.
+        // Transform-derived reads (node_local_translation / world transforms) are
+        // NOT here — they cross into the simulation polytree and stay with the host.
+        bool node_has_component(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& kind) const;
+        std::size_t child_node_count(
+            const wz::scene::AuthoredEntityId& parent_id) const;
+        std::optional<wz::asset::AssetGraphDraftNodeId> node_renderable_asset_node_id(
+            const wz::scene::AuthoredEntityId& node_id) const;
+        std::optional<wz::asset::AssetGraphDraftNodeId> node_scene_source_node_id(
+            const wz::scene::AuthoredEntityId& node_id) const;
+        bool node_has_glb_scene_source(
+            const wz::scene::AuthoredEntityId& node_id) const;
+        const wz::engine::assets::SceneGLBSceneSource* node_glb_scene_source(
+            const wz::scene::AuthoredEntityId& node_id) const;
+        const wz::engine::assets::SceneCollisionAsset* node_collision(
+            const wz::scene::AuthoredEntityId& node_id) const;
+        const wz::engine::assets::SceneMotionAsset* node_motion(
+            const wz::scene::AuthoredEntityId& node_id) const;
+        // A snapshot copy of the grafted (scene-source instance) children.
+        std::vector<wz::engine::assets::SceneNodeAsset> grafted_nodes() const;
 
     private:
         std::vector<wz::engine::assets::SceneNodeAsset> nodes_{};

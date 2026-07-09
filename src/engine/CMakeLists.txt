@@ -4,6 +4,7 @@ target_sources(window_engine PRIVATE
     app/wozzits_app_v1.cpp
     app/wozzits_app_v1_spawn.cpp
     app/wozzits_app_v1_behavior.cpp
+    app/scene_document.cpp
     app/view_controller.cpp
     app/editor_runtime.cpp
     project/project_manifest.cpp
