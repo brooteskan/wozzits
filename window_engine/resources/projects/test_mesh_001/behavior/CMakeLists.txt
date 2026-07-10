@@ -78,3 +78,7 @@ add_terrain_collision_behavior_module(
 add_terrain_collision_behavior_module(
     tug_of_war
     cognition/tug_of_war_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    drill_sergeant
+    cognition/drill_sergeant_plugin.cpp)
