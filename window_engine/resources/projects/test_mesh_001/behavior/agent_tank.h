@@ -187,9 +187,11 @@ struct QuantumTankState {
     // was full so this tank fights solo). Preserved across rebuilds.
     int tank_id = -1;
 
-    // Commander-only: the member count it last reshaped its group agent to (-1 =
-    // never). The group is now a FIXED size (hub + tank slots + reinforce), so this
-    // is really a one-shot "have I reshaped yet" latch rather than a live count.
+    // Commander-only: the group-agent reshape latch (the group is a FIXED size now, so
+    // this is "have I reshaped yet", not a live count). -1 = not attempted; -2 = an
+    // attempt FAILED (agent not ready) and is being retried; kReinforceGroupMembers =
+    // reshaped OK. Only the OK value latches, so a failed reshape can't silently
+    // disable the squad.
     int squad_size = -1;
 
     // Commander-only: EMA of the player's speed the PRESS/HARASS order reads, so the

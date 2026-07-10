@@ -147,9 +147,25 @@ namespace
         // index, and -- crucially -- the order no longer re-anneals (and risks
         // flipping) every time a tank deploys or recycles. Live membership is tracked
         // by the roster, not by resizing the agent.
+        //
+        // Latch squad_size ONLY on a SUCCESSFUL reshape. The reshape fails while the
+        // co-located quantum_agent hasn't created its agent yet (handle == 0 before its
+        // self.start) -- so it must RETRY on later frames, not latch and silently
+        // disable the whole squad (no stance reads, no reinforce, no deploys). A
+        // distinct "failed" sentinel keeps retrying but logs the warning just once
+        // rather than every frame.
+        constexpr int kReshapeFailed = -2;
         if (state->squad_size != static_cast<int>(kReinforceGroupMembers)) {
-            wz_self_reshape_group(
-                facts, event, kReinforceGroupMembers, kSquadStarCoupling);
+            if (!wz_self_reshape_group(
+                    facts, event, kReinforceGroupMembers, kSquadStarCoupling)) {
+                if (state->squad_size != kReshapeFailed) {
+                    state->squad_size = kReshapeFailed;
+                    wz_log_infof(
+                        facts,
+                        "[commander] group reshape FAILED (agent not ready?) -- retrying");
+                }
+                return;   // group still size 1 -- retry next frame, don't run on it
+            }
             state->squad_size = static_cast<int>(kReinforceGroupMembers);
             wz_log_infof(
                 facts, "[commander] group = hub + %d (%d stance + reinforce)",
