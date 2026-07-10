@@ -326,6 +326,389 @@
       }
     },
     {
+      "id": "cognition_gallery",
+      "parent": "root",
+      "transform": {
+        "translation": [
+          90,
+          45,
+          120
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true
+    },
+    {
+      "id": "demo_anneal",
+      "parent": "cognition_gallery",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "demo_anneal.behavior.agent",
+          "module": "quantum_agent",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "config": {
+            "decisions": 1,
+            "goal": 0.40000000000000002,
+            "gamma_start": 2,
+            "anneal_seconds": 4,
+            "confidence": 0.80000000000000004,
+            "decoherence": 0,
+            "think_interval": 0.25
+          }
+        },
+        {
+          "id": "demo_anneal.behavior.lamp",
+          "module": "cognition_lamp",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "slot": 0,
+            "full_scale": 3,
+            "rearm_metronome": 10
+          }
+        }
+      ]
+    },
+    {
+      "id": "demo_anneal_lamp_0",
+      "parent": "demo_anneal",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "demo_anneal_lamp_1",
+      "parent": "demo_anneal",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.2312309741973877,
+          1.2312309741973877,
+          1.2312309741973877
+        ]
+      },
+      "visible": false,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
+      "id": "demo_pair_hub",
+      "parent": "cognition_gallery",
+      "name": "demo_pair",
+      "transform": {
+        "translation": [
+          24,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "demo_pair.behavior.agent",
+          "module": "quantum_agent",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "config": {
+            "decisions": 2,
+            "goal": 0,
+            "posture_goal": 0,
+            "coupling": 1.5,
+            "gamma_start": 2,
+            "anneal_seconds": 3,
+            "confidence": 0.94999999999999996,
+            "decoherence": 0.20000000000000001,
+            "think_interval": 0.20000000000000001
+          }
+        }
+      ]
+    },
+    {
+      "id": "demo_pair_twin_a",
+      "parent": "demo_pair_hub",
+      "name": "twin_a",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "twin_a.behavior.lamp",
+          "module": "cognition_lamp",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "agent_node": "demo_pair",
+            "slot": 0,
+            "full_scale": 3,
+            "rearm_metronome": 12
+          }
+        }
+      ]
+    },
+    {
+      "id": "demo_pair_twin_a_lamp_0",
+      "parent": "demo_pair_twin_a",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": false,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "demo_pair_twin_a_lamp_1",
+      "parent": "demo_pair_twin_a",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
+      "id": "demo_pair_twin_b",
+      "parent": "demo_pair_hub",
+      "name": "twin_b",
+      "transform": {
+        "translation": [
+          12,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "twin_b.behavior.lamp",
+          "module": "cognition_lamp",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "agent_node": "demo_pair",
+            "slot": 1,
+            "full_scale": 3,
+            "rearm_metronome": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "demo_pair_twin_b_lamp_0",
+      "parent": "demo_pair_twin_b",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": false,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "demo_pair_twin_b_lamp_1",
+      "parent": "demo_pair_twin_b",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
       "id": "teleport_bubble",
       "parent": "root",
       "name": "teleport bubble (seam 1)",
@@ -364,15 +747,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        134.03396606445312,
-        39.852634429931641,
-        140.6044921875
+        145.32691955566406,
+        78.575889587402344,
+        310.71493530273438
       ],
       "orientation": [
-        2.7385431167203933e-05,
-        -0.31734135746955872,
-        -0.04009232297539711,
-        0.9474635124206543
+        0.053978562355041504,
+        -0.98309475183486938,
+        0.1124580129981041,
+        0.13403049111366272
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

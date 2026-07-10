@@ -66,3 +66,11 @@ add_terrain_collision_behavior_module(
 add_terrain_collision_behavior_module(
     pool_manager
     pool_manager_plugin.cpp)
+
+# --- cognition gallery -------------------------------------------------------
+# Reusable quantum-cognition building blocks (source grouped under cognition/).
+# The helper forces the DLL output to behavior/build/clang-debug regardless of
+# source location, so the flat loader directory still finds them.
+add_terrain_collision_behavior_module(
+    cognition_lamp
+    cognition/cognition_lamp_plugin.cpp)
