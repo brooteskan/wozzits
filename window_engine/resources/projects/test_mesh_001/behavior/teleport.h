@@ -85,15 +85,30 @@ namespace teleport
         WzBehaviorEntityId terrain,
         State* s)
     {
-        *s = State{};
+        // Re-bind the node handles (runtime ids renumber on every rebuild) but PRESERVE
+        // the in-progress blink -- phase / timer / destination / fan angle. Like
+        // tank_lifecycle (and unlike cannon_fire, whose brief flash is safe to reset),
+        // this effect has a LASTING side effect: mid-blink the tank body is hidden for
+        // ~0.5s, and that runtime visible=0 flag survives a rebuild. If init reset the
+        // phase to Idle, the Shrink reveal would never run and a live tank would drive +
+        // fire INVISIBLE until its next redeploy. Preserving the phase lets tick() finish
+        // the blink (reveal the body) straight across the rebuild. First alloc
+        // zero-constructs State (phase = Idle), so nothing needs an explicit reset.
+        //
+        // The DIED-mid-blink case (a parked tank that redeploys) is handled separately by
+        // the self.activated reset: a parked tank doesn't tick, so it must be forced back
+        // to a clean visible state on deploy rather than left to finish the blink here.
         s->self = self;
         s->terrain = terrain;
+        s->bubble = WZ_INVALID_BEHAVIOR_ENTITY;   // reset before re-find so a failed
+        s->body = WZ_INVALID_BEHAVIOR_ENTITY;     // lookup leaves INVALID, not a stale id
         wz_find_descendant_by_name(facts, self, kBubbleName, &s->bubble);
         wz_find_descendant_by_name(facts, self, kBodyName, &s->body);
         wz_log_infof(
-            facts, "[teleport] bubble=%u body=%u",
+            facts, "[teleport] bubble=%u body=%u phase=%u",
             (unsigned)(s->bubble != WZ_INVALID_BEHAVIOR_ENTITY),
-            (unsigned)(s->body != WZ_INVALID_BEHAVIOR_ENTITY));
+            (unsigned)(s->body != WZ_INVALID_BEHAVIOR_ENTITY),
+            (unsigned)s->phase);
     }
 
     inline bool is_blinking(const State* s)
