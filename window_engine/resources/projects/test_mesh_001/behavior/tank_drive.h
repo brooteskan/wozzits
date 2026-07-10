@@ -283,6 +283,45 @@ namespace tank_drive
         return atan2f(dy, horiz);
     }
 
+    // The LOCAL gun pitch (rad) to feed elevate_gun so the bore points at `target`
+    // in WORLD space, aiming at a point `aim_height` ABOVE the target's origin (its
+    // hull/centre, not its base, so the shot strikes the body and rides above the
+    // ground instead of skimming to the feet).
+    //
+    // Crucially this accounts for the hull's TERRAIN-ALIGNMENT tilt: elevate_gun
+    // writes a pitch in the turret/hull's LOCAL frame, but that frame is pitched
+    // (and rolled) to follow the ground. Feeding it a world-space angle
+    // double-counts the hull pitch -- on a nose-up tank the shot flies high. So we
+    // express the aim DIRECTION in the turret's world basis and take its elevation
+    // THERE: that is the local pitch that lands the bore on target whatever the
+    // hull is doing. `parent` = the turret (the gun's parent frame); `pivot` = the
+    // gun node the shot pivots about. Azimuth is handled separately by the turret
+    // yaw, so only the pitch component is returned.
+    inline float local_elevation_to(const WzBehaviorFrameFacts* facts,
+        WzBehaviorEntityId parent, WzBehaviorEntityId pivot,
+        WzBehaviorEntityId target, float aim_height)
+    {
+        WzMat4 pw{}; WzMat4 gw{}; WzVec3 tp{};
+        if (!wz_read_world_transform(facts, parent, &pw)
+            || !wz_read_world_transform(facts, pivot, &gw)
+            || !wz_read_world_position(facts, target, &tp))
+        {
+            return 0.0f;
+        }
+        // Aim direction (world) from the gun pivot to the lifted target point.
+        const float dx = tp.x - gw.m[12];
+        const float dy = (tp.y + aim_height) - gw.m[13];
+        const float dz = tp.z - gw.m[14];
+        // Express it in the turret's LOCAL basis (column-major: local X/Y/Z are
+        // columns 0/1/2 of the world rotation). Its elevation above the turret's
+        // own XZ plane is the local pitch, tilt already folded in.
+        const float ly = dx * pw.m[4] + dy * pw.m[5] + dz * pw.m[6];   // local up
+        const float lx = dx * pw.m[0] + dy * pw.m[1] + dz * pw.m[2];   // local X
+        const float lz = dx * pw.m[8] + dy * pw.m[9] + dz * pw.m[10];  // local Z
+        const float horiz = sqrtf(lx * lx + lz * lz);
+        return atan2f(ly, horiz);
+    }
+
     // Yaw rate (rad/sec) that steers the hull to ORBIT `target` at roughly
     // `standoff` world units: aim the nose ~tangent to the circle around the
     // target (90 deg off the target bearing), with a radius correction that spirals

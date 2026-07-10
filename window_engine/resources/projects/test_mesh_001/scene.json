@@ -324,6 +324,35 @@
       "renderable": {
         "asset_graph_node_id": 67
       }
+    },
+    {
+      "id": "teleport_bubble",
+      "parent": "root",
+      "name": "teleport bubble (seam 1)",
+      "transform": {
+        "translation": [
+          60,
+          47,
+          100
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          8,
+          8,
+          8
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "render_order": 100,
+      "renderable": {
+        "asset_graph_node_id": 106
+      }
     }
   ],
   "defaults": {
@@ -335,15 +364,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -69.559257507324219,
-        523.43731689453125,
-        245.10723876953125
+        134.03396606445312,
+        39.852634429931641,
+        140.6044921875
       ],
       "orientation": [
-        -0.078834332525730133,
-        -0.63059192895889282,
-        0.054390940815210342,
-        -0.77018225193023682
+        2.7385431167203933e-05,
+        -0.31734135746955872,
+        -0.04009232297539711,
+        0.9474635124206543
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

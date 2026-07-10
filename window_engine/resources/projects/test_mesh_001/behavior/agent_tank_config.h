@@ -132,6 +132,19 @@ namespace agent_tank_config
     inline constexpr int   kLosSamples = 12;      // points along the sightline
     inline constexpr float kLosClearance = 0.3f;  // world u the ground may graze
 
+    // Aim the gun at a point kAimHeight above the target's ROOT (its hull/centre,
+    // not its base): a direct shot then strikes the body and its trajectory rides
+    // above the ground instead of skimming to the target's feet and digging into a
+    // rise short of it. Matches kEyeHeight so the shot and the LOS test agree.
+    inline constexpr float kAimHeight = 1.5f;     // world u above target origin
+
+    // The tank only discharges when the round's ACTUAL muzzle ray reaches the
+    // target: if terrain intercepts it more than kShotClearMargin short of the
+    // target it would bury itself in the landscape, so hold fire. The margin (~a
+    // hull length) keeps legitimate near-target shots (grazing the base) from being
+    // suppressed.
+    inline constexpr float kShotClearMargin = 4.0f;  // world u
+
     // Cannon reload: the tank fires at most once per this interval (seconds), and
     // only while its FIRE disposition is weapons-free (see below) and it has ammo.
     inline constexpr double kFireCooldown = 1.1;

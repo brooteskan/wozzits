@@ -199,6 +199,20 @@
           "config": { "kind": 2, "damage": 25, "team": 2 }
         }
       ]
+    },
+    {
+      "id": "enemy_teleport_bubble",
+      "parent": "enemy_tank_root",
+      "name": "teleport_bubble",
+      "transform": {
+        "translation": [ 0, 1, 0 ],
+        "rotation_quat": [ 0, 0, 0, 1 ],
+        "scale": [ 0.001, 0.001, 0.001 ]
+      },
+      "visible": false,
+      "active": true,
+      "render_order": 100,
+      "renderable": { "asset_graph_node_id": 106 }
     }
   ],
   "defaults": {}

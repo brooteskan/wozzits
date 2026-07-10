@@ -5,6 +5,7 @@
 #include "tank_drive.h"
 #include "cannon_fire.h"
 #include "tank_lifecycle.h"
+#include "teleport.h"
 
 // Enemy gun elevation travel limits (radians, relative to the gun's LEVEL rest
 // pose), the AI counterpart to the player's in player_tank.h. The agent pitches
@@ -79,6 +80,7 @@ struct QuantumTankState {
     float speed = 0.0f;
     tank_drive::Chassis chassis;  // turret handle (chassis.turret) + turret aim
     cannon_fire::State cannon;    // the shared "fire the cannon" sequence state
+    teleport::State teleport;     // the "blink" teleport effect (bubble + jump)
 
     // The gun (barrel) node -- the "gun" child of the turret in the tank GLB
     // (body -> turret -> gun); the muzzle-flash anchor.

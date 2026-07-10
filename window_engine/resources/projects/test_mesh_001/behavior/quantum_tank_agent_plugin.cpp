@@ -84,6 +84,12 @@ namespace
             facts, self, state->chassis.turret, state->barrel,
             state->terrain, &state->cannon);
 
+        // THE "blink" teleport effect (teleport.h): expands a cyan bubble around
+        // the tank, hides the tank-body subtree, jumps the root to a new spot on
+        // the landscape, and shrinks the bubble to reveal it. Self-triggers on a
+        // timer for now.
+        teleport::init(facts, self, state->terrain, &state->teleport);
+
         // The squad commander (hidden top-level node). Optional -- the tank fights
         // solo if it isn't present.
         (void)wz_find_entity_by_authored_id(facts, "2:command", &state->command);
@@ -229,6 +235,73 @@ namespace
         return true;
     }
 
+    // Can the gun actually POINT at the target's aim point, or is the required
+    // elevation past its travel (so a committed shot flies over/under)? Uses the
+    // SAME lifted aim point the gun is elevated toward, so this agrees with where
+    // the barrel is actually driven.
+    bool gun_can_reach(
+        const WzBehaviorFrameFacts* facts, const QuantumTankState* state)
+    {
+        if (state->barrel == WZ_INVALID_BEHAVIOR_ENTITY
+            || state->target == WZ_INVALID_BEHAVIOR_ENTITY)
+        {
+            return true;
+        }
+        const float need = tank_drive::local_elevation_to(
+            facts, state->chassis.turret, state->barrel,
+            state->target, agent_tank_config::kAimHeight);
+        constexpr float kEps = 0.02f;   // ~1 deg slack at the travel limits
+        return need >= kGunElevationMin - kEps
+            && need <= kGunElevationMax + kEps;
+    }
+
+    // Would the round ACTUALLY reach the target, or does terrain intercept it
+    // first? Casts the exact ray the launch will cast -- same muzzle anchor +
+    // firing axis via cannon_fire::read_muzzle_anchor, same terrain -- so this is
+    // the real shot line, not the higher eye-height LOS proxy. A gun snapped onto
+    // the target that skims the ground, or one clamped below a low target, puts the
+    // terrain hit SHORT of the target and is held. (read_muzzle_anchor reads the
+    // same pre-propagate transform cannon_fire::tick reads this frame, so the test
+    // matches the shot that fires.)
+    bool shot_reaches_target(
+        const WzBehaviorFrameFacts* facts, const QuantumTankState* state)
+    {
+        if (state->terrain == WZ_INVALID_BEHAVIOR_ENTITY
+            || state->target == WZ_INVALID_BEHAVIOR_ENTITY)
+        {
+            return true;   // nothing to test against -> don't suppress the shot
+        }
+        float ax, ay, az, nx, ny, nz;
+        if (!cannon_fire::read_muzzle_anchor(
+                facts, state->cannon.data, ax, ay, az, nx, ny, nz))
+        {
+            return true;
+        }
+        WzVec3 tp{};
+        if (!wz_read_world_position(facts, state->target, &tp)) {
+            return true;
+        }
+        const float tdx = tp.x - ax, tdy = tp.y - ay, tdz = tp.z - az;
+        const float target_dist = sqrtf(tdx * tdx + tdy * tdy + tdz * tdz);
+
+        WzSurfaceSample surf{};
+        if (wz_query_collision_surface_ray(
+                facts, state->terrain,
+                WzVec3{ ax, ay, az }, WzVec3{ nx, ny, nz },
+                target_dist + agent_tank_config::kShotClearMargin, &surf)
+            && surf.hit)
+        {
+            const float hx = surf.position.x - ax;
+            const float hy = surf.position.y - ay;
+            const float hz = surf.position.z - az;
+            const float hit_dist = sqrtf(hx * hx + hy * hy + hz * hz);
+            if (hit_dist < target_dist - agent_tank_config::kShotClearMargin) {
+                return false;   // terrain intercepts the round short of the target
+            }
+        }
+        return true;
+    }
+
     void quantum_tank_on_event(
         const WzBehaviorFrameFacts* facts,
         const WzBehaviorEvent* event,
@@ -272,6 +345,11 @@ namespace
             }
             wz_self_set_terrain_alignment_rate(
                 facts, event, agent_tank_config::kTerrainAlignRate);
+            // Reset the blink so a recycle mid-teleport can't leave a redeployed
+            // tank's body hidden (or its bubble stuck on).
+            state->teleport.phase = teleport::Phase::Idle;
+            teleport::show_body(facts, &state->teleport, 1u);
+            teleport::show_bubble(facts, &state->teleport, 0u);
             wz_log_infof(facts, "[qtank:%d] deployed (squad lease)", state->tank_id);
             return;
         }
@@ -427,7 +505,9 @@ namespace
         // player's manual raise/lower.
         if (state->barrel != WZ_INVALID_BEHAVIOR_ENTITY) {
             const float elev = tank_drive::clampf(
-                tank_drive::elevation_to(facts, state->barrel, state->target),
+                tank_drive::local_elevation_to(
+                    facts, state->chassis.turret, state->barrel,
+                    state->target, agent_tank_config::kAimHeight),
                 kGunElevationMin, kGunElevationMax);
             tank_drive::elevate_gun(facts, state->barrel, elev);
         }
@@ -518,9 +598,19 @@ namespace
                     !has_fire
                     || fire_dec.committed == 0
                     || (fire_dec.committed == -1 && fire_dec.marginal > 0.0f);
-                if (alive && weapons_free && state->ammo > 0
+                // Ready to pull the trigger on the coarse conditions? Only then pay
+                // for the aim-quality checks: the gun must be able to POINT at the
+                // target (elevation not clamped) AND the round's real muzzle ray
+                // must reach it without digging into terrain short. This is what
+                // stops the shots-into-the-landscape -- the coarse `shot` gate above
+                // (yaw + eye-height LOS) still drives learning, but the DISCHARGE is
+                // held until the actual shot solution is good.
+                const bool ready = alive && weapons_free && state->ammo > 0
                     && now >= state->next_fire_time
-                    && state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY)
+                    && state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY;
+                if (ready
+                    && gun_can_reach(facts, state)
+                    && shot_reaches_target(facts, state))
                 {
                     cannon_fire::fire(&state->cannon);
                     state->ammo--;
@@ -593,13 +683,24 @@ namespace
         // Terrain alignment is set on DEPLOY (self.start / self.activated) above.
 
         // Frozen while destroyed; the lifecycle teleports us to HQ on respawn.
+        // Also frozen mid-blink (velocity ZEROED, not just left un-set -- the
+        // motion component retains the last velocity, which would coast the tank
+        // and fight the teleport's world-translation set) so the jump lands clean.
         if (alive) {
-            tank_drive::drive_facing(facts, event, state->heading, state->speed);
+            const bool blinking = teleport::is_blinking(&state->teleport);
+            tank_drive::drive_facing(
+                facts, event,
+                blinking ? 0.0f : state->heading,
+                blinking ? 0.0f : state->speed);
         }
 
         // Advance the cannon shot (shared with the player). Fired above on a shot;
         // runs even while destroyed so an in-flight shot still finishes.
         cannon_fire::tick(facts, event, &state->cannon);
+
+        // Advance the blink teleport (bubble expand/shrink + the jump). Runs every
+        // frame; self-triggers on its own timer.
+        teleport::tick(facts, &state->teleport);
     }
 }
 
