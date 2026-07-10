@@ -424,9 +424,9 @@
           1
         ],
         "scale": [
-          2.055504322052002,
-          2.055504322052002,
-          2.055504322052002
+          3,
+          3,
+          3
         ]
       },
       "visible": true,
@@ -457,7 +457,7 @@
           0.94449573755264282
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1015,12 +1015,12 @@
           1
         ],
         "scale": [
-          1,
-          1,
-          1
+          3,
+          3,
+          3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1048,7 +1048,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1701,6 +1701,568 @@
       }
     },
     {
+      "id": "caravan_hub",
+      "parent": "cognition_gallery",
+      "name": "caravan",
+      "transform": {
+        "translation": [
+          150,
+          22,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "caravan.agent",
+          "module": "quantum_agent",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "config": {
+            "decisions": 5,
+            "goal": 0,
+            "posture_goal": 0,
+            "chi": 2,
+            "chain_coupling": 1.2,
+            "gamma_start": 2,
+            "anneal_seconds": 5,
+            "confidence": 0.80000000000000004,
+            "decoherence": 0.10000000000000001,
+            "think_interval": 0.20000000000000001
+          }
+        },
+        {
+          "id": "caravan.tug",
+          "module": "tug_of_war",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "frame.update"
+          ],
+          "config": {
+            "slot_a": 0,
+            "slot_b": 4,
+            "pin": 0.80000000000000004,
+            "period": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "caravan_wagon_0",
+      "parent": "caravan_hub",
+      "name": "wagon_0",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "caravan.wagon0.lamp",
+          "module": "cognition_lamp",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "agent_node": "caravan",
+            "slot": 0,
+            "full_scale": 3,
+            "rearm_metronome": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "caravan_wagon_0_lamp_0",
+      "parent": "caravan_wagon_0",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "caravan_wagon_0_lamp_1",
+      "parent": "caravan_wagon_0",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": false,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
+      "id": "caravan_wagon_1",
+      "parent": "caravan_hub",
+      "name": "wagon_1",
+      "transform": {
+        "translation": [
+          9,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "caravan.wagon1.lamp",
+          "module": "cognition_lamp",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "agent_node": "caravan",
+            "slot": 1,
+            "full_scale": 3,
+            "rearm_metronome": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "caravan_wagon_1_lamp_0",
+      "parent": "caravan_wagon_1",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "caravan_wagon_1_lamp_1",
+      "parent": "caravan_wagon_1",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": false,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
+      "id": "caravan_wagon_2",
+      "parent": "caravan_hub",
+      "name": "wagon_2",
+      "transform": {
+        "translation": [
+          18,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "caravan.wagon2.lamp",
+          "module": "cognition_lamp",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "agent_node": "caravan",
+            "slot": 2,
+            "full_scale": 3,
+            "rearm_metronome": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "caravan_wagon_2_lamp_0",
+      "parent": "caravan_wagon_2",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "caravan_wagon_2_lamp_1",
+      "parent": "caravan_wagon_2",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": false,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
+      "id": "caravan_wagon_3",
+      "parent": "caravan_hub",
+      "name": "wagon_3",
+      "transform": {
+        "translation": [
+          27,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "caravan.wagon3.lamp",
+          "module": "cognition_lamp",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "agent_node": "caravan",
+            "slot": 3,
+            "full_scale": 3,
+            "rearm_metronome": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "caravan_wagon_3_lamp_0",
+      "parent": "caravan_wagon_3",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "caravan_wagon_3_lamp_1",
+      "parent": "caravan_wagon_3",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": false,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
+      "id": "caravan_wagon_4",
+      "parent": "caravan_hub",
+      "name": "wagon_4",
+      "transform": {
+        "translation": [
+          36,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "caravan.wagon4.lamp",
+          "module": "cognition_lamp",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "agent_node": "caravan",
+            "slot": 4,
+            "full_scale": 3,
+            "rearm_metronome": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "caravan_wagon_4_lamp_0",
+      "parent": "caravan_wagon_4",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "caravan_wagon_4_lamp_1",
+      "parent": "caravan_wagon_4",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": false,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
       "id": "teleport_bubble",
       "parent": "root",
       "name": "teleport bubble (seam 1)",
@@ -1739,15 +2301,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        188.61444091796875,
-        109.32646942138672,
-        232.34393310546875
+        303.00479125976562,
+        336.53225708007812,
+        656.26116943359375
       ],
       "orientation": [
-        0.099453486502170563,
-        -0.93764817714691162,
-        0.24537670612335205,
-        0.22520051896572113
+        0.040873955935239792,
+        -0.97868520021438599,
+        0.20100939273834229,
+        0.0099950255826115608
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
