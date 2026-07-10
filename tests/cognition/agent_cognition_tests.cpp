@@ -639,3 +639,33 @@ TEST(AgentCognition, RejectsInsaneQubitCounts)
         EXPECT_EQ(store.agent_count(h), 4u);
     }
 }
+
+// A reward with an absurd strength must NOT NaN-poison the memory. exp(strength) is
+// clamped, so an out-of-range strength stays a valid (saturated) reward rather than
+// overflowing to inf -> normalize -> NaN, which would freeze memory_preference (and
+// every downstream goal/marginal) forever. Range/compare assertions catch a NaN
+// (all comparisons against NaN are false).
+TEST(AgentCognition, RewardOverflowDoesNotPoisonMemory)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 2;
+    spec.clock = anneal_clock();
+    spec.memory_qubits = 1;
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    // Unclamped, this strength overflows exp() to inf; normalize then writes NaN into
+    // the memory amplitudes and every later reward keeps it NaN -- the register is dead.
+    // (marginal()'s `total > 0` guard hides the NaN as a constant readout, so the
+    // SYMPTOM is a FROZEN memory, not a NaN value.) Clamped, the memory saturates but
+    // stays alive.
+    EXPECT_TRUE(store.reward(h, 0, /*toward=*/true, 1e6));
+
+    // The tell: a live memory can still be pulled the OTHER way (its preference drops);
+    // a NaN-poisoned one is frozen wherever the guard pins it (~ +1) and never moves.
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_TRUE(store.reward(h, 0, /*toward=*/false, 30.0));
+    }
+    EXPECT_LT(store.memory_preference(h, 0), 0.5);   // moved back -> not poisoned
+}
