@@ -1628,9 +1628,23 @@ namespace wz::engine::behavior
                 return 0;
             }
             // Re-anneal from the current sim-time (the clock is sim-time based).
-            return quantum_agent_store().rearm(state->handle, context->sim_time)
-                ? 1u
-                : 0u;
+            if (!quantum_agent_store().rearm(state->handle, context->sim_time)) {
+                return 0;
+            }
+
+            // Re-arming REVOKES every latched decision (the store clears its latches to
+            // re-anneal from scratch), so the module's frame-path CACHE must forget them
+            // too. Otherwise get_agent_decision_at keeps reporting the now-revoked
+            // decision as committed until the next cognition tick (up to think_interval),
+            // and actuators act on a dead order -- the staleness behind the old
+            // read-after-rearm bugs. Reset it to "deliberating", exactly as
+            // reshape_group_request does; the next tick refills it from the re-anneal.
+            auto* cache = const_cast<QuantumAgentState*>(state);
+            for (uint32_t i = 0; i < kQuantumAgentMaxDecisions; ++i) {
+                cache->committed[i] = -1;
+                cache->marginal[i] = 0.0f;
+            }
+            return 1u;
         }
 
         uint8_t reshape_group_request(
