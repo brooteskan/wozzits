@@ -242,3 +242,307 @@ TEST(CollisionSurfaceSampling, HeightFieldNearestClampsOffBoundsToEdge)
         surface_entry(surface), 3.0f, 0.5f, sample));
     EXPECT_NEAR(sample.position.y, 4.0f, 1e-4f);
 }
+
+namespace
+{
+    wz::engine::assets::CollisionAssetData flat_height_field_surface(
+        float height)
+    {
+        wz::engine::assets::CollisionAssetData surface{};
+        surface.shape_kind =
+            wz::engine::assets::CollisionShapeKind::TerrainHeightField;
+        surface.occupancy.queryable = true;
+        surface.origin[0] = 0.0f;
+        surface.origin[1] = 0.0f;
+        surface.size[0] = 2.0f;
+        surface.size[1] = 2.0f;
+        surface.resolution_x = 2u;
+        surface.resolution_y = 2u;
+        surface.vertical_scale = 1.0f;
+        surface.base_height = 0.0f;
+        surface.height_samples = { height, height, height, height };
+        surface.min_height = height;
+        surface.max_height = height;
+        surface.bounds_min[0] = 0.0f;
+        surface.bounds_min[1] = height;
+        surface.bounds_min[2] = 0.0f;
+        surface.bounds_max[0] = 2.0f;
+        surface.bounds_max[1] = height;
+        surface.bounds_max[2] = 2.0f;
+        return surface;
+    }
+
+    // World height == local X: a linear ramp rising from 0 at x=0 to 10 at x=10,
+    // flat in Z. A single 2x2 cell, so the bilinear surface is height(x, z) == x
+    // exactly -- the closed form lets the ray-cast expectations be exact.
+    wz::engine::assets::CollisionAssetData ramp_height_field_surface()
+    {
+        wz::engine::assets::CollisionAssetData surface{};
+        surface.shape_kind =
+            wz::engine::assets::CollisionShapeKind::TerrainHeightField;
+        surface.occupancy.queryable = true;
+        surface.origin[0] = 0.0f;
+        surface.origin[1] = 0.0f;
+        surface.size[0] = 10.0f;
+        surface.size[1] = 10.0f;
+        surface.resolution_x = 2u;
+        surface.resolution_y = 2u;
+        surface.vertical_scale = 1.0f;
+        surface.base_height = 0.0f;
+        surface.height_samples = { 0.0f, 10.0f, 0.0f, 10.0f };
+        surface.min_height = 0.0f;
+        surface.max_height = 10.0f;
+        surface.bounds_min[0] = 0.0f;
+        surface.bounds_min[1] = 0.0f;
+        surface.bounds_min[2] = 0.0f;
+        surface.bounds_max[0] = 10.0f;
+        surface.bounds_max[1] = 10.0f;
+        surface.bounds_max[2] = 10.0f;
+        return surface;
+    }
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldRayHitsFlatSurfaceFromAbove)
+{
+    const auto surface = flat_height_field_surface(10.0f);
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    ASSERT_TRUE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(surface),
+        wz::math::Vec3{ .x = 0.5f, .y = 20.0f, .z = 0.5f },
+        wz::math::Vec3{ .x = 0.0f, .y = -1.0f, .z = 0.0f },
+        100.0f,
+        sample));
+    EXPECT_TRUE(sample.hit);
+    EXPECT_EQ(sample.surface_entity, 7u);
+    EXPECT_NEAR(sample.position.x, 0.5f, 1e-3f);
+    EXPECT_NEAR(sample.position.y, 10.0f, 1e-3f);
+    EXPECT_NEAR(sample.position.z, 0.5f, 1e-3f);
+    EXPECT_NEAR(sample.normal.y, 1.0f, 1e-4f);
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldRayMissesWhenSkimmingAboveSurface)
+{
+    const auto surface = flat_height_field_surface(10.0f);
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    // A horizontal ray at y=15 across a flat y=10 field stays above the surface
+    // the whole way -- no crossing, so the shot flies over.
+    EXPECT_FALSE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(surface),
+        wz::math::Vec3{ .x = 0.1f, .y = 15.0f, .z = 0.5f },
+        wz::math::Vec3{ .x = 1.0f, .y = 0.0f, .z = 0.0f },
+        100.0f,
+        sample));
+    EXPECT_FALSE(sample.hit);
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldGrazingRayHitsSlopeWhereDrawn)
+{
+    const auto surface = ramp_height_field_surface();  // height == x
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    // The regression: a low, near-horizontal shot at y=1 skims the shallow foot
+    // of the ramp. It must strike exactly where the surface rises to meet it
+    // (height == x, so x == 1), NOT punch through as the missing heightfield ray
+    // path let it.
+    ASSERT_TRUE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(surface),
+        wz::math::Vec3{ .x = 0.0f, .y = 1.0f, .z = 5.0f },
+        wz::math::Vec3{ .x = 1.0f, .y = 0.0f, .z = 0.0f },
+        20.0f,
+        sample));
+    EXPECT_TRUE(sample.hit);
+    EXPECT_NEAR(sample.position.x, 1.0f, 2e-3f);
+    EXPECT_NEAR(sample.position.y, 1.0f, 2e-3f);
+    EXPECT_NEAR(sample.position.z, 5.0f, 2e-3f);
+    EXPECT_GT(sample.normal.y, 0.0f);
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldRayMissesWhenAboveEntireSlope)
+{
+    const auto surface = ramp_height_field_surface();  // max height 10
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    // y=11 clears the whole ramp -> the shot flies over and never lands.
+    EXPECT_FALSE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(surface),
+        wz::math::Vec3{ .x = 0.0f, .y = 11.0f, .z = 5.0f },
+        wz::math::Vec3{ .x = 1.0f, .y = 0.0f, .z = 0.0f },
+        20.0f,
+        sample));
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldRayRespectsMaxDistance)
+{
+    const auto surface = ramp_height_field_surface();  // crossing is 1 unit away
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    // The surface crossing is 1 unit down the ray; a 0.5-unit reach stops short.
+    EXPECT_FALSE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(surface),
+        wz::math::Vec3{ .x = 0.0f, .y = 1.0f, .z = 5.0f },
+        wz::math::Vec3{ .x = 1.0f, .y = 0.0f, .z = 0.0f },
+        0.5f,
+        sample));
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldRayHitsThroughWorldTranslation)
+{
+    const auto surface = flat_height_field_surface(10.0f);
+    wz::math::Mat4 translated = wz::math::Mat4::identity();
+    translated.m[12] = 100.0f;
+    translated.m[13] = 200.0f;
+    translated.m[14] = 300.0f;
+
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    ASSERT_TRUE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(surface, translated),
+        wz::math::Vec3{ .x = 100.5f, .y = 220.0f, .z = 300.5f },
+        wz::math::Vec3{ .x = 0.0f, .y = -1.0f, .z = 0.0f },
+        100.0f,
+        sample));
+    EXPECT_TRUE(sample.hit);
+    EXPECT_NEAR(sample.position.x, 100.5f, 1e-3f);
+    EXPECT_NEAR(sample.position.y, 210.0f, 1e-3f);
+    EXPECT_NEAR(sample.position.z, 300.5f, 1e-3f);
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldRayHitsThroughLargeWorldScale)
+{
+    const auto surface = flat_height_field_surface(10.0f);  // footprint local [0,2]
+    wz::math::Mat4 scaled = wz::math::Mat4::identity();
+    scaled.m[0] = 1000.0f;
+    scaled.m[5] = 1000.0f;
+    scaled.m[10] = 1000.0f;
+
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    ASSERT_TRUE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(surface, scaled),
+        wz::math::Vec3{ .x = 750.0f, .y = 20000.0f, .z = 750.0f },
+        wz::math::Vec3{ .x = 0.0f, .y = -1.0f, .z = 0.0f },
+        100000.0f,
+        sample));
+    EXPECT_TRUE(sample.hit);
+    EXPECT_NEAR(sample.position.x, 750.0f, 1e-1f);
+    EXPECT_NEAR(sample.position.y, 10000.0f, 1e-1f);
+    EXPECT_NEAR(sample.position.z, 750.0f, 1e-1f);
+}
+
+TEST(CollisionSurfaceSampling, RaycastRejectsMeshSurfaceShape)
+{
+    // Mesh-surface ray-casting is serviced by the behavior adapter's triangle
+    // path; raycast_terrain_surface fills only the heightfield gap and rejects
+    // other shapes so the two paths never double-report.
+    const auto surface = terrain_mesh_surface_with_triangle_in_cell(0u);
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    EXPECT_FALSE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(surface),
+        wz::math::Vec3{ .x = 0.75f, .y = 10.0f, .z = 0.75f },
+        wz::math::Vec3{ .x = 0.0f, .y = -1.0f, .z = 0.0f },
+        100.0f,
+        sample));
+    EXPECT_FALSE(sample.hit);
+}
+
+TEST(CollisionSurfaceSampling, RaycastRejectsDegenerateDirection)
+{
+    const auto surface = flat_height_field_surface(10.0f);
+    wz::engine::collision::CollisionSurfaceSample sample{};
+    EXPECT_FALSE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(surface),
+        wz::math::Vec3{ .x = 0.5f, .y = 20.0f, .z = 0.5f },
+        wz::math::Vec3{ .x = 0.0f, .y = 0.0f, .z = 0.0f },
+        100.0f,
+        sample));
+}
+
+namespace
+{
+    // A symmetric V-valley (flat in Z): sample column i has height |i-8| * 1.25,
+    // so the floor is 0 at x=8 and the rims are 10 at x=0 and x=16. 17x17 samples
+    // over a 16x16 footprint => sample step 1. The floor is a single breakpoint,
+    // so a coarse render ring whose cell straddles it BRIDGES the floor with a
+    // rim-to-rim chord, exactly like the drawn clipmap. render_lod_* mirror the
+    // clipmap LOD schedule (0 = disabled).
+    wz::engine::assets::CollisionAssetData valley_height_field_surface(
+        uint32_t render_lod_base_resolution,
+        uint32_t render_lod_level_count)
+    {
+        wz::engine::assets::CollisionAssetData surface{};
+        surface.shape_kind =
+            wz::engine::assets::CollisionShapeKind::TerrainHeightField;
+        surface.occupancy.queryable = true;
+        surface.origin[0] = 0.0f;
+        surface.origin[1] = 0.0f;
+        surface.size[0] = 16.0f;
+        surface.size[1] = 16.0f;
+        surface.resolution_x = 17u;
+        surface.resolution_y = 17u;
+        surface.vertical_scale = 1.0f;
+        surface.base_height = 0.0f;
+        surface.height_samples.resize(17u * 17u);
+        for (uint32_t z = 0; z < 17u; ++z) {
+            for (uint32_t x = 0; x < 17u; ++x) {
+                int dx = static_cast<int>(x) - 8;
+                if (dx < 0) {
+                    dx = -dx;
+                }
+                surface.height_samples[z * 17u + x] =
+                    static_cast<float>(dx) * 1.25f;
+            }
+        }
+        surface.min_height = 0.0f;
+        surface.max_height = 10.0f;
+        surface.bounds_min[0] = 0.0f;
+        surface.bounds_min[1] = 0.0f;
+        surface.bounds_min[2] = 0.0f;
+        surface.bounds_max[0] = 16.0f;
+        surface.bounds_max[1] = 10.0f;
+        surface.bounds_max[2] = 16.0f;
+        surface.render_lod_base_resolution = render_lod_base_resolution;
+        surface.render_lod_level_count = render_lod_level_count;
+        return surface;
+    }
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldRayLodBridgesDistantValleyFloor)
+{
+    const auto lod = valley_height_field_surface(2u, 5u);
+    const auto plain = valley_height_field_surface(0u, 0u);  // LOD disabled
+
+    // A descending grazing shot from the near rim, out across the valley.
+    const wz::math::Vec3 origin{ .x = 0.0f, .y = 14.0f, .z = 8.0f };
+    const wz::math::Vec3 dir{ .x = 1.0f, .y = -1.0f, .z = 0.0f };
+
+    wz::engine::collision::CollisionSurfaceSample plain_hit{};
+    wz::engine::collision::CollisionSurfaceSample lod_hit{};
+    ASSERT_TRUE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(plain), origin, dir, 40.0f, plain_hit));
+    ASSERT_TRUE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(lod), origin, dir, 40.0f, lod_hit));
+
+    // The true full-res ray skims over the valley floor and only strikes the far
+    // rising rim (low + far). The drawn-surface ray strikes the coarse chord that
+    // bridges the floor -- higher and nearer, where the hill is DRAWN -- instead
+    // of passing through and reappearing on the far side.
+    EXPECT_GT(lod_hit.position.y, plain_hit.position.y + 2.0f);
+    EXPECT_LT(lod_hit.position.x, plain_hit.position.x - 1.0f);
+}
+
+TEST(CollisionSurfaceSampling, HeightFieldRayLodIsFullResUnderShooter)
+{
+    const auto lod = valley_height_field_surface(2u, 5u);
+    const auto plain = valley_height_field_surface(0u, 0u);
+
+    // Straight down onto the valley floor from directly above: the impact sits at
+    // the ring center (the shooter), so it is in the level-0 full-res ring and
+    // the drawn surface equals the true floor -- no bridging right under the shot.
+    const wz::math::Vec3 origin{ .x = 8.0f, .y = 20.0f, .z = 8.0f };
+    const wz::math::Vec3 dir{ .x = 0.0f, .y = -1.0f, .z = 0.0f };
+
+    wz::engine::collision::CollisionSurfaceSample plain_hit{};
+    wz::engine::collision::CollisionSurfaceSample lod_hit{};
+    ASSERT_TRUE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(plain), origin, dir, 30.0f, plain_hit));
+    ASSERT_TRUE(wz::engine::collision::raycast_terrain_surface(
+        surface_entry(lod), origin, dir, 30.0f, lod_hit));
+
+    EXPECT_NEAR(plain_hit.position.y, 0.0f, 1e-2f);
+    EXPECT_NEAR(lod_hit.position.y, plain_hit.position.y, 1e-2f);
+}

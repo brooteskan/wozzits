@@ -30,7 +30,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kCollisionTerrainDiskCacheMagic = 0x43435a57u;
-        constexpr uint32_t kCollisionTerrainDiskCacheVersion = 3u;
+        constexpr uint32_t kCollisionTerrainDiskCacheVersion = 4u;
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -302,6 +302,8 @@ namespace wz::engine::assets::internal
             append_scalar(out, static_cast<uint8_t>(data.supports_ray_query));
             append_scalar(out, static_cast<uint8_t>(data.supports_overlap_query));
             append_scalar(out, static_cast<uint8_t>(data.placement_driven));
+            append_scalar(out, data.render_lod_base_resolution);
+            append_scalar(out, data.render_lod_level_count);
             return out;
         }
 
@@ -493,6 +495,11 @@ namespace wz::engine::assets::internal
             data.supports_ray_query = supports_ray != 0u;
             data.supports_overlap_query = supports_overlap != 0u;
             data.placement_driven = placement_driven != 0u;
+            if (!read_scalar(bytes, offset, data.render_lod_base_resolution)
+                || !read_scalar(bytes, offset, data.render_lod_level_count))
+            {
+                return false;
+            }
             return offset == bytes.size();
         }
 
@@ -747,6 +754,14 @@ namespace wz::engine::assets::internal
                 params.get<uint32_t>(
                     "projection_resolution_y",
                     desc.projection_resolution_y);
+            desc.render_lod_base_resolution =
+                params.get<uint32_t>(
+                    "render_lod_base_resolution",
+                    desc.render_lod_base_resolution);
+            desc.render_lod_level_count =
+                params.get<uint32_t>(
+                    "render_lod_level_count",
+                    desc.render_lod_level_count);
             return desc;
         }
 
@@ -1446,6 +1461,8 @@ namespace wz::engine::assets::internal
             data.bounds_max[0] = data.origin[0] + data.size[0];
             data.bounds_max[1] = data.max_height;
             data.bounds_max[2] = data.origin[1] + data.size[1];
+            data.render_lod_base_resolution = desc.render_lod_base_resolution;
+            data.render_lod_level_count = desc.render_lod_level_count;
             return data;
         }
 
@@ -1904,6 +1921,22 @@ namespace wz::engine::assets::internal
                     .default_num = 0,
                     .min = 0,
                     .max = 65536,
+                },
+                {
+                    .name = "render_lod_base_resolution",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Render LOD base resolution",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 65536,
+                },
+                {
+                    .name = "render_lod_level_count",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Render LOD level count",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 64,
                 },
             },
             .compile =

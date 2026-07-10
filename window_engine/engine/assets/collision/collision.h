@@ -106,6 +106,18 @@ namespace wz::engine::assets
         // double-apply a non-unit node scale.
         bool placement_driven = false;
 
+        // Optional render-LOD reconstruction (clipmap ray-collision match). When
+        // this heightfield is DRAWN as a geometry-clipmap, its coarse rings
+        // triangulate the field at 2^L-cell spacing, so the drawn surface floats
+        // above the true field over sub-cell relief and a full-res ray misses
+        // grazing shots that visibly strike the drawn hill. These mirror the
+        // clipmap LOD schedule (base_resolution m + level_count) so a RAY query
+        // can reconstruct the drawn coarse surface (the finest cell c0 is derived
+        // as size/resolution). 0 = disabled: ray uses the true full-res surface.
+        // Only ray queries consult these; height/nearest sampling is unaffected.
+        uint32_t render_lod_base_resolution = 0;
+        uint32_t render_lod_level_count = 0;
+
         uint32_t source_triangle_count = 0;
         uint32_t accepted_triangle_count = 0;
 
@@ -156,6 +168,11 @@ namespace wz::engine::assets
         };
         uint32_t projection_resolution_x = 0;
         uint32_t projection_resolution_y = 0;
+
+        // Render-LOD reconstruction schedule for ray queries (see
+        // CollisionAssetData). 0 = disabled.
+        uint32_t render_lod_base_resolution = 0;
+        uint32_t render_lod_level_count = 0;
     };
 
     class CollisionAssetTable

@@ -1088,6 +1088,381 @@ namespace wz::engine::collision
             };
             return true;
         }
+
+        // The true full-res surface height at a local XZ, reconstructed by
+        // BILINEAR filtering (matching the clipmap render shader's level-0 ring,
+        // NOT the bicubic vertical sampler). u,v are clamped to the footprint;
+        // callers clip the ray to the footprint first, so this only sees in-range
+        // probes.
+        float height_field_ray_surface_local_y(
+            const wz::engine::assets::CollisionAssetData& data,
+            float local_x,
+            float local_z) noexcept
+        {
+            const float u =
+                (std::clamp)((local_x - data.origin[0]) / data.size[0],
+                    0.0f, 1.0f);
+            const float v =
+                (std::clamp)((local_z - data.origin[1]) / data.size[1],
+                    0.0f, 1.0f);
+            const float sample_x =
+                u * static_cast<float>(data.resolution_x - 1u);
+            const float sample_z =
+                v * static_cast<float>(data.resolution_y - 1u);
+            return bilinear_height_sample(data, sample_x, sample_z);
+        }
+
+        // Render-LOD reconstruction context. When a heightfield is DRAWN as a
+        // geometry-clipmap, its coarse rings triangulate the field at 2^L-cell
+        // spacing -- straight chords that BRIDGE any dip finer than a coarse cell
+        // -- so the drawn surface floats ABOVE the true field over sub-cell
+        // relief. A ray marching the true full-res field slips under that drawn
+        // chord (occluded) but over the true ground (no hit), so a grazing shot
+        // passes through and reappears. This mirrors the clipmap ring schedule so
+        // the ray can strike the DRAWN surface instead. Keyed off the ray origin
+        // (the shooter) rather than the render camera: for a shot the player
+        // scrutinises the camera rides the shooter, so the two coincide.
+        struct HeightFieldRayLod
+        {
+            bool enabled = false;
+            float center_x = 0.0f;    // ring center (shooter local XZ)
+            float center_z = 0.0f;
+            float origin_x = 0.0f;    // footprint origin (coarse-grid anchor)
+            float origin_z = 0.0f;
+            float step_x = 1.0f;      // finest cell = sample spacing size/(res-1)
+            float step_z = 1.0f;
+            float inner_half = 1.0f;  // level-0 square half-extent (0.5 * m * c0)
+            float max_level = 0.0f;   // level_count - 1
+        };
+
+        HeightFieldRayLod make_height_field_ray_lod(
+            const wz::engine::assets::CollisionAssetData& data,
+            float center_x,
+            float center_z) noexcept
+        {
+            HeightFieldRayLod lod{};
+            if (data.render_lod_level_count < 1u
+                || data.render_lod_base_resolution < 2u
+                || data.resolution_x < 2u
+                || data.resolution_y < 2u)
+            {
+                return lod;
+            }
+            // The finest lattice cell is the sample spacing, so a level-0 ring
+            // reconstructs the true bilinear surface exactly (its coarse grid IS
+            // the sample grid) and level L subsamples every 2^L-th sample -- the
+            // clipmap's coarse triangulation.
+            lod.enabled = true;
+            lod.center_x = center_x;
+            lod.center_z = center_z;
+            lod.origin_x = data.origin[0];
+            lod.origin_z = data.origin[1];
+            lod.step_x =
+                data.size[0] / static_cast<float>(data.resolution_x - 1u);
+            lod.step_z =
+                data.size[1] / static_cast<float>(data.resolution_y - 1u);
+            lod.inner_half = 0.5f
+                * static_cast<float>(data.render_lod_base_resolution)
+                * lod.step_x;
+            lod.max_level =
+                static_cast<float>(data.render_lod_level_count - 1u);
+            return lod;
+        }
+
+        // The DRAWN surface height at a local XZ. With LOD off this is the true
+        // bilinear surface. With LOD on, pick the clipmap ring for this point (the
+        // finest ring whose square half-extent inner_half*2^L covers the Chebyshev
+        // distance from the ring center) and reconstruct that ring's coarse
+        // triangulation: sample the true field at the four surrounding coarse-grid
+        // vertices (spacing 2^L sample steps, anchored on the footprint origin so
+        // corners land on samples) and bilinear-blend, so the chords bridge
+        // sub-cell dips exactly as the drawn ring does. Mip box-filter, per-level
+        // snap and geomorph are intentionally omitted -- the coarse-chord bridging
+        // is the term that stops the pass-through.
+        float height_field_drawn_surface_local_y(
+            const wz::engine::assets::CollisionAssetData& data,
+            const HeightFieldRayLod& lod,
+            float local_x,
+            float local_z) noexcept
+        {
+            if (!lod.enabled) {
+                return height_field_ray_surface_local_y(data, local_x, local_z);
+            }
+            const float dist = (std::max)(
+                std::abs(local_x - lod.center_x),
+                std::abs(local_z - lod.center_z));
+            float level = 0.0f;
+            if (dist > lod.inner_half && lod.inner_half > 1e-6f) {
+                level = std::ceil(std::log2(dist / lod.inner_half));
+            }
+            level = (std::clamp)(level, 0.0f, lod.max_level);
+            const float scale = std::exp2(level);
+            const float clx = lod.step_x * scale;
+            const float clz = lod.step_z * scale;
+            if (!(clx > 1e-6f) || !(clz > 1e-6f)) {
+                return height_field_ray_surface_local_y(data, local_x, local_z);
+            }
+
+            const float gx = (local_x - lod.origin_x) / clx;
+            const float gz = (local_z - lod.origin_z) / clz;
+            const float fx = std::floor(gx);
+            const float fz = std::floor(gz);
+            const float frx = gx - fx;
+            const float frz = gz - fz;
+            const float x0 = lod.origin_x + fx * clx;
+            const float x1 = lod.origin_x + (fx + 1.0f) * clx;
+            const float z0 = lod.origin_z + fz * clz;
+            const float z1 = lod.origin_z + (fz + 1.0f) * clz;
+            const float h00 = height_field_ray_surface_local_y(data, x0, z0);
+            const float h10 = height_field_ray_surface_local_y(data, x1, z0);
+            const float h01 = height_field_ray_surface_local_y(data, x0, z1);
+            const float h11 = height_field_ray_surface_local_y(data, x1, z1);
+            const float h0 = h00 + (h10 - h00) * frx;
+            const float h1 = h01 + (h11 - h01) * frx;
+            return h0 + (h1 - h0) * frz;
+        }
+
+        // Fill out_sample for a heightfield ray hit whose LOCAL XZ is
+        // (local_x, local_z): snap Y onto the DRAWN surface (true field with LOD
+        // off) and build the world normal from central differences of that same
+        // surface, one texel to each side.
+        bool emit_height_field_ray_hit(
+            const CollisionWorldEntry& entry,
+            const wz::engine::assets::CollisionAssetData& data,
+            const HeightFieldRayLod& lod,
+            float local_x,
+            float local_z,
+            CollisionSurfaceSample& out_sample) noexcept
+        {
+            const float step_x = data.size[0]
+                / static_cast<float>(data.resolution_x - 1u);
+            const float step_z = data.size[1]
+                / static_cast<float>(data.resolution_y - 1u);
+
+            const wz::math::Vec3 local_position{
+                .x = local_x,
+                .y = height_field_drawn_surface_local_y(
+                    data, lod, local_x, local_z),
+                .z = local_z,
+            };
+
+            const float d_height_dx =
+                (height_field_drawn_surface_local_y(
+                     data, lod, local_x + step_x, local_z)
+                 - height_field_drawn_surface_local_y(
+                     data, lod, local_x - step_x, local_z))
+                / (2.0f * step_x);
+            const float d_height_dz =
+                (height_field_drawn_surface_local_y(
+                     data, lod, local_x, local_z + step_z)
+                 - height_field_drawn_surface_local_y(
+                     data, lod, local_x, local_z - step_z))
+                / (2.0f * step_z);
+
+            const wz::math::Vec3 world_position =
+                wz::math::mul_point(entry.world_from_local, local_position);
+            const wz::math::Vec3 world_tangent_x =
+                wz::math::mul_point(
+                    entry.world_from_local,
+                    local_position
+                        + wz::math::Vec3{
+                            .x = 1.0f,
+                            .y = d_height_dx,
+                            .z = 0.0f,
+                        })
+                - world_position;
+            const wz::math::Vec3 world_tangent_z =
+                wz::math::mul_point(
+                    entry.world_from_local,
+                    local_position
+                        + wz::math::Vec3{
+                            .x = 0.0f,
+                            .y = d_height_dz,
+                            .z = 1.0f,
+                        })
+                - world_position;
+            wz::math::Vec3 world_normal =
+                wz::math::cross(world_tangent_z, world_tangent_x);
+            if (!normalize_checked(world_normal)) {
+                world_normal = wz::math::Vec3{
+                    .x = 0.0f,
+                    .y = 1.0f,
+                    .z = 0.0f,
+                };
+            }
+            if (world_normal.y < 0.0f) {
+                world_normal.x = -world_normal.x;
+                world_normal.y = -world_normal.y;
+                world_normal.z = -world_normal.z;
+            }
+
+            out_sample = CollisionSurfaceSample{
+                .hit = true,
+                .surface_entity = entry.entity,
+                .position = world_position,
+                .normal = world_normal,
+            };
+            return true;
+        }
+
+        // March a ray against a TerrainHeightField collider and report the
+        // nearest surface crossing. Works entirely in the collider's LOCAL frame
+        // -- like sample_height_field_surface -- so it hits the SAME surface the
+        // rest of the collision system reports. ray_dir_unit must be normalized.
+        bool raycast_height_field_surface(
+            const CollisionWorldEntry& entry,
+            const wz::math::Vec3& ray_origin,
+            const wz::math::Vec3& ray_dir_unit,
+            float max_distance,
+            CollisionSurfaceSample& out_sample) noexcept
+        {
+            const auto& data = *entry.resolved;
+            if (data.resolution_x < 2u
+                || data.resolution_y < 2u
+                || data.size[0] <= 0.0f
+                || data.size[1] <= 0.0f
+                || data.height_samples.size()
+                    != static_cast<size_t>(data.resolution_x)
+                        * data.resolution_y)
+            {
+                return false;
+            }
+
+            // Transform the world ray's endpoints into local space and rebuild
+            // the local ray from them; this avoids needing the inverse of the
+            // linear part explicitly (same trick as the mesh grid ray path).
+            const wz::math::Vec3 world_end =
+                ray_origin + ray_dir_unit * max_distance;
+            wz::math::Vec3 local_origin{};
+            wz::math::Vec3 local_end{};
+            if (!inverse_affine_point(
+                    entry.world_from_local, ray_origin, local_origin)
+                || !inverse_affine_point(
+                    entry.world_from_local, world_end, local_end))
+            {
+                return false;
+            }
+
+            const wz::math::Vec3 local_delta = local_end - local_origin;
+            const float local_len = wz::math::length(local_delta);
+            if (local_len <= 1e-6f || !std::isfinite(local_len)) {
+                return false;
+            }
+            const wz::math::Vec3 local_dir = local_delta / local_len;
+
+            // Clip the local ray to the field's XZ footprint: only that span can
+            // produce a real crossing (outside it the sampler just clamps).
+            float t0 = 0.0f;
+            float t1 = local_len;
+            const auto clip_axis =
+                [&](float o, float d, float lo, float hi) -> bool
+            {
+                if (std::abs(d) < 1e-9f) {
+                    return o >= lo && o <= hi;  // parallel: inside slab or reject
+                }
+                float ta = (lo - o) / d;
+                float tb = (hi - o) / d;
+                if (ta > tb) {
+                    const float tmp = ta;
+                    ta = tb;
+                    tb = tmp;
+                }
+                t0 = (std::max)(t0, ta);
+                t1 = (std::min)(t1, tb);
+                return t0 <= t1;
+            };
+            if (!clip_axis(
+                    local_origin.x,
+                    local_dir.x,
+                    data.origin[0],
+                    data.origin[0] + data.size[0])
+                || !clip_axis(
+                    local_origin.z,
+                    local_dir.z,
+                    data.origin[1],
+                    data.origin[1] + data.size[1]))
+            {
+                return false;
+            }
+            t0 = (std::max)(t0, 0.0f);
+            t1 = (std::min)(t1, local_len);
+            if (t0 > t1) {
+                return false;
+            }
+
+            // Reconstruct the DRAWN clipmap surface, keyed off the ray origin
+            // (shooter) as the ring center. With no render-LOD params authored
+            // this is a no-op and the ray marches the true full-res surface.
+            const HeightFieldRayLod lod = make_height_field_ray_lod(
+                data, local_origin.x, local_origin.z);
+
+            const auto signed_height = [&](float t) -> float {
+                const wz::math::Vec3 p = local_origin + local_dir * t;
+                return p.y
+                    - height_field_drawn_surface_local_y(data, lod, p.x, p.z);
+            };
+
+            // Origin already at/under the surface within the footprint: the ray
+            // starts underground, so the entry point is the hit.
+            const float f0 = signed_height(t0);
+            if (f0 <= 0.0f) {
+                const wz::math::Vec3 p = local_origin + local_dir * t0;
+                return emit_height_field_ray_hit(
+                    entry, data, lod, p.x, p.z, out_sample);
+            }
+
+            // March in XZ at ~half a texel per step. `horizontal` is the ray's XZ
+            // speed per unit t (local_dir is unit, so <= 1); a near-vertical ray
+            // barely moves in XZ, so fall back to a single span and just test the
+            // endpoints. Step count is bounded so a grazing ray can't spin.
+            const float span = t1 - t0;
+            const float cell =
+                (std::min)(
+                    data.size[0]
+                        / static_cast<float>(data.resolution_x - 1u),
+                    data.size[1]
+                        / static_cast<float>(data.resolution_y - 1u));
+            const float horizontal = std::sqrt(
+                local_dir.x * local_dir.x + local_dir.z * local_dir.z);
+            constexpr uint32_t k_max_steps = 4096u;
+            float step_t = (horizontal > 1e-4f)
+                ? 0.5f * cell / horizontal
+                : span;
+            if (!(step_t > 0.0f) || !std::isfinite(step_t)) {
+                step_t = span > 0.0f ? span : 1.0f;
+            }
+            step_t = (std::clamp)(
+                step_t,
+                span / static_cast<float>(k_max_steps),
+                (std::max)(span, 1e-6f));
+
+            float t_prev = t0;
+            for (float t = t0 + step_t; ; t += step_t) {
+                const bool last = t >= t1;
+                const float tc = last ? t1 : t;
+                if (signed_height(tc) <= 0.0f) {
+                    // Crossing in (t_prev, tc]: bisect for the exact surface.
+                    float lo = t_prev;  // above surface
+                    float hi = tc;      // at/under surface
+                    for (int i = 0; i < 24; ++i) {
+                        const float mid = 0.5f * (lo + hi);
+                        if (signed_height(mid) > 0.0f) {
+                            lo = mid;
+                        } else {
+                            hi = mid;
+                        }
+                    }
+                    const wz::math::Vec3 p = local_origin + local_dir * hi;
+                    return emit_height_field_ray_hit(
+                        entry, data, lod, p.x, p.z, out_sample);
+                }
+                t_prev = tc;
+                if (last) {
+                    break;
+                }
+            }
+            return false;
+        }
     }
 
     bool sample_terrain_surface(
@@ -1161,6 +1536,46 @@ namespace wz::engine::collision
                 out_sample);
 
         default:
+            return false;
+        }
+    }
+
+    bool raycast_terrain_surface(
+        const CollisionWorldEntry& entry,
+        const wz::math::Vec3& ray_origin,
+        const wz::math::Vec3& ray_direction,
+        float max_distance,
+        CollisionSurfaceSample& out_sample) noexcept
+    {
+        out_sample = CollisionSurfaceSample{};
+        if (!entry.enabled
+            || !entry.resolved
+            || max_distance <= 0.0f
+            || !std::isfinite(max_distance)
+            || !std::isfinite(ray_origin.x)
+            || !std::isfinite(ray_origin.y)
+            || !std::isfinite(ray_origin.z))
+        {
+            return false;
+        }
+
+        wz::math::Vec3 direction = ray_direction;
+        if (!normalize_checked(direction)) {
+            return false;
+        }
+
+        switch (entry.resolved->shape_kind) {
+        case wz::engine::assets::CollisionShapeKind::TerrainHeightField:
+            return raycast_height_field_surface(
+                entry,
+                ray_origin,
+                direction,
+                max_distance,
+                out_sample);
+
+        default:
+            // Mesh-surface ray-casting stays in the behavior adapter's existing
+            // triangle path for now; only the heightfield gap is filled here.
             return false;
         }
     }

@@ -25,6 +25,7 @@
         ]
       },
       "visible": true,
+      "active": true,
       "render_program": {
         "asset_graph_node_id": 10
       },
@@ -92,6 +93,7 @@
         ]
       },
       "visible": true,
+      "active": true,
       "camera": {
         "fov_y": 1.0471999645233154,
         "near": 0.10000000149011612,
@@ -104,6 +106,41 @@
       "audio_source": {
         "audio_renderable_node_id": 34,
         "auto_play": false,
+        "enabled": true
+      },
+      "motion_filter": {
+        "translation": {
+          "smoothing": [
+            0.20000000298023224,
+            0.20000000298023224,
+            0.20000000298023224
+          ],
+          "terrain_floor": true,
+          "terrain_floor_offset": 0.5
+        },
+        "rotation": {
+          "roll": {
+            "smoothing_time": 0.20000000298023224,
+            "level": false,
+            "limit": false,
+            "limit_min_degrees": 0,
+            "limit_max_degrees": 0
+          },
+          "pitch": {
+            "smoothing_time": 0.20000000298023224,
+            "level": false,
+            "limit": false,
+            "limit_min_degrees": 0,
+            "limit_max_degrees": 0
+          },
+          "yaw": {
+            "smoothing_time": 0.10000000149011612,
+            "level": false,
+            "limit": false,
+            "limit_min_degrees": 0,
+            "limit_max_degrees": 0
+          }
+        },
         "enabled": true
       }
     },
@@ -124,12 +161,13 @@
           1
         ],
         "scale": [
-          1,
-          1,
-          1
+          5,
+          2,
+          5
         ]
       },
       "visible": true,
+      "active": true,
       "audio_source": {
         "audio_renderable_node_id": 41,
         "auto_play": true,
@@ -158,11 +196,20 @@
         ]
       },
       "visible": true,
+      "active": true,
       "renderable": {
         "asset_graph_node_id": 55
       },
       "renderable_constants": [
-        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+        {
+          "name": "intensity",
+          "value": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
       ]
     },
     {
@@ -175,23 +222,32 @@
           4.1723255890246946e-06
         ],
         "rotation_quat": [
-          -1.4211466272989921e-14,
+          -1.0658600128258915e-14,
           1.1261068721069023e-05,
           0.99995720386505127,
-          -0.0092613119632005692
+          -0.0092613156884908676
         ],
         "scale": [
-          20,
-          0.15000000596046448,
+          19.999992370605469,
+          0.1499999463558197,
           0.15000000596046448
         ]
       },
       "visible": true,
+      "active": true,
       "renderable": {
         "asset_graph_node_id": 55
       },
       "renderable_constants": [
-        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+        {
+          "name": "intensity",
+          "value": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
       ]
     },
     {
@@ -216,30 +272,53 @@
         ]
       },
       "visible": true,
+      "active": true,
       "renderable": {
         "asset_graph_node_id": 55
       },
       "renderable_constants": [
-        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+        {
+          "name": "intensity",
+          "value": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
       ]
     },
     {
       "id": "hitbox",
       "parent": "empty_1",
-      "name": "hitbox",
       "transform": {
-        "translation": [ 0, 0.5, 0 ],
-        "rotation_quat": [ 0, 0, 0, 1 ],
-        "scale": [ 1.5, 1.0, 1.5 ]
+        "translation": [
+          0,
+          0.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.5,
+          1,
+          1.5
+        ]
       },
       "visible": true,
+      "active": true,
       "collision": {
-        "collision_asset_node_id": 56,
+        "asset": "asset-key:5b1aa7b7525c8433:e69f678512921d38:f11eca55e7000b00:0000000000000000:9e3779b97f4aa12d:0000000000000000:f4d63ad2ce39597e:cc265f70aab8d8c2",
         "layer_mask": 2,
         "collides_with_mask": 4,
         "is_trigger": true,
         "enabled": true,
-        "constrain_movement": false
+        "constrain_movement": false,
+        "collision_asset_node_id": 56
       },
       "behaviors": [
         {
@@ -248,34 +327,61 @@
           "name": "",
           "enabled": true,
           "apply_in_editor": false,
-          "events": [ "collision.*", "proximity.*" ],
-          "config": { "label": "player" }
+          "events": [
+            "collision.*",
+            "proximity.*"
+          ],
+          "config": {
+            "label": "player"
+          }
         }
       ]
     },
     {
       "id": "projectile",
       "parent": "empty_1",
-      "name": "projectile",
       "transform": {
-        "translation": [ 0, -1000, 0 ],
-        "rotation_quat": [ 0, 0, 0, 1 ],
-        "scale": [ 0.5, 0.5, 0.5 ]
+        "translation": [
+          0,
+          -1000,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          0.5,
+          0.5,
+          0.5
+        ]
       },
       "visible": true,
+      "active": true,
       "renderable": {
         "asset_graph_node_id": 55
       },
       "renderable_constants": [
-        { "name": "intensity", "value": [0.0, 0.0, 0.0, 1.0] }
+        {
+          "name": "intensity",
+          "value": [
+            0,
+            0,
+            0,
+            1
+          ]
+        }
       ],
       "collision": {
-        "collision_asset_node_id": 56,
+        "asset": "asset-key:5b1aa7b7525c8433:e69f678512921d38:f11eca55e7000b00:0000000000000000:9e3779b97f4aa12d:0000000000000000:f4d63ad2ce39597e:cc265f70aab8d8c2",
         "layer_mask": 4,
         "collides_with_mask": 2,
         "is_trigger": true,
         "enabled": true,
-        "constrain_movement": false
+        "constrain_movement": false,
+        "collision_asset_node_id": 56
       },
       "behaviors": [
         {
@@ -284,8 +390,14 @@
           "name": "",
           "enabled": true,
           "apply_in_editor": false,
-          "events": [ "collision.*" ],
-          "config": { "kind": 2, "damage": 25, "team": 1 }
+          "events": [
+            "collision.*"
+          ],
+          "config": {
+            "kind": 2,
+            "damage": 25,
+            "team": 1
+          }
         }
       ]
     }

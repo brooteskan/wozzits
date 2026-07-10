@@ -933,15 +933,49 @@ namespace wz::engine::behavior
                 if (entry.entity != surface_entity
                     || !entry.enabled
                     || !entry.resolved
-                    || !entry.resolved->occupancy.queryable
-                    || entry.resolved->shape_kind
-                        != wz::engine::assets::CollisionShapeKind::
-                            TerrainMeshSurface)
+                    || !entry.resolved->occupancy.queryable)
                 {
                     continue;
                 }
 
                 const auto& data = *entry.resolved;
+
+                // Heightfield terrain (the geometry-clipmap landscape carries a
+                // heightfield collider, not a triangle mesh) has no triangles to
+                // intersect, so without this branch a shot fired at it never
+                // registers a ground hit and passes straight through. March the
+                // ray against the resident height field instead.
+                if (data.shape_kind
+                    == wz::engine::assets::CollisionShapeKind::
+                        TerrainHeightField)
+                {
+                    wz::engine::collision::CollisionSurfaceSample sample{};
+                    if (wz::engine::collision::raycast_terrain_surface(
+                            entry,
+                            ray_origin,
+                            ray_direction,
+                            max_distance,
+                            sample)
+                        && sample.hit)
+                    {
+                        const float distance = wz::math::length(
+                            sample.position - ray_origin);
+                        if (distance < best_distance) {
+                            best_distance = distance;
+                            best_position = sample.position;
+                            best_normal = sample.normal;
+                            best_surface = sample.surface_entity;
+                        }
+                    }
+                    continue;
+                }
+
+                if (data.shape_kind
+                    != wz::engine::assets::CollisionShapeKind::
+                        TerrainMeshSurface)
+                {
+                    continue;
+                }
                 if (data.points.empty() || data.indices.size() < 3u) {
                     continue;
                 }
