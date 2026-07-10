@@ -84,6 +84,29 @@ namespace wz::engine::behavior
     // correlate with the hub). Use INSTEAD of `coupling` (which is the 0<->1 pair).
     inline constexpr const char* kQuantumAgentStarCouplingKey = "star_coupling";
 
+    // Coordination BACKEND selector (chi). 0 = exact joint state (genuine
+    // entanglement, small groups; the default, and what every current NPC uses);
+    // 1 = loopy BP (any topology incl. CYCLIC villages, scales linearly, but a
+    // product-state approximation with NO entanglement); >= 2 = chi-truncated TTN
+    // chain (larger entangled groups; bonds MUST form the nearest-neighbour chain,
+    // so pair it with chain_coupling, not ring/star). Default 0. An out-of-topology
+    // spec (e.g. chi>=2 with a ring) fails to build -- create() returns invalid and
+    // the module logs it.
+    inline constexpr const char* kQuantumAgentChiKey = "chi";
+
+    // Nearest-neighbour topology for the linear-scaling backends -- use ONE of these
+    // INSTEAD of coupling/star for a many-membered group:
+    //   chain_coupling - bond (i, i+1) into an OPEN chain (the shape a chi>=2 TTN
+    //                    requires). Default 0.
+    //   ring_coupling  - the chain PLUS the closing bond (n-1, 0): a CYCLE. An odd
+    //                    anti-ferromagnetic ring is FRUSTRATED (no 2-coloring) -- the
+    //                    thing a tree cannot show; run it on chi=1 (a chi>=2 TTN needs
+    //                    an open chain, so a ring fails to build). The closing bond is
+    //                    skipped below 3 qubits (a 2-ring would double the lone bond).
+    //                    Default 0.
+    inline constexpr const char* kQuantumAgentChainCouplingKey = "chain_coupling";
+    inline constexpr const char* kQuantumAgentRingCouplingKey = "ring_coupling";
+
     // LEARNING: number of MEMORY qubits held outside the coordination (never
     // measured, so their learned bias accumulates across commits / rearms /
     // reshapes). 0 = no memory. An actuator reinforces them via wz_agent_reward

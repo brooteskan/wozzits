@@ -102,6 +102,36 @@ namespace wz::engine::behavior
                             });
                     }
                 }
+                // Nearest-neighbour topology for the linear-scaling backends:
+                // chain_coupling bonds (i, i+1) into an OPEN chain (the shape a
+                // chi>=2 TTN requires); ring_coupling adds the closing (n-1, 0)
+                // bond -> a CYCLE (chi=1 loopy BP handles the frustration a ring
+                // carries; a chi>=2 TTN rejects a ring and fails to build). Use ONE
+                // of these INSTEAD of coupling/star for a many-membered group.
+                const float chain_j =
+                    config_float(facts, kQuantumAgentChainCouplingKey, 0.0f);
+                const float ring_j =
+                    config_float(facts, kQuantumAgentRingCouplingKey, 0.0f);
+                const float nn_j = chain_j != 0.0f ? chain_j : ring_j;
+                if (nn_j != 0.0f) {
+                    for (uint32_t i = 0; i + 1 < spec.agent_count; ++i) {
+                        spec.bonds.push_back(
+                            wz::engine::cognition::ExactBond{
+                                .a = i, .b = i + 1u,
+                                .j = static_cast<double>(nn_j),
+                            });
+                    }
+                    // Close the ring (ring_coupling only; skip below 3 qubits so a
+                    // 2-ring does not double the lone nearest-neighbour bond).
+                    if (chain_j == 0.0f && ring_j != 0.0f
+                        && spec.agent_count >= 3u) {
+                        spec.bonds.push_back(
+                            wz::engine::cognition::ExactBond{
+                                .a = spec.agent_count - 1u, .b = 0u,
+                                .j = static_cast<double>(ring_j),
+                            });
+                    }
+                }
                 spec.clock.gamma_start =
                     config_float(facts, kQuantumAgentGammaStartKey, 2.0f);
                 spec.clock.gamma_end = 0.0;
@@ -113,7 +143,11 @@ namespace wz::engine::behavior
                     config_float(facts, kQuantumAgentConfidenceKey, 0.8f);
                 spec.commit.decoherence_rate =
                     config_float(facts, kQuantumAgentDecoherenceKey, 0.0f);
-                spec.chi = 0;  // exact joint state: genuine entanglement, 2 qubits
+                // Coordination backend: 0 exact joint state (default), 1 loopy BP,
+                // >= 2 chi-truncated TTN chain. Config keys are data -> no ABI bump.
+                const float chi_f =
+                    config_float(facts, kQuantumAgentChiKey, 0.0f);
+                spec.chi = chi_f < 0.0f ? 0u : static_cast<uint32_t>(chi_f);
 
                 // Optional LEARNING memory register (held outside the coordination).
                 float memory_f = 0.0f;
@@ -133,10 +167,29 @@ namespace wz::engine::behavior
                 seed ^= seed >> 31;
                 spec.seed = seed ? seed : 0x9e3779b97f4a7c15ull;
 
-                const wz::engine::cognition::AgentHandle handle = quantum_agent_store().create(spec);
+                const char* const backend = spec.chi == 0u
+                    ? "exact"
+                    : (spec.chi == 1u ? "loopy" : "ttn");
+                const wz::engine::cognition::AgentHandle handle =
+                    quantum_agent_store().create(spec);
                 if (handle == wz::engine::cognition::kInvalidAgent) {
+                    // Loud, not silent: a chi>=2 TTN with a ring/star (non-chain)
+                    // bond set, a zero/over-cap agent_count, etc. -- the demo shows
+                    // dark bodies and this line names why.
+                    wz_log_infof(
+                        facts,
+                        "[quantum_agent] build FAILED chi=%u backend=%s agents=%u "
+                        "bonds=%u (unbuildable spec -- chi>=2 TTN needs a nearest-"
+                        "neighbour chain, not a ring/star)",
+                        spec.chi, backend, spec.agent_count,
+                        static_cast<unsigned>(spec.bonds.size()));
                     return;
                 }
+                wz_log_infof(
+                    facts,
+                    "[quantum_agent] built chi=%u backend=%s agents=%u bonds=%u",
+                    spec.chi, backend, spec.agent_count,
+                    static_cast<unsigned>(spec.bonds.size()));
                 quantum_agent_store().start(handle, wz_sim_time(facts));
 
                 const float interval =
@@ -208,6 +261,12 @@ namespace wz::engine::behavior
             { kQuantumAgentDecisionsKey, "Decision count (qubits)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 2.0, nullptr },
             { kQuantumAgentStarCouplingKey, "Star coupling (hub bond j)",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
+            { kQuantumAgentChiKey, "Backend chi (0 exact / 1 loopy / >=2 TTN)",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
+            { kQuantumAgentChainCouplingKey, "Chain coupling (n.n. bond j)",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
+            { kQuantumAgentRingCouplingKey, "Ring coupling (cyclic bond j)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
             { kQuantumAgentGammaStartKey, "Exploration (gamma start)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 2.0, nullptr },
