@@ -535,3 +535,47 @@ TEST(AgentCognition, NoMemoryRejectsLearning)
     EXPECT_FALSE(store.reward(h, 0, true, 1.0));
     EXPECT_EQ(store.memory_preference(h, 0), 0.0);
 }
+
+// A REJECTED reshape must leave the agent completely intact -- validate before
+// mutate. A chi>=2 (TTN) agent accepts only nearest-neighbour chain bonds, so a
+// star bond (0-2) trips build_ttn. If reshape resized the bookkeeping BEFORE that
+// check, a rejected SHRINK would leave agent_count longer than the shortened
+// vectors and the next think() would read past them (heap corruption). Here the
+// agent must survive unchanged and stay fully usable.
+TEST(AgentCognition, RejectedReshapeLeavesAgentIntact)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 4;
+    spec.chi = 2;   // TTN backend -- only nearest-neighbour chain bonds are buildable
+    spec.clock = anneal_clock();
+    spec.bonds = { ExactBond{ 0, 1, 1.0 }, ExactBond{ 1, 2, 1.0 },
+        ExactBond{ 2, 3, 1.0 } };
+    spec.goals = { Goal{ 0, 0.6 } };
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    ASSERT_EQ(store.agent_count(h), 4u);
+
+    store.start(h, 0.0);
+    for (int i = 1; i <= 80; ++i) {
+        store.think(h, 0.1 * i);
+    }
+    ASSERT_GT(store.marginal(h, 0), 0.8);   // committed to its + goal before the reshape
+
+    // Reshape to 3 qubits with a STAR (non-chain) bond 0-2 -- build_ttn rejects it.
+    // Shrinking 4 -> 3 is the heap-corruption case if the vectors are resized first.
+    const bool ok = store.reshape(
+        h, 3u, { ExactBond{ 0, 1, 1.0 }, ExactBond{ 0, 2, 1.0 } }, 8.1);
+    EXPECT_FALSE(ok);                      // rejected
+    EXPECT_EQ(store.agent_count(h), 4u);   // shape left intact
+
+    // Still fully usable: think() must not read past any vector (under ASan the old
+    // code would heap-overflow here), and it stays a healthy 4-qubit agent.
+    for (int i = 1; i <= 10; ++i) {
+        store.think(h, 8.1 + 0.1 * i);
+    }
+    const double m3 = store.marginal(h, 3);   // the 4th qubit still exists
+    EXPECT_GE(m3, -1.0001);
+    EXPECT_LE(m3, 1.0001);
+    EXPECT_GT(store.marginal(h, 0), 0.8);     // still holds its goal -- fully alive
+}

@@ -329,14 +329,15 @@ namespace wz::engine::cognition
             return false;
         }
 
-        // Resize the bookkeeping (existing goal fields survive where the count
-        // overlaps; new qubits start unbiased). Latches + marginals reset -- the
-        // reshaped group re-deliberates.
-        a->goal_fields.resize(agent_count, 0.0);
-        a->bonds = bonds;
-        a->latched.assign(agent_count, std::nullopt);
-        a->marginal_cache.assign(agent_count, 0.0);
-
+        // Build + VALIDATE the new shape WITHOUT mutating the agent yet: read the
+        // surviving goal fields straight from the (still-unchanged) vector -- existing
+        // fields survive where the count overlaps, new qubits start unbiased. Validating
+        // BEFORE mutating is essential: if we resized the bookkeeping first and
+        // build_coordination then failed (e.g. build_ttn rejecting star bonds at
+        // chi>=2), a shrink would leave agent_count LONGER than the shortened vectors
+        // and the next think() would write past them -- heap corruption -- while a grow
+        // would strand the rejected bonds for every later rearm(). So a rejected reshape
+        // must leave the agent exactly as it was.
         AgentSpec spec;
         spec.agent_count = agent_count;
         spec.bonds = bonds;
@@ -344,12 +345,21 @@ namespace wz::engine::cognition
         spec.seed = a->seed;
         spec.goals.reserve(agent_count);
         for (uint32_t i = 0; i < agent_count; ++i) {
-            spec.goals.push_back(Goal{ .agent = i, .field = a->goal_fields[i] });
+            const double field =
+                i < a->goal_fields.size() ? a->goal_fields[i] : 0.0;
+            spec.goals.push_back(Goal{ .agent = i, .field = field });
         }
         std::optional<Coordination> coordination = build_coordination(spec);
         if (!coordination) {
-            return false;
+            return false;   // agent left untouched
         }
+
+        // Validated -- NOW commit the new shape. Latches + marginals reset (the
+        // reshaped group re-deliberates).
+        a->goal_fields.resize(agent_count, 0.0);
+        a->bonds = bonds;
+        a->latched.assign(agent_count, std::nullopt);
+        a->marginal_cache.assign(agent_count, 0.0);
         a->coordination = std::move(*coordination);
         a->agent_count = agent_count;
         wz::engine::cognition::start(a->clock, now);
