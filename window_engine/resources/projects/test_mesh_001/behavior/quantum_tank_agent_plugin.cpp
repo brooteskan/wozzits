@@ -377,7 +377,13 @@ namespace
         // release the squad lease + PARK ourselves (back to the pool) instead of
         // respawning. The pool sees the vacancy and redeploys a spare. Parking stops
         // dispatch, so this fires exactly once; the next DEPLOY heals + re-leases us.
-        if (kind == WZ_EVENT_FRAME_UPDATE && state->tank_id >= 0
+        //
+        // NOT gated on tank_id >= 0: frame.update only fires for an ACTIVE (deployed)
+        // tank, and a tank that deployed SOLO (roster full -> tank_id == -1) is just as
+        // deployed and must be killable -- gating on the lease would leave it unkillable,
+        // pinning its pool slot forever. squad_roster_release is a no-op for -1, and the
+        // tally reset below guards against a re-trigger before the park takes effect.
+        if (kind == WZ_EVENT_FRAME_UPDATE
             && state->hitbox != WZ_INVALID_BEHAVIOR_ENTITY)
         {
             if (auto* tally = wz_instance_state_of<tank_damage::Tally>(
