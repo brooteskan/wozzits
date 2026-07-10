@@ -1,5 +1,6 @@
 #include "agent_tank.h"
 #include "agent_tank_config.h"
+#include "squad_deploy.h"
 #include "tank_drive.h"
 
 // tank_commander -- the DIRECTOR half of a squad's command tree.
@@ -30,6 +31,12 @@ namespace
         if (!state) {
             return;
         }
+        // Ensure the command -> pool deploy queue exists (get-or-create, init
+        // context -- where wz_create_shared_state lives). The commander posts
+        // reinforce orders here; the co-located pool_manager consumes them.
+        (void)wz_create_shared_state(
+            facts, squad_deploy::kKey,
+            sizeof(squad_deploy::Queue), alignof(squad_deploy::Queue));
         // The squad watches the player. The player is a runtime-spawned prefab
         // (root node named "tank"), so its authored id is remapped on spawn -- find
         // it by NAME, the same way the tanks do. It usually isn't present yet at the
@@ -61,41 +68,65 @@ namespace
         // binding's init, so the player's own spawn re-runs commander_init after it
         // exists -- init resolves it then. No per-frame retry needed.
 
-        // DYNAMIC MEMBERSHIP: grow the group agent to the live squad size (a member
-        // stance qubit per registered tank, star-bonded to the command). Only when
-        // the roster count changes -- reshape re-anneals the whole group.
+        using namespace agent_tank_config;
+
+        // Squad shared state: the ROSTER (live membership + doctrine tallies) and the
+        // DEPLOY QUEUE the commander posts reinforce orders to (the pool consumes it).
         const SquadRoster* roster = static_cast<const SquadRoster*>(
             wz_find_shared_state(facts, kSquadRosterKey));
-        // Live squad size = the number of LEASED slots (tanks currently deployed),
-        // which the roster caps at kSquadLeaseSlots -- so a pool larger than the group
-        // can't push the group agent past its member cap. Rises on deploy, falls on
-        // recycle; reshape re-anneals the group to match.
-        const int count = roster ? roster->active_members : 0;
-        if (count != state->squad_size) {
+        squad_deploy::Queue* deploy_q = static_cast<squad_deploy::Queue*>(
+            wz_find_shared_state(facts, squad_deploy::kKey));
+
+        // FIXED GROUP: hub (PRESS/HARASS order) + 3 tank stance slots + a REINFORCE
+        // qubit (the top member, index kReinforceQubit), star-bonded into one wave
+        // function. Reshaped ONCE to a fixed size rather than per membership change:
+        // a tank always finds its stance slot, the reinforce qubit keeps a stable
+        // index, and -- crucially -- the order no longer re-anneals (and risks
+        // flipping) every time a tank deploys or recycles. Live membership is tracked
+        // by the roster, not by resizing the agent.
+        if (state->squad_size != static_cast<int>(kReinforceGroupMembers)) {
             wz_self_reshape_group(
-                facts, event,
-                static_cast<uint32_t>(count),
-                agent_tank_config::kSquadStarCoupling);
-            state->squad_size = count;
-            wz_log_infof(facts, "[commander] reshape squad -> %d members", count);
+                facts, event, kReinforceGroupMembers, kSquadStarCoupling);
+            state->squad_size = static_cast<int>(kReinforceGroupMembers);
+            wz_log_infof(
+                facts, "[commander] group = hub + %d (%d stance + reinforce)",
+                (int)kReinforceGroupMembers, (int)kReinforceGroupMembers - 1);
         }
 
         sense_world(facts, event, state);   // gets the player's speed
 
         const double now = wz_sim_time(facts);
+        const int live = roster ? roster->active_members : 0;
 
-        // SQUAD REINFORCEMENT is now owned by the co-located `pool_manager` behavior
-        // (the #252 prewarm-and-park pool): it prewarms enemy_tank instances PARKED at
-        // load and DEPLOYS them by unpark on a cooldown, instead of a fresh spawn per
-        // reinforcement (each of which was an O(scene) rebuild -- the pooling baseline).
-        // The commander keeps only its quantum PRESS/HARASS order below. See
-        // pool_manager_plugin.cpp.
+        // REINFORCE ORDER: bringing a tank up is the commander's decision. When its
+        // reinforce qubit is committed |0> (reinforce), there is ROOM under the squad
+        // target, and the request cooldown has elapsed, post ONE deploy to the queue;
+        // the pool unparks a reserve. Checked every frame (paced by the cooldown) so an
+        // understrength squad fills promptly even though the order re-anneals slower.
+        // Gating on (live + pending) keeps outstanding requests from ever exceeding the
+        // deficit, so it can never over-commit past kSquadTargetSize.
+        if (deploy_q) {
+            WzAgentDecision reinforce{};
+            const uint8_t have = wz_self_agent_decision_at(
+                facts, event, kReinforceQubit, &reinforce);
+            const bool wants_reinforce =
+                have && (reinforce.committed == 0
+                    || (reinforce.committed == -1 && reinforce.marginal > 0.0f));
+            if (wants_reinforce
+                && (live + deploy_q->pending) < kSquadTargetSize
+                && now >= state->next_spawn_time)
+            {
+                deploy_q->pending += 1;
+                state->next_spawn_time = now + kReinforceCooldown;
+                wz_log_infof(
+                    facts, "[commander] REINFORCE order (%d live +%d queued < %d)",
+                    live, deploy_q->pending, (int)kSquadTargetSize);
+            }
+        }
 
         if (now < state->next_reanneal_time) {
             return;
         }
-
-        using namespace agent_tank_config;
 
         // DOCTRINE LEARNING: reward the commander's doctrine memory from the squad's
         // net shot-exchange since the last order (shots_landed - fire_taken delta),
@@ -120,17 +151,21 @@ namespace
         const float doctrine =
             wz_self_agent_memory(facts, event, kDoctrineMemoryQubit);
 
-        // Command goal: reactive rule (PRESS when the player is slow/passive) PLUS
-        // the learned doctrine bias.
-        const float order_goal = tank_drive::clampf(
-            kCommandBias
-                - state->target_speed * kCommandSpeedGain
-                + doctrine * kDoctrineGain,
-            -1.0f, 1.0f);
-        wz_self_set_agent_goal(facts, event, 0u, order_goal);
-        wz_self_rearm_agent(facts, event);
-        state->next_reanneal_time = now + kCommandReanneal;
+        // ORDER STABILITY (kills the flip-flop): (1) EMA the player speed the order
+        // reads, so a momentary twitch near the crossover doesn't swing the stance;
+        // (2) bias the goal toward the CURRENTLY committed side (hysteresis / Schmitt
+        // trigger), so the order holds unless the battlefield clearly argues otherwise.
+        state->order_speed_ema +=
+            kOrderSpeedEmaAlpha * (state->target_speed - state->order_speed_ema);
 
+        // Sample the order the group SETTLED on over the window that just ended --
+        // the cache holds the last rearm's committed outcome -- BEFORE computing the
+        // hysteresis. Sampling it AFTER the rearm below (as we used to) reads a stale
+        // value: the rearm doesn't update the cache until the next cognition tick, so
+        // `hold` would lag TWO windows, and near the crossover that stale bias pushes
+        // toward the side from two windows ago -- reinforcing the very period-2
+        // flip-flop the hysteresis exists to kill. Reading here makes it a proper
+        // one-window latch: hold(d_n) biases the anneal that produces d_{n+1}.
         WzAgentDecision order{};
         (void)wz_self_agent_decision(facts, event, &order);
         if (order.committed != state->last_decision) {
@@ -140,9 +175,33 @@ namespace
                 "[commander] order=%s (player_spd=%.1f doctrine=%.2f)",
                 order.committed == 0 ? "PRESS"
                     : (order.committed == 1 ? "HARASS" : "deliberating"),
-                (double)state->target_speed,
+                (double)state->order_speed_ema,
                 (double)doctrine);
         }
+
+        const float hold =
+            state->last_decision == 0 ? kOrderHysteresis
+            : (state->last_decision == 1 ? -kOrderHysteresis : 0.0f);
+        const float order_goal = tank_drive::clampf(
+            kCommandBias
+                - state->order_speed_ema * kCommandSpeedGain
+                + doctrine * kDoctrineGain
+                + hold,
+            -1.0f, 1.0f);
+        wz_self_set_agent_goal(facts, event, 0u, order_goal);
+
+        // REINFORCE goal (qubit kReinforceQubit): UNDERSTRENGTH pressure. The wider the
+        // gap between the live squad and its target, the harder it leans |0>
+        // (reinforce); at full strength the bias holds reserves. Star-bonded to the
+        // hub, so a PRESS order pulls it toward committing and HARASS toward holding.
+        const int deficit = kSquadTargetSize - live;
+        const float reinforce_goal = tank_drive::clampf(
+            kReinforceBias + kReinforceDeficitGain * static_cast<float>(deficit),
+            -1.0f, 1.0f);
+        wz_self_set_agent_goal(facts, event, kReinforceQubit, reinforce_goal);
+
+        wz_self_rearm_agent(facts, event);
+        state->next_reanneal_time = now + kCommandReanneal;
     }
 }
 

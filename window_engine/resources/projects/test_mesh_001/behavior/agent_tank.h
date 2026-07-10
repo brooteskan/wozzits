@@ -173,9 +173,14 @@ struct QuantumTankState {
     // was full so this tank fights solo). Preserved across rebuilds.
     int tank_id = -1;
 
-    // Commander-only: the squad size it last reshaped its group agent to (-1 =
-    // never), so it reshapes only when the roster count changes.
+    // Commander-only: the member count it last reshaped its group agent to (-1 =
+    // never). The group is now a FIXED size (hub + tank slots + reinforce), so this
+    // is really a one-shot "have I reshaped yet" latch rather than a live count.
     int squad_size = -1;
+
+    // Commander-only: EMA of the player's speed the PRESS/HARASS order reads, so the
+    // order tracks SUSTAINED movement rather than per-frame jitter (order stability).
+    float order_speed_ema = 0.0f;
 
     // Commander-only doctrine learning: the squad tallies last seen, so the
     // commander rewards its doctrine memory on the DELTA each re-anneal.

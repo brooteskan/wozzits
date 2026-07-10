@@ -1656,10 +1656,30 @@ namespace wz::engine::behavior
                     .j = static_cast<double>(star_coupling),
                 });
             }
-            return quantum_agent_store().reshape(
-                       state->handle, agent_count, bonds, context->sim_time)
-                ? 1u
-                : 0u;
+            if (!quantum_agent_store().reshape(
+                    state->handle, agent_count, bonds, context->sim_time))
+            {
+                return 0;
+            }
+
+            // Propagate the new size to the module's FRAME-PATH CACHE. The
+            // cognition-tick handler only caches (and get_agent_decision_at only
+            // exposes) the first `agent_count` qubits, and that count is otherwise set
+            // ONCE at self.start from the `decisions` config. Without this, any qubit
+            // added by a reshape past the agent's original size -- a group's member
+            // stance qubits, a reinforce qubit -- would silently read as "not present"
+            // (agent_index >= agent_count -> 0). Reset the freshly-sized caches to
+            // "deliberating"; the next tick refills them from the re-annealed group,
+            // mirroring the store, which also resets latches/marginals on reshape.
+            auto* cache = const_cast<QuantumAgentState*>(state);
+            cache->agent_count = static_cast<uint8_t>(
+                agent_count < kQuantumAgentMaxDecisions
+                    ? agent_count : kQuantumAgentMaxDecisions);
+            for (uint32_t i = 0; i < kQuantumAgentMaxDecisions; ++i) {
+                cache->committed[i] = -1;
+                cache->marginal[i] = 0.0f;
+            }
+            return 1u;
         }
 
         uint8_t reward_agent_request(

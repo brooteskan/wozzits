@@ -81,6 +81,34 @@ namespace agent_tank_config
     inline constexpr float kDoctrineReward = 0.3f;  // per winning re-anneal window
     inline constexpr float kDoctrineGain = 0.6f;    // learned doctrine -> order bias
 
+    // --- ORDER STABILITY: the PRESS/HARASS order is a low-frequency STANCE, not a
+    // per-frame reaction. Undamped it flip-flops each re-anneal when the player's
+    // speed sits near the press/harass crossover, so damp it two ways: an EMA on the
+    // player speed the order reads (a momentary twitch won't swing the stance) and a
+    // HYSTERESIS bias toward the CURRENTLY committed side (a Schmitt trigger -- it
+    // takes a clear contrary signal to flip). Together they turn a jittery order into
+    // a deliberate one that holds until the battlefield genuinely shifts. ---
+    inline constexpr float kOrderSpeedEmaAlpha = 0.25f;  // EMA weight of each new speed sample
+    inline constexpr float kOrderHysteresis = 0.8f;      // goal bias toward the held order
+
+    // --- REINFORCE DECISION: bringing a tank up is a COMMANDER decision now, not a
+    // pool timer. The command node's group agent carries a REINFORCE qubit -- the TOP
+    // member (index kReinforceQubit) star-bonded to the PRESS/HARASS hub, so an
+    // aggressive (PRESS) commander commits reserves and a cautious (HARASS) one holds
+    // them (the entanglement the design wants). Its own goal is UNDERSTRENGTH
+    // pressure: the wider the gap between the live squad and kSquadTargetSize, the
+    // harder it leans |0> (reinforce). On a commit, with room + kReinforceCooldown
+    // elapsed, the commander posts a deploy to the squad_deploy queue and the pool
+    // unparks a reserve. The group is reshaped ONCE to kReinforceGroupMembers (hub +
+    // 3 tank stance slots + reinforce = 5 qubits, the agent cap) so the reinforce
+    // qubit keeps a stable index and the order never re-anneals on a membership
+    // change. Since members are indexed 1..member_count, the reinforce qubit (the
+    // last member) sits at index == kReinforceGroupMembers. ---
+    inline constexpr uint32_t kReinforceQubit = 4u;         // top member (kQuantumAgentMaxDecisions-1)
+    inline constexpr uint32_t kReinforceGroupMembers = 4u;  // 3 tank stance slots + reinforce
+    inline constexpr float kReinforceBias = -0.3f;          // at full strength -> hold reserves
+    inline constexpr float kReinforceDeficitGain = 0.5f;    // per missing tank -> lean reinforce
+
     // How a tank folds the group command into its own goals.
     inline constexpr float kObeyPressPursue = 0.3f;    // PRESS: engage harder
     inline constexpr float kObeyPressClose = 0.5f;     //        + bias toward CLOSE

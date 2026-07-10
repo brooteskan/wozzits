@@ -1,6 +1,8 @@
 #include <engine/behavior/behavior_module_api.h>
 #include <engine/behavior/behavior_plugin_abi.h>
 
+#include "squad_deploy.h"
+
 // pool_manager -- a self-driving instance pool (the #252 prewarm-and-park model).
 //
 // It replaces the commander's per-reinforcement fresh SPAWN (each an O(scene)
@@ -72,6 +74,11 @@ namespace
         // returned AS-IS across rebuilds). The prewarm runs on self.start, which
         // fires once when the (authored-active) pool node goes live.
         (void)wz_instance_state<PoolManagerState>(facts);
+        // The command -> pool deploy queue (get-or-create): the commander's reinforce
+        // decision posts here, this pool consumes it. See squad_deploy.h.
+        (void)wz_create_shared_state(
+            facts, squad_deploy::kKey,
+            sizeof(squad_deploy::Queue), alignof(squad_deploy::Queue));
     }
 
     void pool_on_event(
@@ -200,9 +207,17 @@ namespace
                 }
             }
 
-            // DEPLOY to keep kActiveTarget live, paced by the cooldown.
+            // COMMAND-DRIVEN DEPLOY: unpark a reserve only when the COMMANDER has
+            // posted a reinforce order to the deploy queue -- bringing a tank up is the
+            // commander's decision now, not an automatic top-up. kActiveTarget stays a
+            // hard CAP, and the cooldown still paces successive deploys.
+            squad_deploy::Queue* deploy_q = static_cast<squad_deploy::Queue*>(
+                wz_find_shared_state(facts, squad_deploy::kKey));
             if (state->live_count >= kActiveTarget) {
-                return;   // squad at strength
+                return;   // at strength cap
+            }
+            if (!deploy_q || deploy_q->pending <= 0) {
+                return;   // no reinforce order outstanding
             }
             if (state->ready_count <= 0) {
                 return;   // nothing prewarmed yet
@@ -259,6 +274,7 @@ namespace
                 facts, handle,
                 hq.x + lateral, hq.y, hq.z + kDeployAhead);
 
+            deploy_q->pending -= 1;   // consume the commander's reinforce order
             state->slot_deployed[chosen] = 1u;
             state->live_count++;
             state->deploy_cursor = (chosen + 1) % state->pool_size;
