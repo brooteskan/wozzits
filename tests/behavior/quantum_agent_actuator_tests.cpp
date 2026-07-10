@@ -85,13 +85,15 @@ namespace
 
     // A one-shot behavior that RE-BIASES + RE-ARMS the co-located agent through the
     // write seam (wz_self_set_agent_goal / wz_self_rearm_agent) -- the sense->think
-    // half of the loop. Fires once, then latches g_rearm_done so it doesn't re-arm
-    // every frame.
+    // half of the loop. It skips the FIRST frame.update (so the test can read the
+    // agent's ORIGINAL committed decision first), fires on the SECOND, then latches
+    // `done` so it doesn't re-arm every frame.
     struct RearmProbe
     {
         uint8_t set_ok = 0;
         uint8_t rearm_ok = 0;
-        bool done = false;
+        int     frames = 0;
+        bool    done = false;
     };
     RearmProbe* g_rearm_probe = nullptr;
 
@@ -104,6 +106,10 @@ namespace
             return;
         }
         if (!g_rearm_probe || g_rearm_probe->done) {
+            return;
+        }
+        // Let the first frame observe the original commit before re-arming.
+        if (++g_rearm_probe->frames < 2) {
             return;
         }
         // Flip qubit 0's goal to favor |1>, then re-open the decision.
@@ -384,10 +390,14 @@ TEST(QuantumAgentActuator, RearmThroughWriteSeamFlipsTheDecision)
     dispatch_frame();
     EXPECT_EQ(actuator.seen_committed, 0);   // committed to the original goal |0>
 
-    // Next frame the rearm probe re-biases (goal -> |1>) + re-arms via the ABI.
+    // Next frame the rearm probe re-biases (goal -> |1>) + re-arms via the ABI. The
+    // re-arm REVOKES the latched decision, so the frame-path cache is reset and the
+    // actuator immediately reads "deliberating" -- it must NOT keep acting on the
+    // now-dead |0> order until the fresh anneal commits.
     dispatch_frame();
     EXPECT_EQ(rearm.set_ok, 1u);             // write seam resolved the agent
     EXPECT_EQ(rearm.rearm_ok, 1u);
+    EXPECT_EQ(actuator.seen_committed, -1);  // rearm re-opened the decision
 
     // Fresh anneal from the new goal, then the actuator reads the FLIPPED decision.
     for (int i = 41; i <= 90; ++i) {
