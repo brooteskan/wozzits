@@ -92,8 +92,10 @@ namespace wz::engine::behavior
     inline constexpr const char* kQuantumAgentMemoryKey = "memory";
 
     // Cap on coupled decisions a single agent exposes (keeps the POD state fixed-
-    // size + trivially copyable). Bump if a richer NPC needs more qubits.
-    inline constexpr uint32_t kQuantumAgentMaxDecisions = 4;
+    // size + trivially copyable). Bump if a richer NPC needs more qubits. 5 lets
+    // the tank carry a 5th qubit (a BLINK/teleport disposition) alongside
+    // pursue/posture/reconsider/fire.
+    inline constexpr uint32_t kQuantumAgentMaxDecisions = 5;
 
     // Per-binding instance state (POD; trivially copyable, preserved across scene
     // rebuilds). Public so an actuator / read surface -- and tests -- can read the
@@ -107,8 +109,9 @@ namespace wz::engine::behavior
         uint8_t agent_count = 1;       // number of coupled decisions built
         // Per-qubit cache. [i] = decision i; -1 committed = deliberating, else
         // 0 (|0>) / 1 (|1>); marginal = live <sigma_z> in [-1, 1].
-        int8_t committed[kQuantumAgentMaxDecisions] = { -1, -1, -1, -1 };
-        float marginal[kQuantumAgentMaxDecisions] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        int8_t committed[kQuantumAgentMaxDecisions] = { -1, -1, -1, -1, -1 };
+        float marginal[kQuantumAgentMaxDecisions] =
+            { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
     };
 
     uint8_t register_quantum_agent_behaviors(WzBehaviorPluginApi* api);

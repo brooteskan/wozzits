@@ -37,7 +37,6 @@ namespace teleport
     inline constexpr float  kTeleportDist     = 45.0f; // jump distance (world units)
     inline constexpr float  kRideHeight       = 0.5f;  // lift above the sampled ground
     inline constexpr float  kRevealFraction   = 0.45f; // reveal the tank once shrink is this far
-    inline constexpr double kTeleportInterval = 9.0;   // seconds between blinks (timer trigger)
 
     inline constexpr const char* kBubbleName = "teleport_bubble";
     inline constexpr const char* kBodyName   = "body";
@@ -54,7 +53,6 @@ namespace teleport
         float   timer = 0.0f;       // seconds into the current phase
         float   dir   = 0.0f;       // accumulating blink heading (rad)
         float   dx = 0.0f, dy = 0.0f, dz = 0.0f;  // chosen arrival point (world)
-        double  next_time = -1.0;   // sim_time of the next timer blink (<0 = unset)
     };
 
     inline void set_bubble_scale(
@@ -141,21 +139,11 @@ namespace teleport
         show_bubble(facts, s, 1u);
     }
 
-    // Advance the blink; also self-triggers on the built-in timer (Seam 2).
+    // Advance an in-progress blink. Idle until the agent calls trigger() (wired to
+    // the tank's BLINK decision qubit).
     inline void tick(const WzBehaviorFrameFacts* facts, State* s)
     {
-        if (!facts || !s) {
-            return;
-        }
-        const double now = wz_sim_time(facts);
-        if (s->next_time < 0.0) {
-            s->next_time = now + kTeleportInterval;
-        }
-        if (s->phase == Phase::Idle) {
-            if (now >= s->next_time) {
-                trigger(facts, s);
-                s->next_time = now + kTeleportInterval;
-            }
+        if (!facts || !s || s->phase == Phase::Idle) {
             return;
         }
 

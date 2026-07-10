@@ -186,10 +186,23 @@ namespace
                 + range_quality * kFireRangeWeight,
             -1.0f, 1.0f);
 
+        // BLINK disposition (qubit 4): tactical pressure -> teleport out. Taking
+        // fire pushes hard toward a jump, a terrain-blocked shot pushes mildly
+        // (reposition for a clean line), and the bias keeps it put otherwise.
+        // under_fire / has_los are last frame's sensed values (set in the learning
+        // block below) -- a frame's lag is fine for a goal.
+        const float blink_goal = tank_drive::clampf(
+            (state->under_fire ? kBlinkUnderFireWeight : 0.0f)
+                + (state->has_los ? 0.0f : kBlinkBlockedWeight)
+                - kBlinkBias,
+            -1.0f, 1.0f);
+
         wz_self_set_agent_goal(facts, event, 0u, pursue_goal);      // pursue vs hold
         wz_self_set_agent_goal(facts, event, 1u, posture_goal);     // close vs circle
         wz_self_set_agent_goal(facts, event, 2u, reconsider_goal);  // volatile vs stable
         wz_self_set_agent_goal(facts, event, 3u, fire_goal);        // fire vs conserve
+        wz_self_set_agent_goal(
+            facts, event, kBlinkDecisionQubit, blink_goal);         // blink vs stay
     }
 
     // Clear line of sight from our gun to the player? March points along the
@@ -666,6 +679,30 @@ namespace
                         kAggressionMemoryQubit));
             }
             state->under_fire = fire ? 1u : 0u;
+
+            // BLINK: when the deliberated blink disposition (qubit 4) commits --
+            // or, for an unobserved tank that may never fully collapse, LEANS --
+            // toward teleporting (|0>), and the bubble effect is idle + off
+            // cooldown, discharge a jump. teleport.h runs the bubble + relocation.
+            WzAgentDecision blink_dec{};
+            const uint8_t has_blink = wz_self_agent_decision_at(
+                facts, event, kBlinkDecisionQubit, &blink_dec);
+            const bool wants_blink =
+                has_blink
+                && (blink_dec.committed == 0
+                    || (blink_dec.committed == -1 && blink_dec.marginal > 0.0f));
+            const double blink_now = wz_sim_time(facts);
+            if (alive && wants_blink
+                && state->teleport.phase == teleport::Phase::Idle
+                && blink_now >= state->next_blink_time)
+            {
+                teleport::trigger(facts, &state->teleport);
+                state->next_blink_time = blink_now + kBlinkCooldown;
+                wz_log_infof(
+                    facts, "[qtank:%d] BLINK  ctx=%s dist=%.1f",
+                    state->tank_id, ctx ? "braced" : "fleeing",
+                    (double)state->distance_to_target);
+            }
         }
 
         // Announce each collapse of the joint decision (once per change).

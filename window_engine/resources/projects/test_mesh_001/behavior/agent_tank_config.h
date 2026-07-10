@@ -162,6 +162,21 @@ namespace agent_tank_config
     inline constexpr float kFireAmmoWeight = 1.0f;    // full ammo -> fire, empty -> conserve
     inline constexpr float kFireRangeWeight = 0.6f;   // close target -> worth the shot
 
+    // --- BLINK / TELEPORT DECISION: a 5th decision qubit (index 4) is the tank's
+    // BLINK disposition -- |0> teleport away, |1> stay -- deliberated on the
+    // cognition's own clock like pursue/posture/fire. Its goal is driven by
+    // TACTICAL PRESSURE: taking fire pushes hard toward a blink (escape /
+    // reposition), a terrain-blocked shot pushes mildly (jump for a clean line),
+    // and a baseline bias keeps the tank PUT when nothing is pressing. The blink
+    // discharges when this disposition commits (or leans) to |0>, the bubble
+    // effect is idle, and the cooldown has elapsed; teleport.h runs the sequence.
+    // Requires the co-located quantum_agent's `decisions` >= 5 (enemy prefab). ---
+    inline constexpr uint32_t kBlinkDecisionQubit = 4u;
+    inline constexpr double kBlinkCooldown = 6.0;        // min seconds between blinks
+    inline constexpr float kBlinkUnderFireWeight = 1.2f; // taking fire -> blink out
+    inline constexpr float kBlinkBlockedWeight = 0.8f;   // shot blocked -> reposition
+    inline constexpr float kBlinkBias = 0.7f;            // baseline lean toward STAY
+
     // --- OBSERVATION-FORCED DECOHERENCE (quantum Zeno): when the player is looking
     // at the tank, its decisions collapse fast -> it commits early and acts
     // PREDICTABLY; unobserved, near-zero decoherence keeps it in superposition

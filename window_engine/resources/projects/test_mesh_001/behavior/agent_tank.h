@@ -155,6 +155,10 @@ struct QuantumTankState {
     // shot lined up, at most once per kFireCooldown). Unlimited ammo.
     double next_fire_time = 0.0;
 
+    // Blink gate: sim_time the tank may next teleport, so a persistently-committed
+    // BLINK qubit (index 4) can't chain jumps -- one blink per kBlinkCooldown.
+    double next_blink_time = 0.0;
+
     // Last committed disposition of the co-located quantum_agent (if any):
     // -2 = never read, -1 = deliberating, 0/1 = the chosen outcome. We react
     // only on a CHANGE, so the announcement fires once per collapse.
