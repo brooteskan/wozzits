@@ -81,3 +81,26 @@ TEST(Ttn, TruncationErrorTelemetry)
     relax_step(capped, /*gamma=*/0.2, /*dtau=*/0.05);
     EXPECT_GT(capped.last_truncation_error, 0.0);
 }
+
+// A PERSISTENT agent relaxes far longer than any short test. The imaginary-time
+// gates are non-unitary, so without per-step renormalization the MPS 2-norm
+// compounds (~e^{|E0| dtau} per step) and overflows to inf within a couple thousand
+// steps; the trace-normalized marginals then read inf/inf = NaN and the agent
+// silently stops committing. With renormalization the marginals stay finite and in
+// range however long it runs. 4000 steps at dtau=0.05 = 200 sim-seconds, well past
+// the ~77s where the un-normalized norm overflows.
+TEST(Ttn, LongRelaxationStaysFiniteAndBounded)
+{
+    TtnChain g = make_ttn_chain(6, { 1.0, 1.0, 1.0, 1.0, 1.0 }, /*chi=*/2);
+    g.goal_field[0] = 0.5;
+    relax(g, /*gamma=*/0.1, /*dtau=*/0.05, /*iterations=*/4000);
+
+    const auto z = decisions(g);
+    ASSERT_EQ(z.size(), 6u);
+    for (double v : z) {
+        EXPECT_TRUE(std::isfinite(v)) << "marginal overflowed to inf/NaN";
+        EXPECT_GE(v, -1.0001);
+        EXPECT_LE(v, 1.0001);
+    }
+    EXPECT_GT(z[0], 0.0);  // the goal still biases the chain after all that time
+}

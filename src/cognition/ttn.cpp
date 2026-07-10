@@ -49,6 +49,35 @@ namespace wz::engine::cognition
             g[3 * 4 + 3] = Complex{ agree, 0 };   // 11
             return g;
         }
+
+        // Rescale every MPS site to unit Frobenius norm. The imaginary-time gates are
+        // NON-unitary (e^{-H dtau} shrinks/grows amplitudes), so without this the
+        // network's 2-norm drifts every relax_step -- it grows ~e^{|E0| dtau} per step
+        // and, over a long-lived relaxation (a persistent agent), overflows to inf.
+        // The marginals are trace-normalized (tree_bp_sigma_z), so an overflowed state
+        // reads inf/inf = NaN, try_commit stops firing (NaN compares false), and the
+        // agent silently freezes. A per-site rescale is a pure GAUGE: the physical state
+        // is the contraction of the sites, so dividing each site by a scalar only
+        // rescales the whole state -- which the trace-normalized reads are invariant to.
+        // It changes nothing physical; it just keeps the amplitudes in range. (Mirrors
+        // qstate's normalize-after-each-imaginary-time-op and graph_tn's lambda renorm.)
+        void renormalize_sites(TreeBpNetwork& mps)
+        {
+            const uint32_t n = node_count(mps);
+            for (uint32_t i = 0; i < n; ++i) {
+                MpsSite& A = node_data(mps, static_cast<NodeHandle>(i));
+                double sumsq = 0.0;
+                for (const Complex& c : A.a) {
+                    sumsq += c.real() * c.real() + c.imag() * c.imag();
+                }
+                if (sumsq > 0.0) {
+                    const double inv = 1.0 / std::sqrt(sumsq);
+                    for (Complex& c : A.a) {
+                        c *= inv;
+                    }
+                }
+            }
+        }
     }
 
     TtnChain make_ttn_chain(
@@ -106,6 +135,10 @@ namespace wz::engine::cognition
             apply_one_site_gate(
                 node_data(g.mps, i), site_gate(gamma, g.goal_field[i], dtau * 0.5));
         }
+        // The gates above are non-unitary, so rescale the sites back into range or the
+        // MPS 2-norm compounds each step and eventually overflows to inf/NaN (see
+        // renormalize_sites). Pure gauge -- the trace-normalized marginals are unchanged.
+        renormalize_sites(g.mps);
     }
 
     void relax(TtnChain& g, double gamma, double dtau, uint32_t iterations)
