@@ -401,6 +401,22 @@ namespace wz::app
                     ++it;
                 }
             }
+
+            // And the self.start set (dispatch_self_start skips any binding already in
+            // it). Same reuse hazard, worse consequence: a re-added node with a REUSED
+            // binding id (a live edit / undo) would never re-fire self.start, so its
+            // quantum_agent would never (re)create its agent -- handle stays 0, every
+            // read "deliberating", every write a silent no-op: a permanently brain-dead
+            // NPC -- and the set would leak one string per despawn. Prune it like the
+            // initialized set so a reused id starts fresh.
+            auto& started = behavior_scene_->behavior_state.started_bindings;
+            for (auto it = started.begin(); it != started.end();) {
+                if (live_binding_ids.find(*it) == live_binding_ids.end()) {
+                    it = started.erase(it);
+                } else {
+                    ++it;
+                }
+            }
         }
 
         // Release cognition wave functions whose quantum_agent binding vanished
