@@ -579,3 +579,27 @@ TEST(AgentCognition, RejectedReshapeLeavesAgentIntact)
     EXPECT_LE(m3, 1.0001);
     EXPECT_GT(store.marginal(h, 0), 0.8);     // still holds its goal -- fully alive
 }
+
+// rearm() re-opens every decision to a fresh equal superposition, so BOTH reads
+// must reflect that immediately: committed() = deliberating AND marginal() ~ 0.
+// The bug left the pre-rearm +/-1 in the marginal cache, so marginal() reported a
+// maximally-wrong "live" value until the next think() even though committed()
+// already said deliberating.
+TEST(AgentCognition, RearmResetsStaleMarginal)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 2;
+    spec.clock = anneal_clock();
+    spec.goals = { Goal{ 0, 0.8 } };
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    run_anneal(store, h);   // start + anneal -> committed, marginal polarized to +z
+    ASSERT_TRUE(store.committed(h, 0).has_value());
+    ASSERT_GT(store.marginal(h, 0), 0.8);
+
+    ASSERT_TRUE(store.rearm(h, 8.1));
+    EXPECT_FALSE(store.committed(h, 0).has_value());  // deliberating
+    EXPECT_NEAR(store.marginal(h, 0), 0.0, 1e-9);     // reset, NOT the stale ~1
+}

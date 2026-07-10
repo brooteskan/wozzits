@@ -314,6 +314,13 @@ namespace wz::engine::cognition
         a->coordination = std::move(*coordination);
 
         std::fill(a->latched.begin(), a->latched.end(), std::nullopt);
+        // Reset the marginal cache too (as reshape does): rearm re-opens every decision
+        // to a fresh equal superposition (<sigma_z> = 0). Leaving the pre-rearm +/-1 in
+        // the cache would make marginal() report a maximally-wrong "live" value until the
+        // next think() -- while committed() already reads "deliberating" off the cleared
+        // latches. That inconsistency is the read-after-rearm asymmetry from the module
+        // cache, one level down.
+        std::fill(a->marginal_cache.begin(), a->marginal_cache.end(), 0.0);
         wz::engine::cognition::start(a->clock, now);
         return true;
     }
