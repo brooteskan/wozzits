@@ -160,6 +160,11 @@ namespace
         {
             const double now = wz_sim_time(facts);
 
+            // The command -> pool deploy queue. We publish our live_count into it (see
+            // below) so the commander gates on a count consistent with `pending`.
+            squad_deploy::Queue* deploy_q = static_cast<squad_deploy::Queue*>(
+                wz_find_shared_state(facts, squad_deploy::kKey));
+
             // LAZY PREWARM: submit one parked spawn per kPrewarmCooldown until the pool
             // is full, so the O(scene) rebuild each spawn triggers lands on a DIFFERENT
             // frame instead of stacking into one load spike. The reserves trickle in
@@ -201,6 +206,7 @@ namespace
                 {
                     state->slot_deployed[i] = 0u;
                     state->live_count--;
+                    if (deploy_q) { deploy_q->live = state->live_count; }
                     wz_log_infof(
                         facts, "[pool] recycle slot %d <- %s (%d/%d live)",
                         i, state->slot_id[i], state->live_count, kActiveTarget);
@@ -211,8 +217,6 @@ namespace
             // posted a reinforce order to the deploy queue -- bringing a tank up is the
             // commander's decision now, not an automatic top-up. kActiveTarget stays a
             // hard CAP, and the cooldown still paces successive deploys.
-            squad_deploy::Queue* deploy_q = static_cast<squad_deploy::Queue*>(
-                wz_find_shared_state(facts, squad_deploy::kKey));
             if (state->live_count >= kActiveTarget) {
                 return;   // at strength cap
             }
@@ -274,9 +278,12 @@ namespace
                 facts, handle,
                 hq.x + lateral, hq.y, hq.z + kDeployAhead);
 
+            // Move one unit from pending -> live ATOMICALLY (same step) so the
+            // commander, reading (live + pending), never sees the deploy uncounted.
             deploy_q->pending -= 1;   // consume the commander's reinforce order
             state->slot_deployed[chosen] = 1u;
             state->live_count++;
+            deploy_q->live = state->live_count;
             state->deploy_cursor = (chosen + 1) % state->pool_size;
             state->next_deploy_time = now + kDeployCooldown;
             wz_log_infof(

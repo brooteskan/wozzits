@@ -24,5 +24,14 @@ namespace squad_deploy
         // The commander bounds this so (live + pending) never exceeds the squad
         // target, so it saturates at the current deficit rather than running away.
         int32_t pending = 0;
+
+        // The pool's live-or-in-flight count (its live_count), MIRRORED here so the
+        // commander gates on a count that is consistent with `pending`. The pool
+        // moves a unit from pending->live ATOMICALLY at deploy (pending--, live++ in
+        // the same step) and drops live on recycle, so (live + pending) never has the
+        // one-frame undercount it would if the commander read the roster's lease count
+        // (claimed a frame later, on the tank's self.activated). Written only by the
+        // pool; read by the commander.
+        int32_t live = 0;
     };
 }

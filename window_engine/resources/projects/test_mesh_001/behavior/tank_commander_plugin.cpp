@@ -159,7 +159,12 @@ namespace
         sense_world(facts, event, state);   // gets the player's speed
 
         const double now = wz_sim_time(facts);
-        const int live = roster ? roster->active_members : 0;
+        // Live-or-in-flight count from the POOL (mirrored in the queue), NOT the
+        // roster's lease count. The pool moves a unit pending->live atomically at
+        // deploy, so (live + pending) has no one-frame undercount -- the roster's lease
+        // is only claimed on the tank's self.activated, a frame after the deploy, and
+        // reading it here would let the commander post an extra order in that gap.
+        const int live = deploy_q ? deploy_q->live : 0;
         const int deficit = kSquadTargetSize - live;
 
         // Smooth the player speed the order reads with a frame-rate-INVARIANT EMA (a
@@ -202,8 +207,10 @@ namespace
 
         // REINFORCE: post ONE deploy to the queue when the (settled) reinforce qubit is
         // committed |0>, there's room under the target, and the cooldown has elapsed.
-        // The pool consumes the queue; (live + pending) < target caps outstanding
-        // requests at the deficit, so it can never over-commit past kSquadTargetSize.
+        // `live` is the pool's own count (mirrored in the queue) and the pool moves
+        // pending->live atomically at deploy, so (live + pending) is a consistent total
+        // that truly caps outstanding requests at the deficit -- it can never over-commit
+        // past kSquadTargetSize, even across the deploy/lease-claim frame gap.
         if (deploy_q) {
             WzAgentDecision reinforce{};
             const uint8_t have = wz_self_agent_decision_at(
