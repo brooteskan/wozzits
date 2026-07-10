@@ -109,9 +109,13 @@ namespace wz::engine::cognition
         // Returns false for an unknown handle.
         bool set_decoherence(AgentHandle h, double rate);
 
-        // LEARNING. Reinforce the agent's memory toward (memory_qubit == `toward`)
-        // by `strength` (> 0 reward, < 0 punish; monotonic + saturating). Untouched
-        // by rearm/reshape/commit -- the learned bias accumulates. False if the
+        // LEARNING. Reinforce the agent's memory register. `toward` picks which branch
+        // of `memory_qubit` to boost: toward == true boosts the |0> branch (raising the
+        // qubit's memory_preference toward +1); toward == false boosts |1> (toward -1).
+        // `strength` > 0 rewards, < 0 punishes (monotonic + saturating). NB: this is the
+        // INVERSE of reward_pair's convention below, where ctx_value/dec_value == true
+        // selects the |1> branch -- follow each function's own mapping, not a shared one.
+        // Untouched by rearm/reshape/commit -- the learned bias accumulates. False if the
         // agent has no memory / bad qubit.
         bool reward(
             AgentHandle h, uint32_t memory_qubit, bool toward, double strength);
