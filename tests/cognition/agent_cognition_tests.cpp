@@ -603,3 +603,39 @@ TEST(AgentCognition, RearmResetsStaleMarginal)
     EXPECT_FALSE(store.committed(h, 0).has_value());  // deliberating
     EXPECT_NEAR(store.marginal(h, 0), 0.0, 1e-9);     // reset, NOT the stale ~1
 }
+
+// create()/reshape() must REFUSE a qubit count that would blow up the exact
+// backend's 2^n qstate -- uint64_t{1} << n is UB at n >= 64, and counts in the 30s
+// OOM into hundreds of GB. The count is refused, never attempted.
+TEST(AgentCognition, RejectsInsaneQubitCounts)
+{
+    AgentCognitionStore store;
+
+    // chi = 0 exact: 64 would shift-UB, 40 would allocate terabytes, 25 is just over
+    // the 24-qubit cap. All refused rather than attempted.
+    for (uint32_t n : { 25u, 40u, 64u }) {
+        AgentSpec spec;
+        spec.agent_count = n;
+        spec.clock = anneal_clock();
+        EXPECT_EQ(store.create(spec), kInvalidAgent) << "agent_count=" << n;
+    }
+    // The learning-memory register is the same 2^n qstate -- also bounded.
+    {
+        AgentSpec spec;
+        spec.agent_count = 2;
+        spec.memory_qubits = 64;
+        spec.clock = anneal_clock();
+        EXPECT_EQ(store.create(spec), kInvalidAgent);
+    }
+    // A small exact group still builds, and an absurd reshape is refused without
+    // disturbing the live agent.
+    {
+        AgentSpec spec;
+        spec.agent_count = 4;
+        spec.clock = anneal_clock();
+        const AgentHandle h = store.create(spec);
+        ASSERT_NE(h, kInvalidAgent);
+        EXPECT_FALSE(store.reshape(h, 1u << 20, {}, 0.0));
+        EXPECT_EQ(store.agent_count(h), 4u);
+    }
+}

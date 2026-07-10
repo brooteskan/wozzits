@@ -15,10 +15,23 @@ namespace wz::engine::cognition
 {
     namespace
     {
+        // Sane upper bounds on qubit counts. The exact backend (chi = 0) and the
+        // learning-memory register both allocate a 2^n qstate vector, so n must stay
+        // WELL under 64 (uint64_t{1} << n is UB at n >= 64, qstate.cpp) and small enough
+        // not to OOM (2^30 ~ 16 GB, and it only gets worse). The linear backends
+        // (chi = 1 loopy, chi >= 2 TTN) scale linearly, so they get a far higher ceiling
+        // that just guards against an absurd count rather than the exponential blow-up.
+        constexpr uint32_t kMaxExactQubits = 24;   // 2^24 complex ~ 256 MB -- the hard cap
+        constexpr uint32_t kMaxAgentCount = 4096;  // linear-backend sanity ceiling
+
         // Build the exact joint-state backend (chi = 0): arbitrary pairwise bonds
-        // + summed per-agent goals.
+        // + summed per-agent goals. Refuses a count whose 2^n state vector would
+        // overflow the shift (n >= 64) or exhaust memory -- callers get nullopt, not UB.
         std::optional<Coordination> build_exact(const AgentSpec& spec)
         {
+            if (spec.agent_count > kMaxExactQubits) {
+                return std::nullopt;
+            }
             ExactGroup g = make_exact_group(spec.agent_count, spec.bonds);
             set_goals(g, spec.goals);
             return Coordination{ std::move(g) };
@@ -84,7 +97,13 @@ namespace wz::engine::cognition
 
     AgentHandle AgentCognitionStore::create(const AgentSpec& spec)
     {
-        if (spec.agent_count == 0) {
+        // Reject an empty agent, an absurd count (guards the linear backends), and a
+        // memory register too large for its 2^n qstate (same 1<<n UB / OOM as the exact
+        // backend). The exact backend's tighter 2^agent_count cap is enforced in
+        // build_exact, so only chi = 0 is bounded that low.
+        if (spec.agent_count == 0
+            || spec.agent_count > kMaxAgentCount
+            || spec.memory_qubits > kMaxExactQubits) {
             return kInvalidAgent;
         }
 
@@ -332,7 +351,7 @@ namespace wz::engine::cognition
         double now)
     {
         Agent* a = find(h);
-        if (!a || agent_count == 0) {
+        if (!a || agent_count == 0 || agent_count > kMaxAgentCount) {
             return false;
         }
 
