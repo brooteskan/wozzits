@@ -150,6 +150,14 @@ namespace wz::engine::behavior
                     state->marginal[i] = 0.0f;
                 }
                 state->started = 1;
+                // Bootstrap the self-paced think loop from agent creation. Only the
+                // cognition-tick handler reschedules the wake, and dispatch parks a
+                // binding's wake at +inf before firing -- so a tick that fires BEFORE
+                // this self.start early-returns (below) without rescheduling and strands
+                // the wake asleep forever, and nothing else would ever wake it. Setting
+                // the wake here starts the loop regardless of dispatch order; 0 = due
+                // now, matching the "no entry -> due now" first-think timing.
+                wz_set_next_wake(facts, 0.0f);
                 return;
             }
 

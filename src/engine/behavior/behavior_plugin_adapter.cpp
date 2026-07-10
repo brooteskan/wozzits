@@ -1662,6 +1662,14 @@ namespace wz::engine::behavior
             // 1 hub qubit + one per member; a star of bonds from the hub (0) to
             // every member so the whole group stays one entangled coordination.
             const uint32_t agent_count = 1u + member_count;
+            // The frame-path cache is fixed at kQuantumAgentMaxDecisions, but the store
+            // has NO cap -- so a group larger than the cache would grow the store while
+            // its top members stayed permanently unreadable via get_agent_decision_at
+            // (they still take goals and entangle, they just never report a decision).
+            // Refuse rather than silently diverge the store from the cache.
+            if (agent_count > kQuantumAgentMaxDecisions) {
+                return 0;
+            }
             std::vector<wz::engine::cognition::ExactBond> bonds;
             bonds.reserve(member_count);
             for (uint32_t i = 1; i < agent_count; ++i) {
