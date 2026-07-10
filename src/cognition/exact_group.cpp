@@ -7,6 +7,19 @@ namespace wz::engine::cognition
     ExactGroup make_exact_group(
         uint32_t agent_count, std::vector<ExactBond> bonds)
     {
+        // Drop any bond with an out-of-range endpoint. relax_step applies each bond's
+        // ZZ UNCHECKED (unlike the goal loop, which guards q < goal_field.size()), so an
+        // out-of-range endpoint would address a non-existent qubit: its bit reads a
+        // constant 0, silently degenerating the bond into a phantom single-site field,
+        // and an index >= 64 is shift-UB. The store's create() canonicalizes bonds
+        // first, but make_exact_group is public, so it guards itself.
+        bonds.erase(
+            std::remove_if(
+                bonds.begin(), bonds.end(),
+                [agent_count](const ExactBond& b) {
+                    return b.a >= agent_count || b.b >= agent_count;
+                }),
+            bonds.end());
         return ExactGroup{
             .joint = qstate::uniform(agent_count),
             .bonds = std::move(bonds),

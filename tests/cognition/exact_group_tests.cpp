@@ -135,3 +135,29 @@ TEST(ExactGroup, SymmetricTrotterStepIsSecondOrder)
     EXPECT_GT(ratio, 3.0);
     EXPECT_LT(ratio, 5.0);
 }
+
+// make_exact_group must DROP a bond with an out-of-range endpoint. relax_step applies
+// each bond's ZZ UNCHECKED, so an out-of-range endpoint would address a non-existent
+// qubit (its bit reads a constant 0 -> the bond degenerates into a phantom single-site
+// field) and, for an index >= 64, shift-UB. Only the valid bonds survive, and relax
+// runs cleanly.
+TEST(ExactGroup, DropsOutOfRangeBonds)
+{
+    // 2-qubit group, but two bonds reference qubits that do not exist.
+    ExactGroup g = make_exact_group(
+        2, { ExactBond{ .a = 0, .b = 1, .j = 1.0 },     // valid
+             ExactBond{ .a = 0, .b = 2, .j = 1.0 },     // b = 2 out of range
+             ExactBond{ .a = 99, .b = 1, .j = 1.0 } }); // a = 99 out of range
+    EXPECT_EQ(g.bonds.size(), 1u);   // only the valid bond survives
+
+    // No UB, and the marginals stay finite and in range.
+    for (int i = 0; i < 50; ++i) {
+        relax_step(g, /*gamma=*/0.2, /*dtau=*/0.05);
+    }
+    for (uint32_t q = 0; q < 2; ++q) {
+        const double z = decision_z(g, q);
+        EXPECT_TRUE(std::isfinite(z));
+        EXPECT_GE(z, -1.0001);
+        EXPECT_LE(z, 1.0001);
+    }
+}
