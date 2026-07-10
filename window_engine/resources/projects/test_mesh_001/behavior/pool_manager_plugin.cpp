@@ -62,6 +62,8 @@ namespace
     static const char* kPoolEvents[] = {
         "self.start",
         "spawn.completed",
+        "spawn.failed",     // else the SPAWN_FAILED case below is dead -- a failed
+                            // prewarm would strand its slot with no diagnostic
         "frame.update",
     };
 
@@ -150,8 +152,17 @@ namespace
 
         case WZ_EVENT_SPAWN_FAILED:
         {
+            // A prewarm spawn failed: its slot never becomes ready, so the pool runs
+            // with one fewer reserve (if enough fail, the squad can't reach strength).
+            // The lazy prewarm counts it as submitted and moves on -- it is NOT retried,
+            // so this log is the only signal. Loud so a permanently-bad prefab (all
+            // spawns failing -> no enemy ever deploys) is obvious rather than silent.
+            // No error-level log seam exists (behavior logging is info-only), so mark
+            // the message ERROR so it stands out in the log.
             wz_log_infof(
-                facts, "[pool] prewarm spawn FAILED (tag %llu)",
+                facts,
+                "[pool] ERROR: prewarm spawn FAILED (tag %llu) -- reserve slot lost, "
+                "squad may run under strength",
                 static_cast<unsigned long long>(wz_spawn_event_request_tag(facts)));
             return;
         }
