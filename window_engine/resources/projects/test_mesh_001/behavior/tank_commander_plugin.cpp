@@ -47,6 +47,69 @@ namespace
         }
     }
 
+    // Re-anneal the commander's group agent: reward doctrine from the squad's recent
+    // exchange, set the order + reinforce goals, and rearm. This is the ONLY place the
+    // order re-opens, so it is structurally separated from every decision READ (which
+    // live in the Holding branch below). `desired` is the order side to commit toward
+    // -- the held side on a heartbeat/reinforce rearm, or the new side on a warranted
+    // flip. Leaves the machine in Deliberating.
+    void commander_rearm(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        QuantumTankState* state,
+        const SquadRoster* roster,
+        int desired,
+        int deficit,
+        double now)
+    {
+        using namespace agent_tank_config;
+
+        // DOCTRINE LEARNING: reward from the squad's net shot-exchange since the last
+        // rearm (shots_landed - fire_taken delta) -- pressing that wins exchanges
+        // reinforces |0>, losing them reinforces |1> -- then fold what it has learned
+        // into the order below. The "director node learns" whether pressing pays off.
+        if (roster) {
+            const int d_landed = roster->shots_landed - state->prev_shots_landed;
+            const int d_taken = roster->fire_taken - state->prev_fire_taken;
+            state->prev_shots_landed = roster->shots_landed;
+            state->prev_fire_taken = roster->fire_taken;
+            const int net = d_landed - d_taken;
+            if (net != 0) {
+                wz_self_agent_reward(
+                    facts, event, kDoctrineMemoryQubit,
+                    /*toward=*/ net > 0 ? 1u : 0u, kDoctrineReward);
+            }
+        }
+        const float doctrine =
+            wz_self_agent_memory(facts, event, kDoctrineMemoryQubit);
+
+        // Order goal: reactive base (press slow players + learned doctrine) plus a
+        // decisive bias toward `desired` so the fresh anneal commits to the intended
+        // side -- holding the current order across a reinforce/heartbeat rearm, or
+        // carrying a warranted flip through.
+        const float bias =
+            desired == 0 ? kOrderHysteresis
+            : (desired == 1 ? -kOrderHysteresis : 0.0f);
+        const float order_goal = tank_drive::clampf(
+            kCommandBias
+                - state->order_speed_ema * kCommandSpeedGain
+                + doctrine * kDoctrineGain
+                + bias,
+            -1.0f, 1.0f);
+        wz_self_set_agent_goal(facts, event, 0u, order_goal);
+
+        // Reinforce goal (top qubit): understrength pressure, star-bonded to the order.
+        const float reinforce_goal = tank_drive::clampf(
+            kReinforceBias + kReinforceDeficitGain * static_cast<float>(deficit),
+            -1.0f, 1.0f);
+        wz_self_set_agent_goal(facts, event, kReinforceQubit, reinforce_goal);
+
+        wz_self_rearm_agent(facts, event);
+        state->order_deficit_at_rearm = deficit;
+        state->next_reanneal_time = now + kOrderHeartbeat;
+        state->order_phase = OrderPhase::Deliberating;
+    }
+
     void commander_on_event(
         const WzBehaviorFrameFacts* facts,
         const WzBehaviorEvent* event,
@@ -97,22 +160,55 @@ namespace
 
         const double now = wz_sim_time(facts);
         const int live = roster ? roster->active_members : 0;
+        const int deficit = kSquadTargetSize - live;
 
-        // REINFORCE ORDER: bringing a tank up is the commander's decision. When its
-        // reinforce qubit is committed |0> (reinforce), there is ROOM under the squad
-        // target, and the request cooldown has elapsed, post ONE deploy to the queue;
-        // the pool unparks a reserve. Checked every frame (paced by the cooldown) so an
-        // understrength squad fills promptly even though the order re-anneals slower.
-        // Gating on (live + pending) keeps outstanding requests from ever exceeding the
-        // deficit, so it can never over-commit past kSquadTargetSize.
+        // Smooth the player speed the order reads with a frame-rate-INVARIANT EMA (a
+        // per-second time constant, not a per-frame weight). Updated EVERY frame -- the
+        // order is event-driven now (no fixed re-anneal window), so the smoothing must
+        // sample every frame too, or it would ALIAS the speed rather than average it (a
+        // sprint between sparse samples would be invisible; a boundary twitch would get
+        // full weight). A sustained change registers over ~kOrderSpeedTau seconds; a
+        // sub-second twitch is averaged away before it can cross the flip deadband.
+        const float ema_dt = wz_delta_seconds(facts);
+        const float ema_alpha =
+            ema_dt > 0.0f ? 1.0f - expf(-ema_dt / kOrderSpeedTau) : 0.0f;
+        state->order_speed_ema +=
+            ema_alpha * (state->target_speed - state->order_speed_ema);
+
+        // ORDER STATE MACHINE (OrderPhase). Reads live in one state, the rearm on the
+        // transition -- so a decision is never read in the block it is rearmed (the
+        // async-commit trap), and the order re-deliberates only on a material change
+        // (never on a bare timer -- the flip-flop).
+        if (state->order_phase == OrderPhase::Deliberating) {
+            // Waiting for the freshly-rearmed group to settle: read, and latch on the
+            // first commit. Don't act on an unsettled group.
+            WzAgentDecision order{};
+            (void)wz_self_agent_decision(facts, event, &order);
+            if (order.committed != -1) {
+                if (order.committed != state->last_decision) {
+                    state->last_decision = order.committed;
+                    wz_log_infof(
+                        facts, "[commander] order=%s (player_spd=%.1f)",
+                        order.committed == 0 ? "PRESS" : "HARASS",
+                        (double)state->order_speed_ema);
+                }
+                state->order_phase = OrderPhase::Holding;
+            }
+            return;
+        }
+
+        // HOLDING: the order is latched. Feed reinforce deploys off the settled group,
+        // then decide whether anything warrants re-opening the order.
+
+        // REINFORCE: post ONE deploy to the queue when the (settled) reinforce qubit is
+        // committed |0>, there's room under the target, and the cooldown has elapsed.
+        // The pool consumes the queue; (live + pending) < target caps outstanding
+        // requests at the deficit, so it can never over-commit past kSquadTargetSize.
         if (deploy_q) {
             WzAgentDecision reinforce{};
             const uint8_t have = wz_self_agent_decision_at(
                 facts, event, kReinforceQubit, &reinforce);
-            const bool wants_reinforce =
-                have && (reinforce.committed == 0
-                    || (reinforce.committed == -1 && reinforce.marginal > 0.0f));
-            if (wants_reinforce
+            if (have && reinforce.committed == 0
                 && (live + deploy_q->pending) < kSquadTargetSize
                 && now >= state->next_spawn_time)
             {
@@ -124,84 +220,32 @@ namespace
             }
         }
 
-        if (now < state->next_reanneal_time) {
-            return;
-        }
-
-        // DOCTRINE LEARNING: reward the commander's doctrine memory from the squad's
-        // net shot-exchange since the last order (shots_landed - fire_taken delta),
-        // then fold what it has learned into the order. Beyond the reactive rule
-        // (press slow players), the commander LEARNS whether pressing actually pays
-        // off against THIS player and leans that way -- the "director node learns".
-        if (roster) {
-            const int d_landed = roster->shots_landed - state->prev_shots_landed;
-            const int d_taken = roster->fire_taken - state->prev_fire_taken;
-            state->prev_shots_landed = roster->shots_landed;
-            state->prev_fire_taken = roster->fire_taken;
-            const int net = d_landed - d_taken;
-            if (net != 0) {
-                // net > 0: squad won the exchange -> pressing paid off (|0>).
-                // net < 0: squad got the worse of it -> caution paid off (|1>).
-                wz_self_agent_reward(
-                    facts, event, kDoctrineMemoryQubit,
-                    /*toward=*/ net > 0 ? 1u : 0u, kDoctrineReward);
-            }
-        }
-        // +1 => memory leans |0> (pressing pays); fold into the PRESS/HARASS order.
+        // Re-open the order ONLY on a material change: the reactive base decisively
+        // favors the OTHER side (a Schmitt flip past kOrderHysteresis), the squad size
+        // changed (the reinforce qubit must re-deliberate its deficit), or the slow
+        // heartbeat elapsed (so learned doctrine re-expresses on a static battlefield).
+        // Otherwise the latch just holds -- no re-roll, no flip-flop.
         const float doctrine =
             wz_self_agent_memory(facts, event, kDoctrineMemoryQubit);
-
-        // ORDER STABILITY (kills the flip-flop): (1) EMA the player speed the order
-        // reads, so a momentary twitch near the crossover doesn't swing the stance;
-        // (2) bias the goal toward the CURRENTLY committed side (hysteresis / Schmitt
-        // trigger), so the order holds unless the battlefield clearly argues otherwise.
-        state->order_speed_ema +=
-            kOrderSpeedEmaAlpha * (state->target_speed - state->order_speed_ema);
-
-        // Sample the order the group SETTLED on over the window that just ended --
-        // the cache holds the last rearm's committed outcome -- BEFORE computing the
-        // hysteresis. Sampling it AFTER the rearm below (as we used to) reads a stale
-        // value: the rearm doesn't update the cache until the next cognition tick, so
-        // `hold` would lag TWO windows, and near the crossover that stale bias pushes
-        // toward the side from two windows ago -- reinforcing the very period-2
-        // flip-flop the hysteresis exists to kill. Reading here makes it a proper
-        // one-window latch: hold(d_n) biases the anneal that produces d_{n+1}.
-        WzAgentDecision order{};
-        (void)wz_self_agent_decision(facts, event, &order);
-        if (order.committed != state->last_decision) {
-            state->last_decision = order.committed;
-            wz_log_infof(
-                facts,
-                "[commander] order=%s (player_spd=%.1f doctrine=%.2f)",
-                order.committed == 0 ? "PRESS"
-                    : (order.committed == 1 ? "HARASS" : "deliberating"),
-                (double)state->order_speed_ema,
-                (double)doctrine);
-        }
-
-        const float hold =
-            state->last_decision == 0 ? kOrderHysteresis
-            : (state->last_decision == 1 ? -kOrderHysteresis : 0.0f);
-        const float order_goal = tank_drive::clampf(
+        const float base =
             kCommandBias
                 - state->order_speed_ema * kCommandSpeedGain
-                + doctrine * kDoctrineGain
-                + hold,
-            -1.0f, 1.0f);
-        wz_self_set_agent_goal(facts, event, 0u, order_goal);
+                + doctrine * kDoctrineGain;
+        int desired = state->last_decision;
+        if (base > kOrderHysteresis) {
+            desired = 0;   // PRESS
+        } else if (base < -kOrderHysteresis) {
+            desired = 1;   // HARASS
+        }
 
-        // REINFORCE goal (qubit kReinforceQubit): UNDERSTRENGTH pressure. The wider the
-        // gap between the live squad and its target, the harder it leans |0>
-        // (reinforce); at full strength the bias holds reserves. Star-bonded to the
-        // hub, so a PRESS order pulls it toward committing and HARASS toward holding.
-        const int deficit = kSquadTargetSize - live;
-        const float reinforce_goal = tank_drive::clampf(
-            kReinforceBias + kReinforceDeficitGain * static_cast<float>(deficit),
-            -1.0f, 1.0f);
-        wz_self_set_agent_goal(facts, event, kReinforceQubit, reinforce_goal);
+        const bool flip =
+            state->last_decision >= 0 && desired != state->last_decision;
+        const bool squad_changed = deficit != state->order_deficit_at_rearm;
+        const bool heartbeat = now >= state->next_reanneal_time;
 
-        wz_self_rearm_agent(facts, event);
-        state->next_reanneal_time = now + kCommandReanneal;
+        if (flip || squad_changed || heartbeat) {
+            commander_rearm(facts, event, state, roster, desired, deficit, now);
+        }
     }
 }
 

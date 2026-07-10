@@ -13,7 +13,7 @@
 // depress below horizontal to aim DOWN at a lower target (reduce if it clips the
 // hull).
 inline constexpr float kGunElevationMax = 2 * 0.2617994f;  // 30 deg above horizontal
-inline constexpr float kGunElevationMin = -0.2617994f;     // 15 deg depression
+inline constexpr float kGunElevationMin = 0.5 * -0.2617994f;     // 7.5 deg depression
 
 // Total damage an enemy tank absorbs before it is destroyed. The player's shell
 // deals 25 (its projectile's collidable), so this is ~4 clean hits. On death the
@@ -73,6 +73,20 @@ inline void squad_roster_release(SquadRoster* r, int slot) {
     r->slot_taken[slot] = 0u;
     r->active_members--;
 }
+
+// Commander-only ORDER re-anneal phase -- a plain-enum state machine (the teleport.h
+// idiom) that orders the cognition-engine calls. The PRESS/HARASS order re-deliberates
+// only on a MATERIAL change, not a fixed timer, so it LATCHES instead of re-rolling
+// every window:
+//   * Deliberating -- the group was just rearmed and is annealing toward a commit. We
+//     only READ the decision here (waiting for it to settle); we never rearm.
+//   * Holding      -- the order is latched. We act on it (feed reinforce deploys) and
+//     watch for a trigger; the group is REARMED only on the transition back to
+//     Deliberating.
+// Because reads live in one state and the rearm lives on the transition, reading a
+// decision in the same block it is rearmed -- the async-commit trap -- is structurally
+// impossible.
+enum class OrderPhase : uint8_t { Deliberating = 0, Holding };
 
 struct QuantumTankState {
 
@@ -181,6 +195,13 @@ struct QuantumTankState {
     // Commander-only: EMA of the player's speed the PRESS/HARASS order reads, so the
     // order tracks SUSTAINED movement rather than per-frame jitter (order stability).
     float order_speed_ema = 0.0f;
+
+    // Commander-only: the order state machine's phase (see OrderPhase) + the squad
+    // deficit captured at the last rearm. A change in the deficit is one of the
+    // triggers that re-opens the order (so the reinforce qubit re-deliberates); the
+    // sentinel forces the first frame to rearm and kick off deliberation.
+    OrderPhase order_phase = OrderPhase::Holding;
+    int order_deficit_at_rearm = -999;
 
     // Commander-only doctrine learning: the squad tallies last seen, so the
     // commander rewards its doctrine memory on the DELTA each re-anneal.

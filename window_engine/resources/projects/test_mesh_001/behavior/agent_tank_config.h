@@ -55,7 +55,6 @@ namespace agent_tank_config
     // player is fast/aggressive. goal > 0 favors PRESS (|0>).
     inline constexpr float kCommandSpeedGain = 0.6f;   // per (u/s) of player speed
     inline constexpr float kCommandBias = 0.3f;        // subtracted: passive -> press
-    inline constexpr double kCommandReanneal = 6.0;    // commander re-think interval (s)
 
     // --- SQUAD REINFORCEMENT: the command node brings its squad up to strength
     // from its OWN position (HQ), on its OWN clock -- this REPLACES the player's
@@ -81,15 +80,21 @@ namespace agent_tank_config
     inline constexpr float kDoctrineReward = 0.3f;  // per winning re-anneal window
     inline constexpr float kDoctrineGain = 0.6f;    // learned doctrine -> order bias
 
-    // --- ORDER STABILITY: the PRESS/HARASS order is a low-frequency STANCE, not a
-    // per-frame reaction. Undamped it flip-flops each re-anneal when the player's
-    // speed sits near the press/harass crossover, so damp it two ways: an EMA on the
-    // player speed the order reads (a momentary twitch won't swing the stance) and a
-    // HYSTERESIS bias toward the CURRENTLY committed side (a Schmitt trigger -- it
-    // takes a clear contrary signal to flip). Together they turn a jittery order into
-    // a deliberate one that holds until the battlefield genuinely shifts. ---
-    inline constexpr float kOrderSpeedEmaAlpha = 0.25f;  // EMA weight of each new speed sample
-    inline constexpr float kOrderHysteresis = 0.8f;      // goal bias toward the held order
+    // --- ORDER STABILITY: the PRESS/HARASS order is a low-frequency STANCE. Rather
+    // than re-anneal it on a timer (which re-rolls a near-crossover decision every
+    // window -- the flip-flop), the commander runs it as an event-driven state machine
+    // (OrderPhase) that re-opens the order ONLY on a material change. Two knobs shape
+    // it: a time-constant EMA on the player speed the order reads (updated EVERY frame,
+    // frame-rate invariant -- a sustained change registers over ~kOrderSpeedTau seconds
+    // while a sub-second twitch is averaged away, so it can't jerk the flip trigger),
+    // and kOrderHysteresis, which is BOTH the Schmitt deadband (the reactive base must
+    // cross +/- this to flip the held order) AND the bias applied on rearm so the fresh
+    // anneal commits decisively to the intended side. kOrderHeartbeat is a slow safety
+    // re-anneal so learned doctrine still re-expresses when the battlefield is static
+    // (nothing else would trigger a rearm). ---
+    inline constexpr float  kOrderSpeedTau = 1.5f;       // player-speed EMA time constant (s)
+    inline constexpr float  kOrderHysteresis = 0.8f;     // flip deadband + rearm commit bias
+    inline constexpr double kOrderHeartbeat = 12.0;      // slow safety re-anneal (s)
 
     // --- REINFORCE DECISION: bringing a tank up is a COMMANDER decision now, not a
     // pool timer. The command node's group agent carries a REINFORCE qubit -- the TOP
