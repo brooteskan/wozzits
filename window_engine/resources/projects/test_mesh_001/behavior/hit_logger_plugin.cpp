@@ -17,9 +17,13 @@ namespace
 
     void hit_init(const WzBehaviorInitFacts* facts, WzBehaviorEntityId, void*)
     {
-        if (auto* s = wz_instance_state<tank_damage::Tally>(facts)) {
-            s->total = 0.0f;
-        }
+        // Ensure the tally block exists (zeroed on FIRST alloc, then PRESERVED as-is
+        // across rebuilds), but do NOT reset it here. init re-runs on every structural
+        // rebuild, so zeroing would heal a live tank as a side effect of, e.g., a
+        // prewarm spawn -- silently wiping accumulated damage mid-combat. A tank is
+        // (re)started healthy at its real lifecycle points instead: the enemy on deploy
+        // (self.activated) and both tanks on respawn (tank_lifecycle), not on re-init.
+        (void)wz_instance_state<tank_damage::Tally>(facts);
     }
 
     void hit_on_event(
