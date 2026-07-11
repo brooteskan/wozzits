@@ -1315,6 +1315,7 @@
                                                 <TextBlock Text="{Binding Name}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center"/>
                                                 <TextBox Grid.Column="1"
+                                                         Classes="InspectorInput"
                                                          Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                             </Grid>
                                         </DataTemplate>
@@ -1333,6 +1334,7 @@
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center"/>
                                                 <TextBox Grid.Column="1"
+                                                         Classes="InspectorInput"
                                                          Text="{Binding ConstEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                                          IsVisible="{Binding IsConstant}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding InspectorValue}"
@@ -1366,6 +1368,7 @@
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center" TextWrapping="Wrap"/>
                                                 <TextBox Grid.Column="1"
+                                                         Classes="InspectorInput"
                                                          Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                                          IsVisible="{Binding IsEditable}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding ReadOnlyValue}"
@@ -1384,6 +1387,7 @@
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center" TextWrapping="Wrap"/>
                                                 <TextBox Grid.Column="1"
+                                                         Classes="InspectorInput"
                                                          Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                                          IsVisible="{Binding IsEditable}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding ReadOnlyValue}"
@@ -1402,6 +1406,7 @@
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center" TextWrapping="Wrap"/>
                                                 <TextBox Grid.Column="1"
+                                                         Classes="InspectorInput"
                                                          Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                                          IsVisible="{Binding IsEditable}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding ReadOnlyValue}"
@@ -1423,6 +1428,7 @@
                                                     <TextBlock Text="after" VerticalAlignment="Center"
                                                                IsVisible="{Binding IsAfter}"/>
                                                     <TextBox Width="70" IsVisible="{Binding IsAfter}"
+                                                             Classes="InspectorInput"
                                                              Text="{Binding SecondsEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                                     <TextBlock Text="s" VerticalAlignment="Center"
                                                                IsVisible="{Binding IsAfter}"/>
