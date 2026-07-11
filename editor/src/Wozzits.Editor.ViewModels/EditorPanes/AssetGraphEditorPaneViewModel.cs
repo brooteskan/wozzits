@@ -16,6 +16,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     private const double MaxZoom = 4.0;
     private const double WheelZoomFactor = 1.1;
     private readonly IWozzitsEngineEditorSession? _editorSession;
+    private readonly AssetGraphGroupingModel _grouping = new();
     private string _emptyState = "No asset graph loaded.";
     private string _lastEditError = string.Empty;
     private bool _isDraftGraph;
@@ -51,6 +52,10 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     public ObservableCollection<AssetGraphEdgeViewModel> Edges { get; } = [];
 
     public ObservableCollection<AssetGraphNodeCardViewModel> SelectedNodes { get; } = [];
+
+    // Editor-only node groupings (sub-graphs). View-state only — never affects the engine
+    // graph, asset keys, or compilation (issue woguls/wozzits-editor#1).
+    public ReadOnlyObservableCollection<AssetGraphSubGraph> SubGraphs => _grouping.SubGraphs;
 
     public IAsyncRelayCommand CommitGraphCommand { get; }
 
@@ -301,6 +306,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         GraphHeight = Nodes.Count == 0
             ? 420.0
             : Nodes.Max(node => node.Y + CardHeight + CanvasPadding);
+        _grouping.ReconcileWithLiveNodes(Nodes.Select(node => node.Id).ToHashSet());
         NotifyGraphStateChanged();
     }
 
@@ -523,6 +529,59 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         ClearConnectionTarget();
         IsConnectionPreviewVisible = false;
         IsConnectionPreviewRejected = false;
+    }
+
+    // --- Editor-only node grouping (sub-graphs) ---------------------------------------
+    // Sub-graphs group nodes under a named, collapsible proxy. They are a pure editor-side
+    // view concept and never touch the engine graph, asset keys, or compilation
+    // (issue woguls/wozzits-editor#1) — so, unlike node edits, grouping does NOT mark the
+    // graph as a draft.
+
+    // Group the currently selected nodes into a new sub-graph, seeding the collapsed
+    // proxy at the selection's centroid. Returns null (and sets LastEditError) when the
+    // selection is empty.
+    public AssetGraphSubGraph? CreateSubGraphFromSelection(string name)
+    {
+        if (SelectedNodes.Count == 0)
+        {
+            LastEditError = "Select one or more nodes to group into a sub-graph.";
+            return null;
+        }
+
+        var memberIds = SelectedNodes.Select(node => node.Id).ToList();
+        var subGraph = _grouping.CreateSubGraph(
+            string.IsNullOrWhiteSpace(name) ? "Sub-graph" : name.Trim(),
+            memberIds);
+
+        var (proxyX, proxyY) = SelectionProxyAnchor();
+        subGraph.ProxyX = proxyX;
+        subGraph.ProxyY = proxyY;
+
+        LastEditError = string.Empty;
+        return subGraph;
+    }
+
+    // Dissolve a sub-graph; its member nodes become ungrouped again.
+    public bool Ungroup(AssetGraphSubGraph subGraph)
+    {
+        return _grouping.Ungroup(subGraph.Id);
+    }
+
+    public AssetGraphSubGraph? SubGraphOfNode(ulong nodeId)
+    {
+        return _grouping.SubGraphOfNode(nodeId);
+    }
+
+    private (double X, double Y) SelectionProxyAnchor()
+    {
+        if (SelectedNodes.Count == 0)
+        {
+            return (CanvasPadding, CanvasPadding);
+        }
+
+        return (
+            Math.Max(CanvasPadding, SelectedNodes.Average(node => node.X)),
+            Math.Max(CanvasPadding, SelectedNodes.Average(node => node.Y)));
     }
 
     public (double X, double Y) OutputPortAnchor(
