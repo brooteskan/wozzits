@@ -84,6 +84,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             RefreshStatecharts, () => !string.IsNullOrWhiteSpace(_projectDirectory));
         OpenStatechartDataflowCommand = new RelayCommand<StatechartFileInfo?>(
             OpenStatechartDataflow, _ => _assetGraphDock is not null);
+        OpenStatechartControlCommand = new RelayCommand<StatechartFileInfo?>(
+            OpenStatechartControl, _ => _assetGraphDock is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(
             editorSession,
             _subGraphGrouping,
@@ -175,6 +177,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IRelayCommand RefreshStatechartsCommand { get; }
 
     public IRelayCommand<StatechartFileInfo?> OpenStatechartDataflowCommand { get; }
+
+    public IRelayCommand<StatechartFileInfo?> OpenStatechartControlCommand { get; }
 
     public ObservableCollection<StatechartFileInfo> Statecharts { get; } = [];
 
@@ -714,6 +718,62 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             Id = documentId,
             Title = $"{info.Name} (dataflow)",
+            Context = pane,
+            CanClose = true,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = true,
+            DockCapabilityOverrides = new DockCapabilityOverrides
+            {
+                CanClose = true,
+                CanPin = false,
+                CanFloat = false,
+                CanDrag = true,
+                CanDrop = true,
+                CanDockAsDocument = true,
+            },
+        };
+
+        DockFactory.AddDockable(_assetGraphDock, document);
+        DockFactory.SetActiveDockable(document);
+    }
+
+    // Open a statechart's CONTROL layer (states + transitions) as a document tab (E3b).
+    private void OpenStatechartControl(StatechartFileInfo? info)
+    {
+        if (info is null || _assetGraphDock is null)
+        {
+            return;
+        }
+
+        var documentId = $"StatechartControl_{info.Name}";
+        var existing = _assetGraphDock.VisibleDockables?
+            .FirstOrDefault(dockable => dockable.Id == documentId);
+        if (existing is not null)
+        {
+            DockFactory.SetActiveDockable(existing);
+            return;
+        }
+
+        Chart chart;
+        try
+        {
+            chart = StatechartJson.Load(File.ReadAllText(info.Path));
+        }
+        catch (Exception ex)
+        {
+            AppendEditorLog($"[editor] Could not open statechart '{info.Name}': {ex.Message}");
+            return;
+        }
+
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        var document = new Document
+        {
+            Id = documentId,
+            Title = $"{info.Name} (control)",
             Context = pane,
             CanClose = true,
             CanFloat = false,

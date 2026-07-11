@@ -1,0 +1,118 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Wozzits.Editor.App.Controls"
+             xmlns:sc="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.Statecharts.ControlPaneView"
+             x:DataType="sc:ControlPaneViewModel">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
+            <Grid>
+                <TextBlock Text="No statechart open. Statecharts &#x2192; open a chart's control layer."
+                           Classes="PaneEmptyState"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding !HasGraph}"/>
+
+                <ScrollViewer IsVisible="{Binding HasGraph}"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <Grid Width="{Binding ScaledGraphWidth}"
+                          Height="{Binding ScaledGraphHeight}">
+                        <Grid Width="{Binding GraphWidth}"
+                              Height="{Binding GraphHeight}"
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Top"
+                              RenderTransformOrigin="0,0">
+                            <Grid.RenderTransform>
+                                <ScaleTransform ScaleX="{Binding Zoom}"
+                                                ScaleY="{Binding Zoom}"/>
+                            </Grid.RenderTransform>
+
+                            <!-- Region swimlanes (behind everything) -->
+                            <ItemsControl ItemsSource="{Binding Regions}"
+                                          x:CompileBindings="False">
+                                <ItemsControl.ItemContainerTheme>
+                                    <ControlTheme TargetType="ContentPresenter">
+                                        <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                                        <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                                    </ControlTheme>
+                                </ItemsControl.ItemContainerTheme>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Canvas/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="sc:RegionViewModel">
+                                        <Border Width="{Binding Width}"
+                                                Height="{Binding Height}"
+                                                Background="Transparent"
+                                                BorderBrush="{DynamicResource WozzitsGraphWireBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="6">
+                                            <TextBlock Text="{Binding Title}"
+                                                       Classes="AssetGraphCardId"
+                                                       HorizontalAlignment="Left"
+                                                       VerticalAlignment="Top"
+                                                       Margin="10,5,0,0"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Transition arrows (over the swimlanes, under the boxes) -->
+                            <controls:TransitionArrowLayer Edges="{Binding Transitions}"
+                                                           Stroke="{DynamicResource WozzitsGraphWireBrush}"
+                                                           LabelBrush="{DynamicResource WozzitsGraphWireBrush}"
+                                                           StrokeThickness="2"
+                                                           BoxWidth="180"
+                                                           BoxHeight="76"
+                                                           IsHitTestVisible="False"/>
+
+                            <!-- State boxes (on top) -->
+                            <ItemsControl ItemsSource="{Binding States}"
+                                          x:CompileBindings="False">
+                                <ItemsControl.ItemContainerTheme>
+                                    <ControlTheme TargetType="ContentPresenter">
+                                        <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                                        <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                                    </ControlTheme>
+                                </ItemsControl.ItemContainerTheme>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Canvas/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="sc:StateNodeViewModel">
+                                        <Border Classes="AssetGraphCard"
+                                                Classes.selected="{Binding IsSelected}"
+                                                Width="180"
+                                                MinHeight="76">
+                                            <Grid RowDefinitions="Auto,*"
+                                                  RowSpacing="4">
+                                                <Grid ColumnDefinitions="*,Auto"
+                                                      ColumnSpacing="6">
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Classes="AssetGraphCardName"/>
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="&#x25B6; initial"
+                                                               Classes="AssetGraphCardId"
+                                                               IsVisible="{Binding IsInitial}"/>
+                                                </Grid>
+                                                <TextBlock Grid.Row="1"
+                                                           Text="{Binding Summary}"
+                                                           Classes="AssetGraphCardType"
+                                                           VerticalAlignment="Bottom"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
