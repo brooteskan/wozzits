@@ -57,6 +57,29 @@ public partial class MainWindow : Window
         }
     }
 
+    // Populate the Statecharts submenu with the project's authored charts each time it
+    // opens (mirrors the Prefabs menu). Selecting one opens its dataflow canvas.
+    private void OnStatechartsMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        viewModel.RefreshStatechartsCommand.Execute(null);
+
+        OpenStatechartMenu.Items.Clear();
+        foreach (var chart in viewModel.Statecharts)
+        {
+            OpenStatechartMenu.Items.Add(new MenuItem
+            {
+                Header = chart.Name,
+                Command = viewModel.OpenStatechartDataflowCommand,
+                CommandParameter = chart,
+            });
+        }
+    }
+
     private void OnSelectBlueTheme(object? sender, RoutedEventArgs e)
         => SetTheme(EditorTheme.Variant.Blue);
 

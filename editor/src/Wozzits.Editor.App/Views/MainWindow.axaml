@@ -45,6 +45,9 @@
                 <MenuItem Header="_Refresh Prefab List"
                           Command="{Binding RefreshSceneletsCommand}"/>
             </MenuItem>
+            <MenuItem Header="_Statecharts" SubmenuOpened="OnStatechartsMenuOpened">
+                <MenuItem Header="_Open Dataflow" x:Name="OpenStatechartMenu"/>
+            </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Theme">
                     <MenuItem Header="_Blue (Daylight)"

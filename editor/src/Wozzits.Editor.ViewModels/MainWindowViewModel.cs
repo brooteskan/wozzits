@@ -13,6 +13,8 @@ using Wozzits.Editor.Core.Logging;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 using Wozzits.Editor.ViewModels.EditorPanes;
+using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
+using Wozzits.Editor.Statecharts;
 
 namespace Wozzits.Editor.ViewModels;
 
@@ -78,6 +80,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             BackToScene, () => _editorSession is not null && IsEditingPrefab);
         RefreshSceneletsCommand = new RelayCommand(
             RefreshScenelets, () => _editorSession is not null);
+        RefreshStatechartsCommand = new RelayCommand(
+            RefreshStatecharts, () => !string.IsNullOrWhiteSpace(_projectDirectory));
+        OpenStatechartDataflowCommand = new RelayCommand<StatechartFileInfo?>(
+            OpenStatechartDataflow, _ => _assetGraphDock is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(
             editorSession,
             _subGraphGrouping,
@@ -165,6 +171,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IRelayCommand<SceneletInfo?> OpenSceneletCommand { get; }
     public IRelayCommand BackToSceneCommand { get; }
     public IRelayCommand RefreshSceneletsCommand { get; }
+
+    public IRelayCommand RefreshStatechartsCommand { get; }
+
+    public IRelayCommand<StatechartFileInfo?> OpenStatechartDataflowCommand { get; }
+
+    public ObservableCollection<StatechartFileInfo> Statecharts { get; } = [];
 
     private string? _editingPrefabName;
     public string? EditingPrefabName
@@ -620,6 +632,88 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             Id = documentId,
             Title = subGraph.Name,
+            Context = pane,
+            CanClose = true,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = true,
+            DockCapabilityOverrides = new DockCapabilityOverrides
+            {
+                CanClose = true,
+                CanPin = false,
+                CanFloat = false,
+                CanDrag = true,
+                CanDrop = true,
+                CanDockAsDocument = true,
+            },
+        };
+
+        DockFactory.AddDockable(_assetGraphDock, document);
+        DockFactory.SetActiveDockable(document);
+    }
+
+    // Enumerate the project's authored statecharts (behavior/statecharts/*.sc.json) for
+    // the open menu. Re-run when the menu opens so newly-authored charts appear.
+    private void RefreshStatecharts()
+    {
+        Statecharts.Clear();
+        if (string.IsNullOrWhiteSpace(_projectDirectory))
+        {
+            return;
+        }
+
+        var dir = Path.Combine(_projectDirectory, "behavior", "statecharts");
+        if (!Directory.Exists(dir))
+        {
+            return;
+        }
+
+        foreach (var path in Directory.EnumerateFiles(dir, "*.sc.json").OrderBy(p => p))
+        {
+            var file = Path.GetFileName(path);
+            var name = file.EndsWith(".sc.json", StringComparison.Ordinal) ? file[..^8] : file;
+            Statecharts.Add(new StatechartFileInfo(name, path));
+        }
+    }
+
+    // Open a statechart's DATAFLOW layer as a document tab beside the asset graph (E2b).
+    // Thick editor: the .sc.json is loaded + compiled in-process; the engine isn't involved.
+    // Re-focuses an already-open tab rather than duplicating it.
+    private void OpenStatechartDataflow(StatechartFileInfo? info)
+    {
+        if (info is null || _assetGraphDock is null)
+        {
+            return;
+        }
+
+        var documentId = $"StatechartDataflow_{info.Name}";
+        var existing = _assetGraphDock.VisibleDockables?
+            .FirstOrDefault(dockable => dockable.Id == documentId);
+        if (existing is not null)
+        {
+            DockFactory.SetActiveDockable(existing);
+            return;
+        }
+
+        Chart chart;
+        try
+        {
+            chart = StatechartJson.Load(File.ReadAllText(info.Path));
+        }
+        catch (Exception ex)
+        {
+            AppendEditorLog($"[editor] Could not open statechart '{info.Name}': {ex.Message}");
+            return;
+        }
+
+        var pane = new DataflowPaneViewModel();
+        pane.Project(chart);
+
+        var document = new Document
+        {
+            Id = documentId,
+            Title = $"{info.Name} (dataflow)",
             Context = pane,
             CanClose = true,
             CanFloat = false,
