@@ -82,3 +82,7 @@ add_terrain_collision_behavior_module(
 add_terrain_collision_behavior_module(
     drill_sergeant
     cognition/drill_sergeant_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    zeno_observer
+    cognition/zeno_observer_plugin.cpp)
