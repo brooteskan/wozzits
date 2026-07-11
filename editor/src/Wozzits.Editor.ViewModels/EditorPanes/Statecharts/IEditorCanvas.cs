@@ -41,4 +41,7 @@ public interface IEditorCanvas
 
     // Zoom about the current level by one wheel notch (sign of wheelDelta); the pane clamps.
     void ZoomByWheel(double wheelDelta);
+
+    // Remove the current selection from the underlying chart and re-project.
+    void DeleteSelected();
 }

@@ -46,6 +46,7 @@ public sealed class GraphInteraction
         root.AddHandler(InputElement.PointerMovedEvent, OnMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
         root.AddHandler(InputElement.PointerReleasedEvent, OnReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         root.AddHandler(InputElement.PointerWheelChangedEvent, OnWheel, RoutingStrategies.Tunnel, handledEventsToo: true);
+        root.AddHandler(InputElement.KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
         root.Focusable = true;
     }
 
@@ -218,6 +219,15 @@ public sealed class GraphInteraction
         }
 
         e.Handled = true;
+    }
+
+    private void OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.Delete or Key.Back && _canvasVm() is { } vm)
+        {
+            vm.DeleteSelected();
+            e.Handled = true;
+        }
     }
 
     private void EndDrag(IPointer pointer)

@@ -175,6 +175,12 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
     private void UpdateSelectedNode() =>
         SelectedNode = SelectedNodes.Count == 1 ? SelectedNodes[0] : null;
 
+    public void DeleteSelected()
+    {
+        // Dataflow structural deletion (with input-dependency handling) arrives with the
+        // phase-3 structural-editing step; the control canvas deletes states today.
+    }
+
     /// <summary>Rebuild the canvas from a chart's dataflow layer.</summary>
     public void Project(Chart chart)
     {

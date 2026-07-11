@@ -25,6 +25,8 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
 
     private double _zoom = 1.0;
     private StateNodeViewModel? _selectedState;
+    private Chart? _chart;
+    private bool _isDirty;
 
     private readonly Dictionary<string, StateNodeViewModel> _statesById = new();
 
@@ -56,6 +58,12 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
     }
 
     public bool HasSelectedState => _selectedState is not null;
+
+    public bool IsDirty
+    {
+        get => _isDirty;
+        private set => SetProperty(ref _isDirty, value);
+    }
 
     public double Zoom
     {
@@ -218,9 +226,39 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
         }
     }
 
+    public void DeleteSelected()
+    {
+        if (_chart is null || SelectedStates.Count == 0)
+        {
+            return;
+        }
+
+        var doomed = SelectedStates.Select(s => s.StateId).ToHashSet();
+        _chart.States.RemoveAll(s => doomed.Contains(s.Id));
+        foreach (var region in _chart.Regions)
+        {
+            region.States.RemoveAll(doomed.Contains);
+            if (doomed.Contains(region.Initial))
+            {
+                region.Initial = region.States.Count > 0 ? region.States[0] : string.Empty;
+            }
+        }
+
+        _chart.Regions.RemoveAll(r => r.States.Count == 0);
+        foreach (var state in _chart.States)
+        {
+            state.Transitions.RemoveAll(t => doomed.Contains(t.Target));
+        }
+
+        IsDirty = true;
+        Project(_chart);
+    }
+
     /// <summary>Rebuild the canvas from a chart's control layer.</summary>
     public void Project(Chart chart)
     {
+        _chart = chart;
+
         foreach (var t in Transitions)
         {
             t.Dispose();
