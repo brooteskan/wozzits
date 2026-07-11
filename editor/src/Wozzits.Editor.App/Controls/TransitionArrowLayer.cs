@@ -137,7 +137,9 @@ public sealed class TransitionArrowLayer : Control
 
         var dir = Normalize(p3 - p0);
         var perp = new Vector(-dir.Y, dir.X);
-        const double bow = 26.0;
+        // Lane fans same-direction parallels apart; opposite directions already separate because
+        // perp flips with the arrow direction.
+        double bow = 26.0 + t.Lane * 22.0;
         var c1 = Lerp(p0, p3, 0.33) + perp * bow;
         var c2 = Lerp(p0, p3, 0.66) + perp * bow;
 
@@ -163,7 +165,7 @@ public sealed class TransitionArrowLayer : Control
         double topY = t.StartY - hh;
         var start = new Point(cx - hw * 0.35, topY);
         var end = new Point(cx + hw * 0.35, topY);
-        const double height = 46.0;
+        double height = 46.0 + t.Lane * 26.0;   // stack multiple self-loops at rising heights
         var c1 = new Point(cx - hw * 0.55, topY - height);
         var c2 = new Point(cx + hw * 0.55, topY - height);
 

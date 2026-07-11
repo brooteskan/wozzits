@@ -25,7 +25,11 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
         DoEffectRows = model.Do.Select(e => new EffectRowViewModel(e, () => Edited?.Invoke())).ToList();
         EntryEffectRows = model.Entry.Select(e => new EffectRowViewModel(e, () => Edited?.Invoke())).ToList();
         ExitEffectRows = model.Exit.Select(e => new EffectRowViewModel(e, () => Edited?.Invoke())).ToList();
-        TransitionRows = model.Transitions.Select(t => new TransitionRowViewModel(t, () => Edited?.Invoke())).ToList();
+        TransitionRows = model.Transitions.Select(t =>
+            new TransitionRowViewModel(t, () => Edited?.Invoke())
+            {
+                DeleteRequested = () => TransitionDeleteRequested?.Invoke(t),
+            }).ToList();
     }
 
     public State Model { get; }
@@ -56,6 +60,10 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
 
     // Invoked when a row's editable field is edited (the pane wires it to mark dirty).
     public Action? Edited { get; set; }
+
+    // Invoked to delete one of this state's outgoing transitions (the pane routes it to
+    // DeleteTransition); each transition row calls it with its own model.
+    public Action<Transition>? TransitionDeleteRequested { get; set; }
 
     // Convenience read-only string views of the rows (used by tests / plain text).
     public IReadOnlyList<string> DoEffects => DoEffectRows.Select(r => r.Display).ToList();

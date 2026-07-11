@@ -316,4 +316,58 @@ public sealed class StatechartMutationTests
         pane.DisarmTransitionDraw();
         Assert.False(pane.IsDrawingTransition);
     }
+
+    [Fact]
+    public void Parallel_Transitions_Get_Distinct_Lanes()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        // DELIBERATE already commits to HOLD; add a second DELIBERATE -> HOLD.
+        pane.TryAddTransition("DELIBERATE", "HOLD");
+
+        var parallels = pane.Transitions
+            .Where(t => t.From.StateId == "DELIBERATE" && t.To.StateId == "HOLD")
+            .Select(t => t.Lane)
+            .OrderBy(lane => lane)
+            .ToArray();
+
+        Assert.Equal(new[] { 0, 1 }, parallels);   // fanned, not stacked on lane 0
+    }
+
+    [Fact]
+    public void Delete_Transition_Removes_It_From_The_Owning_State()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        var hold = chart.States.First(s => s.Id == "HOLD");
+        var doomed = hold.Transitions[0];
+        int before = hold.Transitions.Count;
+
+        pane.DeleteTransition(hold, doomed);
+
+        Assert.Equal(before - 1, chart.States.First(s => s.Id == "HOLD").Transitions.Count);
+        Assert.DoesNotContain(doomed, chart.States.First(s => s.Id == "HOLD").Transitions);
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Transition_Row_Delete_Command_Removes_The_Transition()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        var holdVm = pane.States.First(s => s.StateId == "HOLD");
+        int before = chart.States.First(s => s.Id == "HOLD").Transitions.Count;
+
+        holdVm.TransitionRows[0].DeleteCommand.Execute(null);   // the inspector's Delete button
+
+        Assert.Equal(before - 1, chart.States.First(s => s.Id == "HOLD").Transitions.Count);
+        Assert.True(pane.IsDirty);
+    }
 }

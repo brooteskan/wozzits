@@ -44,6 +44,10 @@ public sealed class TransitionViewModel : ViewModelBase, IDisposable
 
     public int ActionCount { get; }
 
+    // Index among transitions sharing the same (From, To) ordered pair, assigned by the
+    // projection so parallel arrows / stacked self-loops fan out instead of overlapping.
+    public int Lane { get; set; }
+
     public bool IsSelfLoop => ReferenceEquals(From, To);
 
     public double StartX => From.X + _stateWidth / 2;

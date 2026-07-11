@@ -1,6 +1,7 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.Globalization;
+using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
 
 // One outgoing-transition line in the state inspector. The target + trigger read as a
@@ -62,6 +63,14 @@ public sealed class TransitionRowViewModel : ViewModelBase
     public string ActionSummary { get; }
 
     public bool HasActions => ActionSummary.Length > 0;
+
+    // Invoked to delete this transition (the state VM routes it to the pane).
+    public Action? DeleteRequested { get; set; }
+
+    private IRelayCommand? _deleteCommand;
+
+    public IRelayCommand DeleteCommand =>
+        _deleteCommand ??= new RelayCommand(() => DeleteRequested?.Invoke());
 
     private static string TriggerLabel(Trigger t) => t.Kind switch
     {

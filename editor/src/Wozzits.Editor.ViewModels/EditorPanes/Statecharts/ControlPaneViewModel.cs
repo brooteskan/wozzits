@@ -78,8 +78,21 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         });
 
         IsDirty = true;
-        ReprojectPreservingLayout();
+        ReprojectPreservingSelection();
         return true;
+    }
+
+    // Remove a specific outgoing transition (from the inspector's transition list). Keeps the
+    // owning state selected so the inspector refreshes to the shortened list.
+    public void DeleteTransition(State owner, Transition transition)
+    {
+        if (_chart is null || !owner.Transitions.Remove(transition))
+        {
+            return;
+        }
+
+        IsDirty = true;
+        ReprojectPreservingSelection();
     }
 
     public ObservableCollection<RegionViewModel> Regions { get; } = [];
@@ -406,6 +419,18 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         ApplyLayout(layout);
     }
 
+    // As above, but re-select the previously selected state by id after the rebuild, so an
+    // inspector-driven edit (add/delete transition) keeps its selection and refreshes.
+    private void ReprojectPreservingSelection()
+    {
+        var selectedId = _selectedState?.StateId;
+        ReprojectPreservingLayout();
+        if (selectedId is not null && States.FirstOrDefault(s => s.StateId == selectedId) is { } again)
+        {
+            SelectOnly(again);
+        }
+    }
+
     // Apply a saved layout (zoom + hand-placed state positions) over the auto-layout. This is
     // a restore, not an edit, so it does not mark the pane dirty.
     public void ApplyLayout(StatechartLayout layout)
@@ -449,7 +474,11 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         stateVms.Clear();
         foreach (var s in chart.States)
         {
-            stateVms[s.Id] = new StateNodeViewModel(s, initials.Contains(s.Id)) { Edited = MarkChartDirty };
+            stateVms[s.Id] = new StateNodeViewModel(s, initials.Contains(s.Id))
+            {
+                Edited = MarkChartDirty,
+                TransitionDeleteRequested = t => DeleteTransition(s, t),
+            };
         }
 
         // Regions as vertical swimlanes; each region's states in a row.
@@ -496,6 +525,9 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
             States.Add(stateVms[s.Id]);
         }
 
+        // Fan parallel transitions: each edge gets a lane index within its (from, to) pair so
+        // same-direction arrows and stacked self-loops separate instead of drawing on top.
+        var laneByPair = new Dictionary<(string From, string To), int>();
         foreach (var s in chart.States)
         {
             var from = stateVms[s.Id];
@@ -503,7 +535,10 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
             {
                 if (stateVms.TryGetValue(transition.Target, out var to))
                 {
-                    Transitions.Add(new TransitionViewModel(transition, from, to, StateWidth, StateHeight));
+                    var key = (s.Id, transition.Target);
+                    int lane = laneByPair.TryGetValue(key, out var n) ? n : 0;
+                    laneByPair[key] = lane + 1;
+                    Transitions.Add(new TransitionViewModel(transition, from, to, StateWidth, StateHeight) { Lane = lane });
                 }
             }
         }
