@@ -1,6 +1,7 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.Collections.ObjectModel;
+using System.Text.Json.Nodes;
 using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
 
@@ -38,11 +39,17 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
     {
         SelectedNodes.CollectionChanged += (_, _) => UpdateSelectedNode();
         AddOpCommand = new RelayCommand<OpKind>(kind => AddOp(kind));
+        AddAgentCommand = new RelayCommand(() => AddAgent());
+        AddBindingCommand = new RelayCommand(() => AddBinding());
         DeleteSelectedCommand = new RelayCommand(DeleteSelected);
     }
 
-    // Toolbar: add a pure op of the given kind; delete the current selection.
+    // Toolbar: add a pure op of the given kind; add an agent / binding; delete the selection.
     public IRelayCommand<OpKind> AddOpCommand { get; }
+
+    public IRelayCommand AddAgentCommand { get; }
+
+    public IRelayCommand AddBindingCommand { get; }
 
     public IRelayCommand DeleteSelectedCommand { get; }
 
@@ -218,35 +225,86 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             return null;
         }
 
-        var taken = _chart.Pure.Select(p => p.Id)
-            .Concat(_chart.Agents.Select(a => a.Id))
-            .Concat(_chart.Bindings.Select(b => b.Port));
-        var id = FreshId("op", taken);
-
+        var id = FreshId("op", AllNodeIds());
         _chart.Pure.Add(NewOp(kind, id));
         IsDirty = true;
         ReprojectPreservingLayout();
+        return PlaceAndSelect(id);
+    }
 
-        var node = Nodes.FirstOrDefault(n => n.NodeId == id);
-        if (node is not null)
+    // Add an owned agent (a co-located quantum_agent) with a default spec whose numeric fields
+    // are then editable in the inspector.
+    public DataflowNodeViewModel? AddAgent()
+    {
+        if (_chart is null)
         {
-            double bottom = CanvasPadding;
-            foreach (var n in Nodes)
-            {
-                if (n != node)
-                {
-                    bottom = Math.Max(bottom, n.Y + CardHeight);
-                }
-            }
-
-            node.X = CanvasPadding;
-            node.Y = bottom + RowGap;
-            SelectOnly(node);
-            RaiseExtentChanged();
+            return null;
         }
 
+        var id = FreshId("agent", AllNodeIds());
+        _chart.Agents.Add(new AgentDecl { Id = id, Owned = true, Host = "self", Spec = DefaultAgentSpec() });
+        IsDirty = true;
+        ReprojectPreservingLayout();
+        return PlaceAndSelect(id);
+    }
+
+    // Add an entity binding (a port that resolves a scene node by name). `find` defaults to the
+    // port and is editable in the inspector -- point it at the entity the chart should drive.
+    public DataflowNodeViewModel? AddBinding()
+    {
+        if (_chart is null)
+        {
+            return null;
+        }
+
+        var port = FreshId("bind", AllNodeIds());
+        _chart.Bindings.Add(new Binding { Port = port, Find = port, Subtree = true });
+        IsDirty = true;
+        ReprojectPreservingLayout();
+        return PlaceAndSelect(port);
+    }
+
+    private IEnumerable<string> AllNodeIds() => _chart is null
+        ? Enumerable.Empty<string>()
+        : _chart.Pure.Select(p => p.Id)
+            .Concat(_chart.Agents.Select(a => a.Id))
+            .Concat(_chart.Bindings.Select(b => b.Port));
+
+    // Position a freshly-added node at a clear row below the existing ones and select it.
+    private DataflowNodeViewModel? PlaceAndSelect(string id)
+    {
+        var node = Nodes.FirstOrDefault(n => n.NodeId == id);
+        if (node is null)
+        {
+            return null;
+        }
+
+        double bottom = CanvasPadding;
+        foreach (var n in Nodes)
+        {
+            if (n != node)
+            {
+                bottom = Math.Max(bottom, n.Y + CardHeight);
+            }
+        }
+
+        node.X = CanvasPadding;
+        node.Y = bottom + RowGap;
+        SelectOnly(node);
+        RaiseExtentChanged();
         return node;
     }
+
+    private static JsonObject DefaultAgentSpec() => new()
+    {
+        ["decisions"] = 1,
+        ["goal"] = 0.4,
+        ["gamma_start"] = 2,
+        ["anneal_seconds"] = 4,
+        ["confidence"] = 0.8,
+        ["decoherence"] = 0.0,
+        ["think_interval"] = 0.25,
+    };
 
     // Wire an op's output into a target op's operand (the input at row `targetInputIndex`).
     // Rejects when: the source isn't an op (a leaf binding/agent can't feed a value operand —
@@ -574,6 +632,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         {
             var node = new DataflowNodeViewModel(DataflowNodeKind.Binding, b.Port, "binding", b);
             node.OutputPorts.Add(new DataflowPortViewModel(node, 0, "entity", isInput: false));
+            node.BindingEdited = MarkChartDirty;
             bindingNodes[b.Port] = node;
             Nodes.Add(node);
         }

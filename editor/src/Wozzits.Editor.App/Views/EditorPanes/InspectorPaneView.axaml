@@ -1325,6 +1325,25 @@
                             </StackPanel>
                         </Border>
                         <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding SelectedStatechartNode.HasBindingFields}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Binding" Classes="InspectorSectionTitle"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartNode.BindingFields}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Name}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1"
+                                                         Classes="InspectorInput"
+                                                         Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="InspectorSectionCard"
                                 IsVisible="{Binding SelectedStatechartNode.HasInputPorts}">
                             <StackPanel Classes="InspectorSection">
                                 <TextBlock Text="Inputs" Classes="InspectorSectionTitle"/>
@@ -1365,6 +1384,11 @@
                                 <TextBlock Text="State" Classes="InspectorSectionTitle"/>
                                 <TextBlock Text="&#x25B6; initial state"
                                            IsVisible="{Binding SelectedStatechartState.IsInitial}"/>
+                                <Button Content="Make initial"
+                                        Classes="InspectorApplyButton"
+                                        HorizontalAlignment="Left"
+                                        Command="{Binding SelectedStatechartState.MakeInitialCommand}"
+                                        IsVisible="{Binding SelectedStatechartState.CanMakeInitial}"/>
 
                                 <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
                                     <TextBlock Text="do" Classes="InspectorSectionTitle" VerticalAlignment="Center"/>

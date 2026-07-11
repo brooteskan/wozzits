@@ -82,6 +82,26 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         return true;
     }
 
+    // Make a state its region's initial (the marked start of that orthogonal region). Reprojects,
+    // keeping the state selected so the inspector's initial marker updates.
+    public void SetInitial(State state)
+    {
+        if (_chart is null)
+        {
+            return;
+        }
+
+        var region = _chart.Regions.FirstOrDefault(r => r.States.Contains(state.Id));
+        if (region is null || region.Initial == state.Id)
+        {
+            return;
+        }
+
+        region.Initial = state.Id;
+        IsDirty = true;
+        ReprojectPreservingSelection();
+    }
+
     // Add an effect of the given kind to a state's do/entry/exit list, seeded with defaults
     // (agent effects target the first agent; actuators target the first binding; values are
     // constants the user then edits). Reprojects, keeping the state selected.
@@ -578,6 +598,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
                 TransitionKindChangeRequested = (t, k) => SetTriggerKind(s, t, k),
                 EffectAddRequested = (slot, kind) => AddEffect(s, slot, kind),
                 EffectDeleteRequested = e => DeleteEffect(s, e),
+                SetInitialRequested = () => SetInitial(s),
             };
         }
 

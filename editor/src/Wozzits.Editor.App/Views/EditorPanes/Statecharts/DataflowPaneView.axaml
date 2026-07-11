@@ -34,6 +34,8 @@
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>
+                    <Button Content="+ Agent" Command="{Binding AddAgentCommand}"/>
+                    <Button Content="+ Binding" Command="{Binding AddBindingCommand}"/>
                     <Button Content="Delete" Command="{Binding DeleteSelectedCommand}"/>
                 </StackPanel>
                 <Grid Grid.Row="1">

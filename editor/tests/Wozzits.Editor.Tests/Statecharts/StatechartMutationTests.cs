@@ -504,4 +504,84 @@ public sealed class StatechartMutationTests
         Assert.Equal(before - 1, chart.States.First(s => s.Id == "DELIBERATE").Do.Count);
         Assert.True(pane.IsDirty);
     }
+
+    // ---- M4: add agent / binding, set-initial (authoring from scratch) ----------
+
+    [Fact]
+    public void Add_Agent_Appends_An_Owned_Agent_With_An_Editable_Spec()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        int before = chart.Agents.Count;
+
+        var node = pane.AddAgent();
+
+        Assert.NotNull(node);
+        Assert.Equal(before + 1, chart.Agents.Count);
+        var added = chart.Agents.First(a => a.Id == node!.NodeId);
+        Assert.True(added.Owned);
+        Assert.Equal("self", added.Host);
+        Assert.NotNull(added.Spec);
+        Assert.True(node!.HasSpecFields);       // its numeric spec is editable
+        Assert.Same(node, pane.SelectedNode);
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Add_Binding_Appends_A_Binding_Whose_Find_Is_Editable()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        int before = chart.Bindings.Count;
+
+        var node = pane.AddBinding()!;
+        pane.ClearDirty();
+
+        Assert.Equal(before + 1, chart.Bindings.Count);
+        Assert.True(node.HasBindingFields);
+
+        node.BindingFields[0].Value = "cube_7";   // point it at an entity
+
+        Assert.Equal("cube_7", chart.Bindings.First(b => b.Port == node.NodeId).Find);
+        Assert.True(pane.IsDirty);                // the edit re-marked the chart
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Set_Initial_Repoints_The_Region()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var hold = chart.States.First(s => s.Id == "HOLD");   // DELIBERATE is the initial
+
+        pane.SetInitial(hold);
+
+        Assert.Equal("HOLD", chart.Regions.First(r => r.States.Contains("HOLD")).Initial);
+        Assert.True(pane.States.First(s => s.StateId == "HOLD").IsInitial);
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
+    public void Author_A_Well_Formed_Chart_From_An_Empty_One()
+    {
+        var chart = new Chart { Name = "scratch" };
+        var control = new ControlPaneViewModel();
+        var dataflow = new DataflowPaneViewModel();
+        control.Project(chart);
+        dataflow.Project(chart);
+
+        var agent = dataflow.AddAgent()!;
+        dataflow.AddBinding();
+        var state = control.AddState()!;                                  // becomes its region's initial
+        control.AddEffect(state.Model, EffectSlot.Do, EffectKind.SetGoal); // drives the new agent
+
+        Assert.Single(chart.Agents);
+        Assert.Single(chart.Bindings);
+        Assert.Single(chart.States);
+        Assert.NotEmpty(chart.States[0].Do);
+        Assert.Equal(agent.NodeId, chart.States[0].Do[0].Agent);   // effect targets the added agent
+        Assert.Empty(StatechartJson.Validate(chart));               // the hand-built chart is valid
+    }
 }

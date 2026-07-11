@@ -46,6 +46,9 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
     // This state is its region's initial state (shown with an entry marker).
     public bool IsInitial { get; }
 
+    // Offer a "Make initial" action only when this state isn't already the region's initial.
+    public bool CanMakeInitial => !IsInitial;
+
     public int DoCount { get; }
 
     public int EntryCount { get; }
@@ -78,6 +81,14 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
     public Action<EffectSlot, EffectKind>? EffectAddRequested { get; set; }
 
     public Action<Effect>? EffectDeleteRequested { get; set; }
+
+    // Invoked to make this state its region's initial (the pane routes it to SetInitial).
+    public Action? SetInitialRequested { get; set; }
+
+    private IRelayCommand? _makeInitialCommand;
+
+    public IRelayCommand MakeInitialCommand =>
+        _makeInitialCommand ??= new RelayCommand(() => SetInitialRequested?.Invoke());
 
     // The "+" menu commands for each effect list (command parameter = the effect kind to add).
     public IRelayCommand<EffectKind> AddDoEffectCommand { get; }

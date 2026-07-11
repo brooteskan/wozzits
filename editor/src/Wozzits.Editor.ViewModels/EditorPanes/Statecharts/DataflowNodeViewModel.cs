@@ -31,6 +31,9 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         SpecFields = kind == DataflowNodeKind.Agent && model is AgentDecl agent
             ? BuildSpecFields(agent)
             : Array.Empty<EditableFieldViewModel>();
+        BindingFields = kind == DataflowNodeKind.Binding && model is Binding binding
+            ? new[] { new EditableFieldViewModel("find", () => binding.Find, v => binding.Find = v, () => BindingEdited?.Invoke()) }
+            : Array.Empty<EditableFieldViewModel>();
     }
 
     public DataflowNodeKind Kind { get; }
@@ -101,11 +104,18 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public Action? SpecEdited { get; set; }
 
+    // Editable binding fields (the entity `find` name); empty for non-binding nodes. The pane
+    // sets BindingEdited so a commit marks the chart dirty (find isn't drawn on the card).
+    public IReadOnlyList<EditableFieldViewModel> BindingFields { get; }
+
+    public bool HasBindingFields => BindingFields.Count > 0;
+
+    public Action? BindingEdited { get; set; }
+
     private static IReadOnlyList<InspectorRow> BuildRows(object model) => model switch
     {
         Binding b => new List<InspectorRow>
         {
-            new("find", b.Find),
             new("scope", b.Subtree ? "subtree" : "global"),
         },
         AgentDecl a => BuildAgentRows(a),

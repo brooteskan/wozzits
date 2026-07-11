@@ -43,11 +43,11 @@ public sealed class StatechartInspectorTests
     }
 
     [Fact]
-    public void Binding_Node_Inspector_Shows_Find_And_Scope()
+    public void Binding_Node_Inspector_Shows_Editable_Find_And_Scope()
     {
         var player = Dataflow("zeno.sc.json").Nodes.First(n => n.NodeId == "player");   // find "tank" global
 
-        Assert.Contains(player.PropertyRows, r => r.Name == "find" && r.Value == "tank");
+        Assert.Contains(player.BindingFields, f => f.Name == "find" && f.Value == "tank");   // now editable
         Assert.Contains(player.PropertyRows, r => r.Name == "scope" && r.Value == "global");
     }
 
