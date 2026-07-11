@@ -572,6 +572,31 @@ public sealed class AssetGraphGroupingTests
         Assert.True(EdgeBetween(pane, 1, 2).IsRenderHidden);
     }
 
+    [Fact]
+    public void InspectorNamesAndClearsNodeReroute()
+    {
+        var reroutes = new AssetGraphRerouteModel();
+        var inspector = new InspectorPaneViewModel();
+        inspector.SetRerouteModel(reroutes);
+        var changed = 0;
+        inspector.RerouteChanged += () => changed++;
+
+        var node = new AssetGraphNodeCardViewModel(
+            new EngineAssetGraphNode { Id = 5, DisplayName = "src", TypeName = "N" },
+            28.0);
+        inspector.Inspect(node);
+
+        Assert.True(inspector.HasAssetGraphNodeSelection);
+        Assert.Equal(string.Empty, inspector.NodeRerouteName);
+
+        inspector.NodeRerouteName = "SharedTex";
+        Assert.Equal("SharedTex", reroutes.NameOf(5));
+        Assert.True(changed > 0);
+
+        inspector.NodeRerouteName = "   "; // clearing removes the reroute
+        Assert.False(reroutes.IsReroute(5));
+    }
+
     private static ulong[] Members(AssetGraphSubGraph subGraph) =>
         subGraph.MemberNodeIds.OrderBy(id => id).ToArray();
 

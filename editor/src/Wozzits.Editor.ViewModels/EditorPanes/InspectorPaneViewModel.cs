@@ -142,6 +142,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private AssetGraphSubGraph? _inspectedSubGraph;
     private string _subGraphName = string.Empty;
     private string _subGraphMemberCount = string.Empty;
+    private AssetGraphRerouteModel? _reroutes;
+    private string _nodeRerouteName = string.Empty;
 
     public InspectorPaneViewModel(
         IWozzitsEngineEditorSession? editorSession = null,
@@ -191,6 +193,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // appears to "reset" to its default. The host (MainWindowViewModel) handles
     // this by reloading the graph from the live session.
     public event Action? AssetGraphNodeParamApplied;
+
+    // Raised after a named reroute is created/renamed/removed on the selected asset-graph
+    // node, so the host re-projects the graph panes (issue woguls/wozzits-editor#1).
+    public event Action? RerouteChanged;
 
     public ObservableCollection<InspectorComponentViewModel> Components { get; } = [];
 
@@ -560,6 +566,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public void SetSceneNodeLookup(Func<string, SceneTreeNodeViewModel?> lookup)
     {
         _sceneNodeLookup = lookup;
+    }
+
+    // The shared named-reroute model, so the inspector can name a selected node's output.
+    public void SetRerouteModel(AssetGraphRerouteModel reroutes)
+    {
+        _reroutes = reroutes;
     }
 
     // ─── Collision (terrain-stick track) ─────────────────────────────────────────
@@ -1025,6 +1037,40 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         private set => SetProperty(ref _assetGraphNodePosition, value);
     }
 
+    // The selected node's named-reroute label. Typing a name collapses the node's output
+    // fan-out into that named badge; clearing it removes the reroute. Editor-only display
+    // (issue woguls/wozzits-editor#1); persists in the sidecar on Save All.
+    public string NodeRerouteName
+    {
+        get => _nodeRerouteName;
+        set
+        {
+            if (SetProperty(ref _nodeRerouteName, value))
+            {
+                OnNodeRerouteNameEdited();
+            }
+        }
+    }
+
+    private void OnNodeRerouteNameEdited()
+    {
+        if (_suppressLiveEdits || !HasAssetGraphNodeSelection || _reroutes is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(NodeRerouteName))
+        {
+            _reroutes.Remove(_assetGraphNodeIdValue);
+        }
+        else
+        {
+            _reroutes.Set(_assetGraphNodeIdValue, NodeRerouteName);
+        }
+
+        RerouteChanged?.Invoke();
+    }
+
     public bool HasAssetGraphInputPorts => AssetGraphInputPorts.Count > 0;
 
     public bool HasNoAssetGraphInputPorts => !HasAssetGraphInputPorts;
@@ -1194,6 +1240,16 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphNodeCompileStatus = node.CompileStatus;
         AssetGraphNodePosition =
             $"{FormatDouble(node.GraphX)}, {FormatDouble(node.GraphY)}";
+
+        _suppressLiveEdits = true;
+        try
+        {
+            NodeRerouteName = _reroutes?.NameOf(node.Id) ?? string.Empty;
+        }
+        finally
+        {
+            _suppressLiveEdits = false;
+        }
 
         foreach (var port in node.InputPorts)
         {
@@ -1559,6 +1615,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         AssetGraphNodeSchema = string.Empty;
         AssetGraphNodeCompileStatus = string.Empty;
         AssetGraphNodePosition = string.Empty;
+        NodeRerouteName = string.Empty;
     }
 
     private void SetSelectionKind(InspectorSelectionKind kind)

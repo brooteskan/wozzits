@@ -91,6 +91,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // EFFECTIVE render program by walking ParentId ancestors, which needs
         // the scene tree's node lookup (the inspector holds only the selection).
         Inspector.SetSceneNodeLookup(SceneTree.FindNodeById);
+        Inspector.SetRerouteModel(_subGraphReroutes);
         InitializeDockLayout();
 
         // The per-run file mirror is composed at the app root (null in tests, so a
@@ -501,6 +502,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // the asset-graph pane's cached node cards; re-pull the graph so
         // re-selecting the node shows the applied value (#218 Phase 3).
         Inspector.AssetGraphNodeParamApplied += OnInspectorAssetGraphNodeParamApplied;
+        Inspector.RerouteChanged += OnInspectorRerouteChanged;
 
         var layoutFactory = new EditorDockLayoutFactory(this);
         DockFactory = layoutFactory.Factory;
@@ -826,6 +828,23 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void OnInspectorAssetGraphNodeParamApplied()
     {
         AssetGraph.RefreshFromSession();
+    }
+
+    // A named reroute changed in the inspector; re-project every open graph pane so the
+    // badges and wire-hiding refresh (the reroute model is shared across panes).
+    private void OnInspectorRerouteChanged()
+    {
+        AssetGraph.ReapplyProjection();
+        if (_assetGraphDock?.VisibleDockables is { } dockables)
+        {
+            foreach (var dockable in dockables)
+            {
+                if (dockable is Document { Context: AssetGraphEditorPaneViewModel pane })
+                {
+                    pane.ReapplyProjection();
+                }
+            }
+        }
     }
 
     // The stable schema discriminator for the "Scene from GLB" asset-graph node

@@ -1112,6 +1112,16 @@
 
                         <Border Classes="InspectorSectionCard">
                             <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Named reroute"
+                                           Classes="InspectorSectionTitle"/>
+                                <TextBox Text="{Binding NodeRerouteName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         PlaceholderText="name to collapse this output's wires"
+                                         Classes="InspectorInput"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
                                 <TextBlock Text="Parameters"
                                            Classes="InspectorSectionTitle"/>
                                 <TextBlock Text="No parameters."

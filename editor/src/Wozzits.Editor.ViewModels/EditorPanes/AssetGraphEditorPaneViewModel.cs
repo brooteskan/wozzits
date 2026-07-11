@@ -667,6 +667,13 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
 
     public bool IsReroute(ulong nodeId) => _reroutes.IsReroute(nodeId);
 
+    // Re-run the canvas projection (e.g. after the inspector renames a reroute in the
+    // shared model) so badges + wire-hiding refresh without a full reload.
+    public void ReapplyProjection()
+    {
+        RefreshCanvasProjection();
+    }
+
     // Name a node's output so its outgoing wires collapse into name badges. The default
     // name is the node's display name (renameable in the inspector, seam 2).
     public void CreateReroute(AssetGraphNodeCardViewModel node)
