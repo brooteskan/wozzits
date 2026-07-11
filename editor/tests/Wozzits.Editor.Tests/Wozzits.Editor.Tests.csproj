@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\Wozzits.Editor.Core\Wozzits.Editor.Core.csproj" />
     <ProjectReference Include="..\..\src\Wozzits.Editor.Protocol\Wozzits.Editor.Protocol.csproj" />
     <ProjectReference Include="..\..\src\Wozzits.Editor.HostClient\Wozzits.Editor.HostClient.csproj" />
+    <ProjectReference Include="..\..\src\Wozzits.Editor.Statecharts\Wozzits.Editor.Statecharts.csproj" />
     <ProjectReference Include="..\..\src\Wozzits.Editor.ViewModels\Wozzits.Editor.ViewModels.csproj" />
   </ItemGroup>
 

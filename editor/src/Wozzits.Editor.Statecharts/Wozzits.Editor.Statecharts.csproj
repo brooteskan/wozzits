@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Pure domain model + compiler for cognition-behavior statecharts
+       (schema "wozzits.statechart.ir.v0"). No Avalonia, no engine ABI: the
+       editor's ViewModels bind to this, and it compiles the id-based authoring
+       model to the same IR the engine's statechart_runner interpreter reads. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

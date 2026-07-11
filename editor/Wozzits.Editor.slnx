@@ -4,6 +4,7 @@
     <Project Path="src/Wozzits.Editor.Core/Wozzits.Editor.Core.csproj" />
     <Project Path="src/Wozzits.Editor.HostClient/Wozzits.Editor.HostClient.csproj" />
     <Project Path="src/Wozzits.Editor.Protocol/Wozzits.Editor.Protocol.csproj" />
+    <Project Path="src/Wozzits.Editor.Statecharts/Wozzits.Editor.Statecharts.csproj" />
     <Project Path="src/Wozzits.Editor.ViewModels/Wozzits.Editor.ViewModels.csproj" />
   </Folder>
   <Folder Name="/tests/">
