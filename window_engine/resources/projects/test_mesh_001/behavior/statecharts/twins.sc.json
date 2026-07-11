@@ -1,0 +1,554 @@
+{
+  "schema": "wozzits.statechart.ir.v0",
+  "name": "twins",
+  "bindings": [
+    {
+      "port": "a_lamp_0",
+      "find": "a_lamp_0",
+      "scope": "subtree"
+    },
+    {
+      "port": "a_lamp_1",
+      "find": "a_lamp_1",
+      "scope": "subtree"
+    },
+    {
+      "port": "b_lamp_0",
+      "find": "b_lamp_0",
+      "scope": "subtree"
+    },
+    {
+      "port": "b_lamp_1",
+      "find": "b_lamp_1",
+      "scope": "subtree"
+    }
+  ],
+  "agents": [
+    {
+      "id": "sig",
+      "owned": true,
+      "host": "self",
+      "spec": {
+        "decisions": 2,
+        "goal": 0,
+        "posture_goal": 0,
+        "coupling": 1.5,
+        "gamma_start": 2,
+        "anneal_seconds": 3,
+        "confidence": 0.95,
+        "decoherence": 0.2,
+        "think_interval": 0.2
+      }
+    }
+  ],
+  "pure": [
+    {
+      "id": "a_z",
+      "op": "marginal",
+      "agent": "sig",
+      "slot": 0
+    },
+    {
+      "id": "a_c",
+      "op": "committed",
+      "agent": "sig",
+      "slot": 0
+    },
+    {
+      "id": "a_delib",
+      "op": "lt",
+      "ins": [
+        {
+          "op": "a_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "a_md0",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "a_z"
+        },
+        {
+          "const": 0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "a_md1",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "a_z"
+        },
+        {
+          "const": -0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "a_p0",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "a_md0"
+        }
+      ]
+    },
+    {
+      "id": "a_p1",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "a_md1"
+        }
+      ]
+    },
+    {
+      "id": "a_is0",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "a_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "a_is1",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "a_c"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    {
+      "id": "a_sd0",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "a_p0"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "a_sd1",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "a_p1"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "a_win0",
+      "op": "select",
+      "cond": {
+        "op": "a_is0"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "a_win1",
+      "op": "select",
+      "cond": {
+        "op": "a_is1"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "a_s0",
+      "op": "select",
+      "cond": {
+        "op": "a_delib"
+      },
+      "a": {
+        "op": "a_sd0"
+      },
+      "b": {
+        "op": "a_win0"
+      }
+    },
+    {
+      "id": "a_s1",
+      "op": "select",
+      "cond": {
+        "op": "a_delib"
+      },
+      "a": {
+        "op": "a_sd1"
+      },
+      "b": {
+        "op": "a_win1"
+      }
+    },
+    {
+      "id": "a_v0",
+      "op": "or",
+      "ins": [
+        {
+          "op": "a_delib"
+        },
+        {
+          "op": "a_is0"
+        }
+      ]
+    },
+    {
+      "id": "a_v1",
+      "op": "or",
+      "ins": [
+        {
+          "op": "a_delib"
+        },
+        {
+          "op": "a_is1"
+        }
+      ]
+    },
+    {
+      "id": "b_z",
+      "op": "marginal",
+      "agent": "sig",
+      "slot": 1
+    },
+    {
+      "id": "b_c",
+      "op": "committed",
+      "agent": "sig",
+      "slot": 1
+    },
+    {
+      "id": "b_delib",
+      "op": "lt",
+      "ins": [
+        {
+          "op": "b_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "b_md0",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "b_z"
+        },
+        {
+          "const": 0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "b_md1",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "b_z"
+        },
+        {
+          "const": -0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "b_p0",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "b_md0"
+        }
+      ]
+    },
+    {
+      "id": "b_p1",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "b_md1"
+        }
+      ]
+    },
+    {
+      "id": "b_is0",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "b_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "b_is1",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "b_c"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    {
+      "id": "b_sd0",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "b_p0"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "b_sd1",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "b_p1"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "b_win0",
+      "op": "select",
+      "cond": {
+        "op": "b_is0"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "b_win1",
+      "op": "select",
+      "cond": {
+        "op": "b_is1"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "b_s0",
+      "op": "select",
+      "cond": {
+        "op": "b_delib"
+      },
+      "a": {
+        "op": "b_sd0"
+      },
+      "b": {
+        "op": "b_win0"
+      }
+    },
+    {
+      "id": "b_s1",
+      "op": "select",
+      "cond": {
+        "op": "b_delib"
+      },
+      "a": {
+        "op": "b_sd1"
+      },
+      "b": {
+        "op": "b_win1"
+      }
+    },
+    {
+      "id": "b_v0",
+      "op": "or",
+      "ins": [
+        {
+          "op": "b_delib"
+        },
+        {
+          "op": "b_is0"
+        }
+      ]
+    },
+    {
+      "id": "b_v1",
+      "op": "or",
+      "ins": [
+        {
+          "op": "b_delib"
+        },
+        {
+          "op": "b_is1"
+        }
+      ]
+    }
+  ],
+  "regions": [
+    {
+      "id": "twin_a",
+      "initial": "SIGNAL_A",
+      "states": [
+        "SIGNAL_A"
+      ]
+    },
+    {
+      "id": "twin_b",
+      "initial": "SIGNAL_B",
+      "states": [
+        "SIGNAL_B"
+      ]
+    }
+  ],
+  "states": [
+    {
+      "id": "SIGNAL_A",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "a_lamp_0"
+          },
+          "value": {
+            "op": "a_s0"
+          }
+        },
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "a_lamp_1"
+          },
+          "value": {
+            "op": "a_s1"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "a_lamp_0"
+          },
+          "value": {
+            "op": "a_v0"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "a_lamp_1"
+          },
+          "value": {
+            "op": "a_v1"
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "after",
+            "seconds": 12
+          },
+          "actions": [
+            {
+              "kind": "rearm",
+              "agent": "sig"
+            }
+          ],
+          "target": "SIGNAL_A"
+        }
+      ]
+    },
+    {
+      "id": "SIGNAL_B",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "b_lamp_0"
+          },
+          "value": {
+            "op": "b_s0"
+          }
+        },
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "b_lamp_1"
+          },
+          "value": {
+            "op": "b_s1"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "b_lamp_0"
+          },
+          "value": {
+            "op": "b_v0"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "b_lamp_1"
+          },
+          "value": {
+            "op": "b_v1"
+          }
+        }
+      ],
+      "transitions": []
+    }
+  ]
+}
