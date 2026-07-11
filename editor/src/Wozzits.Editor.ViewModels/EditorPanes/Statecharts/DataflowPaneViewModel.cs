@@ -27,6 +27,12 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
     private const double MaxZoom = 4.0;
 
     private double _zoom = 1.0;
+    private DataflowNodeViewModel? _selectedNode;
+
+    public DataflowPaneViewModel()
+    {
+        SelectedNodes.CollectionChanged += (_, _) => UpdateSelectedNode();
+    }
 
     public ObservableCollection<DataflowNodeViewModel> Nodes { get; } = [];
 
@@ -35,6 +41,20 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
     public ObservableCollection<DataflowNodeViewModel> SelectedNodes { get; } = [];
 
     public bool HasGraph => Nodes.Count > 0;
+
+    public DataflowNodeViewModel? SelectedNode
+    {
+        get => _selectedNode;
+        private set
+        {
+            if (SetProperty(ref _selectedNode, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedNode));
+            }
+        }
+    }
+
+    public bool HasSelectedNode => _selectedNode is not null;
 
     public double Zoom
     {
@@ -151,6 +171,9 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
         OnPropertyChanged(nameof(ScaledGraphWidth));
         OnPropertyChanged(nameof(ScaledGraphHeight));
     }
+
+    private void UpdateSelectedNode() =>
+        SelectedNode = SelectedNodes.Count == 1 ? SelectedNodes[0] : null;
 
     /// <summary>Rebuild the canvas from a chart's dataflow layer.</summary>
     public void Project(Chart chart)

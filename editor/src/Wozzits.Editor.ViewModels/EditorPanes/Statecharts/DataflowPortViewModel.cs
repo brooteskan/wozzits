@@ -39,4 +39,7 @@ public sealed class DataflowPortViewModel : ViewModelBase
         : Constant.IsBool
             ? (Constant.Const != 0 ? "true" : "false")
             : Constant.Const.ToString(CultureInfo.InvariantCulture);
+
+    // Value shown for this input in the inspector: the literal, or a "wired" marker.
+    public string InspectorValue => IsConstant ? ConstantText : (IsWired ? "← wired" : string.Empty);
 }

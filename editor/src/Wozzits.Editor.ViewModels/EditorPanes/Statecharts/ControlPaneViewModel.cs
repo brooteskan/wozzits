@@ -24,8 +24,14 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
     private const double MaxZoom = 4.0;
 
     private double _zoom = 1.0;
+    private StateNodeViewModel? _selectedState;
 
     private readonly Dictionary<string, StateNodeViewModel> _statesById = new();
+
+    public ControlPaneViewModel()
+    {
+        SelectedStates.CollectionChanged += (_, _) => UpdateSelectedState();
+    }
 
     public ObservableCollection<RegionViewModel> Regions { get; } = [];
 
@@ -36,6 +42,20 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
     public ObservableCollection<StateNodeViewModel> SelectedStates { get; } = [];
 
     public bool HasGraph => States.Count > 0;
+
+    public StateNodeViewModel? SelectedState
+    {
+        get => _selectedState;
+        private set
+        {
+            if (SetProperty(ref _selectedState, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedState));
+            }
+        }
+    }
+
+    public bool HasSelectedState => _selectedState is not null;
 
     public double Zoom
     {
@@ -157,6 +177,9 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
         OnPropertyChanged(nameof(ScaledGraphWidth));
         OnPropertyChanged(nameof(ScaledGraphHeight));
     }
+
+    private void UpdateSelectedState() =>
+        SelectedState = SelectedStates.Count == 1 ? SelectedStates[0] : null;
 
     // Each region's swimlane wraps its member states (+ header + padding), so a state box
     // never escapes its container -- drag a state and its region grows to follow it.
