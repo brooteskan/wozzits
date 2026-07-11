@@ -28,6 +28,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
 
     private double _zoom = 1.0;
     private DataflowNodeViewModel? _selectedNode;
+    private Chart? _chart;
 
     public DataflowPaneViewModel()
     {
@@ -181,9 +182,73 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
         // phase-3 structural-editing step; the control canvas deletes states today.
     }
 
+    // Cross-layer focus: dim every dataflow node/wire that doesn't feed the given control
+    // state -- its effects + transitions, transitively through op inputs, read agents, and
+    // proximity bindings. Null clears the focus (all full opacity).
+    public void FocusOnState(State? state)
+    {
+        if (state is null || _chart is null)
+        {
+            foreach (var node in Nodes) node.IsDimmed = false;
+            foreach (var wire in Wires) wire.IsDimmed = false;
+            return;
+        }
+
+        var opsById = _chart.Pure.ToDictionary(p => p.Id);
+        var relevant = new HashSet<string>();
+        var pending = new Stack<string>();
+
+        void SeedOp(ValueRef? r)
+        {
+            if (r is { Kind: RefKind.Op } && relevant.Add(r.Op))
+            {
+                pending.Push(r.Op);
+            }
+        }
+
+        void SeedEffect(Effect e)
+        {
+            if (e.Agent.Length > 0) relevant.Add(e.Agent);
+            if (e.TargetBind.Length > 0) relevant.Add(e.TargetBind);
+            SeedOp(e.Value);
+        }
+
+        foreach (var e in state.Do) SeedEffect(e);
+        foreach (var e in state.Entry) SeedEffect(e);
+        foreach (var e in state.Exit) SeedEffect(e);
+        foreach (var t in state.Transitions)
+        {
+            if (t.Trigger.Kind == TriggerKind.Commit && t.Trigger.Agent.Length > 0)
+            {
+                relevant.Add(t.Trigger.Agent);
+            }
+            if (t.Trigger.Kind == TriggerKind.Guard) SeedOp(t.Trigger.Cond);
+            foreach (var a in t.Actions) SeedEffect(a);
+        }
+
+        while (pending.Count > 0)
+        {
+            if (!opsById.TryGetValue(pending.Pop(), out var op))
+            {
+                continue;
+            }
+            if (op.IsRead && op.Agent.Length > 0) relevant.Add(op.Agent);
+            if (op.Op == OpKind.Proximity && op.Target.Length > 0) relevant.Add(op.Target);
+            foreach (var dep in OpRefIds(op))
+            {
+                if (relevant.Add(dep)) pending.Push(dep);
+            }
+        }
+
+        foreach (var node in Nodes) node.IsDimmed = !relevant.Contains(node.NodeId);
+        foreach (var wire in Wires) wire.IsDimmed = wire.From.IsDimmed || wire.To.IsDimmed;
+    }
+
     /// <summary>Rebuild the canvas from a chart's dataflow layer.</summary>
     public void Project(Chart chart)
     {
+        _chart = chart;
+
         foreach (var w in Wires)
         {
             w.Dispose();

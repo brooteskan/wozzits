@@ -11,6 +11,7 @@ public sealed class DataflowWireViewModel : ViewModelBase, IDisposable
     private readonly double _portRowBaseY;
     private readonly double _portRowSpacing;
     private bool _disposed;
+    private bool _isDimmed;
 
     public DataflowWireViewModel(
         DataflowNodeViewModel from,
@@ -36,6 +37,12 @@ public sealed class DataflowWireViewModel : ViewModelBase, IDisposable
     public DataflowNodeViewModel To { get; }
 
     public int ToInputIndex { get; }
+
+    public bool IsDimmed
+    {
+        get => _isDimmed;
+        set => SetProperty(ref _isDimmed, value);
+    }
 
     public double StartX => From.X + _cardWidth;
 

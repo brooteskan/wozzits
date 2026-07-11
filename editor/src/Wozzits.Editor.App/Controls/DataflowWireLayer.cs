@@ -69,7 +69,14 @@ public sealed class DataflowWireLayer : Control
             return;
         }
 
-        var pen = new Pen(Stroke ?? Brushes.DodgerBlue, StrokeThickness);
+        var stroke = Stroke ?? Brushes.DodgerBlue;
+        var pen = new Pen(stroke, StrokeThickness);
+        var dimPen = stroke is ISolidColorBrush solid
+            ? new Pen(
+                new SolidColorBrush(Color.FromArgb((byte)(solid.Color.A * 0.28), solid.Color.R, solid.Color.G, solid.Color.B)),
+                StrokeThickness)
+            : pen;
+
         foreach (var item in Edges)
         {
             if (item is not DataflowWireViewModel wire)
@@ -77,7 +84,7 @@ public sealed class DataflowWireLayer : Control
                 continue;
             }
 
-            DrawWire(context, pen, wire.StartX, wire.StartY, wire.EndX, wire.EndY);
+            DrawWire(context, wire.IsDimmed ? dimPen : pen, wire.StartX, wire.StartY, wire.EndX, wire.EndY);
         }
     }
 

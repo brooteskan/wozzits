@@ -15,6 +15,16 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
         Dataflow = new DataflowPaneViewModel();
         Control.Project(chart);
         Dataflow.Project(chart);
+
+        // Cross-layer focus: selecting a state on the control canvas dims the dataflow to
+        // just the ops feeding that state (David's "simplify the dataflow by selection").
+        Control.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ControlPaneViewModel.SelectedState))
+            {
+                Dataflow.FocusOnState(Control.SelectedState?.Model);
+            }
+        };
     }
 
     public string Name { get; }

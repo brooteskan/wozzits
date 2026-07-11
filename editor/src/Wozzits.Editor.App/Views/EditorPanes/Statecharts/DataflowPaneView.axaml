@@ -52,6 +52,7 @@
                                     <DataTemplate DataType="sc:DataflowNodeViewModel">
                                         <Border Classes="AssetGraphCard"
                                                 Classes.selected="{Binding IsSelected}"
+                                                Opacity="{Binding DimOpacity}"
                                                 Width="220">
                                             <Grid RowDefinitions="Auto,Auto,*"
                                                   RowSpacing="6">

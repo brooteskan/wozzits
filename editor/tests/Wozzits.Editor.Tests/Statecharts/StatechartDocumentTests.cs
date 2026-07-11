@@ -36,4 +36,33 @@ public sealed class StatechartDocumentTests
         Assert.True(document.Control.IsDirty);
         Assert.True(document.Dataflow.HasGraph);   // dataflow still projects fine
     }
+
+    [Fact]
+    public void Selecting_A_State_Dims_The_Dataflow_That_Does_Not_Feed_It()
+    {
+        var document = new StatechartDocumentViewModel("traffic_light", Golden("traffic_light.sc.json"));
+        var delib = document.Control.States.First(s => s.StateId == "DELIBERATE");
+
+        ((IEditorCanvas)document.Control).SelectOnly(delib);
+
+        // z (marginal) feeds DELIBERATE's scales via s0d<-p0<-md0<-z; sig feeds it via reads.
+        Assert.False(document.Dataflow.Nodes.First(n => n.NodeId == "z").IsDimmed);
+        Assert.False(document.Dataflow.Nodes.First(n => n.NodeId == "sig").IsDimmed);
+        // s0h / c feed only HOLD, so they dim.
+        Assert.True(document.Dataflow.Nodes.First(n => n.NodeId == "s0h").IsDimmed);
+        Assert.True(document.Dataflow.Nodes.First(n => n.NodeId == "c").IsDimmed);
+    }
+
+    [Fact]
+    public void Deselecting_Restores_The_Full_Dataflow()
+    {
+        var document = new StatechartDocumentViewModel("traffic_light", Golden("traffic_light.sc.json"));
+        var canvas = (IEditorCanvas)document.Control;
+
+        canvas.SelectOnly(document.Control.States.First(s => s.StateId == "DELIBERATE"));
+        Assert.Contains(document.Dataflow.Nodes, n => n.IsDimmed);
+
+        canvas.ClearSelection();
+        Assert.DoesNotContain(document.Dataflow.Nodes, n => n.IsDimmed);
+    }
 }

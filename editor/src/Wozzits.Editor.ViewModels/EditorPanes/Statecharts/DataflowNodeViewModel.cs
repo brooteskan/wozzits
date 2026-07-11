@@ -19,6 +19,7 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
     private double _x;
     private double _y;
     private bool _isSelected;
+    private bool _isDimmed;
 
     public DataflowNodeViewModel(DataflowNodeKind kind, string nodeId, string subtitle, object model)
     {
@@ -56,6 +57,22 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         get => _isSelected;
         set => SetProperty(ref _isSelected, value);
     }
+
+    // Cross-layer focus: when a control state is selected, dataflow nodes that don't feed it
+    // are dimmed (DataflowPaneViewModel.FocusOnState). Layout stays put; deselect restores.
+    public bool IsDimmed
+    {
+        get => _isDimmed;
+        set
+        {
+            if (SetProperty(ref _isDimmed, value))
+            {
+                OnPropertyChanged(nameof(DimOpacity));
+            }
+        }
+    }
+
+    public double DimOpacity => _isDimmed ? 0.28 : 1.0;
 
     // Assigned by the pane's auto-layout: column == dependency depth, row == order within.
     public int Column { get; set; }
