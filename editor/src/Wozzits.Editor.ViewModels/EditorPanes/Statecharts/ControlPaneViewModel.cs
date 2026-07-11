@@ -95,6 +95,49 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         ReprojectPreservingSelection();
     }
 
+    // Change a transition's trigger kind, seeding the new kind's fields with sensible defaults
+    // (commit → the first agent, fires on any outcome; after → 1s; guard → an always-true cond).
+    // Reprojects so the arrow label + inspector row reflect the new kind.
+    public void SetTriggerKind(State owner, Transition transition, TriggerKind kind)
+    {
+        if (_chart is null || !owner.Transitions.Contains(transition))
+        {
+            return;
+        }
+
+        var trigger = transition.Trigger;
+        if (trigger.Kind == kind)
+        {
+            return;
+        }
+
+        trigger.Kind = kind;
+        switch (kind)
+        {
+            case TriggerKind.Commit:
+                if (string.IsNullOrEmpty(trigger.Agent))
+                {
+                    trigger.Agent = _chart.Agents.Count > 0 ? _chart.Agents[0].Id : string.Empty;
+                }
+                trigger.Outcome = null;   // any outcome
+                break;
+            case TriggerKind.After:
+                if (trigger.Seconds <= 0)
+                {
+                    trigger.Seconds = 1.0;
+                }
+                break;
+            case TriggerKind.Guard:
+                trigger.Cond ??= ValueRef.Number(1);   // valid, not permanently dead
+                break;
+            case TriggerKind.Event:
+                break;   // EventName kept as-is
+        }
+
+        IsDirty = true;
+        ReprojectPreservingSelection();
+    }
+
     public ObservableCollection<RegionViewModel> Regions { get; } = [];
 
     public ObservableCollection<StateNodeViewModel> States { get; } = [];
@@ -478,6 +521,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
             {
                 Edited = MarkChartDirty,
                 TransitionDeleteRequested = t => DeleteTransition(s, t),
+                TransitionKindChangeRequested = (t, k) => SetTriggerKind(s, t, k),
             };
         }
 

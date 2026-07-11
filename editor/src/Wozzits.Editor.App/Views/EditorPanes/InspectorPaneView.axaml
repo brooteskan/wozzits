@@ -1430,16 +1430,17 @@
                                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center"/>
-                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                                                    <TextBlock Text="after" VerticalAlignment="Center"
-                                                               IsVisible="{Binding IsAfter}"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                                                            VerticalAlignment="Center">
+                                                    <ComboBox Classes="InspectorInput"
+                                                              MinWidth="96"
+                                                              ItemsSource="{Binding TriggerKinds}"
+                                                              SelectedItem="{Binding SelectedTriggerKind, Mode=TwoWay}"/>
                                                     <TextBox Width="70" IsVisible="{Binding IsAfter}"
                                                              Classes="InspectorInput"
                                                              Text="{Binding SecondsEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                                     <TextBlock Text="s" VerticalAlignment="Center"
                                                                IsVisible="{Binding IsAfter}"/>
-                                                    <TextBlock Text="{Binding TriggerText}" VerticalAlignment="Center"
-                                                               TextWrapping="Wrap" IsVisible="{Binding HasTriggerText}"/>
                                                     <TextBlock Text="{Binding ActionSummary}" Classes="InspectorPropertyName"
                                                                VerticalAlignment="Center" IsVisible="{Binding HasActions}"/>
                                                 </StackPanel>

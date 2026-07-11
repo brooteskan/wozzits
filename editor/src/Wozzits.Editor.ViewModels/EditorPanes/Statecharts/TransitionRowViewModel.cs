@@ -16,6 +16,7 @@ public sealed class TransitionRowViewModel : ViewModelBase
     {
         _transition = transition;
         Label = $"→ {transition.Target}";
+        _selectedKind = transition.Trigger.Kind;
 
         if (transition.Trigger.Kind == TriggerKind.After)
         {
@@ -71,6 +72,32 @@ public sealed class TransitionRowViewModel : ViewModelBase
 
     public IRelayCommand DeleteCommand =>
         _deleteCommand ??= new RelayCommand(() => DeleteRequested?.Invoke());
+
+    // The kinds a transition trigger can be, for the inspector's picker.
+    public IReadOnlyList<TriggerKind> TriggerKinds { get; } =
+        new[] { TriggerKind.Commit, TriggerKind.After, TriggerKind.Guard, TriggerKind.Event };
+
+    // Invoked when the picker changes the kind (the state VM routes it to the pane, which sets
+    // sensible defaults for the new kind and re-projects).
+    public Action<TriggerKind>? TriggerKindChangeRequested { get; set; }
+
+    private TriggerKind _selectedKind;
+
+    public TriggerKind SelectedTriggerKind
+    {
+        get => _selectedKind;
+        set
+        {
+            if (_selectedKind == value)
+            {
+                return;
+            }
+
+            _selectedKind = value;
+            OnPropertyChanged();
+            TriggerKindChangeRequested?.Invoke(value);
+        }
+    }
 
     private static string TriggerLabel(Trigger t) => t.Kind switch
     {

@@ -29,6 +29,7 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
             new TransitionRowViewModel(t, () => Edited?.Invoke())
             {
                 DeleteRequested = () => TransitionDeleteRequested?.Invoke(t),
+                TriggerKindChangeRequested = k => TransitionKindChangeRequested?.Invoke(t, k),
             }).ToList();
     }
 
@@ -64,6 +65,9 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
     // Invoked to delete one of this state's outgoing transitions (the pane routes it to
     // DeleteTransition); each transition row calls it with its own model.
     public Action<Transition>? TransitionDeleteRequested { get; set; }
+
+    // Invoked to change a transition's trigger kind (the pane routes it to SetTriggerKind).
+    public Action<Transition, TriggerKind>? TransitionKindChangeRequested { get; set; }
 
     // Convenience read-only string views of the rows (used by tests / plain text).
     public IReadOnlyList<string> DoEffects => DoEffectRows.Select(r => r.Display).ToList();

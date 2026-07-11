@@ -370,4 +370,55 @@ public sealed class StatechartMutationTests
         Assert.Equal(before - 1, chart.States.First(s => s.Id == "HOLD").Transitions.Count);
         Assert.True(pane.IsDirty);
     }
+
+    [Fact]
+    public void Change_Trigger_Kind_After_To_Commit_Defaults_The_Agent()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        var hold = chart.States.First(s => s.Id == "HOLD");
+        var t = hold.Transitions.First(x => x.Trigger.Kind == TriggerKind.After);
+
+        pane.SetTriggerKind(hold, t, TriggerKind.Commit);
+
+        Assert.Equal(TriggerKind.Commit, t.Trigger.Kind);
+        Assert.Equal("sig", t.Trigger.Agent);   // the chart's only agent
+        Assert.Null(t.Trigger.Outcome);          // fires on any outcome
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Change_Trigger_Kind_Commit_To_After_Defaults_Seconds()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        var delib = chart.States.First(s => s.Id == "DELIBERATE");
+        var t = delib.Transitions.First(x => x.Trigger.Kind == TriggerKind.Commit);
+
+        pane.SetTriggerKind(delib, t, TriggerKind.After);
+
+        Assert.Equal(TriggerKind.After, t.Trigger.Kind);
+        Assert.True(t.Trigger.Seconds > 0);   // defaulted to 1s
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Transition_Row_Kind_Picker_Changes_The_Trigger_And_Arrow_Label()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        var holdVm = pane.States.First(s => s.StateId == "HOLD");
+        holdVm.TransitionRows[0].SelectedTriggerKind = TriggerKind.Commit;   // the inspector picker
+
+        Assert.Contains(chart.States.First(s => s.Id == "HOLD").Transitions, x => x.Trigger.Kind == TriggerKind.Commit);
+        Assert.Contains(pane.Transitions, tr => tr.From.StateId == "HOLD" && tr.Label == "commit");
+        Assert.True(pane.IsDirty);
+    }
 }
