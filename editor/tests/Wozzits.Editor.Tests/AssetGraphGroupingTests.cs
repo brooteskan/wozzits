@@ -413,7 +413,7 @@ public sealed class AssetGraphGroupingTests
     // --- Sidecar persistence -----------------------------------------------------------
 
     [Fact]
-    public void SidecarRoundTripsSubGraphs()
+    public void SidecarRoundTripsSubGraphsAndReroutes()
     {
         var model = new AssetGraphGroupingModel();
         var group = model.CreateSubGraph("Terrain", [1ul, 2ul], id: "terrain");
@@ -421,22 +421,28 @@ public sealed class AssetGraphGroupingTests
         group.ProxyY = 240;
 
         var loaded = AssetGraphSubGraphSidecar.Deserialize(
-            AssetGraphSubGraphSidecar.Serialize(model.SubGraphs));
+            AssetGraphSubGraphSidecar.Serialize(
+                model.SubGraphs,
+                new Dictionary<ulong, string> { [7] = "SharedTex" }));
 
-        var one = Assert.Single(loaded);
+        var one = Assert.Single(loaded.SubGraphs);
         Assert.Equal("terrain", one.Id);
         Assert.Equal("Terrain", one.Name);
         Assert.Null(one.ParentId);
         Assert.Equal(120, one.ProxyX);
         Assert.Equal(240, one.ProxyY);
         Assert.Equal<ulong>([1, 2], one.MemberNodeIds.OrderBy(id => id).ToArray());
+
+        var reroute = Assert.Single(loaded.Reroutes);
+        Assert.Equal(7ul, reroute.SourceNodeId);
+        Assert.Equal("SharedTex", reroute.Name);
     }
 
     [Fact]
     public void DeserializeReturnsEmptyForMissingOrMalformedJson()
     {
-        Assert.Empty(AssetGraphSubGraphSidecar.Deserialize(""));
-        Assert.Empty(AssetGraphSubGraphSidecar.Deserialize("}{ not json"));
+        Assert.Empty(AssetGraphSubGraphSidecar.Deserialize("").SubGraphs);
+        Assert.Empty(AssetGraphSubGraphSidecar.Deserialize("}{ not json").Reroutes);
     }
 
     [Fact]
@@ -515,6 +521,56 @@ public sealed class AssetGraphGroupingTests
                     .ToList(),
             },
         };
+
+    // --- Named reroutes ----------------------------------------------------------------
+
+    [Fact]
+    public void CreatingRerouteHidesFanOutAndBadgesPorts()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(SnapshotWithEdges([1, 2, 3], (1, 2), (1, 3)));
+
+        var source = NodeById(pane, 1);
+        pane.CreateReroute(source);
+
+        Assert.True(pane.IsReroute(1));
+        // The source's fan-out wires are hidden.
+        Assert.True(EdgeBetween(pane, 1, 2).IsRenderHidden);
+        Assert.True(EdgeBetween(pane, 1, 3).IsRenderHidden);
+        // The source output and each fed input carry the reroute badge (default = name).
+        Assert.Equal("node 1", source.OutputPorts[0].RerouteName);
+        Assert.Equal("node 1", NodeById(pane, 2).InputPorts[0].RerouteName);
+        Assert.Equal("node 1", NodeById(pane, 3).InputPorts[0].RerouteName);
+        // The name shows as a full-width badge line: a declaration on the source, and a
+        // usage on each fed node that names the input port it feeds.
+        Assert.Contains("→ node 1", source.RerouteBadges);
+        Assert.Contains(NodeById(pane, 2).RerouteBadges, badge => badge.Contains("node 1"));
+        Assert.Contains(NodeById(pane, 2).RerouteBadges, badge => badge.Contains("in"));
+
+        pane.RemoveReroute(source);
+        Assert.False(pane.IsReroute(1));
+        Assert.False(EdgeBetween(pane, 1, 2).IsRenderHidden);
+        Assert.Null(source.OutputPorts[0].RerouteName);
+        Assert.Empty(source.RerouteBadges);
+    }
+
+    [Fact]
+    public void LoadReroutesAppliesAndDropsDeadOnes()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(SnapshotWithEdges([1, 2], (1, 2)));
+
+        pane.LoadReroutes(new[]
+        {
+            new PersistedReroute { SourceNodeId = 1, Name = "Shared" },
+            new PersistedReroute { SourceNodeId = 9, Name = "Dead" },
+        });
+
+        Assert.True(pane.IsReroute(1));
+        Assert.False(pane.IsReroute(9)); // node 9 doesn't exist → reconciled away
+        Assert.Equal("Shared", NodeById(pane, 1).OutputPorts[0].RerouteName);
+        Assert.True(EdgeBetween(pane, 1, 2).IsRenderHidden);
+    }
 
     private static ulong[] Members(AssetGraphSubGraph subGraph) =>
         subGraph.MemberNodeIds.OrderBy(id => id).ToArray();

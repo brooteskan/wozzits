@@ -28,6 +28,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     // One grouping model shared by the root canvas and every drill-in tab, so sub-graphs
     // and their membership stay consistent across panes (issue woguls/wozzits-editor#1).
     private readonly AssetGraphGroupingModel _subGraphGrouping = new();
+    private readonly AssetGraphRerouteModel _subGraphReroutes = new();
     private IDocumentDock? _assetGraphDock;
 
     // Engine log lines arrive one at a time (often on the engine's logger thread)
@@ -77,7 +78,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             BackToScene, () => _editorSession is not null && IsEditingPrefab);
         RefreshSceneletsCommand = new RelayCommand(
             RefreshScenelets, () => _editorSession is not null);
-        AssetGraph = new AssetGraphEditorPaneViewModel(editorSession, _subGraphGrouping);
+        AssetGraph = new AssetGraphEditorPaneViewModel(
+            editorSession,
+            _subGraphGrouping,
+            reroutes: _subGraphReroutes);
         AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(
             editorSession, AppendEditorLog);
@@ -232,7 +236,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             File.WriteAllText(
                 path,
-                AssetGraphSubGraphSidecar.Serialize(AssetGraph.SubGraphs));
+                AssetGraphSubGraphSidecar.Serialize(
+                    AssetGraph.SubGraphs,
+                    AssetGraph.RerouteNames));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -249,8 +255,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            AssetGraph.LoadSubGraphs(
-                AssetGraphSubGraphSidecar.Deserialize(File.ReadAllText(path)));
+            var document = AssetGraphSubGraphSidecar.Deserialize(File.ReadAllText(path));
+            AssetGraph.LoadSubGraphs(document.SubGraphs);
+            AssetGraph.LoadReroutes(document.Reroutes);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -600,7 +607,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         var pane = new AssetGraphEditorPaneViewModel(
             _editorSession,
             _subGraphGrouping,
-            subGraph);
+            subGraph,
+            _subGraphReroutes);
         pane.LoadSnapshot(_editorSession.LoadAssetGraphSnapshot());
         pane.OpenSubGraphRequested += OnOpenSubGraphRequested;
         pane.SelectedNodeChanged += OnAssetGraphNodeSelected;

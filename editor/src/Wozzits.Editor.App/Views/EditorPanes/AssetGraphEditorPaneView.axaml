@@ -114,7 +114,7 @@
                                                     PointerPressed="NodeCardPointerPressed"
                                                     PointerMoved="NodeCardPointerMoved"
                                                     PointerReleased="NodeCardPointerReleased">
-                                                <Grid RowDefinitions="Auto,Auto,Auto,*"
+                                                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto"
                                                       RowSpacing="6">
                                                     <Grid ColumnDefinitions="Auto,*,Auto"
                                                           ColumnSpacing="7">
@@ -196,6 +196,21 @@
                                                             </ItemsControl>
                                                         </StackPanel>
                                                     </Grid>
+
+                                                    <ItemsControl Grid.Row="4"
+                                                                  ItemsSource="{Binding RerouteBadges}"
+                                                                  IsVisible="{Binding HasReroutes}"
+                                                                  Margin="12,0,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Classes="AssetGraphRerouteChip"
+                                                                        HorizontalAlignment="Left"
+                                                                        Margin="0,2,0,0">
+                                                                    <TextBlock Text="{Binding}"/>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>

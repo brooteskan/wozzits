@@ -17,6 +17,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     private const double WheelZoomFactor = 1.1;
     private readonly IWozzitsEngineEditorSession? _editorSession;
     private readonly AssetGraphGroupingModel _grouping;
+    private readonly AssetGraphRerouteModel _reroutes;
     private readonly AssetGraphSubGraph? _context;
     private string _emptyState = "No asset graph loaded.";
     private string _lastEditError = string.Empty;
@@ -42,10 +43,12 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     public AssetGraphEditorPaneViewModel(
         IWozzitsEngineEditorSession? editorSession = null,
         AssetGraphGroupingModel? grouping = null,
-        AssetGraphSubGraph? context = null)
+        AssetGraphSubGraph? context = null,
+        AssetGraphRerouteModel? reroutes = null)
     {
         _editorSession = editorSession;
         _grouping = grouping ?? new AssetGraphGroupingModel();
+        _reroutes = reroutes ?? new AssetGraphRerouteModel();
         _context = context;
         CommitGraphCommand = new AsyncRelayCommand(
             CommitGraphAsync,
@@ -341,7 +344,9 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         GraphHeight = Nodes.Count == 0
             ? 420.0
             : Nodes.Max(node => node.Y + CardHeight + CanvasPadding);
-        _grouping.ReconcileWithLiveNodes(Nodes.Select(node => node.Id).ToHashSet());
+        var liveNodeIds = Nodes.Select(node => node.Id).ToHashSet();
+        _grouping.ReconcileWithLiveNodes(liveNodeIds);
+        _reroutes.ReconcileWithLiveNodes(liveNodeIds);
         RefreshCanvasProjection();
         NotifyGraphStateChanged();
     }
@@ -656,6 +661,34 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         RefreshCanvasProjection();
     }
 
+    // --- Named reroutes (editor-only fan-out declutter) --------------------------------
+
+    public IReadOnlyDictionary<ulong, string> RerouteNames => _reroutes.Names;
+
+    public bool IsReroute(ulong nodeId) => _reroutes.IsReroute(nodeId);
+
+    // Name a node's output so its outgoing wires collapse into name badges. The default
+    // name is the node's display name (renameable in the inspector, seam 2).
+    public void CreateReroute(AssetGraphNodeCardViewModel node)
+    {
+        _reroutes.Set(node.Id, node.DisplayName);
+        RefreshCanvasProjection();
+    }
+
+    public void RemoveReroute(AssetGraphNodeCardViewModel node)
+    {
+        _reroutes.Remove(node.Id);
+        RefreshCanvasProjection();
+    }
+
+    public void LoadReroutes(IEnumerable<PersistedReroute> reroutes)
+    {
+        _reroutes.Load(reroutes.Select(reroute =>
+            new KeyValuePair<ulong, string>(reroute.SourceNodeId, reroute.Name)));
+        _reroutes.ReconcileWithLiveNodes(Nodes.Select(node => node.Id).ToHashSet());
+        RefreshCanvasProjection();
+    }
+
     // Select a sub-graph proxy. Proxy selection and node selection are mutually exclusive.
     public void SelectSubGraph(AssetGraphSubGraph? subGraph)
     {
@@ -725,8 +758,58 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
             edge.IsRenderHidden = false;
         }
 
+        ApplyRerouteBadges();
         SyncVisibleSubGraphs();
         EnsureGraphBounds();
+    }
+
+    // Named reroutes (editor-only): hide a named source's fan-out wires and badge the
+    // ports — the source output as the declaration, each fed input port as a usage.
+    private void ApplyRerouteBadges()
+    {
+        var incoming = new Dictionary<(ulong Node, uint Port), ulong>();
+        foreach (var edge in Edges)
+        {
+            incoming[(edge.ToNodeId, edge.ToInputPort)] = edge.FromNodeId;
+            if (_reroutes.IsReroute(edge.FromNodeId))
+            {
+                edge.IsRenderHidden = true;
+            }
+        }
+
+        foreach (var node in Nodes)
+        {
+            var declaration = _reroutes.NameOf(node.Id);
+            foreach (var port in node.OutputPorts)
+            {
+                port.RerouteName = declaration;
+            }
+
+            foreach (var port in node.InputPorts)
+            {
+                port.RerouteName =
+                    incoming.TryGetValue((node.Id, port.Index), out var source)
+                        ? _reroutes.NameOf(source)
+                        : null;
+            }
+
+            node.RerouteBadges.Clear();
+            if (declaration is not null)
+            {
+                node.RerouteBadges.Add($"→ {declaration}");
+            }
+
+            // A usage badge names the input port it feeds, so it's clear which port the
+            // reroute connects to.
+            foreach (var port in node.InputPorts)
+            {
+                if (port.RerouteName is { } usage)
+                {
+                    var label = string.IsNullOrWhiteSpace(port.Label) ? "input" : port.Label;
+                    node.RerouteBadges.Add($"{label}  ←  {usage}");
+                }
+            }
+        }
     }
 
     // How a node appears on this canvas: as a visible card (OnCanvas, no proxy), collapsed
@@ -1465,7 +1548,8 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     private static double NodeCardHeight(AssetGraphNodeCardViewModel node)
     {
         var portRows = Math.Max(node.InputPorts.Count, node.OutputPorts.Count);
-        return Math.Max(CardHeight, PortRowBaseY + portRows * PortRowSpacing + 28.0);
+        var rows = portRows + node.RerouteBadges.Count;
+        return Math.Max(CardHeight, PortRowBaseY + rows * PortRowSpacing + 28.0);
     }
 
     private void ClearGraph()

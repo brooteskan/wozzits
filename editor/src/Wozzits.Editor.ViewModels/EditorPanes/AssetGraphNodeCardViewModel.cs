@@ -29,6 +29,7 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
             node.InputPorts.Select(port => new AssetGraphPortViewModel(this, port, isInput: true)));
         OutputPorts = new ObservableCollection<AssetGraphPortViewModel>(
             node.OutputPorts.Select(port => new AssetGraphPortViewModel(this, port, isInput: false)));
+        RerouteBadges.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasReroutes));
     }
 
     public ulong Id { get; }
@@ -96,4 +97,12 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
     public ObservableCollection<AssetGraphPortViewModel> InputPorts { get; }
 
     public ObservableCollection<AssetGraphPortViewModel> OutputPorts { get; }
+
+    // Full-width named-reroute badges shown at the bottom of the card (the port rows stay
+    // fixed-width so wires still line up). Populated by the pane's projection: a "→ name"
+    // declaration when this node is a reroute source, a "← name" usage per fed input
+    // (issue woguls/wozzits-editor#1).
+    public ObservableCollection<string> RerouteBadges { get; } = [];
+
+    public bool HasReroutes => RerouteBadges.Count > 0;
 }

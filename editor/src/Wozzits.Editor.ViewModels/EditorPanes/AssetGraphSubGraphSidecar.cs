@@ -18,10 +18,17 @@ public sealed record PersistedSubGraph
     public List<ulong> MemberNodeIds { get; init; } = [];
 }
 
+public sealed record PersistedReroute
+{
+    public ulong SourceNodeId { get; init; }
+    public string Name { get; init; } = string.Empty;
+}
+
 public sealed record SubGraphSidecarDocument
 {
     public int Version { get; init; } = 1;
     public List<PersistedSubGraph> SubGraphs { get; init; } = [];
+    public List<PersistedReroute> Reroutes { get; init; } = [];
 }
 
 public static class AssetGraphSubGraphSidecar
@@ -39,7 +46,9 @@ public static class AssetGraphSubGraphSidecar
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public static string Serialize(IEnumerable<AssetGraphSubGraph> subGraphs)
+    public static string Serialize(
+        IEnumerable<AssetGraphSubGraph> subGraphs,
+        IReadOnlyDictionary<ulong, string> reroutes)
     {
         var document = new SubGraphSidecarDocument
         {
@@ -54,28 +63,35 @@ public static class AssetGraphSubGraphSidecar
                     MemberNodeIds = [.. subGraph.MemberNodeIds],
                 })
                 .ToList(),
+            Reroutes = reroutes
+                .Select(entry => new PersistedReroute
+                {
+                    SourceNodeId = entry.Key,
+                    Name = entry.Value,
+                })
+                .ToList(),
         };
 
         return JsonSerializer.Serialize(document, Options);
     }
 
-    // Never throws: a missing/empty/corrupt sidecar yields no groups rather than blocking
-    // the project from opening.
-    public static IReadOnlyList<PersistedSubGraph> Deserialize(string json)
+    // Never throws: a missing/empty/corrupt sidecar yields an empty document rather than
+    // blocking the project from opening.
+    public static SubGraphSidecarDocument Deserialize(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
         {
-            return [];
+            return new SubGraphSidecarDocument();
         }
 
         try
         {
-            var document = JsonSerializer.Deserialize<SubGraphSidecarDocument>(json, Options);
-            return document?.SubGraphs ?? [];
+            return JsonSerializer.Deserialize<SubGraphSidecarDocument>(json, Options)
+                ?? new SubGraphSidecarDocument();
         }
         catch (JsonException)
         {
-            return [];
+            return new SubGraphSidecarDocument();
         }
     }
 }

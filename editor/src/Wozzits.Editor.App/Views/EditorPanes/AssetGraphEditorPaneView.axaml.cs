@@ -597,6 +597,22 @@ public partial class AssetGraphEditorPaneView : UserControl
         return null;
     }
 
+    private static AssetGraphPortViewModel? PortUnderPointer(object? source)
+    {
+        var current = source as StyledElement;
+        while (current is not null)
+        {
+            if (current.DataContext is AssetGraphPortViewModel port)
+            {
+                return port;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
+    }
+
     private static AssetGraphSubGraph? SubGraphUnderPointer(object? source)
     {
         var current = source as StyledElement;
@@ -626,7 +642,14 @@ public partial class AssetGraphEditorPaneView : UserControl
 
         var items = new List<Control>();
 
-        if (SubGraphUnderPointer(_rightDownSource) is { } proxy)
+        if (PortUnderPointer(_rightDownSource) is { IsOutput: true } outputPort)
+        {
+            var owner = outputPort.Owner;
+            items.Add(graph.IsReroute(owner.Id)
+                ? BuildMenuItem("Remove named reroute", () => graph.RemoveReroute(owner))
+                : BuildMenuItem("Create named reroute", () => graph.CreateReroute(owner)));
+        }
+        else if (SubGraphUnderPointer(_rightDownSource) is { } proxy)
         {
             graph.SelectSubGraph(proxy);
             items.Add(BuildMenuItem("Open sub-graph", () => graph.OpenSubGraph(proxy)));
