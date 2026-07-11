@@ -3,6 +3,7 @@
 #include <engine/behavior/behavior_module_api.h>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -172,6 +173,21 @@ namespace wz::engine::behavior
             case K::Or:  v = (eref(op.in0) != 0.0 || eref(op.in1) != 0.0) ? 1.0 : 0.0; break;
             case K::Not: v = (eref(op.in0) == 0.0) ? 1.0 : 0.0; break;
             case K::Select: v = (eref(op.in0) != 0.0) ? eref(op.in1) : eref(op.in2); break;
+            case K::Proximity: {
+                WzVec3 me{}, them{};
+                const WzBehaviorEntityId tgt = (op.slot < ent.size())
+                    ? ent[op.slot]
+                    : static_cast<WzBehaviorEntityId>(WZ_INVALID_BEHAVIOR_ENTITY);
+                if (wz_read_world_position(facts, self, &me)
+                    && wz_read_world_position(facts, tgt, &them)) {
+                    const double dx = me.x - them.x;
+                    const double dz = me.z - them.z;   // horizontal only
+                    v = std::sqrt(dx * dx + dz * dz);
+                }
+                else {
+                    v = 1.0e9;   // no target resolved -> effectively unobserved
+                }
+            } break;
             }
             rt.pure_out[i] = v;
         }

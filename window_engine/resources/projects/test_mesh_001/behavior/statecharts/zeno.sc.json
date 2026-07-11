@@ -1,0 +1,337 @@
+{
+  "schema": "wozzits.statechart.ir.v0",
+  "name": "zeno",
+  "bindings": [
+    {
+      "port": "lamp_0",
+      "find": "lamp_0",
+      "scope": "subtree"
+    },
+    {
+      "port": "lamp_1",
+      "find": "lamp_1",
+      "scope": "subtree"
+    },
+    {
+      "port": "player",
+      "find": "tank",
+      "scope": "global"
+    }
+  ],
+  "agents": [
+    {
+      "id": "sig",
+      "owned": true,
+      "host": "self",
+      "spec": {
+        "decisions": 1,
+        "goal": 0,
+        "gamma_start": 2,
+        "anneal_seconds": 2,
+        "confidence": 0.99,
+        "decoherence": 0.02,
+        "think_interval": 0.1
+      }
+    }
+  ],
+  "pure": [
+    {
+      "id": "dist",
+      "op": "proximity",
+      "target": "player"
+    },
+    {
+      "id": "obs",
+      "op": "lt",
+      "ins": [
+        {
+          "op": "dist"
+        },
+        {
+          "const": 25
+        }
+      ]
+    },
+    {
+      "id": "decoh",
+      "op": "select",
+      "cond": {
+        "op": "obs"
+      },
+      "a": {
+        "const": 2.5
+      },
+      "b": {
+        "const": 0.02
+      }
+    },
+    {
+      "id": "z",
+      "op": "marginal",
+      "agent": "sig",
+      "slot": 0
+    },
+    {
+      "id": "cc",
+      "op": "committed",
+      "agent": "sig",
+      "slot": 0
+    },
+    {
+      "id": "md0",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "z"
+        },
+        {
+          "const": 0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "md1",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "z"
+        },
+        {
+          "const": -0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "p0",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "md0"
+        }
+      ]
+    },
+    {
+      "id": "p1",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "md1"
+        }
+      ]
+    },
+    {
+      "id": "s0d",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "p0"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "s1d",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "p1"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "is0",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "cc"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "is1",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "cc"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    {
+      "id": "s0h",
+      "op": "select",
+      "cond": {
+        "op": "is0"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "s1h",
+      "op": "select",
+      "cond": {
+        "op": "is1"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    }
+  ],
+  "regions": [
+    {
+      "id": "zeno",
+      "initial": "DELIBERATE",
+      "states": [
+        "DELIBERATE",
+        "HOLD"
+      ]
+    }
+  ],
+  "states": [
+    {
+      "id": "DELIBERATE",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "lamp_0"
+          },
+          "value": {
+            "op": "s0d"
+          }
+        },
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "lamp_1"
+          },
+          "value": {
+            "op": "s1d"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "lamp_0"
+          },
+          "value": {
+            "const": true
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "lamp_1"
+          },
+          "value": {
+            "const": true
+          }
+        },
+        {
+          "kind": "set_decoherence",
+          "agent": "sig",
+          "value": {
+            "op": "decoh"
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "commit",
+            "agent": "sig",
+            "slot": 0,
+            "outcome": "any"
+          },
+          "target": "HOLD"
+        }
+      ]
+    },
+    {
+      "id": "HOLD",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "lamp_0"
+          },
+          "value": {
+            "op": "s0h"
+          }
+        },
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "lamp_1"
+          },
+          "value": {
+            "op": "s1h"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "lamp_0"
+          },
+          "value": {
+            "op": "is0"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "lamp_1"
+          },
+          "value": {
+            "op": "is1"
+          }
+        },
+        {
+          "kind": "set_decoherence",
+          "agent": "sig",
+          "value": {
+            "op": "decoh"
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "after",
+            "seconds": 1
+          },
+          "actions": [
+            {
+              "kind": "rearm",
+              "agent": "sig"
+            }
+          ],
+          "target": "DELIBERATE"
+        }
+      ]
+    }
+  ]
+}

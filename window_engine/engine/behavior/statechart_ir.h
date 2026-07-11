@@ -38,7 +38,9 @@ namespace wz::engine::behavior::statechart
         Eq, Lt, Gt,                    // in0,in1 -> bool
         And, Or, Not,                  // in0(,in1) -> bool
         Select,                        // in0 ? in1 : in2
-        // sensors (Seam 2): Proximity, TerrainSlope, Gaze, Timer
+        // Sensors. Proximity: horizontal distance from self to the target binding
+        // (slot holds the target binding index). More (Gaze/Timer/TerrainSlope) TBD.
+        Proximity,
     };
 
     struct PureOp

@@ -92,7 +92,7 @@ namespace wz::engine::behavior::statechart
                     {"mul_add",OpKind::MulAdd},{"clamp01",OpKind::Clamp01},
                     {"eq",OpKind::Eq},{"lt",OpKind::Lt},{"gt",OpKind::Gt},
                     {"and",OpKind::And},{"or",OpKind::Or},{"not",OpKind::Not},
-                    {"select",OpKind::Select},
+                    {"select",OpKind::Select},{"proximity",OpKind::Proximity},
                 };
                 for (auto& e : t) if (s == e.first) { k = e.second; return true; }
                 return fail("unknown pure op kind '" + s + "'");
@@ -119,6 +119,14 @@ namespace wz::engine::behavior::statechart
                     if (!cd || !av || !bv) return fail("select needs cond/a/b");
                     if (!ref(*cd, p.in0) || !ref(*av, p.in1) || !ref(*bv, p.in2))
                         return false;
+                }
+                else if (p.op == OpKind::Proximity) {
+                    // self -> target horizontal distance; slot holds the target
+                    // binding index (self is implicit).
+                    int b = c.index_of_binding(str(o, "target"));
+                    if (b < 0)
+                        return fail("proximity names unknown target binding");
+                    p.slot = static_cast<uint16_t>(b);
                 }
                 else {
                     const JSONValue* ins = arr(o, "ins");
