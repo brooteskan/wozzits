@@ -45,3 +45,13 @@ public interface IEditorCanvas
     // Remove the current selection from the underlying chart and re-project.
     void DeleteSelected();
 }
+
+// A canvas whose nodes can be wired by dragging one node's output onto another's input
+// (the dataflow pane; the control pane does not implement it, so the shared interaction
+// controller's wire gesture is inert there).
+public interface IWiringCanvas
+{
+    // Wire sourceNodeId's output into targetNodeId's operand at the given input row.
+    // Returns false (leaving the chart untouched) when the connection is invalid or cyclic.
+    bool TryConnect(string sourceNodeId, string targetNodeId, int targetInputIndex);
+}

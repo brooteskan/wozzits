@@ -206,6 +206,25 @@ public sealed class StatechartDocumentTests
     }
 
     [Fact]
+    public void Wiring_An_Operand_Marks_Dirty_And_Saves_Into_The_Chart()
+    {
+        var path = FreshChartPath("traffic_light.sc.json");
+        var document = new StatechartDocumentViewModel("traffic_light", path, Golden("traffic_light.sc.json"));
+
+        var a = document.Dataflow.AddOp(OpKind.Mul)!;
+        var b = document.Dataflow.AddOp(OpKind.Add)!;
+        Assert.True(document.Dataflow.TryConnect(a.NodeId, b.NodeId, 0));
+        Assert.True(document.IsDirty);
+
+        document.Save();
+
+        var reloaded = StatechartJson.Load(File.ReadAllText(path));
+        var bOp = reloaded.Pure.First(p => p.Id == b.NodeId);
+        Assert.Equal(RefKind.Op, bOp.Ins[0].Kind);
+        Assert.Equal(a.NodeId, bOp.Ins[0].Op);
+    }
+
+    [Fact]
     public void Saved_Layout_Is_Restored_On_Reopen()
     {
         var path = FreshChartPath("traffic_light.sc.json");

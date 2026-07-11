@@ -5,12 +5,12 @@ using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 namespace Wozzits.Editor.App.Views.EditorPanes.Statecharts;
 
 // Dataflow canvas. Navigation + selection + node-drag come from the shared GraphInteraction
-// controller (E2c phase 1); structural editing (add/remove/wire) + save arrive later.
+// controller; the WirePreview line lets it also drive the output->input wiring gesture (M2).
 public partial class DataflowPaneView : UserControl
 {
     public DataflowPaneView()
     {
         InitializeComponent();
-        _ = new GraphInteraction(this, Scroll, Canvas, SelectionRectangle, () => DataContext as IEditorCanvas);
+        _ = new GraphInteraction(this, Scroll, Canvas, SelectionRectangle, () => DataContext as IEditorCanvas, WirePreview);
     }
 }

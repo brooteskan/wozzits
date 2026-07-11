@@ -15,13 +15,14 @@ using Wozzits.Editor.Statecharts;
 /// which guarantees every wire runs strictly left-to-right. Positions are transient here;
 /// persisting hand-placed layout comes with the canvas view (E2b/E2c).
 /// </summary>
-public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
+public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWiringCanvas
 {
     private const double CanvasPadding = 28.0;
-    private const double CardWidth = 220.0;
+    // Card geometry is public so the port VMs (drag-preview anchors) and the wire VMs share it.
+    public const double CardWidth = 220.0;
     private const double CardHeight = 116.0;
-    private const double PortRowBaseY = 82.0;
-    private const double PortRowSpacing = 18.0;
+    public const double PortRowBaseY = 82.0;
+    public const double PortRowSpacing = 18.0;
     private const double ColumnGap = 120.0;
     private const double RowGap = 40.0;
     private const double MinZoom = 0.25;
@@ -245,6 +246,84 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
         }
 
         return node;
+    }
+
+    // Wire an op's output into a target op's operand (the input at row `targetInputIndex`).
+    // Rejects when: the source isn't an op (a leaf binding/agent can't feed a value operand —
+    // route it through a read op), the target input isn't a value operand (reads/proximity take
+    // an agent/binding, not an op ref), or the edge would create a pure-op cycle. Reprojects on
+    // success so the wire appears and the formerly-constant input becomes wired.
+    public bool TryConnect(string sourceNodeId, string targetNodeId, int targetInputIndex)
+    {
+        if (_chart is null)
+        {
+            return false;
+        }
+
+        var source = _chart.Pure.FirstOrDefault(p => p.Id == sourceNodeId);
+        var target = _chart.Pure.FirstOrDefault(p => p.Id == targetNodeId);
+        if (source is null || target is null)
+        {
+            return false;
+        }
+
+        var operand = OperandSlot(target, targetInputIndex);
+        if (operand is null || CreatesCycle(sourceNodeId, targetNodeId))
+        {
+            return false;
+        }
+
+        operand.Kind = RefKind.Op;
+        operand.Op = sourceNodeId;
+        operand.Const = 0;
+        operand.IsBool = false;
+
+        IsDirty = true;
+        ReprojectPreservingLayout();
+        return true;
+    }
+
+    // The ValueRef that an (op, input row index) addresses, or null when that input is not a
+    // value operand (a read's agent / a proximity target is wired differently, not as an op ref).
+    private static ValueRef? OperandSlot(PureOp op, int index) => op.Op switch
+    {
+        OpKind.Marginal or OpKind.Committed or OpKind.Memory or OpKind.Proximity => null,
+        OpKind.Select => index switch
+        {
+            0 => op.Cond ??= ValueRef.Number(0),
+            1 => op.A ??= ValueRef.Number(0),
+            2 => op.B ??= ValueRef.Number(0),
+            _ => null,
+        },
+        _ => index >= 0 && index < op.Ins.Count ? op.Ins[index] : null,
+    };
+
+    // Would wiring source -> target (target comes to depend on source) create a cycle? Yes iff
+    // source already depends on target transitively (target reachable from source, self included).
+    private bool CreatesCycle(string sourceId, string targetId)
+    {
+        var opsById = _chart!.Pure.ToDictionary(p => p.Id);
+        var seen = new HashSet<string>();
+        var stack = new Stack<string>();
+        stack.Push(sourceId);
+        while (stack.Count > 0)
+        {
+            var id = stack.Pop();
+            if (id == targetId)
+            {
+                return true;
+            }
+            if (!seen.Add(id) || !opsById.TryGetValue(id, out var op))
+            {
+                continue;
+            }
+            foreach (var dep in OpRefIds(op))
+            {
+                stack.Push(dep);
+            }
+        }
+
+        return false;
     }
 
     // Delete the selected OP nodes (agents/bindings are left for a later entity-editing seam).

@@ -136,6 +136,13 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
+                            <Line x:Name="WirePreview"
+                                  Stroke="{DynamicResource WozzitsAccentBrush}"
+                                  StrokeThickness="2"
+                                  StrokeDashArray="4,3"
+                                  IsVisible="False"
+                                  IsHitTestVisible="False"/>
+
                             <Border x:Name="SelectionRectangle"
                                     Classes="AssetGraphSelectionRectangle"
                                     HorizontalAlignment="Left"

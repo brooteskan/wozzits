@@ -173,4 +173,64 @@ public sealed class StatechartMutationTests
         Assert.Equal(x, moved.X, 3);
         Assert.Equal(y, moved.Y, 3);
     }
+
+    // ---- M2: wiring -------------------------------------------------------------
+
+    [Fact]
+    public void Connect_Wires_An_Op_Output_To_An_Operand()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var a = pane.AddOp(OpKind.Mul)!;
+        var b = pane.AddOp(OpKind.Add)!;
+
+        bool ok = pane.TryConnect(a.NodeId, b.NodeId, 0);
+
+        Assert.True(ok);
+        var bOp = chart.Pure.First(p => p.Id == b.NodeId);
+        Assert.Equal(RefKind.Op, bOp.Ins[0].Kind);
+        Assert.Equal(a.NodeId, bOp.Ins[0].Op);
+        Assert.Contains(pane.Wires, w => w.From.NodeId == a.NodeId && w.To.NodeId == b.NodeId);
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Connect_Rejects_A_Cycle()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var a = pane.AddOp(OpKind.Mul)!;
+        var b = pane.AddOp(OpKind.Add)!;
+        Assert.True(pane.TryConnect(a.NodeId, b.NodeId, 0));   // a -> b
+
+        bool ok = pane.TryConnect(b.NodeId, a.NodeId, 0);      // b -> a would close a loop
+
+        Assert.False(ok);
+        Assert.Equal(RefKind.Const, chart.Pure.First(p => p.Id == a.NodeId).Ins[0].Kind);
+    }
+
+    [Fact]
+    public void Connect_Rejects_A_Leaf_Source()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var b = pane.AddOp(OpKind.Add)!;
+        var agent = pane.Nodes.First(n => n.Kind == DataflowNodeKind.Agent);
+
+        // An agent/binding can't feed an operand (operands are Const|op-ref); route via a read op.
+        Assert.False(pane.TryConnect(agent.NodeId, b.NodeId, 0));
+        Assert.Equal(RefKind.Const, chart.Pure.First(p => p.Id == b.NodeId).Ins[0].Kind);
+    }
+
+    [Fact]
+    public void Connect_Rejects_A_Read_Op_Target()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var a = pane.AddOp(OpKind.Add)!;
+        var read = pane.Nodes.First(n => n.NodeId == "z");   // marginal read; its input is an agent
+
+        Assert.False(pane.TryConnect(a.NodeId, read.NodeId, 0));
+    }
 }

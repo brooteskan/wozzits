@@ -3,6 +3,7 @@ namespace Wozzits.Editor.App.Controls;
 using System;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
@@ -19,6 +20,7 @@ public sealed class GraphInteraction
     private readonly ScrollViewer _scrollViewer;
     private readonly Control _canvas;
     private readonly Border _selectionRectangle;
+    private readonly Line? _wirePreview;
     private readonly Func<IEditorCanvas?> _canvasVm;
 
     private ICanvasNode? _dragNode;
@@ -29,18 +31,21 @@ public sealed class GraphInteraction
     private bool _isBoxSelecting;
     private Point _boxStart;
     private Point _boxCurrent;
+    private DataflowPortViewModel? _wireSource;
 
     public GraphInteraction(
         Control root,
         ScrollViewer scrollViewer,
         Control canvas,
         Border selectionRectangle,
-        Func<IEditorCanvas?> canvasVm)
+        Func<IEditorCanvas?> canvasVm,
+        Line? wirePreview = null)
     {
         _root = root;
         _scrollViewer = scrollViewer;
         _canvas = canvas;
         _selectionRectangle = selectionRectangle;
+        _wirePreview = wirePreview;
         _canvasVm = canvasVm;
 
         root.AddHandler(InputElement.PointerPressedEvent, OnPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -75,6 +80,18 @@ public sealed class GraphInteraction
 
         if (!point.Properties.IsLeftButtonPressed)
         {
+            return;
+        }
+
+        // Grabbing a node's OUTPUT port starts a wire drag (dataflow only). Input ports and the
+        // rest of the card fall through to node drag / marquee below.
+        if (vm is IWiringCanvas && PortUnder(e.Source) is { IsOutput: true } outputPort)
+        {
+            _wireSource = outputPort;
+            UpdateWirePreview(ToGraph(e));
+            _root.Focus();
+            e.Pointer.Capture(_root);
+            e.Handled = true;
             return;
         }
 
@@ -118,6 +135,20 @@ public sealed class GraphInteraction
         var vm = _canvasVm();
         if (vm is null)
         {
+            return;
+        }
+
+        if (_wireSource is not null && e.Pointer.Captured == _root)
+        {
+            var point = e.GetCurrentPoint(_root);
+            if (!point.Properties.IsLeftButtonPressed)
+            {
+                EndWire(e, point.Position);
+                return;
+            }
+
+            UpdateWirePreview(ToGraph(e));
+            e.Handled = true;
             return;
         }
 
@@ -173,6 +204,13 @@ public sealed class GraphInteraction
 
     private void OnReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_wireSource is not null)
+        {
+            EndWire(e, e.GetPosition(_root));
+            e.Handled = true;
+            return;
+        }
+
         if (_dragNode is not null)
         {
             EndDrag(e.Pointer);
@@ -235,6 +273,61 @@ public sealed class GraphInteraction
     {
         _dragNode = null;
         pointer.Capture(null);
+    }
+
+    // Finish a wire drag: if released over an INPUT port, ask the canvas to connect the source
+    // op's output to that operand (the VM rejects invalid/cyclic connects). Always hide the
+    // preview + release capture.
+    private void EndWire(PointerEventArgs e, Point rootPosition)
+    {
+        var source = _wireSource;
+        _wireSource = null;
+        if (_wirePreview is not null)
+        {
+            _wirePreview.IsVisible = false;
+        }
+        e.Pointer.Capture(null);
+
+        if (source is null || _canvasVm() is not IWiringCanvas wiring)
+        {
+            return;
+        }
+
+        if (PortAtPoint(rootPosition) is { IsInput: true } target)
+        {
+            wiring.TryConnect(source.Owner.NodeId, target.Owner.NodeId, target.Index);
+        }
+    }
+
+    private void UpdateWirePreview(Point graphEnd)
+    {
+        if (_wirePreview is null || _wireSource is null)
+        {
+            return;
+        }
+
+        _wirePreview.StartPoint = new Point(_wireSource.AnchorX, _wireSource.AnchorY);
+        _wirePreview.EndPoint = graphEnd;
+        _wirePreview.IsVisible = true;
+    }
+
+    private DataflowPortViewModel? PortAtPoint(Point rootPosition) =>
+        PortUnder(_root.InputHitTest(rootPosition));
+
+    private static DataflowPortViewModel? PortUnder(object? source)
+    {
+        var current = source as StyledElement;
+        while (current is not null)
+        {
+            if (current.DataContext is DataflowPortViewModel port)
+            {
+                return port;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
     }
 
     private void EndPan(IPointer pointer)

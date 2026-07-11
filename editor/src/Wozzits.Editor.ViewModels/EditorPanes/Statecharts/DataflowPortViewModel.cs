@@ -26,6 +26,16 @@ public sealed class DataflowPortViewModel : ViewModelBase
 
     public bool IsOutput => !IsInput;
 
+    // Graph-space anchor of this port's dot (matches the wire endpoint geometry): the single
+    // output sits at the card's right edge, inputs stack down the left edge. Used by the
+    // wiring gesture to draw the drag preview from the source port.
+    public double AnchorX => IsOutput
+        ? Owner.X + DataflowPaneViewModel.CardWidth
+        : Owner.X;
+
+    public double AnchorY => Owner.Y + DataflowPaneViewModel.PortRowBaseY
+        + (IsInput ? Index * DataflowPaneViewModel.PortRowSpacing : 0);
+
     // Input ports only: an unwired operand carries a literal constant instead of a wire.
     public ValueRef? Constant { get; init; }
 
