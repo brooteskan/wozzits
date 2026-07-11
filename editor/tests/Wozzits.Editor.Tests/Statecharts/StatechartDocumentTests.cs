@@ -240,6 +240,22 @@ public sealed class StatechartDocumentTests
     }
 
     [Fact]
+    public void Adding_An_Effect_Marks_Dirty_And_Saves_Into_The_Chart()
+    {
+        var path = FreshChartPath("traffic_light.sc.json");
+        var document = new StatechartDocumentViewModel("traffic_light", path, Golden("traffic_light.sc.json"));
+
+        var delib = document.Control.States.First(s => s.StateId == "DELIBERATE");
+        delib.AddDoEffectCommand.Execute(EffectKind.Rearm);
+        Assert.True(document.IsDirty);
+
+        document.Save();
+
+        var reloaded = StatechartJson.Load(File.ReadAllText(path));
+        Assert.Contains(reloaded.States.First(s => s.Id == "DELIBERATE").Do, e => e.Kind == EffectKind.Rearm);
+    }
+
+    [Fact]
     public void Saved_Layout_Is_Restored_On_Reopen()
     {
         var path = FreshChartPath("traffic_light.sc.json");

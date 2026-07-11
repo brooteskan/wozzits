@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
+             xmlns:model="using:Wozzits.Editor.Statecharts"
              x:Class="Wozzits.Editor.App.Views.EditorPanes.InspectorPaneView"
              x:DataType="panes:InspectorPaneViewModel">
     <UserControl.Resources>
@@ -1365,12 +1366,27 @@
                                 <TextBlock Text="&#x25B6; initial state"
                                            IsVisible="{Binding SelectedStatechartState.IsInitial}"/>
 
-                                <TextBlock Text="do" Classes="InspectorSectionTitle" Margin="0,8,0,0"
-                                           IsVisible="{Binding SelectedStatechartState.HasDoEffects}"/>
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                                    <TextBlock Text="do" Classes="InspectorSectionTitle" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Content="+ &#x25BE;" Classes="InspectorApplyButton">
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="set_goal" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetGoal}"/>
+                                                <MenuItem Header="set_decoherence" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetDecoherence}"/>
+                                                <MenuItem Header="rearm" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.Rearm}"/>
+                                                <MenuItem Header="reward" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.Reward}"/>
+                                                <Separator/>
+                                                <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
+                                                <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
+                                                <MenuItem Header="play_sound" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.PlaySound}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
                                 <ItemsControl ItemsSource="{Binding SelectedStatechartState.DoEffectRows}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center" TextWrapping="Wrap"/>
                                                 <TextBox Grid.Column="1"
@@ -1379,17 +1395,34 @@
                                                          IsVisible="{Binding IsEditable}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding ReadOnlyValue}"
                                                            IsVisible="{Binding HasReadOnlyValue}" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
+                                                        VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
-                                <TextBlock Text="entry" Classes="InspectorSectionTitle" Margin="0,8,0,0"
-                                           IsVisible="{Binding SelectedStatechartState.HasEntryEffects}"/>
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                                    <TextBlock Text="entry" Classes="InspectorSectionTitle" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Content="+ &#x25BE;" Classes="InspectorApplyButton">
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="set_goal" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetGoal}"/>
+                                                <MenuItem Header="set_decoherence" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetDecoherence}"/>
+                                                <MenuItem Header="rearm" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.Rearm}"/>
+                                                <MenuItem Header="reward" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.Reward}"/>
+                                                <Separator/>
+                                                <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
+                                                <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
+                                                <MenuItem Header="play_sound" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.PlaySound}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
                                 <ItemsControl ItemsSource="{Binding SelectedStatechartState.EntryEffectRows}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center" TextWrapping="Wrap"/>
                                                 <TextBox Grid.Column="1"
@@ -1398,17 +1431,34 @@
                                                          IsVisible="{Binding IsEditable}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding ReadOnlyValue}"
                                                            IsVisible="{Binding HasReadOnlyValue}" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
+                                                        VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
-                                <TextBlock Text="exit" Classes="InspectorSectionTitle" Margin="0,8,0,0"
-                                           IsVisible="{Binding SelectedStatechartState.HasExitEffects}"/>
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                                    <TextBlock Text="exit" Classes="InspectorSectionTitle" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Content="+ &#x25BE;" Classes="InspectorApplyButton">
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="set_goal" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetGoal}"/>
+                                                <MenuItem Header="set_decoherence" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetDecoherence}"/>
+                                                <MenuItem Header="rearm" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.Rearm}"/>
+                                                <MenuItem Header="reward" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.Reward}"/>
+                                                <Separator/>
+                                                <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
+                                                <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
+                                                <MenuItem Header="play_sound" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.PlaySound}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
                                 <ItemsControl ItemsSource="{Binding SelectedStatechartState.ExitEffectRows}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center" TextWrapping="Wrap"/>
                                                 <TextBox Grid.Column="1"
@@ -1417,6 +1467,8 @@
                                                          IsVisible="{Binding IsEditable}"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding ReadOnlyValue}"
                                                            IsVisible="{Binding HasReadOnlyValue}" VerticalAlignment="Center"/>
+                                                <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
+                                                        VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

@@ -1,5 +1,6 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
+using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
 
 // A control-layer state box (A1: compact -- a title plus effect/transition badge
@@ -20,11 +21,14 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
         ExitCount = model.Exit.Count;
         OutgoingCount = model.Transitions.Count;
 
-        // Rows late-bind Edited (set by the pane after construction) so editing a
-        // constant / after-delay marks the chart dirty without a reproject.
-        DoEffectRows = model.Do.Select(e => new EffectRowViewModel(e, () => Edited?.Invoke())).ToList();
-        EntryEffectRows = model.Entry.Select(e => new EffectRowViewModel(e, () => Edited?.Invoke())).ToList();
-        ExitEffectRows = model.Exit.Select(e => new EffectRowViewModel(e, () => Edited?.Invoke())).ToList();
+        // Rows late-bind Edited / *Requested (set by the pane after construction) so an edit or
+        // delete marks the chart dirty without the row needing a pane reference.
+        DoEffectRows = model.Do.Select(e => EffectRow(e)).ToList();
+        EntryEffectRows = model.Entry.Select(e => EffectRow(e)).ToList();
+        ExitEffectRows = model.Exit.Select(e => EffectRow(e)).ToList();
+        AddDoEffectCommand = new RelayCommand<EffectKind>(k => EffectAddRequested?.Invoke(EffectSlot.Do, k));
+        AddEntryEffectCommand = new RelayCommand<EffectKind>(k => EffectAddRequested?.Invoke(EffectSlot.Entry, k));
+        AddExitEffectCommand = new RelayCommand<EffectKind>(k => EffectAddRequested?.Invoke(EffectSlot.Exit, k));
         TransitionRows = model.Transitions.Select(t =>
             new TransitionRowViewModel(t, () => Edited?.Invoke())
             {
@@ -68,6 +72,22 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
 
     // Invoked to change a transition's trigger kind (the pane routes it to SetTriggerKind).
     public Action<Transition, TriggerKind>? TransitionKindChangeRequested { get; set; }
+
+    // Invoked to add an effect of a given kind to this state's do/entry/exit list, and to
+    // remove one (the pane routes them to AddEffect / DeleteEffect).
+    public Action<EffectSlot, EffectKind>? EffectAddRequested { get; set; }
+
+    public Action<Effect>? EffectDeleteRequested { get; set; }
+
+    // The "+" menu commands for each effect list (command parameter = the effect kind to add).
+    public IRelayCommand<EffectKind> AddDoEffectCommand { get; }
+
+    public IRelayCommand<EffectKind> AddEntryEffectCommand { get; }
+
+    public IRelayCommand<EffectKind> AddExitEffectCommand { get; }
+
+    private EffectRowViewModel EffectRow(Effect effect) =>
+        new(effect, () => Edited?.Invoke()) { DeleteRequested = () => EffectDeleteRequested?.Invoke(effect) };
 
     // Convenience read-only string views of the rows (used by tests / plain text).
     public IReadOnlyList<string> DoEffects => DoEffectRows.Select(r => r.Display).ToList();
@@ -115,4 +135,12 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
         get => _isSelected;
         set => SetProperty(ref _isSelected, value);
     }
+}
+
+// Which of a state's effect lists an effect belongs to / is added to.
+public enum EffectSlot
+{
+    Do,
+    Entry,
+    Exit,
 }

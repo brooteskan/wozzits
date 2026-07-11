@@ -421,4 +421,87 @@ public sealed class StatechartMutationTests
         Assert.Contains(pane.Transitions, tr => tr.From.StateId == "HOLD" && tr.Label == "commit");
         Assert.True(pane.IsDirty);
     }
+
+    // ---- M4: add / remove effects -----------------------------------------------
+
+    [Fact]
+    public void Add_Do_Effect_Appends_With_Defaults()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var delib = chart.States.First(s => s.Id == "DELIBERATE");
+        int before = delib.Do.Count;
+
+        pane.AddEffect(delib, EffectSlot.Do, EffectKind.SetGoal);
+
+        Assert.Equal(before + 1, delib.Do.Count);
+        var added = delib.Do.Last();
+        Assert.Equal(EffectKind.SetGoal, added.Kind);
+        Assert.Equal("sig", added.Agent);   // seeded with the first agent
+        Assert.NotNull(added.Value);         // an editable constant
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Add_Actuator_Effect_Targets_The_First_Binding()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var hold = chart.States.First(s => s.Id == "HOLD");
+
+        pane.AddEffect(hold, EffectSlot.Entry, EffectKind.SetScale);
+
+        Assert.Equal("lamp_0", hold.Entry.Last().TargetBind);   // seeded with the first binding
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Delete_Effect_Removes_It_From_Its_List()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var delib = chart.States.First(s => s.Id == "DELIBERATE");
+        var doomed = delib.Do[0];
+        int before = delib.Do.Count;
+
+        pane.DeleteEffect(delib, doomed);
+
+        Assert.Equal(before - 1, delib.Do.Count);
+        Assert.DoesNotContain(doomed, delib.Do);
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
+    public void Add_Effect_Command_Appends_To_The_Do_List()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var delibVm = pane.States.First(s => s.StateId == "DELIBERATE");
+        int before = chart.States.First(s => s.Id == "DELIBERATE").Do.Count;
+
+        delibVm.AddDoEffectCommand.Execute(EffectKind.Rearm);   // the "+ do" menu
+
+        Assert.Equal(before + 1, chart.States.First(s => s.Id == "DELIBERATE").Do.Count);
+        Assert.Contains(chart.States.First(s => s.Id == "DELIBERATE").Do, e => e.Kind == EffectKind.Rearm);
+    }
+
+    [Fact]
+    public void Effect_Row_Delete_Command_Removes_The_Effect()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var delibVm = pane.States.First(s => s.StateId == "DELIBERATE");
+        int before = chart.States.First(s => s.Id == "DELIBERATE").Do.Count;
+
+        delibVm.DoEffectRows[0].DeleteCommand.Execute(null);   // the inspector's row delete
+
+        Assert.Equal(before - 1, chart.States.First(s => s.Id == "DELIBERATE").Do.Count);
+        Assert.True(pane.IsDirty);
+    }
 }

@@ -1,6 +1,7 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.Globalization;
+using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
 
 // One effect line in the state inspector (a do/entry/exit action). The descriptive
@@ -46,6 +47,14 @@ public sealed class EffectRowViewModel : ViewModelBase
     public string? ReadOnlyValue { get; }
 
     public bool HasReadOnlyValue => ReadOnlyValue is not null;
+
+    // Invoked to remove this effect from its state (the state VM routes it to the pane).
+    public Action? DeleteRequested { get; set; }
+
+    private IRelayCommand? _deleteCommand;
+
+    public IRelayCommand DeleteCommand =>
+        _deleteCommand ??= new RelayCommand(() => DeleteRequested?.Invoke());
 
     private static string Describe(Effect e) => e.Kind switch
     {

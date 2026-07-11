@@ -82,6 +82,60 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         return true;
     }
 
+    // Add an effect of the given kind to a state's do/entry/exit list, seeded with defaults
+    // (agent effects target the first agent; actuators target the first binding; values are
+    // constants the user then edits). Reprojects, keeping the state selected.
+    public void AddEffect(State owner, EffectSlot slot, EffectKind kind)
+    {
+        if (_chart is null)
+        {
+            return;
+        }
+
+        var list = slot switch
+        {
+            EffectSlot.Entry => owner.Entry,
+            EffectSlot.Exit => owner.Exit,
+            _ => owner.Do,
+        };
+        list.Add(NewEffect(kind, _chart));
+
+        IsDirty = true;
+        ReprojectPreservingSelection();
+    }
+
+    // Remove an effect from whichever of the state's lists holds it.
+    public void DeleteEffect(State owner, Effect effect)
+    {
+        if (_chart is null)
+        {
+            return;
+        }
+
+        if (owner.Do.Remove(effect) || owner.Entry.Remove(effect) || owner.Exit.Remove(effect))
+        {
+            IsDirty = true;
+            ReprojectPreservingSelection();
+        }
+    }
+
+    private static Effect NewEffect(EffectKind kind, Chart chart)
+    {
+        string agent = chart.Agents.Count > 0 ? chart.Agents[0].Id : string.Empty;
+        string bind = chart.Bindings.Count > 0 ? chart.Bindings[0].Port : string.Empty;
+        return kind switch
+        {
+            EffectKind.SetGoal => new Effect { Kind = kind, Agent = agent, Slot = 0, Value = ValueRef.Number(0) },
+            EffectKind.SetDecoherence => new Effect { Kind = kind, Agent = agent, Value = ValueRef.Number(0) },
+            EffectKind.Rearm => new Effect { Kind = kind, Agent = agent },
+            EffectKind.Reward => new Effect { Kind = kind, Agent = agent, Slot = 0, Value = ValueRef.Number(0) },
+            EffectKind.SetScale => new Effect { Kind = kind, TargetBind = bind, Value = ValueRef.Number(1) },
+            EffectKind.SetVisible => new Effect { Kind = kind, TargetBind = bind, Value = ValueRef.Bool(true) },
+            EffectKind.PlaySound => new Effect { Kind = kind, TargetBind = bind },
+            _ => new Effect { Kind = kind },
+        };
+    }
+
     // Remove a specific outgoing transition (from the inspector's transition list). Keeps the
     // owning state selected so the inspector refreshes to the shortened list.
     public void DeleteTransition(State owner, Transition transition)
@@ -522,6 +576,8 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
                 Edited = MarkChartDirty,
                 TransitionDeleteRequested = t => DeleteTransition(s, t),
                 TransitionKindChangeRequested = (t, k) => SetTriggerKind(s, t, k),
+                EffectAddRequested = (slot, kind) => AddEffect(s, slot, kind),
+                EffectDeleteRequested = e => DeleteEffect(s, e),
             };
         }
 
