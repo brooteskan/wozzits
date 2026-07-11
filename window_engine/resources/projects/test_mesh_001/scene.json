@@ -452,9 +452,9 @@
           1
         ],
         "scale": [
-          1.1838545799255371,
-          1.1838545799255371,
-          1.1838545799255371
+          0.68925029039382935,
+          0.68925029039382935,
+          0.68925029039382935
         ]
       },
       "visible": false,
@@ -569,9 +569,9 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
       "visible": false,
@@ -669,9 +669,9 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
       "visible": false,
@@ -815,12 +815,12 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -843,9 +843,9 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
       "visible": true,
@@ -915,9 +915,9 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
       "visible": true,
@@ -943,12 +943,12 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1015,12 +1015,12 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1043,9 +1043,9 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
       "visible": true,
@@ -1115,9 +1115,9 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
       "visible": true,
@@ -1143,12 +1143,12 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1215,12 +1215,12 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1243,9 +1243,9 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          3,
+          3,
+          3
         ]
       },
       "visible": true,
@@ -1366,7 +1366,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1394,7 +1394,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1466,7 +1466,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1494,7 +1494,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1566,7 +1566,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1594,7 +1594,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1666,7 +1666,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1694,7 +1694,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1828,7 +1828,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1856,7 +1856,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1928,7 +1928,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1956,7 +1956,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -2028,7 +2028,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -2056,7 +2056,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -2128,7 +2128,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -2156,7 +2156,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -2228,7 +2228,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -2256,7 +2256,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -2407,9 +2407,9 @@
           1
         ],
         "scale": [
-          1.8948633670806885,
-          1.8948633670806885,
-          1.8948633670806885
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -2507,9 +2507,9 @@
           1
         ],
         "scale": [
-          1.6919081211090088,
-          1.6919081211090088,
-          1.6919081211090088
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -2607,9 +2607,9 @@
           1
         ],
         "scale": [
-          1.6919081211090088,
-          1.6919081211090088,
-          1.6919081211090088
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -2707,9 +2707,9 @@
           1
         ],
         "scale": [
-          1.6919081211090088,
-          1.6919081211090088,
-          1.6919081211090088
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -2807,9 +2807,9 @@
           1
         ],
         "scale": [
-          1.6919081211090088,
-          1.6919081211090088,
-          1.6919081211090088
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -2911,9 +2911,9 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.8673801422119141,
+          1.8673801422119141,
+          1.8673801422119141
         ]
       },
       "visible": true,
@@ -2939,9 +2939,122 @@
           1
         ],
         "scale": [
-          1.5,
-          1.5,
-          1.5
+          1.1326198577880859,
+          1.1326198577880859,
+          1.1326198577880859
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
+      "id": "demo_ir",
+      "parent": "cognition_gallery",
+      "transform": {
+        "translation": [
+          -30,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "demo_ir.agent",
+          "module": "quantum_agent",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "config": {
+            "decisions": 1,
+            "goal": 0.40000000000000002,
+            "gamma_start": 2,
+            "anneal_seconds": 4,
+            "confidence": 0.80000000000000004,
+            "decoherence": 0,
+            "think_interval": 0.25
+          }
+        },
+        {
+          "id": "demo_ir.runner",
+          "module": "statechart_runner",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "chart": "traffic_light",
+            "chart_ir": "{\"schema\":\"wozzits.statechart.ir.v0\",\"name\":\"traffic_light\",\"bindings\":[{\"port\":\"lamp_0\",\"find\":\"lamp_0\",\"scope\":\"subtree\"},{\"port\":\"lamp_1\",\"find\":\"lamp_1\",\"scope\":\"subtree\"}],\"agents\":[{\"id\":\"sig\",\"owned\":true,\"host\":\"self\",\"spec\":{\"decisions\":1,\"goal\":0.4,\"gamma_start\":2,\"anneal_seconds\":4,\"confidence\":0.8,\"decoherence\":0.0,\"think_interval\":0.25}}],\"pure\":[{\"id\":\"z\",\"op\":\"marginal\",\"agent\":\"sig\",\"slot\":0},{\"id\":\"c\",\"op\":\"committed\",\"agent\":\"sig\",\"slot\":0},{\"id\":\"md0\",\"op\":\"mul_add\",\"ins\":[{\"op\":\"z\"},{\"const\":0.5},{\"const\":0.5}]},{\"id\":\"md1\",\"op\":\"mul_add\",\"ins\":[{\"op\":\"z\"},{\"const\":-0.5},{\"const\":0.5}]},{\"id\":\"p0\",\"op\":\"clamp01\",\"ins\":[{\"op\":\"md0\"}]},{\"id\":\"p1\",\"op\":\"clamp01\",\"ins\":[{\"op\":\"md1\"}]},{\"id\":\"s0d\",\"op\":\"mul\",\"ins\":[{\"op\":\"p0\"},{\"const\":3}]},{\"id\":\"s1d\",\"op\":\"mul\",\"ins\":[{\"op\":\"p1\"},{\"const\":3}]},{\"id\":\"is0\",\"op\":\"eq\",\"ins\":[{\"op\":\"c\"},{\"const\":0}]},{\"id\":\"is1\",\"op\":\"eq\",\"ins\":[{\"op\":\"c\"},{\"const\":1}]},{\"id\":\"s0h\",\"op\":\"select\",\"cond\":{\"op\":\"is0\"},\"a\":{\"const\":3},\"b\":{\"const\":0}},{\"id\":\"s1h\",\"op\":\"select\",\"cond\":{\"op\":\"is1\"},\"a\":{\"const\":3},\"b\":{\"const\":0}}],\"regions\":[{\"id\":\"signal\",\"initial\":\"DELIBERATE\",\"states\":[\"DELIBERATE\",\"HOLD\"]}],\"states\":[{\"id\":\"DELIBERATE\",\"do\":[{\"kind\":\"set_scale\",\"target\":{\"bind\":\"lamp_0\"},\"value\":{\"op\":\"s0d\"}},{\"kind\":\"set_scale\",\"target\":{\"bind\":\"lamp_1\"},\"value\":{\"op\":\"s1d\"}},{\"kind\":\"set_visible\",\"target\":{\"bind\":\"lamp_0\"},\"value\":{\"const\":true}},{\"kind\":\"set_visible\",\"target\":{\"bind\":\"lamp_1\"},\"value\":{\"const\":true}}],\"transitions\":[{\"trigger\":{\"kind\":\"commit\",\"agent\":\"sig\",\"slot\":0,\"outcome\":\"any\"},\"target\":\"HOLD\"}]},{\"id\":\"HOLD\",\"do\":[{\"kind\":\"set_scale\",\"target\":{\"bind\":\"lamp_0\"},\"value\":{\"op\":\"s0h\"}},{\"kind\":\"set_scale\",\"target\":{\"bind\":\"lamp_1\"},\"value\":{\"op\":\"s1h\"}},{\"kind\":\"set_visible\",\"target\":{\"bind\":\"lamp_0\"},\"value\":{\"op\":\"is0\"}},{\"kind\":\"set_visible\",\"target\":{\"bind\":\"lamp_1\"},\"value\":{\"op\":\"is1\"}}],\"transitions\":[{\"trigger\":{\"kind\":\"after\",\"seconds\":10},\"actions\":[{\"kind\":\"rearm\",\"agent\":\"sig\"}],\"target\":\"DELIBERATE\"}]}]}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "demo_ir_lamp_0",
+      "parent": "demo_ir",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          3,
+          3,
+          3
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "demo_ir_lamp_1",
+      "parent": "demo_ir",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
         ]
       },
       "visible": false,
@@ -3119,15 +3232,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        37.870925903320312,
-        220.72567749023438,
-        348.01443481445312
+        -10.694230079650879,
+        37.320686340332031,
+        52.027896881103516
       ],
       "orientation": [
-        -0.049766670912504196,
-        -0.90345555543899536,
-        0.356626957654953,
-        -0.23261228203773499
+        0.1753711998462677,
+        -0.37985482811927795,
+        -0.031568437814712524,
+        -0.90772175788879395
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,

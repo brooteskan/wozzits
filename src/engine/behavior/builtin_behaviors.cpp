@@ -4,6 +4,7 @@
 #include <engine/behavior/sample_collision_behaviors.h>
 #include <engine/behavior/quantum_agent_behaviors.h>
 #include <engine/behavior/scene_camera_behaviors.h>
+#include <engine/behavior/statechart_runner.h>
 #include <engine/behavior/terrain_align_behaviors.h>
 
 #include <logging/logger.h>
@@ -117,6 +118,16 @@ namespace wz::engine::behavior
                 registry,
                 register_quantum_agent_behaviors,
                 &logger);
+        const bool registered_statechart_runner =
+            plugins.register_static_pack(
+                registry,
+                register_statechart_runner_behaviors,
+                &logger);
+        if (!registered_statechart_runner) {
+            logger.warn(
+                "[behavior] failed to register builtin behavior pack: "
+                "statechart_runner");
+        }
         if (!registered_debug) {
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: debug");

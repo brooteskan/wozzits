@@ -29,6 +29,8 @@ target_sources(window_engine PRIVATE
     behavior/drive_forward_behaviors.cpp
     behavior/terrain_align_behaviors.cpp
     behavior/quantum_agent_behaviors.cpp
+    behavior/statechart_ir.cpp
+    behavior/statechart_runner.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp
