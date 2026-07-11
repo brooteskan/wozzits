@@ -415,9 +415,11 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         return false;
     }
 
-    // Delete the selected OP nodes (agents/bindings are left for a later entity-editing seam).
-    // Any ref that pointed at a deleted op is disconnected to a constant 0, so the chart stays
-    // valid and the now-literal input becomes editable.
+    // Delete the selected nodes -- ops, agents, or bindings -- cleaning up every reference so
+    // the chart stays structurally sound: an op orphaned by a deleted agent (a read) or binding
+    // (a proximity) is removed too; op-refs pointing at a removed op fall back to a constant 0;
+    // effects that write a deleted agent or drive a deleted binding are dropped; a commit trigger
+    // whose agent is gone reverts to a plain timer.
     public void DeleteSelected()
     {
         if (_chart is null)
@@ -425,37 +427,68 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             return;
         }
 
-        var doomed = SelectedNodes
-            .Where(n => n.Kind == DataflowNodeKind.Op)
-            .Select(n => n.NodeId)
-            .ToHashSet();
-        if (doomed.Count == 0)
+        var ops = SelectedNodes.Where(n => n.Kind == DataflowNodeKind.Op).Select(n => n.NodeId).ToHashSet();
+        var agents = SelectedNodes.Where(n => n.Kind == DataflowNodeKind.Agent).Select(n => n.NodeId).ToHashSet();
+        var bindings = SelectedNodes.Where(n => n.Kind == DataflowNodeKind.Binding).Select(n => n.NodeId).ToHashSet();
+        if (ops.Count + agents.Count + bindings.Count == 0)
         {
             return;
         }
 
-        _chart.Pure.RemoveAll(p => doomed.Contains(p.Id));
+        _chart.Agents.RemoveAll(a => agents.Contains(a.Id));
+        _chart.Bindings.RemoveAll(b => bindings.Contains(b.Port));
         foreach (var p in _chart.Pure)
         {
-            foreach (var r in p.Ins) Disconnect(r, doomed);
-            Disconnect(p.Cond, doomed);
-            Disconnect(p.A, doomed);
-            Disconnect(p.B, doomed);
+            if ((p.IsRead && agents.Contains(p.Agent)) || (p.Op == OpKind.Proximity && bindings.Contains(p.Target)))
+            {
+                ops.Add(p.Id);   // a read/proximity can't outlive its source
+            }
+        }
+        _chart.Pure.RemoveAll(p => ops.Contains(p.Id));
+
+        foreach (var p in _chart.Pure)
+        {
+            foreach (var r in p.Ins) Disconnect(r, ops);
+            Disconnect(p.Cond, ops);
+            Disconnect(p.A, ops);
+            Disconnect(p.B, ops);
         }
         foreach (var s in _chart.States)
         {
-            foreach (var e in s.Do) Disconnect(e.Value, doomed);
-            foreach (var e in s.Entry) Disconnect(e.Value, doomed);
-            foreach (var e in s.Exit) Disconnect(e.Value, doomed);
+            PruneEffects(s.Do, agents, bindings, ops);
+            PruneEffects(s.Entry, agents, bindings, ops);
+            PruneEffects(s.Exit, agents, bindings, ops);
             foreach (var t in s.Transitions)
             {
-                if (t.Trigger.Kind == TriggerKind.Guard) Disconnect(t.Trigger.Cond, doomed);
-                foreach (var a in t.Actions) Disconnect(a.Value, doomed);
+                PruneEffects(t.Actions, agents, bindings, ops);
+                if (t.Trigger.Kind == TriggerKind.Guard)
+                {
+                    Disconnect(t.Trigger.Cond, ops);
+                }
+                if (t.Trigger.Kind == TriggerKind.Commit && agents.Contains(t.Trigger.Agent))
+                {
+                    t.Trigger.Kind = TriggerKind.After;
+                    t.Trigger.Agent = string.Empty;
+                    t.Trigger.Seconds = 1.0;
+                }
             }
         }
 
         IsDirty = true;
         ReprojectPreservingLayout();
+    }
+
+    // Remove effects that write a deleted agent or drive a deleted binding, and disconnect any
+    // op-ref value pointing at a removed op.
+    private static void PruneEffects(List<Effect> effects, HashSet<string> agents, HashSet<string> bindings, HashSet<string> ops)
+    {
+        effects.RemoveAll(e =>
+            ((e.Kind is EffectKind.SetGoal or EffectKind.SetDecoherence or EffectKind.Rearm or EffectKind.Reward) && agents.Contains(e.Agent))
+            || ((e.Kind is EffectKind.SetScale or EffectKind.SetVisible or EffectKind.PlaySound) && bindings.Contains(e.TargetBind)));
+        foreach (var e in effects)
+        {
+            Disconnect(e.Value, ops);
+        }
     }
 
     private static void Disconnect(ValueRef? r, HashSet<string> doomed)

@@ -52,6 +52,13 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public DataflowNodeKind Kind { get; }
 
+    // Field-guide colour class flags for the card border (agent = violet, op/binding = teal).
+    public bool IsAgentNode => Kind == DataflowNodeKind.Agent;
+
+    public bool IsOpNode => Kind == DataflowNodeKind.Op;
+
+    public bool IsBindingNode => Kind == DataflowNodeKind.Binding;
+
     public string NodeId { get; }
 
     public string Title => NodeId;

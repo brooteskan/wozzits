@@ -219,6 +219,50 @@ public sealed class StatechartMutationTests
         Assert.Equal(y, moved.Y, 3);
     }
 
+    [Fact]
+    public void Delete_A_Freshly_Added_Binding()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var added = pane.AddBinding()!;   // selected after adding, unreferenced
+        int before = chart.Bindings.Count;
+
+        ((IEditorCanvas)pane).DeleteSelected();
+
+        Assert.Equal(before - 1, chart.Bindings.Count);
+        Assert.DoesNotContain(chart.Bindings, b => b.Port == added.NodeId);
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Delete_A_Referenced_Binding_Drops_Its_Actuator_Effects()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        pane.SelectOnly(pane.Nodes.First(n => n.NodeId == "lamp_0"));   // driven by set_scale/set_visible
+
+        ((IEditorCanvas)pane).DeleteSelected();
+
+        Assert.DoesNotContain(chart.Bindings, b => b.Port == "lamp_0");
+        Assert.DoesNotContain(chart.States.SelectMany(s => s.Do), e => e.TargetBind == "lamp_0");
+        Assert.Empty(StatechartJson.Validate(chart));   // still valid after the cleanup
+    }
+
+    [Fact]
+    public void Delete_An_Agent_Removes_Its_Reads_And_Writes()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        pane.SelectOnly(pane.Nodes.First(n => n.Kind == DataflowNodeKind.Agent));   // sig, the only agent
+
+        ((IEditorCanvas)pane).DeleteSelected();
+
+        Assert.Empty(chart.Agents);
+        Assert.DoesNotContain(chart.Pure, p => p.IsRead);   // its reads went with it
+        Assert.Empty(StatechartJson.Validate(chart));       // reverted commit triggers keep it valid
+    }
+
     // ---- M2: wiring -------------------------------------------------------------
 
     [Fact]

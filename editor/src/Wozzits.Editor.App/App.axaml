@@ -39,6 +39,15 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://Wozzits.Editor.App/Themes/BlueTheme.axaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Statechart-graph semantics, from the field guide. Fixed across accent themes:
+                 these encode what a node/edge IS (agent = the wave function, flow = dataflow
+                 ops, effect = a state's actuators, trigger = what fires a transition), so they
+                 stay constant while the rest of the UI re-themes. -->
+            <SolidColorBrush x:Key="WozzitsScAgentBrush" Color="#9091F2"/>
+            <SolidColorBrush x:Key="WozzitsScFlowBrush" Color="#52B7B0"/>
+            <SolidColorBrush x:Key="WozzitsScEffectBrush" Color="#E0A94A"/>
+            <SolidColorBrush x:Key="WozzitsScTriggerBrush" Color="#EF6F63"/>
         </ResourceDictionary>
     </Application.Resources>
 

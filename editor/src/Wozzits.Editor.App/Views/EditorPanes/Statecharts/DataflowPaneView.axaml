@@ -68,7 +68,7 @@
                             </Grid.RenderTransform>
 
                             <controls:DataflowWireLayer Edges="{Binding Wires}"
-                                                        Stroke="{DynamicResource WozzitsGraphWireBrush}"
+                                                        Stroke="{DynamicResource WozzitsScFlowBrush}"
                                                         StrokeThickness="2"
                                                         IsHitTestVisible="False"/>
 
@@ -87,8 +87,11 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="sc:DataflowNodeViewModel">
-                                        <Border Classes="AssetGraphCard"
+                                        <Border Classes="AssetGraphCard scNode"
                                                 Classes.selected="{Binding IsSelected}"
+                                                Classes.scAgent="{Binding IsAgentNode}"
+                                                Classes.scOp="{Binding IsOpNode}"
+                                                Classes.scBinding="{Binding IsBindingNode}"
                                                 Opacity="{Binding DimOpacity}"
                                                 Width="220">
                                             <Grid RowDefinitions="Auto,Auto,*"
@@ -144,7 +147,7 @@
                             </ItemsControl>
 
                             <Line x:Name="WirePreview"
-                                  Stroke="{DynamicResource WozzitsAccentBrush}"
+                                  Stroke="{DynamicResource WozzitsScFlowBrush}"
                                   StrokeThickness="2"
                                   StrokeDashArray="4,3"
                                   IsVisible="False"

@@ -75,8 +75,8 @@
 
                             <!-- Transition arrows (over the swimlanes, under the boxes) -->
                             <controls:TransitionArrowLayer Edges="{Binding Transitions}"
-                                                           Stroke="{DynamicResource WozzitsGraphWireBrush}"
-                                                           LabelBrush="{DynamicResource WozzitsGraphWireBrush}"
+                                                           Stroke="{DynamicResource WozzitsScTriggerBrush}"
+                                                           LabelBrush="{DynamicResource WozzitsScTriggerBrush}"
                                                            StrokeThickness="2"
                                                            BoxWidth="180"
                                                            BoxHeight="76"
@@ -98,7 +98,7 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="sc:StateNodeViewModel">
-                                        <Border Classes="AssetGraphCard"
+                                        <Border Classes="AssetGraphCard scState scNode"
                                                 Classes.selected="{Binding IsSelected}"
                                                 Width="180"
                                                 MinHeight="76">
@@ -124,7 +124,7 @@
                             </ItemsControl>
 
                             <Line x:Name="TransitionPreview"
-                                  Stroke="{DynamicResource WozzitsAccentBrush}"
+                                  Stroke="{DynamicResource WozzitsScTriggerBrush}"
                                   StrokeThickness="2"
                                   StrokeDashArray="4,3"
                                   IsVisible="False"

@@ -331,6 +331,32 @@
         <Setter Property="BorderThickness" Value="2"/>
     </Style>
 
+    <!-- Statechart node kind colours (field-guide semantics). These are 3-class selectors so
+         the kind colour beats the generic .selected accent: a selected statechart node keeps
+         its colour and only THICKENS its border (below), so flow/teal nodes stay legible. -->
+    <Style Selector="Border.AssetGraphCard.scNode.scAgent">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsScAgentBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+    <Style Selector="Border.AssetGraphCard.scNode.scOp">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsScFlowBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+    <Style Selector="Border.AssetGraphCard.scNode.scBinding">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsScFlowBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+    <Style Selector="Border.AssetGraphCard.scNode.scState">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsScEffectBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+
+    <!-- Selection thickens the (kind-coloured) border. Defined after the kind styles so it wins
+         the thickness on the 3-class specificity tie. -->
+    <Style Selector="Border.AssetGraphCard.scNode.selected">
+        <Setter Property="BorderThickness" Value="3.5"/>
+    </Style>
+
     <Style Selector="Border.AssetGraphSubGraphCard">
         <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
