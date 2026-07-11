@@ -29,6 +29,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
     private double _zoom = 1.0;
     private DataflowNodeViewModel? _selectedNode;
     private Chart? _chart;
+    private bool _isLayoutDirty;
 
     public DataflowPaneViewModel()
     {
@@ -56,6 +57,14 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
     }
 
     public bool HasSelectedNode => _selectedNode is not null;
+
+    public bool IsLayoutDirty
+    {
+        get => _isLayoutDirty;
+        private set => SetProperty(ref _isLayoutDirty, value);
+    }
+
+    public void ClearDirty() => IsLayoutDirty = false;
 
     public double Zoom
     {
@@ -158,11 +167,13 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
         }
 
         RaiseExtentChanged();
+        IsLayoutDirty = true;
     }
 
     public void ZoomByWheel(double wheelDelta)
     {
         Zoom = wheelDelta > 0 ? Zoom * 1.1 : Zoom / 1.1;
+        IsLayoutDirty = true;
     }
 
     private void RaiseExtentChanged()
@@ -242,6 +253,23 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
 
         foreach (var node in Nodes) node.IsDimmed = !relevant.Contains(node.NodeId);
         foreach (var wire in Wires) wire.IsDimmed = wire.From.IsDimmed || wire.To.IsDimmed;
+    }
+
+    // Apply a saved layout (zoom + hand-placed node positions) over the auto-layout; a restore,
+    // so it does not mark the pane dirty.
+    public void ApplyLayout(StatechartLayout layout)
+    {
+        Zoom = layout.DataflowZoom;
+        foreach (var node in Nodes)
+        {
+            if (layout.NodePositions.TryGetValue(node.NodeId, out var p))
+            {
+                node.X = p.X;
+                node.Y = p.Y;
+            }
+        }
+
+        RaiseExtentChanged();
     }
 
     /// <summary>Rebuild the canvas from a chart's dataflow layer.</summary>

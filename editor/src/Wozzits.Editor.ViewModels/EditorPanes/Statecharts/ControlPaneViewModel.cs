@@ -27,6 +27,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
     private StateNodeViewModel? _selectedState;
     private Chart? _chart;
     private bool _isDirty;
+    private bool _isLayoutDirty;
 
     private readonly Dictionary<string, StateNodeViewModel> _statesById = new();
 
@@ -63,6 +64,18 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
     {
         get => _isDirty;
         private set => SetProperty(ref _isDirty, value);
+    }
+
+    public bool IsLayoutDirty
+    {
+        get => _isLayoutDirty;
+        private set => SetProperty(ref _isLayoutDirty, value);
+    }
+
+    public void ClearDirty()
+    {
+        IsDirty = false;
+        IsLayoutDirty = false;
     }
 
     public double Zoom
@@ -171,11 +184,13 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
 
         RecomputeRegionBounds();
         RaiseExtentChanged();
+        IsLayoutDirty = true;
     }
 
     public void ZoomByWheel(double wheelDelta)
     {
         Zoom = wheelDelta > 0 ? Zoom * 1.1 : Zoom / 1.1;
+        IsLayoutDirty = true;
     }
 
     private void RaiseExtentChanged()
@@ -252,6 +267,24 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
 
         IsDirty = true;
         Project(_chart);
+    }
+
+    // Apply a saved layout (zoom + hand-placed state positions) over the auto-layout. This is
+    // a restore, not an edit, so it does not mark the pane dirty.
+    public void ApplyLayout(StatechartLayout layout)
+    {
+        Zoom = layout.ControlZoom;
+        foreach (var state in States)
+        {
+            if (layout.StatePositions.TryGetValue(state.StateId, out var p))
+            {
+                state.X = p.X;
+                state.Y = p.Y;
+            }
+        }
+
+        RecomputeRegionBounds();
+        RaiseExtentChanged();
     }
 
     /// <summary>Rebuild the canvas from a chart's control layer.</summary>

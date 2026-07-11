@@ -231,6 +231,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _editorSession?.SaveAssetGraph();
         _editorSession?.SaveScene();
         SaveSubGraphSidecar();
+        SaveOpenStatecharts();
     }
 
     // Editor-only sub-graph groupings persist in a sidecar next to the asset graph
@@ -256,6 +257,33 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             AppendEditorLog($"[editor] Sub-graph layout save failed: {ex.Message}");
+        }
+    }
+
+    // Save every open statechart document that has edits: the chart back to its .sc.json (if
+    // the model changed) and its hand-placed layout to a .sc.editor.json sidecar. The editor
+    // owns both files; the engine reads neither directly.
+    private void SaveOpenStatecharts()
+    {
+        if (_assetGraphDock?.VisibleDockables is null)
+        {
+            return;
+        }
+
+        foreach (var dockable in _assetGraphDock.VisibleDockables)
+        {
+            if (dockable is Document { Context: StatechartDocumentViewModel document } && document.IsDirty)
+            {
+                try
+                {
+                    document.Save();
+                    AppendEditorLog($"[editor] Saved statechart '{document.Name}'");
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    AppendEditorLog($"[editor] Statechart save failed for '{document.Name}': {ex.Message}");
+                }
+            }
         }
     }
 
@@ -711,7 +739,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             Id = documentId,
             Title = info.Name,
-            Context = new StatechartDocumentViewModel(info.Name, chart),
+            Context = new StatechartDocumentViewModel(info.Name, info.Path, chart),
             CanClose = true,
             CanFloat = false,
             CanDrag = true,
