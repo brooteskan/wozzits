@@ -4,6 +4,7 @@
     <ProjectReference Include="..\Wozzits.Editor.Core\Wozzits.Editor.Core.csproj" />
     <ProjectReference Include="..\Wozzits.Editor.Protocol\Wozzits.Editor.Protocol.csproj" />
     <ProjectReference Include="..\Wozzits.Editor.HostClient\Wozzits.Editor.HostClient.csproj" />
+    <ProjectReference Include="..\Wozzits.Editor.Statecharts\Wozzits.Editor.Statecharts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

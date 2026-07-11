@@ -13,27 +13,9 @@ namespace Wozzits.Editor.Tests.Statecharts;
 /// </summary>
 public sealed class StatechartOracleTests
 {
-    private static string CorpusProjectDir()
-    {
-        var roots = new List<string>();
-        var env = Environment.GetEnvironmentVariable("WOZZITS_ENGINE_REPO");
-        if (!string.IsNullOrEmpty(env)) roots.Add(env);
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
-            roots.Add(Path.Combine(d.FullName, "wozzits-window-engine"));
+    private static string CorpusProjectDir() => CorpusLocator.ProjectDir();
 
-        foreach (var r in roots)
-        {
-            var p = Path.Combine(r, "window_engine", "resources", "projects", "test_mesh_001");
-            if (Directory.Exists(Path.Combine(p, "behavior", "statecharts")))
-                return p;
-        }
-        throw new DirectoryNotFoundException(
-            "Could not locate the engine corpus (wozzits-window-engine/.../test_mesh_001/behavior/statecharts). " +
-            "Place the engine repo beside the editor repo, or set WOZZITS_ENGINE_REPO. Searched: " +
-            string.Join("; ", roots));
-    }
-
-    private static string StatechartsDir() => Path.Combine(CorpusProjectDir(), "behavior", "statecharts");
+    private static string StatechartsDir() => CorpusLocator.StatechartsDir();
 
     [Fact]
     public void AllGoldenCharts_Load_Validate_And_RoundTrip_Canonically()
