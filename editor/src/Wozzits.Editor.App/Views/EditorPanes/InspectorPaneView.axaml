@@ -1330,8 +1330,13 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
-                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding InspectorValue}"/>
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1"
+                                                         Text="{Binding ConstEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         IsVisible="{Binding IsConstant}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding InspectorValue}"
+                                                           IsVisible="{Binding IsWired}" VerticalAlignment="Center"/>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

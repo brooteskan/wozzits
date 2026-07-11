@@ -129,6 +129,25 @@ public sealed class StatechartDocumentTests
     }
 
     [Fact]
+    public void Editing_An_Op_Constant_Marks_Dirty_And_Saves_Into_The_Chart()
+    {
+        var path = FreshChartPath("traffic_light.sc.json");
+        var document = new StatechartDocumentViewModel("traffic_light", path, Golden("traffic_light.sc.json"));
+
+        // s0d = mul(p0, 3) -- the second input is the constant 3
+        var mul = document.Dataflow.Nodes.First(n => n.NodeId == "s0d");
+        mul.InputPorts.First(p => p.IsConstant).ConstEditor!.Value = "5";
+
+        Assert.True(document.Dataflow.IsDirty);
+
+        document.Save();
+
+        var reloaded = StatechartJson.Load(File.ReadAllText(path));
+        var s0d = reloaded.Pure.First(p => p.Id == "s0d");
+        Assert.Contains(s0d.Ins, r => r.Kind == RefKind.Const && r.Const == 5);
+    }
+
+    [Fact]
     public void Saved_Layout_Is_Restored_On_Reopen()
     {
         var path = FreshChartPath("traffic_light.sc.json");

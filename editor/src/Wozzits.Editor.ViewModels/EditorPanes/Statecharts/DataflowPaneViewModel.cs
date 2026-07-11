@@ -401,7 +401,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
         }
     }
 
-    private static void AddOpInputPorts(DataflowNodeViewModel node, PureOp p)
+    private void AddOpInputPorts(DataflowNodeViewModel node, PureOp p)
     {
         switch (p.Op)
         {
@@ -427,14 +427,20 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
         }
     }
 
-    private static DataflowPortViewModel InputPort(DataflowNodeViewModel node, int index, string label, ValueRef? r)
+    private DataflowPortViewModel InputPort(DataflowNodeViewModel node, int index, string label, ValueRef? r)
     {
         bool wired = r is { Kind: RefKind.Op };
-        return new DataflowPortViewModel(node, index, label, isInput: true)
+        var port = new DataflowPortViewModel(node, index, label, isInput: true)
         {
             IsWired = wired,
             Constant = wired ? null : r,
         };
+        if (!wired && r is not null)
+        {
+            port.Edited = MarkChartDirty;
+        }
+
+        return port;
     }
 
     // Wired inputs as (input row index, source node). Reads pull from their agent, proximity
