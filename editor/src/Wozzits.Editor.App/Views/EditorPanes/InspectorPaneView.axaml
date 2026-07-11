@@ -38,6 +38,38 @@
                            IsVisible="{Binding HasNoSelection}"/>
 
                 <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasSubGraphSelection}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{Binding Header}"
+                                   Classes="InspectorHeader"/>
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Sub-graph"
+                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Name"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding SubGraphName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Nodes"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding SubGraphMemberCount}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Grid.Row="1"
                               IsVisible="{Binding HasSceneNodeSelection}">
                     <!-- Scene-node edits act on the live viewport runtime, so the
                          whole edit surface is disabled when it is down; fields stay

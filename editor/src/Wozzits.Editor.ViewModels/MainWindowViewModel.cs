@@ -500,6 +500,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         EditorLayout = layoutFactory.CreateLayout();
         _assetGraphDock = layoutFactory.AssetGraphDock;
         AssetGraph.OpenSubGraphRequested += OnOpenSubGraphRequested;
+        AssetGraph.SelectedSubGraphChanged += OnAssetGraphSubGraphSelected;
     }
 
     // Guards against re-entrancy: clearing one pane raises its
@@ -550,6 +551,31 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         Inspector.Inspect(node);
     }
 
+    // Selecting a sub-graph proxy inspects it (it is nameable there) and clears the
+    // scene-tree selection, mirroring node selection's mutual exclusivity.
+    private void OnAssetGraphSubGraphSelected(AssetGraphSubGraph? subGraph)
+    {
+        if (_syncingSelection)
+        {
+            return;
+        }
+
+        if (subGraph is not null)
+        {
+            _syncingSelection = true;
+            try
+            {
+                SceneTree.ClearSelection();
+            }
+            finally
+            {
+                _syncingSelection = false;
+            }
+        }
+
+        Inspector.Inspect(subGraph);
+    }
+
     // Open (or re-focus) a sub-graph in its own document tab (drill-in). The tab is a
     // second asset-graph pane over the SAME engine session and the SAME shared grouping,
     // with its canvas context set to the sub-graph, so it shows just that group's members
@@ -578,6 +604,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         pane.LoadSnapshot(_editorSession.LoadAssetGraphSnapshot());
         pane.OpenSubGraphRequested += OnOpenSubGraphRequested;
         pane.SelectedNodeChanged += OnAssetGraphNodeSelected;
+        pane.SelectedSubGraphChanged += OnAssetGraphSubGraphSelected;
 
         var document = new Document
         {

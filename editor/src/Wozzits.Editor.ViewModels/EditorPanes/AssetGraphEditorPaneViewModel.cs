@@ -75,11 +75,21 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     // tab. The shell (MainWindowViewModel) owns the dock, so it services the request.
     public event Action<AssetGraphSubGraph>? OpenSubGraphRequested;
 
+    // Raised when the selected sub-graph proxy changes, so the shell can drive the shared
+    // inspector (sub-graphs are nameable there).
+    public event Action<AssetGraphSubGraph?>? SelectedSubGraphChanged;
+
     // The currently selected sub-graph proxy (mutually exclusive with node selection).
     public AssetGraphSubGraph? SelectedSubGraph
     {
         get => _selectedSubGraph;
-        private set => SetProperty(ref _selectedSubGraph, value);
+        private set
+        {
+            if (SetProperty(ref _selectedSubGraph, value))
+            {
+                SelectedSubGraphChanged?.Invoke(_selectedSubGraph);
+            }
+        }
     }
 
     public IAsyncRelayCommand CommitGraphCommand { get; }

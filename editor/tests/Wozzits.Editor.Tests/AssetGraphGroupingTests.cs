@@ -387,6 +387,29 @@ public sealed class AssetGraphGroupingTests
         Assert.True(pane.GraphHeight > 116 + 28);
     }
 
+    [Fact]
+    public void InspectorRenamesSelectedSubGraphLive()
+    {
+        var subGraph = new AssetGraphSubGraph("id", "Old");
+        var inspector = new InspectorPaneViewModel();
+
+        inspector.Inspect(subGraph);
+        Assert.True(inspector.HasSubGraphSelection);
+        Assert.Equal("Old", inspector.SubGraphName);
+        Assert.Equal("0", inspector.SubGraphMemberCount);
+
+        inspector.SubGraphName = "Sky";
+        Assert.Equal("Sky", subGraph.Name); // renamed live (the proxy card binds Name)
+        Assert.Equal("Sky", inspector.Header);
+
+        inspector.SubGraphName = "   "; // blank ignored — the name stays
+        Assert.Equal("Sky", subGraph.Name);
+
+        // Switching selection away clears the sub-graph inspection.
+        inspector.Inspect((AssetGraphSubGraph?)null);
+        Assert.False(inspector.HasSubGraphSelection);
+    }
+
     // --- Sidecar persistence -----------------------------------------------------------
 
     [Fact]

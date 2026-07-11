@@ -139,6 +139,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // the engine as a live edit.
     private bool _suppressLiveEdits;
     private SceneTreeNodeViewModel? _inspectedSceneNode;
+    private AssetGraphSubGraph? _inspectedSubGraph;
+    private string _subGraphName = string.Empty;
+    private string _subGraphMemberCount = string.Empty;
 
     public InspectorPaneViewModel(
         IWozzitsEngineEditorSession? editorSession = null,
@@ -291,6 +294,29 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public bool HasSceneNodeSelection => _selectionKind == InspectorSelectionKind.SceneNode;
 
     public bool HasAssetGraphNodeSelection => _selectionKind == InspectorSelectionKind.AssetGraphNode;
+
+    public bool HasSubGraphSelection => _selectionKind == InspectorSelectionKind.SubGraph;
+
+    // The selected sub-graph's editable name (issue woguls/wozzits-editor#1). Edits rename
+    // it live — the proxy card binds Name — and persist via the sidecar on Save All. An
+    // empty/whitespace value is ignored so a mid-edit clear doesn't blank the group.
+    public string SubGraphName
+    {
+        get => _subGraphName;
+        set
+        {
+            if (SetProperty(ref _subGraphName, value) && !_suppressLiveEdits)
+            {
+                OnSubGraphNameEdited();
+            }
+        }
+    }
+
+    public string SubGraphMemberCount
+    {
+        get => _subGraphMemberCount;
+        private set => SetProperty(ref _subGraphMemberCount, value);
+    }
 
     // Scene-node edits run against the live viewport runtime, so the whole
     // scene-node edit surface is disabled when it is down (mirrors the scene
@@ -1215,6 +1241,84 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         NotifyAssetGraphPortStateChanged();
     }
 
+    // Inspect a sub-graph proxy (issue woguls/wozzits-editor#1): show its editable name so
+    // authors can label groups. Rename is pure editor view-state — no engine/session call.
+    public void Inspect(AssetGraphSubGraph? subGraph)
+    {
+        Components.Clear();
+        Behaviors.Clear();
+        AvailableBehaviorModules.Clear();
+        AssetGraphInputPorts.Clear();
+        AssetGraphOutputPorts.Clear();
+        AssetGraphDiagnostics.Clear();
+        AssetGraphParams.Clear();
+        ClearGlbNodePicker();
+        LastEditError = string.Empty;
+
+        if (subGraph is null)
+        {
+            Header = string.Empty;
+            EmptyState = "No scene or asset graph node selected.";
+            SetSelectionKind(InspectorSelectionKind.None);
+            ClearNodeFields();
+            ClearAssetGraphFields();
+            ClearSubGraphFields();
+            NotifyComponentStateChanged();
+            NotifyAssetGraphPortStateChanged();
+            return;
+        }
+
+        Header = subGraph.Name;
+        EmptyState = string.Empty;
+        SetSelectionKind(InspectorSelectionKind.SubGraph);
+        ClearNodeFields();
+        ClearAssetGraphFields();
+
+        _inspectedSubGraph = subGraph;
+        _suppressLiveEdits = true;
+        try
+        {
+            SubGraphName = subGraph.Name;
+            SubGraphMemberCount =
+                subGraph.MemberCount.ToString(CultureInfo.InvariantCulture);
+        }
+        finally
+        {
+            _suppressLiveEdits = false;
+        }
+
+        NotifyComponentStateChanged();
+        NotifyAssetGraphPortStateChanged();
+    }
+
+    private void OnSubGraphNameEdited()
+    {
+        if (_inspectedSubGraph is null
+            || !HasSubGraphSelection
+            || string.IsNullOrWhiteSpace(SubGraphName))
+        {
+            return;
+        }
+
+        _inspectedSubGraph.Name = SubGraphName;
+        Header = SubGraphName;
+    }
+
+    private void ClearSubGraphFields()
+    {
+        _inspectedSubGraph = null;
+        _suppressLiveEdits = true;
+        try
+        {
+            SubGraphName = string.Empty;
+            SubGraphMemberCount = string.Empty;
+        }
+        finally
+        {
+            _suppressLiveEdits = false;
+        }
+    }
+
     private void ApplyAssetGraphNodeParam(string name, string value)
     {
         if (!HasAssetGraphNodeSelection)
@@ -1467,6 +1571,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasNoSelection));
         OnPropertyChanged(nameof(HasSceneNodeSelection));
         OnPropertyChanged(nameof(HasAssetGraphNodeSelection));
+        OnPropertyChanged(nameof(HasSubGraphSelection));
         ApplyCameraCommand.NotifyCanExecuteChanged();
     }
 
@@ -3812,4 +3917,5 @@ public enum InspectorSelectionKind
     None,
     SceneNode,
     AssetGraphNode,
+    SubGraph,
 }
