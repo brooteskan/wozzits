@@ -283,6 +283,37 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         return true;
     }
 
+    // Revert a wired operand back to an editable constant 0 (the inverse of TryConnect / a
+    // "delete connection"). Rejects an input that isn't an op-wired value operand. Reprojects.
+    public bool Disconnect(string targetNodeId, int inputIndex)
+    {
+        if (_chart is null)
+        {
+            return false;
+        }
+
+        var target = _chart.Pure.FirstOrDefault(p => p.Id == targetNodeId);
+        if (target is null)
+        {
+            return false;
+        }
+
+        var operand = OperandSlot(target, inputIndex);
+        if (operand is null || operand.Kind != RefKind.Op)
+        {
+            return false;
+        }
+
+        operand.Kind = RefKind.Const;
+        operand.Op = "";
+        operand.Const = 0;
+        operand.IsBool = false;
+
+        IsDirty = true;
+        ReprojectPreservingLayout();
+        return true;
+    }
+
     // The ValueRef that an (op, input row index) addresses, or null when that input is not a
     // value operand (a read's agent / a proximity target is wired differently, not as an op ref).
     private static ValueRef? OperandSlot(PureOp op, int index) => op.Op switch
@@ -670,7 +701,11 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             IsWired = wired,
             Constant = wired ? null : r,
         };
-        if (!wired && r is not null)
+        if (wired)
+        {
+            port.DisconnectRequested = () => Disconnect(node.NodeId, index);
+        }
+        else if (r is not null)
         {
             port.Edited = MarkChartDirty;
         }

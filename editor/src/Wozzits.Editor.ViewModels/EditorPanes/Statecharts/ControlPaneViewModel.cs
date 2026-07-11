@@ -11,7 +11,7 @@ using Wozzits.Editor.Statecharts;
 /// the acyclic dataflow layer this layer is cyclic, so there is no left-to-right layering.
 /// Positions are transient here; hand-placed layout persistence comes with the view.
 /// </summary>
-public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
+public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransitionDrawCanvas
 {
     public const double StateWidth = 180.0;
     public const double StateHeight = 76.0;
@@ -29,6 +29,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
     private Chart? _chart;
     private bool _isDirty;
     private bool _isLayoutDirty;
+    private bool _isDrawingTransition;
 
     private readonly Dictionary<string, StateNodeViewModel> _statesById = new();
 
@@ -43,6 +44,43 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
     public IRelayCommand AddStateCommand { get; }
 
     public IRelayCommand DeleteSelectedCommand { get; }
+
+    // When armed (a two-way-bound toolbar toggle), a drag from one state to another authors a
+    // transition instead of moving the state; the interaction controller disarms after each
+    // attempt, which the toggle reflects.
+    public bool IsDrawingTransition
+    {
+        get => _isDrawingTransition;
+        set => SetProperty(ref _isDrawingTransition, value);
+    }
+
+    public void DisarmTransitionDraw() => IsDrawingTransition = false;
+
+    // Author a transition from -> to (self-drop = self-loop), defaulting to an editable
+    // `after 1s` trigger (the user retargets/retriggers it in the inspector). Reprojects.
+    public bool TryAddTransition(string fromStateId, string toStateId)
+    {
+        if (_chart is null)
+        {
+            return false;
+        }
+
+        var from = _chart.States.FirstOrDefault(s => s.Id == fromStateId);
+        if (from is null || _chart.States.All(s => s.Id != toStateId))
+        {
+            return false;
+        }
+
+        from.Transitions.Add(new Transition
+        {
+            Target = toStateId,
+            Trigger = new Trigger { Kind = TriggerKind.After, Seconds = 1.0 },
+        });
+
+        IsDirty = true;
+        ReprojectPreservingLayout();
+        return true;
+    }
 
     public ObservableCollection<RegionViewModel> Regions { get; } = [];
 

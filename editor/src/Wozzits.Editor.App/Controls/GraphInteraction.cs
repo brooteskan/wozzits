@@ -11,16 +11,18 @@ using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 // Shared canvas interaction for the statechart panes (dataflow + control): right-drag pans,
 // wheel zooms about the cursor, left-drag on empty space marquee-selects, left-drag on a node
-// moves the selection. Mirrors the asset-graph canvas but drives any IEditorCanvas, so the
-// plumbing lives once. Node hit-testing walks the visual tree for an ICanvasNode DataContext,
-// so the node templates need no per-card handlers.
+// moves the selection. Two authoring gestures ride on the same plumbing, gated by capability
+// interfaces so each is inert on the other canvas: dragging an output->input port wires ops
+// (IWiringCanvas, dataflow), and -- while the draw tool is armed -- dragging state->state
+// authors a transition (ITransitionDrawCanvas, control). Both share one dashed preview line.
+// Node hit-testing walks the visual tree for an ICanvasNode DataContext.
 public sealed class GraphInteraction
 {
     private readonly Control _root;
     private readonly ScrollViewer _scrollViewer;
     private readonly Control _canvas;
     private readonly Border _selectionRectangle;
-    private readonly Line? _wirePreview;
+    private readonly Line? _previewLine;
     private readonly Func<IEditorCanvas?> _canvasVm;
 
     private ICanvasNode? _dragNode;
@@ -32,6 +34,8 @@ public sealed class GraphInteraction
     private Point _boxStart;
     private Point _boxCurrent;
     private DataflowPortViewModel? _wireSource;
+    private StateNodeViewModel? _transitionSource;
+    private Point _previewStart;
 
     public GraphInteraction(
         Control root,
@@ -39,13 +43,13 @@ public sealed class GraphInteraction
         Control canvas,
         Border selectionRectangle,
         Func<IEditorCanvas?> canvasVm,
-        Line? wirePreview = null)
+        Line? previewLine = null)
     {
         _root = root;
         _scrollViewer = scrollViewer;
         _canvas = canvas;
         _selectionRectangle = selectionRectangle;
-        _wirePreview = wirePreview;
+        _previewLine = previewLine;
         _canvasVm = canvasVm;
 
         root.AddHandler(InputElement.PointerPressedEvent, OnPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -83,12 +87,36 @@ public sealed class GraphInteraction
             return;
         }
 
+        // Armed "draw transition" tool (control canvas): a drag from a state to another state
+        // authors a transition; a press on empty space cancels the tool.
+        if (vm is ITransitionDrawCanvas { IsDrawingTransition: true } drawVm)
+        {
+            if (NodeUnder(e.Source) is StateNodeViewModel fromState)
+            {
+                _transitionSource = fromState;
+                _previewStart = new Point(
+                    fromState.X + ControlPaneViewModel.StateWidth / 2,
+                    fromState.Y + ControlPaneViewModel.StateHeight / 2);
+                UpdatePreview(ToGraph(e));
+                _root.Focus();
+                e.Pointer.Capture(_root);
+            }
+            else
+            {
+                drawVm.DisarmTransitionDraw();
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         // Grabbing a node's OUTPUT port starts a wire drag (dataflow only). Input ports and the
         // rest of the card fall through to node drag / marquee below.
         if (vm is IWiringCanvas && PortUnder(e.Source) is { IsOutput: true } outputPort)
         {
             _wireSource = outputPort;
-            UpdateWirePreview(ToGraph(e));
+            _previewStart = new Point(outputPort.AnchorX, outputPort.AnchorY);
+            UpdatePreview(ToGraph(e));
             _root.Focus();
             e.Pointer.Capture(_root);
             e.Handled = true;
@@ -138,6 +166,20 @@ public sealed class GraphInteraction
             return;
         }
 
+        if (_transitionSource is not null && e.Pointer.Captured == _root)
+        {
+            var point = e.GetCurrentPoint(_root);
+            if (!point.Properties.IsLeftButtonPressed)
+            {
+                EndTransition(e, point.Position);
+                return;
+            }
+
+            UpdatePreview(ToGraph(e));
+            e.Handled = true;
+            return;
+        }
+
         if (_wireSource is not null && e.Pointer.Captured == _root)
         {
             var point = e.GetCurrentPoint(_root);
@@ -147,7 +189,7 @@ public sealed class GraphInteraction
                 return;
             }
 
-            UpdateWirePreview(ToGraph(e));
+            UpdatePreview(ToGraph(e));
             e.Handled = true;
             return;
         }
@@ -204,6 +246,13 @@ public sealed class GraphInteraction
 
     private void OnReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_transitionSource is not null)
+        {
+            EndTransition(e, e.GetPosition(_root));
+            e.Handled = true;
+            return;
+        }
+
         if (_wireSource is not null)
         {
             EndWire(e, e.GetPosition(_root));
@@ -282,10 +331,7 @@ public sealed class GraphInteraction
     {
         var source = _wireSource;
         _wireSource = null;
-        if (_wirePreview is not null)
-        {
-            _wirePreview.IsVisible = false;
-        }
+        HidePreview();
         e.Pointer.Capture(null);
 
         if (source is null || _canvasVm() is not IWiringCanvas wiring)
@@ -299,20 +345,53 @@ public sealed class GraphInteraction
         }
     }
 
-    private void UpdateWirePreview(Point graphEnd)
+    // Finish a transition draw: if released over a state, add source -> that state (self-drop =
+    // self-loop). Always hide the preview, disarm the tool, release capture.
+    private void EndTransition(PointerEventArgs e, Point rootPosition)
     {
-        if (_wirePreview is null || _wireSource is null)
+        var source = _transitionSource;
+        _transitionSource = null;
+        HidePreview();
+        e.Pointer.Capture(null);
+
+        if (source is null || _canvasVm() is not ITransitionDrawCanvas drawVm)
         {
             return;
         }
 
-        _wirePreview.StartPoint = new Point(_wireSource.AnchorX, _wireSource.AnchorY);
-        _wirePreview.EndPoint = graphEnd;
-        _wirePreview.IsVisible = true;
+        if (StateAtPoint(rootPosition) is { } target)
+        {
+            drawVm.TryAddTransition(source.StateId, target.StateId);
+        }
+
+        drawVm.DisarmTransitionDraw();
+    }
+
+    private void UpdatePreview(Point graphEnd)
+    {
+        if (_previewLine is null)
+        {
+            return;
+        }
+
+        _previewLine.StartPoint = _previewStart;
+        _previewLine.EndPoint = graphEnd;
+        _previewLine.IsVisible = true;
+    }
+
+    private void HidePreview()
+    {
+        if (_previewLine is not null)
+        {
+            _previewLine.IsVisible = false;
+        }
     }
 
     private DataflowPortViewModel? PortAtPoint(Point rootPosition) =>
         PortUnder(_root.InputHitTest(rootPosition));
+
+    private StateNodeViewModel? StateAtPoint(Point rootPosition) =>
+        NodeUnder(_root.InputHitTest(rootPosition)) as StateNodeViewModel;
 
     private static DataflowPortViewModel? PortUnder(object? source)
     {

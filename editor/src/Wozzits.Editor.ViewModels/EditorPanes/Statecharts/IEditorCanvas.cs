@@ -55,3 +55,17 @@ public interface IWiringCanvas
     // Returns false (leaving the chart untouched) when the connection is invalid or cyclic.
     bool TryConnect(string sourceNodeId, string targetNodeId, int targetInputIndex);
 }
+
+// A canvas where a transition is authored by dragging from one state to another while an
+// explicit "draw transition" tool is armed (the control pane). The shared interaction
+// controller only draws when IsDrawingTransition is true, and disarms after each attempt.
+public interface ITransitionDrawCanvas
+{
+    bool IsDrawingTransition { get; }
+
+    // Add a transition from -> to (self-drop = self-loop). Returns false if a state id is unknown.
+    bool TryAddTransition(string fromStateId, string toStateId);
+
+    // Leave the draw tool (after a completed draw, or a cancel on empty space).
+    void DisarmTransitionDraw();
+}

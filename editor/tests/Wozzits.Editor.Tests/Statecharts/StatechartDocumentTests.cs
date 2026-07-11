@@ -225,6 +225,21 @@ public sealed class StatechartDocumentTests
     }
 
     [Fact]
+    public void Drawing_A_Transition_Marks_Dirty_And_Saves_Into_The_Chart()
+    {
+        var path = FreshChartPath("traffic_light.sc.json");
+        var document = new StatechartDocumentViewModel("traffic_light", path, Golden("traffic_light.sc.json"));
+
+        Assert.True(document.Control.TryAddTransition("HOLD", "HOLD"));   // a self-loop
+        Assert.True(document.IsDirty);
+
+        document.Save();
+
+        var reloaded = StatechartJson.Load(File.ReadAllText(path));
+        Assert.Contains(reloaded.States.First(s => s.Id == "HOLD").Transitions, t => t.Target == "HOLD");
+    }
+
+    [Fact]
     public void Saved_Layout_Is_Restored_On_Reopen()
     {
         var path = FreshChartPath("traffic_light.sc.json");

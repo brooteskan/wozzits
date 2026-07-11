@@ -14,6 +14,8 @@
                             IsVisible="{Binding HasGraph}">
                     <Button Content="+ State" Command="{Binding AddStateCommand}"/>
                     <Button Content="Delete" Command="{Binding DeleteSelectedCommand}"/>
+                    <ToggleButton Content="Draw transition"
+                                  IsChecked="{Binding IsDrawingTransition, Mode=TwoWay}"/>
                 </StackPanel>
                 <Grid Grid.Row="1">
                 <TextBlock Text="No statechart open. Statecharts &#x2192; open a chart's control layer."
@@ -120,6 +122,13 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+
+                            <Line x:Name="TransitionPreview"
+                                  Stroke="{DynamicResource WozzitsAccentBrush}"
+                                  StrokeThickness="2"
+                                  StrokeDashArray="4,3"
+                                  IsVisible="False"
+                                  IsHitTestVisible="False"/>
 
                             <Border x:Name="SelectionRectangle"
                                     Classes="AssetGraphSelectionRectangle"

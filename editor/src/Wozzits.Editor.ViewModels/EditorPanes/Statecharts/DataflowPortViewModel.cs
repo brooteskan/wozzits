@@ -1,6 +1,7 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.Globalization;
+using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
 
 // A port on a dataflow node. Ops have one output ("out") and one input per operand;
@@ -55,6 +56,17 @@ public sealed class DataflowPortViewModel : ViewModelBase
 
     // Invoked when the constant is edited in the inspector (the pane wires it to mark dirty).
     public Action? Edited { get; set; }
+
+    // Invoked to disconnect this wired operand (the pane reverts it to an editable constant).
+    // Set only for wired VALUE operands -- a read's agent / a proximity target is not one.
+    public Action? DisconnectRequested { get; set; }
+
+    public bool CanDisconnect => DisconnectRequested is not null;
+
+    private IRelayCommand? _disconnectCommand;
+
+    public IRelayCommand DisconnectCommand =>
+        _disconnectCommand ??= new RelayCommand(() => DisconnectRequested?.Invoke(), () => CanDisconnect);
 
     private EditableFieldViewModel? _constEditor;
 

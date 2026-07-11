@@ -1337,8 +1337,14 @@
                                                          Classes="InspectorInput"
                                                          Text="{Binding ConstEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                                          IsVisible="{Binding IsConstant}"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding InspectorValue}"
-                                                           IsVisible="{Binding IsWired}" VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                                                            IsVisible="{Binding IsWired}">
+                                                    <TextBlock Text="{Binding InspectorValue}" VerticalAlignment="Center"/>
+                                                    <Button Content="Disconnect"
+                                                            Classes="InspectorApplyButton"
+                                                            Command="{Binding DisconnectCommand}"
+                                                            IsVisible="{Binding CanDisconnect}"/>
+                                                </StackPanel>
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>

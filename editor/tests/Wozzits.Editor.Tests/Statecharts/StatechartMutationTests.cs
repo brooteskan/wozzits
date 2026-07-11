@@ -233,4 +233,87 @@ public sealed class StatechartMutationTests
 
         Assert.False(pane.TryConnect(a.NodeId, read.NodeId, 0));
     }
+
+    [Fact]
+    public void Disconnect_Reverts_A_Wired_Operand_To_A_Constant()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var a = pane.AddOp(OpKind.Mul)!;
+        var b = pane.AddOp(OpKind.Add)!;
+        pane.TryConnect(a.NodeId, b.NodeId, 0);
+        Assert.Equal(RefKind.Op, chart.Pure.First(p => p.Id == b.NodeId).Ins[0].Kind);
+
+        bool ok = pane.Disconnect(b.NodeId, 0);
+
+        Assert.True(ok);
+        Assert.Equal(RefKind.Const, chart.Pure.First(p => p.Id == b.NodeId).Ins[0].Kind);
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Disconnect_A_Constant_Input_Is_A_Noop()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var b = pane.AddOp(OpKind.Add)!;
+
+        Assert.False(pane.Disconnect(b.NodeId, 0));   // in0 is already a constant
+    }
+
+    // ---- M3: transition draw ----------------------------------------------------
+
+    [Fact]
+    public void Add_Transition_Links_Two_States_With_An_Editable_After_Trigger()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        bool ok = pane.TryAddTransition("DELIBERATE", "HOLD");
+
+        Assert.True(ok);
+        var delib = chart.States.First(s => s.Id == "DELIBERATE");
+        Assert.Contains(delib.Transitions, t => t.Target == "HOLD" && t.Trigger.Kind == TriggerKind.After);
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Add_Self_Loop_Transition()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        Assert.True(pane.TryAddTransition("HOLD", "HOLD"));
+
+        Assert.Contains(chart.States.First(s => s.Id == "HOLD").Transitions, t => t.Target == "HOLD");
+        Assert.Contains(pane.Transitions, t => t.IsSelfLoop && t.From.StateId == "HOLD");
+    }
+
+    [Fact]
+    public void Add_Transition_Rejects_An_Unknown_Target()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        Assert.False(pane.TryAddTransition("HOLD", "NOPE"));
+        Assert.False(pane.IsDirty);
+    }
+
+    [Fact]
+    public void Arming_And_Disarming_The_Transition_Tool_Flips_The_Flag()
+    {
+        var pane = Control("traffic_light.sc.json");
+        Assert.False(pane.IsDrawingTransition);
+
+        pane.IsDrawingTransition = true;
+        Assert.True(pane.IsDrawingTransition);
+
+        pane.DisarmTransitionDraw();
+        Assert.False(pane.IsDrawingTransition);
+    }
 }
