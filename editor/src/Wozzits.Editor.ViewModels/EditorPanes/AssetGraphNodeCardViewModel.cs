@@ -8,6 +8,7 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
     private double _x;
     private double _y;
     private bool _isSelected;
+    private bool _isCanvasVisible = true;
 
     public AssetGraphNodeCardViewModel(EngineAssetGraphNode node, double canvasPadding)
     {
@@ -54,6 +55,14 @@ public sealed class AssetGraphNodeCardViewModel : ViewModelBase
     {
         get => _isSelected;
         set => SetProperty(ref _isSelected, value);
+    }
+
+    // False when this node is collapsed into a sub-graph and represented by that group's
+    // proxy on the parent canvas, so its card is hidden (issue woguls/wozzits-editor#1).
+    public bool IsCanvasVisible
+    {
+        get => _isCanvasVisible;
+        set => SetProperty(ref _isCanvasVisible, value);
     }
 
     public string DisplayName { get; }

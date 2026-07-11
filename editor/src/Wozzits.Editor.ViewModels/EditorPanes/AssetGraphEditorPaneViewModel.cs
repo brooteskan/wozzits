@@ -16,7 +16,8 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     private const double MaxZoom = 4.0;
     private const double WheelZoomFactor = 1.1;
     private readonly IWozzitsEngineEditorSession? _editorSession;
-    private readonly AssetGraphGroupingModel _grouping = new();
+    private readonly AssetGraphGroupingModel _grouping;
+    private readonly AssetGraphSubGraph? _context;
     private string _emptyState = "No asset graph loaded.";
     private string _lastEditError = string.Empty;
     private bool _isDraftGraph;
@@ -33,12 +34,19 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     private bool _isConnectionPreviewRejected;
     private AssetGraphPortViewModel? _connectionTargetPort;
     private AssetGraphNodeCardViewModel? _selectedNode;
+    private AssetGraphSubGraph? _selectedSubGraph;
     public event Action<AssetGraphNodeCardViewModel?>? SelectedNodeChanged;
 
+    // grouping/context are shared by the shell so a drill-in tab and the root canvas see
+    // one set of sub-graphs. context is the sub-graph this pane represents (null = root).
     public AssetGraphEditorPaneViewModel(
-        IWozzitsEngineEditorSession? editorSession = null)
+        IWozzitsEngineEditorSession? editorSession = null,
+        AssetGraphGroupingModel? grouping = null,
+        AssetGraphSubGraph? context = null)
     {
         _editorSession = editorSession;
+        _grouping = grouping ?? new AssetGraphGroupingModel();
+        _context = context;
         CommitGraphCommand = new AsyncRelayCommand(
             CommitGraphAsync,
             CanRunGraphOperation);
@@ -53,9 +61,26 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
 
     public ObservableCollection<AssetGraphNodeCardViewModel> SelectedNodes { get; } = [];
 
-    // Editor-only node groupings (sub-graphs). View-state only — never affects the engine
-    // graph, asset keys, or compilation (issue woguls/wozzits-editor#1).
+    // Editor-only node groupings (sub-graphs) — ALL of them, shared across panes. View-
+    // state only; never affects the engine graph, asset keys, or compilation
+    // (issue woguls/wozzits-editor#1). Used for persistence; the canvas binds VisibleSubGraphs.
     public ReadOnlyObservableCollection<AssetGraphSubGraph> SubGraphs => _grouping.SubGraphs;
+
+    // The sub-graph proxies drawn on THIS canvas: the children of this pane's context
+    // (top-level groups on the root canvas; a sub-graph's nested children inside its
+    // drill-in tab). A per-pane projection of the shared grouping model.
+    public ObservableCollection<AssetGraphSubGraph> VisibleSubGraphs { get; } = [];
+
+    // Raised when the user opens a sub-graph (double-click / menu) to edit it in its own
+    // tab. The shell (MainWindowViewModel) owns the dock, so it services the request.
+    public event Action<AssetGraphSubGraph>? OpenSubGraphRequested;
+
+    // The currently selected sub-graph proxy (mutually exclusive with node selection).
+    public AssetGraphSubGraph? SelectedSubGraph
+    {
+        get => _selectedSubGraph;
+        private set => SetProperty(ref _selectedSubGraph, value);
+    }
 
     public IAsyncRelayCommand CommitGraphCommand { get; }
 
@@ -307,6 +332,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
             ? 420.0
             : Nodes.Max(node => node.Y + CardHeight + CanvasPadding);
         _grouping.ReconcileWithLiveNodes(Nodes.Select(node => node.Id).ToHashSet());
+        RefreshCanvasProjection();
         NotifyGraphStateChanged();
     }
 
@@ -532,14 +558,14 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     }
 
     // --- Editor-only node grouping (sub-graphs) ---------------------------------------
-    // Sub-graphs group nodes under a named, collapsible proxy. They are a pure editor-side
-    // view concept and never touch the engine graph, asset keys, or compilation
-    // (issue woguls/wozzits-editor#1) — so, unlike node edits, grouping does NOT mark the
-    // graph as a draft.
+    // Sub-graphs group nodes under a named, collapsible proxy card. They are a pure
+    // editor-side view concept and never touch the engine graph, asset keys, or
+    // compilation (issue woguls/wozzits-editor#1) — so, unlike node edits, grouping does
+    // NOT mark the graph as a draft.
 
-    // Group the currently selected nodes into a new sub-graph, seeding the collapsed
-    // proxy at the selection's centroid. Returns null (and sets LastEditError) when the
-    // selection is empty.
+    // Group the currently selected nodes into a new sub-graph, seeding the collapsed proxy
+    // at the selection's centroid, then collapse it on the canvas and select the proxy.
+    // Returns null (and sets LastEditError) when the selection is empty.
     public AssetGraphSubGraph? CreateSubGraphFromSelection(string name)
     {
         if (SelectedNodes.Count == 0)
@@ -549,27 +575,209 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
 
         var memberIds = SelectedNodes.Select(node => node.Id).ToList();
+        var (proxyX, proxyY) = SelectionProxyAnchor();
+
+        // Nest the new group under this canvas's context: top-level on the root canvas, a
+        // child sub-graph inside a drill-in tab.
         var subGraph = _grouping.CreateSubGraph(
             string.IsNullOrWhiteSpace(name) ? "Sub-graph" : name.Trim(),
-            memberIds);
-
-        var (proxyX, proxyY) = SelectionProxyAnchor();
+            memberIds,
+            parentId: _context?.Id);
         subGraph.ProxyX = proxyX;
         subGraph.ProxyY = proxyY;
 
+        RefreshCanvasProjection();
+        SelectSubGraph(subGraph);
         LastEditError = string.Empty;
         return subGraph;
     }
 
-    // Dissolve a sub-graph; its member nodes become ungrouped again.
+    // Dissolve a sub-graph; its member nodes become ungrouped and reappear on the canvas.
     public bool Ungroup(AssetGraphSubGraph subGraph)
     {
-        return _grouping.Ungroup(subGraph.Id);
+        if (!_grouping.Ungroup(subGraph.Id))
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(_selectedSubGraph, subGraph))
+        {
+            ClearSubGraphSelection();
+        }
+
+        RefreshCanvasProjection();
+        return true;
+    }
+
+    public bool UngroupSelectedSubGraph()
+    {
+        return _selectedSubGraph is not null && Ungroup(_selectedSubGraph);
     }
 
     public AssetGraphSubGraph? SubGraphOfNode(ulong nodeId)
     {
         return _grouping.SubGraphOfNode(nodeId);
+    }
+
+    // Replace the current groupings with ones loaded from the editor sidecar (project
+    // open), dropping any member whose node no longer exists, then re-project the canvas.
+    public void LoadSubGraphs(IEnumerable<PersistedSubGraph> subGraphs)
+    {
+        _grouping.Clear();
+        ClearSubGraphSelection();
+
+        foreach (var persisted in subGraphs)
+        {
+            if (persisted.MemberNodeIds.Count == 0)
+            {
+                continue;
+            }
+
+            var subGraph = _grouping.CreateSubGraph(
+                persisted.Name,
+                persisted.MemberNodeIds,
+                persisted.ParentId,
+                persisted.Id);
+            subGraph.ProxyX = persisted.ProxyX;
+            subGraph.ProxyY = persisted.ProxyY;
+        }
+
+        _grouping.ReconcileWithLiveNodes(Nodes.Select(node => node.Id).ToHashSet());
+        RefreshCanvasProjection();
+    }
+
+    // Select a sub-graph proxy. Proxy selection and node selection are mutually exclusive.
+    public void SelectSubGraph(AssetGraphSubGraph? subGraph)
+    {
+        ClearSelection();
+        ClearSubGraphSelection();
+        if (subGraph is null)
+        {
+            return;
+        }
+
+        subGraph.IsSelected = true;
+        SelectedSubGraph = subGraph;
+    }
+
+    public void MoveSubGraphProxyByGraphDelta(
+        AssetGraphSubGraph subGraph,
+        double deltaX,
+        double deltaY)
+    {
+        subGraph.ProxyX = Math.Max(CanvasPadding, subGraph.ProxyX + deltaX);
+        subGraph.ProxyY = Math.Max(CanvasPadding, subGraph.ProxyY + deltaY);
+        EnsureGraphBounds();
+    }
+
+    // Ask the shell to open this sub-graph in its own tab (drill-in).
+    public void OpenSubGraph(AssetGraphSubGraph subGraph)
+    {
+        OpenSubGraphRequested?.Invoke(subGraph);
+    }
+
+    // Project the shared grouping onto THIS canvas (whose context is _context): show only
+    // the nodes/sub-graphs that live directly under the context, reroute edges to the
+    // proxy that represents each hidden endpoint, and hide edges that leave the context.
+    // Root context (null) reproduces the flat collapse view; a sub-graph context is the
+    // drill-in tab. One projection serves both — and nesting when it ships.
+    private void RefreshCanvasProjection()
+    {
+        foreach (var node in Nodes)
+        {
+            var visible = ReferenceEquals(_grouping.SubGraphOfNode(node.Id), _context);
+            node.IsCanvasVisible = visible;
+            if (!visible && node.IsSelected)
+            {
+                RemoveNodeFromSelection(node);
+            }
+        }
+
+        foreach (var edge in Edges)
+        {
+            var from = RepresentativeOnCanvas(edge.FromNodeId);
+            var to = RepresentativeOnCanvas(edge.ToNodeId);
+
+            // Hidden if either endpoint is off this canvas, or both collapse into the
+            // same proxy (an edge internal to one child sub-graph).
+            if (!from.OnCanvas
+                || !to.OnCanvas
+                || (from.Proxy is not null && ReferenceEquals(from.Proxy, to.Proxy)))
+            {
+                edge.FromProxy = null;
+                edge.ToProxy = null;
+                edge.IsRenderHidden = true;
+                continue;
+            }
+
+            edge.FromProxy = from.Proxy;
+            edge.ToProxy = to.Proxy;
+            edge.IsRenderHidden = false;
+        }
+
+        SyncVisibleSubGraphs();
+        EnsureGraphBounds();
+    }
+
+    // How a node appears on this canvas: as a visible card (OnCanvas, no proxy), collapsed
+    // behind a child-of-context sub-graph proxy, or off-canvas entirely (a different
+    // subtree). Walks the sub-graph parent chain up to the context.
+    private (bool OnCanvas, AssetGraphSubGraph? Proxy) RepresentativeOnCanvas(ulong nodeId)
+    {
+        var container = _grouping.SubGraphOfNode(nodeId);
+        if (ReferenceEquals(container, _context))
+        {
+            return (true, null);
+        }
+
+        var contextId = _context?.Id;
+        var current = container;
+        while (current is not null)
+        {
+            if (current.ParentId == contextId)
+            {
+                return (true, current);
+            }
+
+            current = current.ParentId is { } parentId
+                ? _grouping.FindById(parentId)
+                : null;
+        }
+
+        return (false, null);
+    }
+
+    // Keep VisibleSubGraphs in sync with the shared model: the proxies on this canvas are
+    // exactly the sub-graphs whose parent is this pane's context.
+    private void SyncVisibleSubGraphs()
+    {
+        var contextId = _context?.Id;
+        for (var index = VisibleSubGraphs.Count - 1; index >= 0; --index)
+        {
+            var subGraph = VisibleSubGraphs[index];
+            if (subGraph.ParentId != contextId || !_grouping.SubGraphs.Contains(subGraph))
+            {
+                VisibleSubGraphs.RemoveAt(index);
+            }
+        }
+
+        foreach (var subGraph in _grouping.SubGraphs)
+        {
+            if (subGraph.ParentId == contextId && !VisibleSubGraphs.Contains(subGraph))
+            {
+                VisibleSubGraphs.Add(subGraph);
+            }
+        }
+    }
+
+    private void ClearSubGraphSelection()
+    {
+        if (_selectedSubGraph is not null)
+        {
+            _selectedSubGraph.IsSelected = false;
+        }
+
+        SelectedSubGraph = null;
     }
 
     private (double X, double Y) SelectionProxyAnchor()
@@ -655,7 +863,8 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
 
         foreach (var node in Nodes)
         {
-            if (NodeIntersectsRectangle(node, left, top, right, bottom))
+            if (node.IsCanvasVisible
+                && NodeIntersectsRectangle(node, left, top, right, bottom))
             {
                 AddNodeToSelection(node);
             }
@@ -724,7 +933,9 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     {
         foreach (var node in Nodes)
         {
-            if (x < node.X - 24.0 || x > node.X + CardWidth * 0.55)
+            if (!node.IsCanvasVisible
+                || x < node.X - 24.0
+                || x > node.X + CardWidth * 0.55)
             {
                 continue;
             }
@@ -746,7 +957,9 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     {
         foreach (var node in Nodes)
         {
-            if (x < node.X + CardWidth * 0.45 || x > node.X + CardWidth + 24.0)
+            if (!node.IsCanvasVisible
+                || x < node.X + CardWidth * 0.45
+                || x > node.X + CardWidth + 24.0)
             {
                 continue;
             }
@@ -1135,6 +1348,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
 
     private void AddNodeToSelection(AssetGraphNodeCardViewModel node)
     {
+        ClearSubGraphSelection();
         if (SelectedNodes.Contains(node))
         {
             SelectedNode = node;
@@ -1192,14 +1406,56 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         return [anchorNode];
     }
 
+    // Size the canvas to what is actually drawn on it — visible nodes + this canvas's
+    // proxies — so a drill-in tab isn't stretched by the (hidden) rest of the graph.
     private void EnsureGraphBounds()
     {
-        GraphWidth = Nodes.Count == 0
-            ? 640.0
-            : Nodes.Max(node => node.X + CardWidth + CanvasPadding);
-        GraphHeight = Nodes.Count == 0
-            ? 420.0
-            : Nodes.Max(node => node.Y + CardHeight + CanvasPadding);
+        var right = 0.0;
+        var bottom = 0.0;
+        var hasContent = false;
+
+        foreach (var node in Nodes)
+        {
+            if (!node.IsCanvasVisible)
+            {
+                continue;
+            }
+
+            hasContent = true;
+            right = Math.Max(right, node.X + CardWidth + CanvasPadding);
+            bottom = Math.Max(bottom, node.Y + NodeCardHeight(node) + CanvasPadding);
+        }
+
+        foreach (var subGraph in VisibleSubGraphs)
+        {
+            hasContent = true;
+            right = Math.Max(
+                right,
+                subGraph.ProxyX + AssetGraphSubGraph.ProxyWidth + CanvasPadding);
+            bottom = Math.Max(
+                bottom,
+                subGraph.ProxyY + AssetGraphSubGraph.ProxyHeight + CanvasPadding);
+        }
+
+        if (!hasContent)
+        {
+            GraphWidth = 640.0;
+            GraphHeight = 420.0;
+            return;
+        }
+
+        GraphWidth = right;
+        GraphHeight = bottom;
+    }
+
+    // A node card's rendered height grows past its 116px minimum with each port row, so
+    // sizing the scroll bounds by the constant CardHeight clips tall multi-port nodes near
+    // the canvas edge (most visible in a drill-in tab). Estimate generously from the port
+    // count — over-estimating only adds harmless scroll slack; under-estimating clips.
+    private static double NodeCardHeight(AssetGraphNodeCardViewModel node)
+    {
+        var portRows = Math.Max(node.InputPorts.Count, node.OutputPorts.Count);
+        return Math.Max(CardHeight, PortRowBaseY + portRows * PortRowSpacing + 28.0);
     }
 
     private void ClearGraph()

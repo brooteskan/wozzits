@@ -17,6 +17,10 @@ public sealed class EditorDockLayoutFactory
 
     public IFactory Factory => _factory;
 
+    // The asset-graph document host, exposed so the shell can add drill-in sub-graph tabs
+    // to it at runtime (issue woguls/wozzits-editor#1).
+    public IDocumentDock? AssetGraphDock { get; private set; }
+
     public IRootDock CreateLayout()
     {
         var sceneTree = new Tool
@@ -102,6 +106,7 @@ public sealed class EditorDockLayoutFactory
             DockGroup = "documents",
             Proportion = 0.56,
         };
+        AssetGraphDock = assetGraphDock;
 
         var inspector = new Tool
         {

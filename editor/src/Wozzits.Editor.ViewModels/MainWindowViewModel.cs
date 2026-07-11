@@ -1,11 +1,13 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using Dock.Model.Mvvm.Controls;
 using Wozzits.Editor.Core.Behaviors;
 using Wozzits.Editor.Core.Logging;
 using Wozzits.Editor.HostClient;
@@ -23,6 +25,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private readonly Action<Action>? _dispatch;
     private readonly string _projectDirectory;
     private readonly BehaviorModuleBuilder _behaviorBuilder = new();
+    // One grouping model shared by the root canvas and every drill-in tab, so sub-graphs
+    // and their membership stay consistent across panes (issue woguls/wozzits-editor#1).
+    private readonly AssetGraphGroupingModel _subGraphGrouping = new();
+    private IDocumentDock? _assetGraphDock;
 
     // Engine log lines arrive one at a time (often on the engine's logger thread)
     // and used to each trigger a full console rebuild + re-render on the UI thread
@@ -71,7 +77,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             BackToScene, () => _editorSession is not null && IsEditingPrefab);
         RefreshSceneletsCommand = new RelayCommand(
             RefreshScenelets, () => _editorSession is not null);
-        AssetGraph = new AssetGraphEditorPaneViewModel(editorSession);
+        AssetGraph = new AssetGraphEditorPaneViewModel(editorSession, _subGraphGrouping);
         AssetBrowser = new AssetBrowserPaneViewModel(editorSession);
         Inspector = new InspectorPaneViewModel(
             editorSession, AppendEditorLog);
@@ -104,6 +110,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         AssetGraph.LoadSnapshot(ChooseAssetGraphSnapshot(
             projectAssetGraph,
             sessionAssetGraph));
+        LoadSubGraphSidecar();
         SceneTree.LoadSnapshot(projectSnapshot?.Scene);
 
         // Merge the runtime's grafted "Subtree from asset" children under their
@@ -206,6 +213,56 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     {
         _editorSession?.SaveAssetGraph();
         _editorSession?.SaveScene();
+        SaveSubGraphSidecar();
+    }
+
+    // Editor-only sub-graph groupings persist in a sidecar next to the asset graph
+    // (issue woguls/wozzits-editor#1), owned entirely by the editor — the engine and asset
+    // compiler never read it. Written on Save All, read at project open, keyed by stable
+    // node id so it survives graph reloads/rebuilds. Skipped without a project directory
+    // (design-time / tests).
+    private void SaveSubGraphSidecar()
+    {
+        if (SubGraphSidecarPath() is not { } path)
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(
+                path,
+                AssetGraphSubGraphSidecar.Serialize(AssetGraph.SubGraphs));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppendEditorLog($"[editor] Sub-graph layout save failed: {ex.Message}");
+        }
+    }
+
+    private void LoadSubGraphSidecar()
+    {
+        if (SubGraphSidecarPath() is not { } path || !File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            AssetGraph.LoadSubGraphs(
+                AssetGraphSubGraphSidecar.Deserialize(File.ReadAllText(path)));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppendEditorLog($"[editor] Sub-graph layout load failed: {ex.Message}");
+        }
+    }
+
+    private string? SubGraphSidecarPath()
+    {
+        return string.IsNullOrWhiteSpace(_projectDirectory)
+            ? null
+            : Path.Combine(_projectDirectory, AssetGraphSubGraphSidecar.FileName);
     }
 
     // Prefab (scenelet) editing (same-window round-trip): open a scenelet as the
@@ -441,6 +498,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         var layoutFactory = new EditorDockLayoutFactory(this);
         DockFactory = layoutFactory.Factory;
         EditorLayout = layoutFactory.CreateLayout();
+        _assetGraphDock = layoutFactory.AssetGraphDock;
+        AssetGraph.OpenSubGraphRequested += OnOpenSubGraphRequested;
     }
 
     // Guards against re-entrancy: clearing one pane raises its
@@ -489,6 +548,60 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
         RefreshInspectorSceneSources();
         Inspector.Inspect(node);
+    }
+
+    // Open (or re-focus) a sub-graph in its own document tab (drill-in). The tab is a
+    // second asset-graph pane over the SAME engine session and the SAME shared grouping,
+    // with its canvas context set to the sub-graph, so it shows just that group's members
+    // and edits flow to the one draft (issue woguls/wozzits-editor#1). Closing the tab
+    // drops the pane; reopening rebuilds it from the live graph.
+    private void OnOpenSubGraphRequested(AssetGraphSubGraph subGraph)
+    {
+        if (_assetGraphDock is null || _editorSession is null)
+        {
+            return;
+        }
+
+        var documentId = $"SubGraph_{subGraph.Id}";
+        var existing = _assetGraphDock.VisibleDockables?
+            .FirstOrDefault(dockable => dockable.Id == documentId);
+        if (existing is not null)
+        {
+            DockFactory.SetActiveDockable(existing);
+            return;
+        }
+
+        var pane = new AssetGraphEditorPaneViewModel(
+            _editorSession,
+            _subGraphGrouping,
+            subGraph);
+        pane.LoadSnapshot(_editorSession.LoadAssetGraphSnapshot());
+        pane.OpenSubGraphRequested += OnOpenSubGraphRequested;
+        pane.SelectedNodeChanged += OnAssetGraphNodeSelected;
+
+        var document = new Document
+        {
+            Id = documentId,
+            Title = subGraph.Name,
+            Context = pane,
+            CanClose = true,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = true,
+            DockCapabilityOverrides = new DockCapabilityOverrides
+            {
+                CanClose = true,
+                CanPin = false,
+                CanFloat = false,
+                CanDrag = true,
+                CanDrop = true,
+                CanDockAsDocument = true,
+            },
+        };
+
+        DockFactory.AddDockable(_assetGraphDock, document);
+        DockFactory.SetActiveDockable(document);
     }
 
     // Thread the asset graph's "Scene from GLB" nodes into the inspector's "Subtree

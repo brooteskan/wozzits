@@ -162,7 +162,7 @@ public sealed class AssetGraphWireLayer : Control
         {
             foreach (var item in Edges)
             {
-                if (item is not AssetGraphEdgeViewModel edge)
+                if (item is not AssetGraphEdgeViewModel edge || edge.IsRenderHidden)
                 {
                     continue;
                 }
@@ -196,7 +196,7 @@ public sealed class AssetGraphWireLayer : Control
         List<AssetGraphEdgeViewModel> edges = [];
         foreach (var item in Edges)
         {
-            if (item is AssetGraphEdgeViewModel edge)
+            if (item is AssetGraphEdgeViewModel edge && !edge.IsRenderHidden)
             {
                 edges.Add(edge);
             }

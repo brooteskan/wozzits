@@ -217,6 +217,282 @@ public sealed class AssetGraphGroupingTests
         Assert.Empty(pane.SubGraphs);
     }
 
+    // --- Canvas projection (proxy rendering) -------------------------------------------
+
+    [Fact]
+    public void ProjectionHidesGroupedNodesAndReroutesBoundaryEdges()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(SnapshotWithEdges(
+            [1, 2, 3, 4],
+            (2, 1),   // becomes intra-group once (1,2) are grouped
+            (1, 3),   // boundary: grouped 1 -> ungrouped 3
+            (3, 4))); // both ungrouped
+
+        pane.SelectNode(NodeById(pane, 1));
+        pane.ToggleNodeSelection(NodeById(pane, 2));
+        var group = pane.CreateSubGraphFromSelection("G");
+        Assert.NotNull(group);
+
+        Assert.False(NodeById(pane, 1).IsCanvasVisible);
+        Assert.False(NodeById(pane, 2).IsCanvasVisible);
+        Assert.True(NodeById(pane, 3).IsCanvasVisible);
+        Assert.True(NodeById(pane, 4).IsCanvasVisible);
+
+        var intra = EdgeBetween(pane, 2, 1);
+        var boundary = EdgeBetween(pane, 1, 3);
+        var outside = EdgeBetween(pane, 3, 4);
+
+        Assert.True(intra.IsRenderHidden);
+        Assert.False(boundary.IsRenderHidden);
+        Assert.False(outside.IsRenderHidden);
+
+        // Boundary edge starts at the proxy's output anchor, ends at node 3's card.
+        Assert.Same(group, boundary.FromProxy);
+        Assert.Null(boundary.ToProxy);
+        Assert.Equal(group!.ProxyX + AssetGraphSubGraph.ProxyWidth, boundary.StartX);
+        Assert.Equal(NodeById(pane, 3).X, boundary.EndX);
+
+        // Ungrouping restores visibility and un-reroutes the edges.
+        pane.SelectSubGraph(group);
+        Assert.True(pane.UngroupSelectedSubGraph());
+        Assert.True(NodeById(pane, 1).IsCanvasVisible);
+        Assert.False(intra.IsRenderHidden);
+        Assert.Null(boundary.FromProxy);
+        Assert.Empty(pane.SubGraphs);
+    }
+
+    [Fact]
+    public void ProjectionReroutesCrossGroupEdgeToBothProxies()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(SnapshotWithEdges([1, 2], (1, 2)));
+
+        pane.SelectNode(NodeById(pane, 1));
+        var a = pane.CreateSubGraphFromSelection("A");
+        pane.SelectNode(NodeById(pane, 2));
+        var b = pane.CreateSubGraphFromSelection("B");
+
+        var edge = EdgeBetween(pane, 1, 2);
+        Assert.False(edge.IsRenderHidden);
+        Assert.Same(a, edge.FromProxy);
+        Assert.Same(b, edge.ToProxy);
+        Assert.Equal(a!.ProxyX + AssetGraphSubGraph.ProxyWidth, edge.StartX);
+        Assert.Equal(b!.ProxyX, edge.EndX);
+    }
+
+    [Fact]
+    public void SelectingNodesClearsSubGraphSelectionAndViceVersa()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(SnapshotWithEdges([1, 2]));
+
+        pane.SelectNode(NodeById(pane, 1));
+        var group = pane.CreateSubGraphFromSelection("G");
+        // Creating a group selects its proxy and drops the node selection.
+        Assert.Same(group, pane.SelectedSubGraph);
+        Assert.Empty(pane.SelectedNodes);
+
+        // Selecting a node clears the proxy selection (mutually exclusive).
+        pane.SelectNode(NodeById(pane, 2));
+        Assert.Null(pane.SelectedSubGraph);
+        Assert.False(group!.IsSelected);
+    }
+
+    [Fact]
+    public void DrillInContextShowsOnlyItsMembers()
+    {
+        var grouping = new AssetGraphGroupingModel();
+        var root = new AssetGraphEditorPaneViewModel(grouping: grouping);
+        root.LoadSnapshot(SnapshotWithEdges([1, 2, 3], (1, 2), (2, 3)));
+        root.SelectNode(NodeById(root, 1));
+        root.ToggleNodeSelection(NodeById(root, 2));
+        var g = root.CreateSubGraphFromSelection("G");
+        Assert.NotNull(g);
+
+        // A drill-in pane over the SAME grouping, with context = G.
+        var drill = new AssetGraphEditorPaneViewModel(grouping: grouping, context: g);
+        drill.LoadSnapshot(SnapshotWithEdges([1, 2, 3], (1, 2), (2, 3)));
+
+        // Inside G: only its members are visible; the outside node and its edge are hidden.
+        Assert.True(NodeById(drill, 1).IsCanvasVisible);
+        Assert.True(NodeById(drill, 2).IsCanvasVisible);
+        Assert.False(NodeById(drill, 3).IsCanvasVisible);
+        Assert.Empty(drill.VisibleSubGraphs);
+        Assert.False(EdgeBetween(drill, 1, 2).IsRenderHidden);
+        Assert.True(EdgeBetween(drill, 2, 3).IsRenderHidden);
+
+        // The root canvas is unchanged: G's proxy plus the ungrouped node 3.
+        Assert.Same(g, Assert.Single(root.VisibleSubGraphs));
+        Assert.False(NodeById(root, 1).IsCanvasVisible);
+        Assert.True(NodeById(root, 3).IsCanvasVisible);
+    }
+
+    [Fact]
+    public void GroupingInsideADrillInNestsUnderThatContext()
+    {
+        var grouping = new AssetGraphGroupingModel();
+        var root = new AssetGraphEditorPaneViewModel(grouping: grouping);
+        root.LoadSnapshot(SnapshotWithEdges([1, 2, 3]));
+        root.SelectNode(NodeById(root, 1));
+        root.ToggleNodeSelection(NodeById(root, 2));
+        root.ToggleNodeSelection(NodeById(root, 3));
+        var g = root.CreateSubGraphFromSelection("G");
+
+        var drill = new AssetGraphEditorPaneViewModel(grouping: grouping, context: g);
+        drill.LoadSnapshot(SnapshotWithEdges([1, 2, 3]));
+        drill.SelectNode(NodeById(drill, 1));
+        drill.ToggleNodeSelection(NodeById(drill, 2));
+        var child = drill.CreateSubGraphFromSelection("Child");
+
+        Assert.NotNull(child);
+        Assert.Equal(g!.Id, child!.ParentId);
+
+        // In G's drill-in, nodes 1 & 2 collapse behind the nested child proxy; 3 stays.
+        Assert.Same(child, Assert.Single(drill.VisibleSubGraphs));
+        Assert.False(NodeById(drill, 1).IsCanvasVisible);
+        Assert.True(NodeById(drill, 3).IsCanvasVisible);
+
+        // The root canvas still shows only G's top-level proxy.
+        Assert.Same(g, Assert.Single(root.VisibleSubGraphs));
+    }
+
+    [Fact]
+    public void GraphHeightGrowsForNodesWithManyPorts()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(new EngineAssetGraphSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineAssetGraphSnapshot
+            {
+                Nodes =
+                [
+                    new EngineAssetGraphNode
+                    {
+                        Id = 1,
+                        TypeName = "Fat",
+                        DisplayName = "fat",
+                        InputPorts = Enumerable
+                            .Range(0, 8)
+                            .Select(i => new EngineAssetGraphPort { Index = (uint)i })
+                            .ToList(),
+                    },
+                ],
+            },
+        });
+
+        // An 8-port card is far taller than the 116px minimum; the scroll bounds must
+        // include it so its lower ports aren't clipped out of the scroll region.
+        Assert.True(pane.GraphHeight > 116 + 28);
+    }
+
+    // --- Sidecar persistence -----------------------------------------------------------
+
+    [Fact]
+    public void SidecarRoundTripsSubGraphs()
+    {
+        var model = new AssetGraphGroupingModel();
+        var group = model.CreateSubGraph("Terrain", [1ul, 2ul], id: "terrain");
+        group.ProxyX = 120;
+        group.ProxyY = 240;
+
+        var loaded = AssetGraphSubGraphSidecar.Deserialize(
+            AssetGraphSubGraphSidecar.Serialize(model.SubGraphs));
+
+        var one = Assert.Single(loaded);
+        Assert.Equal("terrain", one.Id);
+        Assert.Equal("Terrain", one.Name);
+        Assert.Null(one.ParentId);
+        Assert.Equal(120, one.ProxyX);
+        Assert.Equal(240, one.ProxyY);
+        Assert.Equal<ulong>([1, 2], one.MemberNodeIds.OrderBy(id => id).ToArray());
+    }
+
+    [Fact]
+    public void DeserializeReturnsEmptyForMissingOrMalformedJson()
+    {
+        Assert.Empty(AssetGraphSubGraphSidecar.Deserialize(""));
+        Assert.Empty(AssetGraphSubGraphSidecar.Deserialize("}{ not json"));
+    }
+
+    [Fact]
+    public void LoadSubGraphsAppliesPersistedGroupsAndDropsDeadOnes()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(SnapshotWithEdges([1, 2, 3], (1, 2)));
+
+        pane.LoadSubGraphs(new[]
+        {
+            new PersistedSubGraph
+            {
+                Id = "g",
+                Name = "G",
+                ProxyX = 50,
+                ProxyY = 60,
+                MemberNodeIds = [1ul, 2ul],
+            },
+            new PersistedSubGraph
+            {
+                Id = "dead",
+                Name = "Dead",
+                MemberNodeIds = [4ul],
+            },
+        });
+
+        // The 'dead' group referenced a node that no longer exists → reconciled away.
+        var group = Assert.Single(pane.SubGraphs);
+        Assert.Equal("G", group.Name);
+        Assert.Equal(50, group.ProxyX);
+        Assert.Equal(60, group.ProxyY);
+        // Projection applied on load: members hidden, the rest visible.
+        Assert.False(NodeById(pane, 1).IsCanvasVisible);
+        Assert.False(NodeById(pane, 2).IsCanvasVisible);
+        Assert.True(NodeById(pane, 3).IsCanvasVisible);
+    }
+
+    private static AssetGraphNodeCardViewModel NodeById(
+        AssetGraphEditorPaneViewModel pane,
+        ulong id) =>
+        pane.Nodes.First(node => node.Id == id);
+
+    private static AssetGraphEdgeViewModel EdgeBetween(
+        AssetGraphEditorPaneViewModel pane,
+        ulong from,
+        ulong to) =>
+        pane.Edges.First(edge => edge.FromNodeId == from && edge.ToNodeId == to);
+
+    private static EngineAssetGraphSnapshotResponse SnapshotWithEdges(
+        ulong[] nodeIds,
+        params (ulong From, ulong To)[] edges) =>
+        new()
+        {
+            Ok = true,
+            Snapshot = new EngineAssetGraphSnapshot
+            {
+                Nodes = nodeIds
+                    .Select((id, index) => new EngineAssetGraphNode
+                    {
+                        Id = id,
+                        TypeName = "Node",
+                        DisplayName = $"node {id}",
+                        X = index * 300,
+                        InputPorts = [new EngineAssetGraphPort { Index = 0, Label = "in" }],
+                        OutputPorts = [new EngineAssetGraphPort { Index = 0, Label = "out" }],
+                    })
+                    .ToList(),
+                Edges = edges
+                    .Select((edge, index) => new EngineAssetGraphEdge
+                    {
+                        Id = (ulong)(index + 1),
+                        From = edge.From,
+                        To = edge.To,
+                        ToInputPort = 0,
+                    })
+                    .ToList(),
+            },
+        };
+
     private static ulong[] Members(AssetGraphSubGraph subGraph) =>
         subGraph.MemberNodeIds.OrderBy(id => id).ToArray();
 

@@ -10,6 +10,9 @@ public sealed class AssetGraphEdgeViewModel : ViewModelBase, IDisposable
     private readonly double _cardWidth;
     private readonly double _portRowBaseY;
     private readonly double _portRowSpacing;
+    private AssetGraphSubGraph? _fromProxy;
+    private AssetGraphSubGraph? _toProxy;
+    private bool _isRenderHidden;
     private bool _disposed;
 
     public AssetGraphEdgeViewModel(
@@ -42,13 +45,82 @@ public sealed class AssetGraphEdgeViewModel : ViewModelBase, IDisposable
 
     public uint ToInputPort { get; }
 
-    public double StartX => _from.X + _cardWidth;
+    // When a sub-graph collapses this edge's source off the parent canvas, the edge is
+    // rerouted to start at that group's proxy card (a boundary wire) instead of the
+    // hidden node. Null when the source node is visible.
+    public AssetGraphSubGraph? FromProxy
+    {
+        get => _fromProxy;
+        set
+        {
+            if (ReferenceEquals(_fromProxy, value))
+            {
+                return;
+            }
 
-    public double StartY => _from.Y + _portRowBaseY;
+            if (_fromProxy is not null)
+            {
+                _fromProxy.PropertyChanged -= ProxyPositionChanged;
+            }
 
-    public double EndX => _to.X;
+            _fromProxy = value;
+            if (_fromProxy is not null)
+            {
+                _fromProxy.PropertyChanged += ProxyPositionChanged;
+            }
 
-    public double EndY => _to.Y + _portRowBaseY + ToInputPort * _portRowSpacing;
+            RaiseGeometryChanged();
+        }
+    }
+
+    // As FromProxy, for the target end of the edge.
+    public AssetGraphSubGraph? ToProxy
+    {
+        get => _toProxy;
+        set
+        {
+            if (ReferenceEquals(_toProxy, value))
+            {
+                return;
+            }
+
+            if (_toProxy is not null)
+            {
+                _toProxy.PropertyChanged -= ProxyPositionChanged;
+            }
+
+            _toProxy = value;
+            if (_toProxy is not null)
+            {
+                _toProxy.PropertyChanged += ProxyPositionChanged;
+            }
+
+            RaiseGeometryChanged();
+        }
+    }
+
+    // Both endpoints collapsed into the same sub-graph — the edge is internal, not drawn.
+    public bool IsRenderHidden
+    {
+        get => _isRenderHidden;
+        set => SetProperty(ref _isRenderHidden, value);
+    }
+
+    public double StartX => _fromProxy is not null
+        ? _fromProxy.ProxyX + AssetGraphSubGraph.ProxyWidth
+        : _from.X + _cardWidth;
+
+    public double StartY => _fromProxy is not null
+        ? _fromProxy.ProxyY + AssetGraphSubGraph.ConnectorY
+        : _from.Y + _portRowBaseY;
+
+    public double EndX => _toProxy is not null
+        ? _toProxy.ProxyX
+        : _to.X;
+
+    public double EndY => _toProxy is not null
+        ? _toProxy.ProxyY + AssetGraphSubGraph.ConnectorY
+        : _to.Y + _portRowBaseY + ToInputPort * _portRowSpacing;
 
     public void Dispose()
     {
@@ -59,6 +131,16 @@ public sealed class AssetGraphEdgeViewModel : ViewModelBase, IDisposable
 
         _from.PropertyChanged -= NodePositionChanged;
         _to.PropertyChanged -= NodePositionChanged;
+        if (_fromProxy is not null)
+        {
+            _fromProxy.PropertyChanged -= ProxyPositionChanged;
+        }
+
+        if (_toProxy is not null)
+        {
+            _toProxy.PropertyChanged -= ProxyPositionChanged;
+        }
+
         _disposed = true;
     }
 
@@ -70,6 +152,22 @@ public sealed class AssetGraphEdgeViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        RaiseGeometryChanged();
+    }
+
+    private void ProxyPositionChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not nameof(AssetGraphSubGraph.ProxyX)
+            and not nameof(AssetGraphSubGraph.ProxyY))
+        {
+            return;
+        }
+
+        RaiseGeometryChanged();
+    }
+
+    private void RaiseGeometryChanged()
+    {
         OnPropertyChanged(nameof(StartX));
         OnPropertyChanged(nameof(StartY));
         OnPropertyChanged(nameof(EndX));

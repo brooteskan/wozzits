@@ -331,6 +331,32 @@
         <Setter Property="BorderThickness" Value="2"/>
     </Style>
 
+    <Style Selector="Border.AssetGraphSubGraphCard">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="12,10"/>
+        <Setter Property="Width" Value="200"/>
+        <Setter Property="Height" Value="76"/>
+    </Style>
+
+    <Style Selector="Border.AssetGraphSubGraphCard.selected">
+        <Setter Property="BorderThickness" Value="2.5"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphSubGraphName">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphSubGraphSummary">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontSize" Value="11"/>
+    </Style>
+
     <Style Selector="Border.AssetGraphSelectionRectangle">
         <Setter Property="Background" Value="{DynamicResource WozzitsSelectionOverlayBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>

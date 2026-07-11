@@ -110,6 +110,7 @@
                                         <DataTemplate DataType="panes:AssetGraphNodeCardViewModel">
                                             <Border Classes="AssetGraphCard"
                                                     Classes.selected="{Binding IsSelected}"
+                                                    IsVisible="{Binding IsCanvasVisible}"
                                                     PointerPressed="NodeCardPointerPressed"
                                                     PointerMoved="NodeCardPointerMoved"
                                                     PointerReleased="NodeCardPointerReleased">
@@ -196,6 +197,38 @@
                                                         </StackPanel>
                                                     </Grid>
                                                 </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <ItemsControl ItemsSource="{Binding VisibleSubGraphs}"
+                                              x:CompileBindings="False">
+                                    <ItemsControl.ItemContainerTheme>
+                                        <ControlTheme TargetType="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{Binding ProxyX}"/>
+                                            <Setter Property="Canvas.Top" Value="{Binding ProxyY}"/>
+                                        </ControlTheme>
+                                    </ItemsControl.ItemContainerTheme>
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <Canvas/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:AssetGraphSubGraph">
+                                            <Border Classes="AssetGraphSubGraphCard"
+                                                    Classes.selected="{Binding IsSelected}"
+                                                    PointerPressed="SubGraphProxyPointerPressed"
+                                                    PointerMoved="SubGraphProxyPointerMoved"
+                                                    PointerReleased="SubGraphProxyPointerReleased">
+                                                <StackPanel Spacing="4"
+                                                            VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               Classes="AssetGraphSubGraphName"/>
+                                                    <TextBlock Text="{Binding MemberCount, StringFormat='{}{0} nodes'}"
+                                                               Classes="AssetGraphSubGraphSummary"/>
+                                                </StackPanel>
                                             </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
