@@ -1,0 +1,1065 @@
+{
+  "schema": "wozzits.statechart.ir.v0",
+  "name": "village4",
+  "bindings": [
+    {
+      "port": "u0_lamp_0",
+      "find": "u0_lamp_0",
+      "scope": "subtree"
+    },
+    {
+      "port": "u0_lamp_1",
+      "find": "u0_lamp_1",
+      "scope": "subtree"
+    },
+    {
+      "port": "u1_lamp_0",
+      "find": "u1_lamp_0",
+      "scope": "subtree"
+    },
+    {
+      "port": "u1_lamp_1",
+      "find": "u1_lamp_1",
+      "scope": "subtree"
+    },
+    {
+      "port": "u2_lamp_0",
+      "find": "u2_lamp_0",
+      "scope": "subtree"
+    },
+    {
+      "port": "u2_lamp_1",
+      "find": "u2_lamp_1",
+      "scope": "subtree"
+    },
+    {
+      "port": "u3_lamp_0",
+      "find": "u3_lamp_0",
+      "scope": "subtree"
+    },
+    {
+      "port": "u3_lamp_1",
+      "find": "u3_lamp_1",
+      "scope": "subtree"
+    }
+  ],
+  "agents": [
+    {
+      "id": "sig",
+      "owned": true,
+      "host": "self",
+      "spec": {
+        "decisions": 4,
+        "goal": 0,
+        "posture_goal": 0,
+        "gamma_start": 2,
+        "anneal_seconds": 5,
+        "confidence": 0.7,
+        "decoherence": 0.2,
+        "think_interval": 0.2,
+        "chi": 1,
+        "ring_coupling": -1.0
+      }
+    }
+  ],
+  "pure": [
+    {
+      "id": "u0_z",
+      "op": "marginal",
+      "agent": "sig",
+      "slot": 0
+    },
+    {
+      "id": "u0_c",
+      "op": "committed",
+      "agent": "sig",
+      "slot": 0
+    },
+    {
+      "id": "u0_delib",
+      "op": "lt",
+      "ins": [
+        {
+          "op": "u0_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "u0_md0",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "u0_z"
+        },
+        {
+          "const": 0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "u0_md1",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "u0_z"
+        },
+        {
+          "const": -0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "u0_p0",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "u0_md0"
+        }
+      ]
+    },
+    {
+      "id": "u0_p1",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "u0_md1"
+        }
+      ]
+    },
+    {
+      "id": "u0_is0",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "u0_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "u0_is1",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "u0_c"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    {
+      "id": "u0_sd0",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "u0_p0"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "u0_sd1",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "u0_p1"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "u0_win0",
+      "op": "select",
+      "cond": {
+        "op": "u0_is0"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "u0_win1",
+      "op": "select",
+      "cond": {
+        "op": "u0_is1"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "u0_s0",
+      "op": "select",
+      "cond": {
+        "op": "u0_delib"
+      },
+      "a": {
+        "op": "u0_sd0"
+      },
+      "b": {
+        "op": "u0_win0"
+      }
+    },
+    {
+      "id": "u0_s1",
+      "op": "select",
+      "cond": {
+        "op": "u0_delib"
+      },
+      "a": {
+        "op": "u0_sd1"
+      },
+      "b": {
+        "op": "u0_win1"
+      }
+    },
+    {
+      "id": "u0_v0",
+      "op": "or",
+      "ins": [
+        {
+          "op": "u0_delib"
+        },
+        {
+          "op": "u0_is0"
+        }
+      ]
+    },
+    {
+      "id": "u0_v1",
+      "op": "or",
+      "ins": [
+        {
+          "op": "u0_delib"
+        },
+        {
+          "op": "u0_is1"
+        }
+      ]
+    },
+    {
+      "id": "u1_z",
+      "op": "marginal",
+      "agent": "sig",
+      "slot": 1
+    },
+    {
+      "id": "u1_c",
+      "op": "committed",
+      "agent": "sig",
+      "slot": 1
+    },
+    {
+      "id": "u1_delib",
+      "op": "lt",
+      "ins": [
+        {
+          "op": "u1_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "u1_md0",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "u1_z"
+        },
+        {
+          "const": 0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "u1_md1",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "u1_z"
+        },
+        {
+          "const": -0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "u1_p0",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "u1_md0"
+        }
+      ]
+    },
+    {
+      "id": "u1_p1",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "u1_md1"
+        }
+      ]
+    },
+    {
+      "id": "u1_is0",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "u1_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "u1_is1",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "u1_c"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    {
+      "id": "u1_sd0",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "u1_p0"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "u1_sd1",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "u1_p1"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "u1_win0",
+      "op": "select",
+      "cond": {
+        "op": "u1_is0"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "u1_win1",
+      "op": "select",
+      "cond": {
+        "op": "u1_is1"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "u1_s0",
+      "op": "select",
+      "cond": {
+        "op": "u1_delib"
+      },
+      "a": {
+        "op": "u1_sd0"
+      },
+      "b": {
+        "op": "u1_win0"
+      }
+    },
+    {
+      "id": "u1_s1",
+      "op": "select",
+      "cond": {
+        "op": "u1_delib"
+      },
+      "a": {
+        "op": "u1_sd1"
+      },
+      "b": {
+        "op": "u1_win1"
+      }
+    },
+    {
+      "id": "u1_v0",
+      "op": "or",
+      "ins": [
+        {
+          "op": "u1_delib"
+        },
+        {
+          "op": "u1_is0"
+        }
+      ]
+    },
+    {
+      "id": "u1_v1",
+      "op": "or",
+      "ins": [
+        {
+          "op": "u1_delib"
+        },
+        {
+          "op": "u1_is1"
+        }
+      ]
+    },
+    {
+      "id": "u2_z",
+      "op": "marginal",
+      "agent": "sig",
+      "slot": 2
+    },
+    {
+      "id": "u2_c",
+      "op": "committed",
+      "agent": "sig",
+      "slot": 2
+    },
+    {
+      "id": "u2_delib",
+      "op": "lt",
+      "ins": [
+        {
+          "op": "u2_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "u2_md0",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "u2_z"
+        },
+        {
+          "const": 0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "u2_md1",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "u2_z"
+        },
+        {
+          "const": -0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "u2_p0",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "u2_md0"
+        }
+      ]
+    },
+    {
+      "id": "u2_p1",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "u2_md1"
+        }
+      ]
+    },
+    {
+      "id": "u2_is0",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "u2_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "u2_is1",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "u2_c"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    {
+      "id": "u2_sd0",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "u2_p0"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "u2_sd1",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "u2_p1"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "u2_win0",
+      "op": "select",
+      "cond": {
+        "op": "u2_is0"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "u2_win1",
+      "op": "select",
+      "cond": {
+        "op": "u2_is1"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "u2_s0",
+      "op": "select",
+      "cond": {
+        "op": "u2_delib"
+      },
+      "a": {
+        "op": "u2_sd0"
+      },
+      "b": {
+        "op": "u2_win0"
+      }
+    },
+    {
+      "id": "u2_s1",
+      "op": "select",
+      "cond": {
+        "op": "u2_delib"
+      },
+      "a": {
+        "op": "u2_sd1"
+      },
+      "b": {
+        "op": "u2_win1"
+      }
+    },
+    {
+      "id": "u2_v0",
+      "op": "or",
+      "ins": [
+        {
+          "op": "u2_delib"
+        },
+        {
+          "op": "u2_is0"
+        }
+      ]
+    },
+    {
+      "id": "u2_v1",
+      "op": "or",
+      "ins": [
+        {
+          "op": "u2_delib"
+        },
+        {
+          "op": "u2_is1"
+        }
+      ]
+    },
+    {
+      "id": "u3_z",
+      "op": "marginal",
+      "agent": "sig",
+      "slot": 3
+    },
+    {
+      "id": "u3_c",
+      "op": "committed",
+      "agent": "sig",
+      "slot": 3
+    },
+    {
+      "id": "u3_delib",
+      "op": "lt",
+      "ins": [
+        {
+          "op": "u3_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "u3_md0",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "u3_z"
+        },
+        {
+          "const": 0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "u3_md1",
+      "op": "mul_add",
+      "ins": [
+        {
+          "op": "u3_z"
+        },
+        {
+          "const": -0.5
+        },
+        {
+          "const": 0.5
+        }
+      ]
+    },
+    {
+      "id": "u3_p0",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "u3_md0"
+        }
+      ]
+    },
+    {
+      "id": "u3_p1",
+      "op": "clamp01",
+      "ins": [
+        {
+          "op": "u3_md1"
+        }
+      ]
+    },
+    {
+      "id": "u3_is0",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "u3_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "u3_is1",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "u3_c"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    {
+      "id": "u3_sd0",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "u3_p0"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "u3_sd1",
+      "op": "mul",
+      "ins": [
+        {
+          "op": "u3_p1"
+        },
+        {
+          "const": 3
+        }
+      ]
+    },
+    {
+      "id": "u3_win0",
+      "op": "select",
+      "cond": {
+        "op": "u3_is0"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "u3_win1",
+      "op": "select",
+      "cond": {
+        "op": "u3_is1"
+      },
+      "a": {
+        "const": 3
+      },
+      "b": {
+        "const": 0
+      }
+    },
+    {
+      "id": "u3_s0",
+      "op": "select",
+      "cond": {
+        "op": "u3_delib"
+      },
+      "a": {
+        "op": "u3_sd0"
+      },
+      "b": {
+        "op": "u3_win0"
+      }
+    },
+    {
+      "id": "u3_s1",
+      "op": "select",
+      "cond": {
+        "op": "u3_delib"
+      },
+      "a": {
+        "op": "u3_sd1"
+      },
+      "b": {
+        "op": "u3_win1"
+      }
+    },
+    {
+      "id": "u3_v0",
+      "op": "or",
+      "ins": [
+        {
+          "op": "u3_delib"
+        },
+        {
+          "op": "u3_is0"
+        }
+      ]
+    },
+    {
+      "id": "u3_v1",
+      "op": "or",
+      "ins": [
+        {
+          "op": "u3_delib"
+        },
+        {
+          "op": "u3_is1"
+        }
+      ]
+    }
+  ],
+  "regions": [
+    {
+      "id": "R0",
+      "initial": "S0",
+      "states": [
+        "S0"
+      ]
+    },
+    {
+      "id": "R1",
+      "initial": "S1",
+      "states": [
+        "S1"
+      ]
+    },
+    {
+      "id": "R2",
+      "initial": "S2",
+      "states": [
+        "S2"
+      ]
+    },
+    {
+      "id": "R3",
+      "initial": "S3",
+      "states": [
+        "S3"
+      ]
+    }
+  ],
+  "states": [
+    {
+      "id": "S0",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "u0_lamp_0"
+          },
+          "value": {
+            "op": "u0_s0"
+          }
+        },
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "u0_lamp_1"
+          },
+          "value": {
+            "op": "u0_s1"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "u0_lamp_0"
+          },
+          "value": {
+            "op": "u0_v0"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "u0_lamp_1"
+          },
+          "value": {
+            "op": "u0_v1"
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "after",
+            "seconds": 15
+          },
+          "actions": [
+            {
+              "kind": "rearm",
+              "agent": "sig"
+            }
+          ],
+          "target": "S0"
+        }
+      ]
+    },
+    {
+      "id": "S1",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "u1_lamp_0"
+          },
+          "value": {
+            "op": "u1_s0"
+          }
+        },
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "u1_lamp_1"
+          },
+          "value": {
+            "op": "u1_s1"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "u1_lamp_0"
+          },
+          "value": {
+            "op": "u1_v0"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "u1_lamp_1"
+          },
+          "value": {
+            "op": "u1_v1"
+          }
+        }
+      ],
+      "transitions": []
+    },
+    {
+      "id": "S2",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "u2_lamp_0"
+          },
+          "value": {
+            "op": "u2_s0"
+          }
+        },
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "u2_lamp_1"
+          },
+          "value": {
+            "op": "u2_s1"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "u2_lamp_0"
+          },
+          "value": {
+            "op": "u2_v0"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "u2_lamp_1"
+          },
+          "value": {
+            "op": "u2_v1"
+          }
+        }
+      ],
+      "transitions": []
+    },
+    {
+      "id": "S3",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "u3_lamp_0"
+          },
+          "value": {
+            "op": "u3_s0"
+          }
+        },
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "u3_lamp_1"
+          },
+          "value": {
+            "op": "u3_s1"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "u3_lamp_0"
+          },
+          "value": {
+            "op": "u3_v0"
+          }
+        },
+        {
+          "kind": "set_visible",
+          "target": {
+            "bind": "u3_lamp_1"
+          },
+          "value": {
+            "op": "u3_v1"
+          }
+        }
+      ],
+      "transitions": []
+    }
+  ]
+}
