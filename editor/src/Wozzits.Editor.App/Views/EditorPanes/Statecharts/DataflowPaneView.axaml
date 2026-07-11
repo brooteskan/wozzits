@@ -31,6 +31,11 @@
                                 <MenuItem Header="or" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Or}"/>
                                 <MenuItem Header="not" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Not}"/>
                                 <MenuItem Header="select" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Select}"/>
+                                <Separator/>
+                                <MenuItem Header="marginal — read the agent's leaning" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Marginal}"/>
+                                <MenuItem Header="committed — read its decision" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Committed}"/>
+                                <MenuItem Header="memory" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Memory}"/>
+                                <MenuItem Header="proximity" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Proximity}"/>
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>

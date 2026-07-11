@@ -589,6 +589,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
 
         var stateVms = _statesById;
         stateVms.Clear();
+        var opIds = chart.Pure.Select(p => p.Id).ToList();
         foreach (var s in chart.States)
         {
             stateVms[s.Id] = new StateNodeViewModel(s, initials.Contains(s.Id))
@@ -598,7 +599,9 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
                 TransitionKindChangeRequested = (t, k) => SetTriggerKind(s, t, k),
                 EffectAddRequested = (slot, kind) => AddEffect(s, slot, kind),
                 EffectDeleteRequested = e => DeleteEffect(s, e),
+                EffectValueSourceChanged = ReprojectPreservingSelection,
                 SetInitialRequested = () => SetInitial(s),
+                AvailableOps = opIds,
             };
         }
 

@@ -26,11 +26,10 @@ public sealed class EffectRowViewModel : ViewModelBase
                 text => SetConst(value, text),
                 edited);
         }
-        else if (effect.Value is { Kind: RefKind.Op } op)
-        {
-            ReadOnlyValue = $"op:{op.Op}";
-        }
     }
+
+    // The picker entry that means "a literal constant" rather than an op's output.
+    public const string ConstSentinel = "(constant)";
 
     // The read-only prefix: kind plus its agent/target, without the "= value" tail.
     public string Label { get; }
@@ -43,10 +42,40 @@ public sealed class EffectRowViewModel : ViewModelBase
 
     public bool IsEditable => ValueEditor is not null;
 
-    // A non-editable value marker (an op source); null when there is nothing to show.
-    public string? ReadOnlyValue { get; }
+    // Effects with a value (set_goal/scale/…) can source it from a constant or an op's output —
+    // this is the terminal link that lets a read op reach an actuator. Valueless effects
+    // (rearm/play_sound) have no source. The state VM supplies the op choices in ValueSources.
+    public bool HasValueSource => _effect.Value is not null;
 
-    public bool HasReadOnlyValue => ReadOnlyValue is not null;
+    public IReadOnlyList<string> ValueSources { get; set; } = Array.Empty<string>();
+
+    public Action? ValueSourceChanged { get; set; }
+
+    public string SelectedValueSource
+    {
+        get => _effect.Value is { Kind: RefKind.Op } op ? op.Op : ConstSentinel;
+        set
+        {
+            if (_effect.Value is null || value is null || value == SelectedValueSource)
+            {
+                return;
+            }
+
+            if (value == ConstSentinel)
+            {
+                _effect.Value.Kind = RefKind.Const;
+                _effect.Value.Op = string.Empty;
+            }
+            else
+            {
+                _effect.Value.Kind = RefKind.Op;
+                _effect.Value.Op = value;
+            }
+
+            OnPropertyChanged();
+            ValueSourceChanged?.Invoke();
+        }
+    }
 
     // Invoked to remove this effect from its state (the state VM routes it to the pane).
     public Action? DeleteRequested { get; set; }

@@ -98,7 +98,33 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
     public IRelayCommand<EffectKind> AddExitEffectCommand { get; }
 
     private EffectRowViewModel EffectRow(Effect effect) =>
-        new(effect, () => Edited?.Invoke()) { DeleteRequested = () => EffectDeleteRequested?.Invoke(effect) };
+        new(effect, () => Edited?.Invoke())
+        {
+            DeleteRequested = () => EffectDeleteRequested?.Invoke(effect),
+            ValueSourceChanged = () => EffectValueSourceChanged?.Invoke(),
+        };
+
+    // Invoked when an effect's value source flips between constant and an op (the pane routes it
+    // to a reproject, since the row's editable field changes).
+    public Action? EffectValueSourceChanged { get; set; }
+
+    // The dataflow op ids an effect value can be sourced from; the pane sets this after building
+    // the state, which pushes the "(constant) + ops" choice list into every effect row.
+    private IReadOnlyList<string> _availableOps = Array.Empty<string>();
+
+    public IReadOnlyList<string> AvailableOps
+    {
+        get => _availableOps;
+        set
+        {
+            _availableOps = value;
+            var sources = new List<string> { EffectRowViewModel.ConstSentinel };
+            sources.AddRange(value);
+            foreach (var r in DoEffectRows) r.ValueSources = sources;
+            foreach (var r in EntryEffectRows) r.ValueSources = sources;
+            foreach (var r in ExitEffectRows) r.ValueSources = sources;
+        }
+    }
 
     // Convenience read-only string views of the rows (used by tests / plain text).
     public IReadOnlyList<string> DoEffects => DoEffectRows.Select(r => r.Display).ToList();

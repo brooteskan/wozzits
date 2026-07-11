@@ -34,6 +34,20 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         BindingFields = kind == DataflowNodeKind.Binding && model is Binding binding
             ? new[] { new EditableFieldViewModel("find", () => binding.Find, v => binding.Find = v, () => BindingEdited?.Invoke()) }
             : Array.Empty<EditableFieldViewModel>();
+
+        if (model is PureOp op)
+        {
+            IsReadOp = op.IsRead;
+            IsProximityOp = op.Op == OpKind.Proximity;
+            if (op.IsRead)
+            {
+                SlotEditor = new EditableFieldViewModel(
+                    op.Op == OpKind.Memory ? "qubit" : "slot",
+                    () => op.Slot.ToString(CultureInfo.InvariantCulture),
+                    v => { if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var s) && s >= 0) op.Slot = s; },
+                    () => SlotEdited?.Invoke());
+            }
+        }
     }
 
     public DataflowNodeKind Kind { get; }
@@ -112,6 +126,56 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public Action? BindingEdited { get; set; }
 
+    // Read ops (marginal/committed/memory) pull from an agent + slot; proximity senses a target
+    // binding. Both are picked in the inspector rather than wired. The pane supplies the choices
+    // (ReadAgents / ProximityTargets) and the callbacks: a ref change reprojects (the wire moves),
+    // a slot edit just marks dirty.
+    public bool IsReadOp { get; }
+
+    public bool IsProximityOp { get; }
+
+    // The operand-inputs section is for value inputs only -- reads/proximity take a ref, not a
+    // value, so they show their picker instead.
+    public bool ShowOperandInputs => HasInputPorts && !IsReadOp && !IsProximityOp;
+
+    public EditableFieldViewModel? SlotEditor { get; }
+
+    public IReadOnlyList<string> ReadAgents { get; set; } = Array.Empty<string>();
+
+    public IReadOnlyList<string> ProximityTargets { get; set; } = Array.Empty<string>();
+
+    public Action? ReadRefChanged { get; set; }
+
+    public Action? SlotEdited { get; set; }
+
+    public string SelectedReadAgent
+    {
+        get => (Model as PureOp)?.Agent ?? string.Empty;
+        set
+        {
+            if (Model is PureOp op && value is not null && op.Agent != value)
+            {
+                op.Agent = value;
+                OnPropertyChanged();
+                ReadRefChanged?.Invoke();
+            }
+        }
+    }
+
+    public string SelectedProximityTarget
+    {
+        get => (Model as PureOp)?.Target ?? string.Empty;
+        set
+        {
+            if (Model is PureOp op && value is not null && op.Target != value)
+            {
+                op.Target = value;
+                OnPropertyChanged();
+                ReadRefChanged?.Invoke();
+            }
+        }
+    }
+
     private static IReadOnlyList<InspectorRow> BuildRows(object model) => model switch
     {
         Binding b => new List<InspectorRow>
@@ -129,21 +193,9 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         new("host", a.Host),
     };
 
-    private static IReadOnlyList<InspectorRow> BuildOpRows(PureOp p) => p.Op switch
-    {
-        OpKind.Marginal or OpKind.Committed => new List<InspectorRow>
-        {
-            new("agent", p.Agent),
-            new("slot", p.Slot.ToString(CultureInfo.InvariantCulture)),
-        },
-        OpKind.Memory => new List<InspectorRow>
-        {
-            new("agent", p.Agent),
-            new("qubit", p.Slot.ToString(CultureInfo.InvariantCulture)),
-        },
-        OpKind.Proximity => new List<InspectorRow> { new("target", p.Target) },
-        _ => Array.Empty<InspectorRow>(),
-    };
+    // Read/proximity refs are now editable pickers (SelectedReadAgent / SlotEditor /
+    // SelectedProximityTarget); ops carry no read-only property rows.
+    private static IReadOnlyList<InspectorRow> BuildOpRows(PureOp p) => Array.Empty<InspectorRow>();
 
     private IReadOnlyList<EditableFieldViewModel> BuildSpecFields(AgentDecl a)
     {

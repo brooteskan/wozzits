@@ -126,6 +126,51 @@ public sealed class StatechartMutationTests
     }
 
     [Fact]
+    public void Add_Read_Op_Defaults_To_The_First_Agent()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+
+        var node = pane.AddOp(OpKind.Marginal)!;
+
+        var op = chart.Pure.First(p => p.Id == node.NodeId);
+        Assert.Equal("sig", op.Agent);   // seeded with the first agent
+        Assert.True(node.IsReadOp);
+        Assert.Equal("sig", node.SelectedReadAgent);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Add_Proximity_Op_Defaults_To_The_First_Binding()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+
+        var node = pane.AddOp(OpKind.Proximity)!;
+
+        var op = chart.Pure.First(p => p.Id == node.NodeId);
+        Assert.Equal("lamp_0", op.Target);   // seeded with the first binding
+        Assert.True(node.IsProximityOp);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Change_A_Read_Ops_Agent_Rewires_It()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var second = pane.AddAgent()!;                 // now sig + agent1
+        var read = pane.AddOp(OpKind.Committed)!;      // defaults to sig
+
+        var readVm = pane.Nodes.First(n => n.NodeId == read.NodeId);
+        readVm.SelectedReadAgent = second.NodeId;      // the inspector picker
+
+        Assert.Equal(second.NodeId, chart.Pure.First(p => p.Id == read.NodeId).Agent);
+        Assert.Contains(pane.Wires, w => w.From.NodeId == second.NodeId && w.To.NodeId == read.NodeId);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
     public void Add_Op_Produces_A_Valid_Saveable_Chart()
     {
         var chart = Golden("traffic_light.sc.json");
@@ -583,5 +628,30 @@ public sealed class StatechartMutationTests
         Assert.NotEmpty(chart.States[0].Do);
         Assert.Equal(agent.NodeId, chart.States[0].Do[0].Agent);   // effect targets the added agent
         Assert.Empty(StatechartJson.Validate(chart));               // the hand-built chart is valid
+    }
+
+    [Fact]
+    public void Author_The_Full_Loop_A_Read_Feeds_An_Actuator()
+    {
+        var chart = new Chart { Name = "loop" };
+        var control = new ControlPaneViewModel();
+        var dataflow = new DataflowPaneViewModel();
+        control.Project(chart);
+        dataflow.Project(chart);
+
+        dataflow.AddAgent();                                  // the brain
+        dataflow.AddBinding();                                // the cube
+        var read = dataflow.AddOp(OpKind.Marginal)!;          // read its live leaning
+        var state = control.AddState()!;
+        control.AddEffect(state.Model, EffectSlot.Do, EffectKind.SetScale);   // scale the cube
+
+        // source that effect's value from the read op — the terminal link (inspector picker)
+        var effectRow = control.States.First(s => s.StateId == state.StateId).DoEffectRows[0];
+        effectRow.SelectedValueSource = read.NodeId;
+
+        var value = chart.States[0].Do[0].Value!;
+        Assert.Equal(RefKind.Op, value.Kind);
+        Assert.Equal(read.NodeId, value.Op);             // scale follows the agent's reading
+        Assert.Empty(StatechartJson.Validate(chart));    // agent → read → actuator, well-formed
     }
 }

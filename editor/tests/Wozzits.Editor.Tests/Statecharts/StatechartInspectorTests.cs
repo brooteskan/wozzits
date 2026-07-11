@@ -34,12 +34,13 @@ public sealed class StatechartInspectorTests
     }
 
     [Fact]
-    public void Read_Op_Inspector_Shows_Agent_And_Slot()
+    public void Read_Op_Inspector_Shows_Editable_Agent_And_Slot()
     {
         var z = Dataflow("traffic_light.sc.json").Nodes.First(n => n.NodeId == "z");   // marginal
 
-        Assert.Contains(z.PropertyRows, r => r.Name == "agent" && r.Value == "sig");
-        Assert.Contains(z.PropertyRows, r => r.Name == "slot" && r.Value == "0");
+        Assert.True(z.IsReadOp);
+        Assert.Equal("sig", z.SelectedReadAgent);   // now a picker
+        Assert.Equal("0", z.SlotEditor!.Value);      // now editable
     }
 
     [Fact]
@@ -92,14 +93,17 @@ public sealed class StatechartInspectorTests
     {
         var s0 = Control("caravan.sc.json").States.First(s => s.StateId == "S0");
 
-        // set_goal = 0.8 is a constant -> editable; set_scale = op:... is not.
+        // set_goal = 0.8 is a constant -> editable box + "(constant)" source.
         var goal = s0.DoEffectRows.First(r => r.Label.StartsWith("set_goal"));
         Assert.True(goal.IsEditable);
         Assert.Equal("0.8", goal.ValueEditor!.Value);
+        Assert.Equal(EffectRowViewModel.ConstSentinel, goal.SelectedValueSource);
 
+        // set_scale = op:... is sourced from an op, not a constant.
         var scale = s0.DoEffectRows.First(r => r.Label.StartsWith("set_scale"));
         Assert.False(scale.IsEditable);
-        Assert.True(scale.HasReadOnlyValue);
+        Assert.True(scale.HasValueSource);
+        Assert.NotEqual(EffectRowViewModel.ConstSentinel, scale.SelectedValueSource);
     }
 
     [Fact]

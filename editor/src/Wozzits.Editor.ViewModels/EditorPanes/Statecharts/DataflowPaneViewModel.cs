@@ -226,7 +226,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         }
 
         var id = FreshId("op", AllNodeIds());
-        _chart.Pure.Add(NewOp(kind, id));
+        _chart.Pure.Add(NewOp(kind, id, _chart));
         IsDirty = true;
         ReprojectPreservingLayout();
         return PlaceAndSelect(id);
@@ -469,11 +469,20 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         }
     }
 
-    private static PureOp NewOp(OpKind kind, string id)
+    private static PureOp NewOp(OpKind kind, string id, Chart chart)
     {
         var op = new PureOp { Id = id, Op = kind };
         switch (kind)
         {
+            case OpKind.Marginal:
+            case OpKind.Committed:
+            case OpKind.Memory:
+                op.Agent = chart.Agents.Count > 0 ? chart.Agents[0].Id : string.Empty;
+                op.Slot = 0;
+                break;
+            case OpKind.Proximity:
+                op.Target = chart.Bindings.Count > 0 ? chart.Bindings[0].Port : string.Empty;
+                break;
             case OpKind.Clamp01:
             case OpKind.Not:
                 op.Ins.Add(ValueRef.Number(0));
@@ -528,6 +537,18 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         var layout = CaptureLayout();
         Project(_chart!);
         ApplyLayout(layout);
+    }
+
+    // As above, but re-select the previously selected node by id after the rebuild, so an
+    // inspector-driven ref change (a read's agent / a proximity target) keeps its selection.
+    private void ReprojectPreservingSelection()
+    {
+        var id = _selectedNode?.NodeId;
+        ReprojectPreservingLayout();
+        if (id is not null && Nodes.FirstOrDefault(n => n.NodeId == id) is { } again)
+        {
+            SelectOnly(again);
+        }
     }
 
     // Cross-layer focus: dim every dataflow node/wire that doesn't feed the given control
@@ -646,11 +667,17 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             Nodes.Add(node);
         }
 
+        var agentIds = chart.Agents.Select(a => a.Id).ToList();
+        var bindingPorts = chart.Bindings.Select(b => b.Port).ToList();
         foreach (var p in chart.Pure)
         {
             var node = new DataflowNodeViewModel(DataflowNodeKind.Op, p.Id, p.Op.ToString(), p);
             node.OutputPorts.Add(new DataflowPortViewModel(node, 0, "out", isInput: false));
             AddOpInputPorts(node, p);
+            node.ReadAgents = agentIds;
+            node.ProximityTargets = bindingPorts;
+            node.SlotEdited = MarkChartDirty;
+            node.ReadRefChanged = ReprojectPreservingSelection;
             opNodes[p.Id] = node;
             opsById[p.Id] = p;
             Nodes.Add(node);
