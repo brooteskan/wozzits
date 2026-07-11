@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Wozzits.Editor.Statecharts;
 using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
@@ -106,6 +107,25 @@ public sealed class StatechartDocumentTests
 
         Assert.Equal("SENTINEL", File.ReadAllText(path));   // .sc.json left alone
         Assert.True(File.Exists(Path.ChangeExtension(path, ".editor.json")));
+    }
+
+    [Fact]
+    public void Editing_An_Agent_Spec_Field_Marks_Dirty_And_Saves_Into_The_Chart()
+    {
+        var path = FreshChartPath("traffic_light.sc.json");
+        var document = new StatechartDocumentViewModel("traffic_light", path, Golden("traffic_light.sc.json"));
+
+        var agent = document.Dataflow.Nodes.First(n => n.Kind == DataflowNodeKind.Agent);
+        agent.SpecFields.First(f => f.Name == "goal").Value = "0.9";
+
+        Assert.True(document.Dataflow.IsDirty);
+        Assert.True(document.IsDirty);
+
+        document.Save();
+
+        var reloaded = StatechartJson.Load(File.ReadAllText(path));
+        var spec = (JsonObject)reloaded.Agents.First(a => a.Id == "sig").Spec!;
+        Assert.Equal(0.9, spec["goal"]!.GetValue<double>());
     }
 
     [Fact]

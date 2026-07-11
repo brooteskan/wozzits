@@ -1305,6 +1305,24 @@
                             </StackPanel>
                         </Border>
                         <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding SelectedStatechartNode.HasSpecFields}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Agent spec" Classes="InspectorSectionTitle"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartNode.SpecFields}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Name}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1"
+                                                         Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="InspectorSectionCard"
                                 IsVisible="{Binding SelectedStatechartNode.HasInputPorts}">
                             <StackPanel Classes="InspectorSection">
                                 <TextBlock Text="Inputs" Classes="InspectorSectionTitle"/>

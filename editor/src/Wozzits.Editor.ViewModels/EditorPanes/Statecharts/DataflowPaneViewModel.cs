@@ -30,6 +30,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
     private DataflowNodeViewModel? _selectedNode;
     private Chart? _chart;
     private bool _isLayoutDirty;
+    private bool _isChartDirty;
 
     public DataflowPaneViewModel()
     {
@@ -64,7 +65,19 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
         private set => SetProperty(ref _isLayoutDirty, value);
     }
 
-    public void ClearDirty() => IsLayoutDirty = false;
+    public bool IsDirty
+    {
+        get => _isChartDirty;
+        private set => SetProperty(ref _isChartDirty, value);
+    }
+
+    public void MarkChartDirty() => IsDirty = true;
+
+    public void ClearDirty()
+    {
+        IsLayoutDirty = false;
+        IsDirty = false;
+    }
 
     public double Zoom
     {
@@ -303,6 +316,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
         {
             var node = new DataflowNodeViewModel(DataflowNodeKind.Agent, a.Id, a.Owned ? "agent" : "agent (ref)", a);
             node.OutputPorts.Add(new DataflowPortViewModel(node, 0, "agent", isInput: false));
+            node.SpecEdited = MarkChartDirty;
             agentNodes[a.Id] = node;
             Nodes.Add(node);
         }

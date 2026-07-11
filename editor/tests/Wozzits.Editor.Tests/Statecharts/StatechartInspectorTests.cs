@@ -30,7 +30,7 @@ public sealed class StatechartInspectorTests
 
         Assert.Contains(agent.PropertyRows, r => r.Name == "owned" && r.Value == "yes");
         Assert.Contains(agent.PropertyRows, r => r.Name == "host" && r.Value == "self");
-        Assert.Contains(agent.PropertyRows, r => r.Name == "decisions");   // a quantum_agent spec field
+        Assert.Contains(agent.SpecFields, f => f.Name == "decisions");   // spec is now an editable field
     }
 
     [Fact]

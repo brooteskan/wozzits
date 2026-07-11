@@ -41,7 +41,7 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
     public DataflowPaneViewModel Dataflow { get; }
 
     // The chart was edited (needs a .sc.json rewrite) or the layout moved (needs the sidecar).
-    public bool IsDirty => Control.IsDirty || Control.IsLayoutDirty || Dataflow.IsLayoutDirty;
+    public bool IsDirty => Control.IsDirty || Control.IsLayoutDirty || Dataflow.IsDirty || Dataflow.IsLayoutDirty;
 
     private string LayoutPath => Path.ChangeExtension(_path, ".editor.json");
 
@@ -49,7 +49,7 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
     // never reformatted) and the hand-placed layout to the editor-owned sidecar.
     public void Save()
     {
-        if (Control.IsDirty)
+        if (Control.IsDirty || Dataflow.IsDirty)
         {
             File.WriteAllText(_path, StatechartJson.Emit(_chart, indented: true));
         }

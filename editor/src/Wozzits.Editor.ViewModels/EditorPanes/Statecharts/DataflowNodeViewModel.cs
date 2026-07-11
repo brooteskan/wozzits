@@ -28,6 +28,9 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         Subtitle = subtitle;
         Model = model;
         PropertyRows = BuildRows(model);
+        SpecFields = kind == DataflowNodeKind.Agent && model is AgentDecl agent
+            ? BuildSpecFields(agent)
+            : Array.Empty<EditableFieldViewModel>();
     }
 
     public DataflowNodeKind Kind { get; }
@@ -90,6 +93,14 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
     // no extras -- their operands show as the input-port rows.
     public IReadOnlyList<InspectorRow> PropertyRows { get; }
 
+    // Editable agent quantum_agent spec fields (E3b-ii); empty for non-agent nodes. The pane
+    // sets SpecEdited so a commit marks the chart dirty (spec isn't drawn, so no re-project).
+    public IReadOnlyList<EditableFieldViewModel> SpecFields { get; }
+
+    public bool HasSpecFields => SpecFields.Count > 0;
+
+    public Action? SpecEdited { get; set; }
+
     private static IReadOnlyList<InspectorRow> BuildRows(object model) => model switch
     {
         Binding b => new List<InspectorRow>
@@ -102,23 +113,11 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         _ => Array.Empty<InspectorRow>(),
     };
 
-    private static IReadOnlyList<InspectorRow> BuildAgentRows(AgentDecl a)
+    private static IReadOnlyList<InspectorRow> BuildAgentRows(AgentDecl a) => new List<InspectorRow>
     {
-        var rows = new List<InspectorRow>
-        {
-            new("owned", a.Owned ? "yes" : "no"),
-            new("host", a.Host),
-        };
-        if (a.Spec is JsonObject spec)
-        {
-            foreach (var member in spec)
-            {
-                rows.Add(new InspectorRow(member.Key, member.Value?.ToJsonString() ?? "null"));
-            }
-        }
-
-        return rows;
-    }
+        new("owned", a.Owned ? "yes" : "no"),
+        new("host", a.Host),
+    };
 
     private static IReadOnlyList<InspectorRow> BuildOpRows(PureOp p) => p.Op switch
     {
@@ -135,4 +134,51 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         OpKind.Proximity => new List<InspectorRow> { new("target", p.Target) },
         _ => Array.Empty<InspectorRow>(),
     };
+
+    private IReadOnlyList<EditableFieldViewModel> BuildSpecFields(AgentDecl a)
+    {
+        if (a.Spec is not JsonObject spec)
+        {
+            return Array.Empty<EditableFieldViewModel>();
+        }
+
+        var fields = new List<EditableFieldViewModel>();
+        foreach (var member in spec)
+        {
+            var key = member.Key;
+            fields.Add(new EditableFieldViewModel(
+                key,
+                () => JsonScalarText(spec[key]),
+                v => spec[key] = ParseJsonScalar(v),
+                () => SpecEdited?.Invoke()));
+        }
+
+        return fields;
+    }
+
+    private static string JsonScalarText(JsonNode? node)
+    {
+        if (node is JsonValue value)
+        {
+            if (value.TryGetValue<double>(out var d)) return d.ToString(CultureInfo.InvariantCulture);
+            if (value.TryGetValue<bool>(out var b)) return b ? "true" : "false";
+            if (value.TryGetValue<string>(out var s)) return s;
+        }
+
+        return node?.ToJsonString() ?? string.Empty;
+    }
+
+    private static JsonNode ParseJsonScalar(string text)
+    {
+        if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+        {
+            return JsonValue.Create(d);
+        }
+        if (bool.TryParse(text, out var b))
+        {
+            return JsonValue.Create(b);
+        }
+
+        return JsonValue.Create(text)!;
+    }
 }
