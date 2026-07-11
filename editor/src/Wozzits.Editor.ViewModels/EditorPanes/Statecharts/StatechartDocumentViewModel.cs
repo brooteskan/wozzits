@@ -61,18 +61,13 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
 
     private StatechartLayout CaptureLayout()
     {
-        var layout = new StatechartLayout
+        // Each pane snapshots its own half; merge into one sidecar layout.
+        var layout = Control.CaptureLayout();
+        var dataflow = Dataflow.CaptureLayout();
+        layout.DataflowZoom = dataflow.DataflowZoom;
+        foreach (var (id, point) in dataflow.NodePositions)
         {
-            ControlZoom = Control.Zoom,
-            DataflowZoom = Dataflow.Zoom,
-        };
-        foreach (var state in Control.States)
-        {
-            layout.StatePositions[state.StateId] = new StatechartLayout.Point(state.X, state.Y);
-        }
-        foreach (var node in Dataflow.Nodes)
-        {
-            layout.NodePositions[node.NodeId] = new StatechartLayout.Point(node.X, node.Y);
+            layout.NodePositions[id] = point;
         }
         return layout;
     }

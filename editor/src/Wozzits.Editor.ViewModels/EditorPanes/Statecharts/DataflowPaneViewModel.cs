@@ -1,6 +1,7 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
 
 /// <summary>
@@ -35,7 +36,14 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
     public DataflowPaneViewModel()
     {
         SelectedNodes.CollectionChanged += (_, _) => UpdateSelectedNode();
+        AddOpCommand = new RelayCommand<OpKind>(kind => AddOp(kind));
+        DeleteSelectedCommand = new RelayCommand(DeleteSelected);
     }
+
+    // Toolbar: add a pure op of the given kind; delete the current selection.
+    public IRelayCommand<OpKind> AddOpCommand { get; }
+
+    public IRelayCommand DeleteSelectedCommand { get; }
 
     public ObservableCollection<DataflowNodeViewModel> Nodes { get; } = [];
 
@@ -200,10 +208,158 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
     private void UpdateSelectedNode() =>
         SelectedNode = SelectedNodes.Count == 1 ? SelectedNodes[0] : null;
 
+    // Add a pure op of the given kind with default (constant) operands, select it, and place
+    // it at a clear row below the existing nodes. Returns the new node (null if no chart).
+    public DataflowNodeViewModel? AddOp(OpKind kind)
+    {
+        if (_chart is null)
+        {
+            return null;
+        }
+
+        var taken = _chart.Pure.Select(p => p.Id)
+            .Concat(_chart.Agents.Select(a => a.Id))
+            .Concat(_chart.Bindings.Select(b => b.Port));
+        var id = FreshId("op", taken);
+
+        _chart.Pure.Add(NewOp(kind, id));
+        IsDirty = true;
+        ReprojectPreservingLayout();
+
+        var node = Nodes.FirstOrDefault(n => n.NodeId == id);
+        if (node is not null)
+        {
+            double bottom = CanvasPadding;
+            foreach (var n in Nodes)
+            {
+                if (n != node)
+                {
+                    bottom = Math.Max(bottom, n.Y + CardHeight);
+                }
+            }
+
+            node.X = CanvasPadding;
+            node.Y = bottom + RowGap;
+            SelectOnly(node);
+            RaiseExtentChanged();
+        }
+
+        return node;
+    }
+
+    // Delete the selected OP nodes (agents/bindings are left for a later entity-editing seam).
+    // Any ref that pointed at a deleted op is disconnected to a constant 0, so the chart stays
+    // valid and the now-literal input becomes editable.
     public void DeleteSelected()
     {
-        // Dataflow structural deletion (with input-dependency handling) arrives with the
-        // phase-3 structural-editing step; the control canvas deletes states today.
+        if (_chart is null)
+        {
+            return;
+        }
+
+        var doomed = SelectedNodes
+            .Where(n => n.Kind == DataflowNodeKind.Op)
+            .Select(n => n.NodeId)
+            .ToHashSet();
+        if (doomed.Count == 0)
+        {
+            return;
+        }
+
+        _chart.Pure.RemoveAll(p => doomed.Contains(p.Id));
+        foreach (var p in _chart.Pure)
+        {
+            foreach (var r in p.Ins) Disconnect(r, doomed);
+            Disconnect(p.Cond, doomed);
+            Disconnect(p.A, doomed);
+            Disconnect(p.B, doomed);
+        }
+        foreach (var s in _chart.States)
+        {
+            foreach (var e in s.Do) Disconnect(e.Value, doomed);
+            foreach (var e in s.Entry) Disconnect(e.Value, doomed);
+            foreach (var e in s.Exit) Disconnect(e.Value, doomed);
+            foreach (var t in s.Transitions)
+            {
+                if (t.Trigger.Kind == TriggerKind.Guard) Disconnect(t.Trigger.Cond, doomed);
+                foreach (var a in t.Actions) Disconnect(a.Value, doomed);
+            }
+        }
+
+        IsDirty = true;
+        ReprojectPreservingLayout();
+    }
+
+    private static void Disconnect(ValueRef? r, HashSet<string> doomed)
+    {
+        if (r is { Kind: RefKind.Op } && doomed.Contains(r.Op))
+        {
+            r.Kind = RefKind.Const;
+            r.Op = "";
+            r.Const = 0;
+            r.IsBool = false;
+        }
+    }
+
+    private static PureOp NewOp(OpKind kind, string id)
+    {
+        var op = new PureOp { Id = id, Op = kind };
+        switch (kind)
+        {
+            case OpKind.Clamp01:
+            case OpKind.Not:
+                op.Ins.Add(ValueRef.Number(0));
+                break;
+            case OpKind.MulAdd:
+                op.Ins.Add(ValueRef.Number(0));
+                op.Ins.Add(ValueRef.Number(0));
+                op.Ins.Add(ValueRef.Number(0));
+                break;
+            case OpKind.Select:
+                op.Cond = ValueRef.Number(0);
+                op.A = ValueRef.Number(0);
+                op.B = ValueRef.Number(0);
+                break;
+            default:   // Add/Sub/Mul/Min/Max/Eq/Lt/Gt/And/Or: two operands
+                op.Ins.Add(ValueRef.Number(0));
+                op.Ins.Add(ValueRef.Number(0));
+                break;
+        }
+
+        return op;
+    }
+
+    private static string FreshId(string prefix, IEnumerable<string> taken)
+    {
+        var used = taken.ToHashSet();
+        for (int i = 1; ; i++)
+        {
+            var candidate = prefix + i;
+            if (!used.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    // Snapshot the current node positions + zoom so a structural reproject can restore hand
+    // placement (surviving nodes keep their spot; a new node keeps its auto-layout position).
+    public StatechartLayout CaptureLayout()
+    {
+        var layout = new StatechartLayout { DataflowZoom = Zoom };
+        foreach (var node in Nodes)
+        {
+            layout.NodePositions[node.NodeId] = new StatechartLayout.Point(node.X, node.Y);
+        }
+
+        return layout;
+    }
+
+    private void ReprojectPreservingLayout()
+    {
+        var layout = CaptureLayout();
+        Project(_chart!);
+        ApplyLayout(layout);
     }
 
     // Cross-layer focus: dim every dataflow node/wire that doesn't feed the given control

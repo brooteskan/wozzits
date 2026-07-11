@@ -1,6 +1,7 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
 
 /// <summary>
@@ -34,7 +35,14 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
     public ControlPaneViewModel()
     {
         SelectedStates.CollectionChanged += (_, _) => UpdateSelectedState();
+        AddStateCommand = new RelayCommand(() => AddState());
+        DeleteSelectedCommand = new RelayCommand(DeleteSelected);
     }
+
+    // Toolbar: add a state to the selected state's region; delete the current selection.
+    public IRelayCommand AddStateCommand { get; }
+
+    public IRelayCommand DeleteSelectedCommand { get; }
 
     public ObservableCollection<RegionViewModel> Regions { get; } = [];
 
@@ -245,6 +253,73 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
         }
     }
 
+    // Add an empty state to the selected state's region (else the first region, else a fresh
+    // one), make it the region's initial if the region had none, select it. Returns the new
+    // state (null if no chart).
+    public StateNodeViewModel? AddState()
+    {
+        if (_chart is null)
+        {
+            return null;
+        }
+
+        var region = RegionForNewState();
+        var id = FreshId("state", _chart.States.Select(s => s.Id));
+        _chart.States.Add(new State { Id = id });
+        region.States.Add(id);
+        if (string.IsNullOrEmpty(region.Initial))
+        {
+            region.Initial = id;
+        }
+
+        IsDirty = true;
+        ReprojectPreservingLayout();
+
+        var vm = States.FirstOrDefault(s => s.StateId == id);
+        if (vm is not null)
+        {
+            SelectOnly(vm);
+        }
+
+        return vm;
+    }
+
+    // Where a new state lands: the selected state's region, else the first region, else a new
+    // region created to hold it (a chart must have at least one region).
+    private Region RegionForNewState()
+    {
+        if (_selectedState is not null)
+        {
+            var owner = _chart!.Regions.FirstOrDefault(r => r.States.Contains(_selectedState.StateId));
+            if (owner is not null)
+            {
+                return owner;
+            }
+        }
+
+        if (_chart!.Regions.Count > 0)
+        {
+            return _chart.Regions[0];
+        }
+
+        var region = new Region { Id = FreshId("region", _chart.Regions.Select(r => r.Id)) };
+        _chart.Regions.Add(region);
+        return region;
+    }
+
+    private static string FreshId(string prefix, IEnumerable<string> taken)
+    {
+        var used = taken.ToHashSet();
+        for (int i = 1; ; i++)
+        {
+            var candidate = prefix + i;
+            if (!used.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
     public void DeleteSelected()
     {
         if (_chart is null || SelectedStates.Count == 0)
@@ -270,7 +345,27 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
         }
 
         IsDirty = true;
-        Project(_chart);
+        ReprojectPreservingLayout();
+    }
+
+    // Snapshot the current state positions + zoom so a structural reproject can restore hand
+    // placement (surviving states keep their spot; a new state keeps its auto-layout column).
+    public StatechartLayout CaptureLayout()
+    {
+        var layout = new StatechartLayout { ControlZoom = Zoom };
+        foreach (var state in States)
+        {
+            layout.StatePositions[state.StateId] = new StatechartLayout.Point(state.X, state.Y);
+        }
+
+        return layout;
+    }
+
+    private void ReprojectPreservingLayout()
+    {
+        var layout = CaptureLayout();
+        Project(_chart!);
+        ApplyLayout(layout);
     }
 
     // Apply a saved layout (zoom + hand-placed state positions) over the auto-layout. This is

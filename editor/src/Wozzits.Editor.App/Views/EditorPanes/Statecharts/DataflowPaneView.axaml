@@ -2,11 +2,41 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:Wozzits.Editor.App.Controls"
              xmlns:sc="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
+             xmlns:model="using:Wozzits.Editor.Statecharts"
              x:Class="Wozzits.Editor.App.Views.EditorPanes.Statecharts.DataflowPaneView"
              x:DataType="sc:DataflowPaneViewModel">
     <Grid Classes="EditorPaneRoot">
         <Border Classes="PaneSurface">
-            <Grid>
+            <Grid RowDefinitions="Auto,*">
+                <StackPanel Grid.Row="0"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            Margin="6"
+                            IsVisible="{Binding HasGraph}">
+                    <Button Content="+ Op &#x25BE;">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuItem Header="add" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Add}"/>
+                                <MenuItem Header="sub" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Sub}"/>
+                                <MenuItem Header="mul" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Mul}"/>
+                                <MenuItem Header="min" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Min}"/>
+                                <MenuItem Header="max" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Max}"/>
+                                <MenuItem Header="mul_add" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.MulAdd}"/>
+                                <MenuItem Header="clamp01" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Clamp01}"/>
+                                <Separator/>
+                                <MenuItem Header="eq" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Eq}"/>
+                                <MenuItem Header="lt" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Lt}"/>
+                                <MenuItem Header="gt" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Gt}"/>
+                                <MenuItem Header="and" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.And}"/>
+                                <MenuItem Header="or" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Or}"/>
+                                <MenuItem Header="not" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Not}"/>
+                                <MenuItem Header="select" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Select}"/>
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button Content="Delete" Command="{Binding DeleteSelectedCommand}"/>
+                </StackPanel>
+                <Grid Grid.Row="1">
                 <TextBlock Text="No statechart open. Statecharts &#x2192; open a chart's dataflow."
                            Classes="PaneEmptyState"
                            HorizontalAlignment="Center"
@@ -115,6 +145,7 @@
                         </Grid>
                     </Grid>
                 </ScrollViewer>
+                </Grid>
             </Grid>
         </Border>
     </Grid>

@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 // Shared canvas interaction for the statechart panes (dataflow + control): right-drag pans,
@@ -55,9 +56,9 @@ public sealed class GraphInteraction
     private void OnPressed(object? sender, PointerPressedEventArgs e)
     {
         var vm = _canvasVm();
-        if (vm is null)
+        if (vm is null || !WithinCanvas(e.Source))
         {
-            return;
+            return;   // presses on pane chrome (toolbar) are not canvas gestures
         }
 
         var point = e.GetCurrentPoint(_root);
@@ -196,7 +197,7 @@ public sealed class GraphInteraction
     private void OnWheel(object? sender, PointerWheelEventArgs e)
     {
         var vm = _canvasVm();
-        if (vm is null)
+        if (vm is null || !WithinCanvas(e.Source))
         {
             return;
         }
@@ -261,6 +262,25 @@ public sealed class GraphInteraction
         _selectionRectangle.Width = Math.Abs(_boxCurrent.X - _boxStart.X);
         _selectionRectangle.Height = Math.Abs(_boxCurrent.Y - _boxStart.Y);
         _selectionRectangle.IsVisible = true;
+    }
+
+    // True when the event originated inside the scrollable canvas (not the pane's toolbar/
+    // chrome), so canvas gestures never fire from a button press.
+    private bool WithinCanvas(object? source)
+    {
+        for (var current = source as Visual; current is not null; current = current.GetVisualParent())
+        {
+            if (ReferenceEquals(current, _scrollViewer))
+            {
+                return true;
+            }
+            if (ReferenceEquals(current, _root))
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private static ICanvasNode? NodeUnder(object? source)

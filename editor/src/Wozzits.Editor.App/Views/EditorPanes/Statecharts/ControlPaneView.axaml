@@ -6,7 +6,16 @@
              x:DataType="sc:ControlPaneViewModel">
     <Grid Classes="EditorPaneRoot">
         <Border Classes="PaneSurface">
-            <Grid>
+            <Grid RowDefinitions="Auto,*">
+                <StackPanel Grid.Row="0"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            Margin="6"
+                            IsVisible="{Binding HasGraph}">
+                    <Button Content="+ State" Command="{Binding AddStateCommand}"/>
+                    <Button Content="Delete" Command="{Binding DeleteSelectedCommand}"/>
+                </StackPanel>
+                <Grid Grid.Row="1">
                 <TextBlock Text="No statechart open. Statecharts &#x2192; open a chart's control layer."
                            Classes="PaneEmptyState"
                            HorizontalAlignment="Center"
@@ -121,6 +130,7 @@
                         </Grid>
                     </Grid>
                 </ScrollViewer>
+                </Grid>
             </Grid>
         </Border>
     </Grid>

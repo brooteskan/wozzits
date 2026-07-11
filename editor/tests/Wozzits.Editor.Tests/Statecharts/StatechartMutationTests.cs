@@ -16,6 +16,13 @@ public sealed class StatechartMutationTests
         return pane;
     }
 
+    private static DataflowPaneViewModel Dataflow(Chart chart)
+    {
+        var pane = new DataflowPaneViewModel();
+        pane.Project(chart);
+        return pane;
+    }
+
     [Fact]
     public void Delete_A_State_Removes_It_And_Every_Transition_Touching_It()
     {
@@ -68,5 +75,102 @@ public sealed class StatechartMutationTests
 
         Assert.Equal(before, pane.States.Count);
         Assert.False(pane.IsDirty);
+    }
+
+    // ---- M1: structural creation -------------------------------------------------
+
+    [Fact]
+    public void Add_State_Appends_A_State_To_A_Region_And_Selects_It()
+    {
+        var pane = Control("traffic_light.sc.json");
+        int before = pane.States.Count;
+
+        var state = pane.AddState();
+
+        Assert.NotNull(state);
+        Assert.Equal(before + 1, pane.States.Count);
+        Assert.Same(state, pane.SelectedState);
+        Assert.True(pane.IsDirty);
+        Assert.Contains(pane.Regions, r => r.StateIds.Contains(state!.StateId));
+    }
+
+    [Fact]
+    public void Add_State_Into_A_Chart_With_No_Regions_Creates_A_Region()
+    {
+        var chart = new Chart { Name = "empty" };
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+
+        var state = pane.AddState();
+
+        Assert.NotNull(state);
+        Assert.Single(pane.Regions);
+        Assert.True(state!.IsInitial);   // the sole state becomes the new region's initial
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Add_Op_Appends_A_Pure_Op_And_Selects_It()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        int before = pane.Nodes.Count;
+
+        var node = pane.AddOp(OpKind.Mul);
+
+        Assert.NotNull(node);
+        Assert.Equal(before + 1, pane.Nodes.Count);
+        Assert.Same(node, pane.SelectedNode);
+        Assert.True(pane.IsDirty);
+        Assert.Contains(chart.Pure, p => p.Id == node!.NodeId && p.Op == OpKind.Mul);
+    }
+
+    [Fact]
+    public void Add_Op_Produces_A_Valid_Saveable_Chart()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+
+        pane.AddOp(OpKind.Select);
+
+        Assert.Empty(StatechartJson.Validate(chart));
+        var reloaded = StatechartJson.Load(StatechartJson.Emit(chart, indented: true));
+        Assert.Contains(reloaded.Pure, p => p.Op == OpKind.Select);
+    }
+
+    [Fact]
+    public void Delete_Op_Removes_It_And_Disconnects_Referencing_Effects()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+
+        // s0d feeds DELIBERATE's `set_scale lamp_0 = op:s0d`.
+        pane.SelectOnly(pane.Nodes.First(n => n.NodeId == "s0d"));
+        ((IEditorCanvas)pane).DeleteSelected();
+
+        Assert.DoesNotContain(chart.Pure, p => p.Id == "s0d");
+        var effect = chart.States.First(s => s.Id == "DELIBERATE").Do
+            .First(e => e.Kind == EffectKind.SetScale && e.TargetBind == "lamp_0");
+        Assert.Equal(RefKind.Const, effect.Value!.Kind);   // disconnected to a literal
+        Assert.Empty(StatechartJson.Validate(chart));
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
+    public void Structural_Edit_Preserves_Hand_Placed_Positions()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+
+        pane.SelectOnly(pane.Nodes.First(n => n.NodeId == "z"));
+        pane.MoveSelectedBy(500, 300);
+        double x = pane.Nodes.First(n => n.NodeId == "z").X;
+        double y = pane.Nodes.First(n => n.NodeId == "z").Y;
+
+        pane.AddOp(OpKind.Add);   // reprojects the whole canvas
+
+        var moved = pane.Nodes.First(n => n.NodeId == "z");
+        Assert.Equal(x, moved.X, 3);
+        Assert.Equal(y, moved.Y, 3);
     }
 }
