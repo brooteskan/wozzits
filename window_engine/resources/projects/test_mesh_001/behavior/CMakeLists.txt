@@ -86,3 +86,7 @@ add_terrain_collision_behavior_module(
 add_terrain_collision_behavior_module(
     zeno_observer
     cognition/zeno_observer_plugin.cpp)
+
+add_terrain_collision_behavior_module(
+    skinner
+    cognition/skinner_plugin.cpp)

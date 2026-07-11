@@ -346,7 +346,7 @@
           1
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true
     },
     {
@@ -370,7 +370,7 @@
           1
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "behaviors": [
         {
@@ -424,9 +424,9 @@
           1
         ],
         "scale": [
-          1.8161454200744629,
-          1.8161454200744629,
-          1.8161454200744629
+          3,
+          3,
+          3
         ]
       },
       "visible": true,
@@ -457,7 +457,7 @@
           1.1838545799255371
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -485,7 +485,7 @@
           1
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "behaviors": [
         {
@@ -574,7 +574,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -602,7 +602,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -674,7 +674,7 @@
           3
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -702,7 +702,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -730,7 +730,7 @@
           1
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "behaviors": [
         {
@@ -815,9 +815,9 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
       "visible": true,
@@ -843,12 +843,12 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -915,9 +915,9 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
       "visible": true,
@@ -943,12 +943,12 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1015,12 +1015,12 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1043,9 +1043,9 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
       "visible": true,
@@ -1115,9 +1115,9 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
       "visible": true,
@@ -1143,12 +1143,12 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -1215,12 +1215,12 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -1243,9 +1243,9 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.5,
+          1.5,
+          1.5
         ]
       },
       "visible": true,
@@ -1276,7 +1276,7 @@
           1
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "behaviors": [
         {
@@ -1722,7 +1722,7 @@
           1
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "behaviors": [
         {
@@ -1823,9 +1823,9 @@
           1
         ],
         "scale": [
-          1.5816869735717773,
-          1.5816869735717773,
-          1.5816869735717773
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -1923,9 +1923,9 @@
           1
         ],
         "scale": [
-          1.5013346672058105,
-          1.5013346672058105,
-          1.5013346672058105
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -2023,9 +2023,9 @@
           1
         ],
         "scale": [
-          1.4327554702758789,
-          1.4327554702758789,
-          1.4327554702758789
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -2123,9 +2123,9 @@
           1
         ],
         "scale": [
-          1.3598097562789917,
-          1.3598097562789917,
-          1.3598097562789917
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -2223,9 +2223,9 @@
           1
         ],
         "scale": [
-          1.2776703834533691,
-          1.2776703834533691,
-          1.2776703834533691
+          3,
+          3,
+          3
         ]
       },
       "visible": false,
@@ -2283,7 +2283,7 @@
           1
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true
     },
     {
@@ -2384,7 +2384,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -2407,12 +2407,12 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.8948633670806885,
+          1.8948633670806885,
+          1.8948633670806885
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -2484,7 +2484,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -2507,12 +2507,12 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.6919081211090088,
+          1.6919081211090088,
+          1.6919081211090088
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -2584,7 +2584,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -2607,12 +2607,12 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.6919081211090088,
+          1.6919081211090088,
+          1.6919081211090088
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -2684,7 +2684,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -2707,12 +2707,12 @@
           1
         ],
         "scale": [
-          3,
-          3,
-          3
+          1.6919081211090088,
+          1.6919081211090088,
+          1.6919081211090088
         ]
       },
-      "visible": true,
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -2784,7 +2784,7 @@
           3
         ]
       },
-      "visible": false,
+      "visible": true,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 108
@@ -2807,12 +2807,144 @@
           1
         ],
         "scale": [
+          1.6919081211090088,
+          1.6919081211090088,
+          1.6919081211090088
+        ]
+      },
+      "visible": false,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 110
+      }
+    },
+    {
+      "id": "skinner_box",
+      "parent": "cognition_gallery",
+      "transform": {
+        "translation": [
+          260,
+          22,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "behaviors": [
+        {
+          "id": "skinner_box.agent",
+          "module": "quantum_agent",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "config": {
+            "decisions": 1,
+            "goal": 0,
+            "memory": 1,
+            "gamma_start": 2,
+            "anneal_seconds": 2,
+            "confidence": 0.90000000000000002,
+            "decoherence": 0.40000000000000002,
+            "think_interval": 0.14999999999999999
+          }
+        },
+        {
+          "id": "skinner_box.skinner",
+          "module": "skinner",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "reward": 0.5,
+            "punish": 0.29999999999999999,
+            "gain": 0.80000000000000004,
+            "period": 6
+          }
+        },
+        {
+          "id": "skinner_box.lamp",
+          "module": "cognition_lamp",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "events": [
+            "self.start",
+            "frame.update"
+          ],
+          "config": {
+            "slot": 0,
+            "full_scale": 3,
+            "rearm_metronome": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "skinner_box_lamp_0",
+      "parent": "skinner_box",
+      "name": "lamp_0",
+      "transform": {
+        "translation": [
+          0,
+          2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
           3,
           3,
           3
         ]
       },
       "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 108
+      }
+    },
+    {
+      "id": "skinner_box_lamp_1",
+      "parent": "skinner_box",
+      "name": "lamp_1",
+      "transform": {
+        "translation": [
+          0,
+          -2.5,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          1.5
+        ]
+      },
+      "visible": false,
       "active": true,
       "renderable": {
         "asset_graph_node_id": 110
@@ -2987,15 +3119,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        -6.2288694381713867,
-        302.5240478515625,
-        543.02838134765625
+        37.870925903320312,
+        220.72567749023438,
+        348.01443481445312
       ],
       "orientation": [
-        0.023753561079502106,
-        0.93104583024978638,
-        -0.30701231956481934,
-        0.19578823447227478
+        -0.049766670912504196,
+        -0.90345555543899536,
+        0.356626957654953,
+        -0.23261228203773499
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
