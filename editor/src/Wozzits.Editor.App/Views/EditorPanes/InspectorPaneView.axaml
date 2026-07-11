@@ -1282,6 +1282,101 @@
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
+
+                <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasStatechartNodeSelection}"
+                              x:CompileBindings="False">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{Binding Header}" Classes="InspectorHeader"/>
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="{Binding SelectedStatechartNode.Subtitle}"
+                                           Classes="InspectorSectionTitle"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartNode.PropertyRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Name}" Classes="InspectorPropertyName"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding SelectedStatechartNode.HasInputPorts}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Inputs" Classes="InspectorSectionTitle"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartNode.InputPorts}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding InspectorValue}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasStatechartStateSelection}"
+                              x:CompileBindings="False">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{Binding Header}" Classes="InspectorHeader"/>
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="State" Classes="InspectorSectionTitle"/>
+                                <TextBlock Text="&#x25B6; initial state"
+                                           IsVisible="{Binding SelectedStatechartState.IsInitial}"/>
+
+                                <TextBlock Text="do" Classes="InspectorSectionTitle" Margin="0,8,0,0"
+                                           IsVisible="{Binding SelectedStatechartState.HasDoEffects}"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.DoEffects}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="entry" Classes="InspectorSectionTitle" Margin="0,8,0,0"
+                                           IsVisible="{Binding SelectedStatechartState.HasEntryEffects}"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.EntryEffects}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="exit" Classes="InspectorSectionTitle" Margin="0,8,0,0"
+                                           IsVisible="{Binding SelectedStatechartState.HasExitEffects}"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.ExitEffects}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="transitions" Classes="InspectorSectionTitle" Margin="0,8,0,0"
+                                           IsVisible="{Binding SelectedStatechartState.HasTransitions}"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.OutgoingTransitions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
             </Grid>
         </Border>
     </Grid>

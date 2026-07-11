@@ -6,6 +6,7 @@ using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
+using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 namespace Wozzits.Editor.ViewModels.EditorPanes;
 
@@ -16,6 +17,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _emptyState = "No scene or asset graph node selected.";
     private string _header = string.Empty;
     private InspectorSelectionKind _selectionKind;
+    private DataflowNodeViewModel? _selectedStatechartNode;
+    private StateNodeViewModel? _selectedStatechartState;
     private string _nodeId = string.Empty;
     private string _nodeName = string.Empty;
     private string _parentId = string.Empty;
@@ -302,6 +305,22 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public bool HasAssetGraphNodeSelection => _selectionKind == InspectorSelectionKind.AssetGraphNode;
 
     public bool HasSubGraphSelection => _selectionKind == InspectorSelectionKind.SubGraph;
+
+    public bool HasStatechartNodeSelection => _selectionKind == InspectorSelectionKind.StatechartDataflowNode;
+
+    public bool HasStatechartStateSelection => _selectionKind == InspectorSelectionKind.StatechartState;
+
+    public DataflowNodeViewModel? SelectedStatechartNode
+    {
+        get => _selectedStatechartNode;
+        private set => SetProperty(ref _selectedStatechartNode, value);
+    }
+
+    public StateNodeViewModel? SelectedStatechartState
+    {
+        get => _selectedStatechartState;
+        private set => SetProperty(ref _selectedStatechartState, value);
+    }
 
     // The selected sub-graph's editable name (issue woguls/wozzits-editor#1). Edits rename
     // it live — the proxy card binds Name — and persist via the sidecar on Save All. An
@@ -1618,6 +1637,42 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         NodeRerouteName = string.Empty;
     }
 
+    // Statechart selection (E3b) routed from the open chart document. The selected view-model
+    // carries the read-only detail (phase-2 PropertyRows / effects); editing is 3b-ii.
+    public void Inspect(DataflowNodeViewModel? node)
+    {
+        SelectedStatechartState = null;
+        SelectedStatechartNode = node;
+        if (node is null)
+        {
+            Header = string.Empty;
+            EmptyState = "No node selected.";
+            SetSelectionKind(InspectorSelectionKind.None);
+            return;
+        }
+
+        Header = node.Title;
+        EmptyState = string.Empty;
+        SetSelectionKind(InspectorSelectionKind.StatechartDataflowNode);
+    }
+
+    public void Inspect(StateNodeViewModel? state)
+    {
+        SelectedStatechartNode = null;
+        SelectedStatechartState = state;
+        if (state is null)
+        {
+            Header = string.Empty;
+            EmptyState = "No state selected.";
+            SetSelectionKind(InspectorSelectionKind.None);
+            return;
+        }
+
+        Header = state.Title;
+        EmptyState = string.Empty;
+        SetSelectionKind(InspectorSelectionKind.StatechartState);
+    }
+
     private void SetSelectionKind(InspectorSelectionKind kind)
     {
         if (!SetProperty(ref _selectionKind, kind, nameof(HasSelection)))
@@ -1629,6 +1684,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasSceneNodeSelection));
         OnPropertyChanged(nameof(HasAssetGraphNodeSelection));
         OnPropertyChanged(nameof(HasSubGraphSelection));
+        OnPropertyChanged(nameof(HasStatechartNodeSelection));
+        OnPropertyChanged(nameof(HasStatechartStateSelection));
         ApplyCameraCommand.NotifyCanExecuteChanged();
     }
 
@@ -3975,4 +4032,6 @@ public enum InspectorSelectionKind
     SceneNode,
     AssetGraphNode,
     SubGraph,
+    StatechartDataflowNode,
+    StatechartState,
 }

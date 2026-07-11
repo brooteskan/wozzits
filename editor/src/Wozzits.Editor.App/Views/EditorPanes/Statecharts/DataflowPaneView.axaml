@@ -4,8 +4,8 @@
              xmlns:sc="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
              x:Class="Wozzits.Editor.App.Views.EditorPanes.Statecharts.DataflowPaneView"
              x:DataType="sc:DataflowPaneViewModel">
-    <Grid Classes="EditorPaneRoot" ColumnDefinitions="*,Auto">
-        <Border Classes="PaneSurface" Grid.Column="0">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
             <Grid>
                 <TextBlock Text="No statechart open. Statecharts &#x2192; open a chart's dataflow."
                            Classes="PaneEmptyState"
@@ -116,47 +116,6 @@
                     </Grid>
                 </ScrollViewer>
             </Grid>
-        </Border>
-
-        <Border Grid.Column="1"
-                Width="300"
-                IsVisible="{Binding HasSelectedNode}"
-                Background="{DynamicResource WozzitsShellBackgroundBrush}"
-                BorderBrush="{DynamicResource WozzitsGraphWireBrush}"
-                BorderThickness="1,0,0,0">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="14" Spacing="10" x:CompileBindings="False">
-                    <TextBlock Text="{Binding SelectedNode.Title}" Classes="AssetGraphCardName"/>
-                    <TextBlock Text="{Binding SelectedNode.Subtitle}" Classes="AssetGraphCardType"/>
-
-                    <ItemsControl ItemsSource="{Binding SelectedNode.PropertyRows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Grid ColumnDefinitions="110,*" ColumnSpacing="8" Margin="0,2">
-                                    <TextBlock Text="{Binding Name}" Classes="AssetGraphPortLabel"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Value}"
-                                               Classes="AssetGraphPortLabel" TextWrapping="Wrap"/>
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <TextBlock Text="inputs" Classes="AssetGraphCardType"
-                               IsVisible="{Binding SelectedNode.HasInputPorts}"/>
-                    <ItemsControl ItemsSource="{Binding SelectedNode.InputPorts}"
-                                  IsVisible="{Binding SelectedNode.HasInputPorts}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Grid ColumnDefinitions="110,*" ColumnSpacing="8" Margin="0,2">
-                                    <TextBlock Text="{Binding Label}" Classes="AssetGraphPortLabel"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding InspectorValue}"
-                                               Classes="AssetGraphPortLabel"/>
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </ScrollViewer>
         </Border>
     </Grid>
 </UserControl>

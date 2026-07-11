@@ -735,11 +735,27 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        var chartDocument = new StatechartDocumentViewModel(info.Name, info.Path, chart);
+        chartDocument.Control.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ControlPaneViewModel.SelectedState))
+            {
+                Inspector.Inspect(chartDocument.Control.SelectedState);
+            }
+        };
+        chartDocument.Dataflow.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(DataflowPaneViewModel.SelectedNode))
+            {
+                Inspector.Inspect(chartDocument.Dataflow.SelectedNode);
+            }
+        };
+
         var document = new Document
         {
             Id = documentId,
             Title = info.Name,
-            Context = new StatechartDocumentViewModel(info.Name, info.Path, chart),
+            Context = chartDocument,
             CanClose = true,
             CanFloat = false,
             CanDrag = true,

@@ -4,8 +4,8 @@
              xmlns:sc="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
              x:Class="Wozzits.Editor.App.Views.EditorPanes.Statecharts.ControlPaneView"
              x:DataType="sc:ControlPaneViewModel">
-    <Grid Classes="EditorPaneRoot" ColumnDefinitions="*,Auto">
-        <Border Classes="PaneSurface" Grid.Column="0">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
             <Grid>
                 <TextBlock Text="No statechart open. Statecharts &#x2192; open a chart's control layer."
                            Classes="PaneEmptyState"
@@ -122,65 +122,6 @@
                     </Grid>
                 </ScrollViewer>
             </Grid>
-        </Border>
-
-        <Border Grid.Column="1"
-                Width="320"
-                IsVisible="{Binding HasSelectedState}"
-                Background="{DynamicResource WozzitsShellBackgroundBrush}"
-                BorderBrush="{DynamicResource WozzitsGraphWireBrush}"
-                BorderThickness="1,0,0,0">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="14" Spacing="6" x:CompileBindings="False">
-                    <TextBlock Text="{Binding SelectedState.Title}" Classes="AssetGraphCardName"/>
-                    <TextBlock Text="&#x25B6; initial state" Classes="AssetGraphCardId"
-                               IsVisible="{Binding SelectedState.IsInitial}"/>
-
-                    <TextBlock Text="do" Classes="AssetGraphCardType" Margin="0,8,0,0"
-                               IsVisible="{Binding SelectedState.HasDoEffects}"/>
-                    <ItemsControl ItemsSource="{Binding SelectedState.DoEffects}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" Classes="AssetGraphPortLabel"
-                                           TextWrapping="Wrap" Margin="0,1"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <TextBlock Text="entry" Classes="AssetGraphCardType" Margin="0,8,0,0"
-                               IsVisible="{Binding SelectedState.HasEntryEffects}"/>
-                    <ItemsControl ItemsSource="{Binding SelectedState.EntryEffects}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" Classes="AssetGraphPortLabel"
-                                           TextWrapping="Wrap" Margin="0,1"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <TextBlock Text="exit" Classes="AssetGraphCardType" Margin="0,8,0,0"
-                               IsVisible="{Binding SelectedState.HasExitEffects}"/>
-                    <ItemsControl ItemsSource="{Binding SelectedState.ExitEffects}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" Classes="AssetGraphPortLabel"
-                                           TextWrapping="Wrap" Margin="0,1"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <TextBlock Text="transitions" Classes="AssetGraphCardType" Margin="0,8,0,0"
-                               IsVisible="{Binding SelectedState.HasTransitions}"/>
-                    <ItemsControl ItemsSource="{Binding SelectedState.OutgoingTransitions}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" Classes="AssetGraphPortLabel"
-                                           TextWrapping="Wrap" Margin="0,1"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </ScrollViewer>
         </Border>
     </Grid>
 </UserControl>
