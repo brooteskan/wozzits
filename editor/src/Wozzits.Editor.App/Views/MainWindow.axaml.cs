@@ -69,19 +69,12 @@ public partial class MainWindow : Window
         viewModel.RefreshStatechartsCommand.Execute(null);
 
         OpenStatechartMenu.Items.Clear();
-        OpenControlMenu.Items.Clear();
         foreach (var chart in viewModel.Statecharts)
         {
             OpenStatechartMenu.Items.Add(new MenuItem
             {
                 Header = chart.Name,
-                Command = viewModel.OpenStatechartDataflowCommand,
-                CommandParameter = chart,
-            });
-            OpenControlMenu.Items.Add(new MenuItem
-            {
-                Header = chart.Name,
-                Command = viewModel.OpenStatechartControlCommand,
+                Command = viewModel.OpenStatechartCommand,
                 CommandParameter = chart,
             });
         }

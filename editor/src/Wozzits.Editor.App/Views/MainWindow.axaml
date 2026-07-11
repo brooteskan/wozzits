@@ -46,8 +46,7 @@
                           Command="{Binding RefreshSceneletsCommand}"/>
             </MenuItem>
             <MenuItem Header="_Statecharts" SubmenuOpened="OnStatechartsMenuOpened">
-                <MenuItem Header="_Open Dataflow" x:Name="OpenStatechartMenu"/>
-                <MenuItem Header="Open _Control" x:Name="OpenControlMenu"/>
+                <MenuItem Header="_Open Chart" x:Name="OpenStatechartMenu"/>
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Theme">

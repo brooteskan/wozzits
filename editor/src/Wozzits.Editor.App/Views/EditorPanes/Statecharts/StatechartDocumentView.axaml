@@ -1,0 +1,17 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sc="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.Statecharts.StatechartDocumentView"
+             x:DataType="sc:StatechartDocumentViewModel">
+    <Grid ColumnDefinitions="2*,Auto,3*">
+        <ContentControl Grid.Column="0" Content="{Binding Control}"/>
+
+        <GridSplitter Grid.Column="1"
+                      Width="5"
+                      VerticalAlignment="Stretch"
+                      ResizeDirection="Columns"
+                      Background="{DynamicResource WozzitsGraphWireBrush}"/>
+
+        <ContentControl Grid.Column="2" Content="{Binding Dataflow}"/>
+    </Grid>
+</UserControl>
