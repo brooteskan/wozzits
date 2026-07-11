@@ -14,7 +14,7 @@ using Wozzits.Editor.Statecharts;
 /// which guarantees every wire runs strictly left-to-right. Positions are transient here;
 /// persisting hand-placed layout comes with the canvas view (E2b/E2c).
 /// </summary>
-public sealed class DataflowPaneViewModel : ViewModelBase
+public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas
 {
     private const double CanvasPadding = 28.0;
     private const double CardWidth = 220.0;
@@ -56,6 +56,101 @@ public sealed class DataflowPaneViewModel : ViewModelBase
     public double ScaledGraphWidth => GraphWidth * Zoom;
 
     public double ScaledGraphHeight => GraphHeight * Zoom;
+
+    public IReadOnlyList<ICanvasNode> CanvasNodes => Nodes;
+
+    public void SelectOnly(ICanvasNode node)
+    {
+        foreach (var n in Nodes)
+        {
+            n.IsSelected = false;
+        }
+
+        SelectedNodes.Clear();
+        if (node is DataflowNodeViewModel dataflow)
+        {
+            dataflow.IsSelected = true;
+            SelectedNodes.Add(dataflow);
+        }
+    }
+
+    public void ToggleSelection(ICanvasNode node)
+    {
+        if (node is not DataflowNodeViewModel dataflow)
+        {
+            return;
+        }
+
+        dataflow.IsSelected = !dataflow.IsSelected;
+        if (dataflow.IsSelected)
+        {
+            if (!SelectedNodes.Contains(dataflow))
+            {
+                SelectedNodes.Add(dataflow);
+            }
+        }
+        else
+        {
+            SelectedNodes.Remove(dataflow);
+        }
+    }
+
+    public void ClearSelection()
+    {
+        foreach (var n in Nodes)
+        {
+            n.IsSelected = false;
+        }
+
+        SelectedNodes.Clear();
+    }
+
+    public void SelectInRectangle(double x0, double y0, double x1, double y1, bool additive)
+    {
+        double left = Math.Min(x0, x1);
+        double right = Math.Max(x0, x1);
+        double top = Math.Min(y0, y1);
+        double bottom = Math.Max(y0, y1);
+
+        if (!additive)
+        {
+            ClearSelection();
+        }
+
+        foreach (var n in Nodes)
+        {
+            bool overlaps = n.X < right && n.X + CardWidth > left && n.Y < bottom && n.Y + CardHeight > top;
+            if (overlaps && !n.IsSelected)
+            {
+                n.IsSelected = true;
+                SelectedNodes.Add(n);
+            }
+        }
+    }
+
+    public void MoveSelectedBy(double dx, double dy)
+    {
+        foreach (var n in SelectedNodes)
+        {
+            n.X = Math.Max(0, n.X + dx);
+            n.Y = Math.Max(0, n.Y + dy);
+        }
+
+        RaiseExtentChanged();
+    }
+
+    public void ZoomByWheel(double wheelDelta)
+    {
+        Zoom = wheelDelta > 0 ? Zoom * 1.1 : Zoom / 1.1;
+    }
+
+    private void RaiseExtentChanged()
+    {
+        OnPropertyChanged(nameof(GraphWidth));
+        OnPropertyChanged(nameof(GraphHeight));
+        OnPropertyChanged(nameof(ScaledGraphWidth));
+        OnPropertyChanged(nameof(ScaledGraphHeight));
+    }
 
     /// <summary>Rebuild the canvas from a chart's dataflow layer.</summary>
     public void Project(Chart chart)

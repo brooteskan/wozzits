@@ -13,12 +13,14 @@
                            VerticalAlignment="Center"
                            IsVisible="{Binding !HasGraph}"/>
 
-                <ScrollViewer IsVisible="{Binding HasGraph}"
+                <ScrollViewer x:Name="Scroll"
+                              IsVisible="{Binding HasGraph}"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Auto">
                     <Grid Width="{Binding ScaledGraphWidth}"
                           Height="{Binding ScaledGraphHeight}">
-                        <Grid Width="{Binding GraphWidth}"
+                        <Grid x:Name="Canvas"
+                              Width="{Binding GraphWidth}"
                               Height="{Binding GraphHeight}"
                               HorizontalAlignment="Left"
                               VerticalAlignment="Top"
@@ -109,6 +111,13 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+
+                            <Border x:Name="SelectionRectangle"
+                                    Classes="AssetGraphSelectionRectangle"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    IsVisible="False"
+                                    IsHitTestVisible="False"/>
                         </Grid>
                     </Grid>
                 </ScrollViewer>

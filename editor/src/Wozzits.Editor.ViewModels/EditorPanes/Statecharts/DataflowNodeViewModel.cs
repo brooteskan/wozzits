@@ -11,7 +11,7 @@ public enum DataflowNodeKind
 
 // A card on the dataflow canvas: a binding, an agent, or a pure op. `Model` is the
 // backing authoring object (Binding | AgentDecl | PureOp) for editing/inspection.
-public sealed class DataflowNodeViewModel : ViewModelBase
+public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 {
     private double _x;
     private double _y;

@@ -4,7 +4,7 @@ using Wozzits.Editor.Statecharts;
 
 // A control-layer state box (A1: compact -- a title plus effect/transition badge
 // counts; effects are edited in the inspector, not on the card).
-public sealed class StateNodeViewModel : ViewModelBase
+public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
 {
     private double _x;
     private double _y;

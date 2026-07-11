@@ -10,7 +10,7 @@ using Wozzits.Editor.Statecharts;
 /// the acyclic dataflow layer this layer is cyclic, so there is no left-to-right layering.
 /// Positions are transient here; hand-placed layout persistence comes with the view.
 /// </summary>
-public sealed class ControlPaneViewModel : ViewModelBase
+public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
 {
     public const double StateWidth = 180.0;
     public const double StateHeight = 76.0;
@@ -24,6 +24,8 @@ public sealed class ControlPaneViewModel : ViewModelBase
     private const double MaxZoom = 4.0;
 
     private double _zoom = 1.0;
+
+    private readonly Dictionary<string, StateNodeViewModel> _statesById = new();
 
     public ObservableCollection<RegionViewModel> Regions { get; } = [];
 
@@ -60,6 +62,139 @@ public sealed class ControlPaneViewModel : ViewModelBase
 
     public double ScaledGraphHeight => GraphHeight * Zoom;
 
+    public IReadOnlyList<ICanvasNode> CanvasNodes => States;
+
+    public void SelectOnly(ICanvasNode node)
+    {
+        foreach (var s in States)
+        {
+            s.IsSelected = false;
+        }
+
+        SelectedStates.Clear();
+        if (node is StateNodeViewModel state)
+        {
+            state.IsSelected = true;
+            SelectedStates.Add(state);
+        }
+    }
+
+    public void ToggleSelection(ICanvasNode node)
+    {
+        if (node is not StateNodeViewModel state)
+        {
+            return;
+        }
+
+        state.IsSelected = !state.IsSelected;
+        if (state.IsSelected)
+        {
+            if (!SelectedStates.Contains(state))
+            {
+                SelectedStates.Add(state);
+            }
+        }
+        else
+        {
+            SelectedStates.Remove(state);
+        }
+    }
+
+    public void ClearSelection()
+    {
+        foreach (var s in States)
+        {
+            s.IsSelected = false;
+        }
+
+        SelectedStates.Clear();
+    }
+
+    public void SelectInRectangle(double x0, double y0, double x1, double y1, bool additive)
+    {
+        double left = Math.Min(x0, x1);
+        double right = Math.Max(x0, x1);
+        double top = Math.Min(y0, y1);
+        double bottom = Math.Max(y0, y1);
+
+        if (!additive)
+        {
+            ClearSelection();
+        }
+
+        foreach (var s in States)
+        {
+            bool overlaps = s.X < right && s.X + StateWidth > left && s.Y < bottom && s.Y + StateHeight > top;
+            if (overlaps && !s.IsSelected)
+            {
+                s.IsSelected = true;
+                SelectedStates.Add(s);
+            }
+        }
+    }
+
+    public void MoveSelectedBy(double dx, double dy)
+    {
+        foreach (var s in SelectedStates)
+        {
+            s.X = Math.Max(0, s.X + dx);
+            s.Y = Math.Max(0, s.Y + dy);
+        }
+
+        RecomputeRegionBounds();
+        RaiseExtentChanged();
+    }
+
+    public void ZoomByWheel(double wheelDelta)
+    {
+        Zoom = wheelDelta > 0 ? Zoom * 1.1 : Zoom / 1.1;
+    }
+
+    private void RaiseExtentChanged()
+    {
+        OnPropertyChanged(nameof(GraphWidth));
+        OnPropertyChanged(nameof(GraphHeight));
+        OnPropertyChanged(nameof(ScaledGraphWidth));
+        OnPropertyChanged(nameof(ScaledGraphHeight));
+    }
+
+    // Each region's swimlane wraps its member states (+ header + padding), so a state box
+    // never escapes its container -- drag a state and its region grows to follow it.
+    private void RecomputeRegionBounds()
+    {
+        foreach (var region in Regions)
+        {
+            double minX = double.MaxValue;
+            double minY = double.MaxValue;
+            double maxX = double.MinValue;
+            double maxY = double.MinValue;
+            int count = 0;
+            foreach (var stateId in region.StateIds)
+            {
+                if (!_statesById.TryGetValue(stateId, out var s))
+                {
+                    continue;
+                }
+
+                minX = Math.Min(minX, s.X);
+                minY = Math.Min(minY, s.Y);
+                maxX = Math.Max(maxX, s.X + StateWidth);
+                maxY = Math.Max(maxY, s.Y + StateHeight);
+                count++;
+            }
+
+            if (count == 0)
+            {
+                continue;
+            }
+
+            region.X = Math.Max(0, minX - RegionPadding);
+            region.Y = Math.Max(0, minY - RegionHeaderHeight - RegionPadding);
+            region.Width = (maxX - Math.Max(0, minX - RegionPadding)) + RegionPadding;
+            region.Height = (maxY - Math.Max(0, minY - RegionHeaderHeight - RegionPadding)) + RegionPadding;
+        }
+    }
+
     /// <summary>Rebuild the canvas from a chart's control layer.</summary>
     public void Project(Chart chart)
     {
@@ -79,7 +214,8 @@ public sealed class ControlPaneViewModel : ViewModelBase
             initials.Add(r.Initial);
         }
 
-        var stateVms = new Dictionary<string, StateNodeViewModel>();
+        var stateVms = _statesById;
+        stateVms.Clear();
         foreach (var s in chart.States)
         {
             stateVms[s.Id] = new StateNodeViewModel(s, initials.Contains(s.Id));
@@ -105,13 +241,8 @@ public sealed class ControlPaneViewModel : ViewModelBase
                 column++;
             }
 
-            int count = Math.Max(1, column);
-            region.X = CanvasPadding;
-            region.Y = top;
-            region.Width = RegionPadding * 2 + count * StateWidth + (count - 1) * StateGapX;
-            region.Height = RegionHeaderHeight + RegionPadding * 2 + StateHeight;
             Regions.Add(region);
-            top += region.Height + RegionGapY;
+            top += RegionHeaderHeight + RegionPadding * 2 + StateHeight + RegionGapY;
         }
 
         // Any state not claimed by a region: a trailing row (defensive; goldens are 1:1).
@@ -145,6 +276,8 @@ public sealed class ControlPaneViewModel : ViewModelBase
                 }
             }
         }
+
+        RecomputeRegionBounds();
 
         OnPropertyChanged(nameof(HasGraph));
         OnPropertyChanged(nameof(GraphWidth));
