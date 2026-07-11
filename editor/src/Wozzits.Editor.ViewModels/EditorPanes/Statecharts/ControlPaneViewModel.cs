@@ -78,6 +78,10 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
         IsLayoutDirty = false;
     }
 
+    // A state's effect/transition field was edited in the inspector: the chart changed
+    // in place (no reproject), so mark it dirty for save.
+    public void MarkChartDirty() => IsDirty = true;
+
     public double Zoom
     {
         get => _zoom;
@@ -312,7 +316,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas
         stateVms.Clear();
         foreach (var s in chart.States)
         {
-            stateVms[s.Id] = new StateNodeViewModel(s, initials.Contains(s.Id));
+            stateVms[s.Id] = new StateNodeViewModel(s, initials.Contains(s.Id)) { Edited = MarkChartDirty };
         }
 
         // Regions as vertical swimlanes; each region's states in a row.

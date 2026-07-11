@@ -88,6 +88,38 @@ public sealed class StatechartInspectorTests
     }
 
     [Fact]
+    public void State_Effect_Rows_Expose_Editable_Constants_And_Op_Markers()
+    {
+        var s0 = Control("caravan.sc.json").States.First(s => s.StateId == "S0");
+
+        // set_goal = 0.8 is a constant -> editable; set_scale = op:... is not.
+        var goal = s0.DoEffectRows.First(r => r.Label.StartsWith("set_goal"));
+        Assert.True(goal.IsEditable);
+        Assert.Equal("0.8", goal.ValueEditor!.Value);
+
+        var scale = s0.DoEffectRows.First(r => r.Label.StartsWith("set_scale"));
+        Assert.False(scale.IsEditable);
+        Assert.True(scale.HasReadOnlyValue);
+    }
+
+    [Fact]
+    public void Transition_Rows_Expose_Editable_After_Delay()
+    {
+        var control = Control("traffic_light.sc.json");
+
+        var hold = control.States.First(s => s.StateId == "HOLD");
+        var after = hold.TransitionRows.First(r => r.IsAfter);
+        Assert.Equal("10", after.SecondsEditor!.Value);
+        Assert.True(after.HasActions);   // rearm sig
+
+        // A commit-triggered transition is not editable-as-delay; it reads as text.
+        var delib = control.States.First(s => s.StateId == "DELIBERATE");
+        var commit = delib.TransitionRows.First();
+        Assert.False(commit.IsAfter);
+        Assert.True(commit.HasTriggerText);
+    }
+
+    [Fact]
     public void SelectedState_Tracks_Single_Selection()
     {
         var pane = Control("traffic_light.sc.json");

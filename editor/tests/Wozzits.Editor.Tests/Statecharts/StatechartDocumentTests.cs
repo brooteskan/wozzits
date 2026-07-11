@@ -148,6 +148,48 @@ public sealed class StatechartDocumentTests
     }
 
     [Fact]
+    public void Editing_An_Effect_Constant_Marks_Dirty_And_Saves_Into_The_Chart()
+    {
+        var path = FreshChartPath("caravan.sc.json");
+        var document = new StatechartDocumentViewModel("caravan", path, Golden("caravan.sc.json"));
+
+        // S0's do has `set_goal caravan[0] = 0.8` -- an editable numeric constant.
+        var s0 = document.Control.States.First(s => s.StateId == "S0");
+        s0.DoEffectRows.First(r => r.IsEditable).ValueEditor!.Value = "0.5";
+
+        Assert.True(document.Control.IsDirty);
+        Assert.True(document.IsDirty);
+
+        document.Save();
+
+        var reloaded = StatechartJson.Load(File.ReadAllText(path));
+        var goal = reloaded.States.First(s => s.Id == "S0").Do.First(e => e.Kind == EffectKind.SetGoal);
+        Assert.Equal(0.5, goal.Value!.Const);
+    }
+
+    [Fact]
+    public void Editing_A_Transition_After_Delay_Marks_Dirty_And_Saves_Into_The_Chart()
+    {
+        var path = FreshChartPath("traffic_light.sc.json");
+        var document = new StatechartDocumentViewModel("traffic_light", path, Golden("traffic_light.sc.json"));
+
+        // HOLD -> DELIBERATE fires on `after 10s` -- the delay is the editable scalar.
+        var hold = document.Control.States.First(s => s.StateId == "HOLD");
+        var after = hold.TransitionRows.First(r => r.IsAfter);
+        after.SecondsEditor!.Value = "12";
+
+        Assert.True(document.Control.IsDirty);
+        Assert.True(document.IsDirty);
+
+        document.Save();
+
+        var reloaded = StatechartJson.Load(File.ReadAllText(path));
+        var trigger = reloaded.States.First(s => s.Id == "HOLD").Transitions
+            .First(t => t.Trigger.Kind == TriggerKind.After).Trigger;
+        Assert.Equal(12, trigger.Seconds);
+    }
+
+    [Fact]
     public void Saved_Layout_Is_Restored_On_Reopen()
     {
         var path = FreshChartPath("traffic_light.sc.json");

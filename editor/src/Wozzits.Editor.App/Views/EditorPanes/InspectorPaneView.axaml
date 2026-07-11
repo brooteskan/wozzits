@@ -1359,40 +1359,79 @@
 
                                 <TextBlock Text="do" Classes="InspectorSectionTitle" Margin="0,8,0,0"
                                            IsVisible="{Binding SelectedStatechartState.HasDoEffects}"/>
-                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.DoEffects}">
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.DoEffectRows}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"/>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                <TextBox Grid.Column="1"
+                                                         Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         IsVisible="{Binding IsEditable}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding ReadOnlyValue}"
+                                                           IsVisible="{Binding HasReadOnlyValue}" VerticalAlignment="Center"/>
+                                            </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
                                 <TextBlock Text="entry" Classes="InspectorSectionTitle" Margin="0,8,0,0"
                                            IsVisible="{Binding SelectedStatechartState.HasEntryEffects}"/>
-                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.EntryEffects}">
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.EntryEffectRows}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"/>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                <TextBox Grid.Column="1"
+                                                         Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         IsVisible="{Binding IsEditable}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding ReadOnlyValue}"
+                                                           IsVisible="{Binding HasReadOnlyValue}" VerticalAlignment="Center"/>
+                                            </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
                                 <TextBlock Text="exit" Classes="InspectorSectionTitle" Margin="0,8,0,0"
                                            IsVisible="{Binding SelectedStatechartState.HasExitEffects}"/>
-                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.ExitEffects}">
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.ExitEffectRows}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"/>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                <TextBox Grid.Column="1"
+                                                         Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         IsVisible="{Binding IsEditable}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding ReadOnlyValue}"
+                                                           IsVisible="{Binding HasReadOnlyValue}" VerticalAlignment="Center"/>
+                                            </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
                                 <TextBlock Text="transitions" Classes="InspectorSectionTitle" Margin="0,8,0,0"
                                            IsVisible="{Binding SelectedStatechartState.HasTransitions}"/>
-                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.OutgoingTransitions}">
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.TransitionRows}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"/>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                    <TextBlock Text="after" VerticalAlignment="Center"
+                                                               IsVisible="{Binding IsAfter}"/>
+                                                    <TextBox Width="70" IsVisible="{Binding IsAfter}"
+                                                             Text="{Binding SecondsEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    <TextBlock Text="s" VerticalAlignment="Center"
+                                                               IsVisible="{Binding IsAfter}"/>
+                                                    <TextBlock Text="{Binding TriggerText}" VerticalAlignment="Center"
+                                                               TextWrapping="Wrap" IsVisible="{Binding HasTriggerText}"/>
+                                                    <TextBlock Text="{Binding ActionSummary}" Classes="InspectorPropertyName"
+                                                               VerticalAlignment="Center" IsVisible="{Binding HasActions}"/>
+                                                </StackPanel>
+                                            </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

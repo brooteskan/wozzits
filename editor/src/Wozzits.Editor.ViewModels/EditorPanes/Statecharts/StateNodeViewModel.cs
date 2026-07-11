@@ -1,10 +1,9 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
-using System.Globalization;
 using Wozzits.Editor.Statecharts;
 
 // A control-layer state box (A1: compact -- a title plus effect/transition badge
-// counts; effects are edited in the inspector, not on the card).
+// counts; effects and transitions are edited in the inspector, not on the card).
 public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
 {
     private double _x;
@@ -20,10 +19,13 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
         EntryCount = model.Entry.Count;
         ExitCount = model.Exit.Count;
         OutgoingCount = model.Transitions.Count;
-        DoEffects = model.Do.Select(FormatEffect).ToList();
-        EntryEffects = model.Entry.Select(FormatEffect).ToList();
-        ExitEffects = model.Exit.Select(FormatEffect).ToList();
-        OutgoingTransitions = model.Transitions.Select(FormatTransition).ToList();
+
+        // Rows late-bind Edited (set by the pane after construction) so editing a
+        // constant / after-delay marks the chart dirty without a reproject.
+        DoEffectRows = model.Do.Select(e => new EffectRowViewModel(e, () => Edited?.Invoke())).ToList();
+        EntryEffectRows = model.Entry.Select(e => new EffectRowViewModel(e, () => Edited?.Invoke())).ToList();
+        ExitEffectRows = model.Exit.Select(e => new EffectRowViewModel(e, () => Edited?.Invoke())).ToList();
+        TransitionRows = model.Transitions.Select(t => new TransitionRowViewModel(t, () => Edited?.Invoke())).ToList();
     }
 
     public State Model { get; }
@@ -43,22 +45,34 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
 
     public int OutgoingCount { get; }
 
-    // Read-only detail for the inspector panel: each effect / outgoing transition as a line.
-    public IReadOnlyList<string> DoEffects { get; }
+    // Editable inspector rows for each effect / outgoing transition.
+    public IReadOnlyList<EffectRowViewModel> DoEffectRows { get; }
 
-    public IReadOnlyList<string> EntryEffects { get; }
+    public IReadOnlyList<EffectRowViewModel> EntryEffectRows { get; }
 
-    public IReadOnlyList<string> ExitEffects { get; }
+    public IReadOnlyList<EffectRowViewModel> ExitEffectRows { get; }
 
-    public IReadOnlyList<string> OutgoingTransitions { get; }
+    public IReadOnlyList<TransitionRowViewModel> TransitionRows { get; }
 
-    public bool HasDoEffects => DoEffects.Count > 0;
+    // Invoked when a row's editable field is edited (the pane wires it to mark dirty).
+    public Action? Edited { get; set; }
 
-    public bool HasEntryEffects => EntryEffects.Count > 0;
+    // Convenience read-only string views of the rows (used by tests / plain text).
+    public IReadOnlyList<string> DoEffects => DoEffectRows.Select(r => r.Display).ToList();
 
-    public bool HasExitEffects => ExitEffects.Count > 0;
+    public IReadOnlyList<string> EntryEffects => EntryEffectRows.Select(r => r.Display).ToList();
 
-    public bool HasTransitions => OutgoingTransitions.Count > 0;
+    public IReadOnlyList<string> ExitEffects => ExitEffectRows.Select(r => r.Display).ToList();
+
+    public IReadOnlyList<string> OutgoingTransitions => TransitionRows.Select(r => r.Display).ToList();
+
+    public bool HasDoEffects => DoEffectRows.Count > 0;
+
+    public bool HasEntryEffects => EntryEffectRows.Count > 0;
+
+    public bool HasExitEffects => ExitEffectRows.Count > 0;
+
+    public bool HasTransitions => TransitionRows.Count > 0;
 
     public string Summary
     {
@@ -89,39 +103,4 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
         get => _isSelected;
         set => SetProperty(ref _isSelected, value);
     }
-
-    private static string FormatEffect(Effect e) => e.Kind switch
-    {
-        EffectKind.SetGoal => $"set_goal {e.Agent}[{e.Slot}] = {FormatValue(e.Value)}",
-        EffectKind.SetDecoherence => $"set_decoherence {e.Agent} = {FormatValue(e.Value)}",
-        EffectKind.Rearm => $"rearm {e.Agent}",
-        EffectKind.Reward => $"reward {e.Agent} q{e.Slot} {(e.Toward ? "toward |0>" : "toward |1>")} {FormatValue(e.Value)}",
-        EffectKind.SetScale => $"set_scale {e.TargetBind} = {FormatValue(e.Value)}",
-        EffectKind.SetVisible => $"set_visible {e.TargetBind} = {FormatValue(e.Value)}",
-        EffectKind.PlaySound => $"play_sound {e.TargetBind}",
-        _ => e.Kind.ToString(),
-    };
-
-    private static string FormatTransition(Transition t)
-    {
-        string actions = t.Actions.Count > 0 ? $"  ·  {t.Actions.Count} action(s)" : string.Empty;
-        return $"→ {t.Target}   on {TriggerLabel(t.Trigger)}{actions}";
-    }
-
-    private static string TriggerLabel(Trigger t) => t.Kind switch
-    {
-        TriggerKind.Commit => t.Outcome is int outcome ? $"commit={outcome}" : "commit",
-        TriggerKind.After => $"after {t.Seconds.ToString("0.###", CultureInfo.InvariantCulture)}s",
-        TriggerKind.Guard => "guard",
-        TriggerKind.Event => string.IsNullOrEmpty(t.EventName) ? "event" : $"event {t.EventName}",
-        _ => string.Empty,
-    };
-
-    private static string FormatValue(ValueRef? r) => r is null
-        ? string.Empty
-        : r.Kind == RefKind.Op
-            ? $"op:{r.Op}"
-            : r.IsBool
-                ? (r.Const != 0 ? "true" : "false")
-                : r.Const.ToString(CultureInfo.InvariantCulture);
 }
