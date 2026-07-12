@@ -2,6 +2,7 @@ namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.Input;
+using Wozzits.Editor.Protocol;
 using Wozzits.Editor.Statecharts;
 
 /// <summary>
@@ -48,6 +49,11 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
     public IRelayCommand AddRegionCommand { get; }
 
     public IRelayCommand DeleteSelectedCommand { get; }
+
+    // The device-free behavior-actuator catalog (name + declared arg schema), set by the
+    // owner (which holds the engine session) before Project so `call` effects can offer an
+    // actuator picker and its per-arg pickers. Persists across reprojects.
+    public IReadOnlyList<EngineActuator> ActuatorCatalog { get; set; } = Array.Empty<EngineActuator>();
 
     // When armed (a two-way-bound toolbar toggle), a drag from one state to another authors a
     // transition instead of moving the state; the interaction controller disarms after each
@@ -715,6 +721,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         stateVms.Clear();
         var opIds = chart.Pure.Select(p => p.Id).ToList();
         var bindingPorts = chart.Bindings.Select(b => b.Port).ToList();
+        var agentIds = chart.Agents.Select(a => a.Id).ToList();
         foreach (var s in chart.States)
         {
             stateVms[s.Id] = new StateNodeViewModel(s, initials.Contains(s.Id))
@@ -730,6 +737,8 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
                 RenameRequested = newId => RenameState(s, newId),
                 AvailableOps = opIds,
                 AvailableBindings = bindingPorts,
+                AvailableAgents = agentIds,
+                AvailableActuators = ActuatorCatalog,   // last: seeds `call` arg rows with the lists in hand
             };
         }
 

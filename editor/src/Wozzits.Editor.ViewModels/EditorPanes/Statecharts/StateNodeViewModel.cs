@@ -1,6 +1,7 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using CommunityToolkit.Mvvm.Input;
+using Wozzits.Editor.Protocol;
 using Wozzits.Editor.Statecharts;
 
 // A control-layer state box (A1: compact -- a title plus effect/transition badge
@@ -153,6 +154,39 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
             foreach (var r in DoEffectRows) r.TargetBindings = value;
             foreach (var r in EntryEffectRows) r.TargetBindings = value;
             foreach (var r in ExitEffectRows) r.TargetBindings = value;
+        }
+    }
+
+    // The chart's agent ids, pushed into every effect row so a `call` effect's AGENT
+    // args can pick any agent. The pane sets this after building the state.
+    private IReadOnlyList<string> _availableAgents = Array.Empty<string>();
+
+    public IReadOnlyList<string> AvailableAgents
+    {
+        get => _availableAgents;
+        set
+        {
+            _availableAgents = value;
+            foreach (var r in DoEffectRows) r.AvailableAgents = value;
+            foreach (var r in EntryEffectRows) r.AvailableAgents = value;
+            foreach (var r in ExitEffectRows) r.AvailableAgents = value;
+        }
+    }
+
+    // The behavior-actuator catalog, pushed into every effect row so a `call` effect can
+    // pick an actuator and render its declared arg pickers. Set LAST (after ops/bindings/
+    // agents) so each row seeds its args against the schema with the choice lists in hand.
+    private IReadOnlyList<EngineActuator> _availableActuators = Array.Empty<EngineActuator>();
+
+    public IReadOnlyList<EngineActuator> AvailableActuators
+    {
+        get => _availableActuators;
+        set
+        {
+            _availableActuators = value;
+            foreach (var r in DoEffectRows) r.ActuatorCatalog = value;
+            foreach (var r in EntryEffectRows) r.ActuatorCatalog = value;
+            foreach (var r in ExitEffectRows) r.ActuatorCatalog = value;
         }
     }
 

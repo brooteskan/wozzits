@@ -873,7 +873,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        var chartDocument = new StatechartDocumentViewModel(info.Name, info.Path, chart);
+        // The behavior-actuator catalog is device-free, so it loads without a live
+        // viewport; a `call` effect uses it for its actuator + arg pickers.
+        var actuatorCatalog = _editorSession?.LoadActuatorCatalog();
+        var chartDocument = new StatechartDocumentViewModel(
+            info.Name,
+            info.Path,
+            chart,
+            actuatorCatalog is { Ok: true } ? actuatorCatalog.Actuators : null);
         chartDocument.Control.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ControlPaneViewModel.SelectedState))

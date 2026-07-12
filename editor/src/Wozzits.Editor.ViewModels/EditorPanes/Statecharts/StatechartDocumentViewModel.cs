@@ -2,6 +2,7 @@ namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.IO;
 using CommunityToolkit.Mvvm.Input;
+using Wozzits.Editor.Protocol;
 using Wozzits.Editor.Statecharts;
 
 // One chart, both layers, one document. Owns the Chart and its .sc.json path, so it can save
@@ -15,7 +16,11 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
     private bool _isReadOnly;
     private bool _metaDirty;
 
-    public StatechartDocumentViewModel(string name, string path, Chart chart)
+    public StatechartDocumentViewModel(
+        string name,
+        string path,
+        Chart chart,
+        IReadOnlyList<EngineActuator>? actuatorCatalog = null)
     {
         _name = name;
         _path = path;
@@ -23,6 +28,11 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
         NameEditor = new EditableFieldViewModel("name", () => Name, TryRename);
         Control = new ControlPaneViewModel();
         Dataflow = new DataflowPaneViewModel();
+        // Set before Project so `call` effects get their actuator picker + arg pickers.
+        if (actuatorCatalog is not null)
+        {
+            Control.ActuatorCatalog = actuatorCatalog;
+        }
         Control.Project(chart);
         Dataflow.Project(chart);
 

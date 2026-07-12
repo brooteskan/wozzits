@@ -1496,6 +1496,7 @@
                                                 <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
                                                 <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
                                                 <MenuItem Header="play_sound" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.PlaySound}"/>
+                                                <MenuItem Header="call" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.Call}"/>
                                             </MenuFlyout>
                                         </Button.Flyout>
                                     </Button>
@@ -1520,6 +1521,38 @@
                                                                  IsVisible="{Binding IsEditable}"
                                                                  Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                                     </StackPanel>
+                                                    <StackPanel Orientation="Vertical" Spacing="4" IsVisible="{Binding IsCall}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="120"
+                                                                  ItemsSource="{Binding ActuatorNames}"
+                                                                  SelectedItem="{Binding SelectedActuator, Mode=TwoWay}"/>
+                                                        <ItemsControl ItemsSource="{Binding CallArgs}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="10,0,0,0">
+                                                                        <TextBlock Text="{Binding ParamName}" Classes="InspectorPropertyName"
+                                                                                   VerticalAlignment="Center"/>
+                                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsScalar}"
+                                                                                      ItemsSource="{Binding ValueSources}"
+                                                                                      SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                                            <TextBox Classes="InspectorInput" Width="70"
+                                                                                     IsVisible="{Binding IsEditable}"
+                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsBinding}"
+                                                                                      ItemsSource="{Binding Bindings}"
+                                                                                      SelectedItem="{Binding SelectedBinding, Mode=TwoWay}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsAgent}"
+                                                                                      ItemsSource="{Binding Agents}"
+                                                                                      SelectedItem="{Binding SelectedAgent, Mode=TwoWay}"/>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
                                                 </StackPanel>
                                                 <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
                                                         VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
@@ -1541,6 +1574,7 @@
                                                 <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
                                                 <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
                                                 <MenuItem Header="play_sound" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.PlaySound}"/>
+                                                <MenuItem Header="call" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.Call}"/>
                                             </MenuFlyout>
                                         </Button.Flyout>
                                     </Button>
@@ -1565,6 +1599,38 @@
                                                                  IsVisible="{Binding IsEditable}"
                                                                  Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                                     </StackPanel>
+                                                    <StackPanel Orientation="Vertical" Spacing="4" IsVisible="{Binding IsCall}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="120"
+                                                                  ItemsSource="{Binding ActuatorNames}"
+                                                                  SelectedItem="{Binding SelectedActuator, Mode=TwoWay}"/>
+                                                        <ItemsControl ItemsSource="{Binding CallArgs}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="10,0,0,0">
+                                                                        <TextBlock Text="{Binding ParamName}" Classes="InspectorPropertyName"
+                                                                                   VerticalAlignment="Center"/>
+                                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsScalar}"
+                                                                                      ItemsSource="{Binding ValueSources}"
+                                                                                      SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                                            <TextBox Classes="InspectorInput" Width="70"
+                                                                                     IsVisible="{Binding IsEditable}"
+                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsBinding}"
+                                                                                      ItemsSource="{Binding Bindings}"
+                                                                                      SelectedItem="{Binding SelectedBinding, Mode=TwoWay}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsAgent}"
+                                                                                      ItemsSource="{Binding Agents}"
+                                                                                      SelectedItem="{Binding SelectedAgent, Mode=TwoWay}"/>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
                                                 </StackPanel>
                                                 <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
                                                         VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
@@ -1586,6 +1652,7 @@
                                                 <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
                                                 <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
                                                 <MenuItem Header="play_sound" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.PlaySound}"/>
+                                                <MenuItem Header="call" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.Call}"/>
                                             </MenuFlyout>
                                         </Button.Flyout>
                                     </Button>
@@ -1609,6 +1676,38 @@
                                                         <TextBox Classes="InspectorInput" Width="80"
                                                                  IsVisible="{Binding IsEditable}"
                                                                  Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Vertical" Spacing="4" IsVisible="{Binding IsCall}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="120"
+                                                                  ItemsSource="{Binding ActuatorNames}"
+                                                                  SelectedItem="{Binding SelectedActuator, Mode=TwoWay}"/>
+                                                        <ItemsControl ItemsSource="{Binding CallArgs}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="10,0,0,0">
+                                                                        <TextBlock Text="{Binding ParamName}" Classes="InspectorPropertyName"
+                                                                                   VerticalAlignment="Center"/>
+                                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsScalar}"
+                                                                                      ItemsSource="{Binding ValueSources}"
+                                                                                      SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                                            <TextBox Classes="InspectorInput" Width="70"
+                                                                                     IsVisible="{Binding IsEditable}"
+                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsBinding}"
+                                                                                      ItemsSource="{Binding Bindings}"
+                                                                                      SelectedItem="{Binding SelectedBinding, Mode=TwoWay}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsAgent}"
+                                                                                      ItemsSource="{Binding Agents}"
+                                                                                      SelectedItem="{Binding SelectedAgent, Mode=TwoWay}"/>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                     </StackPanel>
                                                 </StackPanel>
                                                 <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
