@@ -87,6 +87,16 @@ namespace wz::app
         return frame_profiling_.load(std::memory_order_acquire);
     }
 
+    void EditorRuntimeControl::set_paused(bool paused)
+    {
+        paused_.store(paused, std::memory_order_release);
+    }
+
+    bool EditorRuntimeControl::paused() const
+    {
+        return paused_.load(std::memory_order_acquire);
+    }
+
     void EditorRuntimeControl::request_reload_behavior_modules()
     {
         reload_behaviors_requested_.store(true, std::memory_order_release);
@@ -1517,7 +1527,13 @@ namespace wz::app
                     frame_input.window = input.window;
                 }
 
-                app.simulation_tick(frame_input, dt, drive_camera);
+                // Skip the simulation while paused (editor "pause simulation"): the render
+                // path below keeps running and re-presents the last simulated frame, so the
+                // viewport stays live but agents/behaviors/time stop. dt is recomputed every
+                // frame regardless, so resuming does not produce a catch-up spike.
+                if (!control || !control->paused()) {
+                    app.simulation_tick(frame_input, dt, drive_camera);
+                }
 
                 if (!wz::gpu::begin_frame(ctx.device)) {
                     ctx.logger.error("begin_frame failed");

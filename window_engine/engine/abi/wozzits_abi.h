@@ -1016,6 +1016,13 @@ WZ_ABI_API int wz_host_runtime_is_running(WzHostRuntime* runtime);
 WZ_ABI_API void wz_host_runtime_set_frame_profiling(
     WzHostRuntime* runtime, int enabled);
 
+// Pause/resume the running engine's SIMULATION (default running). While paused the
+// engine keeps rendering the last frame (the viewport stays live) but skips the per-
+// frame simulation tick, so agents/behaviors/time stop and that CPU is freed. Resuming
+// does not produce a time catch-up. Safe on NULL.
+// NEW exported fn — WZ_ABI_VERSION unchanged (no struct change).
+WZ_ABI_API void wz_host_runtime_set_paused(WzHostRuntime* runtime, int paused);
+
 // Compile the session's current asset-graph draft on the running engine: copies
 // the draft, binds it on the engine thread (materialize -> swap -> resolve ->
 // rebind the renderer), and blocks until done. The draft is the only thing that
