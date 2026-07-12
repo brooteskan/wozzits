@@ -653,6 +653,39 @@ public sealed class StatechartMutationTests
     }
 
     [Fact]
+    public void Rename_Agent_Rewrites_Every_Reference()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var agent = chart.Agents.First(a => a.Id == "sig");
+        chart.States[0].Do.Add(new Effect { Kind = EffectKind.SetGoal, Agent = "sig", Slot = 0, Value = ValueRef.Number(0) });
+
+        pane.RenameAgent(agent, "brain");
+
+        Assert.Equal("brain", agent.Id);
+        Assert.DoesNotContain(chart.Pure, p => p.IsRead && p.Agent == "sig");   // reads repointed
+        Assert.Contains(chart.Pure, p => p.IsRead && p.Agent == "brain");
+        Assert.Contains(chart.States[0].Do, e => e.Kind == EffectKind.SetGoal && e.Agent == "brain");
+        Assert.Contains(chart.States.SelectMany(s => s.Transitions),
+            t => t.Trigger.Kind == TriggerKind.Commit && t.Trigger.Agent == "brain");
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Rename_Agent_To_An_Existing_Id_Is_Rejected()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var agent = chart.Agents.First();
+        var opId = chart.Pure[0].Id;
+
+        pane.RenameAgent(agent, opId);   // collides with an op id
+
+        Assert.Equal("sig", agent.Id);   // unchanged
+    }
+
+    [Fact]
     public void Author_A_Well_Formed_Chart_From_An_Empty_One()
     {
         var chart = new Chart { Name = "scratch" };

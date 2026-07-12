@@ -267,6 +267,67 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         return PlaceAndSelect(port);
     }
 
+    // Rename an agent (its id) and rewrite every reference to it -- read ops, agent-write effects
+    // (in states + transition actions), and commit triggers. Rejects an empty / unchanged /
+    // colliding name. Reprojects and re-selects the renamed node.
+    public void RenameAgent(AgentDecl agent, string newId)
+    {
+        if (_chart is null)
+        {
+            return;
+        }
+
+        newId = (newId ?? string.Empty).Trim();
+        if (newId.Length == 0 || newId == agent.Id || AllNodeIds().Contains(newId))
+        {
+            return;
+        }
+
+        var oldId = agent.Id;
+        agent.Id = newId;
+
+        foreach (var p in _chart.Pure)
+        {
+            if (p.IsRead && p.Agent == oldId)
+            {
+                p.Agent = newId;
+            }
+        }
+        foreach (var s in _chart.States)
+        {
+            RenameAgentInEffects(s.Do, oldId, newId);
+            RenameAgentInEffects(s.Entry, oldId, newId);
+            RenameAgentInEffects(s.Exit, oldId, newId);
+            foreach (var t in s.Transitions)
+            {
+                RenameAgentInEffects(t.Actions, oldId, newId);
+                if (t.Trigger.Kind == TriggerKind.Commit && t.Trigger.Agent == oldId)
+                {
+                    t.Trigger.Agent = newId;
+                }
+            }
+        }
+
+        IsDirty = true;
+        ReprojectPreservingLayout();
+        if (Nodes.FirstOrDefault(n => n.NodeId == newId) is { } renamed)
+        {
+            SelectOnly(renamed);
+        }
+    }
+
+    private static void RenameAgentInEffects(List<Effect> effects, string oldId, string newId)
+    {
+        foreach (var e in effects)
+        {
+            if (e.Agent == oldId
+                && e.Kind is EffectKind.SetGoal or EffectKind.SetDecoherence or EffectKind.Rearm or EffectKind.Reward)
+            {
+                e.Agent = newId;
+            }
+        }
+    }
+
     private IEnumerable<string> AllNodeIds() => _chart is null
         ? Enumerable.Empty<string>()
         : _chart.Pure.Select(p => p.Id)
@@ -699,6 +760,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             var node = new DataflowNodeViewModel(DataflowNodeKind.Agent, a.Id, a.Owned ? "agent" : "agent (ref)", a);
             node.OutputPorts.Add(new DataflowPortViewModel(node, 0, "agent", isInput: false));
             node.SpecEdited = MarkChartDirty;
+            node.AgentRenameRequested = newId => RenameAgent(a, newId);
             agentNodes[a.Id] = node;
             Nodes.Add(node);
         }

@@ -34,6 +34,9 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         BindingFields = kind == DataflowNodeKind.Binding && model is Binding binding
             ? new[] { new EditableFieldViewModel("find", () => binding.Find, v => binding.Find = v, () => BindingEdited?.Invoke()) }
             : Array.Empty<EditableFieldViewModel>();
+        AgentNameEditor = kind == DataflowNodeKind.Agent && model is AgentDecl ag
+            ? new EditableFieldViewModel("name", () => ag.Id, v => AgentRenameRequested?.Invoke(v))
+            : null;
 
         if (model is PureOp op)
         {
@@ -132,6 +135,14 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
     public bool HasBindingFields => BindingFields.Count > 0;
 
     public Action? BindingEdited { get; set; }
+
+    // Editable agent name (its id) for an agent node; null otherwise. Renaming rewrites every
+    // reference to the agent -- the pane does that (RenameAgent) via AgentRenameRequested.
+    public EditableFieldViewModel? AgentNameEditor { get; }
+
+    public bool HasAgentName => AgentNameEditor is not null;
+
+    public Action<string>? AgentRenameRequested { get; set; }
 
     // Read ops (marginal/committed/memory) pull from an agent + slot; proximity senses a target
     // binding. Both are picked in the inspector rather than wired. The pane supplies the choices

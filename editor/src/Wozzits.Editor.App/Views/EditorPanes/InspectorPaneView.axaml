@@ -1293,6 +1293,13 @@
                             <StackPanel Classes="InspectorSection">
                                 <TextBlock Text="{Binding SelectedStatechartNode.Subtitle}"
                                            Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
+                                      IsVisible="{Binding SelectedStatechartNode.HasAgentName}">
+                                    <TextBlock Text="name" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1"
+                                             Classes="InspectorInput"
+                                             Text="{Binding SelectedStatechartNode.AgentNameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
                                 <ItemsControl ItemsSource="{Binding SelectedStatechartNode.PropertyRows}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
