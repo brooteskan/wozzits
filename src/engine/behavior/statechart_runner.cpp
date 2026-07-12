@@ -262,6 +262,49 @@ namespace wz::engine::behavior
                 wz_agent_reward(facts, ah, e.slot, e.flag,
                     static_cast<float>(eref(e.value)));
                 break;
+            case EK::Call: {
+                // A behavior-registered actuator: resolve it by name against the
+                // live registry (through facts), marshal the chart-resolved args,
+                // and call it with the SAME facts the runner is dispatching under.
+                if (!facts->actuator_lookup) {
+                    break;
+                }
+                WzBehaviorActuatorFn fn = nullptr;
+                void* ud = nullptr;
+                if (!facts->actuator_lookup(
+                        facts->actuator_registry_user,
+                        e.call.c_str(), &fn, &ud)
+                    || !fn) {
+                    break;   // unknown actuator -> no-op (a hand-authored typo)
+                }
+                constexpr size_t kMaxArgs = 8;
+                WzActuatorArg argv[kMaxArgs]{};
+                const size_t n = std::min(e.call_args.size(), kMaxArgs);
+                for (size_t i = 0; i < n; ++i) {
+                    const sc::CallArg& ca = e.call_args[i];
+                    WzActuatorArg& a = argv[i];
+                    switch (ca.kind) {
+                    case sc::CallArg::Kind::Binding:
+                        a.kind = WZ_ACTUATOR_ARG_ENTITY;
+                        a.entity = (ca.binding < ent.size())
+                            ? ent[ca.binding]
+                            : static_cast<WzBehaviorEntityId>(
+                                  WZ_INVALID_BEHAVIOR_ENTITY);
+                        break;
+                    case sc::CallArg::Kind::Agent:
+                        a.kind = WZ_ACTUATOR_ARG_ENTITY;
+                        a.entity = (ca.agent < host.size())
+                            ? host[ca.agent] : self;
+                        break;
+                    case sc::CallArg::Kind::Scalar:
+                    default:
+                        a.kind = WZ_ACTUATOR_ARG_SCALAR;
+                        a.scalar = eref(ca.scalar);
+                        break;
+                    }
+                }
+                fn(facts, self, argv, static_cast<uint32_t>(n), ud);
+            } break;
             case EK::Reshape:
             case EK::Move:
             case EK::PlaySound:

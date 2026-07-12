@@ -517,6 +517,7 @@ namespace wz::engine::behavior
             .scene = &scene,
             .behavior_state = &scene.behavior_state,
             .logger = logger,
+            .registry = &registry,
         };
 
         auto& initialized = scene.behavior_state.initialized_bindings;
@@ -589,6 +590,9 @@ namespace wz::engine::behavior
         if (!context.behavior_state) {
             context.behavior_state = &scene.behavior_state;
         }
+        // So facts.actuator_lookup can resolve behavior-registered actuators the
+        // statechart runner calls this frame (the open actuator vocabulary).
+        context.registry = &registry;
 
         context.commands->clear();
         if (context.gpu_compute) {
@@ -649,6 +653,7 @@ namespace wz::engine::behavior
         if (!context.behavior_state) {
             context.behavior_state = &scene.behavior_state;
         }
+        context.registry = &registry;
         dispatch_gpu_compute_events_to_modules(scene, registry, context);
     }
 

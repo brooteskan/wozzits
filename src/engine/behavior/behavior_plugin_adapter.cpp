@@ -2035,6 +2035,38 @@ namespace wz::engine::behavior
             return context->scene->entity_is_active(entity) ? 1u : 0u;
         }
 
+        // facts.actuator_lookup: resolve a behavior-registered actuator by name so a
+        // consumer (the statechart runner) can call it with the live facts it holds.
+        // The registry lives on the frame context, so the lookup follows the plugin/
+        // reload lifecycle. Misses (no registry, unknown name) return 0 and the
+        // consumer no-ops.
+        uint8_t lookup_actuator(
+            void* user,
+            const char* name,
+            WzBehaviorActuatorFn* out_fn,
+            void** out_user_data)
+        {
+            if (!user || !name) {
+                return 0;
+            }
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context->registry) {
+                return 0;
+            }
+            const BehaviorActuatorRegistration* reg =
+                context->registry->find_actuator(name);
+            if (!reg || !reg->fn) {
+                return 0;
+            }
+            if (out_fn) {
+                *out_fn = reg->fn;
+            }
+            if (out_user_data) {
+                *out_user_data = reg->user_data;
+            }
+            return 1;
+        }
+
         void log_info(void* user, const char* message)
         {
             auto* logger = static_cast<wz::Logger*>(user);
@@ -2140,6 +2172,8 @@ namespace wz::engine::behavior
                 .submit_spawn_prefab = submit_spawn_prefab_request,
                 .node_query_user = &context,
                 .get_node_active = get_node_active_query,
+                .actuator_registry_user = &context,
+                .actuator_lookup = lookup_actuator,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -2234,6 +2268,8 @@ namespace wz::engine::behavior
                 .submit_spawn_prefab = submit_spawn_prefab_request,
                 .node_query_user = &context,
                 .get_node_active = get_node_active_query,
+                .actuator_registry_user = &context,
+                .actuator_lookup = lookup_actuator,
             };
         }
 
@@ -2587,6 +2623,66 @@ namespace wz::engine::behavior
                 ? uint8_t{ 1 }
                 : uint8_t{ 0 };
         }
+
+        ActuatorParamKind from_abi_actuator_param_kind(WzActuatorParamKind kind)
+        {
+            switch (kind) {
+            case WZ_ACTUATOR_PARAM_BINDING:
+                return ActuatorParamKind::Binding;
+            case WZ_ACTUATOR_PARAM_AGENT:
+                return ActuatorParamKind::Agent;
+            case WZ_ACTUATOR_PARAM_SCALAR:
+            default:
+                return ActuatorParamKind::Scalar;
+            }
+        }
+
+        uint8_t register_actuator(
+            void* user,
+            const WzBehaviorActuatorDesc* desc)
+        {
+            // Size-gated like register_module_desc: `size` covering through `fn`
+            // is required; user_data is the optional tail.
+            const uint32_t required_size =
+                static_cast<uint32_t>(
+                    offsetof(WzBehaviorActuatorDesc, user_data));
+            auto* context = static_cast<RegisterContext*>(user);
+            if (!context || !context->registry || !desc
+                || desc->size < required_size
+                || !desc->name || desc->name[0] == '\0' || !desc->fn)
+            {
+                return 0;
+            }
+
+            std::vector<ActuatorParamSpec> params;
+            params.reserve(desc->param_count);
+            for (uint32_t i = 0; i < desc->param_count; ++i) {
+                if (!desc->params || !desc->params[i].name
+                    || desc->params[i].name[0] == '\0')
+                {
+                    continue;
+                }
+                params.push_back(ActuatorParamSpec{
+                    .name = desc->params[i].name,
+                    .kind = from_abi_actuator_param_kind(desc->params[i].kind),
+                    .default_value = desc->params[i].default_value,
+                });
+            }
+
+            const bool has_user_data =
+                desc->size >= offsetof(WzBehaviorActuatorDesc, user_data)
+                    + sizeof(desc->user_data);
+            return context->registry->register_actuator(
+                BehaviorActuatorRegistration{
+                    .name = desc->name,
+                    .label = desc->label ? desc->label : "",
+                    .params = std::move(params),
+                    .fn = desc->fn,
+                    .user_data = has_user_data ? desc->user_data : nullptr,
+                })
+                ? uint8_t{ 1 }
+                : uint8_t{ 0 };
+        }
     }
 
     BehaviorPluginHost::~BehaviorPluginHost()
@@ -2618,6 +2714,7 @@ namespace wz::engine::behavior
             .register_gpu_kernel_contract =
                 register_gpu_kernel_contract,
             .register_behavior_desc = register_behavior_desc,
+            .register_actuator = register_actuator,
         };
 
         return register_plugin(&api) != 0;

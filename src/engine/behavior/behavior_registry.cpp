@@ -167,6 +167,35 @@ namespace wz::engine::behavior
         return true;
     }
 
+    bool BehaviorRegistry::register_actuator(
+        BehaviorActuatorRegistration actuator)
+    {
+        if (actuator.name.empty() || !actuator.fn) {
+            return false;
+        }
+
+        for (auto& existing : actuators_) {
+            if (existing.name == actuator.name) {
+                existing = std::move(actuator);   // last writer wins (reload-safe)
+                return true;
+            }
+        }
+
+        actuators_.push_back(std::move(actuator));
+        return true;
+    }
+
+    const BehaviorActuatorRegistration* BehaviorRegistry::find_actuator(
+        std::string_view name) const noexcept
+    {
+        for (const auto& actuator : actuators_) {
+            if (actuator.name == name) {
+                return &actuator;
+            }
+        }
+        return nullptr;
+    }
+
     std::optional<BehaviorHandle> BehaviorRegistry::find(
         std::string_view module,
         std::string_view name) const noexcept
@@ -216,5 +245,6 @@ namespace wz::engine::behavior
         registrations_.clear();
         modules_.clear();
         gpu_kernel_contracts_.clear();
+        actuators_.clear();
     }
 }

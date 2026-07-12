@@ -203,6 +203,46 @@ namespace wz::engine::behavior::statechart
                     e.kind = EffectKind::PlaySound;
                     if (!target(e)) return fail("play_sound");
                 }
+                else if (k == "call") {
+                    // A behavior-registered actuator, called by name. Args resolve
+                    // against the chart here (bind->binding index, agent->agent
+                    // index, scalar->const/op Ref); the `fn` NAME resolves late, in
+                    // the runner, against the live actuator registry.
+                    e.kind = EffectKind::Call;
+                    e.call = str(o, "fn");
+                    if (e.call.empty()) return fail("call needs 'fn'");
+                    if (const JSONValue* a = arr(o, "args")) {
+                        for (auto& av : a->array_values) {
+                            CallArg ca{};
+                            if (const JSONValue* b = find_member(*av, "bind")) {
+                                if (b->kind != JSONValueKind::String)
+                                    return fail("call arg 'bind' must be a string");
+                                int bi = c.index_of_binding(b->string_value);
+                                if (bi < 0)
+                                    return fail("call arg binds unknown port '"
+                                        + b->string_value + "'");
+                                ca.kind = CallArg::Kind::Binding;
+                                ca.binding = static_cast<uint16_t>(bi);
+                            }
+                            else if (const JSONValue* ag =
+                                         find_member(*av, "agent")) {
+                                if (ag->kind != JSONValueKind::String)
+                                    return fail("call arg 'agent' must be a string");
+                                int ai = c.index_of_agent(ag->string_value);
+                                if (ai < 0)
+                                    return fail("call arg names unknown agent '"
+                                        + ag->string_value + "'");
+                                ca.kind = CallArg::Kind::Agent;
+                                ca.agent = static_cast<uint16_t>(ai);
+                            }
+                            else {
+                                ca.kind = CallArg::Kind::Scalar;
+                                if (!ref(*av, ca.scalar)) return false;
+                            }
+                            e.call_args.push_back(ca);
+                        }
+                    }
+                }
                 else {
                     return fail("unknown effect kind '" + k + "'");
                 }

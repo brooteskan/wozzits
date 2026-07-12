@@ -31,6 +31,7 @@ target_sources(window_engine PRIVATE
     behavior/quantum_agent_behaviors.cpp
     behavior/statechart_ir.cpp
     behavior/statechart_runner.cpp
+    behavior/builtin_actuators.cpp
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp

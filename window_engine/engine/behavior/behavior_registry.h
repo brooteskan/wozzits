@@ -36,6 +36,8 @@ namespace wz::engine::assets
 
 namespace wz::engine::behavior
 {
+    class BehaviorRegistry;
+
     struct BehaviorSurfaceRayQueryStats
     {
         uint32_t grid_queries = 0;
@@ -80,6 +82,12 @@ namespace wz::engine::behavior
         // compares scheduled wakes against, and the value surfaced to modules as
         // facts.sim_time. The host accumulates it per frame.
         double sim_time = 0.0;
+        // The registry backing this dispatch, so facts can resolve behavior-
+        // registered actuators by name (facts.actuator_lookup -- the open actuator
+        // vocabulary). The dispatcher sets it next to `scene`; null in contexts that
+        // never dispatch through the registry (some tests), where actuator lookups
+        // simply miss and the statechart Call effect no-ops.
+        const BehaviorRegistry* registry = nullptr;
     };
 
     using BehaviorFn = void (*)(
@@ -175,6 +183,34 @@ namespace wz::engine::behavior
         std::vector<BehaviorGpuKernelPortContract> ports;
     };
 
+    // A registered actuator's parameter (mirrors WzActuatorParamDesc). Its authoring
+    // kind drives which editor picker binds it and how the runner resolves the arg.
+    enum class ActuatorParamKind : uint8_t
+    {
+        Scalar = 0,   // a chart const or a pure-op output
+        Binding,      // a bound entity (a chart binding port)
+        Agent,        // a chart agent's host entity
+    };
+
+    struct ActuatorParamSpec
+    {
+        std::string name;
+        ActuatorParamKind kind = ActuatorParamKind::Scalar;
+        double default_value = 0.0;
+    };
+
+    // A behavior-registered leaf actuator a statechart effect calls by name. The
+    // registry holds the raw ABI fn pointer (invoked with the same facts the runner
+    // is dispatching under) plus its declared param schema, so tools can enumerate it.
+    struct BehaviorActuatorRegistration
+    {
+        std::string name;
+        std::string label;
+        std::vector<ActuatorParamSpec> params;
+        WzBehaviorActuatorFn fn = nullptr;
+        void* user_data = nullptr;
+    };
+
     class BehaviorRegistry
     {
     public:
@@ -229,6 +265,15 @@ namespace wz::engine::behavior
         bool register_gpu_kernel_contract(
             BehaviorGpuKernelContract contract);
 
+        // Register a named actuator (the open statechart actuator vocabulary). A
+        // later registration of the same name REPLACES the earlier one (last writer
+        // wins), matching how a reloaded plugin re-registers its actuators. Returns
+        // false on a null fn or empty name.
+        bool register_actuator(BehaviorActuatorRegistration actuator);
+
+        [[nodiscard]] const BehaviorActuatorRegistration* find_actuator(
+            std::string_view name) const noexcept;
+
         [[nodiscard]] std::optional<BehaviorHandle> find(
             std::string_view module,
             std::string_view name) const noexcept;
@@ -260,11 +305,18 @@ namespace wz::engine::behavior
             return gpu_kernel_contracts_;
         }
 
+        [[nodiscard]] std::span<const BehaviorActuatorRegistration>
+        actuators() const noexcept
+        {
+            return actuators_;
+        }
+
         void clear();
 
     private:
         std::vector<BehaviorRegistration> registrations_;
         std::vector<BehaviorModuleRegistration> modules_;
         std::vector<BehaviorGpuKernelContract> gpu_kernel_contracts_;
+        std::vector<BehaviorActuatorRegistration> actuators_;
     };
 }

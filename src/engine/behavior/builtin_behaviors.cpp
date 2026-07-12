@@ -1,4 +1,5 @@
 #include <engine/behavior/builtin_behaviors.h>
+#include <engine/behavior/builtin_actuators.h>
 #include <engine/behavior/drive_forward_behaviors.h>
 #include <engine/behavior/prefab_spawner_behaviors.h>
 #include <engine/behavior/sample_collision_behaviors.h>
@@ -123,10 +124,20 @@ namespace wz::engine::behavior
                 registry,
                 register_statechart_runner_behaviors,
                 &logger);
+        const bool registered_actuators =
+            plugins.register_static_pack(
+                registry,
+                register_builtin_actuators,
+                &logger);
         if (!registered_statechart_runner) {
             logger.warn(
                 "[behavior] failed to register builtin behavior pack: "
                 "statechart_runner");
+        }
+        if (!registered_actuators) {
+            logger.warn(
+                "[behavior] failed to register builtin behavior pack: "
+                "actuators");
         }
         if (!registered_debug) {
             logger.warn(

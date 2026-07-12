@@ -30,7 +30,12 @@ extern "C" {
 // v32: appended spawn-with-identity (active_spawn_event / spawn_prefab_user /
 //      submit_spawn_prefab) + node-active GET (node_query_user / get_node_active)
 //      -- #252 pooling ABI. Five appended WzBehaviorFrameFacts fields.
-#define WZ_BEHAVIOR_ABI_VERSION 32u
+// v33: appended register_actuator (WzBehaviorPluginApi) + actuator_registry_user /
+//      actuator_lookup (WzBehaviorFrameFacts) -- a statechart effect calls a
+//      behavior-REGISTERED actuator by name (open actuator vocabulary) instead of a
+//      closed EffectKind. WzBehaviorPluginApi is version-checked, so this forces a
+//      lockstep host+plugin rebuild.
+#define WZ_BEHAVIOR_ABI_VERSION 33u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -1106,6 +1111,89 @@ typedef void* (*WzGetBehaviorStateOfFn)(
     WzBehaviorEntityId entity,
     const char* module_name);
 
+/*
+ * Registered behavior ACTUATORS (v33) -- the open actuator vocabulary. A behavior
+ * registers a named leaf function (register_actuator, below) that a statechart
+ * effect can call by name with resolved arguments, instead of the interpreter
+ * switching over a closed EffectKind. One registry, consumed today by the
+ * statechart runner and tomorrow by the C++ emitter, so the interpreter stays the
+ * faithful oracle. The param schema (kind + default per argument) is what lets a
+ * tool present the right picker for each argument -- the same discipline a compiler
+ * uses when it declares its parameters.
+ */
+struct WzBehaviorFrameFacts;   /* forward decl: an actuator drives the world through facts */
+
+/* An actuator PARAMETER's authoring type: which picker the editor shows and how the
+ * runner resolves the argument. */
+typedef uint32_t WzActuatorParamKind;
+enum
+{
+    WZ_ACTUATOR_PARAM_SCALAR = 0u,   /* a number: a chart const or a pure-op output */
+    WZ_ACTUATOR_PARAM_BINDING = 1u,  /* a bound entity (a chart binding port)       */
+    WZ_ACTUATOR_PARAM_AGENT = 2u,    /* a chart agent's host entity                 */
+};
+
+typedef struct WzActuatorParamDesc
+{
+    const char* name;                /* "target", "speed"        */
+    WzActuatorParamKind kind;        /* WZ_ACTUATOR_PARAM_*       */
+    double default_value;            /* SCALAR authoring default  */
+} WzActuatorParamDesc;
+
+/* A RESOLVED argument handed to an actuator at call time. `kind` selects the live
+ * member: SCALAR -> scalar; ENTITY -> entity (a resolved binding / agent host). */
+typedef uint32_t WzActuatorArgKind;
+enum
+{
+    WZ_ACTUATOR_ARG_SCALAR = 0u,
+    WZ_ACTUATOR_ARG_ENTITY = 1u,
+};
+
+typedef struct WzActuatorArg
+{
+    WzActuatorArgKind kind;
+    double scalar;
+    WzBehaviorEntityId entity;
+} WzActuatorArg;
+
+/* An actuator implementation: given the acting entity (`self`) and its resolved
+ * args, drive the world through the SAME facts a behavior uses (facts->write_command,
+ * facts->get_world_position, ...). Registered by name; invoked by the statechart
+ * runner via facts->actuator_lookup. */
+typedef void (*WzBehaviorActuatorFn)(
+    const struct WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId self,
+    const WzActuatorArg* args,
+    uint32_t arg_count,
+    void* user_data);
+
+typedef struct WzBehaviorActuatorDesc
+{
+    uint32_t size;                   /* sizeof(WzBehaviorActuatorDesc) -- forward-compatible */
+    const char* name;                /* "move_toward" -- the bind name                       */
+    const char* label;               /* human label; may be NULL                             */
+    const WzActuatorParamDesc* params;   /* declared param schema (the editor reads it)      */
+    uint32_t param_count;
+    WzBehaviorActuatorFn fn;
+    void* user_data;
+} WzBehaviorActuatorDesc;
+
+typedef uint8_t (*WzRegisterBehaviorActuatorFn)(
+    void* user,
+    const WzBehaviorActuatorDesc* desc);
+
+/*
+ * Look up a registered actuator by name (host-side, so the registry's lifecycle is
+ * the host's -- correct across a plugin/DLL reload). Fills out_fn + out_user_data and
+ * returns 1 on a hit, else 0. The CALL is made by the consumer, which holds facts, so
+ * the actuator receives the live facts the runner is dispatching under.
+ */
+typedef uint8_t (*WzLookupBehaviorActuatorFn)(
+    void* user,
+    const char* name,
+    WzBehaviorActuatorFn* out_fn,
+    void** out_user_data);
+
 typedef struct WzBehaviorFrameFacts
 {
     const WzInputStateView* input;
@@ -1268,6 +1356,16 @@ typedef struct WzBehaviorFrameFacts
      */
     void*             node_query_user;
     WzGetNodeActiveFn get_node_active;
+
+    /*
+     * Registered-actuator lookup (v33; APPEND-ONLY). Resolves a behavior-registered
+     * actuator by name so the statechart runner can invoke it with facts + resolved
+     * args -- the open actuator vocabulary (a chart calls a named C function a
+     * behavior shipped, instead of a fixed EffectKind). Host-owned registry, so the
+     * lookup stays correct across a plugin/DLL reload. Null when the host wires none.
+     */
+    void*                      actuator_registry_user;
+    WzLookupBehaviorActuatorFn actuator_lookup;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts
@@ -1424,6 +1522,10 @@ typedef struct WzBehaviorPluginApi
     // APPEND-ONLY: registers a behavior with a declared param table. May be NULL
     // on hosts that predate it; callers should null-check before use.
     WzRegisterBehaviorDescFn register_behavior_desc;
+    // APPEND-ONLY (v33): registers a named actuator -- a leaf function a statechart
+    // effect can call by name, with a declared param schema tools enumerate. May be
+    // NULL on hosts that predate it; null-check before use.
+    WzRegisterBehaviorActuatorFn register_actuator;
 } WzBehaviorPluginApi;
 
 typedef uint8_t (*WzRegisterBehaviorPluginFn)(

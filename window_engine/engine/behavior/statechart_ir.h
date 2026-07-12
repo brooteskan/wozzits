@@ -57,6 +57,22 @@ namespace wz::engine::behavior::statechart
         SetGoal, SetDecoherence, Rearm, Reward, Reshape,
         // actuators
         SetScale, SetVisible, Move, PlaySound,
+        // a behavior-REGISTERED actuator, called by name with resolved args (the
+        // open actuator vocabulary -- resolved against the runtime registry in the
+        // runner, so parsing stays registry-free and the emitter shares this parser)
+        Call,
+    };
+
+    // One resolved argument to a Call effect. The kind mirrors the actuator's param
+    // schema: Scalar is a const/op Ref; Binding is a bound entity; Agent is an
+    // agent's host entity. The runner marshals these into WzActuatorArg at call time.
+    struct CallArg
+    {
+        enum class Kind : uint8_t { Scalar, Binding, Agent };
+        Kind kind = Kind::Scalar;
+        Ref scalar;            // Kind::Scalar
+        uint16_t binding = 0;  // Kind::Binding -> Chart::bindings index
+        uint16_t agent = 0;    // Kind::Agent   -> Chart::agents index
     };
 
     struct Effect
@@ -67,6 +83,9 @@ namespace wz::engine::behavior::statechart
         uint16_t slot = 0;      // SetGoal slot / Reward qubit
         Ref value;              // SetGoal/SetDecoherence/SetScale/SetVisible/Reward-strength
         uint8_t flag = 0;       // Reward: toward (|0> == 1)
+        // Kind::Call: the registered actuator name + its resolved args, in order.
+        std::string call;
+        std::vector<CallArg> call_args;
     };
 
     enum class TriggerKind : uint8_t { Commit, After, Guard, Event };
