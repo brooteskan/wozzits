@@ -12,7 +12,7 @@
                             Orientation="Horizontal"
                             Spacing="6"
                             Margin="6"
-                            IsVisible="{Binding HasGraph}">
+                            IsVisible="{Binding HasChart}">
                     <Button Content="+ Op &#x25BE;">
                         <Button.Flyout>
                             <MenuFlyout>
@@ -48,7 +48,7 @@
                            Classes="PaneEmptyState"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
-                           IsVisible="{Binding !HasGraph}"/>
+                           IsVisible="{Binding !HasChart}"/>
 
                 <ScrollViewer x:Name="Scroll"
                               IsVisible="{Binding HasGraph}"

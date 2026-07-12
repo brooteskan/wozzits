@@ -93,7 +93,7 @@ public sealed class StatechartDataflowProjectionTests
     [Fact]
     public void Every_Golden_Projects_With_Only_Resolved_Wires()
     {
-        foreach (var file in Directory.GetFiles(CorpusLocator.StatechartsDir(), "*.sc.json"))
+        foreach (var file in CorpusLocator.GoldenChartFiles())
         {
             var pane = new DataflowPaneViewModel();
             pane.Project(StatechartJson.Load(File.ReadAllText(file)));

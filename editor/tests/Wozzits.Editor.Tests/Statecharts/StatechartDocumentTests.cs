@@ -256,6 +256,118 @@ public sealed class StatechartDocumentTests
     }
 
     [Fact]
+    public void Layout_Sidecar_Persists_The_Read_Only_Flag()
+    {
+        Assert.True(StatechartLayout.FromJson(new StatechartLayout { ReadOnly = true }.ToJson()).ReadOnly);
+        Assert.False(StatechartLayout.FromJson(new StatechartLayout().ToJson()).ReadOnly);
+    }
+
+    [Fact]
+    public void A_Read_Only_Chart_Is_Not_Rewritten_But_The_Flag_Persists()
+    {
+        var path = FreshChartPath("traffic_light.sc.json");
+        File.WriteAllText(path, "SENTINEL");   // the doc holds its chart in memory, not from here
+        var document = new StatechartDocumentViewModel("traffic_light", path, Golden("traffic_light.sc.json"));
+
+        document.IsReadOnly = true;
+        ((IEditorCanvas)document.Control).SelectOnly(document.Control.States.First(s => s.StateId == "HOLD"));
+        ((IEditorCanvas)document.Control).DeleteSelected();   // a real edit that must NOT be written
+        Assert.True(document.IsDirty);
+
+        document.Save();
+
+        Assert.Equal("SENTINEL", File.ReadAllText(path));   // .sc.json protected
+        var sidecar = StatechartLayout.FromJson(File.ReadAllText(Path.ChangeExtension(path, ".editor.json")));
+        Assert.True(sidecar.ReadOnly);
+
+        var reopened = new StatechartDocumentViewModel("traffic_light", path, Golden("traffic_light.sc.json"));
+        Assert.True(reopened.IsReadOnly);   // restored from the sidecar
+    }
+
+    [Fact]
+    public void Rename_Moves_The_Chart_File_And_Updates_The_Name()
+    {
+        var path = FreshChartPath("orig.sc.json");
+        File.WriteAllText(path, StatechartJson.Emit(Golden("traffic_light.sc.json"), indented: true));
+        var document = new StatechartDocumentViewModel("orig", path, Golden("traffic_light.sc.json"));
+
+        document.TryRename("renamed");
+
+        Assert.Equal("renamed", document.Name);
+        Assert.False(File.Exists(path));
+        Assert.True(File.Exists(Path.Combine(Path.GetDirectoryName(path)!, "renamed.sc.json")));
+    }
+
+    [Fact]
+    public void Rename_To_An_Existing_Chart_Name_Is_Rejected()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "wz-sc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var aPath = Path.Combine(dir, "a.sc.json");
+        File.WriteAllText(aPath, "{}");
+        File.WriteAllText(Path.Combine(dir, "b.sc.json"), "{}");
+        var document = new StatechartDocumentViewModel("a", aPath, Golden("traffic_light.sc.json"));
+
+        document.TryRename("b");   // collides
+
+        Assert.Equal("a", document.Name);
+        Assert.True(File.Exists(aPath));
+    }
+
+    [Fact]
+    public void A_Read_Only_Chart_Cannot_Be_Renamed()
+    {
+        var path = FreshChartPath("locked.sc.json");
+        File.WriteAllText(path, "{}");
+        var document = new StatechartDocumentViewModel("locked", path, Golden("traffic_light.sc.json")) { IsReadOnly = true };
+
+        document.TryRename("unlocked");
+
+        Assert.Equal("locked", document.Name);
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    public void Delete_Chart_Removes_The_Files_And_Signals_The_Host()
+    {
+        var path = FreshChartPath("doomed.sc.json");
+        File.WriteAllText(path, "{}");
+        File.WriteAllText(Path.ChangeExtension(path, ".editor.json"), "{}");
+        var document = new StatechartDocumentViewModel("doomed", path, Golden("traffic_light.sc.json"));
+        var closed = false;
+        document.Deleted = () => closed = true;
+
+        document.DeleteChart();
+
+        Assert.False(File.Exists(path));
+        Assert.False(File.Exists(Path.ChangeExtension(path, ".editor.json")));
+        Assert.True(closed);   // the host closes the tab
+    }
+
+    [Fact]
+    public void A_Read_Only_Chart_Cannot_Be_Deleted()
+    {
+        var path = FreshChartPath("protected.sc.json");
+        File.WriteAllText(path, "{}");
+        var document = new StatechartDocumentViewModel("protected", path, Golden("traffic_light.sc.json")) { IsReadOnly = true };
+
+        document.DeleteChart();
+
+        Assert.True(File.Exists(path));   // protected
+    }
+
+    [Fact]
+    public void An_Open_But_Empty_Chart_Reports_HasChart_For_The_Toolbars()
+    {
+        var chart = new Chart { Name = "empty" };
+        var dataflow = new DataflowPaneViewModel();
+        dataflow.Project(chart);
+
+        Assert.True(dataflow.HasChart);    // a chart is loaded -> toolbar shows
+        Assert.False(dataflow.HasGraph);   // ...even with no nodes yet
+    }
+
+    [Fact]
     public void Saved_Layout_Is_Restored_On_Reopen()
     {
         var path = FreshChartPath("traffic_light.sc.json");

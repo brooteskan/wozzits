@@ -17,6 +17,10 @@ public sealed class StatechartLayout
 
     public double DataflowZoom { get; set; } = 1.0;
 
+    // When true the chart is protected: the editor never rewrites its .sc.json on save (only
+    // this sidecar). Guards authored/reference charts against accidental edits.
+    public bool ReadOnly { get; set; }
+
     public Dictionary<string, Point> StatePositions { get; } = new();
 
     public Dictionary<string, Point> NodePositions { get; } = new();
@@ -25,6 +29,7 @@ public sealed class StatechartLayout
     {
         var root = new JsonObject
         {
+            ["readOnly"] = ReadOnly,
             ["control"] = new JsonObject { ["zoom"] = ControlZoom, ["positions"] = Positions(StatePositions) },
             ["dataflow"] = new JsonObject { ["zoom"] = DataflowZoom, ["positions"] = Positions(NodePositions) },
         };
@@ -49,6 +54,7 @@ public sealed class StatechartLayout
             return layout;
         }
 
+        layout.ReadOnly = root["readOnly"] is JsonValue rv && rv.TryGetValue<bool>(out var ro) && ro;
         if (root["control"] is JsonObject control)
         {
             layout.ControlZoom = Number(control, "zoom", 1.0);

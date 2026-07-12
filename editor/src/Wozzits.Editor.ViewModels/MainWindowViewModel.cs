@@ -82,6 +82,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             RefreshScenelets, () => _editorSession is not null);
         RefreshStatechartsCommand = new RelayCommand(
             RefreshStatecharts, () => !string.IsNullOrWhiteSpace(_projectDirectory));
+        NewStatechartCommand = new RelayCommand(
+            NewStatechart, () => !string.IsNullOrWhiteSpace(_projectDirectory) && _assetGraphDock is not null);
         OpenStatechartCommand = new RelayCommand<StatechartFileInfo?>(
             OpenStatechart, _ => _assetGraphDock is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(
@@ -173,6 +175,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IRelayCommand RefreshSceneletsCommand { get; }
 
     public IRelayCommand RefreshStatechartsCommand { get; }
+
+    public IRelayCommand NewStatechartCommand { get; }
 
     public IRelayCommand<StatechartFileInfo?> OpenStatechartCommand { get; }
 
@@ -705,6 +709,54 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // Create a fresh chart in the project's statecharts folder and open it. Seeded with one
+    // region + state so it's valid and its toolbars show (you author the rest from there). The
+    // Statecharts menu is the one place charts are created/opened.
+    private void NewStatechart()
+    {
+        if (string.IsNullOrWhiteSpace(_projectDirectory) || _assetGraphDock is null)
+        {
+            return;
+        }
+
+        var dir = Path.Combine(_projectDirectory, "behavior", "statecharts");
+        Directory.CreateDirectory(dir);
+        var name = FreshStatechartName(dir);
+        var path = Path.Combine(dir, name + ".sc.json");
+
+        var chart = new Chart { Name = name };
+        chart.States.Add(new State { Id = "state1" });
+        var region = new Region { Id = "region1", Initial = "state1" };
+        region.States.Add("state1");
+        chart.Regions.Add(region);
+
+        try
+        {
+            File.WriteAllText(path, StatechartJson.Emit(chart, indented: true));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppendEditorLog($"[editor] Could not create statechart '{name}': {ex.Message}");
+            return;
+        }
+
+        RefreshStatecharts();
+        OpenStatechart(new StatechartFileInfo(name, path));
+        AppendEditorLog($"[editor] Created statechart '{name}'");
+    }
+
+    private static string FreshStatechartName(string dir)
+    {
+        for (int i = 1; ; i++)
+        {
+            var name = "untitled" + i;
+            if (!File.Exists(Path.Combine(dir, name + ".sc.json")))
+            {
+                return name;
+            }
+        }
+    }
+
     // Open a chart as ONE document hosting both canvases (control over dataflow, split).
     // Thick editor: the .sc.json is loaded + compiled in-process; the engine isn't involved.
     // Re-focuses an already-open tab rather than duplicating it.
@@ -770,6 +822,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 CanDrop = true,
                 CanDockAsDocument = true,
             },
+        };
+
+        chartDocument.Renamed = () =>
+        {
+            document.Title = chartDocument.Name;
+            document.Id = $"Statechart_{chartDocument.Name}";
+            RefreshStatecharts();
+        };
+        chartDocument.Deleted = () =>
+        {
+            DockFactory.CloseDockable(document);
+            RefreshStatecharts();
         };
 
         DockFactory.AddDockable(_assetGraphDock, document);

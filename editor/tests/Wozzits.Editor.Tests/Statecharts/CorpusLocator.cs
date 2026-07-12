@@ -33,4 +33,22 @@ internal static class CorpusLocator
     }
 
     public static string StatechartsDir() => Path.Combine(ProjectDir(), "behavior", "statecharts");
+
+    // The known demo charts (the editor's oracle corpus). Iterating tests use this rather than
+    // "every *.sc.json in the folder" so working charts a user creates there (New Chart writes
+    // into the same folder) don't break the corpus tests.
+    private static readonly string[] GoldenNames =
+    {
+        "traffic_light", "skinner", "twins", "village4", "village5", "caravan", "squad", "zeno",
+    };
+
+    public static IReadOnlyList<string> GoldenChartFiles()
+    {
+        var dir = StatechartsDir();
+        return GoldenNames
+            .Select(n => Path.Combine(dir, n + ".sc.json"))
+            .Where(File.Exists)
+            .OrderBy(p => p)
+            .ToArray();
+    }
 }

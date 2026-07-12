@@ -88,7 +88,7 @@ public sealed class StatechartControlProjectionTests
     [Fact]
     public void Every_Golden_Projects_With_Resolved_Transitions_And_An_Initial()
     {
-        foreach (var file in Directory.GetFiles(CorpusLocator.StatechartsDir(), "*.sc.json"))
+        foreach (var file in CorpusLocator.GoldenChartFiles())
         {
             var name = Path.GetFileName(file);
             var pane = new ControlPaneViewModel();

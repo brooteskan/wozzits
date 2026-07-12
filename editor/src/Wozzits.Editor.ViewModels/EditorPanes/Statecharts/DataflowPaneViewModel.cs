@@ -61,6 +61,9 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
 
     public bool HasGraph => Nodes.Count > 0;
 
+    // A chart is loaded (possibly still empty) -- drives the toolbar so you can author from scratch.
+    public bool HasChart => _chart is not null;
+
     public DataflowNodeViewModel? SelectedNode
     {
         get => _selectedNode;
@@ -719,6 +722,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         LayOut(opsById);
         Wire(chart, bindingNodes, agentNodes, opNodes);
 
+        OnPropertyChanged(nameof(HasChart));
         OnPropertyChanged(nameof(HasGraph));
         OnPropertyChanged(nameof(GraphWidth));
         OnPropertyChanged(nameof(GraphHeight));

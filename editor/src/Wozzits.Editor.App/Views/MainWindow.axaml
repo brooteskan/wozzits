@@ -46,6 +46,8 @@
                           Command="{Binding RefreshSceneletsCommand}"/>
             </MenuItem>
             <MenuItem Header="_Statecharts" SubmenuOpened="OnStatechartsMenuOpened">
+                <MenuItem Header="_New Chart" Command="{Binding NewStatechartCommand}"/>
+                <Separator/>
                 <MenuItem Header="_Open Chart" x:Name="OpenStatechartMenu"/>
             </MenuItem>
             <MenuItem Header="_View">

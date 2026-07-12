@@ -20,8 +20,8 @@ public sealed class StatechartOracleTests
     [Fact]
     public void AllGoldenCharts_Load_Validate_And_RoundTrip_Canonically()
     {
-        var files = Directory.GetFiles(StatechartsDir(), "*.sc.json").OrderBy(f => f).ToArray();
-        Assert.True(files.Length >= 8, $"expected >= 8 golden charts, found {files.Length}");
+        var files = CorpusLocator.GoldenChartFiles();
+        Assert.True(files.Count >= 8, $"expected >= 8 golden charts, found {files.Count}");
 
         var failures = new List<string>();
         foreach (var path in files)
@@ -105,7 +105,7 @@ public sealed class StatechartOracleTests
     [Fact]
     public void TopoSort_Restores_A_Valid_Order_From_Shuffled_Pure()
     {
-        var files = Directory.GetFiles(StatechartsDir(), "*.sc.json").OrderBy(f => f).ToArray();
+        var files = CorpusLocator.GoldenChartFiles();
         var failures = new List<string>();
 
         foreach (var path in files)

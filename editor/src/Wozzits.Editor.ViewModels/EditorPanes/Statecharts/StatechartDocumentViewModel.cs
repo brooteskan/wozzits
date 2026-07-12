@@ -1,6 +1,7 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.IO;
+using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
 
 // One chart, both layers, one document. Owns the Chart and its .sc.json path, so it can save
@@ -9,13 +10,17 @@ using Wozzits.Editor.Statecharts;
 public sealed class StatechartDocumentViewModel : ViewModelBase
 {
     private readonly Chart _chart;
-    private readonly string _path;
+    private string _path;
+    private string _name;
+    private bool _isReadOnly;
+    private bool _metaDirty;
 
     public StatechartDocumentViewModel(string name, string path, Chart chart)
     {
-        Name = name;
+        _name = name;
         _path = path;
         _chart = chart;
+        NameEditor = new EditableFieldViewModel("name", () => Name, TryRename);
         Control = new ControlPaneViewModel();
         Dataflow = new DataflowPaneViewModel();
         Control.Project(chart);
@@ -34,22 +39,128 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
         ApplySavedLayout();
     }
 
-    public string Name { get; }
+    public string Name
+    {
+        get => _name;
+        private set => SetProperty(ref _name, value);
+    }
+
+    // Editable name shown in the document header; committing it renames the chart's files.
+    public EditableFieldViewModel NameEditor { get; }
+
+    // Invoked after a successful rename so the host can retitle the tab + refresh the menu.
+    public Action? Renamed { get; set; }
+
+    // Invoked after the chart's files are deleted so the host can close the tab + refresh the menu.
+    public Action? Deleted { get; set; }
+
+    private IRelayCommand? _deleteChartCommand;
+
+    public IRelayCommand DeleteChartCommand => _deleteChartCommand ??= new RelayCommand(DeleteChart);
+
+    // Delete the chart's files (.sc.json + layout sidecar) and signal the host. A no-op when
+    // read-only, so a protected chart can't be deleted.
+    public void DeleteChart()
+    {
+        if (IsReadOnly)
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(_path))
+            {
+                File.Delete(_path);
+            }
+            if (File.Exists(LayoutPath))
+            {
+                File.Delete(LayoutPath);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        Deleted?.Invoke();
+    }
 
     public ControlPaneViewModel Control { get; }
 
     public DataflowPaneViewModel Dataflow { get; }
 
-    // The chart was edited (needs a .sc.json rewrite) or the layout moved (needs the sidecar).
-    public bool IsDirty => Control.IsDirty || Control.IsLayoutDirty || Dataflow.IsDirty || Dataflow.IsLayoutDirty;
+    // Protected chart: Save leaves the .sc.json untouched (only the sidecar persists the flag +
+    // layout). Toggling it needs persisting, so it marks the document dirty.
+    public bool IsReadOnly
+    {
+        get => _isReadOnly;
+        set
+        {
+            if (SetProperty(ref _isReadOnly, value))
+            {
+                _metaDirty = true;
+            }
+        }
+    }
+
+    // The chart was edited (needs a .sc.json rewrite) or the layout / read-only flag changed.
+    public bool IsDirty => Control.IsDirty || Control.IsLayoutDirty || Dataflow.IsDirty || Dataflow.IsLayoutDirty || _metaDirty;
 
     private string LayoutPath => Path.ChangeExtension(_path, ".editor.json");
+
+    // Rename the chart: move its .sc.json (and layout sidecar) and update the name. A no-op when
+    // read-only, or when the new name is empty / unchanged / invalid / already taken.
+    public void TryRename(string newName)
+    {
+        if (IsReadOnly)
+        {
+            return;
+        }
+
+        newName = (newName ?? string.Empty).Trim();
+        if (newName.Length == 0 || newName == Name || newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            return;
+        }
+
+        var dir = Path.GetDirectoryName(_path);
+        if (dir is null)
+        {
+            return;
+        }
+
+        var newPath = Path.Combine(dir, newName + ".sc.json");
+        if (File.Exists(newPath))
+        {
+            return;   // a chart by that name already exists
+        }
+
+        try
+        {
+            var oldSidecar = LayoutPath;
+            File.Move(_path, newPath);
+            _path = newPath;
+            if (File.Exists(oldSidecar))
+            {
+                File.Move(oldSidecar, LayoutPath);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        _chart.Name = newName;
+        Name = newName;
+        Renamed?.Invoke();
+    }
 
     // Write the chart back to its .sc.json (only when actually edited, so an untouched chart is
     // never reformatted) and the hand-placed layout to the editor-owned sidecar.
     public void Save()
     {
-        if (Control.IsDirty || Dataflow.IsDirty)
+        if (!IsReadOnly && (Control.IsDirty || Dataflow.IsDirty))
         {
             File.WriteAllText(_path, StatechartJson.Emit(_chart, indented: true));
         }
@@ -57,6 +168,7 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
         File.WriteAllText(LayoutPath, CaptureLayout().ToJson());
         Control.ClearDirty();
         Dataflow.ClearDirty();
+        _metaDirty = false;
     }
 
     private StatechartLayout CaptureLayout()
@@ -65,6 +177,7 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
         var layout = Control.CaptureLayout();
         var dataflow = Dataflow.CaptureLayout();
         layout.DataflowZoom = dataflow.DataflowZoom;
+        layout.ReadOnly = IsReadOnly;
         foreach (var (id, point) in dataflow.NodePositions)
         {
             layout.NodePositions[id] = point;
@@ -90,6 +203,7 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
         }
 
         var layout = StatechartLayout.FromJson(json);
+        _isReadOnly = layout.ReadOnly;
         Control.ApplyLayout(layout);
         Dataflow.ApplyLayout(layout);
     }

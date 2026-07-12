@@ -222,6 +222,9 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
 
     public bool HasGraph => States.Count > 0;
 
+    // A chart is loaded (possibly still empty) -- drives the toolbar so you can author from scratch.
+    public bool HasChart => _chart is not null;
+
     public StateNodeViewModel? SelectedState
     {
         get => _selectedState;
@@ -669,6 +672,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
 
         RecomputeRegionBounds();
 
+        OnPropertyChanged(nameof(HasChart));
         OnPropertyChanged(nameof(HasGraph));
         OnPropertyChanged(nameof(GraphWidth));
         OnPropertyChanged(nameof(GraphHeight));
