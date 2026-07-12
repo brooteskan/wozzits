@@ -3783,6 +3783,16 @@ public sealed partial class ProjectOpeningTests
             return AssetCatalog;
         }
 
+        public EngineActuatorCatalogResponse ActuatorCatalog { get; set; } = new()
+        {
+            Ok = true,
+        };
+
+        public EngineActuatorCatalogResponse LoadActuatorCatalog()
+        {
+            return ActuatorCatalog;
+        }
+
         public EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
             ulong fromNodeId,
             ulong toNodeId,

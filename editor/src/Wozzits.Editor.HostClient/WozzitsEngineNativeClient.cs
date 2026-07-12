@@ -281,6 +281,50 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    public EngineActuatorCatalogResponse LoadActuatorCatalog()
+    {
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorBehaviorActuatorCatalog(out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return new EngineActuatorCatalogResponse
+                {
+                    Ok = false,
+                    Error = result.Message,
+                };
+            }
+
+            return ReadActuatorCatalog(buffer);
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new EngineActuatorCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new EngineActuatorCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new EngineActuatorCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new EngineActuatorCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
         string glbPath,
         string? resourceRoot,

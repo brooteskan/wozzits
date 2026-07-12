@@ -40,7 +40,7 @@ public static class StatechartJson
         ("set_goal", EffectKind.SetGoal), ("set_decoherence", EffectKind.SetDecoherence),
         ("rearm", EffectKind.Rearm), ("reward", EffectKind.Reward),
         ("set_scale", EffectKind.SetScale), ("set_visible", EffectKind.SetVisible),
-        ("play_sound", EffectKind.PlaySound),
+        ("play_sound", EffectKind.PlaySound), ("call", EffectKind.Call),
     };
 
     private static readonly (string Name, TriggerKind Kind)[] TriggerTable =
@@ -239,6 +239,12 @@ public static class StatechartJson
             case EffectKind.PlaySound:
                 ef.TargetBind = TargetBindOf(e);
                 break;
+            case EffectKind.Call:
+                ef.Fn = Str(e, "fn");
+                if (Member(e, "args") is JsonArray args)
+                    foreach (var a in args)
+                        if (a != null) ef.Args.Add(LoadCallArg(a));
+                break;
         }
         return ef;
     }
@@ -256,6 +262,25 @@ public static class StatechartJson
         if (o.TryGetPropertyValue("op", out var ov) && ov is JsonValue ojv && ojv.TryGetValue<string>(out var id))
             return ValueRef.FromOp(id);
         throw new StatechartFormatException("ref needs 'const' or 'op'");
+    }
+
+    private static CallArg LoadCallArg(JsonNode n)
+    {
+        if (n is not JsonObject o)
+            throw new StatechartFormatException("call arg must be an object");
+        if (o.TryGetPropertyValue("bind", out var bv) && bv is JsonValue bjv && bjv.TryGetValue<string>(out var port))
+            return CallArg.ToBind(port);
+        if (o.TryGetPropertyValue("agent", out var av) && av is JsonValue ajv && ajv.TryGetValue<string>(out var agent))
+            return CallArg.ToAgent(agent);
+        if (o.TryGetPropertyValue("op", out var ov) && ov is JsonValue ojv && ojv.TryGetValue<string>(out var id))
+            return CallArg.FromOp(id);
+        if (o.TryGetPropertyValue("const", out var cv) && cv is JsonValue cjv)
+        {
+            if (cjv.TryGetValue<bool>(out var b)) return new CallArg { Kind = CallArgKind.Const, Const = b ? 1 : 0, IsBool = true };
+            if (cjv.TryGetValue<double>(out var d)) return CallArg.Number(d);
+            throw new StatechartFormatException("call arg const must be a number or bool");
+        }
+        throw new StatechartFormatException("call arg needs 'bind', 'agent', 'op', or 'const'");
     }
 
     // ======================================================================
@@ -401,6 +426,10 @@ public static class StatechartJson
             case EffectKind.PlaySound:
                 o["target"] = new JsonObject { ["bind"] = e.TargetBind };
                 break;
+            case EffectKind.Call:
+                o["fn"] = e.Fn;
+                o["args"] = JArr(e.Args, EmitCallArg);
+                break;
         }
         return o;
     }
@@ -413,6 +442,14 @@ public static class StatechartJson
             ? new JsonObject { ["op"] = r.Op }
             : new JsonObject { ["const"] = r.IsBool ? JsonValue.Create(r.Const != 0) : JsonValue.Create(r.Const) };
     }
+
+    private static JsonNode EmitCallArg(CallArg a) => a.Kind switch
+    {
+        CallArgKind.Op => new JsonObject { ["op"] = a.Op },
+        CallArgKind.Bind => new JsonObject { ["bind"] = a.Bind },
+        CallArgKind.Agent => new JsonObject { ["agent"] = a.Agent },
+        _ => new JsonObject { ["const"] = a.IsBool ? JsonValue.Create(a.Const != 0) : JsonValue.Create(a.Const) },
+    };
 
     // ======================================================================
     //  Topological sort of pure ops (stable: tie-broken by authored order)
@@ -544,6 +581,19 @@ public static class StatechartJson
                 case EffectKind.PlaySound:
                     if (!bindingPorts.Contains(e.TargetBind))
                         errors.Add($"{where} {NameOf(e.Kind)} targets unknown binding '{e.TargetBind}'");
+                    break;
+                case EffectKind.Call:
+                    if (string.IsNullOrEmpty(e.Fn))
+                        errors.Add($"{where} call missing fn");
+                    foreach (var a in e.Args)
+                    {
+                        if (a.Kind == CallArgKind.Bind && !bindingPorts.Contains(a.Bind))
+                            errors.Add($"{where} call arg binds unknown binding '{a.Bind}'");
+                        else if (a.Kind == CallArgKind.Agent && !agentIds.Contains(a.Agent))
+                            errors.Add($"{where} call arg names unknown agent '{a.Agent}'");
+                        else if (a.Kind == CallArgKind.Op && !pureIds.Contains(a.Op))
+                            errors.Add($"{where} call arg references unknown op '{a.Op}'");
+                    }
                     break;
             }
             if (e.Kind is EffectKind.SetGoal or EffectKind.SetDecoherence

@@ -20,6 +20,11 @@ public interface IWozzitsEngineEditorSession
     // session-independent), excluding types not yet migrated to wozzits-rhi.
     EngineAssetCatalogResponse LoadAssetCatalog();
 
+    // Device-free catalog of behavior-registered actuators (name/label + declared
+    // arg schema) a statechart `call` effect can invoke. Project- and session-
+    // independent, like LoadAssetCatalog (built from a throwaway registry).
+    EngineActuatorCatalogResponse LoadActuatorCatalog();
+
     // Device-free, READ-ONLY import of a GLB scene's component hierarchy (issue
     // #213 Phase 3b-1), so the inspector can show what a node's glb_scene_source
     // descriptor grafts as children. glbPath is the authored source_path verbatim

@@ -52,6 +52,13 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.LoadAssetCatalog();
     }
 
+    public EngineActuatorCatalogResponse LoadActuatorCatalog()
+    {
+        // Actuator catalog is device-free and project-independent (built from a
+        // throwaway registry), so it does not need a live native session.
+        return _client.LoadActuatorCatalog();
+    }
+
     public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
         string glbPath,
         uint sceneIndex)

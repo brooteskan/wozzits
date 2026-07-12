@@ -195,4 +195,63 @@ public sealed class StatechartCompilerTests
             """;
         Assert.Throws<StatechartFormatException>(() => StatechartJson.Load(bad));
     }
+
+    [Fact]
+    public void Call_Effect_RoundTrips_All_Arg_Kinds()
+    {
+        // A call to a behavior-registered actuator with one arg of each kind:
+        // a bound entity, a literal scalar, a pure-op output, and an agent host.
+        var c = MinimalValid();
+        var call = new Effect { Kind = EffectKind.Call, Fn = "move_toward" };
+        call.Args.Add(CallArg.ToBind("lamp"));
+        call.Args.Add(CallArg.Number(3.5));
+        call.Args.Add(CallArg.FromOp("z"));
+        call.Args.Add(CallArg.ToAgent("sig"));
+        c.States[0].Do.Add(call);
+
+        var ir = StatechartJson.Emit(c, indented: false);
+        Assert.Contains("\"fn\":\"move_toward\"", ir);
+        Assert.Contains("\"bind\":\"lamp\"", ir);
+        Assert.Contains("\"agent\":\"sig\"", ir);
+
+        var back = StatechartJson.Load(ir);
+        var loaded = back.States[0].Do.First(e => e.Kind == EffectKind.Call);
+        Assert.Equal("move_toward", loaded.Fn);
+        Assert.Equal(4, loaded.Args.Count);
+        Assert.Equal(CallArgKind.Bind, loaded.Args[0].Kind);
+        Assert.Equal("lamp", loaded.Args[0].Bind);
+        Assert.Equal(CallArgKind.Const, loaded.Args[1].Kind);
+        Assert.Equal(3.5, loaded.Args[1].Const);
+        Assert.Equal(CallArgKind.Op, loaded.Args[2].Kind);
+        Assert.Equal("z", loaded.Args[2].Op);
+        Assert.Equal(CallArgKind.Agent, loaded.Args[3].Kind);
+        Assert.Equal("sig", loaded.Args[3].Agent);
+    }
+
+    [Fact]
+    public void Call_Validates_Clean_And_Flags_Bad_Args()
+    {
+        var c = MinimalValid();
+        var ok = new Effect { Kind = EffectKind.Call, Fn = "move_toward" };
+        ok.Args.Add(CallArg.ToBind("lamp"));
+        ok.Args.Add(CallArg.Number(3));
+        c.States[0].Do.Add(ok);
+        Assert.Empty(StatechartJson.Validate(c));
+
+        var bad = new Effect { Kind = EffectKind.Call, Fn = "move_toward" };
+        bad.Args.Add(CallArg.ToBind("nope"));
+        bad.Args.Add(CallArg.ToAgent("ghost"));
+        c.States[0].Do.Add(bad);
+        var errors = StatechartJson.Validate(c);
+        Assert.Contains(errors, e => e.Contains("unknown binding 'nope'"));
+        Assert.Contains(errors, e => e.Contains("unknown agent 'ghost'"));
+    }
+
+    [Fact]
+    public void Call_Missing_Fn_Is_Flagged()
+    {
+        var c = MinimalValid();
+        c.States[0].Do.Add(new Effect { Kind = EffectKind.Call });   // no Fn
+        Assert.Contains(StatechartJson.Validate(c), e => e.Contains("call missing fn"));
+    }
 }

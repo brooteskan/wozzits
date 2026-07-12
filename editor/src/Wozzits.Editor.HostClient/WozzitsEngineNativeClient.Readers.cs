@@ -74,6 +74,42 @@ public sealed partial class WozzitsEngineNativeClient
         };
     }
 
+    private static EngineActuatorCatalogResponse ReadActuatorCatalog(WzBuffer buffer)
+    {
+        var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty actuator catalog buffer.");
+        var catalog = ReadStruct<WzEditorBehaviorActuatorCatalogAbi>(bytes, offset: 0);
+        ValidateAbiVersion(catalog.AbiVersion);
+
+        return new EngineActuatorCatalogResponse
+        {
+            Ok = catalog.Ok != 0,
+            Actuators = ReadTable<WzEditorBehaviorActuatorAbi, EngineActuator>(
+                bytes,
+                catalog.Actuators,
+                ReadActuator),
+        };
+    }
+
+    private static EngineActuator ReadActuator(
+        byte[] bytes,
+        WzEditorBehaviorActuatorAbi actuator)
+    {
+        return new EngineActuator
+        {
+            Name = ReadString(bytes, actuator.Name),
+            Label = ReadString(bytes, actuator.Label),
+            Params = ReadTable<WzEditorBehaviorActuatorParamAbi, EngineActuatorParam>(
+                bytes,
+                actuator.Params,
+                (b, param) => new EngineActuatorParam
+                {
+                    Name = ReadString(b, param.Name),
+                    Kind = checked((int)param.Kind),
+                    DefaultValue = param.DefaultValue,
+                }),
+        };
+    }
+
     private static EngineGlbSceneHierarchy ReadGlbSceneHierarchy(WzBuffer buffer)
     {
         var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty GLB scene hierarchy buffer.");

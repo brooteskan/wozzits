@@ -208,6 +208,34 @@ public sealed record EngineAssetCatalogSchema
     public string Label { get; init; } = string.Empty;
 }
 
+public sealed record EngineActuatorCatalogResponse
+{
+    public bool Ok { get; init; }
+
+    public string Error { get; init; } = string.Empty;
+
+    public List<EngineActuator> Actuators { get; init; } = [];
+}
+
+public sealed record EngineActuator
+{
+    public string Name { get; init; } = string.Empty;
+
+    public string Label { get; init; } = string.Empty;
+
+    public List<EngineActuatorParam> Params { get; init; } = [];
+}
+
+public sealed record EngineActuatorParam
+{
+    public string Name { get; init; } = string.Empty;
+
+    // WzActuatorParamKind: 0 = scalar (const|op), 1 = binding, 2 = agent.
+    public int Kind { get; init; }
+
+    public double DefaultValue { get; init; }
+}
+
 public sealed record EngineAssetGraphParam
 {
     public string Name { get; init; } = string.Empty;
