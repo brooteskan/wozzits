@@ -826,6 +826,38 @@ public sealed class StatechartMutationTests
     }
 
     [Fact]
+    public void Binding_Scope_Ignores_A_Null_ComboBox_Reset()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var binding = pane.Nodes.First(n => n.Kind == DataflowNodeKind.Binding && n.NodeId == "lamp_0");
+        binding.SelectedBindingScope = "global";
+
+        binding.SelectedBindingScope = null!;   // a ComboBox rebind fires this -- must NOT revert to subtree
+
+        Assert.Equal("global", binding.SelectedBindingScope);
+        Assert.False(((Binding)binding.Model).Subtree);
+    }
+
+    [Fact]
+    public void Actuator_Effect_Can_Target_A_Different_Binding()
+    {
+        var pane = Control("traffic_light.sc.json");   // DELIBERATE do: set_scale lamp_0, set_scale lamp_1, ...
+        var delib = pane.States.First(s => s.StateId == "DELIBERATE");
+        var row = delib.DoEffectRows[0];               // first set_scale, targets lamp_0
+        var effect = delib.Model.Do[0];
+
+        Assert.True(row.IsActuator);
+        Assert.Equal(new[] { "lamp_0", "lamp_1" }, row.TargetBindings);
+        Assert.Equal("lamp_0", row.SelectedTargetBind);
+
+        row.SelectedTargetBind = "lamp_1";
+
+        Assert.Equal("lamp_1", effect.TargetBind);     // writes through to the effect model
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
     public void Editing_A_Transition_Delay_Refreshes_The_Graph_Arrow_Label()
     {
         var chart = Golden("traffic_light.sc.json");

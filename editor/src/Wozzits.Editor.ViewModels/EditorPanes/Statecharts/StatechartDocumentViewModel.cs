@@ -45,6 +45,11 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
         private set => SetProperty(ref _name, value);
     }
 
+    // The chart compiled to the minified chart_ir a statechart_runner embeds. Used to refresh
+    // attached runners on save so an edited chart takes effect (a runner runs a compiled snapshot,
+    // not the .sc.json file -- without this you'd have to re-attach after every edit).
+    public string CompiledIr => StatechartJson.Emit(_chart, indented: false);
+
     // Editable name shown in the document header; committing it renames the chart's files.
     public EditableFieldViewModel NameEditor { get; }
 

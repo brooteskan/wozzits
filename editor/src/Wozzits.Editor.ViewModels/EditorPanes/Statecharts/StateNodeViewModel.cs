@@ -139,6 +139,23 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
         }
     }
 
+    // The chart's binding ports, pushed into every effect row so an ACTUATOR effect (set_scale/
+    // set_visible/play_sound) can target any binding, not just the first. The pane sets this after
+    // building the state.
+    private IReadOnlyList<string> _availableBindings = Array.Empty<string>();
+
+    public IReadOnlyList<string> AvailableBindings
+    {
+        get => _availableBindings;
+        set
+        {
+            _availableBindings = value;
+            foreach (var r in DoEffectRows) r.TargetBindings = value;
+            foreach (var r in EntryEffectRows) r.TargetBindings = value;
+            foreach (var r in ExitEffectRows) r.TargetBindings = value;
+        }
+    }
+
     // Convenience read-only string views of the rows (used by tests / plain text).
     public IReadOnlyList<string> DoEffects => DoEffectRows.Select(r => r.Display).ToList();
 

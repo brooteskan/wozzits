@@ -204,7 +204,10 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         get => Model is Binding b && !b.Subtree ? "global" : "subtree";
         set
         {
-            if (Model is Binding b)
+            // Guard null: a ComboBox fires a transient null SelectedItem on rebind, and treating
+            // that as "not global" would silently revert the scope to subtree (matches the null
+            // guard the read-agent / proximity pickers use).
+            if (Model is Binding b && value is not null)
             {
                 bool subtree = value != "global";
                 if (b.Subtree != subtree)

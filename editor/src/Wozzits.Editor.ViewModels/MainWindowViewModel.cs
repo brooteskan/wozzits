@@ -293,6 +293,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        var savedCharts = new Dictionary<string, string>(StringComparer.Ordinal);   // name -> compiled IR
         foreach (var dockable in _assetGraphDock.VisibleDockables)
         {
             if (dockable is Document { Context: StatechartDocumentViewModel document } && document.IsDirty)
@@ -300,6 +301,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 try
                 {
                     document.Save();
+                    savedCharts[document.Name] = document.CompiledIr;
                     AppendEditorLog($"[editor] Saved statechart '{document.Name}'");
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -307,6 +309,54 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     AppendEditorLog($"[editor] Statechart save failed for '{document.Name}': {ex.Message}");
                 }
             }
+        }
+
+        RefreshAttachedRunners(savedCharts);
+    }
+
+    // Re-embed a just-saved chart into every scene node that runs it, so an edited chart takes
+    // effect without re-attaching. A statechart_runner holds a COMPILED snapshot (chart_ir), not a
+    // live file reference; matching by config `chart` (the file-stem name a runner stores), we push
+    // the fresh IR through the live session and re-save the scene. (Applies while the viewport is
+    // running -- the usual edit/save/restart loop; the runner rebuilds on the next self.start.)
+    private void RefreshAttachedRunners(IReadOnlyDictionary<string, string> savedCharts)
+    {
+        if (_editorSession is null || savedCharts.Count == 0)
+        {
+            return;
+        }
+
+        var refreshed = 0;
+
+        void Walk(IEnumerable<SceneTreeNodeViewModel> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                foreach (var behavior in node.Behaviors)
+                {
+                    if (behavior.Module != "statechart_runner")
+                    {
+                        continue;
+                    }
+
+                    var chartName = behavior.Config.FirstOrDefault(c => c.Name == "chart")?.Value;
+                    if (chartName is not null && savedCharts.TryGetValue(chartName, out var ir))
+                    {
+                        _editorSession.SetNodeBehaviorConfig(node.Id, behavior.Id, "chart_ir", "string", ir);
+                        refreshed++;
+                        AppendEditorLog($"[editor] Refreshed runner on '{node.DisplayName}' from chart '{chartName}'");
+                    }
+                }
+
+                Walk(node.Children);
+            }
+        }
+
+        Walk(SceneTree.Nodes);
+
+        if (refreshed > 0)
+        {
+            _editorSession.SaveScene();
         }
     }
 

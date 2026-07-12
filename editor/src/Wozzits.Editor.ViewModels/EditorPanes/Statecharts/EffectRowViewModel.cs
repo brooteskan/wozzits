@@ -12,10 +12,12 @@ using Wozzits.Editor.Statecharts;
 public sealed class EffectRowViewModel : ViewModelBase
 {
     private readonly Effect _effect;
+    private readonly Action? _edited;
 
     public EffectRowViewModel(Effect effect, Action? edited)
     {
         _effect = effect;
+        _edited = edited;
         Label = Describe(effect);
 
         if (effect.Value is { Kind: RefKind.Const } value)
@@ -25,6 +27,29 @@ public sealed class EffectRowViewModel : ViewModelBase
                 () => FormatConst(value),
                 text => SetConst(value, text),
                 edited);
+        }
+    }
+
+    // Actuator effects (set_scale/set_visible/play_sound) drive a bound entity; their TARGET
+    // binding is pickable so an effect can target ANY of the chart's bindings, not just the first.
+    // The state VM supplies the chart's binding ports in TargetBindings. Agent effects have none.
+    public bool IsActuator =>
+        _effect.Kind is EffectKind.SetScale or EffectKind.SetVisible or EffectKind.PlaySound;
+
+    public IReadOnlyList<string> TargetBindings { get; set; } = Array.Empty<string>();
+
+    public string SelectedTargetBind
+    {
+        get => _effect.TargetBind;
+        set
+        {
+            // Guard null (a ComboBox rebind fires a transient null); scalar edit, no reproject.
+            if (value is not null && _effect.TargetBind != value)
+            {
+                _effect.TargetBind = value;
+                OnPropertyChanged();
+                _edited?.Invoke();
+            }
         }
     }
 
@@ -91,9 +116,10 @@ public sealed class EffectRowViewModel : ViewModelBase
         EffectKind.SetDecoherence => $"set_decoherence {e.Agent}",
         EffectKind.Rearm => $"rearm {e.Agent}",
         EffectKind.Reward => $"reward {e.Agent} q{e.Slot} {(e.Toward ? "toward |0>" : "toward |1>")}",
-        EffectKind.SetScale => $"set_scale {e.TargetBind}",
-        EffectKind.SetVisible => $"set_visible {e.TargetBind}",
-        EffectKind.PlaySound => $"play_sound {e.TargetBind}",
+        // Actuators show their target as an editable picker (SelectedTargetBind), not in the label.
+        EffectKind.SetScale => "set_scale",
+        EffectKind.SetVisible => "set_visible",
+        EffectKind.PlaySound => "play_sound",
         _ => e.Kind.ToString(),
     };
 

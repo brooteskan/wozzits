@@ -21,6 +21,21 @@ public sealed class StatechartDocumentTests
         new("traffic_light", FreshChartPath(file), Golden(file));
 
     [Fact]
+    public void CompiledIr_Is_The_Minified_Chart_And_Tracks_Edits()
+    {
+        // The IR the save-time runner refresh re-embeds: minified, as authored, and live.
+        var chart = Golden("traffic_light.sc.json");
+        var document = new StatechartDocumentViewModel("traffic_light", FreshChartPath("cir.sc.json"), chart);
+
+        var ir = document.CompiledIr;
+        Assert.DoesNotContain("\n", ir);              // minified (chart_ir), not the indented .sc.json
+        Assert.Contains("\"find\":\"lamp_0\"", ir);   // as authored
+
+        chart.Bindings.First(b => b.Port == "lamp_0").Find = "reactor";   // edit the shared chart
+        Assert.Contains("\"find\":\"reactor\"", document.CompiledIr);     // re-embed reflects it
+    }
+
+    [Fact]
     public void Document_Projects_Both_Canvases_From_One_Chart()
     {
         var document = Open("traffic_light.sc.json");

@@ -714,6 +714,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         var stateVms = _statesById;
         stateVms.Clear();
         var opIds = chart.Pure.Select(p => p.Id).ToList();
+        var bindingPorts = chart.Bindings.Select(b => b.Port).ToList();
         foreach (var s in chart.States)
         {
             stateVms[s.Id] = new StateNodeViewModel(s, initials.Contains(s.Id))
@@ -728,6 +729,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
                 SetInitialRequested = () => SetInitial(s),
                 RenameRequested = newId => RenameState(s, newId),
                 AvailableOps = opIds,
+                AvailableBindings = bindingPorts,
             };
         }
 

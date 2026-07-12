@@ -1506,14 +1506,20 @@
                                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
-                                                            IsVisible="{Binding HasValueSource}">
-                                                    <ComboBox Classes="InspectorInput" MinWidth="108"
-                                                              ItemsSource="{Binding ValueSources}"
-                                                              SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
-                                                    <TextBox Classes="InspectorInput" Width="80"
-                                                             IsVisible="{Binding IsEditable}"
-                                                             Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsActuator}"
+                                                              ItemsSource="{Binding TargetBindings}"
+                                                              SelectedItem="{Binding SelectedTargetBind, Mode=TwoWay}"/>
+                                                    <StackPanel Orientation="Horizontal" Spacing="6"
+                                                                IsVisible="{Binding HasValueSource}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="108"
+                                                                  ItemsSource="{Binding ValueSources}"
+                                                                  SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                        <TextBox Classes="InspectorInput" Width="80"
+                                                                 IsVisible="{Binding IsEditable}"
+                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    </StackPanel>
                                                 </StackPanel>
                                                 <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
                                                         VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
@@ -1545,14 +1551,20 @@
                                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
-                                                            IsVisible="{Binding HasValueSource}">
-                                                    <ComboBox Classes="InspectorInput" MinWidth="108"
-                                                              ItemsSource="{Binding ValueSources}"
-                                                              SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
-                                                    <TextBox Classes="InspectorInput" Width="80"
-                                                             IsVisible="{Binding IsEditable}"
-                                                             Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsActuator}"
+                                                              ItemsSource="{Binding TargetBindings}"
+                                                              SelectedItem="{Binding SelectedTargetBind, Mode=TwoWay}"/>
+                                                    <StackPanel Orientation="Horizontal" Spacing="6"
+                                                                IsVisible="{Binding HasValueSource}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="108"
+                                                                  ItemsSource="{Binding ValueSources}"
+                                                                  SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                        <TextBox Classes="InspectorInput" Width="80"
+                                                                 IsVisible="{Binding IsEditable}"
+                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    </StackPanel>
                                                 </StackPanel>
                                                 <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
                                                         VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
@@ -1584,14 +1596,20 @@
                                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
                                                 <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
                                                            VerticalAlignment="Center" TextWrapping="Wrap"/>
-                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
-                                                            IsVisible="{Binding HasValueSource}">
-                                                    <ComboBox Classes="InspectorInput" MinWidth="108"
-                                                              ItemsSource="{Binding ValueSources}"
-                                                              SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
-                                                    <TextBox Classes="InspectorInput" Width="80"
-                                                             IsVisible="{Binding IsEditable}"
-                                                             Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsActuator}"
+                                                              ItemsSource="{Binding TargetBindings}"
+                                                              SelectedItem="{Binding SelectedTargetBind, Mode=TwoWay}"/>
+                                                    <StackPanel Orientation="Horizontal" Spacing="6"
+                                                                IsVisible="{Binding HasValueSource}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="108"
+                                                                  ItemsSource="{Binding ValueSources}"
+                                                                  SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                        <TextBox Classes="InspectorInput" Width="80"
+                                                                 IsVisible="{Binding IsEditable}"
+                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    </StackPanel>
                                                 </StackPanel>
                                                 <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
                                                         VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
