@@ -25,6 +25,9 @@
                           Command="{Binding SaveAllCommand}"/>
             </MenuItem>
             <MenuItem Header="_Run">
+                <MenuItem Header="_Pause Simulation"
+                          ToggleType="CheckBox"
+                          IsChecked="{Binding SimulationPaused, Mode=TwoWay}"/>
                 <MenuItem Header="Restart _Viewport"
                           Command="{Binding RestartViewportCommand}"/>
                 <MenuItem Header="Rebuild Behavior _Modules"

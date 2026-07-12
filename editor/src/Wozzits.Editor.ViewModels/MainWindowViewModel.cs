@@ -215,6 +215,22 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    // Pause/resume the viewport simulation: the view stays live (it keeps re-presenting the
+    // last frame) but agents / behaviors / time stop advancing, freeing that CPU. A no-op when
+    // no viewport is running.
+    private bool _simulationPaused;
+    public bool SimulationPaused
+    {
+        get => _simulationPaused;
+        set
+        {
+            if (SetProperty(ref _simulationPaused, value))
+            {
+                _editorSession?.SetSimulationPaused(value);
+            }
+        }
+    }
+
     public string EngineLogText => Console.LogText;
 
     public void Shutdown()
@@ -393,6 +409,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void RestartViewport()
     {
         _editorSession?.RestartRuntime();
+        // A fresh runtime starts unpaused, so keep the toggle in sync.
+        SimulationPaused = false;
         // The runtime is back (or gone): re-enable the inspector's edit surface.
         // The scene tree self-heals (it re-checks on context-menu open).
         Inspector.RefreshEditAvailability();

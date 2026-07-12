@@ -344,6 +344,11 @@ internal static partial class WozzitsEngineAbi
         IntPtr runtime,
         int enabled);
 
+    [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_set_paused")]
+    internal static partial void WzEditorRuntimeSetPaused(
+        IntPtr runtime,
+        int paused);
+
     [LibraryImport(LibraryName, EntryPoint = "wz_host_runtime_bind_draft")]
     internal static partial WzResult WzEditorRuntimeBindDraft(
         IntPtr runtime,

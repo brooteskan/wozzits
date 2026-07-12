@@ -344,4 +344,9 @@ public interface IWozzitsEngineEditorSession
     // Stop the engine's viewport runtime (if any) and start a fresh one for the
     // current project - used to reopen the viewport after its window was closed.
     void RestartRuntime();
+
+    // Pause/resume the running viewport's simulation (default running). While paused
+    // the viewport keeps rendering the last frame but stops advancing behaviors /
+    // agents / time, freeing that CPU. No-op when no viewport is running.
+    void SetSimulationPaused(bool paused);
 }

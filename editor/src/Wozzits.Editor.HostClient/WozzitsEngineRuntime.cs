@@ -51,6 +51,17 @@ public sealed class WozzitsEngineRuntime : IDisposable
         }
     }
 
+    // Pause/resume the simulation on the running engine (default running). The viewport keeps
+    // rendering the last frame while paused, so it stays live but stops advancing. No-op when
+    // no runtime is alive.
+    public void SetPaused(bool paused)
+    {
+        if (_runtime != IntPtr.Zero)
+        {
+            WozzitsEngineAbi.WzEditorRuntimeSetPaused(_runtime, paused ? 1 : 0);
+        }
+    }
+
     // Stop any current runtime (freeing a closed/zombie one) and start a fresh
     // engine + viewport for the same project - the way to bring the viewport
     // back after its window was closed.

@@ -3729,6 +3729,13 @@ public sealed partial class ProjectOpeningTests
             FrameProfilingToggles.Add(enabled);
         }
 
+        public List<bool> SimulationPausedToggles { get; } = [];
+
+        public void SetSimulationPaused(bool paused)
+        {
+            SimulationPausedToggles.Add(paused);
+        }
+
         public List<(string NodeId, string Module)> AddedBehaviors { get; } = [];
 
         public string NextAddedBehaviorId { get; set; } = "behavior.1";
