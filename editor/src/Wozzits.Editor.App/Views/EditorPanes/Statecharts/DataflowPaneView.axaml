@@ -93,6 +93,8 @@
                                                 Classes.scOp="{Binding IsOpNode}"
                                                 Classes.scBinding="{Binding IsBindingNode}"
                                                 Opacity="{Binding DimOpacity}"
+                                                Loaded="CardLoaded"
+                                                SizeChanged="CardSizeChanged"
                                                 Width="220">
                                             <Grid RowDefinitions="Auto,Auto,*"
                                                   RowSpacing="6">
@@ -112,7 +114,9 @@
                                                                 <StackPanel Orientation="Horizontal"
                                                                             Spacing="5"
                                                                             Classes="AssetGraphPortRow">
-                                                                    <Ellipse Classes="AssetGraphInputPortDot"/>
+                                                                    <Ellipse Classes="AssetGraphInputPortDot"
+                                                                             Classes.connectionTarget="{Binding IsConnectionTarget}"
+                                                                             Classes.connectionRejected="{Binding IsConnectionRejected}"/>
                                                                     <TextBlock Text="{Binding Label}"
                                                                                Classes="AssetGraphPortLabel"/>
                                                                     <TextBlock Text="{Binding ConstantText}"

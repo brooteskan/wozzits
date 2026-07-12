@@ -54,6 +54,10 @@ public interface IWiringCanvas
     // Wire sourceNodeId's output into targetNodeId's operand at the given input row.
     // Returns false (leaving the chart untouched) when the connection is invalid or cyclic.
     bool TryConnect(string sourceNodeId, string targetNodeId, int targetInputIndex);
+
+    // Non-mutating: would TryConnect succeed for this trio? Drives the drag-hover port
+    // highlight (valid target vs. rejected) so the user sees the outcome before dropping.
+    bool CanConnect(string sourceNodeId, string targetNodeId, int targetInputIndex);
 }
 
 // A canvas where a transition is authored by dragging from one state to another while an

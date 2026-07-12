@@ -7,26 +7,17 @@ using System.ComponentModel;
 // so wires follow their cards when dragged.
 public sealed class DataflowWireViewModel : ViewModelBase, IDisposable
 {
-    private readonly double _cardWidth;
-    private readonly double _portRowBaseY;
-    private readonly double _portRowSpacing;
     private bool _disposed;
     private bool _isDimmed;
 
     public DataflowWireViewModel(
         DataflowNodeViewModel from,
         DataflowNodeViewModel to,
-        int toInputIndex,
-        double cardWidth,
-        double portRowBaseY,
-        double portRowSpacing)
+        int toInputIndex)
     {
         From = from;
         To = to;
         ToInputIndex = toInputIndex;
-        _cardWidth = cardWidth;
-        _portRowBaseY = portRowBaseY;
-        _portRowSpacing = portRowSpacing;
 
         From.PropertyChanged += NodeMoved;
         To.PropertyChanged += NodeMoved;
@@ -44,13 +35,13 @@ public sealed class DataflowWireViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _isDimmed, value);
     }
 
-    public double StartX => From.X + _cardWidth;
+    public double StartX => From.X + From.OutputDotX;
 
-    public double StartY => From.Y + _portRowBaseY;
+    public double StartY => From.Y + From.OutputDotY;
 
-    public double EndX => To.X;
+    public double EndX => To.X + To.InputDotX;
 
-    public double EndY => To.Y + _portRowBaseY + ToInputIndex * _portRowSpacing;
+    public double EndY => To.Y + To.InputDotBaseY + ToInputIndex * DataflowPaneViewModel.PortRowSpacing;
 
     public void Dispose()
     {
@@ -67,7 +58,8 @@ public sealed class DataflowWireViewModel : ViewModelBase, IDisposable
     private void NodeMoved(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is not nameof(DataflowNodeViewModel.X)
-            and not nameof(DataflowNodeViewModel.Y))
+            and not nameof(DataflowNodeViewModel.Y)
+            and not DataflowNodeViewModel.PortGeometryChanged)
         {
             return;
         }

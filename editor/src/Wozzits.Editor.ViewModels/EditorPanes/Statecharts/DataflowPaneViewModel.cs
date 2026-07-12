@@ -405,6 +405,26 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         return true;
     }
 
+    // Non-mutating twin of TryConnect: does the same source/target/operand/cycle validation but
+    // touches nothing. The wiring gesture calls it on hover to colour the target port dot
+    // (accent = will connect, red = rejected) before the drop.
+    public bool CanConnect(string sourceNodeId, string targetNodeId, int targetInputIndex)
+    {
+        if (_chart is null)
+        {
+            return false;
+        }
+
+        var source = _chart.Pure.FirstOrDefault(p => p.Id == sourceNodeId);
+        var target = _chart.Pure.FirstOrDefault(p => p.Id == targetNodeId);
+        if (source is null || target is null)
+        {
+            return false;
+        }
+
+        return OperandSlot(target, targetInputIndex) is not null && !CreatesCycle(sourceNodeId, targetNodeId);
+    }
+
     // Revert a wired operand back to an editable constant 0 (the inverse of TryConnect / a
     // "delete connection"). Rejects an input that isn't an op-wired value operand. Reprojects.
     public bool Disconnect(string targetNodeId, int inputIndex)
@@ -847,7 +867,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             var target = opNodes[p.Id];
             foreach (var (index, source) in WiredInputs(p, bindingNodes, agentNodes, opNodes))
             {
-                Wires.Add(new DataflowWireViewModel(source, target, index, CardWidth, PortRowBaseY, PortRowSpacing));
+                Wires.Add(new DataflowWireViewModel(source, target, index));
             }
         }
     }

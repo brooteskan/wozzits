@@ -34,6 +34,7 @@ public sealed class GraphInteraction
     private Point _boxStart;
     private Point _boxCurrent;
     private DataflowPortViewModel? _wireSource;
+    private DataflowPortViewModel? _wireHoverTarget;
     private StateNodeViewModel? _transitionSource;
     private Point _previewStart;
 
@@ -190,6 +191,13 @@ public sealed class GraphInteraction
             }
 
             UpdatePreview(ToGraph(e));
+            if (vm is IWiringCanvas wiring)
+            {
+                SetWireHoverTarget(
+                    PortAtPoint(point.Position) is { IsInput: true } hovered ? hovered : null,
+                    wiring);
+            }
+
             e.Handled = true;
             return;
         }
@@ -331,6 +339,7 @@ public sealed class GraphInteraction
     {
         var source = _wireSource;
         _wireSource = null;
+        SetWireHoverTarget(null, null);
         HidePreview();
         e.Pointer.Capture(null);
 
@@ -342,6 +351,33 @@ public sealed class GraphInteraction
         if (PortAtPoint(rootPosition) is { IsInput: true } target)
         {
             wiring.TryConnect(source.Owner.NodeId, target.Owner.NodeId, target.Index);
+        }
+    }
+
+    // Colour the input port dot under the cursor while a wire is being dragged: accent (a bold
+    // pop) when the drop would connect, red when it would be rejected. Clears the previously
+    // highlighted port so exactly one lights up. Passing null (drag left every port, or ended)
+    // clears the highlight entirely.
+    private void SetWireHoverTarget(DataflowPortViewModel? target, IWiringCanvas? wiring)
+    {
+        if (ReferenceEquals(_wireHoverTarget, target))
+        {
+            return;
+        }
+
+        if (_wireHoverTarget is not null)
+        {
+            _wireHoverTarget.IsConnectionTarget = false;
+            _wireHoverTarget.IsConnectionRejected = false;
+        }
+
+        _wireHoverTarget = target;
+
+        if (target is not null && wiring is not null && _wireSource is not null)
+        {
+            bool ok = wiring.CanConnect(_wireSource.Owner.NodeId, target.Owner.NodeId, target.Index);
+            target.IsConnectionTarget = ok;
+            target.IsConnectionRejected = !ok;
         }
     }
 

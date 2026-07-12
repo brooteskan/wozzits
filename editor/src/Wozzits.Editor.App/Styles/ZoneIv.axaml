@@ -498,6 +498,14 @@
         <Setter Property="Fill" Value="{DynamicResource WozzitsErrorBrush}"/>
     </Style>
 
+    <!-- Statechart wiring: the drop-target dot pops (bold) while a wire is dragged onto it, so
+         it's clear what the drop will connect to before releasing. Scoped to statechart cards
+         (.scNode) so the asset-graph editor's port dots are unaffected. Scale is a render
+         transform about the dot centre, so it grows the dot without disturbing the row layout. -->
+    <Style Selector="Border.scNode Ellipse.AssetGraphInputPortDot.connectionTarget">
+        <Setter Property="RenderTransform" Value="scale(1.9)"/>
+    </Style>
+
     <Style Selector="Ellipse.AssetGraphOutputPortDot">
         <Setter Property="Fill" Value="{DynamicResource WozzitsAccentBrush}"/>
         <Setter Property="Width" Value="7"/>

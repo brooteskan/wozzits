@@ -1,5 +1,6 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
+using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Text.Json.Nodes;
@@ -108,6 +109,58 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
     public int Column { get; set; }
 
     public int Row { get; set; }
+
+    // Sentinel property name raised when a measured dot offset changes, so wires observing this
+    // node re-read their endpoints (alongside X/Y).
+    public const string PortGeometryChanged = "PortGeometry";
+
+    // Measured centres of the output dot and the first input dot, relative to the card's
+    // top-left, written by the view once the card is laid out (DataflowPaneView.MeasurePorts).
+    // Wires and the drag preview add these to the node's X/Y so they meet the dots exactly --
+    // independent of how tall the card's header renders. They default to the shared layout
+    // constants so geometry is sane before the first measure.
+    private double _outputDotX = DataflowPaneViewModel.CardWidth;
+    private double _outputDotY = DataflowPaneViewModel.PortRowBaseY;
+    private double _inputDotX;
+    private double _inputDotBaseY = DataflowPaneViewModel.PortRowBaseY;
+
+    public double OutputDotX => _outputDotX;
+
+    public double OutputDotY => _outputDotY;
+
+    public double InputDotX => _inputDotX;
+
+    public double InputDotBaseY => _inputDotBaseY;
+
+    public void SetMeasuredOutputDot(double x, double y)
+    {
+        if (Close(_outputDotX, x) && Close(_outputDotY, y))
+        {
+            return;
+        }
+
+        _outputDotX = x;
+        _outputDotY = y;
+        OnPropertyChanged(nameof(OutputDotX));
+        OnPropertyChanged(nameof(OutputDotY));
+        OnPropertyChanged(PortGeometryChanged);
+    }
+
+    public void SetMeasuredInputDot(double x, double baseY)
+    {
+        if (Close(_inputDotX, x) && Close(_inputDotBaseY, baseY))
+        {
+            return;
+        }
+
+        _inputDotX = x;
+        _inputDotBaseY = baseY;
+        OnPropertyChanged(nameof(InputDotX));
+        OnPropertyChanged(nameof(InputDotBaseY));
+        OnPropertyChanged(PortGeometryChanged);
+    }
+
+    private static bool Close(double a, double b) => Math.Abs(a - b) < 0.5;
 
     public ObservableCollection<DataflowPortViewModel> InputPorts { get; } = [];
 

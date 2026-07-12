@@ -27,15 +27,35 @@ public sealed class DataflowPortViewModel : ViewModelBase
 
     public bool IsOutput => !IsInput;
 
-    // Graph-space anchor of this port's dot (matches the wire endpoint geometry): the single
-    // output sits at the card's right edge, inputs stack down the left edge. Used by the
-    // wiring gesture to draw the drag preview from the source port.
+    // Graph-space anchor of this port's dot -- the same measured geometry the wires use, so the
+    // drag preview leaves the source dot exactly. The output sits at the card's right edge, inputs
+    // stack down the left edge; both offsets are measured by the view (Owner.SetMeasured*Dot).
     public double AnchorX => IsOutput
-        ? Owner.X + DataflowPaneViewModel.CardWidth
-        : Owner.X;
+        ? Owner.X + Owner.OutputDotX
+        : Owner.X + Owner.InputDotX;
 
-    public double AnchorY => Owner.Y + DataflowPaneViewModel.PortRowBaseY
-        + (IsInput ? Index * DataflowPaneViewModel.PortRowSpacing : 0);
+    public double AnchorY => IsOutput
+        ? Owner.Y + Owner.OutputDotY
+        : Owner.Y + Owner.InputDotBaseY + Index * DataflowPaneViewModel.PortRowSpacing;
+
+    // Drag-hover feedback (input ports only): the gesture sets one of these on the port under the
+    // cursor while a wire is being dragged -- target = the drop would connect (dot pops accent),
+    // rejected = it wouldn't (dot turns red). Cleared when the pointer leaves or the drag ends.
+    private bool _isConnectionTarget;
+
+    public bool IsConnectionTarget
+    {
+        get => _isConnectionTarget;
+        set => SetProperty(ref _isConnectionTarget, value);
+    }
+
+    private bool _isConnectionRejected;
+
+    public bool IsConnectionRejected
+    {
+        get => _isConnectionRejected;
+        set => SetProperty(ref _isConnectionRejected, value);
+    }
 
     // Input ports only: an unwired operand carries a literal constant instead of a wire.
     public ValueRef? Constant { get; init; }

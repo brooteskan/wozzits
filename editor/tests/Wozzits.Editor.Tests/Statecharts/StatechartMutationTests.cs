@@ -324,6 +324,47 @@ public sealed class StatechartMutationTests
     }
 
     [Fact]
+    public void CanConnect_Agrees_With_TryConnect_Without_Mutating()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var a = pane.AddOp(OpKind.Mul)!;
+        var b = pane.AddOp(OpKind.Add)!;
+        var agent = pane.Nodes.First(n => n.Kind == DataflowNodeKind.Agent);
+
+        Assert.True(pane.CanConnect(a.NodeId, b.NodeId, 0));      // op -> value operand: ok
+        Assert.False(pane.CanConnect(agent.NodeId, b.NodeId, 0)); // leaf source: rejected
+        Assert.False(pane.CanConnect(a.NodeId, a.NodeId, 0));     // self: cycle, rejected
+
+        // The operand it could fill is left an untouched constant -- CanConnect mutates nothing.
+        Assert.Equal(RefKind.Const, chart.Pure.First(p => p.Id == b.NodeId).Ins[0].Kind);
+    }
+
+    [Fact]
+    public void Measured_Dot_Geometry_Repositions_The_Wire_And_Anchor()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var a = pane.AddOp(OpKind.Mul)!;
+        var b = pane.AddOp(OpKind.Add)!;
+        Assert.True(pane.TryConnect(a.NodeId, b.NodeId, 0));      // reprojects; re-fetch via the wire
+        var wire = pane.Wires.First(w => w.From.NodeId == a.NodeId && w.To.NodeId == b.NodeId);
+
+        wire.From.SetMeasuredOutputDot(173, 55);   // the view feeds real dot centres
+        wire.To.SetMeasuredInputDot(11, 55);
+
+        Assert.Equal(wire.From.X + 173, wire.StartX, 3);
+        Assert.Equal(wire.From.Y + 55, wire.StartY, 3);
+        Assert.Equal(wire.To.X + 11, wire.EndX, 3);
+        Assert.Equal(wire.To.Y + 55, wire.EndY, 3);              // input row 0 -> no spacing offset
+
+        // The output port's drag-preview anchor rides the same measured geometry.
+        var outPort = wire.From.OutputPorts.First();
+        Assert.Equal(wire.From.X + 173, outPort.AnchorX, 3);
+        Assert.Equal(wire.From.Y + 55, outPort.AnchorY, 3);
+    }
+
+    [Fact]
     public void Disconnect_Reverts_A_Wired_Operand_To_A_Constant()
     {
         var chart = Golden("traffic_light.sc.json");
