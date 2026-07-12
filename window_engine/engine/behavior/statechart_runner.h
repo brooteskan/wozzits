@@ -63,7 +63,17 @@ namespace wz::engine::behavior
             std::vector<double>   pure_out;        // scratch, recomputed each tick
         };
 
-        std::unordered_map<std::string, statechart::Chart> charts_;
+        // A parsed chart cached under its stable `chart` name, tagged with the IR text it was
+        // parsed from. The IR tag lets `load` re-parse when the editor re-embeds an edited chart
+        // under the same name -- keying on name alone made a runtime restart run the STALE chart
+        // (the store is a process-global singleton that outlives an AppContext restart).
+        struct CachedChart
+        {
+            std::string source_ir;
+            statechart::Chart chart;
+        };
+
+        std::unordered_map<std::string, CachedChart> charts_;
         std::unordered_map<uint64_t, Runtime> runtimes_;
         uint64_t next_ = 1;
     };

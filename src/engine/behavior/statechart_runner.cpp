@@ -21,17 +21,22 @@ namespace wz::engine::behavior
         const std::string& name, const std::string& ir_text)
     {
         auto it = charts_.find(name);
-        if (it != charts_.end()) {
-            return &it->second;
+        if (it != charts_.end() && it->second.source_ir == ir_text) {
+            return &it->second.chart;   // same IR under this name -> reuse the cached parse
         }
         sc::Chart chart;
         std::string error;
         if (!sc::parse_chart(ir_text, chart, error)) {
             return nullptr;
         }
-        auto [ins, ok] = charts_.emplace(name, std::move(chart));
-        (void)ok;
-        return &ins->second;
+        // Insert or REPLACE: an edited chart re-embeds under the same name with new IR, so the
+        // old parse must be overwritten (else a restart keeps running the stale chart). Safe
+        // because load runs on self.start (fresh runtimes); prior runtimes were destroyed on the
+        // previous scene teardown.
+        auto& slot = charts_[name];
+        slot.source_ir = ir_text;
+        slot.chart = std::move(chart);
+        return &slot.chart;
     }
 
     uint64_t StatechartRunnerStore::create(const sc::Chart* chart)
