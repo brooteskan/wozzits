@@ -71,6 +71,11 @@ public sealed class GraphInteraction
             return;   // presses on pane chrome (toolbar) are not canvas gestures
         }
 
+        if (IsWithinEditable(e.Source))
+        {
+            return;   // let a click land in an on-canvas text field (a region's editable header)
+        }
+
         var point = e.GetCurrentPoint(_root);
 
         if (point.Properties.IsRightButtonPressed)
@@ -428,6 +433,19 @@ public sealed class GraphInteraction
 
     private StateNodeViewModel? StateAtPoint(Point rootPosition) =>
         NodeUnder(_root.InputHitTest(rootPosition)) as StateNodeViewModel;
+
+    private static bool IsWithinEditable(object? source)
+    {
+        for (var current = source as StyledElement; current is not null; current = current.Parent)
+        {
+            if (current is TextBox)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static DataflowPortViewModel? PortUnder(object? source)
     {

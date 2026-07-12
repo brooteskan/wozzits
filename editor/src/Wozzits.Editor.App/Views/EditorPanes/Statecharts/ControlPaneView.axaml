@@ -13,6 +13,7 @@
                             Margin="6"
                             IsVisible="{Binding HasChart}">
                     <Button Content="+ State" Command="{Binding AddStateCommand}"/>
+                    <Button Content="+ Region" Command="{Binding AddRegionCommand}"/>
                     <Button Content="Delete" Command="{Binding DeleteSelectedCommand}"/>
                     <ToggleButton Content="Draw transition"
                                   IsChecked="{Binding IsDrawingTransition, Mode=TwoWay}"/>
@@ -63,11 +64,21 @@
                                                 BorderBrush="{DynamicResource WozzitsGraphWireBrush}"
                                                 BorderThickness="1"
                                                 CornerRadius="6">
-                                            <TextBlock Text="{Binding Title}"
-                                                       Classes="AssetGraphCardId"
-                                                       HorizontalAlignment="Left"
-                                                       VerticalAlignment="Top"
-                                                       Margin="10,5,0,0"/>
+                                            <!-- Editable region name (click to rename). A bare
+                                                 transparent TextBox so it reads like the label
+                                                 but commits on focus-out; the interaction
+                                                 controller lets the click focus it. -->
+                                            <TextBox Text="{Binding NameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                     Foreground="{DynamicResource WozzitsMutedTextBrush}"
+                                                     FontFamily="Consolas"
+                                                     FontSize="11"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     Padding="0"
+                                                     MinHeight="0"
+                                                     HorizontalAlignment="Left"
+                                                     VerticalAlignment="Top"
+                                                     Margin="10,4,6,0"/>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

@@ -13,11 +13,19 @@ public sealed class RegionViewModel : ViewModelBase
     {
         RegionId = regionId;
         StateIds = stateIds;
+        NameEditor = new EditableFieldViewModel("name", () => RegionId, v => RenameRequested?.Invoke(v));
     }
 
     public string RegionId { get; }
 
     public string Title => RegionId;
+
+    // Editable region name (its id). Nothing else in the chart references a region id, so a
+    // rename is just the id -- the pane does it (RenameRegion) via RenameRequested, bound to the
+    // swimlane's editable header. Regions are orthogonal: one active state each, stepping together.
+    public EditableFieldViewModel NameEditor { get; }
+
+    public Action<string>? RenameRequested { get; set; }
 
     public IReadOnlyList<string> StateIds { get; }
 

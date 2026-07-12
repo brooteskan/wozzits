@@ -187,7 +187,35 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public bool HasBindingFields => BindingFields.Count > 0;
 
+    // The single `find` field, surfaced so the binding card can show it inline (not just the
+    // inspector). Card + inspector bind the same object, so an edit in one updates both.
+    public EditableFieldViewModel? BindingFindEditor => BindingFields.Count > 0 ? BindingFields[0] : null;
+
     public Action? BindingEdited { get; set; }
+
+    // Editable binding scope: "subtree" resolves the find only within the runner node's
+    // descendants (the demo pattern -- runner on a container above its named children); "global"
+    // resolves the find by name ANYWHERE, so it works wherever the runner sits. Scalar edit (not
+    // drawn), so it just marks the chart dirty.
+    public IReadOnlyList<string> BindingScopes { get; } = new[] { "subtree", "global" };
+
+    public string SelectedBindingScope
+    {
+        get => Model is Binding b && !b.Subtree ? "global" : "subtree";
+        set
+        {
+            if (Model is Binding b)
+            {
+                bool subtree = value != "global";
+                if (b.Subtree != subtree)
+                {
+                    b.Subtree = subtree;
+                    OnPropertyChanged();
+                    BindingEdited?.Invoke();
+                }
+            }
+        }
+    }
 
     // Editable agent name (its id) for an agent node; null otherwise. Renaming rewrites every
     // reference to the agent -- the pane does that (RenameAgent) via AgentRenameRequested.
@@ -249,10 +277,8 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     private static IReadOnlyList<InspectorRow> BuildRows(object model) => model switch
     {
-        Binding b => new List<InspectorRow>
-        {
-            new("scope", b.Subtree ? "subtree" : "global"),
-        },
+        // Binding scope is now an editable picker (SelectedBindingScope), not a read-only row.
+        Binding => Array.Empty<InspectorRow>(),
         AgentDecl a => BuildAgentRows(a),
         PureOp p => BuildOpRows(p),
         _ => Array.Empty<InspectorRow>(),

@@ -30,11 +30,12 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
         AddEntryEffectCommand = new RelayCommand<EffectKind>(k => EffectAddRequested?.Invoke(EffectSlot.Entry, k));
         AddExitEffectCommand = new RelayCommand<EffectKind>(k => EffectAddRequested?.Invoke(EffectSlot.Exit, k));
         TransitionRows = model.Transitions.Select(t =>
-            new TransitionRowViewModel(t, () => Edited?.Invoke())
+            new TransitionRowViewModel(t, () => TransitionEdited?.Invoke())
             {
                 DeleteRequested = () => TransitionDeleteRequested?.Invoke(t),
                 TriggerKindChangeRequested = k => TransitionKindChangeRequested?.Invoke(t, k),
             }).ToList();
+        NameEditor = new EditableFieldViewModel("name", () => Model.Id, v => RenameRequested?.Invoke(v));
     }
 
     public State Model { get; }
@@ -42,6 +43,13 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
     public string StateId { get; }
 
     public string Title => StateId;
+
+    // Editable state name (its id). Renaming rewrites every transition that targets it and its
+    // region membership (initial + states list) -- the pane does that (RenameState) via
+    // RenameRequested, which the view binds to a "name" field in the inspector.
+    public EditableFieldViewModel NameEditor { get; }
+
+    public Action<string>? RenameRequested { get; set; }
 
     // This state is its region's initial state (shown with an entry marker).
     public bool IsInitial { get; }
@@ -68,6 +76,11 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
 
     // Invoked when a row's editable field is edited (the pane wires it to mark dirty).
     public Action? Edited { get; set; }
+
+    // Invoked when a transition row's editable field (the `after` delay) is edited. Unlike a
+    // plain effect-constant edit, a trigger's value is DRAWN on the graph (the arrow label), so
+    // the pane wires this to a reproject -- otherwise the label keeps its projection-time value.
+    public Action? TransitionEdited { get; set; }
 
     // Invoked to delete one of this state's outgoing transitions (the pane routes it to
     // DeleteTransition); each transition row calls it with its own model.

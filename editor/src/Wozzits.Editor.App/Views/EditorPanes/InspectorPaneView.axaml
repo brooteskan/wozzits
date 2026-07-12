@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
              xmlns:model="using:Wozzits.Editor.Statecharts"
+             xmlns:scvm="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
              x:Class="Wozzits.Editor.App.Views.EditorPanes.InspectorPaneView"
              x:DataType="panes:InspectorPaneViewModel">
     <UserControl.Resources>
@@ -252,6 +253,9 @@
                                                 <MenuItem Header="Audio Listener"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="audio_listener"/>
+                                                <MenuItem Header="Statechart Runner"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="statechart_runner"/>
                                             </MenuFlyout>
                                         </Button.Flyout>
                                     </Button>
@@ -1025,6 +1029,45 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
+
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasStatechartRunnerSection}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Statechart runner" Classes="InspectorSectionTitle"/>
+                                <TextBlock Text="Pick a chart to run on this node, then Attach. The chart's own bindings name the scene nodes it drives; it runs on Play."
+                                           Classes="PaneEmptyState"
+                                           TextWrapping="Wrap"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Chart" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1"
+                                              Classes="InspectorInput"
+                                              HorizontalAlignment="Stretch"
+                                              PlaceholderText="pick a chart"
+                                              ItemsSource="{Binding StatechartRunnerCharts}"
+                                              SelectedItem="{Binding SelectedStatechartRunnerChart, Mode=TwoWay}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="scvm:StatechartFileInfo">
+                                                <TextBlock Text="{Binding Name}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Content="Attach runner"
+                                            Command="{Binding AttachStatechartRunnerCommand}"
+                                            Classes="InspectorApplyButton"
+                                            IsVisible="{Binding HasSelectedStatechartRunnerChart}"/>
+                                    <Button Content="Remove"
+                                            Command="{Binding RemoveStatechartRunnerCommand}"
+                                            Classes="InspectorApplyButton"
+                                            IsVisible="{Binding HasAttachedStatechartRunner}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding StatechartRunnerStatus}"
+                                           Classes="PaneEmptyState"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding HasStatechartRunnerStatus}"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -1348,6 +1391,14 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                    <TextBlock Text="scope" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1"
+                                              Classes="InspectorInput"
+                                              HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding SelectedStatechartNode.BindingScopes}"
+                                              SelectedItem="{Binding SelectedStatechartNode.SelectedBindingScope, Mode=TwoWay}"/>
+                                </Grid>
                             </StackPanel>
                         </Border>
                         <Border Classes="InspectorSectionCard"
@@ -1418,6 +1469,12 @@
                         <Border Classes="InspectorSectionCard">
                             <StackPanel Classes="InspectorSection">
                                 <TextBlock Text="State" Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                    <TextBlock Text="name" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1"
+                                             Classes="InspectorInput"
+                                             Text="{Binding SelectedStatechartState.NameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
                                 <TextBlock Text="&#x25B6; initial state"
                                            IsVisible="{Binding SelectedStatechartState.IsInitial}"/>
                                 <Button Content="Make initial"

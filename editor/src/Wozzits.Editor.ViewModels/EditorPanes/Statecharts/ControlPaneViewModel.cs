@@ -37,11 +37,15 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
     {
         SelectedStates.CollectionChanged += (_, _) => UpdateSelectedState();
         AddStateCommand = new RelayCommand(() => AddState());
+        AddRegionCommand = new RelayCommand(() => AddRegion());
         DeleteSelectedCommand = new RelayCommand(DeleteSelected);
     }
 
-    // Toolbar: add a state to the selected state's region; delete the current selection.
+    // Toolbar: add a state to the selected state's region; add a new (orthogonal) region; delete
+    // the current selection.
     public IRelayCommand AddStateCommand { get; }
+
+    public IRelayCommand AddRegionCommand { get; }
 
     public IRelayCommand DeleteSelectedCommand { get; }
 
@@ -455,6 +459,123 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         return vm;
     }
 
+    // Add a new orthogonal region with one seed state (its initial), and select that state so the
+    // next "+ State" lands in this region. A region can't be empty in v0, so it arrives with a
+    // state rather than as a bare lane. Reprojects (preserving hand-placed layout). Returns the
+    // seed state (null if no chart).
+    public StateNodeViewModel? AddRegion()
+    {
+        if (_chart is null)
+        {
+            return null;
+        }
+
+        var region = new Region { Id = FreshId("region", _chart.Regions.Select(r => r.Id)) };
+        var id = FreshId("state", _chart.States.Select(s => s.Id));
+        _chart.States.Add(new State { Id = id });
+        region.States.Add(id);
+        region.Initial = id;
+        _chart.Regions.Add(region);
+
+        IsDirty = true;
+        ReprojectPreservingLayout();
+
+        var vm = States.FirstOrDefault(s => s.StateId == id);
+        if (vm is not null)
+        {
+            SelectOnly(vm);
+        }
+
+        return vm;
+    }
+
+    // Rename a state (its id). Rewrites every transition that targets it and its region membership
+    // (initial + states list) so no reference dangles; rejects empty / unchanged / colliding.
+    // Migrates the state's hand-placed position to the new id so it keeps its spot, reprojects,
+    // and re-selects it.
+    public void RenameState(State state, string newId)
+    {
+        if (_chart is null)
+        {
+            return;
+        }
+
+        newId = (newId ?? string.Empty).Trim();
+        var oldId = state.Id;
+        if (newId.Length == 0 || newId == oldId || _chart.States.Any(s => s.Id == newId))
+        {
+            return;
+        }
+
+        var layout = CaptureLayout();
+        if (layout.StatePositions.Remove(oldId, out var pos))
+        {
+            layout.StatePositions[newId] = pos;
+        }
+
+        state.Id = newId;
+        foreach (var s in _chart.States)
+        {
+            foreach (var t in s.Transitions)
+            {
+                if (t.Target == oldId)
+                {
+                    t.Target = newId;
+                }
+            }
+        }
+
+        foreach (var r in _chart.Regions)
+        {
+            if (r.Initial == oldId)
+            {
+                r.Initial = newId;
+            }
+
+            for (int i = 0; i < r.States.Count; i++)
+            {
+                if (r.States[i] == oldId)
+                {
+                    r.States[i] = newId;
+                }
+            }
+        }
+
+        IsDirty = true;
+        Project(_chart);
+        ApplyLayout(layout);
+        if (States.FirstOrDefault(s => s.StateId == newId) is { } vm)
+        {
+            SelectOnly(vm);
+        }
+    }
+
+    // Rename a region (its id). Nothing else references a region id, so this is just the id;
+    // rejects empty / unchanged / colliding. Reprojects (preserving layout).
+    public void RenameRegion(string oldId, string newId)
+    {
+        if (_chart is null)
+        {
+            return;
+        }
+
+        newId = (newId ?? string.Empty).Trim();
+        if (newId.Length == 0 || newId == oldId || _chart.Regions.Any(r => r.Id == newId))
+        {
+            return;
+        }
+
+        var region = _chart.Regions.FirstOrDefault(r => r.Id == oldId);
+        if (region is null)
+        {
+            return;
+        }
+
+        region.Id = newId;
+        IsDirty = true;
+        ReprojectPreservingLayout();
+    }
+
     // Where a new state lands: the selected state's region, else the first region, else a new
     // region created to hold it (a chart must have at least one region).
     private Region RegionForNewState()
@@ -598,12 +719,14 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
             stateVms[s.Id] = new StateNodeViewModel(s, initials.Contains(s.Id))
             {
                 Edited = MarkChartDirty,
+                TransitionEdited = () => { MarkChartDirty(); ReprojectPreservingSelection(); },   // mark dirty + refresh the arrow label
                 TransitionDeleteRequested = t => DeleteTransition(s, t),
                 TransitionKindChangeRequested = (t, k) => SetTriggerKind(s, t, k),
                 EffectAddRequested = (slot, kind) => AddEffect(s, slot, kind),
                 EffectDeleteRequested = e => DeleteEffect(s, e),
                 EffectValueSourceChanged = ReprojectPreservingSelection,
                 SetInitialRequested = () => SetInitial(s),
+                RenameRequested = newId => RenameState(s, newId),
                 AvailableOps = opIds,
             };
         }
@@ -613,7 +736,11 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         var placed = new HashSet<string>();
         foreach (var r in chart.Regions)
         {
-            var region = new RegionViewModel(r.Id, r.States.ToList());
+            var regionModel = r;
+            var region = new RegionViewModel(r.Id, r.States.ToList())
+            {
+                RenameRequested = newId => RenameRegion(regionModel.Id, newId),
+            };
             int column = 0;
             foreach (var sid in r.States)
             {

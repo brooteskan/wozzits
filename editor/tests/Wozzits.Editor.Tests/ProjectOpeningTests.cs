@@ -5,6 +5,7 @@ using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 using Wozzits.Editor.ViewModels;
 using Wozzits.Editor.ViewModels.EditorPanes;
+using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 namespace Wozzits.Editor.Tests;
 
@@ -2225,6 +2226,96 @@ public sealed partial class ProjectOpeningTests
         Assert.Contains(viewModel.Inspector.Behaviors, b => b.Module == "spin");
     }
 
+    // A test-owned statechart file (under the test's own output directory), so nothing here
+    // depends on the mutable engine corpus (a live scratch project).
+    private static string WriteRunnerFixtureChart(string name, string bindingPort, string bindingFind)
+    {
+        var dir = Path.Combine(AppContext.BaseDirectory, "runner-fixtures");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, name + ".sc.json");
+        File.WriteAllText(
+            path,
+            "{\n"
+            + "  \"schema\": \"wozzits.statechart.ir.v0\",\n"
+            + $"  \"name\": \"{name}\",\n"
+            + $"  \"bindings\": [ {{ \"port\": \"{bindingPort}\", \"find\": \"{bindingFind}\", \"scope\": \"subtree\" }} ],\n"
+            + "  \"agents\": [],\n"
+            + "  \"pure\": [],\n"
+            + "  \"regions\": [ { \"id\": \"r0\", \"initial\": \"s0\", \"states\": [\"s0\"] } ],\n"
+            + "  \"states\": [ { \"id\": \"s0\", \"do\": [], \"transitions\": [] } ]\n"
+            + "}\n");
+        return path;
+    }
+
+    [Fact]
+    public void InspectorAttachesStatechartRunnerFromComponentsMenuWithAuthoredConfig()
+    {
+        var session = new RecordingEditorSession
+        {
+            NextAddedBehaviorId = "runner.1",
+            BehaviorModuleCatalog = ["spin", "statechart_runner"],
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(scene: SceneSnapshot(Node("host", "Host"))),
+            editorSession: session);
+
+        var chartPath = WriteRunnerFixtureChart("runner_fixture", "bind1", "laser");
+        viewModel.Inspector.SetStatechartsProvider(() => new[]
+        {
+            new StatechartFileInfo("runner_fixture", chartPath),
+        });
+
+        var host = viewModel.SceneTree.Nodes.First(n => n.Id == "host");
+        viewModel.SceneTree.SelectNode(host);
+
+        // The runner is NOT offered in the Behaviors "+" catalog -- only via Components "+".
+        Assert.DoesNotContain(viewModel.Inspector.AvailableBehaviorModules, o => o.Module == "statechart_runner");
+        Assert.Contains(viewModel.Inspector.AvailableBehaviorModules, o => o.Module == "spin");
+
+        // The card is hidden until it's added from the Components "+" menu.
+        Assert.False(viewModel.Inspector.HasStatechartRunnerSection);
+        viewModel.Inspector.AddComponentCommand.Execute("statechart_runner");
+        Assert.True(viewModel.Inspector.HasStatechartRunnerSection);
+
+        // Pick the chart and attach.
+        viewModel.Inspector.SelectedStatechartRunnerChart =
+            viewModel.Inspector.StatechartRunnerCharts.First(c => c.Name == "runner_fixture");
+        viewModel.Inspector.AttachStatechartRunnerCommand.Execute(null);
+
+        // A statechart_runner was added to the host with the chart name + the IR compiled AS
+        // AUTHORED (its binding keeps the find the chart itself specifies), plus events + save.
+        Assert.Contains(("host", "statechart_runner"), session.AddedBehaviors);
+        Assert.Contains(session.BehaviorConfigs,
+            c => c.BindingId == "runner.1" && c.Key == "chart" && c.Value == "runner_fixture");
+        var irConfig = Assert.Single(session.BehaviorConfigs, c => c.Key == "chart_ir");
+        Assert.Contains("\"find\":\"laser\"", irConfig.Value);   // authored find, compiled as-is
+        Assert.Contains(session.BehaviorEventSets,
+            e => e.BindingId == "runner.1"
+                 && e.Events.Contains("self.start")
+                 && e.Events.Contains("frame.update"));
+        Assert.True(session.SaveSceneCount >= 1);
+        // The runner is NOT a raw Behaviors row -- it lives only in the card.
+        Assert.DoesNotContain(viewModel.Inspector.Behaviors, b => b.Module == "statechart_runner");
+        Assert.True(viewModel.Inspector.HasAttachedStatechartRunner);
+
+        // Re-attaching updates the existing runner in place -- it does not add a second.
+        viewModel.Inspector.AttachStatechartRunnerCommand.Execute(null);
+        Assert.Single(session.AddedBehaviors, b => b.Module == "statechart_runner");
+
+        // Reselecting the node auto-reveals the card, PRE-SELECTS the running chart in the picker
+        // (not "unset"), and still shows no raw Behaviors row.
+        viewModel.SceneTree.SelectNode(host);
+        Assert.True(viewModel.Inspector.HasStatechartRunnerSection);
+        Assert.True(viewModel.Inspector.HasAttachedStatechartRunner);
+        Assert.Equal("runner_fixture", viewModel.Inspector.SelectedStatechartRunnerChart?.Name);
+        Assert.DoesNotContain(viewModel.Inspector.Behaviors, b => b.Module == "statechart_runner");
+
+        // Remove detaches it from the node.
+        viewModel.Inspector.RemoveStatechartRunnerCommand.Execute(null);
+        Assert.False(viewModel.Inspector.HasAttachedStatechartRunner);
+        Assert.Contains(("host", "runner.1"), session.RemovedBehaviors);
+    }
+
     [Fact]
     public void RefreshBehaviorModuleCatalogPicksUpModulesLoadedAfterSelection()
     {
@@ -3738,6 +3829,11 @@ public sealed partial class ProjectOpeningTests
 
         public List<(string NodeId, string Module)> AddedBehaviors { get; } = [];
 
+        public List<(string NodeId, string BindingId, string Key, string Kind, string Value)>
+            BehaviorConfigs { get; } = [];
+
+        public List<(string NodeId, string BindingId, string Events)> BehaviorEventSets { get; } = [];
+
         public string NextAddedBehaviorId { get; set; } = "behavior.1";
 
         public List<(string NodeId, string BindingId)> RemovedBehaviors { get; } = [];
@@ -3780,6 +3876,7 @@ public sealed partial class ProjectOpeningTests
             string bindingId,
             string events)
         {
+            BehaviorEventSets.Add((nodeId, bindingId, events));
             return new EngineMutationResponse { Ok = true };
         }
 
@@ -3790,6 +3887,7 @@ public sealed partial class ProjectOpeningTests
             string kind,
             string value)
         {
+            BehaviorConfigs.Add((nodeId, bindingId, key, kind, value));
             return new EngineMutationResponse { Ok = true };
         }
 

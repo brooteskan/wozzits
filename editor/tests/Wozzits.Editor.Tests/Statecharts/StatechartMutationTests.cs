@@ -727,6 +727,122 @@ public sealed class StatechartMutationTests
     }
 
     [Fact]
+    public void Rename_State_Rewrites_Transitions_Initial_And_Region_Membership()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var delib = pane.States.First(s => s.StateId == "DELIBERATE");   // initial + target of HOLD->DELIBERATE
+
+        pane.RenameState(delib.Model, "THINK");
+
+        Assert.DoesNotContain(chart.States, s => s.Id == "DELIBERATE");
+        Assert.Contains(chart.States, s => s.Id == "THINK");
+        Assert.Contains(chart.Regions, r => r.Initial == "THINK");           // initial rewritten
+        Assert.Contains(chart.Regions, r => r.States.Contains("THINK"));     // membership rewritten
+        Assert.Contains(chart.States.SelectMany(s => s.Transitions), t => t.Target == "THINK");
+        Assert.DoesNotContain(chart.States.SelectMany(s => s.Transitions), t => t.Target == "DELIBERATE");
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Rename_State_To_An_Existing_Id_Is_Rejected()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var hold = pane.States.First(s => s.StateId == "HOLD");
+
+        pane.RenameState(hold.Model, "DELIBERATE");   // collides
+
+        Assert.Equal("HOLD", hold.Model.Id);          // unchanged
+    }
+
+    [Fact]
+    public void Add_Region_Adds_An_Orthogonal_Region_With_A_Selected_Seed_State()
+    {
+        var chart = Golden("traffic_light.sc.json");   // one region
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        int before = chart.Regions.Count;
+
+        var seed = pane.AddRegion();
+
+        Assert.Equal(before + 1, chart.Regions.Count);
+        Assert.NotNull(seed);
+        var added = chart.Regions.Last();
+        Assert.Equal(new[] { seed!.StateId }, added.States);   // one seed state, and it's the initial
+        Assert.Equal(seed.StateId, added.Initial);
+        Assert.True(seed.IsSelected);                          // so the next "+ State" lands here
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Rename_Region_Changes_Its_Id()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var oldId = pane.Regions.First().RegionId;
+
+        pane.RenameRegion(oldId, "signals");
+
+        Assert.Contains(chart.Regions, r => r.Id == "signals");
+        Assert.DoesNotContain(chart.Regions, r => r.Id == oldId);
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
+    public void Binding_Find_Is_Surfaced_For_The_Card_And_Writes_Through()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var binding = pane.Nodes.First(n => n.Kind == DataflowNodeKind.Binding && n.NodeId == "lamp_0");
+
+        Assert.NotNull(binding.BindingFindEditor);
+        Assert.Equal("lamp_0", binding.BindingFindEditor!.Value);
+
+        binding.BindingFindEditor.Value = "beacon";
+        Assert.Equal("beacon", ((Binding)binding.Model).Find);   // card edit reaches the model
+    }
+
+    [Fact]
+    public void Binding_Scope_Is_Editable_Between_Subtree_And_Global()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        var binding = pane.Nodes.First(n => n.Kind == DataflowNodeKind.Binding && n.NodeId == "lamp_0");
+
+        Assert.Equal("subtree", binding.SelectedBindingScope);   // as authored
+
+        binding.SelectedBindingScope = "global";
+
+        Assert.Equal("global", binding.SelectedBindingScope);
+        Assert.False(((Binding)binding.Model).Subtree);          // writes through to the model
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
+    public void Editing_A_Transition_Delay_Refreshes_The_Graph_Arrow_Label()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = new ControlPaneViewModel();
+        pane.Project(chart);
+        var hold = pane.States.First(s => s.StateId == "HOLD");   // HOLD -> DELIBERATE, after 10s
+        var row = hold.TransitionRows.First();
+        Assert.NotNull(row.SecondsEditor);
+        Assert.Equal("after 10s", pane.Transitions.First(t => t.From.StateId == "HOLD").Label);
+
+        row.SecondsEditor!.Value = "25";   // a scalar edit that IS drawn on the graph -> must refresh the arrow
+
+        Assert.Equal("after 25s", pane.Transitions.First(t => t.From.StateId == "HOLD").Label);
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
     public void Author_A_Well_Formed_Chart_From_An_Empty_One()
     {
         var chart = new Chart { Name = "scratch" };

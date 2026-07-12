@@ -100,9 +100,13 @@
                                                   RowSpacing="6">
                                                 <TextBlock Text="{Binding Title}"
                                                            Classes="AssetGraphCardName"/>
-                                                <TextBlock Grid.Row="1"
-                                                           Text="{Binding Subtitle}"
-                                                           Classes="AssetGraphCardType"/>
+                                                <StackPanel Grid.Row="1" Spacing="2">
+                                                    <TextBlock Text="{Binding Subtitle}"
+                                                               Classes="AssetGraphCardType"/>
+                                                    <TextBlock Text="{Binding BindingFindEditor.Value, StringFormat='find: {0}'}"
+                                                               Classes="AssetGraphCardId"
+                                                               IsVisible="{Binding IsBindingNode}"/>
+                                                </StackPanel>
 
                                                 <Grid Grid.Row="2"
                                                       ColumnDefinitions="*,Auto"

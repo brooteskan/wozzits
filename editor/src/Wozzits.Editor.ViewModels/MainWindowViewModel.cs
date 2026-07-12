@@ -99,6 +99,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // EFFECTIVE render program by walking ParentId ancestors, which needs
         // the scene tree's node lookup (the inspector holds only the selection).
         Inspector.SetSceneNodeLookup(SceneTree.FindNodeById);
+        // "Statechart runner" card: the inspector pulls the project's charts on demand (a fresh
+        // folder scan, not the lazily-filled menu list), so a node can be pointed at a chart.
+        Inspector.SetStatechartsProvider(EnumerateStatechartFiles);
         Inspector.SetRerouteModel(_subGraphReroutes);
         InitializeDockLayout();
 
@@ -703,27 +706,42 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         DockFactory.SetActiveDockable(document);
     }
 
-    // Enumerate the project's authored statecharts (behavior/statecharts/*.sc.json) for
-    // the open menu. Re-run when the menu opens so newly-authored charts appear.
-    private void RefreshStatecharts()
+    // Scan the project's authored statecharts (behavior/statecharts/*.sc.json). Side-effect-free,
+    // so both the open menu (via RefreshStatecharts) and the inspector's runner dropdown (as a
+    // provider) get a CURRENT list -- the runner section must not depend on the menu having been
+    // opened to populate the shared Statecharts collection.
+    private IReadOnlyList<StatechartFileInfo> EnumerateStatechartFiles()
     {
-        Statecharts.Clear();
+        var charts = new List<StatechartFileInfo>();
         if (string.IsNullOrWhiteSpace(_projectDirectory))
         {
-            return;
+            return charts;
         }
 
         var dir = Path.Combine(_projectDirectory, "behavior", "statecharts");
         if (!Directory.Exists(dir))
         {
-            return;
+            return charts;
         }
 
         foreach (var path in Directory.EnumerateFiles(dir, "*.sc.json").OrderBy(p => p))
         {
             var file = Path.GetFileName(path);
             var name = file.EndsWith(".sc.json", StringComparison.Ordinal) ? file[..^8] : file;
-            Statecharts.Add(new StatechartFileInfo(name, path));
+            charts.Add(new StatechartFileInfo(name, path));
+        }
+
+        return charts;
+    }
+
+    // Refill the shared Statecharts collection (bound to the open menu). Re-run when the menu
+    // opens so newly-authored charts appear.
+    private void RefreshStatecharts()
+    {
+        Statecharts.Clear();
+        foreach (var chart in EnumerateStatechartFiles())
+        {
+            Statecharts.Add(chart);
         }
     }
 

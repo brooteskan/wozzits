@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
+using Wozzits.Editor.Statecharts;
 using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 namespace Wozzits.Editor.ViewModels.EditorPanes;
@@ -182,6 +184,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // via the generic remove verb and hides the section, like collision.
         RemoveAudioSourceComponentCommand =
             new RelayCommand(RemoveAudioSourceComponent);
+        // "Statechart runner": attach an authored chart to the selected node so it runs on Play.
+        // Always enabled; guards with EnsureCanApply + a picked chart internally.
+        AttachStatechartRunnerCommand = new RelayCommand(AttachStatechartRunner);
+        RemoveStatechartRunnerCommand = new RelayCommand(RemoveStatechartRunner);
     }
 
     // Raised after a scene-source reference/descriptor was set or cleared on the
@@ -1214,8 +1220,218 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         RefreshAvailableBehaviorModules();
+        RefreshStatechartRunnerSection();
         NotifyComponentStateChanged();
         NotifyAssetGraphPortStateChanged();
+    }
+
+    // ---- Statechart runner: attach an authored chart to this scene node so it runs on Play -----
+    // Added from the Components "+" menu (which reveals HasStatechartRunnerSection); the card then
+    // offers just a chart picker -- the chart itself names the scene nodes its bindings resolve to,
+    // so there is nothing else to wire here. The chart list is pulled fresh from a host provider.
+    private Func<IReadOnlyList<StatechartFileInfo>>? _statechartsProvider;
+    private StatechartFileInfo? _selectedRunnerChart;
+    private string _statechartRunnerStatus = string.Empty;
+    private bool _hasStatechartRunnerSection;
+
+    public void SetStatechartsProvider(Func<IReadOnlyList<StatechartFileInfo>> provider) =>
+        _statechartsProvider = provider;
+
+    // Revealed by the Components "+" menu (AddComponent) for the selected node; reset on reselect.
+    public bool HasStatechartRunnerSection
+    {
+        get => _hasStatechartRunnerSection;
+        private set => SetProperty(ref _hasStatechartRunnerSection, value);
+    }
+
+    // The project's charts, offered in the runner card's picker (no typing).
+    public ObservableCollection<StatechartFileInfo> StatechartRunnerCharts { get; } = [];
+
+    public StatechartFileInfo? SelectedStatechartRunnerChart
+    {
+        get => _selectedRunnerChart;
+        set
+        {
+            if (SetProperty(ref _selectedRunnerChart, value))
+            {
+                StatechartRunnerStatus = string.Empty;
+                OnPropertyChanged(nameof(HasSelectedStatechartRunnerChart));
+            }
+        }
+    }
+
+    public bool HasSelectedStatechartRunnerChart => _selectedRunnerChart is not null;
+
+    // A one-line result/hint under the attach button (e.g. "Attached — press Play", or why not).
+    public string StatechartRunnerStatus
+    {
+        get => _statechartRunnerStatus;
+        private set
+        {
+            if (SetProperty(ref _statechartRunnerStatus, value))
+            {
+                OnPropertyChanged(nameof(HasStatechartRunnerStatus));
+            }
+        }
+    }
+
+    public bool HasStatechartRunnerStatus => !string.IsNullOrEmpty(_statechartRunnerStatus);
+
+    // True when the selected node already runs a chart -- the card then offers Remove and reflects
+    // the running chart, so the runner lives only here (not as a raw Behaviors row).
+    private bool _hasAttachedStatechartRunner;
+
+    public bool HasAttachedStatechartRunner
+    {
+        get => _hasAttachedStatechartRunner;
+        private set => SetProperty(ref _hasAttachedStatechartRunner, value);
+    }
+
+    public IRelayCommand AttachStatechartRunnerCommand { get; }
+
+    public IRelayCommand RemoveStatechartRunnerCommand { get; }
+
+    // Repopulate the picker for the freshly-selected node (called from Inspect). Charts are pulled
+    // fresh so the list reflects the project regardless of whether the _Statecharts menu was opened.
+    // The card auto-reveals when the node already runs a chart (else the Components "+" menu reveals
+    // it), reflecting the running chart + offering Remove -- so the runner lives only here.
+    private void RefreshStatechartRunnerSection()
+    {
+        SelectedStatechartRunnerChart = null;
+        StatechartRunnerCharts.Clear();
+        if (HasSceneNodeSelection && _statechartsProvider is not null)
+        {
+            foreach (var chart in _statechartsProvider())
+            {
+                StatechartRunnerCharts.Add(chart);
+            }
+        }
+
+        var runner = _inspectedSceneNode?.Behaviors.FirstOrDefault(b => b.Module == "statechart_runner");
+        HasAttachedStatechartRunner = runner is not null;
+        HasStatechartRunnerSection = runner is not null;
+
+        var current = runner?.Config.FirstOrDefault(c => c.Name == StatechartRunnerAttachment.ConfigChart)?.Value;
+        if (string.IsNullOrEmpty(current))
+        {
+            StatechartRunnerStatus = string.Empty;
+        }
+        else
+        {
+            // Reflect the running chart IN THE PICKER (matched by name) so a reloaded runner shows
+            // what it runs instead of looking unset. Set the field directly to keep the status.
+            _selectedRunnerChart = StatechartRunnerCharts.FirstOrDefault(c => c.Name == current);
+            OnPropertyChanged(nameof(SelectedStatechartRunnerChart));
+            OnPropertyChanged(nameof(HasSelectedStatechartRunnerChart));
+            StatechartRunnerStatus = $"Running '{current}'. Pick another chart to change it.";
+        }
+    }
+
+    // Attach the picked chart to the selected node as a statechart_runner: compile it to IR as
+    // authored (bindings resolve to the node names the chart names), then write the chart + chart_ir
+    // config + events and save. One runner per node -- if the node already has one, its config is
+    // updated in place rather than adding a second. The engine round-trips the config, so it
+    // survives; the runner then runs on Play.
+    private void AttachStatechartRunner()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        if (_selectedRunnerChart is null)
+        {
+            StatechartRunnerStatus = "Pick a chart to run first.";
+            return;
+        }
+
+        Chart chart;
+        try
+        {
+            chart = StatechartJson.Load(File.ReadAllText(_selectedRunnerChart.Path));
+        }
+        catch (Exception e)
+        {
+            StatechartRunnerStatus = $"Couldn't read the chart: {e.Message}";
+            return;
+        }
+
+        var chartIr = StatechartJson.Emit(chart, indented: false);
+
+        // One runner per node: reuse the existing behavior (update its config), else add one. It is
+        // NOT mirrored into the Behaviors list -- the card is its sole home.
+        var runner = _inspectedSceneNode?.Behaviors.FirstOrDefault(b => b.Module == "statechart_runner");
+        if (runner is null)
+        {
+            var response = _editorSession!.AddNodeBehavior(NodeId, "statechart_runner");
+            if (!response.Ok)
+            {
+                LastEditError = response.Error;
+                StatechartRunnerStatus = $"Couldn't attach: {response.Error}";
+                return;
+            }
+
+            runner = new EngineSceneBehavior
+            {
+                Id = response.NodeId,
+                Module = "statechart_runner",
+                Label = _selectedRunnerChart.Name,
+                Enabled = true,
+                Events = new List<string>(StatechartRunnerAttachment.RunnerEvents),
+            };
+            _inspectedSceneNode?.Behaviors.Add(runner);
+            NotifyComponentStateChanged();
+        }
+
+        _editorSession!.SetNodeBehaviorConfig(
+            NodeId, runner.Id, StatechartRunnerAttachment.ConfigChart, "string", _selectedRunnerChart.Name);
+        _editorSession.SetNodeBehaviorConfig(
+            NodeId, runner.Id, StatechartRunnerAttachment.ConfigChartIr, "string", chartIr);
+        _editorSession.SetNodeBehaviorEvents(
+            NodeId, runner.Id, string.Join(Environment.NewLine, StatechartRunnerAttachment.RunnerEvents));
+        _editorSession.SaveScene();
+
+        // Mirror the config onto the local model so reselecting the node reflects the running chart.
+        runner.Config.Clear();
+        runner.Config.Add(new() { Name = StatechartRunnerAttachment.ConfigChart, Kind = "string", Value = _selectedRunnerChart.Name });
+        runner.Config.Add(new() { Name = StatechartRunnerAttachment.ConfigChartIr, Kind = "string", Value = chartIr });
+
+        HasAttachedStatechartRunner = true;
+        LastEditError = string.Empty;
+        StatechartRunnerStatus = $"Running '{_selectedRunnerChart.Name}'.";
+    }
+
+    // Remove the node's statechart_runner (the card's "Remove"); saves + hides the card.
+    private void RemoveStatechartRunner()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        var runner = _inspectedSceneNode?.Behaviors.FirstOrDefault(b => b.Module == "statechart_runner");
+        if (runner is null)
+        {
+            HasStatechartRunnerSection = false;
+            HasAttachedStatechartRunner = false;
+            return;
+        }
+
+        var response = _editorSession!.RemoveNodeBehavior(NodeId, runner.Id);
+        if (!response.Ok)
+        {
+            StatechartRunnerStatus = $"Couldn't remove: {response.Error}";
+            return;
+        }
+
+        _inspectedSceneNode?.Behaviors.RemoveAll(b => b.Id == runner.Id);
+        _editorSession.SaveScene();
+        NotifyComponentStateChanged();
+
+        HasAttachedStatechartRunner = false;
+        HasStatechartRunnerSection = false;
+        SelectedStatechartRunnerChart = null;
+        StatechartRunnerStatus = string.Empty;
     }
 
     public void Inspect(AssetGraphNodeCardViewModel? node)
@@ -1756,6 +1972,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
         foreach (var behavior in node.Behaviors)
         {
+            if (string.Equals(behavior.Module, "statechart_runner", StringComparison.Ordinal))
+            {
+                continue;   // shown + managed by the Statechart runner card, not as a raw behavior row
+            }
+
             Behaviors.Add(CreateBehaviorViewModel(behavior));
         }
     }
@@ -1841,6 +2062,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         {
             foreach (var module in _editorSession.GetBehaviorModuleCatalog())
             {
+                if (string.Equals(module, "statechart_runner", StringComparison.Ordinal))
+                {
+                    continue;   // added via the Components "+" -> Statechart Runner card, not here
+                }
+
                 AvailableBehaviorModules.Add(
                     new InspectorBehaviorModuleOptionViewModel(
                         module,
@@ -1932,6 +2158,15 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         if (string.Equals(kind, "render_program", StringComparison.Ordinal))
         {
             HasRenderProgramSection = true;
+            LastEditError = string.Empty;
+            return;
+        }
+
+        // "Statechart runner" is an authored-chart behavior, not a default-toggle component:
+        // reveal its card (a chart picker); the runner is added + configured on Attach.
+        if (string.Equals(kind, "statechart_runner", StringComparison.Ordinal))
+        {
+            HasStatechartRunnerSection = true;
             LastEditError = string.Empty;
             return;
         }
