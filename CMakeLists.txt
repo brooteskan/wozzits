@@ -748,6 +748,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(engine asset_graph_editor_session_tests)
     rs_add_test_group(engine asset_graph_schema_registry_tests)
     rs_add_test_group(engine asset_catalog_tests)
+    rs_add_test_group(engine behavior_actuator_catalog_abi_tests)
     rs_add_test_group(engine asset_graph_json_roundtrip_tests)
     rs_add_test_group(engine editor_runtime_control_tests)
 

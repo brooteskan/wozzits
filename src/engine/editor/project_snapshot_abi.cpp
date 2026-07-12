@@ -2,9 +2,13 @@
 
 #include <engine/abi/wozzits_abi.h>
 #include <engine/assets/gltf/gltf_importer.h>
+#include <engine/behavior/behavior_registry.h>
+#include <engine/behavior/builtin_behaviors.h>
 #include <engine/editor/asset_catalog.h>
 #include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/project_snapshot.h>
+
+#include <logging/logger.h>
 
 #include <algorithm>
 #include <cstring>
@@ -780,6 +784,57 @@ namespace wz::engine::editor
         root.abi_version = WZ_ABI_VERSION;
         root.ok = 1u;
         root.entries = builder.append_table(entries);
+
+        builder.patch_struct(root_offset, root);
+        return builder.take();
+    }
+
+    std::vector<uint8_t> behavior_actuator_catalog_abi_blob()
+    {
+        AbiBlobBuilder builder;
+        const uint64_t root_offset =
+            builder.append_struct(WzEditorBehaviorActuatorCatalog{});
+
+        // Device-free: a throwaway registry populated by the builtin packs (which
+        // register their actuators through the same WzBehaviorPluginApi a plugin
+        // uses). No GPU/session/runtime -- mirrors build_asset_catalog's throwaway
+        // schema registry. A default Logger does no I/O.
+        wz::engine::behavior::BehaviorRegistry registry;
+        wz::engine::behavior::BehaviorPluginHost plugins;
+        wz::Logger logger{};
+        wz::engine::behavior::register_builtin_behaviors(
+            registry, plugins, logger);
+
+        std::vector<WzEditorBehaviorActuator> actuators;
+        const auto actuator_span = registry.actuators();
+        actuators.reserve(actuator_span.size());
+        for (const wz::engine::behavior::BehaviorActuatorRegistration& actuator :
+             actuator_span)
+        {
+            std::vector<WzEditorBehaviorActuatorParam> params;
+            params.reserve(actuator.params.size());
+            for (const wz::engine::behavior::ActuatorParamSpec& param :
+                 actuator.params)
+            {
+                params.push_back(WzEditorBehaviorActuatorParam{
+                    .name = builder.append_string(param.name),
+                    .kind = static_cast<uint32_t>(param.kind),
+                    .reserved = 0u,
+                    .default_value = param.default_value,
+                });
+            }
+
+            actuators.push_back(WzEditorBehaviorActuator{
+                .name = builder.append_string(actuator.name),
+                .label = builder.append_string(actuator.label),
+                .params = builder.append_table(params),
+            });
+        }
+
+        WzEditorBehaviorActuatorCatalog root{};
+        root.abi_version = WZ_ABI_VERSION;
+        root.ok = 1u;
+        root.actuators = builder.append_table(actuators);
 
         builder.patch_struct(root_offset, root);
         return builder.take();

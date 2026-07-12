@@ -33,6 +33,12 @@ namespace wz::engine::editor
     // WzEditorAssetCatalog ABI blob.
     std::vector<uint8_t> asset_catalog_abi_blob();
 
+    // Serialize the device-free behavior-actuator catalog into the
+    // WzEditorBehaviorActuatorCatalog ABI blob: the actuators a statechart `call`
+    // effect can invoke (name/label + declared arg schema), from a throwaway
+    // BehaviorRegistry populated by register_builtin_behaviors -- no device/session.
+    std::vector<uint8_t> behavior_actuator_catalog_abi_blob();
+
     // Serialize a GLB scene-source hierarchy import (issue #213, Phase 3b-1) into
     // the WzEditorGlbSceneHierarchy ABI blob. `ok`/`error` carry the import outcome;
     // on failure pass ok=false with a default `scene` and the blob's component table

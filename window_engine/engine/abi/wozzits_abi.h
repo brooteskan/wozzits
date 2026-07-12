@@ -553,6 +553,35 @@ typedef struct WzEditorAssetCatalog
     WzEditorTableSpan entries;      // WzEditorAssetCatalogEntry[]
 } WzEditorAssetCatalog;
 
+// ─── Behavior actuator catalog (statechart `call` palette) ──────────────────
+// Device-free list of behavior-REGISTERED actuators a statechart `call` effect can
+// invoke, each with its declared argument schema (name/kind/default). The open
+// actuator vocabulary (behavior ABI v33): a chart binds a named leaf function a
+// behavior shipped instead of a fixed EffectKind. Built from a throwaway
+// BehaviorRegistry (register_builtin_behaviors) -- no project/session/GPU.
+
+typedef struct WzEditorBehaviorActuatorParam
+{
+    WzEditorStringSpan name;   // argument name ("target", "speed")
+    uint32_t kind;             // WzActuatorParamKind: 0=scalar, 1=binding, 2=agent
+    uint32_t reserved;
+    double default_value;      // SCALAR authoring default
+} WzEditorBehaviorActuatorParam;
+
+typedef struct WzEditorBehaviorActuator
+{
+    WzEditorStringSpan name;   // "move_toward" -- the bind name
+    WzEditorStringSpan label;  // display label
+    WzEditorTableSpan params;  // WzEditorBehaviorActuatorParam[]
+} WzEditorBehaviorActuator;
+
+typedef struct WzEditorBehaviorActuatorCatalog
+{
+    uint32_t abi_version;
+    uint32_t ok;
+    WzEditorTableSpan actuators;   // WzEditorBehaviorActuator[]
+} WzEditorBehaviorActuatorCatalog;
+
 // ─── GLB scene-source hierarchy (issue #213, Phase 3b-1) ────────────────────
 // On-demand, READ-ONLY import of a GLB scene's component hierarchy so the editor
 // can show what a node's glb_scene_source descriptor will graft as children. The
@@ -825,6 +854,21 @@ static_assert(sizeof(WzEditorAssetCatalog) == 24);
 static_assert(offsetof(WzEditorAssetCatalog, abi_version) == 0);
 static_assert(offsetof(WzEditorAssetCatalog, entries) == 8);
 
+static_assert(sizeof(WzEditorBehaviorActuatorParam) == 32);
+static_assert(offsetof(WzEditorBehaviorActuatorParam, name) == 0);
+static_assert(offsetof(WzEditorBehaviorActuatorParam, kind) == 16);
+static_assert(offsetof(WzEditorBehaviorActuatorParam, reserved) == 20);
+static_assert(offsetof(WzEditorBehaviorActuatorParam, default_value) == 24);
+
+static_assert(sizeof(WzEditorBehaviorActuator) == 48);
+static_assert(offsetof(WzEditorBehaviorActuator, name) == 0);
+static_assert(offsetof(WzEditorBehaviorActuator, label) == 16);
+static_assert(offsetof(WzEditorBehaviorActuator, params) == 32);
+
+static_assert(sizeof(WzEditorBehaviorActuatorCatalog) == 24);
+static_assert(offsetof(WzEditorBehaviorActuatorCatalog, abi_version) == 0);
+static_assert(offsetof(WzEditorBehaviorActuatorCatalog, actuators) == 8);
+
 static_assert(sizeof(WzEditorGlbComponent) == 64);
 static_assert(offsetof(WzEditorGlbComponent, id) == 0);
 static_assert(offsetof(WzEditorGlbComponent, name) == 16);
@@ -851,6 +895,13 @@ WZ_ABI_API uint32_t wz_abi_version(void);
 // has not yet migrated to wozzits-rhi (#186). No project or session required.
 // The blob's byte 0 is a WzEditorAssetCatalog. Caller frees with wz_free_buffer.
 WZ_ABI_API WzResult wz_host_asset_catalog(WzBuffer* out_catalog);
+
+// Device-free catalog of behavior-REGISTERED actuators a statechart `call` effect
+// can invoke, each with its declared argument schema (name/kind/default). Built from
+// a throwaway BehaviorRegistry (register_builtin_behaviors) -- no project/session/GPU.
+// The blob's byte 0 is a WzEditorBehaviorActuatorCatalog. Caller frees with
+// wz_free_buffer. (New exported fn + additive structs -- WZ_ABI_VERSION unchanged.)
+WZ_ABI_API WzResult wz_host_behavior_actuator_catalog(WzBuffer* out_catalog);
 
 // Device-free, READ-ONLY import of a GLB scene's component hierarchy (issue #213,
 // Phase 3b-1): the engine roots `glb_path_utf8` against `resource_root_utf8` using
