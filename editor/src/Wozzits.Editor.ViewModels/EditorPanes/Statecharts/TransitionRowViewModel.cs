@@ -26,6 +26,16 @@ public sealed class TransitionRowViewModel : ViewModelBase
                 text => SetSeconds(transition.Trigger, text),
                 edited);
         }
+        else if (transition.Trigger.Kind == TriggerKind.Event)
+        {
+            // The behavior-event NAME the transition fires on (a behavior emits it via
+            // wz_emit_behavior_event). Editable in place, like the `after` delay.
+            EventNameEditor = new EditableFieldViewModel(
+                "event",
+                () => transition.Trigger.EventName,
+                text => transition.Trigger.EventName = text?.Trim() ?? string.Empty,
+                edited);
+        }
         else
         {
             TriggerText = TriggerLabel(transition.Trigger);
@@ -56,7 +66,12 @@ public sealed class TransitionRowViewModel : ViewModelBase
 
     public bool IsAfter => SecondsEditor is not null;
 
-    // Read-only trigger label for non-`after` triggers; null when the trigger is `after`.
+    // Editable event name for an `event` trigger; null otherwise.
+    public EditableFieldViewModel? EventNameEditor { get; }
+
+    public bool IsEvent => EventNameEditor is not null;
+
+    // Read-only trigger label for commit/guard triggers; null for `after`/`event`.
     public string? TriggerText { get; }
 
     public bool HasTriggerText => TriggerText is not null;

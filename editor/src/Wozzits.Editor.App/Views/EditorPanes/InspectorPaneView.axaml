@@ -1736,6 +1736,9 @@
                                                              Text="{Binding SecondsEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                                     <TextBlock Text="s" VerticalAlignment="Center"
                                                                IsVisible="{Binding IsAfter}"/>
+                                                    <TextBox Width="120" IsVisible="{Binding IsEvent}"
+                                                             Classes="InspectorInput" Watermark="event name"
+                                                             Text="{Binding EventNameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                                     <TextBlock Text="{Binding ActionSummary}" Classes="InspectorPropertyName"
                                                                VerticalAlignment="Center" IsVisible="{Binding HasActions}"/>
                                                 </StackPanel>

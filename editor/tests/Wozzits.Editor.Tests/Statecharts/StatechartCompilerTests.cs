@@ -254,4 +254,25 @@ public sealed class StatechartCompilerTests
         c.States[0].Do.Add(new Effect { Kind = EffectKind.Call });   // no Fn
         Assert.Contains(StatechartJson.Validate(c), e => e.Contains("call missing fn"));
     }
+
+    [Fact]
+    public void EventTrigger_Name_RoundTrips()
+    {
+        // A behavior-event trigger (v34): the transition fires on a named event a
+        // behavior emits. The name must survive emit -> load.
+        var c = MinimalValid();
+        c.States[0].Transitions.Add(new Transition
+        {
+            Target = "S",
+            Trigger = new Trigger { Kind = TriggerKind.Event, EventName = "died" },
+        });
+
+        var ir = StatechartJson.Emit(c, indented: false);
+        Assert.Contains("\"kind\":\"event\"", ir);
+        Assert.Contains("\"name\":\"died\"", ir);
+
+        var back = StatechartJson.Load(ir);
+        var tr = back.States[0].Transitions.First(x => x.Trigger.Kind == TriggerKind.Event);
+        Assert.Equal("died", tr.Trigger.EventName);
+    }
 }
