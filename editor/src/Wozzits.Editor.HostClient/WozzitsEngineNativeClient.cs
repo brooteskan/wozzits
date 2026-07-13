@@ -281,14 +281,22 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
-    public EngineActuatorCatalogResponse LoadActuatorCatalog()
+    // projectDirectory != null loads that project's behavior DLLs too, so the catalog
+    // includes actuators the PROJECT registered (bindable in a chart), not just the
+    // built-ins. Null = built-ins only. Both paths are device-free (no live session).
+    public EngineActuatorCatalogResponse LoadActuatorCatalog(string? projectDirectory = null)
     {
         WozzitsEngineAbi.EnsureResolverRegistered();
 
         WzBuffer buffer = default;
         try
         {
-            var result = WozzitsEngineAbi.WzEditorBehaviorActuatorCatalog(out buffer);
+            var result = projectDirectory is null
+                ? WozzitsEngineAbi.WzEditorBehaviorActuatorCatalog(out buffer)
+                : WozzitsEngineAbi.WzEditorProjectBehaviorActuatorCatalog(
+                    projectDirectory,
+                    resourceRootUtf8: null,
+                    out buffer);
             if (result.Code != WzResultCode.Ok)
             {
                 return new EngineActuatorCatalogResponse

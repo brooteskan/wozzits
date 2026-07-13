@@ -54,9 +54,11 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
 
     public EngineActuatorCatalogResponse LoadActuatorCatalog()
     {
-        // Actuator catalog is device-free and project-independent (built from a
-        // throwaway registry), so it does not need a live native session.
-        return _client.LoadActuatorCatalog();
+        // Device-free (no live session needed), but PROJECT-aware: pass the project
+        // directory so the catalog also lists actuators this project's behavior DLLs
+        // registered, not just the built-ins -- that's what makes a project actuator
+        // bindable in a chart's `call` picker.
+        return _client.LoadActuatorCatalog(_projectDirectory);
     }
 
     public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(

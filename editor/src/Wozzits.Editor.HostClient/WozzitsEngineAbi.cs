@@ -147,6 +147,15 @@ internal static partial class WozzitsEngineAbi
         EntryPoint = "wz_host_behavior_actuator_catalog")]
     internal static partial WzResult WzEditorBehaviorActuatorCatalog(out WzBuffer outCatalog);
 
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_project_behavior_actuator_catalog",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorProjectBehaviorActuatorCatalog(
+        string projectRootUtf8,
+        string? resourceRootUtf8,
+        out WzBuffer outCatalog);
+
     // Device-free, read-only import of a GLB scene's component hierarchy (issue
     // #213 Phase 3b-1). glbPathUtf8 is the authored source_path verbatim (relative
     // or absolute, optionally quote-wrapped); the engine roots it against
