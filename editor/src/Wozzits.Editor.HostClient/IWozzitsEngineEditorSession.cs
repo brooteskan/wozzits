@@ -25,6 +25,11 @@ public interface IWozzitsEngineEditorSession
     // independent, like LoadAssetCatalog (built from a throwaway registry).
     EngineActuatorCatalogResponse LoadActuatorCatalog();
 
+    // Device-free catalog of behavior MODULES and the config params each DECLARES
+    // (key/type/default), so the inspector can render typed, discoverable config fields
+    // for a behavior. Project- and session-independent, like LoadActuatorCatalog.
+    EngineBehaviorModuleCatalogResponse LoadBehaviorModuleCatalog();
+
     // Device-free, READ-ONLY import of a GLB scene's component hierarchy (issue
     // #213 Phase 3b-1), so the inspector can show what a node's glb_scene_source
     // descriptor grafts as children. glbPath is the authored source_path verbatim

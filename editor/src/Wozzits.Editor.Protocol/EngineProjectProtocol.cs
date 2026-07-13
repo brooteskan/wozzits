@@ -236,6 +236,38 @@ public sealed record EngineActuatorParam
     public double DefaultValue { get; init; }
 }
 
+public sealed record EngineBehaviorModuleCatalogResponse
+{
+    public bool Ok { get; init; }
+
+    public string Error { get; init; } = string.Empty;
+
+    public List<EngineBehaviorModule> Modules { get; init; } = [];
+}
+
+public sealed record EngineBehaviorModule
+{
+    public string Module { get; init; } = string.Empty;
+
+    public List<EngineBehaviorModuleParam> Params { get; init; } = [];
+}
+
+public sealed record EngineBehaviorModuleParam
+{
+    // The config key the module reads (what the inspector writes back).
+    public string Key { get; init; } = string.Empty;
+
+    public string Label { get; init; } = string.Empty;
+
+    // WzBehaviorParamType: 1 = float, 2 = bool, 3 = string.
+    public int Type { get; init; }
+
+    // FLOAT/BOOL authoring default (BOOL: 0 or 1).
+    public double DefaultNumber { get; init; }
+
+    public string DefaultString { get; init; } = string.Empty;
+}
+
 public sealed record EngineAssetGraphParam
 {
     public string Name { get; init; } = string.Empty;

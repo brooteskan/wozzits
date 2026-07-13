@@ -333,6 +333,59 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    // projectDirectory != null loads that project's behavior DLLs too, so the catalog
+    // includes the config params the PROJECT's own modules declare, not just the built-
+    // ins. Null = built-ins only. Both paths are device-free (no live session).
+    public EngineBehaviorModuleCatalogResponse LoadBehaviorModuleCatalog(
+        string? projectDirectory = null)
+    {
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = projectDirectory is null
+                ? WozzitsEngineAbi.WzEditorBehaviorModuleCatalog(out buffer)
+                : WozzitsEngineAbi.WzEditorProjectBehaviorModuleCatalog(
+                    projectDirectory,
+                    resourceRootUtf8: null,
+                    out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return new EngineBehaviorModuleCatalogResponse
+                {
+                    Ok = false,
+                    Error = result.Message,
+                };
+            }
+
+            return ReadBehaviorModuleCatalog(buffer);
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new EngineBehaviorModuleCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new EngineBehaviorModuleCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new EngineBehaviorModuleCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new EngineBehaviorModuleCatalogResponse { Ok = false, Error = ex.Message };
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
         string glbPath,
         string? resourceRoot,

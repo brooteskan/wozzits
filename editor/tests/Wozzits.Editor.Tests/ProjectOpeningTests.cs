@@ -3793,6 +3793,14 @@ public sealed partial class ProjectOpeningTests
             return ActuatorCatalog;
         }
 
+        public EngineBehaviorModuleCatalogResponse BehaviorModuleParamCatalog { get; set; } =
+            new EngineBehaviorModuleCatalogResponse { Ok = true };
+
+        public EngineBehaviorModuleCatalogResponse LoadBehaviorModuleCatalog()
+        {
+            return BehaviorModuleParamCatalog;
+        }
+
         public EngineAssetGraphConnectionCheckResponse CanConnectAssetGraphNodes(
             ulong fromNodeId,
             ulong toNodeId,

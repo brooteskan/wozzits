@@ -1003,12 +1003,18 @@
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate DataType="panes:InspectorBehaviorConfigViewModel">
                                                             <Grid ColumnDefinitions="Auto,*"
-                                                                  ColumnSpacing="10">
-                                                                <TextBlock Text="{Binding Name}"
-                                                                           Classes="InspectorPropertyName"/>
-                                                                <TextBlock Grid.Column="1"
-                                                                           Text="{Binding Detail}"
-                                                                           Classes="InspectorPortDetail"/>
+                                                                  ColumnSpacing="10" Margin="0,2">
+                                                                <TextBlock Text="{Binding Label}"
+                                                                           Classes="InspectorPropertyName"
+                                                                           VerticalAlignment="Center"/>
+                                                                <CheckBox Grid.Column="1"
+                                                                          IsChecked="{Binding BoolValue, Mode=TwoWay}"
+                                                                          IsVisible="{Binding IsBool}"
+                                                                          HorizontalAlignment="Left"/>
+                                                                <TextBox Grid.Column="1"
+                                                                         Text="{Binding TextValue, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                         IsVisible="{Binding IsTextField}"
+                                                                         Classes="InspectorInput"/>
                                                             </Grid>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>

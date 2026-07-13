@@ -61,6 +61,14 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.LoadActuatorCatalog(_projectDirectory);
     }
 
+    public EngineBehaviorModuleCatalogResponse LoadBehaviorModuleCatalog()
+    {
+        // Device-free, but PROJECT-aware: pass the project directory so the catalog also
+        // lists the config params this project's own behavior DLLs declare, not just the
+        // built-ins -- that's what lets the inspector render typed fields for them.
+        return _client.LoadBehaviorModuleCatalog(_projectDirectory);
+    }
+
     public EngineGlbSceneHierarchy ImportGlbSceneHierarchy(
         string glbPath,
         uint sceneIndex)

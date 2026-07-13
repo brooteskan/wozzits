@@ -110,6 +110,45 @@ public sealed partial class WozzitsEngineNativeClient
         };
     }
 
+    private static EngineBehaviorModuleCatalogResponse ReadBehaviorModuleCatalog(
+        WzBuffer buffer)
+    {
+        var bytes = ReadBufferBytes(
+            buffer, "Engine ABI returned an empty behavior module catalog buffer.");
+        var catalog = ReadStruct<WzEditorBehaviorModuleCatalogAbi>(bytes, offset: 0);
+        ValidateAbiVersion(catalog.AbiVersion);
+
+        return new EngineBehaviorModuleCatalogResponse
+        {
+            Ok = catalog.Ok != 0,
+            Modules = ReadTable<WzEditorBehaviorModuleAbi, EngineBehaviorModule>(
+                bytes,
+                catalog.Modules,
+                ReadBehaviorModule),
+        };
+    }
+
+    private static EngineBehaviorModule ReadBehaviorModule(
+        byte[] bytes,
+        WzEditorBehaviorModuleAbi module)
+    {
+        return new EngineBehaviorModule
+        {
+            Module = ReadString(bytes, module.Module),
+            Params = ReadTable<WzEditorBehaviorModuleParamAbi, EngineBehaviorModuleParam>(
+                bytes,
+                module.Params,
+                (b, param) => new EngineBehaviorModuleParam
+                {
+                    Key = ReadString(b, param.Key),
+                    Label = ReadString(b, param.Label),
+                    Type = checked((int)param.Type),
+                    DefaultNumber = param.DefaultNumber,
+                    DefaultString = ReadString(b, param.DefaultString),
+                }),
+        };
+    }
+
     private static EngineGlbSceneHierarchy ReadGlbSceneHierarchy(WzBuffer buffer)
     {
         var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty GLB scene hierarchy buffer.");

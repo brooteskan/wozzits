@@ -1986,10 +1986,60 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         return new InspectorBehaviorViewModel(
             behavior,
+            DeclaredParamsFor(behavior.Module),
             SetBehaviorEnabled,
             ApplyBehaviorFields,
             ApplyBehaviorEvents,
-            RemoveBehavior);
+            RemoveBehavior,
+            WriteBehaviorConfig);
+    }
+
+    // The config params a behavior MODULE declares (key/type/default), so the inspector
+    // can render typed fields. Pulled once per inspector lifetime from the device-free,
+    // project-aware module catalog (built-ins + this project's own behavior DLLs).
+    private EngineBehaviorModuleCatalogResponse? _moduleParamCatalog;
+
+    private IReadOnlyList<EngineBehaviorModuleParam> DeclaredParamsFor(string module)
+    {
+        _moduleParamCatalog ??= _editorSession?.LoadBehaviorModuleCatalog();
+        var match = _moduleParamCatalog?.Modules
+            .FirstOrDefault(m => m.Module == module);
+        return match?.Params ?? [];
+    }
+
+    // Persist one behavior-config value live: SetNodeBehaviorConfig on the running
+    // engine, save, and mirror onto the local model so reselecting the node reflects it.
+    private void WriteBehaviorConfig(
+        string behaviorId, string key, string kind, string value)
+    {
+        if (_editorSession is null || !EnsureCanApply())
+        {
+            return;
+        }
+
+        var response = _editorSession.SetNodeBehaviorConfig(
+            NodeId, behaviorId, key, kind, value);
+        if (!response.Ok)
+        {
+            LastEditError = response.Error;
+            return;
+        }
+
+        LastEditError = string.Empty;
+        _editorSession.SaveScene();
+
+        var behavior = _inspectedSceneNode?.Behaviors
+            .FirstOrDefault(b => b.Id == behaviorId);
+        if (behavior is not null)
+        {
+            behavior.Config.RemoveAll(c => c.Name == key);
+            behavior.Config.Add(new EngineSceneBehaviorConfig
+            {
+                Name = key,
+                Kind = kind,
+                Value = value,
+            });
+        }
     }
 
     // Add a behavior binding for the typed module to the selected node (the
@@ -3991,19 +4041,19 @@ public sealed class InspectorBehaviorViewModel : ViewModelBase
 
     public InspectorBehaviorViewModel(
         EngineSceneBehavior behavior,
+        IReadOnlyList<EngineBehaviorModuleParam> declaredParams,
         Action<InspectorBehaviorViewModel> setEnabled,
         Action<InspectorBehaviorViewModel> applyFields,
         Action<InspectorBehaviorViewModel> applyEvents,
-        Action<InspectorBehaviorViewModel> remove)
+        Action<InspectorBehaviorViewModel> remove,
+        Action<string, string, string, string> writeConfig)
     {
         Id = behavior.Id;
         _enabled = behavior.Enabled;
         _label = behavior.Label;
         _module = behavior.Module;
         _events = string.Join(Environment.NewLine, behavior.Events);
-        Config = behavior.Config
-            .Select(c => new InspectorBehaviorConfigViewModel(c.Name, c.Kind, c.Value))
-            .ToList();
+        Config = BuildConfigRows(behavior, declaredParams, writeConfig);
         _setEnabled = setEnabled;
         _applyFields = applyFields;
         _applyEvents = applyEvents;
@@ -4059,14 +4109,143 @@ public sealed class InspectorBehaviorViewModel : ViewModelBase
     public IRelayCommand ApplyEventsCommand { get; }
 
     public IRelayCommand RemoveCommand { get; }
+
+    // Build the editable config rows: one TYPED field per param the module DECLARES
+    // (checkbox for bool, number/text box otherwise), seeded from the node's current
+    // config value or the declared default; plus any non-declared config keys as text so
+    // nothing is hidden. Each row writes back live via writeConfig(id, key, kind, value).
+    private static List<InspectorBehaviorConfigViewModel> BuildConfigRows(
+        EngineSceneBehavior behavior,
+        IReadOnlyList<EngineBehaviorModuleParam> declaredParams,
+        Action<string, string, string, string> writeConfig)
+    {
+        var rows = new List<InspectorBehaviorConfigViewModel>();
+        var id = behavior.Id;
+        var seen = new HashSet<string>();
+
+        foreach (var p in declaredParams)
+        {
+            seen.Add(p.Key);
+            var current = behavior.Config.FirstOrDefault(c => c.Name == p.Key);
+            // WzBehaviorParamType: 1 = float, 2 = bool, 3 = string.
+            var (renderKind, writeKind) = p.Type switch
+            {
+                2 => ("bool", "bool"),
+                3 => ("text", "string"),
+                _ => ("number", "float"),
+            };
+
+            bool boolValue = false;
+            string textValue = string.Empty;
+            if (renderKind == "bool")
+            {
+                boolValue = current is not null
+                    ? current.Value is "true" or "1" or "True"
+                    : p.DefaultNumber != 0.0;
+            }
+            else if (renderKind == "number")
+            {
+                textValue = current?.Value
+                    ?? p.DefaultNumber.ToString("0.###", CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                textValue = current?.Value ?? p.DefaultString;
+            }
+
+            var label = string.IsNullOrEmpty(p.Label) ? p.Key : p.Label;
+            rows.Add(new InspectorBehaviorConfigViewModel(
+                p.Key, label, renderKind, writeKind, boolValue, textValue,
+                row => writeConfig(id, row.Key, row.WriteKind, row.WriteValue)));
+        }
+
+        // Config keys the module did not declare (rare) stay editable as text so the
+        // editor never silently hides authored state.
+        foreach (var c in behavior.Config)
+        {
+            if (seen.Contains(c.Name))
+            {
+                continue;
+            }
+            rows.Add(new InspectorBehaviorConfigViewModel(
+                c.Name, c.Name, "text",
+                string.IsNullOrEmpty(c.Kind) ? "string" : c.Kind,
+                false, c.Value,
+                row => writeConfig(id, row.Key, row.WriteKind, row.WriteValue)));
+        }
+
+        return rows;
+    }
 }
 
-public sealed record InspectorBehaviorConfigViewModel(
-    string Name,
-    string Kind,
-    string Value)
+// One editable behavior-config field, typed by the module's declared param (checkbox
+// for bool, text box for number/string). Edits push straight through the apply callback
+// (SetNodeBehaviorConfig) -- no Apply button, matching the component live-edit UX.
+public sealed class InspectorBehaviorConfigViewModel : ViewModelBase
 {
-    public string Detail => string.IsNullOrEmpty(Kind) ? Value : $"{Kind}: {Value}";
+    private readonly Action<InspectorBehaviorConfigViewModel>? _apply;
+    private readonly bool _initialized;
+    private bool _boolValue;
+    private string _textValue;
+
+    public InspectorBehaviorConfigViewModel(
+        string key,
+        string label,
+        string renderKind,   // "bool" | "number" | "text"
+        string writeKind,    // SetNodeBehaviorConfig kind token: "bool" | "float" | "string"
+        bool boolValue,
+        string textValue,
+        Action<InspectorBehaviorConfigViewModel>? apply)
+    {
+        Key = key;
+        Label = label;
+        RenderKind = renderKind;
+        WriteKind = writeKind;
+        _boolValue = boolValue;
+        _textValue = textValue;
+        _apply = apply;
+        _initialized = true;
+    }
+
+    public string Key { get; }
+
+    public string Label { get; }
+
+    public string RenderKind { get; }
+
+    public string WriteKind { get; }
+
+    public bool IsBool => RenderKind == "bool";
+
+    // Number and string share a text box; only the write kind differs.
+    public bool IsTextField => RenderKind is "number" or "text";
+
+    public bool BoolValue
+    {
+        get => _boolValue;
+        set
+        {
+            if (SetProperty(ref _boolValue, value) && _initialized)
+            {
+                _apply?.Invoke(this);
+            }
+        }
+    }
+
+    public string TextValue
+    {
+        get => _textValue;
+        set
+        {
+            if (SetProperty(ref _textValue, value) && _initialized)
+            {
+                _apply?.Invoke(this);
+            }
+        }
+    }
+
+    // The value string SetNodeBehaviorConfig persists (bool -> "true"/"false").
+    public string WriteValue => IsBool ? (_boolValue ? "true" : "false") : _textValue;
 }
 
 public sealed class InspectorAssetGraphParamViewModel : ViewModelBase

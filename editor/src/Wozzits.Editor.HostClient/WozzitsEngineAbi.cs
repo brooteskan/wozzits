@@ -156,6 +156,20 @@ internal static partial class WozzitsEngineAbi
         string? resourceRootUtf8,
         out WzBuffer outCatalog);
 
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_behavior_module_catalog")]
+    internal static partial WzResult WzEditorBehaviorModuleCatalog(out WzBuffer outCatalog);
+
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_project_behavior_module_catalog",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorProjectBehaviorModuleCatalog(
+        string projectRootUtf8,
+        string? resourceRootUtf8,
+        out WzBuffer outCatalog);
+
     // Device-free, read-only import of a GLB scene's component hierarchy (issue
     // #213 Phase 3b-1). glbPathUtf8 is the authored source_path verbatim (relative
     // or absolute, optionally quote-wrapped); the engine roots it against
@@ -1406,6 +1420,42 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorBehaviorActuatorCatalogAbi.Actuators),
             8);
 
+        AssertSize<WzEditorBehaviorModuleParamAbi>(64);
+        AssertOffset<WzEditorBehaviorModuleParamAbi>(
+            nameof(WzEditorBehaviorModuleParamAbi.Key),
+            0);
+        AssertOffset<WzEditorBehaviorModuleParamAbi>(
+            nameof(WzEditorBehaviorModuleParamAbi.Label),
+            16);
+        AssertOffset<WzEditorBehaviorModuleParamAbi>(
+            nameof(WzEditorBehaviorModuleParamAbi.Type),
+            32);
+        AssertOffset<WzEditorBehaviorModuleParamAbi>(
+            nameof(WzEditorBehaviorModuleParamAbi.Reserved),
+            36);
+        AssertOffset<WzEditorBehaviorModuleParamAbi>(
+            nameof(WzEditorBehaviorModuleParamAbi.DefaultNumber),
+            40);
+        AssertOffset<WzEditorBehaviorModuleParamAbi>(
+            nameof(WzEditorBehaviorModuleParamAbi.DefaultString),
+            48);
+
+        AssertSize<WzEditorBehaviorModuleAbi>(32);
+        AssertOffset<WzEditorBehaviorModuleAbi>(
+            nameof(WzEditorBehaviorModuleAbi.Module),
+            0);
+        AssertOffset<WzEditorBehaviorModuleAbi>(
+            nameof(WzEditorBehaviorModuleAbi.Params),
+            16);
+
+        AssertSize<WzEditorBehaviorModuleCatalogAbi>(24);
+        AssertOffset<WzEditorBehaviorModuleCatalogAbi>(
+            nameof(WzEditorBehaviorModuleCatalogAbi.AbiVersion),
+            0);
+        AssertOffset<WzEditorBehaviorModuleCatalogAbi>(
+            nameof(WzEditorBehaviorModuleCatalogAbi.Modules),
+            8);
+
         AssertSize<WzEditorGlbComponentAbi>(64);
         AssertOffset<WzEditorGlbComponentAbi>(
             nameof(WzEditorGlbComponentAbi.Id),
@@ -1560,6 +1610,32 @@ internal readonly struct WzEditorBehaviorActuatorParamAbi
     public readonly uint Kind;
     public readonly uint Reserved;
     public readonly double DefaultValue;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorBehaviorModuleCatalogAbi
+{
+    public readonly uint AbiVersion;
+    public readonly uint Ok;
+    public readonly WzEditorTableSpanAbi Modules;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorBehaviorModuleAbi
+{
+    public readonly WzEditorStringSpanAbi Module;
+    public readonly WzEditorTableSpanAbi Params;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorBehaviorModuleParamAbi
+{
+    public readonly WzEditorStringSpanAbi Key;
+    public readonly WzEditorStringSpanAbi Label;
+    public readonly uint Type;
+    public readonly uint Reserved;
+    public readonly double DefaultNumber;
+    public readonly WzEditorStringSpanAbi DefaultString;
 }
 
 [StructLayout(LayoutKind.Sequential)]
