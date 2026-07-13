@@ -2157,6 +2157,35 @@ static inline T* wz_instance_state_of(
         wz_get_instance_state_of(facts, entity, module_name));
 }
 
+// Emit a behavior-DEFINED event (v34): a named signal targeted at `target` (often
+// self), delivered to that node's subscribers NEXT frame. A statechart on `target`
+// reacts via an `event` transition whose name matches. This is how a behavior drives a
+// chart from something the chart cannot sense -- a collision, a poll, a threshold --
+// e.g. hit_logger emits "died" / "hit" and the tank's chart transitions on it. Returns
+// 1 if queued, 0 if the host wires no event sink.
+static inline uint8_t wz_emit_behavior_event(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId target,
+    const char* name)
+{
+    return (facts && facts->emit_behavior_event && name)
+        ? facts->emit_behavior_event(facts->behavior_event_sink_user, target, name)
+        : 0u;
+}
+
+// Convenience: emit an event at the event's own entity (self).
+static inline uint8_t wz_emit_self_behavior_event(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    const char* name)
+{
+    return wz_emit_behavior_event(
+        facts,
+        event ? event->entity
+              : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        name);
+}
+
 static inline void* wz_create_shared_state(
     const WzBehaviorInitFacts* facts,
     const char* key,

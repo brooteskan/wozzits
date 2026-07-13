@@ -285,7 +285,8 @@ namespace wz::engine::behavior::statechart
                     if (!cv || !ref(*cv, t.cond)) return fail("guard needs cond");
                 }
                 else if (k == "event") {
-                    t.kind = TriggerKind::Event;   // name matching: Seam 2
+                    t.kind = TriggerKind::Event;
+                    t.event_name = str(o, "name");   // a behavior-emitted event name
                 }
                 else return fail("unknown trigger kind '" + k + "'");
                 return true;

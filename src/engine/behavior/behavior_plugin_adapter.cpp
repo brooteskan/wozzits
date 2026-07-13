@@ -2067,6 +2067,35 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        // facts.behavior_events read: this frame's DELIVERED behavior events (emitted
+        // last frame). The statechart runner scans these for events targeting self.
+        uint8_t read_behavior_event(
+            void* user, uint32_t index, WzBehaviorEventEntry* out_event)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->events || !out_event
+                || index >= context->events->delivered.size())
+            {
+                return 0;
+            }
+            const auto& e = context->events->delivered[index];
+            out_event->target = e.target;
+            out_event->name = e.name.c_str();
+            return 1;
+        }
+
+        // facts.emit_behavior_event: queue a named event (delivered next frame).
+        uint8_t emit_behavior_event(
+            void* user, WzBehaviorEntityId target, const char* name)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->events) {
+                return 0;
+            }
+            context->events->emit(target, name);
+            return 1;
+        }
+
         void log_info(void* user, const char* message)
         {
             auto* logger = static_cast<wz::Logger*>(user);
@@ -2174,6 +2203,16 @@ namespace wz::engine::behavior
                 .get_node_active = get_node_active_query,
                 .actuator_registry_user = &context,
                 .actuator_lookup = lookup_actuator,
+                .behavior_events = WzBehaviorEventView{
+                    .user = &context,
+                    .count = context.events
+                        ? static_cast<uint32_t>(
+                              context.events->delivered.size())
+                        : 0u,
+                    .read = read_behavior_event,
+                },
+                .behavior_event_sink_user = &context,
+                .emit_behavior_event = emit_behavior_event,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -2270,6 +2309,16 @@ namespace wz::engine::behavior
                 .get_node_active = get_node_active_query,
                 .actuator_registry_user = &context,
                 .actuator_lookup = lookup_actuator,
+                .behavior_events = WzBehaviorEventView{
+                    .user = &context,
+                    .count = context.events
+                        ? static_cast<uint32_t>(
+                              context.events->delivered.size())
+                        : 0u,
+                    .read = read_behavior_event,
+                },
+                .behavior_event_sink_user = &context,
+                .emit_behavior_event = emit_behavior_event,
             };
         }
 

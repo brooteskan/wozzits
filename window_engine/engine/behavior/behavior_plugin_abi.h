@@ -35,7 +35,10 @@ extern "C" {
 //      behavior-REGISTERED actuator by name (open actuator vocabulary) instead of a
 //      closed EffectKind. WzBehaviorPluginApi is version-checked, so this forces a
 //      lockstep host+plugin rebuild.
-#define WZ_BEHAVIOR_ABI_VERSION 33u
+// v34: appended behavior-DEFINED events (behavior_events view + emit_behavior_event on
+//      WzBehaviorFrameFacts) -- a behavior emits a NAMED event at a node, and a
+//      statechart on it reacts via an `event` trigger (e.g. hit_logger emits "died").
+#define WZ_BEHAVIOR_ABI_VERSION 34u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -1194,6 +1197,37 @@ typedef uint8_t (*WzLookupBehaviorActuatorFn)(
     WzBehaviorActuatorFn* out_fn,
     void** out_user_data);
 
+/*
+ * Behavior-DEFINED events (v34): a behavior emits a NAMED event targeted at a node
+ * (wz_emit_behavior_event), and a statechart on that node reacts via an `event`
+ * transition trigger. This is how a behavior signals a chart -- e.g. hit_logger emits
+ * "died" and the tank's chart transitions on it -- the piece that lets a collision /
+ * poll drive a chart, which commit/after/guard cannot. Mirrors the collision/input
+ * event surfaces: emitted during a frame's dispatch, DELIVERED to subscribers the NEXT
+ * frame (the host double-buffers, so delivery is independent of dispatch order).
+ */
+typedef struct WzBehaviorEventEntry
+{
+    WzBehaviorEntityId target;   /* the node the event is FOR (the runner matches self) */
+    const char* name;            /* the event name, matched against an `event` trigger */
+} WzBehaviorEventEntry;
+
+typedef uint8_t (*WzReadBehaviorEventFn)(
+    void* user, uint32_t index, WzBehaviorEventEntry* out_event);
+
+typedef struct WzBehaviorEventView
+{
+    void* user;
+    uint32_t count;
+    WzReadBehaviorEventFn read;
+} WzBehaviorEventView;
+
+/* Emit a named event targeted at `target` (often self). Delivered to `target`'s
+ * subscribers next frame. `name` is copied by the host. Returns 1 if queued, 0 if no
+ * sink is wired. */
+typedef uint8_t (*WzEmitBehaviorEventFn)(
+    void* user, WzBehaviorEntityId target, const char* name);
+
 typedef struct WzBehaviorFrameFacts
 {
     const WzInputStateView* input;
@@ -1366,6 +1400,16 @@ typedef struct WzBehaviorFrameFacts
      */
     void*                      actuator_registry_user;
     WzLookupBehaviorActuatorFn actuator_lookup;
+
+    /*
+     * Behavior-defined events (v34; APPEND-ONLY). `behavior_events` is THIS frame's
+     * DELIVERED named events (emitted last frame) -- a statechart runner scans it for
+     * events targeting self and fires matching `event` transitions. emit_behavior_event
+     * queues a new one (delivered next frame). Null/empty when the host wires none.
+     */
+    WzBehaviorEventView   behavior_events;
+    void*                 behavior_event_sink_user;
+    WzEmitBehaviorEventFn emit_behavior_event;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

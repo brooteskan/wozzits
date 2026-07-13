@@ -98,6 +98,7 @@ namespace wz::engine::behavior::statechart
         int8_t outcome = -2;    // Commit: -2 = any, else 0/1
         float seconds = 0.0f;   // After
         Ref cond;               // Guard (bool)
+        std::string event_name; // Event: a behavior-emitted event name to match
     };
 
     struct Transition

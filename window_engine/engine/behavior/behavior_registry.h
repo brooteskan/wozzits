@@ -3,6 +3,7 @@
 // engine/behavior/behavior_registry.h
 
 #include <engine/behavior/behavior_commands.h>
+#include <engine/behavior/behavior_events.h>
 #include <engine/behavior/behavior_gpu_compute.h>
 #include <engine/behavior/behavior_spawn.h>
 #include <engine/behavior/event_channels.h>
@@ -64,6 +65,11 @@ namespace wz::engine::behavior
         // facts.active_spawn_event (#252 pooling).
         const WzSpawnEventPayload* active_spawn_payload = nullptr;
         BehaviorCommandBuffer* commands = nullptr;
+        // Behavior-defined events (v34): behaviors emit here (emit_behavior_event) and
+        // a statechart runner reads the DELIVERED (last-frame) events for `event`
+        // triggers. The dispatcher advances it once per frame (advance_frame). Null in
+        // contexts that wire no event bus -- emits are then dropped, reads are empty.
+        BehaviorEventBuffer* events = nullptr;
         BehaviorGpuComputeBuffer* gpu_compute = nullptr;
         // Spawn-with-identity sink (#252 pooling): submit_spawn_prefab enqueues here
         // mid-dispatch; the host drains it at the frame boundary. Null when the host

@@ -1179,6 +1179,9 @@ namespace wz::app
         wz::engine::behavior::BehaviorRegistry   registry_{};
         wz::engine::behavior::BehaviorPluginHost plugins_{};
         wz::engine::FrameStorage                 frame_storage_{};
+        // Behavior-defined events (v34): persists across frames (double-buffered), so
+        // an event a behavior emits one frame reaches an `event` trigger the next.
+        wz::engine::behavior::BehaviorEventBuffer behavior_events_{};
         std::optional<wz::engine::assets::SceneInstance> behavior_scene_{};
         uint64_t                                 behavior_frame_index_ = 0;
         // Absolute accumulated sim-time (seconds) for the self-paced cognition.tick

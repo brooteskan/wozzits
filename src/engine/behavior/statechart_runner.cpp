@@ -203,6 +203,23 @@ namespace wz::engine::behavior
             cur[j] = decision(rt.commit_refs[j].first, rt.commit_refs[j].second)
                 .committed;
         }
+
+        // Behavior-defined events delivered to self this frame -> their names, for
+        // `event` triggers. A behavior emits (wz_emit_behavior_event) and a chart on
+        // the target reacts here -- the piece commit/after/guard can't cover.
+        std::vector<const char*> self_events;
+        if (facts->behavior_events.read) {
+            for (uint32_t i = 0; i < facts->behavior_events.count; ++i) {
+                WzBehaviorEventEntry e{};
+                if (facts->behavior_events.read(
+                        facts->behavior_events.user, i, &e)
+                    && e.target == self && e.name)
+                {
+                    self_events.push_back(e.name);
+                }
+            }
+        }
+
         auto ref_index = [&](uint16_t agent, uint16_t slot) -> int {
             for (size_t j = 0; j < rt.commit_refs.size(); ++j) {
                 if (rt.commit_refs[j].first == agent
@@ -227,7 +244,12 @@ namespace wz::engine::behavior
             case sc::TriggerKind::Guard:
                 return eref(t.cond) != 0.0;
             case sc::TriggerKind::Event:
-                return false;   // Seam 2
+                for (const char* n : self_events) {
+                    if (t.event_name == n) {   // std::string == const char*
+                        return true;
+                    }
+                }
+                return false;
             }
             return false;
         };

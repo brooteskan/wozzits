@@ -1135,6 +1135,7 @@ namespace wz::app
             .scene = &*behavior_scene_,
             .behavior_state = &behavior_scene_->behavior_state,
             .commands = &frame_storage_.behavior_commands,
+            .events = &behavior_events_,
             .gpu_compute = nullptr,
             .spawn_requests = &spawn_identity_buffer_,
             .authoring = &authoring,

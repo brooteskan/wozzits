@@ -598,6 +598,12 @@ namespace wz::engine::behavior
         if (context.gpu_compute) {
             context.gpu_compute->clear_jobs();
         }
+        // Behavior events (v34): last frame's emissions become this frame's DELIVERED
+        // set (double-buffered, so an `event` trigger fires regardless of whether the
+        // emitter dispatched before or after the runner). Once per frame, here.
+        if (context.events) {
+            context.events->advance_frame();
+        }
         // Command order is deterministic: subscribed module frame.update
         // events, routed input/collision/proximity module events, then legacy
         // named functions.
