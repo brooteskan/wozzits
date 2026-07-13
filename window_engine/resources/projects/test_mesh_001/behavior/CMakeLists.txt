@@ -67,6 +67,13 @@ add_terrain_collision_behavior_module(
     pool_manager
     pool_manager_plugin.cpp)
 
+# Tank + commander ACTIONS as registered actuators (v33), so a statechart can bind
+# and `call` them (drive/aim/fire/blink + request_reinforcement). Actuators only --
+# no behavior module. See tank_actuators_plugin.cpp.
+add_terrain_collision_behavior_module(
+    tank_actuators
+    tank_actuators_plugin.cpp)
+
 # --- cognition gallery -------------------------------------------------------
 # Reusable quantum-cognition building blocks (source grouped under cognition/).
 # The helper forces the DLL output to behavior/build/clang-debug regardless of
