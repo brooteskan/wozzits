@@ -218,6 +218,12 @@ struct QuantumTankState {
     OrderPhase order_phase = OrderPhase::Holding;
     int order_deficit_at_rearm = -999;
 
+    // Commander-only, chart-driven: set by the `reanneal` actuator (a chart's order loop
+    // calls it on the Holding->Deliberating transition) so the commander runs its C++
+    // reanneal -- reward doctrine + set goals + rearm -- on the chart's cadence. The
+    // reward/goal MATH stays in one place; the chart only says WHEN.
+    uint8_t reanneal_requested = 0;
+
     // Commander-only doctrine learning: the squad tallies last seen, so the
     // commander rewards its doctrine memory on the DELTA each re-anneal.
     int prev_shots_landed = 0;

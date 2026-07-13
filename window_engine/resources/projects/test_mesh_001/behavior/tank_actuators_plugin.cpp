@@ -178,6 +178,21 @@ namespace
         }
     }
 
+    // reanneal(): (COMMANDER) request the C++ commander to re-anneal its group agent --
+    // reward doctrine + set the order/reinforce goals + rearm. Called from the commander
+    // chart's order loop (Holding -> Deliberating). The reward/goal MATH stays in the
+    // tank_commander module; this only sets the request flag the module consumes.
+    void reanneal(
+        const WzBehaviorFrameFacts* facts, WzBehaviorEntityId self,
+        const WzActuatorArg*, uint32_t, void*)
+    {
+        if (QuantumTankState* s = wz_instance_state_of<QuantumTankState>(
+                facts, self, "tank_commander"))
+        {
+            s->reanneal_requested = 1;
+        }
+    }
+
     struct ActuatorDef
     {
         const char* name;
@@ -219,6 +234,7 @@ extern "C" WZ_BEHAVIOR_MODULE_EXPORT uint8_t wz_register_behaviors(
         { "blink", "Blink", nullptr, 0u, blink },
         { "request_reinforcement", "Request reinforcement", nullptr, 0u,
           request_reinforcement },
+        { "reanneal", "Re-anneal group (commander)", nullptr, 0u, reanneal },
     };
 
     for (const ActuatorDef& d : defs) {

@@ -31,6 +31,13 @@ namespace
         if (!state) {
             return;
         }
+        // Hand the ORDER phase machine to an attached statechart (config "chart_driven"):
+        // the chart drives deliberating/holding + the reanneal cadence; the reward/goal/
+        // rearm math + reinforce deploys stay here. Default off => the C++ order machine.
+        uint8_t chart_driven = 0;
+        (void)wz_config_bool(facts, "chart_driven", &chart_driven);
+        state->chart_driven = (chart_driven != 0u);
+
         // Ensure the command -> pool deploy queue exists (get-or-create, init
         // context -- where wz_create_shared_state lives). The commander posts
         // reinforce orders here; the co-located pool_manager consumes them.
@@ -108,6 +115,30 @@ namespace
         state->order_deficit_at_rearm = deficit;
         state->next_reanneal_time = now + kOrderHeartbeat;
         state->order_phase = OrderPhase::Deliberating;
+    }
+
+    // The order side the reactive base favors: PRESS (0) / HARASS (1) when the base clears
+    // the Schmitt deadband either way, else hold the current decision. Shared by the C++
+    // re-open and the chart-driven reanneal, so both bias the fresh anneal the same way.
+    int desired_order(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        const QuantumTankState* state)
+    {
+        using namespace agent_tank_config;
+        const float doctrine =
+            wz_self_agent_memory(facts, event, kDoctrineMemoryQubit);
+        const float base =
+            kCommandBias
+                - state->order_speed_ema * kCommandSpeedGain
+                + doctrine * kDoctrineGain;
+        if (base > kOrderHysteresis) {
+            return 0;   // PRESS
+        }
+        if (base < -kOrderHysteresis) {
+            return 1;   // HARASS
+        }
+        return state->last_decision;
     }
 
     void commander_on_event(
@@ -196,6 +227,41 @@ namespace
         state->order_speed_ema +=
             ema_alpha * (state->target_speed - state->order_speed_ema);
 
+        // REINFORCE: post ONE deploy to the queue when the reinforce qubit is committed
+        // |0>, there's room under the target, and the cooldown has elapsed. Runs EVERY
+        // frame, independent of the order PHASE -- the qubit reads -1 while the group
+        // re-deliberates, so it only posts on a settled group -- so reinforce works the
+        // same whether the C++ order machine or an attached chart drives the phase.
+        // (live + pending) is the pool's consistent total, capped at the deficit.
+        if (deploy_q) {
+            WzAgentDecision reinforce{};
+            const uint8_t have = wz_self_agent_decision_at(
+                facts, event, kReinforceQubit, &reinforce);
+            if (have && reinforce.committed == 0
+                && (live + deploy_q->pending) < kSquadTargetSize
+                && now >= state->next_spawn_time)
+            {
+                deploy_q->pending += 1;
+                state->next_spawn_time = now + kReinforceCooldown;
+                wz_log_infof(
+                    facts, "[commander] REINFORCE order (%d live +%d queued < %d)",
+                    live, deploy_q->pending, (int)kSquadTargetSize);
+            }
+        }
+
+        // chart_driven: an attached statechart drives the ORDER phase (deliberating /
+        // holding) + the reanneal cadence. Its `call reanneal` on the loop sets the flag;
+        // run the C++ reanneal (reward doctrine + set goals + rearm) here so the cognition
+        // stays in one place, biased toward the reactive desired_order just like below.
+        if (state->chart_driven) {
+            if (state->reanneal_requested) {
+                state->reanneal_requested = 0;
+                commander_rearm(facts, event, state, roster,
+                    desired_order(facts, event, state), deficit, now);
+            }
+            return;
+        }
+
         // ORDER STATE MACHINE (OrderPhase). Reads live in one state, the rearm on the
         // transition -- so a decision is never read in the block it is rearmed (the
         // async-commit trap), and the order re-deliberates only on a material change
@@ -218,49 +284,10 @@ namespace
             return;
         }
 
-        // HOLDING: the order is latched. Feed reinforce deploys off the settled group,
-        // then decide whether anything warrants re-opening the order.
-
-        // REINFORCE: post ONE deploy to the queue when the (settled) reinforce qubit is
-        // committed |0>, there's room under the target, and the cooldown has elapsed.
-        // `live` is the pool's own count (mirrored in the queue) and the pool moves
-        // pending->live atomically at deploy, so (live + pending) is a consistent total
-        // that truly caps outstanding requests at the deficit -- it can never over-commit
-        // past kSquadTargetSize, even across the deploy/lease-claim frame gap.
-        if (deploy_q) {
-            WzAgentDecision reinforce{};
-            const uint8_t have = wz_self_agent_decision_at(
-                facts, event, kReinforceQubit, &reinforce);
-            if (have && reinforce.committed == 0
-                && (live + deploy_q->pending) < kSquadTargetSize
-                && now >= state->next_spawn_time)
-            {
-                deploy_q->pending += 1;
-                state->next_spawn_time = now + kReinforceCooldown;
-                wz_log_infof(
-                    facts, "[commander] REINFORCE order (%d live +%d queued < %d)",
-                    live, deploy_q->pending, (int)kSquadTargetSize);
-            }
-        }
-
-        // Re-open the order ONLY on a material change: the reactive base decisively
-        // favors the OTHER side (a Schmitt flip past kOrderHysteresis), the squad size
-        // changed (the reinforce qubit must re-deliberate its deficit), or the slow
-        // heartbeat elapsed (so learned doctrine re-expresses on a static battlefield).
-        // Otherwise the latch just holds -- no re-roll, no flip-flop.
-        const float doctrine =
-            wz_self_agent_memory(facts, event, kDoctrineMemoryQubit);
-        const float base =
-            kCommandBias
-                - state->order_speed_ema * kCommandSpeedGain
-                + doctrine * kDoctrineGain;
-        int desired = state->last_decision;
-        if (base > kOrderHysteresis) {
-            desired = 0;   // PRESS
-        } else if (base < -kOrderHysteresis) {
-            desired = 1;   // HARASS
-        }
-
+        // HOLDING: re-open the order ONLY on a material change -- the reactive base
+        // decisively favors the OTHER side (a Schmitt flip past kOrderHysteresis), the
+        // squad size changed, or the slow heartbeat elapsed. Otherwise the latch holds.
+        const int desired = desired_order(facts, event, state);
         const bool flip =
             state->last_decision >= 0 && desired != state->last_decision;
         const bool squad_changed = deficit != state->order_deficit_at_rearm;
@@ -272,8 +299,18 @@ namespace
     }
 }
 
-WZ_BEHAVIOR_MODULE_INIT(
+namespace
+{
+    // Declared config tunable, so the editor renders a checkbox for it.
+    const WzBehaviorParamDesc kCommanderParams[] = {
+        { "chart_driven", "Chart-driven (statechart owns the order phase)",
+            WZ_BEHAVIOR_PARAM_BOOL, 0.0, nullptr },
+    };
+}
+
+WZ_BEHAVIOR_MODULE_INIT_PARAMS(
     "tank_commander",
     commander_init,
     commander_on_event,
-    kCommanderEvents)
+    kCommanderEvents,
+    kCommanderParams)
