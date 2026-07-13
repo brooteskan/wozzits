@@ -882,6 +882,99 @@ namespace wz::engine::editor
         return serialize_actuator_catalog(registry);
     }
 
+    // Module-param catalog blob. Shared by the builtins-only and project-aware entry
+    // points below. Mirrors serialize_actuator_catalog but over registry.modules() --
+    // each module + the config params it declares (key/label/type/default).
+    static std::vector<uint8_t> serialize_module_catalog(
+        const wz::engine::behavior::BehaviorRegistry& registry)
+    {
+        AbiBlobBuilder builder;
+        const uint64_t root_offset =
+            builder.append_struct(WzEditorBehaviorModuleCatalog{});
+
+        std::vector<WzEditorBehaviorModule> modules;
+        const auto module_span = registry.modules();
+        modules.reserve(module_span.size());
+        for (const wz::engine::behavior::BehaviorModuleRegistration& module :
+             module_span)
+        {
+            std::vector<WzEditorBehaviorModuleParam> params;
+            params.reserve(module.params.size());
+            for (const wz::engine::behavior::BehaviorParamSpec& param :
+                 module.params)
+            {
+                params.push_back(WzEditorBehaviorModuleParam{
+                    .key = builder.append_string(param.key),
+                    .label = builder.append_string(param.label),
+                    .type = static_cast<uint32_t>(param.type),
+                    .reserved = 0u,
+                    .default_number = param.default_number,
+                    .default_string =
+                        builder.append_string(param.default_string),
+                });
+            }
+
+            modules.push_back(WzEditorBehaviorModule{
+                .module = builder.append_string(module.module),
+                .params = builder.append_table(params),
+            });
+        }
+
+        WzEditorBehaviorModuleCatalog root{};
+        root.abi_version = WZ_ABI_VERSION;
+        root.ok = 1u;
+        root.modules = builder.append_table(modules);
+
+        builder.patch_struct(root_offset, root);
+        return builder.take();
+    }
+
+    std::vector<uint8_t> behavior_module_catalog_abi_blob()
+    {
+        // Device-free, BUILTINS ONLY: a throwaway registry populated by the builtin
+        // packs (register_builtin_behaviors); no GPU/session/runtime.
+        wz::engine::behavior::BehaviorRegistry registry;
+        wz::engine::behavior::BehaviorPluginHost plugins;
+        wz::Logger logger{};
+        wz::engine::behavior::register_builtin_behaviors(
+            registry, plugins, logger);
+        return serialize_module_catalog(registry);
+    }
+
+    std::vector<uint8_t> project_behavior_module_catalog_abi_blob(
+        std::string_view project_root, std::string_view resource_root)
+    {
+        // Builtins PLUS the project's own modules' declared params: the throwaway
+        // registry gets the builtin packs, then the project's behavior DLLs are loaded
+        // the SAME way the runtime loads them (behavior_module_folder from the manifest)
+        // -- so the editor sees the config tunables the project's modules declare. Still
+        // device-free (loading a DLL just runs its wz_register_behaviors). A stale DLL
+        // (older ABI) is rejected by the load-time version check and simply omitted.
+        wz::engine::behavior::BehaviorRegistry registry;
+        wz::engine::behavior::BehaviorPluginHost plugins;
+        wz::Logger logger{};
+        wz::engine::behavior::register_builtin_behaviors(
+            registry, plugins, logger);
+
+        if (!project_root.empty()) {
+            const auto loaded = wz::engine::project::load_project_manifest(
+                wz::engine::project::ProjectManifestLoadDesc{
+                    .project_root = wz::fs::Path{ std::string(project_root) },
+                    .resource_root = resource_root.empty()
+                        ? wz::fs::Path{}
+                        : wz::fs::Path{ std::string(resource_root) },
+                });
+            if (loaded.ok && !loaded.manifest.behavior_module_folder.empty()) {
+                plugins.load_dynamic_modules_from_directory(
+                    registry,
+                    std::filesystem::path{
+                        loaded.manifest.behavior_module_folder },
+                    &logger);
+            }
+        }
+        return serialize_module_catalog(registry);
+    }
+
     std::vector<uint8_t> glb_scene_hierarchy_abi_blob(
         bool ok,
         std::string_view error,

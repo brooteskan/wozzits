@@ -84,6 +84,37 @@
         return api->register_module_desc(api->user, &desc);                 \
     }
 
+// As WZ_BEHAVIOR_MODULE_INIT, but also ships a DECLARED param table (a static
+// WzBehaviorParamDesc[]) describing the config tunables the module reads -- key/type/
+// authoring default -- so the editor can enumerate them and render typed config fields
+// (a checkbox for a BOOL, a number for a FLOAT) instead of read-only text. Declaring
+// params does NOT change how the module reads config at runtime (wz_config_* still
+// works); it makes the tunables discoverable + documented.
+#define WZ_BEHAVIOR_MODULE_INIT_PARAMS(                                     \
+    module_name, init_fn, handler_fn, event_channel_array, param_array)     \
+    extern "C" WZ_BEHAVIOR_MODULE_EXPORT uint8_t wz_register_behaviors(     \
+        WzBehaviorPluginApi* api)                                           \
+    {                                                                       \
+        if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION                 \
+            || !api->register_module_desc)                                  \
+        {                                                                   \
+            return 0;                                                       \
+        }                                                                   \
+        const WzBehaviorModuleDesc desc = {                                 \
+            sizeof(WzBehaviorModuleDesc),                                   \
+            module_name,                                                    \
+            handler_fn,                                                     \
+            init_fn,                                                        \
+            event_channel_array,                                            \
+            (uint32_t)(sizeof(event_channel_array)                          \
+                / sizeof((event_channel_array)[0])),                        \
+            nullptr,                                                        \
+            param_array,                                                    \
+            (uint32_t)(sizeof(param_array) / sizeof((param_array)[0])),      \
+        };                                                                  \
+        return api->register_module_desc(api->user, &desc);                 \
+    }
+
 // Register a function-style behavior together with a declared param table (the
 // "expose parameters globally" surface). The params describe the config
 // tunables the behavior reads, with their types and authoring defaults, so the

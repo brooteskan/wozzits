@@ -582,6 +582,35 @@ typedef struct WzEditorBehaviorActuatorCatalog
     WzEditorTableSpan actuators;   // WzEditorBehaviorActuator[]
 } WzEditorBehaviorActuatorCatalog;
 
+// ─── Behavior-MODULE config params ──────────────────────────────────────────
+// The "expose parameters globally" surface for MODULES: each registered behavior
+// module's DECLARED config tunables (key/type/authoring default), so the editor can
+// render typed, discoverable fields for a behavior's config instead of read-only text.
+// Built from a throwaway BehaviorRegistry (register_builtin_behaviors [+ project DLLs]).
+
+typedef struct WzEditorBehaviorModuleParam
+{
+    WzEditorStringSpan key;            // config key the module reads ("chart_driven")
+    WzEditorStringSpan label;          // display label; may be empty
+    uint32_t type;                     // WZ_BEHAVIOR_PARAM_* (1=float, 2=bool, 3=string)
+    uint32_t reserved;
+    double default_number;             // FLOAT/BOOL authoring default (BOOL: 0 or 1)
+    WzEditorStringSpan default_string; // STRING authoring default; may be empty
+} WzEditorBehaviorModuleParam;
+
+typedef struct WzEditorBehaviorModule
+{
+    WzEditorStringSpan module;   // module name ("quantum_tank_agent")
+    WzEditorTableSpan params;    // WzEditorBehaviorModuleParam[]
+} WzEditorBehaviorModule;
+
+typedef struct WzEditorBehaviorModuleCatalog
+{
+    uint32_t abi_version;
+    uint32_t ok;
+    WzEditorTableSpan modules;   // WzEditorBehaviorModule[]
+} WzEditorBehaviorModuleCatalog;
+
 // ─── GLB scene-source hierarchy (issue #213, Phase 3b-1) ────────────────────
 // On-demand, READ-ONLY import of a GLB scene's component hierarchy so the editor
 // can show what a node's glb_scene_source descriptor will graft as children. The
@@ -869,6 +898,22 @@ static_assert(sizeof(WzEditorBehaviorActuatorCatalog) == 24);
 static_assert(offsetof(WzEditorBehaviorActuatorCatalog, abi_version) == 0);
 static_assert(offsetof(WzEditorBehaviorActuatorCatalog, actuators) == 8);
 
+static_assert(sizeof(WzEditorBehaviorModuleParam) == 64);
+static_assert(offsetof(WzEditorBehaviorModuleParam, key) == 0);
+static_assert(offsetof(WzEditorBehaviorModuleParam, label) == 16);
+static_assert(offsetof(WzEditorBehaviorModuleParam, type) == 32);
+static_assert(offsetof(WzEditorBehaviorModuleParam, reserved) == 36);
+static_assert(offsetof(WzEditorBehaviorModuleParam, default_number) == 40);
+static_assert(offsetof(WzEditorBehaviorModuleParam, default_string) == 48);
+
+static_assert(sizeof(WzEditorBehaviorModule) == 32);
+static_assert(offsetof(WzEditorBehaviorModule, module) == 0);
+static_assert(offsetof(WzEditorBehaviorModule, params) == 16);
+
+static_assert(sizeof(WzEditorBehaviorModuleCatalog) == 24);
+static_assert(offsetof(WzEditorBehaviorModuleCatalog, abi_version) == 0);
+static_assert(offsetof(WzEditorBehaviorModuleCatalog, modules) == 8);
+
 static_assert(sizeof(WzEditorGlbComponent) == 64);
 static_assert(offsetof(WzEditorGlbComponent, id) == 0);
 static_assert(offsetof(WzEditorGlbComponent, name) == 16);
@@ -911,6 +956,24 @@ WZ_ABI_API WzResult wz_host_behavior_actuator_catalog(WzBuffer* out_catalog);
 // project, or a stale-ABI project DLL, degrades to the built-ins. Same blob shape
 // (WzEditorBehaviorActuatorCatalog). WZ_ABI_VERSION unchanged.
 WZ_ABI_API WzResult wz_host_project_behavior_actuator_catalog(
+    const char* project_root_utf8,
+    const char* resource_root_utf8,
+    WzBuffer* out_catalog);
+
+// Device-free catalog of behavior MODULES and the config params each DECLARES
+// (key/type/authoring default), so the editor can render typed fields for a behavior's
+// config. Built from a throwaway BehaviorRegistry (register_builtin_behaviors) -- no
+// project/session/GPU. The blob's byte 0 is a WzEditorBehaviorModuleCatalog. Caller
+// frees with wz_free_buffer. (New exported fn + additive structs -- WZ_ABI_VERSION
+// unchanged.)
+WZ_ABI_API WzResult wz_host_behavior_module_catalog(WzBuffer* out_catalog);
+
+// As above, but ALSO loads the PROJECT's behavior DLLs (behavior_module_folder from the
+// project manifest at project_root_utf8) so the catalog includes params the project's
+// own modules declare. Still device-free. resource_root_utf8 may be null (the manifest
+// is resolved against project_root). An empty/invalid project, or a stale-ABI project
+// DLL, degrades to the built-ins. Same blob shape (WzEditorBehaviorModuleCatalog).
+WZ_ABI_API WzResult wz_host_project_behavior_module_catalog(
     const char* project_root_utf8,
     const char* resource_root_utf8,
     WzBuffer* out_catalog);

@@ -47,6 +47,20 @@ namespace wz::engine::editor
     std::vector<uint8_t> project_behavior_actuator_catalog_abi_blob(
         std::string_view project_root, std::string_view resource_root);
 
+    // Serialize the device-free behavior-MODULE param catalog into the
+    // WzEditorBehaviorModuleCatalog ABI blob: each registered module + the config params
+    // it DECLARES (key/type/default), from a throwaway BehaviorRegistry populated by
+    // register_builtin_behaviors -- no device/session. Lets the editor render typed
+    // config fields for a behavior instead of read-only text.
+    std::vector<uint8_t> behavior_module_catalog_abi_blob();
+
+    // As above, but ALSO loads the project's behavior DLLs so the catalog includes params
+    // the PROJECT's own modules declare, not just the built-ins. Still device-free; an
+    // empty/invalid project or a stale-ABI DLL degrades to the built-ins. resource_root
+    // may be empty (manifest resolved against project_root).
+    std::vector<uint8_t> project_behavior_module_catalog_abi_blob(
+        std::string_view project_root, std::string_view resource_root);
+
     // Serialize a GLB scene-source hierarchy import (issue #213, Phase 3b-1) into
     // the WzEditorGlbSceneHierarchy ABI blob. `ok`/`error` carry the import outcome;
     // on failure pass ok=false with a default `scene` and the blob's component table
