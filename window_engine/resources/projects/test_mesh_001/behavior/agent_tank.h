@@ -180,6 +180,13 @@ struct QuantumTankState {
 
     float drive_speed = 6.0f; // remove soon
 
+    // Hand ACTUATION to a statechart (config "chart_driven" != 0). The mind still
+    // senses / decides / learns / fires / handles pool-death every frame -- only the
+    // physical APPLY of movement + turret aim is skipped, so an attached tank_combat
+    // chart's pursue/aim_at/blink actuators drive the hull without fighting the C++.
+    // Default off: the tank behaves exactly as before unless the knob is set.
+    bool chart_driven = false;
+
     // The tank's LEASED squad slot ("[qtank:0]", "[qtank:1]") = its group-agent
     // member index (qubit slot = tank_id + 1). Claimed from the shared roster on
     // DEPLOY (unpark) and released on death/recycle, so it reflects live membership,

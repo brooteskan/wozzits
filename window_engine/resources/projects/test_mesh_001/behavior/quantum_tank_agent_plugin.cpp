@@ -27,6 +27,12 @@ namespace
     };
 
 
+    // Flip to true + rebuild this plugin to hand hull actuation (drive + turret aim) to
+    // an attached tank_combat statechart -- the C++ mind still senses / decides / learns
+    // / fires / recycles, only the physical APPLY is skipped. Also settable per-instance
+    // via a "chart_driven" config key on this behavior (overrides this default when set).
+    constexpr bool kChartDrivenDefault = false;
+
     void quantum_tank_init(
         const WzBehaviorInitFacts* facts,
         WzBehaviorEntityId self,
@@ -48,6 +54,15 @@ namespace
 
         // Authorable knob: how fast the tank advances when it commits to ENGAGE.
         (void)wz_config_float(facts, "drive_speed", &state->drive_speed);
+
+        // Hand hull actuation to an attached statechart: default from the compile-time
+        // switch above, overridden per-instance by the "chart_driven" config (a declared
+        // BOOL param -> editable as a checkbox in the inspector). The mind computes +
+        // learns as always; only the physical drive/aim APPLY is skipped so the chart's
+        // actuators own the hull.
+        uint8_t chart_driven = kChartDrivenDefault ? 1u : 0u;
+        (void)wz_config_bool(facts, "chart_driven", &chart_driven);
+        state->chart_driven = (chart_driven != 0u);
 
         // The clipmap landscape node -- its Heightfield collision is what we sample
         // for line of sight (and ground height later).
@@ -516,13 +531,17 @@ namespace
             tank_drive::face_bearing_to(facts, event, state->target),
             -tank_drive::kTurretHalfArc,
             tank_drive::kTurretHalfArc);
-        tank_drive::aim_turret(facts, state->chassis.turret, state->chassis.turret_yaw);
+        // Compute turret_yaw always (it feeds aim_error + learning below); APPLY only
+        // when the mind owns actuation -- a chart's aim_at owns the turret otherwise.
+        if (!state->chart_driven) {
+            tank_drive::aim_turret(facts, state->chassis.turret, state->chassis.turret_yaw);
+        }
 
         // Elevate the gun to hold the target's pitch for direct fire, clamped to
         // the gun's travel -- the barrel (and thus its shot ray, which rides the
         // barrel marker) tracks the target's HEIGHT, the AI counterpart to the
         // player's manual raise/lower.
-        if (state->barrel != WZ_INVALID_BEHAVIOR_ENTITY) {
+        if (state->barrel != WZ_INVALID_BEHAVIOR_ENTITY && !state->chart_driven) {
             const float elev = tank_drive::clampf(
                 tank_drive::local_elevation_to(
                     facts, state->chassis.turret, state->barrel,
@@ -729,7 +748,9 @@ namespace
         // Also frozen mid-blink (velocity ZEROED, not just left un-set -- the
         // motion component retains the last velocity, which would coast the tank
         // and fight the teleport's world-translation set) so the jump lands clean.
-        if (alive) {
+        // When chart_driven, the chart's pursue/halt actuators own the hull velocity;
+        // the mind skips its own drive so the two don't fight (last-writer-wins).
+        if (alive && !state->chart_driven) {
             const bool blinking = teleport::is_blinking(&state->teleport);
             tank_drive::drive_facing(
                 facts, event,
@@ -747,8 +768,23 @@ namespace
     }
 }
 
-WZ_BEHAVIOR_MODULE_INIT(
+namespace
+{
+    // Declared config tunables, so the editor renders typed fields for them (a checkbox
+    // for chart_driven, a number for drive_speed) instead of nothing. The runtime read
+    // is unchanged (wz_config_bool / wz_config_float above); this just makes them
+    // discoverable + gives authoring defaults.
+    const WzBehaviorParamDesc kQuantumTankParams[] = {
+        { "chart_driven", "Chart-driven (statechart owns the hull)",
+            WZ_BEHAVIOR_PARAM_BOOL, 0.0, nullptr },
+        { "drive_speed", "Engage drive speed (units/s)",
+            WZ_BEHAVIOR_PARAM_FLOAT, 6.0, nullptr },
+    };
+}
+
+WZ_BEHAVIOR_MODULE_INIT_PARAMS(
     "quantum_tank_agent",
     quantum_tank_init,
     quantum_tank_on_event,
-    kQuantumTankEvents)
+    kQuantumTankEvents,
+    kQuantumTankParams)
