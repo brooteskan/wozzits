@@ -79,3 +79,50 @@ TEST(BehaviorActuatorCatalogAbi, ExposesMoveTowardWithItsArgSchema)
     }
     EXPECT_TRUE(found_move_toward);
 }
+
+namespace
+{
+    bool catalog_has_actuator(
+        const std::vector<uint8_t>& blob, std::string_view name)
+    {
+        const auto root =
+            read_struct<WzEditorBehaviorActuatorCatalog>(blob, 0);
+        for (uint64_t i = 0; i < root.actuators.count; ++i) {
+            const auto a = read_struct<WzEditorBehaviorActuator>(
+                blob,
+                root.actuators.offset
+                    + i * sizeof(WzEditorBehaviorActuator));
+            if (read_span(blob, a.name) == name) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+// The project-aware blob loads the project's behavior DLLs so their registered
+// actuators surface (that is what makes a project actuator bindable in a chart).
+// With no project it is just the built-ins -- and it must never throw on a missing
+// or bogus project, only degrade to the built-ins.
+TEST(BehaviorActuatorCatalogAbi, ProjectCatalogFallsBackToBuiltinsForEmptyProject)
+{
+    const std::vector<uint8_t> blob =
+        wz::engine::editor::project_behavior_actuator_catalog_abi_blob("", "");
+    ASSERT_GE(blob.size(), sizeof(WzEditorBehaviorActuatorCatalog));
+
+    const auto root = read_struct<WzEditorBehaviorActuatorCatalog>(blob, 0);
+    EXPECT_EQ(root.ok, 1u);
+    EXPECT_EQ(root.abi_version, WZ_ABI_VERSION);
+    EXPECT_TRUE(catalog_has_actuator(blob, "move_toward"));
+}
+
+TEST(BehaviorActuatorCatalogAbi, ProjectCatalogSurvivesBogusProjectRoot)
+{
+    // A nonexistent project must not throw -- just the built-ins.
+    const std::vector<uint8_t> blob =
+        wz::engine::editor::project_behavior_actuator_catalog_abi_blob(
+            "Z:/no/such/project/here", "");
+    const auto root = read_struct<WzEditorBehaviorActuatorCatalog>(blob, 0);
+    EXPECT_EQ(root.ok, 1u);
+    EXPECT_TRUE(catalog_has_actuator(blob, "move_toward"));
+}

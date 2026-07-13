@@ -351,6 +351,40 @@ extern "C"
         }
     }
 
+    WzResult wz_host_project_behavior_actuator_catalog(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        WzBuffer* out_catalog)
+    {
+        if (const WzResult target =
+                prepare_output_buffer(out_catalog, "out_catalog");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            const std::string_view project_root =
+                project_root_utf8 ? std::string_view{ project_root_utf8 }
+                                  : std::string_view{};
+            const std::string_view resource_root =
+                resource_root_utf8 ? std::string_view{ resource_root_utf8 }
+                                   : std::string_view{};
+            return copy_bytes_to_buffer(
+                wz::engine::editor::project_behavior_actuator_catalog_abi_blob(
+                    project_root, resource_root),
+                out_catalog);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "behavior actuator catalog build failed");
+        }
+    }
+
     WzBuffer wz_import_glb_scene_hierarchy(
         const char* glb_path_utf8,
         const char* resource_root_utf8,

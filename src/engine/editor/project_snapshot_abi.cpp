@@ -789,21 +789,14 @@ namespace wz::engine::editor
         return builder.take();
     }
 
-    std::vector<uint8_t> behavior_actuator_catalog_abi_blob()
+    // Serialize a populated registry's actuators into the WzEditorBehaviorActuator-
+    // Catalog blob. Shared by the builtins-only and project-aware entry points below.
+    static std::vector<uint8_t> serialize_actuator_catalog(
+        const wz::engine::behavior::BehaviorRegistry& registry)
     {
         AbiBlobBuilder builder;
         const uint64_t root_offset =
             builder.append_struct(WzEditorBehaviorActuatorCatalog{});
-
-        // Device-free: a throwaway registry populated by the builtin packs (which
-        // register their actuators through the same WzBehaviorPluginApi a plugin
-        // uses). No GPU/session/runtime -- mirrors build_asset_catalog's throwaway
-        // schema registry. A default Logger does no I/O.
-        wz::engine::behavior::BehaviorRegistry registry;
-        wz::engine::behavior::BehaviorPluginHost plugins;
-        wz::Logger logger{};
-        wz::engine::behavior::register_builtin_behaviors(
-            registry, plugins, logger);
 
         std::vector<WzEditorBehaviorActuator> actuators;
         const auto actuator_span = registry.actuators();
@@ -838,6 +831,55 @@ namespace wz::engine::editor
 
         builder.patch_struct(root_offset, root);
         return builder.take();
+    }
+
+    std::vector<uint8_t> behavior_actuator_catalog_abi_blob()
+    {
+        // Device-free, BUILTINS ONLY: a throwaway registry populated by the builtin
+        // packs (which register their actuators through the same WzBehaviorPluginApi
+        // a plugin uses). No GPU/session/runtime; a default Logger does no I/O.
+        wz::engine::behavior::BehaviorRegistry registry;
+        wz::engine::behavior::BehaviorPluginHost plugins;
+        wz::Logger logger{};
+        wz::engine::behavior::register_builtin_behaviors(
+            registry, plugins, logger);
+        return serialize_actuator_catalog(registry);
+    }
+
+    std::vector<uint8_t> project_behavior_actuator_catalog_abi_blob(
+        std::string_view project_root, std::string_view resource_root)
+    {
+        // Builtins PLUS the project's OWN registered actuators: the throwaway registry
+        // gets the builtin packs, then the project's behavior DLLs are loaded the SAME
+        // way the runtime loads them (behavior_module_folder from the manifest) -- so a
+        // chart can bind functions the project registered, which is the whole point.
+        // Still device-free: loading a DLL just runs its wz_register_behaviors (it
+        // registers descriptors; it does NOT run behaviors, and needs no GPU/runtime).
+        // A stale DLL (built against an older ABI) is rejected by the load-time version
+        // check and simply omitted -- never fatal.
+        wz::engine::behavior::BehaviorRegistry registry;
+        wz::engine::behavior::BehaviorPluginHost plugins;
+        wz::Logger logger{};
+        wz::engine::behavior::register_builtin_behaviors(
+            registry, plugins, logger);
+
+        if (!project_root.empty()) {
+            const auto loaded = wz::engine::project::load_project_manifest(
+                wz::engine::project::ProjectManifestLoadDesc{
+                    .project_root = wz::fs::Path{ std::string(project_root) },
+                    .resource_root = resource_root.empty()
+                        ? wz::fs::Path{}
+                        : wz::fs::Path{ std::string(resource_root) },
+                });
+            if (loaded.ok && !loaded.manifest.behavior_module_folder.empty()) {
+                plugins.load_dynamic_modules_from_directory(
+                    registry,
+                    std::filesystem::path{
+                        loaded.manifest.behavior_module_folder },
+                    &logger);
+            }
+        }
+        return serialize_actuator_catalog(registry);
     }
 
     std::vector<uint8_t> glb_scene_hierarchy_abi_blob(

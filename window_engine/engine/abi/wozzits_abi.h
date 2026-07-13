@@ -903,6 +903,18 @@ WZ_ABI_API WzResult wz_host_asset_catalog(WzBuffer* out_catalog);
 // wz_free_buffer. (New exported fn + additive structs -- WZ_ABI_VERSION unchanged.)
 WZ_ABI_API WzResult wz_host_behavior_actuator_catalog(WzBuffer* out_catalog);
 
+// As above, but ALSO loads the PROJECT's behavior DLLs (behavior_module_folder from
+// the project manifest at project_root_utf8) so the catalog includes actuators the
+// project registered -- so the editor can bind them, not just the built-ins. Still
+// device-free (loading a DLL registers descriptors; no GPU/runtime). resource_root_-
+// utf8 may be null (the manifest is resolved against project_root). An empty/invalid
+// project, or a stale-ABI project DLL, degrades to the built-ins. Same blob shape
+// (WzEditorBehaviorActuatorCatalog). WZ_ABI_VERSION unchanged.
+WZ_ABI_API WzResult wz_host_project_behavior_actuator_catalog(
+    const char* project_root_utf8,
+    const char* resource_root_utf8,
+    WzBuffer* out_catalog);
+
 // Device-free, READ-ONLY import of a GLB scene's component hierarchy (issue #213,
 // Phase 3b-1): the engine roots `glb_path_utf8` against `resource_root_utf8` using
 // the shared file-carrier convention (the editor passes the node's scene_source
