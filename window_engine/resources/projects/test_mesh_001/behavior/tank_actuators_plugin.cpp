@@ -162,19 +162,33 @@ namespace
         }
     }
 
-    // request_reinforcement(): post one deploy request to the shared squad queue; the
-    // pool consumes it at its own pace. Called from the COMMANDER node's chart. The
-    // policy (when / how often) is the chart's; the actuator just posts.
+    // request_reinforcement(): post ONE deploy to the shared squad queue when there's room
+    // under the target and the cooldown has elapsed; the pool consumes it. Called from the
+    // COMMANDER chart's reinforce region (every frame the reinforce qubit is committed
+    // |0>). The chart supplies the DECISION gate (committed reinforce); this actuator self-
+    // gates the MECHANICAL bounds (deficit + reload) -- reading the commander's
+    // next_spawn_time (peer state) + the queue's live/pending -- exactly as the C++
+    // commander's Holding branch did, so it can never over-commit past kSquadTargetSize.
     void request_reinforcement(
-        const WzBehaviorFrameFacts* facts, WzBehaviorEntityId,
+        const WzBehaviorFrameFacts* facts, WzBehaviorEntityId self,
         const WzActuatorArg*, uint32_t, void*)
     {
-        void* raw = (facts && facts->find_shared_state)
-            ? facts->find_shared_state(
-                  facts->behavior_state_user, squad_deploy::kKey)
-            : nullptr;
-        if (raw) {
-            static_cast<squad_deploy::Queue*>(raw)->pending += 1;
+        auto* q = static_cast<squad_deploy::Queue*>(
+            (facts && facts->find_shared_state)
+                ? facts->find_shared_state(
+                      facts->behavior_state_user, squad_deploy::kKey)
+                : nullptr);
+        QuantumTankState* s = wz_instance_state_of<QuantumTankState>(
+            facts, self, "tank_commander");
+        if (!q || !s) {
+            return;
+        }
+        const double now = wz_sim_time(facts);
+        if ((q->live + q->pending) < agent_tank_config::kSquadTargetSize
+            && now >= s->next_spawn_time)
+        {
+            q->pending += 1;
+            s->next_spawn_time = now + agent_tank_config::kReinforceCooldown;
         }
     }
 

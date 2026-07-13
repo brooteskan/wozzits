@@ -233,7 +233,9 @@ namespace
         // re-deliberates, so it only posts on a settled group -- so reinforce works the
         // same whether the C++ order machine or an attached chart drives the phase.
         // (live + pending) is the pool's consistent total, capped at the deficit.
-        if (deploy_q) {
+        // When chart_driven, the chart's reinforce region owns this (call
+        // request_reinforcement, which self-gates on the same deficit + cooldown).
+        if (deploy_q && !state->chart_driven) {
             WzAgentDecision reinforce{};
             const uint8_t have = wz_self_agent_decision_at(
                 facts, event, kReinforceQubit, &reinforce);
