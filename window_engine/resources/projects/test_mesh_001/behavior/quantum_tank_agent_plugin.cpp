@@ -615,6 +615,12 @@ namespace
             // and never reward aggression for a blocked shot).
             const bool shot =
                 in_range && fabsf(state->aim_error) < kFireArc && los;
+            // Sensed shot-readiness for the fire_cannon actuator (chart-driven fire):
+            // the aim/range/LOS gate plus gun-reach + terrain-clear, minus the tactical
+            // decision / ammo / cooldown. The exact sense the C++ discharge uses below.
+            state->can_hit = shot
+                && gun_can_reach(facts, state)
+                && shot_reaches_target(facts, state);
             if (shot) {
                 wz_self_agent_reward_pair(
                     facts, event,
@@ -646,9 +652,9 @@ namespace
                 const bool ready = alive && weapons_free && state->ammo > 0
                     && now >= state->next_fire_time
                     && state->canon_audio != WZ_INVALID_BEHAVIOR_ENTITY;
-                if (ready
-                    && gun_can_reach(facts, state)
-                    && shot_reaches_target(facts, state))
+                // chart_driven hands the DISCHARGE to the chart's `call fire_cannon`
+                // (which re-checks can_hit + cooldown); the mind still senses + learns.
+                if (!state->chart_driven && ready && state->can_hit)
                 {
                     cannon_fire::fire(&state->cannon);
                     state->ammo--;

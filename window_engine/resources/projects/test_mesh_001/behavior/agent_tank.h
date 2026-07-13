@@ -169,6 +169,12 @@ struct QuantumTankState {
     // shot lined up, at most once per kFireCooldown). Unlimited ammo.
     double next_fire_time = 0.0;
 
+    // SENSED shot-readiness (aim + range + LOS + gun-reach + terrain-clear), minus the
+    // tactical decision / ammo / cooldown. Recomputed each frame by the mind; the
+    // fire_cannon actuator (chart-driven fire) gates on it so a chart's `call fire_cannon`
+    // discharges on the exact same sense as the C++ dispatch does.
+    bool can_hit = false;
+
     // Blink gate: sim_time the tank may next teleport, so a persistently-committed
     // BLINK qubit (index 4) can't chain jumps -- one blink per kBlinkCooldown.
     double next_blink_time = 0.0;

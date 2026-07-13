@@ -21,6 +21,7 @@
 #include <engine/behavior/behavior_module_api.h>
 
 #include "agent_tank.h"     // QuantumTankState + tank_drive/cannon_fire/teleport/lifecycle
+#include "agent_tank_config.h"   // kFireCooldown (the shared reload interval)
 #include "squad_deploy.h"
 
 namespace
@@ -126,15 +127,29 @@ namespace
         }
     }
 
-    // fire_cannon(): trigger the cannon fire sequence. Its per-frame advance (flight,
-    // flash) stays in the quantum_tank_agent module's tick -- this only sets pending.
+    // fire_cannon(): discharge IF the tank has a shot -- gated on the SAME sense the C++
+    // dispatch uses (`can_hit`, stashed by the mind each frame) plus ammo + reload
+    // cooldown, so a chart calling this every frame in a FIRE state fires at most once per
+    // kFireCooldown and only on a good solution (aim/range/LOS/gun/terrain). Its per-frame
+    // advance (flight, flash) stays in the module tick -- this sets pending + rearms the
+    // cooldown. The tactical WHEN (weapons-free vs conserve) is the chart's guard.
     void fire_cannon(
         const WzBehaviorFrameFacts* facts, WzBehaviorEntityId self,
         const WzActuatorArg*, uint32_t, void*)
     {
-        if (QuantumTankState* s = tank_state(facts, self)) {
-            cannon_fire::fire(&s->cannon);
+        QuantumTankState* s = tank_state(facts, self);
+        if (!s || !s->can_hit || s->ammo == 0
+            || s->canon_audio == WZ_INVALID_BEHAVIOR_ENTITY)
+        {
+            return;
         }
+        const double now = wz_sim_time(facts);
+        if (now < s->next_fire_time) {
+            return;   // reload cooldown
+        }
+        cannon_fire::fire(&s->cannon);
+        s->ammo--;
+        s->next_fire_time = now + agent_tank_config::kFireCooldown;
     }
 
     // blink(): trigger the teleport. Its animation advance stays in the module tick.
