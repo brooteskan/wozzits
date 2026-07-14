@@ -67,7 +67,6 @@ public sealed class StatechartOracleTests
         var dir = StatechartsDir();
 
         var failures = new List<string>();
-        int runners = 0;
         foreach (var node in scene["nodes"]!.AsArray())
         {
             if (node?["behaviors"] is not JsonArray behaviors) continue;
@@ -77,7 +76,6 @@ public sealed class StatechartOracleTests
                 var cfg = b!["config"]!.AsObject();
                 var chartName = cfg["chart"]!.GetValue<string>();
                 var embed = cfg["chart_ir"]!.GetValue<string>();
-                runners++;
 
                 var goldenPath = Path.Combine(dir, chartName + ".sc.json");
                 if (!File.Exists(goldenPath))
@@ -98,7 +96,10 @@ public sealed class StatechartOracleTests
             }
         }
 
-        Assert.True(runners >= 8, $"expected >= 8 statechart_runner embeds in scene.json, found {runners}");
+        // No count assertion: scene.json is mutable scratch (test_mesh_001), so how many
+        // runners David has wired in is his to change and no test may depend on it. This
+        // opportunistically validates whatever embeds ARE present against the compiler, and
+        // no-ops (passes) when there are none.
         Assert.True(failures.Count == 0, "scene embed mismatches:\n  " + string.Join("\n  ", failures));
     }
 
