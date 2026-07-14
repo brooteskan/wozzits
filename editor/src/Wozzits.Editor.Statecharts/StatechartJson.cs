@@ -39,6 +39,7 @@ public static class StatechartJson
     {
         ("set_goal", EffectKind.SetGoal), ("set_decoherence", EffectKind.SetDecoherence),
         ("rearm", EffectKind.Rearm), ("reward", EffectKind.Reward),
+        ("measure_at", EffectKind.MeasureAt),
         ("set_scale", EffectKind.SetScale), ("set_visible", EffectKind.SetVisible),
         ("play_sound", EffectKind.PlaySound), ("call", EffectKind.Call),
     };
@@ -214,6 +215,7 @@ public static class StatechartJson
         switch (ef.Kind)
         {
             case EffectKind.SetGoal:
+            case EffectKind.MeasureAt:
                 ef.Agent = Str(e, "agent");
                 ef.Slot = (int)Num(e, "slot");
                 ef.Value = LoadRef(Member(e, "value"));
@@ -404,6 +406,7 @@ public static class StatechartJson
         switch (e.Kind)
         {
             case EffectKind.SetGoal:
+            case EffectKind.MeasureAt:
                 o["agent"] = e.Agent;
                 o["slot"] = e.Slot;
                 o["value"] = EmitRef(e.Value);
@@ -570,6 +573,12 @@ public static class StatechartJson
         {
             switch (e.Kind)
             {
+                case EffectKind.MeasureAt:
+                    // A measurement reads-with-collapse; unlike the R2 writes it may
+                    // target a REFERENCED mind (the chart measuring the agent it names).
+                    if (!agentIds.Contains(e.Agent))
+                        errors.Add($"{where} measure_at names unknown agent '{e.Agent}'");
+                    break;
                 case EffectKind.SetGoal:
                 case EffectKind.SetDecoherence:
                 case EffectKind.Rearm:
@@ -599,7 +608,7 @@ public static class StatechartJson
                     }
                     break;
             }
-            if (e.Kind is EffectKind.SetGoal or EffectKind.SetDecoherence
+            if (e.Kind is EffectKind.SetGoal or EffectKind.SetDecoherence or EffectKind.MeasureAt
                 or EffectKind.SetScale or EffectKind.SetVisible && e.Value == null)
                 errors.Add($"{where} {NameOf(e.Kind)} missing value");
             CheckRef(e.Value, $"{where} {NameOf(e.Kind)}");

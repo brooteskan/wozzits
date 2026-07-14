@@ -1576,6 +1576,7 @@
                                                 <MenuItem Header="set_decoherence" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetDecoherence}"/>
                                                 <MenuItem Header="rearm" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.Rearm}"/>
                                                 <MenuItem Header="reward" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.Reward}"/>
+                                                <MenuItem Header="measure_at" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.MeasureAt}"/>
                                                 <Separator/>
                                                 <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
                                                 <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
@@ -1654,6 +1655,7 @@
                                                 <MenuItem Header="set_decoherence" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetDecoherence}"/>
                                                 <MenuItem Header="rearm" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.Rearm}"/>
                                                 <MenuItem Header="reward" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.Reward}"/>
+                                                <MenuItem Header="measure_at" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.MeasureAt}"/>
                                                 <Separator/>
                                                 <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
                                                 <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
@@ -1732,6 +1734,7 @@
                                                 <MenuItem Header="set_decoherence" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetDecoherence}"/>
                                                 <MenuItem Header="rearm" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.Rearm}"/>
                                                 <MenuItem Header="reward" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.Reward}"/>
+                                                <MenuItem Header="measure_at" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.MeasureAt}"/>
                                                 <Separator/>
                                                 <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
                                                 <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>

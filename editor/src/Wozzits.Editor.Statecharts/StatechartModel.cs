@@ -94,6 +94,7 @@ public sealed class PureOp
 public enum EffectKind
 {
     SetGoal, SetDecoherence, Rearm, Reward,   // agent writes (owner-only, R2)
+    MeasureAt,                                // non-commuting measurement (mutates; allowed on a ref)
     SetScale, SetVisible, PlaySound,          // actuators
     Call,                                     // a behavior-REGISTERED actuator, by name
 }

@@ -262,6 +262,7 @@ public sealed class EffectRowViewModel : ViewModelBase
     private static string Describe(Effect e) => e.Kind switch
     {
         EffectKind.SetGoal => $"set_goal {e.Agent}[{e.Slot}]",
+        EffectKind.MeasureAt => $"measure_at {e.Agent}[{e.Slot}]",
         EffectKind.SetDecoherence => $"set_decoherence {e.Agent}",
         EffectKind.Rearm => $"rearm {e.Agent}",
         EffectKind.Reward => $"reward {e.Agent} q{e.Slot} {(e.Toward ? "toward |0>" : "toward |1>")}",
@@ -277,6 +278,7 @@ public sealed class EffectRowViewModel : ViewModelBase
     private static string Format(Effect e) => e.Kind switch
     {
         EffectKind.SetGoal => $"set_goal {e.Agent}[{e.Slot}] = {FormatValue(e.Value)}",
+        EffectKind.MeasureAt => $"measure_at {e.Agent}[{e.Slot}] axis={FormatValue(e.Value)}",
         EffectKind.SetDecoherence => $"set_decoherence {e.Agent} = {FormatValue(e.Value)}",
         EffectKind.Rearm => $"rearm {e.Agent}",
         EffectKind.Reward => $"reward {e.Agent} q{e.Slot} {(e.Toward ? "toward |0>" : "toward |1>")} {FormatValue(e.Value)}",

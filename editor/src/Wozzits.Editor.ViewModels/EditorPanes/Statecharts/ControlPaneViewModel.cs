@@ -156,6 +156,7 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
         return kind switch
         {
             EffectKind.SetGoal => new Effect { Kind = kind, Agent = agent, Slot = 0, Value = ValueRef.Number(0) },
+            EffectKind.MeasureAt => new Effect { Kind = kind, Agent = agent, Slot = 0, Value = ValueRef.Number(0) },
             EffectKind.SetDecoherence => new Effect { Kind = kind, Agent = agent, Value = ValueRef.Number(0) },
             EffectKind.Rearm => new Effect { Kind = kind, Agent = agent },
             EffectKind.Reward => new Effect { Kind = kind, Agent = agent, Slot = 0, Value = ValueRef.Number(0) },
