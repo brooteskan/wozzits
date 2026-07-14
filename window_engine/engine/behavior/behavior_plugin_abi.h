@@ -41,7 +41,11 @@ extern "C" {
 // v35: appended get_agent_decision_at_named on WzBehaviorFrameFacts -- reads a decision
 //      from a SPECIFIC quantum_agent on a node (selected by behavior label), so a
 //      statechart REF names which agent it reads instead of grabbing the first one.
-#define WZ_BEHAVIOR_ABI_VERSION 35u
+// v36: appended measure_agent_in_basis on WzBehaviorFrameFacts -- a NON-COMMUTING
+//      (basis-rotated) projective measurement of a named agent's decision, WITH
+//      back-action; the rotated-basis readout an entangled mind needs to exhibit
+//      correlations no classical/finite-state model reproduces (Bell/contextuality).
+#define WZ_BEHAVIOR_ABI_VERSION 36u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -587,6 +591,23 @@ typedef uint8_t (*WzGetAgentDecisionAtNamedFn)(
     const char* agent_name,
     uint32_t agent_index,
     WzAgentDecision* out);
+
+/*
+ * NON-COMMUTING cognition measurement (v36). Projectively MEASURES a named
+ * quantum_agent's decision `agent_index` along axis theta (radians, x-z plane;
+ * theta 0 == the z / decision basis), WITH back-action, writing the +/-1 outcome
+ * to *out_bit (0 == |0>, 1 == |1>). Unlike the reads it MUTATES the agent -- it
+ * collapses the state and latches the outcome. This is the readout an entangled
+ * mind needs to exhibit correlations no classical/finite-state model reproduces
+ * (Bell/contextuality). Returns 1 if measured, 0 if no matching agent / bad index.
+ */
+typedef uint8_t (*WzMeasureAgentInBasisFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    const char* agent_name,
+    uint32_t agent_index,
+    float theta,
+    int8_t* out_bit);
 
 /*
  * Cognition WRITE surface (closes the sense->think loop). An actuator that has
@@ -1435,6 +1456,14 @@ typedef struct WzBehaviorFrameFacts
      * found. Null/empty name == the first agent. Null when no cognition reader.
      */
     WzGetAgentDecisionAtNamedFn get_agent_decision_at_named;
+
+    /*
+     * NON-COMMUTING cognition measurement (v36; APPEND-ONLY; shares
+     * cognition_reader_user). Chart-timed projective measure of a named agent's
+     * decision in a chosen basis, with back-action -- the rotated-basis readout an
+     * entangled mind needs to exhibit Bell/contextuality. Null when no cognition host.
+     */
+    WzMeasureAgentInBasisFn measure_agent_in_basis;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

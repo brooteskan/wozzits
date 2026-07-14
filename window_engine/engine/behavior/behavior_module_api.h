@@ -1771,6 +1771,27 @@ static inline uint8_t wz_agent_decision_at_named(
     return wz_agent_decision_at(facts, entity, agent_index, out);
 }
 
+// Projectively MEASURE a named quantum_agent's decision along axis theta (radians,
+// x-z plane; theta 0 == the z basis), WITH back-action, reading the +/-1 outcome
+// into *out_bit (0 == |0>, 1 == |1>). The non-commuting readout an entangled mind
+// needs to exhibit Bell/contextuality. Returns 0 (unavailable) on a pre-v36 host or
+// if no agent matches -- there is no older equivalent to fall back to.
+static inline uint8_t wz_measure_agent_in_basis(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* agent_name,
+    uint32_t agent_index,
+    float theta,
+    int8_t* out_bit)
+{
+    if (!facts || !out_bit || !facts->measure_agent_in_basis) {
+        return 0;
+    }
+    return facts->measure_agent_in_basis(
+        facts->cognition_reader_user, entity, agent_name, agent_index, theta,
+        out_bit);
+}
+
 // Convenience: read decision `agent_index` of the agent co-located on self.
 static inline uint8_t wz_self_agent_decision_at(
     const WzBehaviorFrameFacts* facts,

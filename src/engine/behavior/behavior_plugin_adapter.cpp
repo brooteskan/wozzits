@@ -1678,6 +1678,42 @@ namespace wz::engine::behavior
             return 1u;
         }
 
+        uint8_t measure_agent_in_basis_request(
+            void* user,
+            WzBehaviorEntityId entity,
+            const char* agent_name,
+            uint32_t agent_index,
+            float theta,
+            int8_t* out_bit)
+        {
+            if (!out_bit) {
+                return 0;
+            }
+            const QuantumAgentState* state = find_quantum_agent_state(
+                static_cast<BehaviorFrameContext*>(user), entity,
+                agent_name ? std::string(agent_name) : std::string());
+            if (!state || state->handle == 0u
+                || agent_index >= state->agent_count
+                || agent_index >= kQuantumAgentMaxDecisions)
+            {
+                return 0;
+            }
+            const std::optional<bool> bit = quantum_agent_store().measure_in_basis(
+                state->handle, agent_index, static_cast<double>(theta));
+            if (!bit) {
+                return 0;
+            }
+            *out_bit = *bit ? 1 : 0;
+            // Mirror the store's latch into the module's FRAME-PATH CACHE so a
+            // Committed read on this slot reflects the measured outcome immediately
+            // (as rearm/reshape refresh the cache after a store mutation), instead of
+            // reporting the stale pre-measurement value until the next cognition tick.
+            auto* cache = const_cast<QuantumAgentState*>(state);
+            cache->committed[agent_index] = *bit ? 1 : 0;
+            cache->marginal[agent_index] = *bit ? -1.0f : 1.0f;
+            return 1u;
+        }
+
         uint8_t reshape_group_request(
             void* user,
             WzBehaviorEntityId entity,
@@ -2245,6 +2281,7 @@ namespace wz::engine::behavior
                 .behavior_event_sink_user = &context,
                 .emit_behavior_event = emit_behavior_event,
                 .get_agent_decision_at_named = get_agent_decision_at_named_query,
+                .measure_agent_in_basis = measure_agent_in_basis_request,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -2352,6 +2389,7 @@ namespace wz::engine::behavior
                 .behavior_event_sink_user = &context,
                 .emit_behavior_event = emit_behavior_event,
                 .get_agent_decision_at_named = get_agent_decision_at_named_query,
+                .measure_agent_in_basis = measure_agent_in_basis_request,
             };
         }
 
