@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Wozzits.Editor.ViewModels;
@@ -18,6 +20,7 @@ public partial class MainWindow : Window
     {
         DataContext = viewModel;
         InitializeComponent();
+        HookWindowPlacement();
         Closed += OnClosed;
         SyncThemeMenu();
     }
@@ -28,6 +31,78 @@ public partial class MainWindow : Window
         {
             viewModel.Shutdown();
         }
+    }
+
+    // --- window placement persistence (position / size / maximized state across runs) ---
+
+    private PixelPoint _normalPosition;
+    private Size _normalSize;
+
+    // Restore the last-closed placement, keep the normal (un-maximized) bounds current so
+    // a maximized window still knows where to sit when un-maximized, and save on close.
+    private void HookWindowPlacement()
+    {
+        _normalPosition = Position;
+        _normalSize = new Size(Width, Height);
+        RestoreWindowPlacement();
+        PositionChanged += (_, _) => RememberNormalBounds();
+        SizeChanged += (_, _) => RememberNormalBounds();
+        Opened += (_, _) => EnsureOnScreen();
+        Closing += (_, _) => SaveWindowPlacement();
+    }
+
+    private void RememberNormalBounds()
+    {
+        if (WindowState == WindowState.Normal)
+        {
+            _normalPosition = Position;
+            _normalSize = new Size(Width, Height);
+        }
+    }
+
+    private void RestoreWindowPlacement()
+    {
+        if (WindowStateStore.Load() is not { } saved)
+        {
+            return;
+        }
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Width = Math.Max(MinWidth, saved.Width);
+        Height = Math.Max(MinHeight, saved.Height);
+        Position = new PixelPoint(saved.X, saved.Y);
+        _normalPosition = Position;
+        _normalSize = new Size(Width, Height);
+        if (Enum.TryParse<WindowState>(saved.State, out var state)
+            && state is WindowState.Maximized or WindowState.FullScreen)
+        {
+            WindowState = state;
+        }
+    }
+
+    // If the saved position lands off every connected screen (a monitor was unplugged or
+    // rearranged), pull the window onto the primary one so it can't be lost off-screen.
+    private void EnsureOnScreen()
+    {
+        var screens = Screens.All;
+        if (screens.Count == 0)
+        {
+            return;
+        }
+        var frame = new PixelRect(Position, PixelSize.FromSize(_normalSize, RenderScaling));
+        if (!screens.Any(s => s.Bounds.Intersects(frame)))
+        {
+            Position = (Screens.Primary ?? screens[0]).WorkingArea.Position;
+        }
+    }
+
+    private void SaveWindowPlacement()
+    {
+        var state = WindowState == WindowState.Minimized ? WindowState.Normal : WindowState;
+        // Maximized/fullscreen: the current Position is on the target monitor (so it
+        // re-maximizes there); pair it with the last NORMAL size for a later un-maximize.
+        var size = state == WindowState.Normal ? new Size(Width, Height) : _normalSize;
+        WindowStateStore.Save(new WindowLayout(
+            Position.X, Position.Y, (int)size.Width, (int)size.Height, state.ToString()));
     }
 
     // Re-query the engine for its scenelets whenever the Prefabs menu opens, so the
