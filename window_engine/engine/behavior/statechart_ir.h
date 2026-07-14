@@ -140,6 +140,11 @@ namespace wz::engine::behavior::statechart
         std::string id;
         bool owned = true;
         uint16_t host_binding = 0;   // Binding index, or kSelfBinding for `self`
+        // A REF (owned=false) may NAME which quantum_agent to read on the host node --
+        // matched against the behavior's label. Empty = the first quantum_agent found
+        // (back-compat). Disambiguates a node that hosts several agents; makes the
+        // reference explicit instead of "grab the first one".
+        std::string agent_name;
     };
 
     inline constexpr uint16_t kSelfBinding = 0xFFFFu;

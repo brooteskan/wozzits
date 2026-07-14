@@ -130,11 +130,15 @@ namespace wz::engine::behavior
             ent[i] = e;
         }
         std::vector<WzBehaviorEntityId> host(c.agents.size(), self);
+        // Each agent may NAME which quantum_agent on its host node to read (empty ==
+        // the first one). This makes a ref unambiguous when the node hosts several.
+        std::vector<std::string> host_agent(c.agents.size());
         for (size_t i = 0; i < c.agents.size(); ++i) {
             const uint16_t hb = c.agents[i].host_binding;
             host[i] = (hb == sc::kSelfBinding)
                 ? self
                 : (hb < ent.size() ? ent[hb] : self);
+            host_agent[i] = c.agents[i].agent_name;
         }
 
         auto decision = [&](uint16_t agent, uint16_t slot) -> WzAgentDecision {
@@ -142,7 +146,8 @@ namespace wz::engine::behavior
             d.committed = -1;
             d.marginal = 0.0f;
             if (agent < host.size()) {
-                wz_agent_decision_at(facts, host[agent], slot, &d);
+                wz_agent_decision_at_named(
+                    facts, host[agent], host_agent[agent].c_str(), slot, &d);
             }
             return d;
         };

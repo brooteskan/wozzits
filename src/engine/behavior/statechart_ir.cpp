@@ -324,6 +324,9 @@ namespace wz::engine::behavior::statechart
                                 + "' is not a binding port");
                             ad.host_binding = static_cast<uint16_t>(bi);
                         }
+                        // Optional: name WHICH quantum_agent on the host to read (a REF
+                        // that disambiguates a node with several). Empty = first-match.
+                        ad.agent_name = str(*a, "agent");
                         c.agents.push_back(std::move(ad));
                     }
 

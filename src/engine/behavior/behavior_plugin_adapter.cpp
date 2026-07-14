@@ -1544,7 +1544,8 @@ namespace wz::engine::behavior
         // not the wave function). Null if the node hosts no quantum_agent.
         const QuantumAgentState* find_quantum_agent_state(
             BehaviorFrameContext* context,
-            WzBehaviorEntityId entity)
+            WzBehaviorEntityId entity,
+            const std::string& name = {})
         {
             if (!context || !context->scene || !context->behavior_state) {
                 return nullptr;
@@ -1557,6 +1558,12 @@ namespace wz::engine::behavior
                 if (component.module != kQuantumAgentModule
                     || component.binding_id.empty())
                 {
+                    continue;
+                }
+                // When the chart NAMES which agent (a REF disambiguating a node with
+                // several), require the behavior's label to match; else the first
+                // quantum_agent -- the historical "grab the first one" behavior.
+                if (!name.empty() && component.name != name) {
                     continue;
                 }
                 const auto* block = context->behavior_state->find_instance_state(
@@ -1580,6 +1587,30 @@ namespace wz::engine::behavior
             }
             const QuantumAgentState* state = find_quantum_agent_state(
                 static_cast<BehaviorFrameContext*>(user), entity);
+            if (!state
+                || agent_index >= state->agent_count
+                || agent_index >= kQuantumAgentMaxDecisions)
+            {
+                return 0;
+            }
+            out->committed = state->committed[agent_index];
+            out->marginal = state->marginal[agent_index];
+            return 1;
+        }
+
+        uint8_t get_agent_decision_at_named_query(
+            void* user,
+            WzBehaviorEntityId entity,
+            const char* agent_name,
+            uint32_t agent_index,
+            WzAgentDecision* out)
+        {
+            if (!out) {
+                return 0;
+            }
+            const QuantumAgentState* state = find_quantum_agent_state(
+                static_cast<BehaviorFrameContext*>(user), entity,
+                agent_name ? std::string(agent_name) : std::string());
             if (!state
                 || agent_index >= state->agent_count
                 || agent_index >= kQuantumAgentMaxDecisions)
@@ -2213,6 +2244,7 @@ namespace wz::engine::behavior
                 },
                 .behavior_event_sink_user = &context,
                 .emit_behavior_event = emit_behavior_event,
+                .get_agent_decision_at_named = get_agent_decision_at_named_query,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -2319,6 +2351,7 @@ namespace wz::engine::behavior
                 },
                 .behavior_event_sink_user = &context,
                 .emit_behavior_event = emit_behavior_event,
+                .get_agent_decision_at_named = get_agent_decision_at_named_query,
             };
         }
 

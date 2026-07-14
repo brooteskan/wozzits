@@ -38,7 +38,10 @@ extern "C" {
 // v34: appended behavior-DEFINED events (behavior_events view + emit_behavior_event on
 //      WzBehaviorFrameFacts) -- a behavior emits a NAMED event at a node, and a
 //      statechart on it reacts via an `event` trigger (e.g. hit_logger emits "died").
-#define WZ_BEHAVIOR_ABI_VERSION 34u
+// v35: appended get_agent_decision_at_named on WzBehaviorFrameFacts -- reads a decision
+//      from a SPECIFIC quantum_agent on a node (selected by behavior label), so a
+//      statechart REF names which agent it reads instead of grabbing the first one.
+#define WZ_BEHAVIOR_ABI_VERSION 35u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -568,6 +571,20 @@ typedef uint8_t (*WzGetAgentDecisionFn)(
 typedef uint8_t (*WzGetAgentDecisionAtFn)(
     void* user,
     WzBehaviorEntityId entity,
+    uint32_t agent_index,
+    WzAgentDecision* out);
+
+/*
+ * NAMED multi-agent read (v35). Like get_agent_decision_at, but when a node hosts
+ * SEVERAL quantum_agents `agent_name` selects the one whose behavior label matches;
+ * a null/empty name takes the first (identical to the unnamed reader). Lets a
+ * statechart ref say WHICH agent it reads instead of silently grabbing the first.
+ * Returns 0 if no matching agent / the index is out of range.
+ */
+typedef uint8_t (*WzGetAgentDecisionAtNamedFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    const char* agent_name,
     uint32_t agent_index,
     WzAgentDecision* out);
 
@@ -1410,6 +1427,14 @@ typedef struct WzBehaviorFrameFacts
     WzBehaviorEventView   behavior_events;
     void*                 behavior_event_sink_user;
     WzEmitBehaviorEventFn emit_behavior_event;
+
+    /*
+     * NAMED cognition read (v35; APPEND-ONLY; shares cognition_reader_user). Reads a
+     * decision from a SPECIFIC quantum_agent on a node -- selected by the behavior's
+     * label -- so a statechart ref reads a named agent rather than the first one
+     * found. Null/empty name == the first agent. Null when no cognition reader.
+     */
+    WzGetAgentDecisionAtNamedFn get_agent_decision_at_named;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

@@ -1750,6 +1750,27 @@ static inline uint8_t wz_agent_decision_at(
         facts->cognition_reader_user, entity, agent_index, out);
 }
 
+// Like wz_agent_decision_at, but NAMES which quantum_agent on the node to read (by
+// the behavior's label) -- for a node hosting several agents. A null/empty name
+// takes the first agent (identical to wz_agent_decision_at). Returns 0 if unwired
+// or no agent matches. Falls back to the unnamed reader on a pre-v35 host.
+static inline uint8_t wz_agent_decision_at_named(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* agent_name,
+    uint32_t agent_index,
+    WzAgentDecision* out)
+{
+    if (!facts || !out) {
+        return 0;
+    }
+    if (facts->get_agent_decision_at_named) {
+        return facts->get_agent_decision_at_named(
+            facts->cognition_reader_user, entity, agent_name, agent_index, out);
+    }
+    return wz_agent_decision_at(facts, entity, agent_index, out);
+}
+
 // Convenience: read decision `agent_index` of the agent co-located on self.
 static inline uint8_t wz_self_agent_decision_at(
     const WzBehaviorFrameFacts* facts,
