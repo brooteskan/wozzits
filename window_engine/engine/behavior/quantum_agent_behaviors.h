@@ -121,11 +121,12 @@ namespace wz::engine::behavior
     // ring family. A present-but-malformed mind_ir fails loudly (no silent fallback).
     inline constexpr const char* kQuantumAgentMindIrKey = "mind_ir";
 
-    // Cap on coupled decisions a single agent exposes (keeps the POD state fixed-
-    // size + trivially copyable). Bump if a richer NPC needs more qubits. 5 lets
-    // the tank carry a 5th qubit (a BLINK/teleport disposition) alongside
-    // pursue/posture/reconsider/fire.
-    inline constexpr uint32_t kQuantumAgentMaxDecisions = 5;
+    // Cap on coupled decisions a single agent exposes (bounds the fixed-size, trivially-
+    // copyable POD cache below). 32 supports large minds on the LINEAR-scaling backends:
+    // chi=1 loopy BP is O(N), and a chi>=2 TTN on a nearest-neighbour chain is
+    // ~O(N * poly(chi)). NOT the exact backend (chi=0), whose joint state is O(2^N) -- keep
+    // exact minds to a handful of qubits. The mind_ir loader rejects a graph over this cap.
+    inline constexpr uint32_t kQuantumAgentMaxDecisions = 32;
 
     // Per-binding instance state (POD; trivially copyable, preserved across scene
     // rebuilds). Public so an actuator / read surface -- and tests -- can read the
@@ -137,11 +138,12 @@ namespace wz::engine::behavior
         float think_interval = 0.25f;  // self-paced cadence (sim-seconds)
         uint8_t started = 0;           // agent created on self.start?
         uint8_t agent_count = 1;       // number of coupled decisions built
-        // Per-qubit cache. [i] = decision i; -1 committed = deliberating, else
-        // 0 (|0>) / 1 (|1>); marginal = live <sigma_z> in [-1, 1].
-        int8_t committed[kQuantumAgentMaxDecisions] = { -1, -1, -1, -1, -1 };
-        float marginal[kQuantumAgentMaxDecisions] =
-            { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+        // Per-qubit cache ([i] = decision i; committed -1 = deliberating, else 0/1;
+        // marginal = live <sigma_z> in [-1, 1]). SELF_START fills every slot on build;
+        // before then only [0] is read (agent_count starts at 1), so [0] alone needs the
+        // deliberating sentinel here (the rest zero-fill and are never read pre-build).
+        int8_t committed[kQuantumAgentMaxDecisions] = { -1 };
+        float marginal[kQuantumAgentMaxDecisions] = {};
     };
 
     uint8_t register_quantum_agent_behaviors(WzBehaviorPluginApi* api);
