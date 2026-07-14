@@ -914,6 +914,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             }
         };
 
+        // Bound a read op's slot picker even when it reads a REFERENCED agent, and let a
+        // double-click on that ref open the mind it points to -- both need the scene (the
+        // node this chart runs on -> its quantum_agent), which lives here, not in the pane.
+        chartDocument.Dataflow.SetRefAgentResolvers(
+            agent => ResolveRefAgentSlotCount(info.Name, agent),
+            agent => OpenReferencedMind(info.Name, agent));
+
         var document = new Document
         {
             Id = documentId,
@@ -949,6 +956,117 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         DockFactory.AddDockable(_assetGraphDock, document);
         DockFactory.SetActiveDockable(document);
+    }
+
+    // ---- referenced-agent resolution (for the dataflow read-op slot picker + double-click) ----
+
+    // A chart read op may reference an EXTERNAL agent (owned:false) whose decision slots live
+    // on the scene node the chart runs on, not in the chart. Resolve that node's quantum_agent
+    // so the slot picker can bound to 0..N-1. 0 when unresolvable: the chart isn't attached to a
+    // node, the ref host isn't `self`, there's no matching quantum_agent, or its count is unknown.
+    private int ResolveRefAgentSlotCount(string chartName, AgentDecl agent)
+    {
+        var quantumAgent = ResolveReferencedQuantumAgent(chartName, agent);
+        if (quantumAgent is null)
+        {
+            return 0;
+        }
+        // An attached graph mind: count its qubits. Otherwise the scalar `decisions` count.
+        var mindName = quantumAgent.Config
+            .FirstOrDefault(c => c.Name == QuantumAgentMindAttachment.ConfigMind)?.Value;
+        if (!string.IsNullOrEmpty(mindName) && TryLoadMind(mindName) is { } mind)
+        {
+            return mind.Qubits.Count;
+        }
+        var decisions = quantumAgent.Config.FirstOrDefault(c => c.Name == "decisions")?.Value;
+        return int.TryParse(decisions, out var n) && n > 0 ? n : 0;
+    }
+
+    // Double-clicking a REFERENCE agent card opens the .mind.json it points to (a graph mind).
+    // Logs when there's nothing to open -- a scalar/plugin agent (like the tank) has no graph.
+    private void OpenReferencedMind(string chartName, AgentDecl agent)
+    {
+        var quantumAgent = ResolveReferencedQuantumAgent(chartName, agent);
+        var mindName = quantumAgent?.Config
+            .FirstOrDefault(c => c.Name == QuantumAgentMindAttachment.ConfigMind)?.Value;
+        if (string.IsNullOrEmpty(mindName))
+        {
+            AppendEditorLog(
+                $"[editor] Agent '{agent.Id}' has no attached .mind.json to open "
+                + "(a scalar/plugin agent defines its slots in code, not a graph).");
+            return;
+        }
+        var info = EnumerateMindFiles().FirstOrDefault(m => m.Name == mindName);
+        if (info is null)
+        {
+            AppendEditorLog($"[editor] Mind '{mindName}' not found under behavior/minds.");
+            return;
+        }
+        OpenMind(info);
+    }
+
+    // chart -> the scene node whose statechart_runner runs it -> the referenced quantum_agent
+    // (matched by the ref's target label, or the first when unnamed). Only `self`-hosted refs
+    // resolve for now (a binding-hosted ref lives on another node -- a follow-up).
+    private EngineSceneBehavior? ResolveReferencedQuantumAgent(string chartName, AgentDecl agent)
+    {
+        if (!string.Equals(agent.Host, "self", StringComparison.Ordinal))
+        {
+            return null;
+        }
+        var host = FindChartHostNode(chartName);
+        if (host is null)
+        {
+            return null;
+        }
+        var quantumAgents = host.Behaviors
+            .Where(b => b.Module == QuantumAgentMindAttachment.Module)
+            .ToList();
+        if (quantumAgents.Count == 0)
+        {
+            return null;
+        }
+        return string.IsNullOrEmpty(agent.AgentName)
+            ? quantumAgents[0]
+            : quantumAgents.FirstOrDefault(b => b.Label == agent.AgentName);
+    }
+
+    private SceneTreeNodeViewModel? FindChartHostNode(string chartName)
+    {
+        SceneTreeNodeViewModel? Walk(IEnumerable<SceneTreeNodeViewModel> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                foreach (var behavior in node.Behaviors)
+                {
+                    if (behavior.Module == "statechart_runner"
+                        && behavior.Config.FirstOrDefault(c => c.Name == "chart")?.Value == chartName)
+                    {
+                        return node;
+                    }
+                }
+                if (Walk(node.Children) is { } found)
+                {
+                    return found;
+                }
+            }
+            return null;
+        }
+        return Walk(SceneTree.Nodes);
+    }
+
+    // Load an authored graph mind by name (to count its qubits); null if absent / unparseable.
+    private Mind? TryLoadMind(string mindName)
+    {
+        try
+        {
+            var info = EnumerateMindFiles().FirstOrDefault(m => m.Name == mindName);
+            return info is null ? null : MindJson.Load(File.ReadAllText(info.Path));
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // ---- Minds menu (parallel to Statecharts): the project's authored .mind.json graphs ----

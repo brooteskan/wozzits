@@ -102,6 +102,7 @@
                                                 Opacity="{Binding DimOpacity}"
                                                 Loaded="CardLoaded"
                                                 SizeChanged="CardSizeChanged"
+                                                DoubleTapped="OnNodeDoubleTapped"
                                                 Width="220">
                                             <Grid RowDefinitions="Auto,Auto,*"
                                                   RowSpacing="6">

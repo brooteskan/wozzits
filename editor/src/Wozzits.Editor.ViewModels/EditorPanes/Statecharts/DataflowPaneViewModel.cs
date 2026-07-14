@@ -35,6 +35,13 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
     private bool _isLayoutDirty;
     private bool _isChartDirty;
 
+    // Scene-aware resolvers the host window supplies (the pane is edited standalone and can't
+    // see the scene): the decision-slot COUNT for a REFERENCED agent (bounds a read op's slot
+    // picker to 0..N-1) and OPEN the .mind.json a referenced agent points to (double-click).
+    // Null until a chart is opened with a scene to resolve against.
+    private Func<AgentDecl, int>? _refSlotCount;
+    private Action<AgentDecl>? _openReferencedMind;
+
     public DataflowPaneViewModel()
     {
         SelectedNodes.CollectionChanged += (_, _) => UpdateSelectedNode();
@@ -425,7 +432,17 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             return 0;
         }
         var agent = _chart.Agents.FirstOrDefault(a => a.Id == p.Agent);
-        if (agent is null || !agent.Owned || agent.Spec is not JsonObject spec)
+        if (agent is null)
+        {
+            return 0;
+        }
+        // A REFERENCE reads an external agent whose slots live on a scene node; the pane
+        // can't see the scene, so the host window resolves the count (0 if unresolvable).
+        if (!agent.Owned)
+        {
+            return _refSlotCount?.Invoke(agent) ?? 0;
+        }
+        if (agent.Spec is not JsonObject spec)
         {
             return 0;
         }
@@ -433,6 +450,28 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             && d is JsonValue jv && jv.TryGetValue<int>(out var n) && n > 0
             ? n
             : 0;
+    }
+
+    // The host window supplies the scene-aware resolvers (see the fields). Setting them
+    // reprojects so the read ops' slot pickers pick up the now-resolvable ref counts.
+    public void SetRefAgentResolvers(Func<AgentDecl, int>? slotCount, Action<AgentDecl>? openMind)
+    {
+        _refSlotCount = slotCount;
+        _openReferencedMind = openMind;
+        if (_chart is not null)
+        {
+            ReprojectPreservingLayout();
+        }
+    }
+
+    // Double-click on a canvas card: if it's a REFERENCE to an external agent, open the
+    // .mind.json that agent points to (resolved by the host window). No-op otherwise.
+    public void ActivateNode(DataflowNodeViewModel? node)
+    {
+        if (node?.Model is AgentDecl { Owned: false } reference)
+        {
+            _openReferencedMind?.Invoke(reference);
+        }
     }
 
     private IEnumerable<string> AllNodeIds() => _chart is null
