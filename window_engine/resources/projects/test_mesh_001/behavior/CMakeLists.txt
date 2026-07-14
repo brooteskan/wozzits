@@ -97,3 +97,10 @@ add_terrain_collision_behavior_module(
 add_terrain_collision_behavior_module(
     skinner
     cognition/skinner_plugin.cpp)
+
+# The CHSH witness: drives the co-located quantum_agent through a Bell test using
+# the v36 non-commuting measurement, and emits "chsh_violation" when S clears 2 --
+# the live, end-to-end "more than a probabilistic FSM" demonstrator.
+add_terrain_collision_behavior_module(
+    chsh_witness
+    cognition/chsh_witness_plugin.cpp)
