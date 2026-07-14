@@ -213,7 +213,7 @@
                              beneath this heading. Transform/Visibility are core node
                              state, not components, so they stay above. -->
                         <Border Classes="InspectorSectionCard">
-                            <StackPanel Classes="InspectorSection">
+                            <StackPanel Classes="InspectorSection ComponentsHost">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Text="Components"
                                                Classes="InspectorSectionTitle"/>
@@ -280,11 +280,56 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                            </StackPanel>
-                        </Border>
 
-                        <Border Classes="InspectorSectionCard"
-                                IsVisible="{Binding HasRenderableReference}">
+                                <!-- Statechart runner: added from the Components "+" menu, shown here as a
+                                     sub-card (like a behavior card) that attaches an authored project chart
+                                     to run on this node. Its own Remove sits in the header. -->
+                                <Border Classes="InspectorSubCard" Margin="0,8,0,0"
+                                        IsVisible="{Binding HasStatechartRunnerSection}">
+                                    <StackPanel Spacing="6">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBlock Text="Statechart Runner"
+                                                       Classes="InspectorSubCardTitle"/>
+                                            <Button Grid.Column="1" Content="Remove"
+                                                    Command="{Binding RemoveStatechartRunnerCommand}"
+                                                    Classes="InspectorApplyButton"
+                                                    IsVisible="{Binding HasAttachedStatechartRunner}"/>
+                                        </Grid>
+                                        <Border Height="1"
+                                                Background="{DynamicResource WozzitsPanelBorderBrush}"
+                                                Margin="0,0,0,2"/>
+                                        <TextBlock Text="Pick a chart to run on this node, then Attach. The chart's own bindings name the scene nodes it drives; it runs on Play."
+                                                   Classes="PaneEmptyState"
+                                                   TextWrapping="Wrap"/>
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                            <TextBlock Text="Chart" Classes="InspectorPropertyName"
+                                                       VerticalAlignment="Center"/>
+                                            <ComboBox Grid.Column="1"
+                                                      Classes="InspectorInput"
+                                                      HorizontalAlignment="Stretch"
+                                                      PlaceholderText="pick a chart"
+                                                      ItemsSource="{Binding StatechartRunnerCharts}"
+                                                      SelectedItem="{Binding SelectedStatechartRunnerChart, Mode=TwoWay}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate DataType="scvm:StatechartFileInfo">
+                                                        <TextBlock Text="{Binding Name}"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                        <Button Content="Attach runner"
+                                                Command="{Binding AttachStatechartRunnerCommand}"
+                                                Classes="InspectorApplyButton"
+                                                IsVisible="{Binding HasSelectedStatechartRunnerChart}"/>
+                                        <TextBlock Text="{Binding StatechartRunnerStatus}"
+                                                   Classes="PaneEmptyState"
+                                                   TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasStatechartRunnerStatus}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Classes="InspectorSectionCard"
+                                        IsVisible="{Binding HasRenderableReference}">
                             <StackPanel Classes="InspectorSection">
                                 <TextBlock Text="Renderable Asset"
                                            Classes="InspectorSectionTitle"/>
@@ -933,6 +978,8 @@
                                         Classes="InspectorApplyButton"/>
                             </StackPanel>
                         </Border>
+                            </StackPanel>
+                        </Border>
 
                         <Border Classes="InspectorSectionCard">
                             <StackPanel Classes="InspectorSection">
@@ -957,17 +1004,26 @@
                                               IsVisible="{Binding HasBehaviors}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate DataType="panes:InspectorBehaviorViewModel">
-                                            <StackPanel Classes="InspectorPropertyRow" Spacing="4">
-                                                <Grid ColumnDefinitions="*,Auto"
-                                                      ColumnSpacing="6">
-                                                    <CheckBox Content="enabled"
+                                            <Border Classes="InspectorSubCard" Margin="0,0,0,8">
+                                              <StackPanel Spacing="6">
+                                                <!-- Header: which behavior this card is, plus its own Remove. -->
+                                                <Grid ColumnDefinitions="*,Auto,Auto"
+                                                      ColumnSpacing="8">
+                                                    <TextBlock Text="{Binding Module}"
+                                                               Classes="InspectorSubCardTitle"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <CheckBox Grid.Column="1" Content="enabled"
                                                               IsChecked="{Binding Enabled, Mode=TwoWay}"
-                                                              Classes="InspectorCheck"/>
-                                                    <Button Grid.Column="1"
+                                                              Classes="InspectorCheck"
+                                                              VerticalAlignment="Center"/>
+                                                    <Button Grid.Column="2"
                                                             Content="Remove"
                                                             Command="{Binding RemoveCommand}"
                                                             Classes="InspectorApplyButton"/>
                                                 </Grid>
+                                                <Border Height="1"
+                                                        Background="{DynamicResource WozzitsPanelBorderBrush}"
+                                                        Margin="0,0,0,2"/>
                                                 <Grid ColumnDefinitions="Auto,*"
                                                       ColumnSpacing="10">
                                                     <TextBlock Text="Module"
@@ -1019,61 +1075,14 @@
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
-                                            </StackPanel>
+                                              </StackPanel>
+                                            </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <Grid ColumnDefinitions="*,Auto"
-                                      ColumnSpacing="6">
-                                    <TextBox Text="{Binding NewBehaviorModule, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                             PlaceholderText="behavior module name"
-                                             Classes="InspectorInput"/>
-                                    <Button Grid.Column="1"
-                                            Content="Add Behavior"
-                                            Command="{Binding AddBehaviorCommand}"
-                                            Classes="InspectorApplyButton"/>
-                                </Grid>
                             </StackPanel>
                         </Border>
 
-                        <Border Classes="InspectorSectionCard"
-                                IsVisible="{Binding HasStatechartRunnerSection}">
-                            <StackPanel Classes="InspectorSection">
-                                <TextBlock Text="Statechart runner" Classes="InspectorSectionTitle"/>
-                                <TextBlock Text="Pick a chart to run on this node, then Attach. The chart's own bindings name the scene nodes it drives; it runs on Play."
-                                           Classes="PaneEmptyState"
-                                           TextWrapping="Wrap"/>
-                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Classes="InspectorPropertyRow">
-                                    <TextBlock Text="Chart" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
-                                    <ComboBox Grid.Column="1"
-                                              Classes="InspectorInput"
-                                              HorizontalAlignment="Stretch"
-                                              PlaceholderText="pick a chart"
-                                              ItemsSource="{Binding StatechartRunnerCharts}"
-                                              SelectedItem="{Binding SelectedStatechartRunnerChart, Mode=TwoWay}">
-                                        <ComboBox.ItemTemplate>
-                                            <DataTemplate DataType="scvm:StatechartFileInfo">
-                                                <TextBlock Text="{Binding Name}"/>
-                                            </DataTemplate>
-                                        </ComboBox.ItemTemplate>
-                                    </ComboBox>
-                                </Grid>
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Content="Attach runner"
-                                            Command="{Binding AttachStatechartRunnerCommand}"
-                                            Classes="InspectorApplyButton"
-                                            IsVisible="{Binding HasSelectedStatechartRunnerChart}"/>
-                                    <Button Content="Remove"
-                                            Command="{Binding RemoveStatechartRunnerCommand}"
-                                            Classes="InspectorApplyButton"
-                                            IsVisible="{Binding HasAttachedStatechartRunner}"/>
-                                </StackPanel>
-                                <TextBlock Text="{Binding StatechartRunnerStatus}"
-                                           Classes="PaneEmptyState"
-                                           TextWrapping="Wrap"
-                                           IsVisible="{Binding HasStatechartRunnerStatus}"/>
-                            </StackPanel>
-                        </Border>
                     </StackPanel>
                 </ScrollViewer>
 
