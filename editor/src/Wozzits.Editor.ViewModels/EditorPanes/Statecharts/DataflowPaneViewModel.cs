@@ -40,6 +40,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         SelectedNodes.CollectionChanged += (_, _) => UpdateSelectedNode();
         AddOpCommand = new RelayCommand<OpKind>(kind => AddOp(kind));
         AddAgentCommand = new RelayCommand(() => AddAgent());
+        AddAgentRefCommand = new RelayCommand(() => AddAgentRef());
         AddBindingCommand = new RelayCommand(() => AddBinding());
         DeleteSelectedCommand = new RelayCommand(DeleteSelected);
     }
@@ -48,6 +49,8 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
     public IRelayCommand<OpKind> AddOpCommand { get; }
 
     public IRelayCommand AddAgentCommand { get; }
+
+    public IRelayCommand AddAgentRefCommand { get; }
 
     public IRelayCommand AddBindingCommand { get; }
 
@@ -235,17 +238,26 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         return PlaceAndSelect(id);
     }
 
-    // Add an owned agent (a co-located quantum_agent) with a default spec whose numeric fields
-    // are then editable in the inspector.
-    public DataflowNodeViewModel? AddAgent()
+    // Add an OWNED agent (a co-located quantum_agent) with a default spec whose numeric fields
+    // are then editable in the inspector -- the chart runs its own mind.
+    public DataflowNodeViewModel? AddAgent() => AddAgentDecl(owned: true);
+
+    // Add a REFERENCE to a quantum_agent that already lives on the host node (host: self).
+    // Which agent it reads is named in the inspector's "reads agent" field (empty = the first
+    // one found). A ref reads an existing agent, so it carries no spec.
+    public DataflowNodeViewModel? AddAgentRef() => AddAgentDecl(owned: false);
+
+    private DataflowNodeViewModel? AddAgentDecl(bool owned)
     {
         if (_chart is null)
         {
             return null;
         }
 
-        var id = FreshId("agent", AllNodeIds());
-        _chart.Agents.Add(new AgentDecl { Id = id, Owned = true, Host = "self", Spec = DefaultAgentSpec() });
+        var id = FreshId(owned ? "agent" : "ref", AllNodeIds());
+        _chart.Agents.Add(owned
+            ? new AgentDecl { Id = id, Owned = true, Host = "self", Spec = DefaultAgentSpec() }
+            : new AgentDecl { Id = id, Owned = false, Host = "self" });
         IsDirty = true;
         ReprojectPreservingLayout();
         return PlaceAndSelect(id);

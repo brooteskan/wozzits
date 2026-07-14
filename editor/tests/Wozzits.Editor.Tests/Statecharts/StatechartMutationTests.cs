@@ -659,6 +659,29 @@ public sealed class StatechartMutationTests
     }
 
     [Fact]
+    public void Add_Agent_Ref_Appends_A_Ref_With_An_Editable_Target_And_No_Spec()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+        int before = chart.Agents.Count;
+
+        var node = pane.AddAgentRef();
+
+        Assert.NotNull(node);
+        Assert.Equal(before + 1, chart.Agents.Count);
+        var added = chart.Agents.First(a => a.Id == node!.NodeId);
+        Assert.False(added.Owned);               // a reference, not an owned agent
+        Assert.Equal("self", added.Host);
+        Assert.Null(added.Spec);                 // reads an existing agent -> no spec
+        Assert.Equal("", added.AgentName);       // empty target = first-match
+        Assert.False(node!.HasSpecFields);       // nothing to configure...
+        Assert.True(node!.HasAgentTarget);       // ...but the "reads agent" field is editable
+        Assert.Same(node, pane.SelectedNode);
+        Assert.True(pane.IsDirty);
+        Assert.Empty(StatechartJson.Validate(chart));
+    }
+
+    [Fact]
     public void Add_Binding_Appends_A_Binding_Whose_Find_Is_Editable()
     {
         var chart = Golden("traffic_light.sc.json");
