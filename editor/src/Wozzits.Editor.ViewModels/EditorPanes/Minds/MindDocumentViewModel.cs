@@ -1,6 +1,7 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Minds;
 
 using System;
+using System.Globalization;
 using System.IO;
 using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
@@ -25,7 +26,63 @@ public sealed class MindDocumentViewModel : ViewModelBase
         Pane = new MindPaneViewModel();
         Pane.Project(mind);
         ApplySavedLayout();
+
+        // Global mind params -- edited in the document's properties panel (not per-qubit).
+        // Each mutates the Mind + marks the pane dirty so Save rewrites the .mind.json.
+        ChiEditor = IntField(() => _mind.Chi, c => { _mind.Chi = Math.Max(0, c); OnPropertyChanged(nameof(BackendLabel)); });
+        MemoryEditor = IntField(() => _mind.Memory, m => _mind.Memory = Math.Max(0, m));
+        GammaStartEditor = DoubleField(() => _mind.Clock.GammaStart, v => _mind.Clock.GammaStart = v);
+        AnnealSecondsEditor = DoubleField(() => _mind.Clock.AnnealSeconds, v => _mind.Clock.AnnealSeconds = v);
+        RelaxRateEditor = DoubleField(() => _mind.Clock.RelaxRate, v => _mind.Clock.RelaxRate = v);
+        ConfidenceEditor = DoubleField(() => _mind.Commit.Confidence, v => _mind.Commit.Confidence = v);
+        DecoherenceEditor = DoubleField(() => _mind.Commit.Decoherence, v => _mind.Commit.Decoherence = v);
     }
+
+    public EditableFieldViewModel ChiEditor { get; }
+
+    public EditableFieldViewModel MemoryEditor { get; }
+
+    public EditableFieldViewModel GammaStartEditor { get; }
+
+    public EditableFieldViewModel AnnealSecondsEditor { get; }
+
+    public EditableFieldViewModel RelaxRateEditor { get; }
+
+    public EditableFieldViewModel ConfidenceEditor { get; }
+
+    public EditableFieldViewModel DecoherenceEditor { get; }
+
+    // What backend the chi classifies into, with its constraint -- shown next to chi.
+    public string BackendLabel => _mind.Backend switch
+    {
+        MindBackend.Exact => "exact — entangled, small groups, any graph",
+        MindBackend.LoopyBp => "loopy BP — any graph, no entanglement",
+        _ => "TTN — needs a nearest-neighbour chain",
+    };
+
+    private EditableFieldViewModel IntField(Func<int> get, Action<int> set) =>
+        new(string.Empty,
+            () => get().ToString(CultureInfo.InvariantCulture),
+            v =>
+            {
+                if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var x))
+                {
+                    set(x);
+                    Pane.MarkDirty();
+                }
+            });
+
+    private EditableFieldViewModel DoubleField(Func<double> get, Action<double> set) =>
+        new(string.Empty,
+            () => get().ToString("0.###", CultureInfo.InvariantCulture),
+            v =>
+            {
+                if (double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var x))
+                {
+                    set(x);
+                    Pane.MarkDirty();
+                }
+            });
 
     public string Name
     {

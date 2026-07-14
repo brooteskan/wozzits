@@ -81,4 +81,37 @@ public sealed class MindDocumentTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void Global_Param_Editors_Mutate_The_Mind_And_Persist()
+    {
+        var dir = TempDir();
+        try
+        {
+            var path = Path.Combine(dir, "m.mind.json");
+            var mind = new Mind { Name = "m" };
+            mind.Qubits.Add(new MindQubit { Id = "q0" });
+            File.WriteAllText(path, MindJson.Emit(mind, indented: true));
+
+            var doc = new MindDocumentViewModel("m", path, MindJson.Load(File.ReadAllText(path)));
+            doc.ChiEditor.Value = "1";
+            doc.MemoryEditor.Value = "2";
+            doc.ConfidenceEditor.Value = "0.65";
+            doc.AnnealSecondsEditor.Value = "6";
+            Assert.True(doc.IsDirty);
+            Assert.Equal("loopy BP — any graph, no entanglement", doc.BackendLabel);
+
+            doc.Save();
+
+            var reloaded = MindJson.Load(File.ReadAllText(path));
+            Assert.Equal(1, reloaded.Chi);
+            Assert.Equal(2, reloaded.Memory);
+            Assert.Equal(0.65, reloaded.Commit.Confidence);
+            Assert.Equal(6.0, reloaded.Clock.AnnealSeconds);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

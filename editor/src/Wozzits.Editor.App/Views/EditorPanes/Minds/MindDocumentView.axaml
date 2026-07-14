@@ -24,6 +24,66 @@
             </Button>
         </StackPanel>
 
-        <ContentControl Grid.Row="1" Content="{Binding Pane}"/>
+        <Grid Grid.Row="1" ColumnDefinitions="*,4,300">
+            <ContentControl Grid.Column="0" Content="{Binding Pane}"/>
+            <GridSplitter Grid.Column="1" ResizeDirection="Columns"/>
+            <Border Grid.Column="2" Classes="PaneSurface">
+                <ScrollViewer>
+                    <StackPanel Spacing="8" Margin="10">
+                        <TextBlock Text="Mind" Classes="InspectorSectionTitle"/>
+                        <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                            <TextBlock Text="chi" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Classes="InspectorInput"
+                                     Text="{Binding ChiEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <TextBlock Text="{Binding BackendLabel}" Classes="InspectorPropertyName" TextWrapping="Wrap"/>
+                        <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                            <TextBlock Text="memory" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Classes="InspectorInput"
+                                     Text="{Binding MemoryEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+
+                        <TextBlock Text="Anneal" Classes="InspectorSectionTitle"/>
+                        <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                            <TextBlock Text="gamma start" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Classes="InspectorInput"
+                                     Text="{Binding GammaStartEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                            <TextBlock Text="anneal secs" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Classes="InspectorInput"
+                                     Text="{Binding AnnealSecondsEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                            <TextBlock Text="relax rate" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Classes="InspectorInput"
+                                     Text="{Binding RelaxRateEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+
+                        <TextBlock Text="Commit" Classes="InspectorSectionTitle"/>
+                        <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                            <TextBlock Text="confidence" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Classes="InspectorInput"
+                                     Text="{Binding ConfidenceEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                            <TextBlock Text="decoherence" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Classes="InspectorInput"
+                                     Text="{Binding DecoherenceEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+
+                        <StackPanel Spacing="6" IsVisible="{Binding Pane.HasSelectedNode}">
+                            <TextBlock Text="Selected qubit" Classes="InspectorSectionTitle"/>
+                            <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                                <TextBlock Text="goal" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                <TextBox Grid.Column="1" Classes="InspectorInput"
+                                         x:CompileBindings="False"
+                                         Text="{Binding Pane.SelectedNode.GoalEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>
