@@ -87,4 +87,13 @@ namespace wz::engine::cognition
     // witness, nonzero exactly when the two agents are correlated beyond a
     // product state.
     double connected_correlation(const ExactGroup& g, uint32_t a, uint32_t b);
+
+    // Measure agent `agent` along axis theta (x-z plane) on the JOINT register,
+    // with back-action: the projection conditions the coupled agents through the
+    // shared wavefunction, so on an entangled group (chi = 0, full 2^N) this is
+    // the non-classical, Bell-capable readout. Returns the outcome bit (see
+    // qstate::measure_in_basis).
+    bool measure_in_basis(
+        ExactGroup& g, uint32_t agent, double theta,
+        wz::engine::cognition::qstate::Rng& rng);
 }

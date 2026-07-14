@@ -79,4 +79,10 @@ namespace wz::engine::cognition
     {
         qstate::project(node_data(net, node), 0u, bit);
     }
+
+    bool measure_in_basis(
+        MeanFieldNetwork& net, NodeHandle node, double theta, qstate::Rng& rng)
+    {
+        return qstate::measure_in_basis(node_data(net, node), 0u, theta, rng);
+    }
 }

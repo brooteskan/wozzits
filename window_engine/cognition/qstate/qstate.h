@@ -156,4 +156,18 @@ namespace wz::engine::cognition::qstate
     // OTHER qubits are left coherent and CONDITIONED on this outcome (a coupled
     // decision read after this reflects the committed one). Idempotent.
     void project(Register& reg, uint32_t q, bool value);
+
+    // Measure qubit q along axis n̂(theta) in the x-z plane, WITH back-action.
+    // theta == 0 measures the z (computational / decision) basis -- identical to
+    // measure(); theta == pi/2 measures the x basis. Rotates the measurement axis
+    // onto z with R_y(-theta), Born-samples in z (projecting + conditioning the
+    // OTHER qubits exactly as measure() does), and leaves qubit q collapsed. The
+    // returned bit is the outcome along n̂ (true == the |1>-like branch, matching
+    // measure()). This is the ONE non-commuting readout: on an entangled register
+    // it yields joint correlations no product state / classical shared-randomness
+    // model can reproduce (Bell). It deliberately does NOT rotate back -- a
+    // leftover single-qubit unitary on q cannot change any other qubit's reduced
+    // state, so the joint statistics are unaffected. (A full (theta,phi) axis is a
+    // one-line generalization -- a general apply_1q matrix -- for sigma_y reads.)
+    bool measure_in_basis(Register& reg, uint32_t q, Real theta, Rng& rng);
 }

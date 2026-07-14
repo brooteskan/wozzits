@@ -68,4 +68,12 @@ namespace wz::engine::cognition
     // is not a LIVE coordination backend anyway (create() rejects chi == 1).
     void collapse(
         MeanFieldNetwork& net, wz::core::graph::NodeHandle node, bool bit);
+
+    // Measure node `node` along axis theta -- a local rotated measurement of the
+    // node's own single-qubit register (a product-state backend carries no
+    // entanglement). Present for coordination-seam parity; mean-field is not a
+    // live backend (create() rejects chi == 1). Returns the outcome bit.
+    bool measure_in_basis(
+        MeanFieldNetwork& net, wz::core::graph::NodeHandle node, double theta,
+        wz::engine::cognition::qstate::Rng& rng);
 }

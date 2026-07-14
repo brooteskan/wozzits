@@ -376,6 +376,23 @@ namespace wz::engine::cognition::qstate
         return outcome;
     }
 
+    bool measure_in_basis(Register& reg, uint32_t q, Real theta, Rng& rng)
+    {
+        // Rotate the measurement axis n̂(theta) onto z with R_y(-theta), row-major
+        // {cos(t/2), sin(t/2); -sin(t/2), cos(t/2)}: a z-measurement of the rotated
+        // register is a n̂-measurement of the original. No rotate-back -- the
+        // leftover unitary on q leaves every OTHER qubit's reduced state (and the
+        // joint statistics) unchanged, and the caller latches + rearms before reuse.
+        const Real c = std::cos(theta * Real{ 0.5 });
+        const Real s = std::sin(theta * Real{ 0.5 });
+        const Complex u[4] = {
+            Complex{ c, 0 }, Complex{ s, 0 },
+            Complex{ -s, 0 }, Complex{ c, 0 },
+        };
+        apply_1q(reg, q, u);
+        return measure(reg, q, rng);
+    }
+
     void project(Register& reg, uint32_t q, bool value)
     {
         const uint64_t stride = uint64_t{ 1 } << q;

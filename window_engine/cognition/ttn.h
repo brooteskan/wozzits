@@ -18,6 +18,7 @@
 // coordination contract. First cut: a CHAIN with nearest-neighbour couplings
 // (the MPS structure); branching trees and long-range couplings are follow-ups.
 
+#include <cognition/qstate/qstate.h>
 #include <cognition/tree_bp.h>
 
 #include <cstdint>
@@ -58,4 +59,14 @@ namespace wz::engine::cognition
     // trace -- so subsequent reads reflect the committed value and the rest of the
     // chain is conditioned through the bonds.
     void collapse(TtnChain& g, uint32_t agent, bool bit);
+
+    // Measure agent `agent` along axis theta (x-z plane), with back-action, up to
+    // the bond dimension chi. Applies the R_y single-site rotation, Born-samples
+    // the site from its CONDITIONED marginal, then collapses it -- the projection
+    // conditions the rest of the chain through the bonds. chi >= 2 captures a
+    // rank-<= chi entangled state (chi = 2 is EXACT for a pair / any GHZ cut), so
+    // this is a genuine non-classical readout. Returns the outcome bit.
+    bool measure_in_basis(
+        TtnChain& g, uint32_t agent, double theta,
+        wz::engine::cognition::qstate::Rng& rng);
 }

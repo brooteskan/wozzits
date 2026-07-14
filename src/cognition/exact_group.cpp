@@ -95,4 +95,13 @@ namespace wz::engine::cognition
             - qstate::expectation_z(g.joint, a)
                 * qstate::expectation_z(g.joint, b);
     }
+
+    bool measure_in_basis(
+        ExactGroup& g, uint32_t agent, double theta, qstate::Rng& rng)
+    {
+        // Straight through to the joint register: measure() there projects the
+        // whole 2^N state, so a coupled partner is conditioned by the outcome --
+        // genuine entanglement, the source of the Bell violation.
+        return qstate::measure_in_basis(g.joint, agent, theta, rng);
+    }
 }

@@ -82,4 +82,17 @@ namespace wz::engine::cognition
     {
         std::visit([&](auto& backend) { set_goals(backend, goals); }, c);
     }
+
+    bool measure_in_basis(
+        Coordination& c, uint32_t agent, double theta, qstate::Rng& rng)
+    {
+        // Each backend supplies its own measure_in_basis overload (entangling for
+        // exact/TTN, local/classical for the product-state backends); the uint32_t
+        // agent converts to the mean-field NodeHandle as it does for collapse.
+        return std::visit(
+            [&](auto& backend) {
+                return measure_in_basis(backend, agent, theta, rng);
+            },
+            c);
+    }
 }

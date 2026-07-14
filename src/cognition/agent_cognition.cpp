@@ -306,6 +306,26 @@ namespace wz::engine::cognition
         return true;
     }
 
+    std::optional<bool> AgentCognitionStore::measure_in_basis(
+        AgentHandle h, uint32_t agent, double theta)
+    {
+        Agent* a = find(h);
+        if (!a || agent >= a->agent_count) {
+            return std::nullopt;
+        }
+        // Fully qualify so the member name does not hide the free Coordination
+        // overload during unqualified lookup.
+        const bool bit = wz::engine::cognition::measure_in_basis(
+            a->coordination, agent, theta, a->rng);
+        // Latch as the committed outcome so committed() / get_agent_decision read
+        // it, and keep the marginal cache consistent (|1> -> <sigma_z> = -1).
+        a->latched[agent] = bit;
+        if (agent < a->marginal_cache.size()) {
+            a->marginal_cache[agent] = bit ? -1.0 : +1.0;
+        }
+        return bit;
+    }
+
     bool AgentCognitionStore::rearm(AgentHandle h, double now)
     {
         Agent* a = find(h);

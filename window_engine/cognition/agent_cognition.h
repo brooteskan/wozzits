@@ -109,6 +109,19 @@ namespace wz::engine::cognition
         // Returns false for an unknown handle.
         bool set_decoherence(AgentHandle h, double rate);
 
+        // Chart-timed projective measurement of decision `agent` along axis theta
+        // (x-z plane), WITH back-action. Unlike think()'s self-timed commit under
+        // the policy, the caller times this and CHOOSES the basis -- the non-
+        // commuting readout that, on an entanglement-capable mind (chi = 0, or
+        // chi >= 2 capturing the state), yields correlations no classical machine
+        // reproduces. Latches the outcome as the committed bit (so committed() /
+        // marginal read it) and returns it; nullopt for a bad handle / out-of-range
+        // agent. The latch supersedes the commit policy for this slot until the next
+        // rearm(); a subsequent think() re-projects it in the z basis, so the
+        // intended protocol is measure -> read -> rearm within one "shot".
+        std::optional<bool> measure_in_basis(
+            AgentHandle h, uint32_t agent, double theta);
+
         // LEARNING. Reinforce the agent's memory register. `toward` picks which branch
         // of `memory_qubit` to boost: toward == true boosts the |0> branch (raising the
         // qubit's memory_preference toward +1); toward == false boosts |1> (toward -1).

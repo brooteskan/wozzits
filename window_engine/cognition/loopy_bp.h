@@ -123,4 +123,15 @@ namespace wz::engine::cognition
     // field. Clamps clear only on a fresh make_loopy_bp_group (the store's
     // rearm/reshape rebuild).
     void collapse(LoopyBpGroup& g, uint32_t agent, bool bit);
+
+    // Measure agent `agent` along axis theta -- a purely LOCAL rotated measurement
+    // of the agent's own single-qubit register. The outcome is exact for that
+    // qubit, but a chi = 1 product state carries NO entanglement, so neighbors are
+    // conditioned only CLASSICALLY (the agent is clamped + its broadcast z pinned,
+    // felt as a fixed field on the next relax). So it faithfully reports the
+    // CLASSICAL floor -- it cannot violate a Bell inequality at any angles.
+    // Returns the outcome bit.
+    bool measure_in_basis(
+        LoopyBpGroup& g, uint32_t agent, double theta,
+        wz::engine::cognition::qstate::Rng& rng);
 }

@@ -170,4 +170,29 @@ namespace wz::engine::cognition
             }
         }
     }
+
+    bool measure_in_basis(
+        TtnChain& g, uint32_t agent, double theta, qstate::Rng& rng)
+    {
+        if (agent >= node_count(g.mps)) {
+            return false;
+        }
+        // Rotate the measurement axis onto z with a single-site R_y(-theta) gate
+        // (unitary -> no bond growth, no truncation; the reads are trace-
+        // normalized so no renormalize is needed either).
+        const double c = std::cos(theta * 0.5);
+        const double s = std::sin(theta * 0.5);
+        const std::vector<Complex> u = {
+            Complex{ c, 0 }, Complex{ s, 0 },
+            Complex{ -s, 0 }, Complex{ c, 0 },
+        };
+        apply_one_site_gate(node_data(g.mps, static_cast<NodeHandle>(agent)), u);
+        // Born-sample from the site's marginal (tree BP gives it CONDITIONED on any
+        // already-collapsed sites): P(|1>) = (1 - <sigma_z>) / 2, matching qstate.
+        const double z = tree_bp_sigma_z(g.mps)[agent];
+        const double p1 = 0.5 * (1.0 - z);
+        const bool bit = rng.next_unit() < p1;
+        collapse(g, agent, bit);  // project + condition the chain through the bonds
+        return bit;
+    }
 }

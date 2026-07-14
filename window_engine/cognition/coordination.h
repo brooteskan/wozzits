@@ -56,4 +56,12 @@ namespace wz::engine::cognition
     // world state -- ahead of a re-anneal. Mean-field goals are not wired yet, so
     // that backend is a no-op.
     void set_goals(Coordination& c, const std::vector<Goal>& goals);
+
+    // Measure agent `agent` along axis theta with back-action (dispatches to the
+    // held backend). The rotated-basis, non-commuting readout: on an entanglement-
+    // capable backend (exact, or TTN with chi capturing the state) it yields
+    // non-classical correlations; the product-state (chi = 1) backends report the
+    // classical floor. Returns the outcome bit.
+    bool measure_in_basis(
+        Coordination& c, uint32_t agent, double theta, qstate::Rng& rng);
 }

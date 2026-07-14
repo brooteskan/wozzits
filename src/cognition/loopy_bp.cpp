@@ -135,4 +135,22 @@ namespace wz::engine::cognition
         // field: |1> (bit == true) -> <sigma_z> = -1, |0> -> +1.
         g.z[agent] = bit ? -1.0 : +1.0;
     }
+
+    bool measure_in_basis(
+        LoopyBpGroup& g, uint32_t agent, double theta, qstate::Rng& rng)
+    {
+        if (agent >= node_count(g.graph)) {
+            return false;
+        }
+        // Rotated LOCAL measurement of the agent's single-qubit register; measure()
+        // leaves it a z-eigenstate matching the outcome. Then clamp + pin the
+        // broadcast so neighbors feel the committed value on the next relax --
+        // CLASSICAL conditioning only (a product state has no entanglement to
+        // back-act through), which is exactly why chi = 1 stays at the Bell floor.
+        const bool bit =
+            qstate::measure_in_basis(node_data(g.graph, agent), 0u, theta, rng);
+        g.clamped[agent] = true;
+        g.z[agent] = bit ? -1.0 : +1.0;
+        return bit;
+    }
 }
