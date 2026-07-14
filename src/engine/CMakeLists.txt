@@ -29,6 +29,7 @@ target_sources(window_engine PRIVATE
     behavior/drive_forward_behaviors.cpp
     behavior/terrain_align_behaviors.cpp
     behavior/quantum_agent_behaviors.cpp
+    behavior/mind_ir.cpp
     behavior/statechart_ir.cpp
     behavior/statechart_runner.cpp
     behavior/builtin_actuators.cpp

@@ -1,9 +1,12 @@
 #include <engine/behavior/quantum_agent_behaviors.h>
 
 #include <engine/behavior/behavior_module_api.h>
+#include <engine/behavior/mind_ir.h>
 #include <cognition/agent_cognition.h>
 
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace wz::engine::behavior
 {
@@ -29,6 +32,25 @@ namespace wz::engine::behavior
             return value;
         }
 
+        // Read a STRING config value: probe for the size, then read into a right-sized
+        // buffer. Empty when the key is absent. (Mirrors statechart_runner's reader.)
+        std::string read_config_string(
+            const WzBehaviorFrameFacts* facts, const char* key)
+        {
+            char probe[256];
+            uint32_t required = 0;
+            wz_config_string(facts, key, probe, sizeof(probe), &required);
+            if (required == 0) {
+                return {};   // key absent / empty
+            }
+            std::vector<char> buffer(required, '\0');   // required includes the null
+            uint32_t got = 0;
+            wz_config_string(
+                facts, key, buffer.data(),
+                static_cast<uint32_t>(buffer.size()), &got);
+            return std::string(buffer.data());
+        }
+
         // Allocate + construct this binding's POD state on first init (defaults run);
         // a later init / reload returns the preserved block as-is.
         void quantum_agent_on_init(
@@ -37,6 +59,103 @@ namespace wz::engine::behavior
             void*)
         {
             (void)wz_instance_state<QuantumAgentState>(facts);
+        }
+
+        // Build the AgentSpec from this binding's SCALAR config -- the star / chain /
+        // ring topology families plus the per-decision goal / anneal / commit / chi /
+        // memory knobs (each key documented in quantum_agent_behaviors.h). The authored
+        // mind IR path supersedes this whenever a `mind_ir` graph is present.
+        void build_scalar_agent_spec(
+            const WzBehaviorFrameFacts* facts,
+            wz::engine::cognition::AgentSpec& spec)
+        {
+            float decisions_f = 2.0f;
+            (void)wz_config_float(
+                facts, kQuantumAgentDecisionsKey, &decisions_f);
+            uint32_t decisions = decisions_f < 1.0f
+                ? 1u
+                : static_cast<uint32_t>(decisions_f);
+            if (decisions > kQuantumAgentMaxDecisions) {
+                decisions = kQuantumAgentMaxDecisions;
+            }
+            spec.agent_count = decisions;
+            spec.goals = {
+                wz::engine::cognition::Goal{
+                    .agent = 0u,
+                    .field = config_float(facts, kQuantumAgentGoalKey, 0.0f),
+                },
+                wz::engine::cognition::Goal{
+                    .agent = 1u,
+                    .field =
+                        config_float(facts, kQuantumAgentPostureGoalKey, 0.0f),
+                },
+            };
+            const float coupling =
+                config_float(facts, kQuantumAgentCouplingKey, 0.0f);
+            if (coupling != 0.0f) {
+                spec.bonds.push_back(
+                    wz::engine::cognition::ExactBond{
+                        .a = 0u, .b = 1u,
+                        .j = static_cast<double>(coupling),
+                    });
+            }
+            // Star coupling: qubit 0 (the hub) bonded to every other qubit -> a group
+            // agent whose members are entangled through the hub.
+            const float star =
+                config_float(facts, kQuantumAgentStarCouplingKey, 0.0f);
+            if (star != 0.0f) {
+                for (uint32_t i = 1; i < spec.agent_count; ++i) {
+                    spec.bonds.push_back(
+                        wz::engine::cognition::ExactBond{
+                            .a = 0u, .b = i,
+                            .j = static_cast<double>(star),
+                        });
+                }
+            }
+            // Nearest-neighbour topology: chain_coupling bonds (i, i+1) into an OPEN
+            // chain (what a chi>=2 TTN needs); ring_coupling adds the closing (n-1, 0)
+            // bond -> a CYCLE (run on chi=1). Use ONE instead of coupling/star.
+            const float chain_j =
+                config_float(facts, kQuantumAgentChainCouplingKey, 0.0f);
+            const float ring_j =
+                config_float(facts, kQuantumAgentRingCouplingKey, 0.0f);
+            const float nn_j = chain_j != 0.0f ? chain_j : ring_j;
+            if (nn_j != 0.0f) {
+                for (uint32_t i = 0; i + 1 < spec.agent_count; ++i) {
+                    spec.bonds.push_back(
+                        wz::engine::cognition::ExactBond{
+                            .a = i, .b = i + 1u,
+                            .j = static_cast<double>(nn_j),
+                        });
+                }
+                if (chain_j == 0.0f && ring_j != 0.0f
+                    && spec.agent_count >= 3u) {
+                    spec.bonds.push_back(
+                        wz::engine::cognition::ExactBond{
+                            .a = spec.agent_count - 1u, .b = 0u,
+                            .j = static_cast<double>(ring_j),
+                        });
+                }
+            }
+            spec.clock.gamma_start =
+                config_float(facts, kQuantumAgentGammaStartKey, 2.0f);
+            spec.clock.gamma_end = 0.0;
+            spec.clock.anneal_seconds =
+                config_float(facts, kQuantumAgentAnnealSecondsKey, 4.0f);
+            spec.clock.relax_rate =
+                config_float(facts, kQuantumAgentRelaxRateKey, 1.0f);
+            spec.commit.confidence =
+                config_float(facts, kQuantumAgentConfidenceKey, 0.8f);
+            spec.commit.decoherence_rate =
+                config_float(facts, kQuantumAgentDecoherenceKey, 0.0f);
+            const float chi_f =
+                config_float(facts, kQuantumAgentChiKey, 0.0f);
+            spec.chi = chi_f < 0.0f ? 0u : static_cast<uint32_t>(chi_f);
+
+            float memory_f = 0.0f;
+            (void)wz_config_float(facts, kQuantumAgentMemoryKey, &memory_f);
+            spec.memory_qubits =
+                memory_f < 1.0f ? 0u : static_cast<uint32_t>(memory_f);
         }
 
         void quantum_agent_on_event(
@@ -54,106 +173,33 @@ namespace wz::engine::behavior
 
             if (event->kind == WZ_EVENT_SELF_START) {
                 // Build the agent's coordination state from this binding's config
-                // and zero its deliberation clock at the current sim-time. TWO
-                // coupled decisions: qubit 0 (the primary disposition) + qubit 1
-                // (a second disposition), entangled by an optional bond so they
-                // resolve together and can frustrate each other into wavering.
+                // and zero its deliberation clock at the current sim-time.
                 wz::engine::cognition::AgentSpec spec;
-                float decisions_f = 2.0f;
-                (void)wz_config_float(
-                    facts, kQuantumAgentDecisionsKey, &decisions_f);
-                uint32_t decisions = decisions_f < 1.0f
-                    ? 1u
-                    : static_cast<uint32_t>(decisions_f);
-                if (decisions > kQuantumAgentMaxDecisions) {
-                    decisions = kQuantumAgentMaxDecisions;
-                }
-                spec.agent_count = decisions;
-                spec.goals = {
-                    wz::engine::cognition::Goal{
-                        .agent = 0u,
-                        .field = config_float(facts, kQuantumAgentGoalKey, 0.0f),
-                    },
-                    wz::engine::cognition::Goal{
-                        .agent = 1u,
-                        .field =
-                            config_float(facts, kQuantumAgentPostureGoalKey, 0.0f),
-                    },
-                };
-                const float coupling =
-                    config_float(facts, kQuantumAgentCouplingKey, 0.0f);
-                if (coupling != 0.0f) {
-                    spec.bonds.push_back(
-                        wz::engine::cognition::ExactBond{
-                            .a = 0u, .b = 1u,
-                            .j = static_cast<double>(coupling),
-                        });
-                }
-                // Star coupling: qubit 0 (the hub / command) bonded to every other
-                // qubit -> a group agent whose members are entangled through the hub.
-                const float star =
-                    config_float(facts, kQuantumAgentStarCouplingKey, 0.0f);
-                if (star != 0.0f) {
-                    for (uint32_t i = 1; i < spec.agent_count; ++i) {
-                        spec.bonds.push_back(
-                            wz::engine::cognition::ExactBond{
-                                .a = 0u, .b = i,
-                                .j = static_cast<double>(star),
-                            });
-                    }
-                }
-                // Nearest-neighbour topology for the linear-scaling backends:
-                // chain_coupling bonds (i, i+1) into an OPEN chain (the shape a
-                // chi>=2 TTN requires); ring_coupling adds the closing (n-1, 0)
-                // bond -> a CYCLE (chi=1 loopy BP handles the frustration a ring
-                // carries; a chi>=2 TTN rejects a ring and fails to build). Use ONE
-                // of these INSTEAD of coupling/star for a many-membered group.
-                const float chain_j =
-                    config_float(facts, kQuantumAgentChainCouplingKey, 0.0f);
-                const float ring_j =
-                    config_float(facts, kQuantumAgentRingCouplingKey, 0.0f);
-                const float nn_j = chain_j != 0.0f ? chain_j : ring_j;
-                if (nn_j != 0.0f) {
-                    for (uint32_t i = 0; i + 1 < spec.agent_count; ++i) {
-                        spec.bonds.push_back(
-                            wz::engine::cognition::ExactBond{
-                                .a = i, .b = i + 1u,
-                                .j = static_cast<double>(nn_j),
-                            });
-                    }
-                    // Close the ring (ring_coupling only; skip below 3 qubits so a
-                    // 2-ring does not double the lone nearest-neighbour bond).
-                    if (chain_j == 0.0f && ring_j != 0.0f
-                        && spec.agent_count >= 3u) {
-                        spec.bonds.push_back(
-                            wz::engine::cognition::ExactBond{
-                                .a = spec.agent_count - 1u, .b = 0u,
-                                .j = static_cast<double>(ring_j),
-                            });
-                    }
-                }
-                spec.clock.gamma_start =
-                    config_float(facts, kQuantumAgentGammaStartKey, 2.0f);
-                spec.clock.gamma_end = 0.0;
-                spec.clock.anneal_seconds =
-                    config_float(facts, kQuantumAgentAnnealSecondsKey, 4.0f);
-                spec.clock.relax_rate =
-                    config_float(facts, kQuantumAgentRelaxRateKey, 1.0f);
-                spec.commit.confidence =
-                    config_float(facts, kQuantumAgentConfidenceKey, 0.8f);
-                spec.commit.decoherence_rate =
-                    config_float(facts, kQuantumAgentDecoherenceKey, 0.0f);
-                // Coordination backend: 0 exact joint state (default), 1 loopy BP,
-                // >= 2 chi-truncated TTN chain. Config keys are data -> no ABI bump.
-                const float chi_f =
-                    config_float(facts, kQuantumAgentChiKey, 0.0f);
-                spec.chi = chi_f < 0.0f ? 0u : static_cast<uint32_t>(chi_f);
 
-                // Optional LEARNING memory register (held outside the coordination).
-                float memory_f = 0.0f;
-                (void)wz_config_float(facts, kQuantumAgentMemoryKey, &memory_f);
-                spec.memory_qubits =
-                    memory_f < 1.0f ? 0u : static_cast<uint32_t>(memory_f);
+                // A data-driven MIND IR -- an explicit graph of decision qubits, their
+                // goal biases and the couplings (bonds) between them, plus backend /
+                // anneal / commit / memory -- supersedes the scalar star/chain/ring
+                // config. Absent -> the scalar path (existing NPCs are unchanged).
+                const std::string mind_ir =
+                    read_config_string(facts, kQuantumAgentMindIrKey);
+                if (!mind_ir.empty()) {
+                    std::string mind_err;
+                    if (!parse_mind(mind_ir, spec, mind_err)) {
+                        wz_log_infof(
+                            facts, "[quantum_agent] mind_ir parse FAILED: %s",
+                            mind_err.c_str());
+                        return;   // authored a mind but it is broken -- fail loudly
+                    }
+                    if (spec.agent_count > kQuantumAgentMaxDecisions) {
+                        wz_log_infof(
+                            facts,
+                            "[quantum_agent] mind_ir has %u qubits, over the cap of %u",
+                            spec.agent_count, kQuantumAgentMaxDecisions);
+                        return;
+                    }
+                } else {
+                    build_scalar_agent_spec(facts, spec);
+                }
 
                 // Per-instance RNG seed so identically-configured NPCs do NOT
                 // decohere in lockstep (the default seed gives every agent the same

@@ -114,6 +114,13 @@ namespace wz::engine::behavior
     // off.
     inline constexpr const char* kQuantumAgentMemoryKey = "memory";
 
+    // An authored MIND IR (schema "wozzits.mind.ir.v0"; see mind_ir.h): a JSON graph
+    // of decision qubits, their goal biases, and the couplings (bonds) between them,
+    // plus backend/anneal/commit/memory. When present it SUPERSEDES every scalar key
+    // above -- the mind is authored as an arbitrary graph rather than a star/chain/
+    // ring family. A present-but-malformed mind_ir fails loudly (no silent fallback).
+    inline constexpr const char* kQuantumAgentMindIrKey = "mind_ir";
+
     // Cap on coupled decisions a single agent exposes (keeps the POD state fixed-
     // size + trivially copyable). Bump if a richer NPC needs more qubits. 5 lets
     // the tank carry a 5th qubit (a BLINK/teleport disposition) alongside
