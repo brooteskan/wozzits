@@ -20,9 +20,30 @@ public sealed class MindNodeViewModel : ViewModelBase, ICanvasNode
     {
         Qubit = qubit;
         Index = index;
+        GoalEditor = new EditableFieldViewModel(
+            "goal",
+            () => Qubit.Goal.ToString("0.###", CultureInfo.InvariantCulture),
+            v =>
+            {
+                if (double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var g)
+                    && g != Qubit.Goal)
+                {
+                    Qubit.Goal = g;
+                    OnPropertyChanged(nameof(GoalLabel));
+                    OnPropertyChanged(nameof(LeansZero));
+                    OnPropertyChanged(nameof(LeansOne));
+                }
+            },
+            () => GoalEdited?.Invoke());
     }
 
     public MindQubit Qubit { get; }
+
+    // Edit the qubit's longitudinal goal bias (shown on the card + in the inspector).
+    public EditableFieldViewModel GoalEditor { get; }
+
+    // Fired when the goal is committed, so the pane can mark the mind dirty.
+    public Action? GoalEdited { get; set; }
 
     // Positional index in the mind (q0, q1, ...) -- the display + bond emit use it.
     public int Index { get; }

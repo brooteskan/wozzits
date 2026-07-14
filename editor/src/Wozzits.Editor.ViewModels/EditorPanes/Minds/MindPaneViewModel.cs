@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
 using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
@@ -22,6 +23,16 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
     private bool _isDirty;
     private bool _isLayoutDirty;
     private MindNodeViewModel? _selectedNode;
+
+    public MindPaneViewModel()
+    {
+        AddQubitCommand = new RelayCommand(() => AddQubit());
+        DeleteSelectedCommand = new RelayCommand(DeleteSelected);
+    }
+
+    public IRelayCommand AddQubitCommand { get; }
+
+    public IRelayCommand DeleteSelectedCommand { get; }
 
     public ObservableCollection<MindNodeViewModel> Nodes { get; } = [];
 
@@ -199,6 +210,89 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
         ReprojectPreservingLayout();
     }
 
+    // ---- structural authoring -------------------------------------------------
+
+    // Append a qubit, place it at a clear spot below the others, and select it.
+    public MindNodeViewModel? AddQubit()
+    {
+        if (_mind is null)
+        {
+            return null;
+        }
+
+        var id = FreshQubitId();
+        _mind.Qubits.Add(new MindQubit { Id = id });
+        IsDirty = true;
+        ReprojectPreservingLayout();
+
+        var node = Nodes.FirstOrDefault(n => n.NodeId == id);
+        if (node is not null)
+        {
+            double bottom = CanvasPadding;
+            foreach (var n in Nodes)
+            {
+                if (n != node)
+                {
+                    bottom = Math.Max(bottom, n.Y + MindNodeViewModel.NodeHeight);
+                }
+            }
+
+            node.X = CanvasPadding;
+            node.Y = bottom + 40.0;
+            SelectOnly(node);
+            RaiseExtentChanged();
+        }
+
+        return node;
+    }
+
+    // Add an undirected coupling between two distinct qubits (by id). Rejects a self-bond
+    // or a duplicate of an existing pair (either direction). Default j is set by the caller.
+    public bool AddBond(string aId, string bId, double j)
+    {
+        if (_mind is null || aId == bId
+            || _mind.Qubits.All(q => q.Id != aId)
+            || _mind.Qubits.All(q => q.Id != bId)
+            || _mind.Bonds.Any(b => (b.A == aId && b.B == bId) || (b.A == bId && b.B == aId)))
+        {
+            return false;
+        }
+
+        _mind.Bonds.Add(new MindBond { A = aId, B = bId, J = j });
+        IsDirty = true;
+        ReprojectPreservingLayout();
+        return true;
+    }
+
+    public void RemoveBond(MindBond bond)
+    {
+        if (_mind is null)
+        {
+            return;
+        }
+
+        if (_mind.Bonds.Remove(bond))
+        {
+            IsDirty = true;
+            ReprojectPreservingLayout();
+        }
+    }
+
+    // The lowest unused "qN" id. Display titles are positional (q0..) regardless; this id is
+    // only the edit-safe handle bonds reference within a session.
+    private string FreshQubitId()
+    {
+        var used = _mind!.Qubits.Select(q => q.Id).ToHashSet();
+        for (int i = 0; ; i++)
+        {
+            var id = "q" + i;
+            if (!used.Contains(id))
+            {
+                return id;
+            }
+        }
+    }
+
     // ---- projection -----------------------------------------------------------
 
     public void Project(Mind mind)
@@ -217,7 +311,7 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
         var byId = new Dictionary<string, MindNodeViewModel>();
         for (int i = 0; i < mind.Qubits.Count; i++)
         {
-            var node = new MindNodeViewModel(mind.Qubits[i], i);
+            var node = new MindNodeViewModel(mind.Qubits[i], i) { GoalEdited = MarkDirty };
             Nodes.Add(node);
             byId[node.NodeId] = node;
         }

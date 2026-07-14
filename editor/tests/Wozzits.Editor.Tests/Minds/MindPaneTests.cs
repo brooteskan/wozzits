@@ -84,4 +84,64 @@ public sealed class MindPaneTests
         Assert.Equal(123, pane.Nodes[0].X);
         Assert.Equal(45, pane.Nodes[0].Y);
     }
+
+    [Fact]
+    public void Add_Qubit_Appends_And_Selects()
+    {
+        var mind = new Mind();
+        mind.Qubits.Add(new MindQubit { Id = "q0" });
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        var node = pane.AddQubit();
+
+        Assert.NotNull(node);
+        Assert.Equal(2, mind.Qubits.Count);
+        Assert.Equal(2, pane.Nodes.Count);
+        Assert.Same(node, pane.SelectedNode);
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
+    public void Add_Bond_Rejects_Self_And_Duplicate()
+    {
+        var pane = new MindPaneViewModel();
+        pane.Project(Sample());   // already has q0<->q1 and q0<->q2
+
+        Assert.False(pane.AddBond("q0", "q0", 1));   // self-bond
+        Assert.False(pane.AddBond("q0", "q1", 1));   // duplicate pair
+        Assert.False(pane.AddBond("q1", "q0", 1));   // duplicate, other direction
+        Assert.True(pane.AddBond("q1", "q2", 0.4));  // a genuinely new pair
+
+        Assert.Equal(3, pane.Bonds.Count);
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
+    public void Remove_Bond_Drops_It()
+    {
+        var mind = Sample();
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        pane.RemoveBond(mind.Bonds[0]);
+
+        Assert.Single(mind.Bonds);
+        Assert.Single(pane.Bonds);
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
+    public void Goal_Editor_Updates_Model_And_Marks_Dirty()
+    {
+        var mind = Sample();
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        pane.Nodes[1].GoalEditor.Value = "0.75";
+
+        Assert.Equal(0.75, mind.Qubits[1].Goal);
+        Assert.Equal("+0.75", pane.Nodes[1].GoalLabel);
+        Assert.True(pane.IsDirty);
+    }
 }
