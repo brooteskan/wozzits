@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 using Wozzits.Editor.Statecharts;
+using Wozzits.Editor.ViewModels.EditorPanes.Minds;
 using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 namespace Wozzits.Editor.ViewModels.EditorPanes;
@@ -188,6 +189,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // Always enabled; guards with EnsureCanApply + a picked chart internally.
         AttachStatechartRunnerCommand = new RelayCommand(AttachStatechartRunner);
         RemoveStatechartRunnerCommand = new RelayCommand(RemoveStatechartRunner);
+        // "Mind": point a node's quantum_agent at an authored mind graph (embeds mind_ir).
+        AttachMindCommand = new RelayCommand(AttachMind);
+        DetachMindCommand = new RelayCommand(DetachMind);
     }
 
     // Raised after a scene-source reference/descriptor was set or cleared on the
@@ -1221,6 +1225,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
         RefreshAvailableBehaviorModules();
         RefreshStatechartRunnerSection();
+        RefreshQuantumAgentMindSection();
         NotifyComponentStateChanged();
         NotifyAssetGraphPortStateChanged();
     }
@@ -1432,6 +1437,173 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         HasStatechartRunnerSection = false;
         SelectedStatechartRunnerChart = null;
         StatechartRunnerStatus = string.Empty;
+    }
+
+    // ---- quantum_agent mind: point a node's quantum_agent at an authored mind graph ------------
+    // Shown when the selected node has a quantum_agent behavior (the wave function). Picking a mind
+    // compiles it to mind_ir + embeds it in the agent's config, which SUPERSEDES the scalar config.
+    private Func<IReadOnlyList<MindFileInfo>>? _mindsProvider;
+    private MindFileInfo? _selectedAgentMind;
+    private string _quantumAgentMindStatus = string.Empty;
+    private bool _hasQuantumAgentMindSection;
+
+    public void SetMindsProvider(Func<IReadOnlyList<MindFileInfo>> provider) => _mindsProvider = provider;
+
+    public bool HasQuantumAgentMindSection
+    {
+        get => _hasQuantumAgentMindSection;
+        private set => SetProperty(ref _hasQuantumAgentMindSection, value);
+    }
+
+    public ObservableCollection<MindFileInfo> QuantumAgentMinds { get; } = [];
+
+    public MindFileInfo? SelectedQuantumAgentMind
+    {
+        get => _selectedAgentMind;
+        set
+        {
+            if (SetProperty(ref _selectedAgentMind, value))
+            {
+                QuantumAgentMindStatus = string.Empty;
+                OnPropertyChanged(nameof(HasSelectedQuantumAgentMind));
+            }
+        }
+    }
+
+    public bool HasSelectedQuantumAgentMind => _selectedAgentMind is not null;
+
+    public string QuantumAgentMindStatus
+    {
+        get => _quantumAgentMindStatus;
+        private set
+        {
+            if (SetProperty(ref _quantumAgentMindStatus, value))
+            {
+                OnPropertyChanged(nameof(HasQuantumAgentMindStatus));
+            }
+        }
+    }
+
+    public bool HasQuantumAgentMindStatus => !string.IsNullOrEmpty(_quantumAgentMindStatus);
+
+    public IRelayCommand AttachMindCommand { get; }
+
+    public IRelayCommand DetachMindCommand { get; }
+
+    private EngineSceneBehavior? InspectedQuantumAgent() =>
+        _inspectedSceneNode?.Behaviors.FirstOrDefault(b => b.Module == QuantumAgentMindAttachment.Module);
+
+    private void RefreshQuantumAgentMindSection()
+    {
+        SelectedQuantumAgentMind = null;
+        QuantumAgentMinds.Clear();
+        if (HasSceneNodeSelection && _mindsProvider is not null)
+        {
+            foreach (var mind in _mindsProvider())
+            {
+                QuantumAgentMinds.Add(mind);
+            }
+        }
+
+        var agent = InspectedQuantumAgent();
+        HasQuantumAgentMindSection = agent is not null;
+
+        var current = agent?.Config.FirstOrDefault(c => c.Name == QuantumAgentMindAttachment.ConfigMind)?.Value;
+        var hasIr = !string.IsNullOrEmpty(
+            agent?.Config.FirstOrDefault(c => c.Name == QuantumAgentMindAttachment.ConfigMindIr)?.Value);
+        if (!string.IsNullOrEmpty(current))
+        {
+            _selectedAgentMind = QuantumAgentMinds.FirstOrDefault(m => m.Name == current);
+            OnPropertyChanged(nameof(SelectedQuantumAgentMind));
+            OnPropertyChanged(nameof(HasSelectedQuantumAgentMind));
+            QuantumAgentMindStatus = $"Using mind '{current}'. Pick another to change it.";
+        }
+        else
+        {
+            QuantumAgentMindStatus = hasIr ? "A mind is attached. Pick one to change it." : string.Empty;
+        }
+    }
+
+    // Attach the picked mind: compile it to mind_ir + write it (with the source name) onto the
+    // node's quantum_agent, then save. The engine round-trips the config; the mind supersedes the
+    // agent's scalar config on Play.
+    private void AttachMind()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        if (_selectedAgentMind is null)
+        {
+            QuantumAgentMindStatus = "Pick a mind first.";
+            return;
+        }
+
+        var agent = InspectedQuantumAgent();
+        if (agent is null)
+        {
+            QuantumAgentMindStatus = "This node has no quantum_agent to attach a mind to.";
+            return;
+        }
+
+        string mindIr;
+        try
+        {
+            mindIr = MindJson.Emit(MindJson.Load(File.ReadAllText(_selectedAgentMind.Path)), indented: false);
+        }
+        catch (Exception e)
+        {
+            QuantumAgentMindStatus = $"Couldn't compile the mind: {e.Message}";
+            return;
+        }
+
+        _editorSession!.SetNodeBehaviorConfig(
+            NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMind, "string", _selectedAgentMind.Name);
+        _editorSession.SetNodeBehaviorConfig(
+            NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMindIr, "string", mindIr);
+        _editorSession.SaveScene();
+
+        SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMind, _selectedAgentMind.Name);
+        SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMindIr, mindIr);
+
+        LastEditError = string.Empty;
+        QuantumAgentMindStatus = $"Using mind '{_selectedAgentMind.Name}'.";
+    }
+
+    // Detach: clear the mind_ir (empty reads as absent), so the quantum_agent falls back to its
+    // scalar config. Leaves the quantum_agent behavior itself in place.
+    private void DetachMind()
+    {
+        if (!EnsureCanApply())
+        {
+            return;
+        }
+
+        var agent = InspectedQuantumAgent();
+        if (agent is null)
+        {
+            return;
+        }
+
+        _editorSession!.SetNodeBehaviorConfig(
+            NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMindIr, "string", string.Empty);
+        _editorSession.SetNodeBehaviorConfig(
+            NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMind, "string", string.Empty);
+        _editorSession.SaveScene();
+
+        SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMindIr, string.Empty);
+        SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMind, string.Empty);
+
+        SelectedQuantumAgentMind = null;
+        QuantumAgentMindStatus = "Detached — the quantum_agent uses its scalar config.";
+    }
+
+    // The config value is init-only, so replace the row (remove + re-add) rather than mutate it.
+    private static void SetLocalBehaviorConfig(EngineSceneBehavior behavior, string name, string value)
+    {
+        behavior.Config.RemoveAll(c => c.Name == name);
+        behavior.Config.Add(new() { Name = name, Kind = "string", Value = value });
     }
 
     public void Inspect(AssetGraphNodeCardViewModel? node)

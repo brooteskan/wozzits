@@ -109,6 +109,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // "Statechart runner" card: the inspector pulls the project's charts on demand (a fresh
         // folder scan, not the lazily-filled menu list), so a node can be pointed at a chart.
         Inspector.SetStatechartsProvider(EnumerateStatechartFiles);
+        // "Mind" card on a node's quantum_agent: pull the project's minds on demand.
+        Inspector.SetMindsProvider(EnumerateMindFiles);
         Inspector.SetRerouteModel(_subGraphReroutes);
         InitializeDockLayout();
 
@@ -1096,7 +1098,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // Save every open mind document that has edits: the mind back to its .mind.json (if the
-    // model changed) + its hand-placed layout to a .mind.editor.json sidecar.
+    // model changed) + its hand-placed layout to a .mind.editor.json sidecar. Then re-embed the
+    // fresh mind_ir into any quantum_agent already using that mind, so an edit takes effect.
     private void SaveOpenMinds()
     {
         if (_assetGraphDock?.VisibleDockables is null)
@@ -1104,6 +1107,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        var savedMinds = new Dictionary<string, string>(StringComparer.Ordinal);   // name -> compiled IR
         foreach (var dockable in _assetGraphDock.VisibleDockables)
         {
             if (dockable is Document { Context: MindDocumentViewModel document } && document.IsDirty)
@@ -1111,6 +1115,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 try
                 {
                     document.Save();
+                    savedMinds[document.Name] = document.CompiledIr;
                     AppendEditorLog($"[editor] Saved mind '{document.Name}'");
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -1118,6 +1123,54 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     AppendEditorLog($"[editor] Mind save failed for '{document.Name}': {ex.Message}");
                 }
             }
+        }
+
+        RefreshAttachedMinds(savedMinds);
+    }
+
+    // Re-embed a just-saved mind into every quantum_agent that uses it (config `mind` matches),
+    // pushing fresh mind_ir -- so an edited mind takes effect without re-attaching. Mirrors
+    // RefreshAttachedRunners.
+    private void RefreshAttachedMinds(IReadOnlyDictionary<string, string> savedMinds)
+    {
+        if (_editorSession is null || savedMinds.Count == 0)
+        {
+            return;
+        }
+
+        var refreshed = 0;
+
+        void Walk(IEnumerable<SceneTreeNodeViewModel> nodes)
+        {
+            foreach (var node in nodes)
+            {
+                foreach (var behavior in node.Behaviors)
+                {
+                    if (behavior.Module != QuantumAgentMindAttachment.Module)
+                    {
+                        continue;
+                    }
+
+                    var mindName = behavior.Config
+                        .FirstOrDefault(c => c.Name == QuantumAgentMindAttachment.ConfigMind)?.Value;
+                    if (mindName is not null && savedMinds.TryGetValue(mindName, out var ir))
+                    {
+                        _editorSession.SetNodeBehaviorConfig(
+                            node.Id, behavior.Id, QuantumAgentMindAttachment.ConfigMindIr, "string", ir);
+                        refreshed++;
+                        AppendEditorLog($"[editor] Refreshed quantum_agent on '{node.DisplayName}' from mind '{mindName}'");
+                    }
+                }
+
+                Walk(node.Children);
+            }
+        }
+
+        Walk(SceneTree.Nodes);
+
+        if (refreshed > 0)
+        {
+            _editorSession.SaveScene();
         }
     }
 

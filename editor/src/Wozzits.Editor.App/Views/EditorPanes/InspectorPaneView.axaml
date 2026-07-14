@@ -3,6 +3,7 @@
              xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
              xmlns:model="using:Wozzits.Editor.Statecharts"
              xmlns:scvm="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
+             xmlns:mindvm="using:Wozzits.Editor.ViewModels.EditorPanes.Minds"
              x:Class="Wozzits.Editor.App.Views.EditorPanes.InspectorPaneView"
              x:DataType="panes:InspectorPaneViewModel">
     <UserControl.Resources>
@@ -325,6 +326,51 @@
                                                    Classes="PaneEmptyState"
                                                    TextWrapping="Wrap"
                                                    IsVisible="{Binding HasStatechartRunnerStatus}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Quantum-agent mind: auto-reveals when the node has a quantum_agent
+                                     behaviour; points it at an authored mind graph (embeds mind_ir). -->
+                                <Border Classes="InspectorSubCard" Margin="0,8,0,0"
+                                        IsVisible="{Binding HasQuantumAgentMindSection}">
+                                    <StackPanel Spacing="6">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBlock Text="Mind"
+                                                       Classes="InspectorSubCardTitle"/>
+                                            <Button Grid.Column="1" Content="Detach"
+                                                    Command="{Binding DetachMindCommand}"
+                                                    Classes="InspectorApplyButton"/>
+                                        </Grid>
+                                        <Border Height="1"
+                                                Background="{DynamicResource WozzitsPanelBorderBrush}"
+                                                Margin="0,0,0,2"/>
+                                        <TextBlock Text="Point this node's quantum_agent at an authored mind graph. The mind supersedes the agent's scalar config on Play."
+                                                   Classes="PaneEmptyState"
+                                                   TextWrapping="Wrap"/>
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                            <TextBlock Text="Mind" Classes="InspectorPropertyName"
+                                                       VerticalAlignment="Center"/>
+                                            <ComboBox Grid.Column="1"
+                                                      Classes="InspectorInput"
+                                                      HorizontalAlignment="Stretch"
+                                                      PlaceholderText="pick a mind"
+                                                      ItemsSource="{Binding QuantumAgentMinds}"
+                                                      SelectedItem="{Binding SelectedQuantumAgentMind, Mode=TwoWay}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate DataType="mindvm:MindFileInfo">
+                                                        <TextBlock Text="{Binding Name}"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                        <Button Content="Attach mind"
+                                                Command="{Binding AttachMindCommand}"
+                                                Classes="InspectorApplyButton"
+                                                IsVisible="{Binding HasSelectedQuantumAgentMind}"/>
+                                        <TextBlock Text="{Binding QuantumAgentMindStatus}"
+                                                   Classes="PaneEmptyState"
+                                                   TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasQuantumAgentMindStatus}"/>
                                     </StackPanel>
                                 </Border>
 
