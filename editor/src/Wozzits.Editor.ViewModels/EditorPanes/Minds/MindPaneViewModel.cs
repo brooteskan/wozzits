@@ -52,11 +52,90 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
             if (SetProperty(ref _selectedNode, value))
             {
                 OnPropertyChanged(nameof(HasSelectedNode));
+                OnPropertyChanged(nameof(SelectedNodeBonds));
+                OnPropertyChanged(nameof(ConnectTargets));
             }
         }
     }
 
     public bool HasSelectedNode => _selectedNode is not null;
+
+    // The bonds incident to the selected qubit (the properties panel's bond list).
+    public IReadOnlyList<MindBondViewModel> SelectedNodeBonds =>
+        _selectedNode is null
+            ? Array.Empty<MindBondViewModel>()
+            : Bonds.Where(b => b.A == _selectedNode || b.B == _selectedNode).ToList();
+
+    // Qubits the selected one could be coupled to (not itself, not already bonded).
+    public IReadOnlyList<MindNodeViewModel> ConnectTargets =>
+        _selectedNode is null
+            ? Array.Empty<MindNodeViewModel>()
+            : Nodes.Where(n => n != _selectedNode && !AlreadyBonded(_selectedNode, n)).ToList();
+
+    // Set by the panel's "connect to" picker: couples the selected qubit to the chosen one
+    // (default ferromagnetic j = 1), keeping the selection so the panel stays put. Resets to
+    // null immediately -- it is a one-shot trigger, not a sticky value.
+    private MindNodeViewModel? _connectTarget;
+
+    public MindNodeViewModel? ConnectTarget
+    {
+        get => _connectTarget;
+        set
+        {
+            _connectTarget = null;
+            OnPropertyChanged();
+            if (value is not null && _selectedNode is { } sel && AddBond(sel.NodeId, value.NodeId, 1.0))
+            {
+                var again = Nodes.FirstOrDefault(n => n.NodeId == sel.NodeId);
+                if (again is not null)
+                {
+                    SelectOnly(again);
+                }
+            }
+        }
+    }
+
+    private bool AlreadyBonded(MindNodeViewModel a, MindNodeViewModel b) =>
+        Bonds.Any(x => (x.A == a && x.B == b) || (x.A == b && x.B == a));
+
+    // Advisory (empty when fine): does the drawn graph fit the chosen backend? chi>=2 TTN
+    // needs a nearest-neighbour chain; chi=0 exact grows exponentially past a handful.
+    public string ValidationWarning
+    {
+        get
+        {
+            if (_mind is null)
+            {
+                return string.Empty;
+            }
+
+            if (_mind.Chi >= 2)
+            {
+                foreach (var b in _mind.Bonds)
+                {
+                    if (Math.Abs(_mind.IndexOfQubit(b.A) - _mind.IndexOfQubit(b.B)) != 1)
+                    {
+                        return "TTN (chi ≥ 2) needs a nearest-neighbour chain — some bonds skip qubits.";
+                    }
+                }
+            }
+            else if (_mind.Chi == 0 && _mind.Qubits.Count > 12)
+            {
+                return $"exact backend on {_mind.Qubits.Count} qubits is exponential — consider chi 1 (loopy BP).";
+            }
+
+            return string.Empty;
+        }
+    }
+
+    public bool HasValidationWarning => ValidationWarning.Length > 0;
+
+    // Re-evaluate the advisory after a global param (e.g. chi) changes on the document side.
+    public void NotifyParamsChanged()
+    {
+        OnPropertyChanged(nameof(ValidationWarning));
+        OnPropertyChanged(nameof(HasValidationWarning));
+    }
 
     public bool IsDirty { get => _isDirty; private set => SetProperty(ref _isDirty, value); }
 
@@ -322,12 +401,17 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
         {
             if (byId.TryGetValue(bond.A, out var a) && byId.TryGetValue(bond.B, out var b))
             {
-                Bonds.Add(new MindBondViewModel(a, b, bond));
+                Bonds.Add(new MindBondViewModel(a, b, bond)
+                {
+                    JEdited = MarkDirty,
+                    RemoveRequested = () => RemoveBond(bond),
+                });
             }
         }
 
         OnPropertyChanged(nameof(HasMind));
         OnPropertyChanged(nameof(HasGraph));
+        OnPropertyChanged(nameof(ValidationWarning));
         RaiseExtentChanged();
     }
 
@@ -368,6 +452,7 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
         }
 
         var positions = Nodes.ToDictionary(n => n.NodeId, n => (n.X, n.Y));
+        var selectedIds = SelectedNodes.Select(n => n.NodeId).ToHashSet();
         double zoom = Zoom;
         Project(_mind);
         foreach (var n in Nodes)
@@ -377,8 +462,15 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
                 n.X = p.X;
                 n.Y = p.Y;
             }
+
+            if (selectedIds.Contains(n.NodeId))
+            {
+                n.IsSelected = true;
+                SelectedNodes.Add(n);
+            }
         }
 
+        SelectedNode = SelectedNodes.LastOrDefault();
         Zoom = zoom;
         RaiseExtentChanged();
     }

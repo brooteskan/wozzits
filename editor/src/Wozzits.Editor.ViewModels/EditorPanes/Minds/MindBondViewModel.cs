@@ -1,11 +1,16 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Minds;
 
+using System;
 using System.ComponentModel;
+using System.Globalization;
+using CommunityToolkit.Mvvm.Input;
 using Wozzits.Editor.Statecharts;
+using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 // A coupling edge between two qubit nodes. Undirected: it attaches to both node centers
 // and follows them when dragged (same pattern as DataflowWireViewModel). The sign of j
-// picks the colour -- ferromagnetic (agree) vs anti (disagree).
+// picks the colour -- ferromagnetic (agree) vs anti (disagree). j is editable + the bond
+// removable from the document's properties panel.
 public sealed class MindBondViewModel : ViewModelBase, IDisposable
 {
     private bool _disposed;
@@ -18,6 +23,21 @@ public sealed class MindBondViewModel : ViewModelBase, IDisposable
         Model = model;
         A.PropertyChanged += NodeMoved;
         B.PropertyChanged += NodeMoved;
+        JEditor = new EditableFieldViewModel(
+            "j",
+            () => Model.J.ToString("0.###", CultureInfo.InvariantCulture),
+            v =>
+            {
+                if (double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var j)
+                    && j != Model.J)
+                {
+                    Model.J = j;
+                    OnPropertyChanged(nameof(J));
+                    OnPropertyChanged(nameof(IsFerromagnetic));  // the bond layer repaints
+                }
+            },
+            () => JEdited?.Invoke());
+        RemoveCommand = new RelayCommand(() => RemoveRequested?.Invoke());
     }
 
     public MindNodeViewModel A { get; }
@@ -29,6 +49,18 @@ public sealed class MindBondViewModel : ViewModelBase, IDisposable
     public double J => Model.J;
 
     public bool IsFerromagnetic => Model.J >= 0.0;
+
+    // "q0 ↔ q1" -- the two endpoints, for the bond row in the properties panel.
+    public string Title => $"{A.Title} ↔ {B.Title}";
+
+    // Edit the coupling strength/sign (repaints the edge); fires JEdited on commit.
+    public EditableFieldViewModel JEditor { get; }
+
+    public Action? JEdited { get; set; }
+
+    public IRelayCommand RemoveCommand { get; }
+
+    public Action? RemoveRequested { get; set; }
 
     public double StartX => A.CenterX;
 

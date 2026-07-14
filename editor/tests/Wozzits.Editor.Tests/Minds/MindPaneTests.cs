@@ -144,4 +144,67 @@ public sealed class MindPaneTests
         Assert.Equal("+0.75", pane.Nodes[1].GoalLabel);
         Assert.True(pane.IsDirty);
     }
+
+    [Fact]
+    public void Connect_Target_Adds_A_Bond_And_Keeps_The_Selection()
+    {
+        var mind = new Mind();
+        mind.Qubits.Add(new MindQubit { Id = "q0" });
+        mind.Qubits.Add(new MindQubit { Id = "q1" });
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        pane.SelectOnly(pane.Nodes[0]);
+        Assert.Single(pane.ConnectTargets);          // only q1 is connectable
+
+        pane.ConnectTarget = pane.ConnectTargets[0]; // connect q0 <-> q1
+
+        Assert.Single(mind.Bonds);
+        Assert.NotNull(pane.SelectedNode);
+        Assert.Equal("q0", pane.SelectedNode!.NodeId); // selection kept
+        Assert.Single(pane.SelectedNodeBonds);
+        Assert.Empty(pane.ConnectTargets);            // q1 now already bonded
+    }
+
+    [Fact]
+    public void Bond_J_Editor_Updates_The_Model_And_Sign()
+    {
+        var pane = new MindPaneViewModel();
+        pane.Project(Sample());
+        var bond = pane.Bonds[0];   // q0<->q1, j = -0.8 (anti)
+        Assert.False(bond.IsFerromagnetic);
+
+        bond.JEditor.Value = "0.5";
+
+        Assert.Equal(0.5, bond.Model.J);
+        Assert.True(bond.IsFerromagnetic);
+        Assert.True(pane.IsDirty);
+    }
+
+    [Fact]
+    public void Bond_Remove_Command_Drops_It()
+    {
+        var mind = Sample();
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        pane.Bonds[0].RemoveCommand.Execute(null);
+
+        Assert.Single(mind.Bonds);
+    }
+
+    [Fact]
+    public void Validation_Flags_A_Non_Chain_Ttn()
+    {
+        var mind = new Mind { Chi = 2 };
+        mind.Qubits.Add(new MindQubit { Id = "q0" });
+        mind.Qubits.Add(new MindQubit { Id = "q1" });
+        mind.Qubits.Add(new MindQubit { Id = "q2" });
+        mind.Bonds.Add(new MindBond { A = "q0", B = "q2", J = 1 }); // skips q1 -> not a chain
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        Assert.True(pane.HasValidationWarning);
+        Assert.Contains("chain", pane.ValidationWarning);
+    }
 }

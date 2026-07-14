@@ -31,6 +31,11 @@
                 <ScrollViewer>
                     <StackPanel Spacing="8" Margin="10">
                         <TextBlock Text="Mind" Classes="InspectorSectionTitle"/>
+                        <TextBlock Text="{Binding Pane.ValidationWarning}"
+                                   TextWrapping="Wrap"
+                                   Foreground="#E0894B"
+                                   IsVisible="{Binding Pane.HasValidationWarning}"
+                                   Margin="0,0,0,4"/>
                         <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
                             <TextBlock Text="chi" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
                             <TextBox Grid.Column="1" Classes="InspectorInput"
@@ -80,6 +85,32 @@
                                          x:CompileBindings="False"
                                          Text="{Binding Pane.SelectedNode.GoalEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                             </Grid>
+
+                            <TextBlock Text="coupled to" Classes="InspectorPropertyName" Margin="0,4,0,0"/>
+                            <ItemsControl ItemsSource="{Binding Pane.SelectedNodeBonds}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="minds:MindBondViewModel">
+                                        <Grid ColumnDefinitions="*,52,Auto" ColumnSpacing="6" Margin="0,2">
+                                            <TextBlock Text="{Binding Title}" VerticalAlignment="Center"
+                                                       Classes="InspectorPropertyName"/>
+                                            <TextBox Grid.Column="1" Classes="InspectorInput"
+                                                     Text="{Binding JEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                            <Button Grid.Column="2" Content="✕" Command="{Binding RemoveCommand}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <ComboBox HorizontalAlignment="Stretch"
+                                      Classes="InspectorInput"
+                                      PlaceholderText="connect to…"
+                                      ItemsSource="{Binding Pane.ConnectTargets}"
+                                      SelectedItem="{Binding Pane.ConnectTarget, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="minds:MindNodeViewModel">
+                                        <TextBlock Text="{Binding Title}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

@@ -29,7 +29,7 @@ public sealed class MindDocumentViewModel : ViewModelBase
 
         // Global mind params -- edited in the document's properties panel (not per-qubit).
         // Each mutates the Mind + marks the pane dirty so Save rewrites the .mind.json.
-        ChiEditor = IntField(() => _mind.Chi, c => { _mind.Chi = Math.Max(0, c); OnPropertyChanged(nameof(BackendLabel)); });
+        ChiEditor = IntField(() => _mind.Chi, c => { _mind.Chi = Math.Max(0, c); OnPropertyChanged(nameof(BackendLabel)); Pane.NotifyParamsChanged(); });
         MemoryEditor = IntField(() => _mind.Memory, m => _mind.Memory = Math.Max(0, m));
         GammaStartEditor = DoubleField(() => _mind.Clock.GammaStart, v => _mind.Clock.GammaStart = v);
         AnnealSecondsEditor = DoubleField(() => _mind.Clock.AnnealSeconds, v => _mind.Clock.AnnealSeconds = v);
