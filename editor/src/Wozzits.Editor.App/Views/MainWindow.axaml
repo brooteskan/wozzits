@@ -53,6 +53,11 @@
                 <Separator/>
                 <MenuItem Header="_Open Chart" x:Name="OpenStatechartMenu"/>
             </MenuItem>
+            <MenuItem Header="_Minds" SubmenuOpened="OnMindsMenuOpened">
+                <MenuItem Header="_New Mind" Command="{Binding NewMindCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Open Mind" x:Name="OpenMindMenu"/>
+            </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Theme">
                     <MenuItem Header="_Blue (Daylight)"

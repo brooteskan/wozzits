@@ -13,6 +13,7 @@ using Wozzits.Editor.Core.Logging;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 using Wozzits.Editor.ViewModels.EditorPanes;
+using Wozzits.Editor.ViewModels.EditorPanes.Minds;
 using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 using Wozzits.Editor.Statecharts;
 
@@ -86,6 +87,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             NewStatechart, () => !string.IsNullOrWhiteSpace(_projectDirectory) && _assetGraphDock is not null);
         OpenStatechartCommand = new RelayCommand<StatechartFileInfo?>(
             OpenStatechart, _ => _assetGraphDock is not null);
+        RefreshMindsCommand = new RelayCommand(
+            RefreshMinds, () => !string.IsNullOrWhiteSpace(_projectDirectory));
+        NewMindCommand = new RelayCommand(
+            NewMind, () => !string.IsNullOrWhiteSpace(_projectDirectory) && _assetGraphDock is not null);
+        OpenMindCommand = new RelayCommand<MindFileInfo?>(
+            OpenMind, _ => _assetGraphDock is not null);
         AssetGraph = new AssetGraphEditorPaneViewModel(
             editorSession,
             _subGraphGrouping,
@@ -185,6 +192,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<StatechartFileInfo> Statecharts { get; } = [];
 
+    public IRelayCommand RefreshMindsCommand { get; }
+
+    public IRelayCommand NewMindCommand { get; }
+
+    public IRelayCommand<MindFileInfo?> OpenMindCommand { get; }
+
+    public ObservableCollection<MindFileInfo> Minds { get; } = [];
+
     private string? _editingPrefabName;
     public string? EditingPrefabName
     {
@@ -255,6 +270,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _editorSession?.SaveScene();
         SaveSubGraphSidecar();
         SaveOpenStatecharts();
+        SaveOpenMinds();
     }
 
     // Editor-only sub-graph groupings persist in a sidecar next to the asset graph
@@ -931,6 +947,178 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         DockFactory.AddDockable(_assetGraphDock, document);
         DockFactory.SetActiveDockable(document);
+    }
+
+    // ---- Minds menu (parallel to Statecharts): the project's authored .mind.json graphs ----
+
+    private IReadOnlyList<MindFileInfo> EnumerateMindFiles()
+    {
+        var minds = new List<MindFileInfo>();
+        if (string.IsNullOrWhiteSpace(_projectDirectory))
+        {
+            return minds;
+        }
+
+        var dir = Path.Combine(_projectDirectory, "behavior", "minds");
+        if (!Directory.Exists(dir))
+        {
+            return minds;
+        }
+
+        foreach (var path in Directory.EnumerateFiles(dir, "*.mind.json").OrderBy(p => p))
+        {
+            var file = Path.GetFileName(path);
+            var name = file.EndsWith(".mind.json", StringComparison.Ordinal) ? file[..^10] : file;
+            minds.Add(new MindFileInfo(name, path));
+        }
+
+        return minds;
+    }
+
+    private void RefreshMinds()
+    {
+        Minds.Clear();
+        foreach (var mind in EnumerateMindFiles())
+        {
+            Minds.Add(mind);
+        }
+    }
+
+    // Create a fresh mind (one qubit, so it's a valid graph) in the project's minds folder
+    // and open it. The Minds menu is the one place minds are created/opened.
+    private void NewMind()
+    {
+        if (string.IsNullOrWhiteSpace(_projectDirectory) || _assetGraphDock is null)
+        {
+            return;
+        }
+
+        var dir = Path.Combine(_projectDirectory, "behavior", "minds");
+        Directory.CreateDirectory(dir);
+        var name = FreshMindName(dir);
+        var path = Path.Combine(dir, name + ".mind.json");
+
+        var mind = new Mind { Name = name };
+        mind.Qubits.Add(new MindQubit { Id = "q0" });
+
+        try
+        {
+            File.WriteAllText(path, MindJson.Emit(mind, indented: true));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppendEditorLog($"[editor] Could not create mind '{name}': {ex.Message}");
+            return;
+        }
+
+        RefreshMinds();
+        OpenMind(new MindFileInfo(name, path));
+        AppendEditorLog($"[editor] Created mind '{name}'");
+    }
+
+    private static string FreshMindName(string dir)
+    {
+        for (int i = 1; ; i++)
+        {
+            var name = "untitled" + i;
+            if (!File.Exists(Path.Combine(dir, name + ".mind.json")))
+            {
+                return name;
+            }
+        }
+    }
+
+    // Open a mind as a document hosting its graph canvas. Re-focuses an already-open tab.
+    private void OpenMind(MindFileInfo? info)
+    {
+        if (info is null || _assetGraphDock is null)
+        {
+            return;
+        }
+
+        var documentId = $"Mind_{info.Name}";
+        var existing = _assetGraphDock.VisibleDockables?
+            .FirstOrDefault(dockable => dockable.Id == documentId);
+        if (existing is not null)
+        {
+            DockFactory.SetActiveDockable(existing);
+            return;
+        }
+
+        Mind mind;
+        try
+        {
+            mind = MindJson.Load(File.ReadAllText(info.Path));
+        }
+        catch (Exception ex)
+        {
+            AppendEditorLog($"[editor] Could not open mind '{info.Name}': {ex.Message}");
+            return;
+        }
+
+        var mindDocument = new MindDocumentViewModel(info.Name, info.Path, mind);
+
+        var document = new Document
+        {
+            Id = documentId,
+            Title = info.Name,
+            Context = mindDocument,
+            CanClose = true,
+            CanFloat = false,
+            CanDrag = true,
+            CanDrop = true,
+            CanDockAsDocument = true,
+            DockCapabilityOverrides = new DockCapabilityOverrides
+            {
+                CanClose = true,
+                CanPin = false,
+                CanFloat = false,
+                CanDrag = true,
+                CanDrop = true,
+                CanDockAsDocument = true,
+            },
+        };
+
+        mindDocument.Renamed = () =>
+        {
+            document.Title = mindDocument.Name;
+            document.Id = $"Mind_{mindDocument.Name}";
+            RefreshMinds();
+        };
+        mindDocument.Deleted = () =>
+        {
+            DockFactory.CloseDockable(document);
+            RefreshMinds();
+        };
+
+        DockFactory.AddDockable(_assetGraphDock, document);
+        DockFactory.SetActiveDockable(document);
+    }
+
+    // Save every open mind document that has edits: the mind back to its .mind.json (if the
+    // model changed) + its hand-placed layout to a .mind.editor.json sidecar.
+    private void SaveOpenMinds()
+    {
+        if (_assetGraphDock?.VisibleDockables is null)
+        {
+            return;
+        }
+
+        foreach (var dockable in _assetGraphDock.VisibleDockables)
+        {
+            if (dockable is Document { Context: MindDocumentViewModel document } && document.IsDirty)
+            {
+                try
+                {
+                    document.Save();
+                    AppendEditorLog($"[editor] Saved mind '{document.Name}'");
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    AppendEditorLog($"[editor] Mind save failed for '{document.Name}': {ex.Message}");
+                }
+            }
+        }
     }
 
     // Thread the asset graph's "Scene from GLB" nodes into the inspector's "Subtree

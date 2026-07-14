@@ -80,6 +80,29 @@ public partial class MainWindow : Window
         }
     }
 
+    // Populate the Minds submenu with the project's authored .mind.json graphs each time it
+    // opens (mirrors the Statecharts menu). Selecting one opens its graph canvas.
+    private void OnMindsMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        viewModel.RefreshMindsCommand.Execute(null);
+
+        OpenMindMenu.Items.Clear();
+        foreach (var mind in viewModel.Minds)
+        {
+            OpenMindMenu.Items.Add(new MenuItem
+            {
+                Header = mind.Name,
+                Command = viewModel.OpenMindCommand,
+                CommandParameter = mind,
+            });
+        }
+    }
+
     private void OnSelectBlueTheme(object? sender, RoutedEventArgs e)
         => SetTheme(EditorTheme.Variant.Blue);
 

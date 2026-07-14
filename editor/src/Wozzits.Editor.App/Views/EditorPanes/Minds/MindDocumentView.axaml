@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:minds="using:Wozzits.Editor.ViewModels.EditorPanes.Minds"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.Minds.MindDocumentView"
+             x:DataType="minds:MindDocumentViewModel">
+    <Grid RowDefinitions="Auto,*">
+        <StackPanel Grid.Row="0"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Margin="6">
+            <TextBlock Text="mind" VerticalAlignment="Center" Classes="InspectorPropertyName"/>
+            <TextBox Width="200"
+                     Classes="InspectorInput"
+                     Text="{Binding NameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+            <Button Content="Delete">
+                <Button.Flyout>
+                    <Flyout>
+                        <StackPanel Spacing="8" Margin="4">
+                            <TextBlock Text="Delete this mind's files?"/>
+                            <Button Content="Delete" Command="{Binding DeleteMindCommand}"/>
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+        </StackPanel>
+
+        <ContentControl Grid.Row="1" Content="{Binding Pane}"/>
+    </Grid>
+</UserControl>

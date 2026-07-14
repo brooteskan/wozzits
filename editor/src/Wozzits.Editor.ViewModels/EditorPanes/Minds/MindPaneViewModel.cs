@@ -237,6 +237,34 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
         RaiseExtentChanged();
     }
 
+    // Snapshot the hand-placed positions + zoom for the .mind.editor.json sidecar.
+    public MindLayout CaptureLayout()
+    {
+        var layout = new MindLayout { Zoom = Zoom };
+        foreach (var n in Nodes)
+        {
+            layout.Positions[n.NodeId] = new MindLayout.Point(n.X, n.Y);
+        }
+
+        return layout;
+    }
+
+    // Restore saved positions + zoom over the auto-layout (a restore -- does not mark dirty).
+    public void ApplyLayout(MindLayout layout)
+    {
+        Zoom = layout.Zoom;
+        foreach (var n in Nodes)
+        {
+            if (layout.Positions.TryGetValue(n.NodeId, out var p))
+            {
+                n.X = p.X;
+                n.Y = p.Y;
+            }
+        }
+
+        RaiseExtentChanged();
+    }
+
     // Rebuild the projection but keep each surviving qubit's hand-placed position.
     public void ReprojectPreservingLayout()
     {
