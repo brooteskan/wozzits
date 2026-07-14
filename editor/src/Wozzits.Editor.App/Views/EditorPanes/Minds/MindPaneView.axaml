@@ -1,0 +1,84 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Wozzits.Editor.App.Controls"
+             xmlns:minds="using:Wozzits.Editor.ViewModels.EditorPanes.Minds"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.Minds.MindPaneView"
+             x:DataType="minds:MindPaneViewModel">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
+            <Grid>
+                <TextBlock Text="No mind open. Minds &#x2192; open a mind's graph."
+                           Classes="PaneEmptyState"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding !HasGraph}"/>
+
+                <ScrollViewer x:Name="Scroll"
+                              IsVisible="{Binding HasGraph}"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <Grid Width="{Binding ScaledGraphWidth}"
+                          Height="{Binding ScaledGraphHeight}">
+                        <Grid x:Name="Canvas"
+                              Width="{Binding GraphWidth}"
+                              Height="{Binding GraphHeight}"
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Top"
+                              RenderTransformOrigin="0,0">
+                            <Grid.RenderTransform>
+                                <ScaleTransform ScaleX="{Binding Zoom}"
+                                                ScaleY="{Binding Zoom}"/>
+                            </Grid.RenderTransform>
+
+                            <controls:MindBondLayer Edges="{Binding Bonds}"
+                                                    FerroBrush="#5BB98C"
+                                                    AntiBrush="#E08A4C"
+                                                    IsHitTestVisible="False"/>
+
+                            <ItemsControl ItemsSource="{Binding Nodes}"
+                                          x:CompileBindings="False">
+                                <ItemsControl.ItemContainerTheme>
+                                    <ControlTheme TargetType="ContentPresenter">
+                                        <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                                        <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                                    </ControlTheme>
+                                </ItemsControl.ItemContainerTheme>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Canvas/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="minds:MindNodeViewModel">
+                                        <Border Classes="AssetGraphCard scNode"
+                                                Classes.selected="{Binding IsSelected}"
+                                                Width="96"
+                                                Height="68">
+                                            <StackPanel VerticalAlignment="Center"
+                                                        HorizontalAlignment="Center"
+                                                        Spacing="2">
+                                                <TextBlock Text="{Binding Title}"
+                                                           Classes="AssetGraphCardName"
+                                                           HorizontalAlignment="Center"/>
+                                                <TextBlock Text="{Binding GoalLabel, StringFormat='goal {0}'}"
+                                                           Classes="AssetGraphCardType"
+                                                           HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Border x:Name="SelectionRectangle"
+                                    Classes="AssetGraphSelectionRectangle"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    IsVisible="False"
+                                    IsHitTestVisible="False"/>
+                        </Grid>
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
