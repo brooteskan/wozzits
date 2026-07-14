@@ -93,6 +93,7 @@ public static class StatechartJson
                 Id = Str(a, "id"),
                 Owned = Bool(a, "owned", true),
                 Host = host.Length == 0 ? "self" : host,
+                AgentName = Str(a, "agent"),
                 Spec = (a as JsonObject)?["spec"]?.DeepClone(),
             });
         }
@@ -314,6 +315,8 @@ public static class StatechartJson
     private static JsonObject EmitAgent(AgentDecl a)
     {
         var o = new JsonObject { ["id"] = a.Id, ["owned"] = a.Owned, ["host"] = a.Host };
+        // Only a REF names its target agent; an owned agent creates its own from Spec.
+        if (!a.Owned && a.AgentName.Length > 0) o["agent"] = a.AgentName;
         if (a.Spec != null) o["spec"] = a.Spec.DeepClone();
         return o;
     }

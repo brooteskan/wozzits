@@ -38,6 +38,10 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         AgentNameEditor = kind == DataflowNodeKind.Agent && model is AgentDecl ag
             ? new EditableFieldViewModel("name", () => ag.Id, v => AgentRenameRequested?.Invoke(v))
             : null;
+        // A REF (owned == false) names WHICH quantum_agent on the host it reads.
+        AgentTargetEditor = kind == DataflowNodeKind.Agent && model is AgentDecl agRef && !agRef.Owned
+            ? new EditableFieldViewModel("reads agent", () => agRef.AgentName, v => agRef.AgentName = v, () => AgentTargetEdited?.Invoke())
+            : null;
 
         if (model is PureOp op)
         {
@@ -227,6 +231,16 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
     public bool HasAgentName => AgentNameEditor is not null;
 
     public Action<string>? AgentRenameRequested { get; set; }
+
+    // For a REF agent (owned == false): the LABEL of the quantum_agent on the host node
+    // it reads. Empty = the first agent found (back-compat). Null for an owned agent
+    // (which creates its own from Spec). Editing marks the chart dirty -- the target is
+    // an abstract label, not a drawn wire, so no re-project.
+    public EditableFieldViewModel? AgentTargetEditor { get; }
+
+    public bool HasAgentTarget => AgentTargetEditor is not null;
+
+    public Action? AgentTargetEdited { get; set; }
 
     // Read ops (marginal/committed/memory) pull from an agent + slot; proximity senses a target
     // binding. Both are picked in the inspector rather than wired. The pane supplies the choices

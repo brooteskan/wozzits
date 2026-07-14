@@ -160,6 +160,27 @@ public sealed class StatechartCompilerTests
     }
 
     [Fact]
+    public void AgentRef_TargetName_RoundTrips_And_OwnedAgent_OmitsIt()   // v35 explicit refs
+    {
+        var c = MinimalValid();   // "sig": an OWNED agent (index 0)
+        // A REF that NAMES which quantum_agent on the host it reads (index 1); and an
+        // unnamed ref (index 2) that falls back to the first agent.
+        c.Agents.Add(new AgentDecl { Id = "peer", Owned = false, Host = "self", AgentName = "beta" });
+        c.Agents.Add(new AgentDecl { Id = "any", Owned = false, Host = "self" });
+
+        var ir = StatechartJson.Emit(c, indented: false);
+        var agents = JsonNode.Parse(ir)!["agents"]!.AsArray();
+        Assert.Null(agents[0]!["agent"]);                       // owned -> no target
+        Assert.Equal("beta", (string?)agents[1]!["agent"]);     // named ref -> label
+        Assert.Null(agents[2]!["agent"]);                       // empty ref -> omitted
+
+        var back = StatechartJson.Load(ir);
+        Assert.Equal("beta", back.Agents.Single(a => a.Id == "peer").AgentName);
+        Assert.Equal("", back.Agents.Single(a => a.Id == "any").AgentName);
+        Assert.Equal("", back.Agents.Single(a => a.Id == "sig").AgentName);
+    }
+
+    [Fact]
     public void Memory_Emits_Q_Reads_Emit_Slot()
     {
         var c = MinimalValid();

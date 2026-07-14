@@ -59,6 +59,11 @@ public sealed class AgentDecl
     public string Id { get; set; } = "";
     public bool Owned { get; set; } = true;
     public string Host { get; set; } = "self";   // "self" or a Binding.Port
+    // A REF (Owned == false) may NAME which quantum_agent on the host node it reads,
+    // matched against the behavior's label. Empty = the first quantum_agent found
+    // (back-compat). Makes a node hosting several agents unambiguous. Ignored for an
+    // owned agent (the chart creates its own from Spec).
+    public string AgentName { get; set; } = "";
     public JsonNode? Spec { get; set; }
 }
 

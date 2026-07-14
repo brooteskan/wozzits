@@ -781,6 +781,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             node.OutputPorts.Add(new DataflowPortViewModel(node, 0, "agent", isInput: false));
             node.SpecEdited = MarkChartDirty;
             node.AgentRenameRequested = newId => RenameAgent(a, newId);
+            node.AgentTargetEdited = MarkChartDirty;
             agentNodes[a.Id] = node;
             Nodes.Add(node);
         }
