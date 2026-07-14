@@ -173,6 +173,14 @@ namespace wz::engine::behavior::statechart
                     if (!agent(e) || !value(e)) return fail("set_goal");
                     e.slot = static_cast<uint16_t>(num(o, "slot"));
                 }
+                else if (k == "measure_at") {
+                    // Chart-timed non-commuting measurement: measure decision `slot`
+                    // of the named agent along axis `value` (radians). Shape mirrors
+                    // set_goal (agent + slot + a value Ref, here the angle).
+                    e.kind = EffectKind::MeasureAt;
+                    if (!agent(e) || !value(e)) return fail("measure_at");
+                    e.slot = static_cast<uint16_t>(num(o, "slot"));
+                }
                 else if (k == "set_decoherence") {
                     e.kind = EffectKind::SetDecoherence;
                     if (!agent(e) || !value(e)) return fail("set_decoherence");

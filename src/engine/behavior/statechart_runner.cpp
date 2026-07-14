@@ -289,6 +289,19 @@ namespace wz::engine::behavior
                 wz_agent_reward(facts, ah, e.slot, e.flag,
                     static_cast<float>(eref(e.value)));
                 break;
+            case EK::MeasureAt: {
+                // Chart-timed NON-COMMUTING measurement (v36): projectively measure
+                // the named agent's decision `slot` along axis `value` (radians),
+                // with back-action. The outcome latches on the agent (and the adapter
+                // refreshes the module cache), so a Committed op on this slot reads it
+                // back on the next evaluation. Named like the read.
+                int8_t bit = 0;
+                const char* name = (e.agent < host_agent.size())
+                    ? host_agent[e.agent].c_str() : "";
+                wz_measure_agent_in_basis(
+                    facts, ah, name, e.slot,
+                    static_cast<float>(eref(e.value)), &bit);
+            } break;
             case EK::Call: {
                 // A behavior-registered actuator: resolve it by name against the
                 // live registry (through facts), marshal the chart-resolved args,

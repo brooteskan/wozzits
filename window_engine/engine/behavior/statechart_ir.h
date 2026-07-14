@@ -54,7 +54,7 @@ namespace wz::engine::behavior::statechart
     enum class EffectKind : uint8_t
     {
         // agent writes (owner-only, R2)
-        SetGoal, SetDecoherence, Rearm, Reward, Reshape,
+        SetGoal, SetDecoherence, Rearm, Reward, Reshape, MeasureAt,
         // actuators
         SetScale, SetVisible, Move, PlaySound,
         // a behavior-REGISTERED actuator, called by name with resolved args (the
@@ -80,8 +80,8 @@ namespace wz::engine::behavior::statechart
         EffectKind kind = EffectKind::SetScale;
         uint16_t agent = 0;     // agent-targeted effects -> Chart::agents index
         uint16_t binding = 0;   // actuator target -> Chart::bindings index
-        uint16_t slot = 0;      // SetGoal slot / Reward qubit
-        Ref value;              // SetGoal/SetDecoherence/SetScale/SetVisible/Reward-strength
+        uint16_t slot = 0;      // SetGoal/MeasureAt slot / Reward qubit
+        Ref value;              // SetGoal/SetDecoherence/SetScale/SetVisible/Reward-strength/MeasureAt-angle
         uint8_t flag = 0;       // Reward: toward (|0> == 1)
         // Kind::Call: the registered actuator name + its resolved args, in order.
         std::string call;
