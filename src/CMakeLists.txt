@@ -1,6 +1,7 @@
 add_subdirectory(algo_math)
 add_subdirectory(scene_render)
 add_subdirectory(engine)
+add_subdirectory(starfield)
 add_subdirectory(app)
 add_subdirectory(bench)
 add_subdirectory(logging)

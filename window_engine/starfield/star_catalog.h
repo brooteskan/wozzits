@@ -1,6 +1,6 @@
 #pragma once
 
-// engine/starfield/star_catalog.h
+// starfield/star_catalog.h
 //
 // Star-catalog astronomy kernel -- the data-side front of the star field (Seam C
 // of umbrella #259, issue #266). Stars are the far end of the frequency split:

@@ -1,4 +1,4 @@
-// src/engine/starfield/star_catalog_compilers.cpp
+// src/engine/assets/star_catalog/star_catalog_compilers.cpp
 //
 // Compiler for the StarCatalogFromJSON recipe asset (Seam C-2, issue #266).
 //
@@ -12,9 +12,9 @@
 // 32-byte ResidentSkyPoint / DistantLight layout the sun's "sky_gaussian_points"
 // buffer uses -- so a star field drops straight into the point-source layer.
 
-#include <engine/starfield/star_catalog_compilers.h>
-#include <engine/starfield/star_catalog_serialize.h>
-#include <engine/starfield/star_catalog_ply_importer.h>
+#include <engine/assets/star_catalog/star_catalog_compilers.h>
+#include <starfield/star_catalog_serialize.h>
+#include <starfield/star_catalog_ply_importer.h>
 #include <engine/assets/engine_asset_library_internal.h>
 #include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/schema_ids.h>

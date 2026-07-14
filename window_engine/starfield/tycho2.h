@@ -1,6 +1,6 @@
 #pragma once
 
-// engine/starfield/tycho2.h
+// starfield/tycho2.h
 //
 // Tycho-2 catalogue (CDS I/259, Hoeg et al. 2000) parsing -- the catalog-format
 // front of the star field (Seam C / issue #266, the "two-stage tycho2_prep"
@@ -15,7 +15,7 @@
 //
 // Pure CPU, deterministic, no GPU.
 
-#include <engine/starfield/star_catalog.h>
+#include <starfield/star_catalog.h>
 
 #include <optional>
 #include <string_view>

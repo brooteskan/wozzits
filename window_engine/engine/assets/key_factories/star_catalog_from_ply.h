@@ -5,7 +5,7 @@
 #include <engine/assets/engine_asset_key_core.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/compiler_version_tokens.h>
-#include <engine/starfield/star_catalog.h>
+#include <starfield/star_catalog.h>
 
 #include <cstdint>
 #include <cstring>

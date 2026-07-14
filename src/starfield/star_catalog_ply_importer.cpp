@@ -1,6 +1,6 @@
-// src/engine/starfield/star_catalog_ply_importer.cpp
+// src/starfield/star_catalog_ply_importer.cpp
 
-#include <engine/starfield/star_catalog_ply_importer.h>
+#include <starfield/star_catalog_ply_importer.h>
 
 #include <ply/ply_reader.h>
 

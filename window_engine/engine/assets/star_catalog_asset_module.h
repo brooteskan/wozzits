@@ -4,7 +4,7 @@
 
 #include <asset/system.h>
 #include <asset/types.h>
-#include <engine/starfield/star_catalog_table.h>
+#include <engine/assets/star_catalog/star_catalog_table.h>
 #include <logging/logger.h>
 
 #include <string>

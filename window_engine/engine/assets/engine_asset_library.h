@@ -71,7 +71,7 @@
 
 #include <engine/assets/sky_gaussian/sky_gaussian_table.h>
 #include <engine/assets/sky_gaussian_asset_module.h>
-#include <engine/starfield/star_catalog_table.h>
+#include <engine/assets/star_catalog/star_catalog_table.h>
 #include <engine/assets/star_catalog_asset_module.h>
 
 #include <engine/assets/data_table_asset_module.h>

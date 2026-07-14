@@ -1,6 +1,6 @@
-// src/engine/starfield/star_catalog.cpp
+// src/starfield/star_catalog.cpp
 
-#include <engine/starfield/star_catalog.h>
+#include <starfield/star_catalog.h>
 
 #include <math/vec3.h>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-// engine/starfield/star_catalog_table.h
+// engine/assets/star_catalog/star_catalog_table.h
 //
 // Runtime table of built StarCatalog records, keyed by ResourceHandle (Seam C-2,
 // issue #266). Mirror of SkyGaussianTable: a baked .star_catalog.json becomes an
@@ -14,7 +14,7 @@
 // on the CPU today -- it exists to mint a valid compiled handle and to keep the
 // built set available for tests / introspection.
 
-#include <engine/starfield/star_catalog.h>
+#include <starfield/star_catalog.h>
 #include <engine/assets/type_extensions.h>
 
 #include <asset/types.h>

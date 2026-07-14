@@ -1,6 +1,6 @@
 #pragma once
 
-// engine/starfield/star_catalog_serialize.h
+// starfield/star_catalog_serialize.h
 //
 // (De)serialize a baked .star_catalog.json document into the raw catalog rows +
 // grade dials the star importer consumes (Seam C-2, issue #266). Kept parallel
@@ -29,7 +29,7 @@
 //     ]
 //   }
 
-#include <engine/starfield/star_catalog.h>
+#include <starfield/star_catalog.h>
 
 #include <external/json/json_document.h>
 

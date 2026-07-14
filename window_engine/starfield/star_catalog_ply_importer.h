@@ -1,6 +1,6 @@
 #pragma once
 
-// engine/starfield/star_catalog_ply_importer.h
+// starfield/star_catalog_ply_importer.h
 //
 // Import a baked star PLY point cloud (stage-1 tycho2_prep output, or any PLY
 // with per-vertex x/y/z = unit direction + vmag + optional bv) into a built
@@ -8,7 +8,7 @@
 // This is the runtime half of the two-stage Tycho-2 path: the compact binary PLY
 // reads fast, and the astronomy/dials run through the shared kernel.
 
-#include <engine/starfield/star_catalog.h>
+#include <starfield/star_catalog.h>
 
 #include <cstdint>
 #include <span>

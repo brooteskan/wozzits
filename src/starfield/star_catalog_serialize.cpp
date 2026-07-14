@@ -1,6 +1,6 @@
-// src/engine/starfield/star_catalog_serialize.cpp
+// src/starfield/star_catalog_serialize.cpp
 
-#include <engine/starfield/star_catalog_serialize.h>
+#include <starfield/star_catalog_serialize.h>
 
 #include <external/json/json_read_helpers.h>
 

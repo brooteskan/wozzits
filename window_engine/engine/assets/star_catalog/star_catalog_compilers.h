@@ -1,9 +1,9 @@
 #pragma once
 
-// engine/starfield/star_catalog_compilers.h
+// engine/assets/star_catalog/star_catalog_compilers.h
 
 #include <asset/compiler.h>
-#include <engine/starfield/star_catalog_table.h>
+#include <engine/assets/star_catalog/star_catalog_table.h>
 #include <engine/assets/gpu_sparse_mesh/gpu_sparse_mesh_compilers.h>  // RhiResourceTracker
 #include <engine/assets/json/json.h>
 #include <logging/logger.h>

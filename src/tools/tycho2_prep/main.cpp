@@ -16,8 +16,8 @@
 // (for a quick slice). Input may also be several concatenated tyc2 files piped
 // via --in - (stdin).
 
-#include <engine/starfield/star_catalog.h>
-#include <engine/starfield/tycho2.h>
+#include <starfield/star_catalog.h>
+#include <starfield/tycho2.h>
 
 #include <cstdint>
 #include <cstring>

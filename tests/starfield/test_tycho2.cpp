@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <engine/starfield/tycho2.h>
+#include <starfield/tycho2.h>
 
 #include <string>
 #include <string_view>

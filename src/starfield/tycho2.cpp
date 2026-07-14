@@ -1,6 +1,6 @@
-// src/engine/starfield/tycho2.cpp
+// src/starfield/tycho2.cpp
 
-#include <engine/starfield/tycho2.h>
+#include <starfield/tycho2.h>
 
 #include <cstdlib>
 #include <string>
