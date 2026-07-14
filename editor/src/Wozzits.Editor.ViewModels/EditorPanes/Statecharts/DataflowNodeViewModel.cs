@@ -1,8 +1,10 @@
 namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Wozzits.Editor.Statecharts;
 
@@ -41,6 +43,11 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         // A REF (owned == false) names WHICH quantum_agent on the host it reads.
         AgentTargetEditor = kind == DataflowNodeKind.Agent && model is AgentDecl agRef && !agRef.Owned
             ? new EditableFieldViewModel("reads agent", () => agRef.AgentName, v => agRef.AgentName = v, () => AgentTargetEdited?.Invoke())
+            : null;
+        // An op's id is editable (like an agent's) so op1 can become a readable name;
+        // the pane's RenameOp rewrites every reference to it.
+        OpNameEditor = kind == DataflowNodeKind.Op && model is PureOp pop
+            ? new EditableFieldViewModel("name", () => pop.Id, v => OpRenameRequested?.Invoke(v))
             : null;
 
         if (model is PureOp op)
@@ -242,6 +249,14 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public Action? AgentTargetEdited { get; set; }
 
+    // Editable op id (its name) for an op node; null otherwise. Renaming rewrites every
+    // reference to the op -- the pane does that (RenameOp) via OpRenameRequested.
+    public EditableFieldViewModel? OpNameEditor { get; }
+
+    public bool HasOpName => OpNameEditor is not null;
+
+    public Action<string>? OpRenameRequested { get; set; }
+
     // Read ops (marginal/committed/memory) pull from an agent + slot; proximity senses a target
     // binding. Both are picked in the inspector rather than wired. The pane supplies the choices
     // (ReadAgents / ProximityTargets) and the callbacks: a ref change reprojects (the wire moves),
@@ -255,6 +270,34 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
     public bool ShowOperandInputs => HasInputPorts && !IsReadOp && !IsProximityOp;
 
     public EditableFieldViewModel? SlotEditor { get; }
+
+    // When the read op targets an OWNED agent, the pane sets this to the agent's decision
+    // count so the slot becomes a 0..N-1 picker (SlotChoices). 0 = unknown (a ref, or a
+    // memory op) -- the inspector then keeps the free-text SlotEditor instead.
+    public int SlotChoiceCount { get; set; }
+
+    public bool HasSlotChoices => SlotChoiceCount > 0;
+
+    public IReadOnlyList<string> SlotChoices => HasSlotChoices
+        ? Enumerable.Range(0, SlotChoiceCount)
+            .Select(i => i.ToString(CultureInfo.InvariantCulture)).ToList()
+        : Array.Empty<string>();
+
+    public string SelectedSlot
+    {
+        get => (Model as PureOp)?.Slot.ToString(CultureInfo.InvariantCulture) ?? "0";
+        set
+        {
+            if (Model is PureOp op
+                && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var s)
+                && s >= 0 && op.Slot != s)
+            {
+                op.Slot = s;
+                OnPropertyChanged();
+                SlotEdited?.Invoke();
+            }
+        }
+    }
 
     public IReadOnlyList<string> ReadAgents { get; set; } = Array.Empty<string>();
 

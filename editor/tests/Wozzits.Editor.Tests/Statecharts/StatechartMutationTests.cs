@@ -171,6 +171,78 @@ public sealed class StatechartMutationTests
     }
 
     [Fact]
+    public void Rename_Op_Rewrites_Every_Reference()
+    {
+        // op "m" is referenced four ways: another op's input, an effect value, a call
+        // arg, and a guard condition. Renaming must rewrite all of them.
+        var chart = new Chart { Name = "t" };
+        chart.Bindings.Add(new Binding { Port = "b", Find = "b" });
+        chart.Agents.Add(new AgentDecl
+        {
+            Id = "sig", Owned = true, Host = "self",
+            Spec = System.Text.Json.Nodes.JsonNode.Parse("""{"decisions":1}"""),
+        });
+        chart.Pure.Add(new PureOp { Id = "m", Op = OpKind.Marginal, Agent = "sig", Slot = 0 });
+        var uses = new PureOp { Id = "uses", Op = OpKind.Clamp01 };
+        uses.Ins.Add(ValueRef.FromOp("m"));
+        chart.Pure.Add(uses);
+        var s = new State { Id = "S" };
+        s.Do.Add(new Effect { Kind = EffectKind.SetScale, TargetBind = "b", Value = ValueRef.FromOp("m") });
+        s.Do.Add(new Effect { Kind = EffectKind.Call, Fn = "act", Args = { CallArg.FromOp("m") } });
+        s.Transitions.Add(new Transition
+        {
+            Target = "S",
+            Trigger = new Trigger { Kind = TriggerKind.Guard, Cond = ValueRef.FromOp("m") },
+        });
+        chart.States.Add(s);
+        var reg = new Region { Id = "R", Initial = "S" };
+        reg.States.Add("S");
+        chart.Regions.Add(reg);
+
+        var pane = Dataflow(chart);
+        var m = chart.Pure.First(p => p.Id == "m");
+        pane.RenameOp(m, "leaning");
+
+        Assert.Equal("leaning", m.Id);
+        Assert.Equal("leaning", chart.Pure.First(p => p.Id == "uses").Ins[0].Op);
+        Assert.Equal("leaning", s.Do.First(e => e.Kind == EffectKind.SetScale).Value!.Op);
+        Assert.Equal("leaning", s.Do.First(e => e.Kind == EffectKind.Call).Args[0].Op);
+        Assert.Equal("leaning", s.Transitions[0].Trigger.Cond!.Op);
+
+        // renaming onto an existing id is rejected (a no-op).
+        pane.RenameOp(m, "uses");
+        Assert.Equal("leaning", m.Id);
+    }
+
+    [Fact]
+    public void Read_Op_Bounds_Slot_For_Owned_Agent_But_Not_A_Ref()
+    {
+        var chart = new Chart { Name = "t" };
+        chart.Agents.Add(new AgentDecl
+        {
+            Id = "own", Owned = true, Host = "self",
+            Spec = System.Text.Json.Nodes.JsonNode.Parse("""{"decisions":3}"""),
+        });
+        chart.Agents.Add(new AgentDecl { Id = "peer", Owned = false, Host = "self" });
+        chart.Pure.Add(new PureOp { Id = "r", Op = OpKind.Committed, Agent = "own", Slot = 0 });
+        var s = new State { Id = "S" };
+        chart.States.Add(s);
+        var reg = new Region { Id = "R", Initial = "S" };
+        reg.States.Add("S");
+        chart.Regions.Add(reg);
+
+        var pane = Dataflow(chart);
+        var vm = pane.Nodes.First(n => n.NodeId == "r");
+        Assert.True(vm.HasSlotChoices);                       // owned agent -> bounded
+        Assert.Equal(3, vm.SlotChoiceCount);
+        Assert.Equal(new[] { "0", "1", "2" }, vm.SlotChoices);
+
+        vm.SelectedReadAgent = "peer";                        // switch to the ref -> reproject
+        var refVm = pane.Nodes.First(n => n.NodeId == "r");
+        Assert.False(refVm.HasSlotChoices);                   // external agent -> free text
+    }
+
+    [Fact]
     public void Add_Op_Produces_A_Valid_Saveable_Chart()
     {
         var chart = Golden("traffic_light.sc.json");

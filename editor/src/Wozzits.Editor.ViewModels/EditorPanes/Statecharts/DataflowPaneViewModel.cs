@@ -340,6 +340,101 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         }
     }
 
+    // Rename a pure op's id, rewriting every reference to it -- other ops' inputs (Ins +
+    // select cond/a/b), effect value sources, guard conditions, and call args. Rejects an
+    // empty / unchanged / colliding id. Reprojects and re-selects the renamed node.
+    public void RenameOp(PureOp op, string newId)
+    {
+        if (_chart is null)
+        {
+            return;
+        }
+
+        newId = (newId ?? string.Empty).Trim();
+        if (newId.Length == 0 || newId == op.Id || AllNodeIds().Contains(newId))
+        {
+            return;
+        }
+
+        var oldId = op.Id;
+        op.Id = newId;
+
+        foreach (var p in _chart.Pure)
+        {
+            RewriteOpRef(p.Cond, oldId, newId);
+            RewriteOpRef(p.A, oldId, newId);
+            RewriteOpRef(p.B, oldId, newId);
+            foreach (var input in p.Ins)
+            {
+                RewriteOpRef(input, oldId, newId);
+            }
+        }
+        foreach (var s in _chart.States)
+        {
+            RewriteOpRefsInEffects(s.Do, oldId, newId);
+            RewriteOpRefsInEffects(s.Entry, oldId, newId);
+            RewriteOpRefsInEffects(s.Exit, oldId, newId);
+            foreach (var t in s.Transitions)
+            {
+                RewriteOpRefsInEffects(t.Actions, oldId, newId);
+                if (t.Trigger.Kind == TriggerKind.Guard)
+                {
+                    RewriteOpRef(t.Trigger.Cond, oldId, newId);
+                }
+            }
+        }
+
+        IsDirty = true;
+        ReprojectPreservingLayout();
+        if (Nodes.FirstOrDefault(n => n.NodeId == newId) is { } renamed)
+        {
+            SelectOnly(renamed);
+        }
+    }
+
+    private static void RewriteOpRef(ValueRef? v, string oldId, string newId)
+    {
+        if (v is { Kind: RefKind.Op } && v.Op == oldId)
+        {
+            v.Op = newId;
+        }
+    }
+
+    private static void RewriteOpRefsInEffects(List<Effect> effects, string oldId, string newId)
+    {
+        foreach (var e in effects)
+        {
+            RewriteOpRef(e.Value, oldId, newId);
+            foreach (var a in e.Args)
+            {
+                if (a.Kind == CallArgKind.Op && a.Op == oldId)
+                {
+                    a.Op = newId;
+                }
+            }
+        }
+    }
+
+    // Decision-slot count for a read op's OWNED agent (its spec's `decisions`), or 0 when
+    // the editor can't know it -- a ref (the agent is external) or a memory op -- in which
+    // case the inspector keeps the free-text slot field.
+    private int SlotCountForReadOp(PureOp p)
+    {
+        if (_chart is null || !p.IsRead || p.Op == OpKind.Memory)
+        {
+            return 0;
+        }
+        var agent = _chart.Agents.FirstOrDefault(a => a.Id == p.Agent);
+        if (agent is null || !agent.Owned || agent.Spec is not JsonObject spec)
+        {
+            return 0;
+        }
+        return spec.TryGetPropertyValue("decisions", out var d)
+            && d is JsonValue jv && jv.TryGetValue<int>(out var n) && n > 0
+            ? n
+            : 0;
+    }
+
     private IEnumerable<string> AllNodeIds() => _chart is null
         ? Enumerable.Empty<string>()
         : _chart.Pure.Select(p => p.Id)
@@ -808,7 +903,9 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             node.ReadAgents = agentIds;
             node.ProximityTargets = bindingPorts;
             node.SlotEdited = MarkChartDirty;
+            node.SlotChoiceCount = SlotCountForReadOp(p);
             node.ReadRefChanged = ReprojectPreservingSelection;
+            node.OpRenameRequested = newId => RenameOp(p, newId);
             opNodes[p.Id] = node;
             opsById[p.Id] = p;
             Nodes.Add(node);
