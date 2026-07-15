@@ -604,6 +604,12 @@ namespace wz::engine::behavior
         if (context.events) {
             context.events->advance_frame();
         }
+        // Behavior scalars (v37): same double-buffer discipline as events -- last
+        // frame's publishes become this frame's readable set, so a chart's `read_state`
+        // op sees a value independent of publish/read dispatch order.
+        if (context.scalars) {
+            context.scalars->advance_frame();
+        }
         // Command order is deterministic: subscribed module frame.update
         // events, routed input/collision/proximity module events, then legacy
         // named functions.

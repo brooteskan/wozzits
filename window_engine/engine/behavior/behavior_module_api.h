@@ -2259,6 +2259,49 @@ static inline uint8_t wz_emit_self_behavior_event(
         name);
 }
 
+// Publish a NAMED scalar (v37) on `entity` (usually self): a live number a statechart
+// on that entity reads with a `read_state` op. The continuous PULL twin of an event --
+// where an event pushes a discrete signal, this exposes a quantity a guard can compare
+// (a tank publishes its "damage" total; its chart branches when it crosses a
+// threshold). Republish every frame; it is readable one frame later (double-buffered).
+// Returns 1 if stored, 0 if the host wires no scalar board.
+static inline uint8_t wz_set_entity_scalar(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* name,
+    double value)
+{
+    return (facts && facts->set_entity_scalar && name)
+        ? facts->set_entity_scalar(facts->entity_scalar_user, entity, name, value)
+        : 0u;
+}
+
+// Read a NAMED scalar published on `entity`. Writes *out and returns 1 on a hit;
+// returns 0 (leaving *out untouched) when unpublished or on a pre-v37 host.
+static inline uint8_t wz_get_entity_scalar(
+    const WzBehaviorFrameFacts* facts,
+    WzBehaviorEntityId entity,
+    const char* name,
+    double* out)
+{
+    return (facts && facts->get_entity_scalar && name && out)
+        ? facts->get_entity_scalar(facts->entity_scalar_user, entity, name, out)
+        : 0u;
+}
+
+// Convenience: publish a scalar at the event's own entity (self).
+static inline uint8_t wz_set_self_scalar(
+    const WzBehaviorFrameFacts* facts,
+    const WzBehaviorEvent* event,
+    const char* name,
+    double value)
+{
+    return wz_set_entity_scalar(
+        facts,
+        event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
+        name, value);
+}
+
 static inline void* wz_create_shared_state(
     const WzBehaviorInitFacts* facts,
     const char* key,

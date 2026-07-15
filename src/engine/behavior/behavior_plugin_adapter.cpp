@@ -2163,6 +2163,31 @@ namespace wz::engine::behavior
             return 1;
         }
 
+        // facts.set_entity_scalar: publish a named number on an entity (readable next
+        // frame by a statechart's `read_state` op, via get_entity_scalar below).
+        uint8_t set_entity_scalar(
+            void* user, WzBehaviorEntityId entity, const char* name, double value)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->scalars || !name) {
+                return 0;
+            }
+            context->scalars->set(entity, name, value);
+            return 1;
+        }
+
+        // facts.get_entity_scalar: read a named scalar published on an entity. Writes
+        // *out + returns 1 on a hit; leaves *out + returns 0 on a miss.
+        uint8_t get_entity_scalar(
+            void* user, WzBehaviorEntityId entity, const char* name, double* out)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!context || !context->scalars || !name || !out) {
+                return 0;
+            }
+            return context->scalars->get(entity, name, out) ? 1u : 0u;
+        }
+
         void log_info(void* user, const char* message)
         {
             auto* logger = static_cast<wz::Logger*>(user);
@@ -2282,6 +2307,9 @@ namespace wz::engine::behavior
                 .emit_behavior_event = emit_behavior_event,
                 .get_agent_decision_at_named = get_agent_decision_at_named_query,
                 .measure_agent_in_basis = measure_agent_in_basis_request,
+                .entity_scalar_user = &context,
+                .set_entity_scalar = set_entity_scalar,
+                .get_entity_scalar = get_entity_scalar,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -2390,6 +2418,9 @@ namespace wz::engine::behavior
                 .emit_behavior_event = emit_behavior_event,
                 .get_agent_decision_at_named = get_agent_decision_at_named_query,
                 .measure_agent_in_basis = measure_agent_in_basis_request,
+                .entity_scalar_user = &context,
+                .set_entity_scalar = set_entity_scalar,
+                .get_entity_scalar = get_entity_scalar,
             };
         }
 

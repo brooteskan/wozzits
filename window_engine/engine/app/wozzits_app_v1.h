@@ -1182,6 +1182,10 @@ namespace wz::app
         // Behavior-defined events (v34): persists across frames (double-buffered), so
         // an event a behavior emits one frame reaches an `event` trigger the next.
         wz::engine::behavior::BehaviorEventBuffer behavior_events_{};
+        // Behavior-published named scalars (v37): same double-buffered lifetime as the
+        // event buffer -- a value a behavior publishes one frame is read by a chart's
+        // `read_state` op the next.
+        wz::engine::behavior::BehaviorScalarBoard behavior_scalars_{};
         std::optional<wz::engine::assets::SceneInstance> behavior_scene_{};
         uint64_t                                 behavior_frame_index_ = 0;
         // Absolute accumulated sim-time (seconds) for the self-paced cognition.tick

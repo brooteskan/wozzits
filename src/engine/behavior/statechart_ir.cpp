@@ -93,6 +93,7 @@ namespace wz::engine::behavior::statechart
                     {"eq",OpKind::Eq},{"lt",OpKind::Lt},{"gt",OpKind::Gt},
                     {"and",OpKind::And},{"or",OpKind::Or},{"not",OpKind::Not},
                     {"select",OpKind::Select},{"proximity",OpKind::Proximity},
+                    {"read_state",OpKind::ReadState},
                 };
                 for (auto& e : t) if (s == e.first) { k = e.second; return true; }
                 return fail("unknown pure op kind '" + s + "'");
@@ -127,6 +128,13 @@ namespace wz::engine::behavior::statechart
                     if (b < 0)
                         return fail("proximity names unknown target binding");
                     p.slot = static_cast<uint16_t>(b);
+                }
+                else if (p.op == OpKind::ReadState) {
+                    // A behavior-published named scalar, read on self; `name` is the
+                    // open-vocabulary scalar name (resolved at runtime via facts).
+                    p.name = str(o, "name");
+                    if (p.name.empty())
+                        return fail("read_state needs a scalar 'name'");
                 }
                 else {
                     const JSONValue* ins = arr(o, "ins");

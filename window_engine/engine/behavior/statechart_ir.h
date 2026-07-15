@@ -41,6 +41,11 @@ namespace wz::engine::behavior::statechart
         // Sensors. Proximity: horizontal distance from self to the target binding
         // (slot holds the target binding index). More (Gaze/Timer/TerrainSlope) TBD.
         Proximity,
+        // ReadState: the live value of a behavior-published named scalar on self
+        // (`name`), read through facts->get_entity_scalar. The pull twin of an `event`
+        // trigger -- lets a guard compare a continuous quantity a behavior tracks
+        // (a tank's "damage", "ammo") that no other op can sense. 0 if unpublished.
+        ReadState,
     };
 
     struct PureOp
@@ -48,6 +53,7 @@ namespace wz::engine::behavior::statechart
         OpKind op = OpKind::Marginal;
         uint16_t agent = 0;   // for reads: index into Chart::agents
         uint16_t slot = 0;    // decision slot / memory qubit
+        std::string name;     // ReadState: the published scalar name to read on self
         Ref in0, in1, in2;    // fixed 3 inputs cover every v0 op
     };
 

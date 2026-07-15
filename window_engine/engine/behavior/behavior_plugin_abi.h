@@ -45,7 +45,12 @@ extern "C" {
 //      (basis-rotated) projective measurement of a named agent's decision, WITH
 //      back-action; the rotated-basis readout an entangled mind needs to exhibit
 //      correlations no classical/finite-state model reproduces (Bell/contextuality).
-#define WZ_BEHAVIOR_ABI_VERSION 36u
+// v37: appended entity_scalar_user / set_entity_scalar / get_entity_scalar on
+//      WzBehaviorFrameFacts -- a behavior PUBLISHES a named scalar on an entity and a
+//      statechart on it READS the number as a `read_state` pure-op (the pull twin of
+//      v34 events: events push a discrete signal, this exposes a continuous quantity a
+//      guard can compare, e.g. a tank's accumulated damage).
+#define WZ_BEHAVIOR_ABI_VERSION 37u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -608,6 +613,27 @@ typedef uint8_t (*WzMeasureAgentInBasisFn)(
     uint32_t agent_index,
     float theta,
     int8_t* out_bit);
+
+/*
+ * Behavior-published NAMED scalars (v37). set_entity_scalar PUBLISHES a number under
+ * `name` on `entity` (typically self) each frame; get_entity_scalar READS it back,
+ * writing to *out and returning 1, or returning 0 (leaving *out untouched) when no
+ * such scalar is published. Double-buffered: a value set in frame N is readable in
+ * N+1, independent of publish/read dispatch order (like behavior events). The name
+ * space is OPEN -- any behavior may publish any name; a statechart `read_state` op
+ * reads one. This is the continuous PULL twin of the discrete event PUSH.
+ */
+typedef uint8_t (*WzSetEntityScalarFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    const char* name,
+    double value);
+
+typedef uint8_t (*WzGetEntityScalarFn)(
+    void* user,
+    WzBehaviorEntityId entity,
+    const char* name,
+    double* out);
 
 /*
  * Cognition WRITE surface (closes the sense->think loop). An actuator that has
@@ -1464,6 +1490,16 @@ typedef struct WzBehaviorFrameFacts
      * entangled mind needs to exhibit Bell/contextuality. Null when no cognition host.
      */
     WzMeasureAgentInBasisFn measure_agent_in_basis;
+
+    /*
+     * Behavior-published named scalars (v37; APPEND-ONLY). A behavior publishes a
+     * number under a name on an entity (set_entity_scalar) and a statechart on that
+     * entity reads it as a `read_state` pure-op (get_entity_scalar). The continuous
+     * pull twin of behavior_events. Null when the host wires no scalar board.
+     */
+    void* entity_scalar_user;
+    WzSetEntityScalarFn set_entity_scalar;
+    WzGetEntityScalarFn get_entity_scalar;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts

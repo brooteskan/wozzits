@@ -4,6 +4,7 @@
 
 #include <engine/behavior/behavior_commands.h>
 #include <engine/behavior/behavior_events.h>
+#include <engine/behavior/behavior_scalars.h>
 #include <engine/behavior/behavior_gpu_compute.h>
 #include <engine/behavior/behavior_spawn.h>
 #include <engine/behavior/event_channels.h>
@@ -70,6 +71,10 @@ namespace wz::engine::behavior
         // triggers. The dispatcher advances it once per frame (advance_frame). Null in
         // contexts that wire no event bus -- emits are then dropped, reads are empty.
         BehaviorEventBuffer* events = nullptr;
+        // Behavior-published named scalars (v37): a chart reads these as `read_state`
+        // pure-ops. Advanced once per frame (advance_frame), like `events`. Null when
+        // the context wires no scalar board -- publishes are dropped, reads miss.
+        BehaviorScalarBoard* scalars = nullptr;
         BehaviorGpuComputeBuffer* gpu_compute = nullptr;
         // Spawn-with-identity sink (#252 pooling): submit_spawn_prefab enqueues here
         // mid-dispatch; the host drains it at the frame boundary. Null when the host

@@ -198,6 +198,13 @@ namespace wz::engine::behavior
                     v = 1.0e9;   // no target resolved -> effectively unobserved
                 }
             } break;
+            case K::ReadState: {
+                // A behavior-published named scalar on self (v37). 0 when nothing
+                // publishes it -- a guard then reads a well-defined "unset" value.
+                double out = 0.0;
+                wz_get_entity_scalar(facts, self, op.name.c_str(), &out);
+                v = out;
+            } break;
             }
             rt.pure_out[i] = v;
         }
