@@ -82,6 +82,12 @@ add_terrain_collision_behavior_module(
     enemy_tank_v1
     enemy_tank_v1/enemy_tank_v1.cpp)
 
+# Drops an enemy_tank_v1 tank into the world (spawns its prefab once at scene start).
+# Config-driven: attach it to a node and point `prefab` at the v1 tank prefab.
+add_terrain_collision_behavior_module(
+    enemy_tank_v1_spawner
+    enemy_tank_v1/enemy_tank_v1_spawner.cpp)
+
 # --- cognition gallery -------------------------------------------------------
 # Reusable quantum-cognition building blocks (source grouped under cognition/).
 # The helper forces the DLL output to behavior/build/clang-debug regardless of
