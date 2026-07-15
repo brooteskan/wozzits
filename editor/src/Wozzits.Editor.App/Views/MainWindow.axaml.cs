@@ -132,6 +132,26 @@ public partial class MainWindow : Window
         }
     }
 
+    // New Scenelet: prompt for a name up front (a scenelet's prefab name IS its filename,
+    // so naming it here saves a rename), then hand the name to the view model to create +
+    // open it. The dialog lives in the view; the VM stays UI-free.
+    private async void OnNewScenelet(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+        var name = await new TextPromptWindow(
+                "New Scenelet",
+                "Name for the new scenelet:",
+                viewModel.NextSceneletName())
+            .ShowDialog<string?>(this);
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            viewModel.CreateScenelet(name);
+        }
+    }
+
     // Populate the Statecharts submenu with the project's authored charts each time it
     // opens (mirrors the Prefabs menu). Selecting one opens its dataflow canvas.
     private void OnStatechartsMenuOpened(object? sender, RoutedEventArgs e)

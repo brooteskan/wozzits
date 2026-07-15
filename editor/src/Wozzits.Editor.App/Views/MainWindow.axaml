@@ -41,7 +41,7 @@
                           IsChecked="{Binding FrameProfilingEnabled, Mode=TwoWay}"/>
             </MenuItem>
             <MenuItem Header="S_cenelets" SubmenuOpened="OnPrefabsMenuOpened">
-                <MenuItem Header="_New Scenelet" Command="{Binding NewSceneletCommand}"/>
+                <MenuItem Header="_New Scenelet" Click="OnNewScenelet"/>
                 <Separator/>
                 <MenuItem Header="_Open Scenelet" x:Name="OpenPrefabMenu"/>
                 <MenuItem Header="_Back to Scene"

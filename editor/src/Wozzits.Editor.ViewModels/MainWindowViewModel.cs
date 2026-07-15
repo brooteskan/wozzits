@@ -81,9 +81,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             BackToScene, () => _editorSession is not null && IsEditingPrefab);
         RefreshSceneletsCommand = new RelayCommand(
             RefreshScenelets, () => _editorSession is not null);
-        NewSceneletCommand = new RelayCommand(
-            NewScenelet,
-            () => _editorSession is not null && !string.IsNullOrWhiteSpace(_projectDirectory));
         RefreshStatechartsCommand = new RelayCommand(
             RefreshStatecharts, () => !string.IsNullOrWhiteSpace(_projectDirectory));
         NewStatechartCommand = new RelayCommand(
@@ -188,7 +185,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IRelayCommand<SceneletInfo?> OpenSceneletCommand { get; }
     public IRelayCommand BackToSceneCommand { get; }
     public IRelayCommand RefreshSceneletsCommand { get; }
-    public IRelayCommand NewSceneletCommand { get; }
 
     public IRelayCommand RefreshStatechartsCommand { get; }
 
@@ -448,22 +444,42 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         ReloadSceneFromRuntime();
     }
 
-    // Create a fresh, minimal scenelet (one empty root node) in the project's scenelets
-    // folder and open it for editing -- the Scenelets menu is the one place scenelets are
-    // created/opened, mirroring New Chart / New Mind. Opening re-scans the scenelets dir,
-    // so the new file registers as a spawnable prefab AND joins the catalog immediately;
-    // you then build it up in the viewport (add the body, attach behaviors).
-    private void NewScenelet()
+    // A suggested unused name to pre-fill the New Scenelet prompt (untitled1, untitled2, …).
+    public string NextSceneletName()
+    {
+        if (string.IsNullOrWhiteSpace(_projectDirectory))
+        {
+            return "untitled1";
+        }
+        return FreshSceneletName(Path.Combine(_projectDirectory, "scenelets"));
+    }
+
+    // Create a fresh, minimal scenelet (one empty root node) named `name` in the project's
+    // scenelets folder and open it for editing -- the Scenelets menu is the one place
+    // scenelets are created/opened (the view prompts for the name). Opening re-scans the
+    // scenelets dir, so the new file registers as a spawnable prefab AND joins the catalog
+    // immediately; you then build it up in the viewport (add the body, attach behaviors).
+    public void CreateScenelet(string name)
     {
         if (_editorSession is null || string.IsNullOrWhiteSpace(_projectDirectory))
         {
             return;
         }
+        name = name.Trim();
+        if (name.Length == 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            AppendEditorLog($"[editor] Invalid scenelet name '{name}'.");
+            return;
+        }
 
         var dir = Path.Combine(_projectDirectory, "scenelets");
         Directory.CreateDirectory(dir);
-        var name = FreshSceneletName(dir);
         var path = Path.Combine(dir, name + ".scene.json");
+        if (File.Exists(path))
+        {
+            AppendEditorLog($"[editor] Scenelet '{name}' already exists.");
+            return;
+        }
 
         try
         {
