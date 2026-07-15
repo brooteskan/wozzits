@@ -467,6 +467,23 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         }
     }
 
+    // Re-bound each read op's slot picker IN PLACE (no reproject) -- used when a ref agent's
+    // mind changes, which alters slot COUNTS only, not the graph structure or wiring.
+    private void RefreshReadOpSlotCounts()
+    {
+        if (_chart is null)
+        {
+            return;
+        }
+        foreach (var node in Nodes)
+        {
+            if (node.Model is PureOp p && p.IsRead)
+            {
+                node.SlotChoiceCount = SlotCountForReadOp(p);
+            }
+        }
+    }
+
     // The minds a referenced agent can point at (host-supplied). Setting reprojects so each
     // ref agent's mind picker refreshes; "(none)" is prepended as the clear option.
     public void SetMindChoices(IReadOnlyList<string> mindNames)
@@ -945,7 +962,10 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             node.AgentRenameRequested = newId => RenameAgent(a, newId);
             node.AgentTargetEdited = MarkChartDirty;
             node.MindChoices = _mindChoices;
-            node.MindRefChanged = () => { MarkChartDirty(); ReprojectPreservingSelection(); };
+            // A mind change alters only the read ops' slot COUNTS (not the graph structure), so
+            // refresh those IN PLACE -- reprojecting here would rebuild the very node the mind
+            // ComboBox is bound to and feed back into the selection (duplicate node + lost value).
+            node.MindRefChanged = () => { MarkChartDirty(); RefreshReadOpSlotCounts(); };
             agentNodes[a.Id] = node;
             Nodes.Add(node);
         }

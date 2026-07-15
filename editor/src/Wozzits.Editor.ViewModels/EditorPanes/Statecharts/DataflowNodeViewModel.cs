@@ -307,10 +307,26 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public EditableFieldViewModel? SlotEditor { get; }
 
-    // When the read op targets an OWNED agent, the pane sets this to the agent's decision
-    // count so the slot becomes a 0..N-1 picker (SlotChoices). 0 = unknown (a ref, or a
-    // memory op) -- the inspector then keeps the free-text SlotEditor instead.
-    public int SlotChoiceCount { get; set; }
+    // When the read op targets an OWNED agent (or a ref that names a mind), the pane sets this
+    // to the decision count so the slot becomes a 0..N-1 picker (SlotChoices). 0 = unknown (an
+    // unresolved ref, or a memory op) -- the inspector then keeps the free-text SlotEditor.
+    // Notifies so a live re-bound (e.g. after the ref's mind changes) refreshes the picker.
+    private int _slotChoiceCount;
+
+    public int SlotChoiceCount
+    {
+        get => _slotChoiceCount;
+        set
+        {
+            if (_slotChoiceCount != value)
+            {
+                _slotChoiceCount = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasSlotChoices));
+                OnPropertyChanged(nameof(SlotChoices));
+            }
+        }
+    }
 
     public bool HasSlotChoices => SlotChoiceCount > 0;
 

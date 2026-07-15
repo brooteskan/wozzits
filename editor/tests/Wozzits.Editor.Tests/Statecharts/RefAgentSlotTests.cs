@@ -78,6 +78,24 @@ public sealed class RefAgentSlotTests
         Assert.Null(opened);
     }
 
+    // Regression: setting the mind must NOT reproject (which would rebuild the very node the
+    // ComboBox is bound to and feed back into the selection) -- exactly one ref node before and
+    // after, and the chosen value sticks. (The reported bug: a duplicate node, both showing
+    // "(none)", and deleting one removing both.)
+    [Fact]
+    public void Setting_A_Mind_Does_Not_Duplicate_The_Ref_Node_Or_Lose_The_Value()
+    {
+        var pane = new DataflowPaneViewModel();
+        pane.Project(RefReadingChart());
+        pane.SetRefAgentResolvers(SlotsForMind, _ => { });
+
+        Assert.Single(pane.Nodes.Where(n => n.NodeId == "mind"));
+        pane.Nodes.First(n => n.NodeId == "mind").SelectedMind = "tank_mind";
+
+        Assert.Single(pane.Nodes.Where(n => n.NodeId == "mind"));   // no duplicate
+        Assert.Equal("tank_mind", pane.Nodes.First(n => n.NodeId == "mind").SelectedMind);   // value stuck
+    }
+
     [Fact]
     public void Ref_Mind_RoundTrips_Through_Json()
     {
