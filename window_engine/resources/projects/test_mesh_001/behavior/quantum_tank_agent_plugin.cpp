@@ -403,6 +403,11 @@ namespace
         {
             if (auto* tally = wz_instance_state_of<tank_damage::Tally>(
                     facts, state->hitbox, tank_damage::kModule)) {
+                // Publish the running damage tally as a named scalar (v37) so a
+                // statechart on this tank can READ it -- a `read_state "damage"` pure-op
+                // -- and gate a transition on it (e.g. flee/hide once it crosses a
+                // threshold). The pull twin of the "died" event the lifecycle emits.
+                wz_set_self_scalar(facts, event, "damage", (double)tally->total);
                 if (tally->total >= kEnemyMaxHealth) {
                     SquadRoster* roster = static_cast<SquadRoster*>(
                         wz_find_shared_state(facts, kSquadRosterKey));
