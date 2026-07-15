@@ -1413,6 +1413,13 @@
                                              Text="{Binding SelectedStatechartNode.AgentTargetEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                 </Grid>
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
+                                      IsVisible="{Binding SelectedStatechartNode.HasMindPicker}">
+                                    <TextBlock Text="mind" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1" Classes="InspectorInput" HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding SelectedStatechartNode.MindChoices}"
+                                              SelectedItem="{Binding SelectedStatechartNode.SelectedMind, Mode=TwoWay}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
                                       IsVisible="{Binding SelectedStatechartNode.HasOpName}">
                                     <TextBlock Text="name" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
                                     <TextBox Grid.Column="1"

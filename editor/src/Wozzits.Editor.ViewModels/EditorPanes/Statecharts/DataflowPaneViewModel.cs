@@ -41,6 +41,9 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
     // Null until a chart is opened with a scene to resolve against.
     private Func<AgentDecl, int>? _refSlotCount;
     private Action<AgentDecl>? _openReferencedMind;
+    // The project's mind (.mind.json) names a referenced agent can point at (with "(none)"
+    // first); the host window supplies them. Threaded to each ref agent's mind picker.
+    private IReadOnlyList<string> _mindChoices = new[] { DataflowNodeViewModel.NoMind };
 
     public DataflowPaneViewModel()
     {
@@ -458,6 +461,19 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
     {
         _refSlotCount = slotCount;
         _openReferencedMind = openMind;
+        if (_chart is not null)
+        {
+            ReprojectPreservingLayout();
+        }
+    }
+
+    // The minds a referenced agent can point at (host-supplied). Setting reprojects so each
+    // ref agent's mind picker refreshes; "(none)" is prepended as the clear option.
+    public void SetMindChoices(IReadOnlyList<string> mindNames)
+    {
+        var list = new List<string> { DataflowNodeViewModel.NoMind };
+        list.AddRange(mindNames);
+        _mindChoices = list;
         if (_chart is not null)
         {
             ReprojectPreservingLayout();
@@ -928,6 +944,8 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             node.SpecEdited = MarkChartDirty;
             node.AgentRenameRequested = newId => RenameAgent(a, newId);
             node.AgentTargetEdited = MarkChartDirty;
+            node.MindChoices = _mindChoices;
+            node.MindRefChanged = () => { MarkChartDirty(); ReprojectPreservingSelection(); };
             agentNodes[a.Id] = node;
             Nodes.Add(node);
         }

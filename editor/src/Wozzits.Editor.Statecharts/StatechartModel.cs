@@ -64,6 +64,10 @@ public sealed class AgentDecl
     // (back-compat). Makes a node hosting several agents unambiguous. Ignored for an
     // owned agent (the chart creates its own from Spec).
     public string AgentName { get; set; } = "";
+    // A REF may also NAME which mind (.mind.json) it reads -- the editor uses this to bound
+    // read-op slots and open the mind graph directly from the chart, with no scene node in
+    // the loop. Empty = no direct mind reference. Ignored for an owned agent (its mind is Spec).
+    public string Mind { get; set; } = "";
     public JsonNode? Spec { get; set; }
 }
 

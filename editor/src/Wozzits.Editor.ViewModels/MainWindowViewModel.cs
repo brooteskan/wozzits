@@ -920,6 +920,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         chartDocument.Dataflow.SetRefAgentResolvers(
             agent => ResolveRefAgentSlotCount(info.Name, agent),
             agent => OpenReferencedMind(info.Name, agent));
+        // The project's minds a ref can point at directly (the picker on a ref agent card).
+        chartDocument.Dataflow.SetMindChoices(
+            EnumerateMindFiles().Select(m => m.Name).ToList());
 
         var document = new Document
         {
@@ -966,6 +969,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     // node, the ref host isn't `self`, there's no matching quantum_agent, or its count is unknown.
     private int ResolveRefAgentSlotCount(string chartName, AgentDecl agent)
     {
+        // Prefer the mind the ref names DIRECTLY -- chart-local, no scene node in the loop.
+        if (agent.Mind.Length > 0)
+        {
+            return TryLoadMind(agent.Mind) is { } named ? named.Qubits.Count : 0;
+        }
+        // Otherwise resolve through the scene node the chart runs on (if any).
         var quantumAgent = ResolveReferencedQuantumAgent(chartName, agent);
         if (quantumAgent is null)
         {
@@ -986,14 +995,17 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     // Logs when there's nothing to open -- a scalar/plugin agent (like the tank) has no graph.
     private void OpenReferencedMind(string chartName, AgentDecl agent)
     {
-        var quantumAgent = ResolveReferencedQuantumAgent(chartName, agent);
-        var mindName = quantumAgent?.Config
-            .FirstOrDefault(c => c.Name == QuantumAgentMindAttachment.ConfigMind)?.Value;
+        // The ref names a mind DIRECTLY? Open it -- no scene node needed. Otherwise fall back
+        // to the mind attached to the quantum_agent on the node the chart runs on.
+        var mindName = agent.Mind.Length > 0
+            ? agent.Mind
+            : ResolveReferencedQuantumAgent(chartName, agent)?.Config
+                .FirstOrDefault(c => c.Name == QuantumAgentMindAttachment.ConfigMind)?.Value;
         if (string.IsNullOrEmpty(mindName))
         {
             AppendEditorLog(
-                $"[editor] Agent '{agent.Id}' has no attached .mind.json to open "
-                + "(a scalar/plugin agent defines its slots in code, not a graph).");
+                $"[editor] Agent '{agent.Id}' names no mind to open "
+                + "(pick a mind on the ref, or attach one to its quantum_agent).");
             return;
         }
         var info = EnumerateMindFiles().FirstOrDefault(m => m.Name == mindName);

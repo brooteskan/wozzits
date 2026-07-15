@@ -3,70 +3,86 @@ using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 namespace Wozzits.Editor.Tests.Statecharts;
 
-// A read op on a REFERENCED agent (owned:false) can't know the slot count from the chart
-// alone -- the slots live on the scene node the chart runs on. The pane takes a host-supplied
-// resolver: with it the slot picker bounds to 0..N-1; a double-click routes the ref to the
-// mind-open resolver. (A ref is exactly the tank_combat "mind" case.)
+// A chart's REF agent (owned:false) can NAME a mind (.mind.json) directly. The editor uses
+// that name to bound a read op's slot picker (0..N-1 from the mind's qubits) and to open the
+// mind on double-click -- with NO scene node in the loop. (This is the tank_combat "mind"
+// case done right: the reference lives in the chart, so opening the chart can open the mind.)
 public sealed class RefAgentSlotTests
 {
-    private static Chart RefReadingChart()
+    private static Chart RefReadingChart(string mind = "")
     {
         var chart = new Chart { Name = "t" };
-        chart.Agents.Add(new AgentDecl { Id = "mind", Owned = false, Host = "self" });
-        chart.Pure.Add(new PureOp
-        {
-            Id = "posture_c",
-            Op = OpKind.Committed,
-            Agent = "mind",
-            Slot = 1,
-        });
+        chart.Agents.Add(new AgentDecl { Id = "mind", Owned = false, Host = "self", Mind = mind });
+        chart.Pure.Add(new PureOp { Id = "posture_c", Op = OpKind.Committed, Agent = "mind", Slot = 1 });
         return chart;
     }
 
+    // The pane's real resolver reads the ref's Mind and loads that .mind.json's qubit count.
+    // Here we stub it: "tank_mind" -> 5 qubits, anything else -> unknown (0).
+    private static int SlotsForMind(AgentDecl a) => a.Mind == "tank_mind" ? 5 : 0;
+
     [Fact]
-    public void RefRead_Has_No_Slot_Bound_Without_A_Resolver()
+    public void RefRead_Has_No_Slot_Bound_Until_A_Mind_Is_Named()
     {
         var pane = new DataflowPaneViewModel();
         pane.Project(RefReadingChart());
+        pane.SetRefAgentResolvers(SlotsForMind, _ => { });
 
         var read = pane.Nodes.First(n => n.NodeId == "posture_c");
-        Assert.Equal(0, read.SlotChoiceCount);   // ref unresolved -> free-text slot field
+        Assert.Equal(0, read.SlotChoiceCount);   // no mind named -> free-text slot field
         Assert.False(read.HasSlotChoices);
     }
 
     [Fact]
-    public void Resolver_Bounds_The_RefRead_Slot_Picker()
+    public void Ref_Naming_A_Mind_Bounds_The_Slot_Picker()
     {
         var pane = new DataflowPaneViewModel();
-        pane.Project(RefReadingChart());
-
-        // The host window resolves the count from the scene (here 5, e.g. the tank's
-        // decisions:5). Setting the resolver reprojects, turning the free-text field into a
-        // 0..4 dropdown.
-        pane.SetRefAgentResolvers(_ => 5, _ => { });
+        pane.Project(RefReadingChart("tank_mind"));
+        pane.SetRefAgentResolvers(SlotsForMind, _ => { });
 
         var read = pane.Nodes.First(n => n.NodeId == "posture_c");
-        Assert.Equal(5, read.SlotChoiceCount);
+        Assert.Equal(5, read.SlotChoiceCount);   // 0..4 from tank_mind's qubits
         Assert.True(read.HasSlotChoices);
-        Assert.Equal(5, read.SlotChoices.Count);   // a 0..4 dropdown
     }
 
     [Fact]
-    public void DoubleClick_On_A_Ref_Agent_Routes_To_The_Mind_Open_Resolver()
+    public void Selecting_A_Mind_Sets_The_Ref_And_Rebounds_The_Slots()
+    {
+        var chart = RefReadingChart();
+        var pane = new DataflowPaneViewModel();
+        pane.Project(chart);
+        pane.SetRefAgentResolvers(SlotsForMind, _ => { });
+
+        pane.Nodes.First(n => n.NodeId == "mind").SelectedMind = "tank_mind";
+
+        Assert.Equal("tank_mind", chart.Agents[0].Mind);
+        // Choosing the mind reprojects, so the read op's picker now bounds to 0..4.
+        Assert.Equal(5, pane.Nodes.First(n => n.NodeId == "posture_c").SlotChoiceCount);
+    }
+
+    [Fact]
+    public void DoubleClick_On_A_Ref_Routes_The_Named_Mind_To_The_Open_Resolver()
     {
         var pane = new DataflowPaneViewModel();
-        pane.Project(RefReadingChart());
+        pane.Project(RefReadingChart("tank_mind"));
 
         AgentDecl? opened = null;
-        pane.SetRefAgentResolvers(_ => 5, a => opened = a);
+        pane.SetRefAgentResolvers(SlotsForMind, a => opened = a);
 
         pane.ActivateNode(pane.Nodes.First(n => n.NodeId == "mind"));   // the ref agent card
-        Assert.NotNull(opened);
-        Assert.Equal("mind", opened!.Id);
+        Assert.Equal("tank_mind", opened?.Mind);
 
         // A non-ref card (the read op) does not trigger the open.
         opened = null;
         pane.ActivateNode(pane.Nodes.First(n => n.NodeId == "posture_c"));
         Assert.Null(opened);
+    }
+
+    [Fact]
+    public void Ref_Mind_RoundTrips_Through_Json()
+    {
+        var ir = StatechartJson.Emit(RefReadingChart("tank_mind"), indented: false);
+        var back = StatechartJson.Load(ir);
+        Assert.Equal("tank_mind", back.Agents.First(a => a.Id == "mind").Mind);
     }
 }

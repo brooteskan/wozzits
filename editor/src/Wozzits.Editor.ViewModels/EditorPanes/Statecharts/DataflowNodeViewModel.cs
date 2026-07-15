@@ -82,6 +82,42 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public object Model { get; }
 
+    // A REF (owned == false) can NAME which mind (.mind.json) it reads. The pane supplies the
+    // available mind names (with a "(none)" first); double-clicking the ref opens the chosen
+    // mind and a read op's slot picker bounds to its qubits -- no scene node needed.
+    public bool HasMindPicker => Kind == DataflowNodeKind.Agent && Model is AgentDecl { Owned: false };
+
+    public const string NoMind = "(none)";
+
+    private IReadOnlyList<string> _mindChoices = new[] { NoMind };
+
+    public IReadOnlyList<string> MindChoices
+    {
+        get => _mindChoices;
+        set { _mindChoices = value is { Count: > 0 } ? value : new[] { NoMind }; OnPropertyChanged(); }
+    }
+
+    public string SelectedMind
+    {
+        get => Model is AgentDecl { Mind.Length: > 0 } a ? a.Mind : NoMind;
+        set
+        {
+            if (Model is not AgentDecl a)
+            {
+                return;
+            }
+            var mind = string.IsNullOrEmpty(value) || value == NoMind ? string.Empty : value;
+            if (a.Mind != mind)
+            {
+                a.Mind = mind;
+                OnPropertyChanged();
+                MindRefChanged?.Invoke();
+            }
+        }
+    }
+
+    public Action? MindRefChanged { get; set; }
+
     public double X
     {
         get => _x;
