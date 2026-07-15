@@ -752,6 +752,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(engine behavior_module_catalog_abi_tests)
     rs_add_test_group(engine asset_graph_json_roundtrip_tests)
     rs_add_test_group(engine editor_runtime_control_tests)
+    rs_add_test_group(engine view_controller_tests)
 
     # Strict-isolation render check (issue #213): launch the standalone
     # wozzits_app_v1 executable as a SEPARATE PROCESS on the portable render
@@ -962,6 +963,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     rs_add_test_group(asset_data_table data_table)
     rs_add_test_group(asset_data_table data_table_asset_module)
+    rs_add_test_group(asset_data_table data_table_csv_export)
     rs_add_test_group(asset_diagnostics diagnostic_resampled_time_series)
     rs_add_test_group(asset_diagnostics diagnostic_resampled_time_series_asset_module)
     rs_add_test_group(asset_diagnostics diagnostic_resampled_time_series_table_view)
