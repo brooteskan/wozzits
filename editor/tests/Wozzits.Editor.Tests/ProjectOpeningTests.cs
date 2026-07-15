@@ -2316,6 +2316,32 @@ public sealed partial class ProjectOpeningTests
         Assert.Contains(("host", "runner.1"), session.RemovedBehaviors);
     }
 
+    // Regression: removing the quantum_agent behavior must also drop its "Mind" sub-card.
+    // That card auto-reveals for a quantum_agent, and it used to linger after the behavior
+    // was gone because its visibility was only recomputed on node selection, not on removal.
+    [Fact]
+    public void RemovingQuantumAgentHidesItsMindCard()
+    {
+        var session = new RecordingEditorSession();   // viewport running by default
+        var inspector = new InspectorPaneViewModel(session);
+        inspector.Inspect(new SceneTreeNodeViewModel(new EngineSceneNode
+        {
+            Id = "tank",
+            DisplayName = "tank",
+            Kind = "node",
+            Visible = true,
+            Behaviors = [new EngineSceneBehavior { Id = "qa.1", Module = "quantum_agent" }],
+        }));
+
+        Assert.True(inspector.HasQuantumAgentMindSection);   // the Mind card shows for a quantum_agent
+
+        inspector.Behaviors.First(b => b.Module == "quantum_agent").RemoveCommand.Execute(null);
+
+        Assert.Contains(("tank", "qa.1"), session.RemovedBehaviors);
+        Assert.DoesNotContain(inspector.Behaviors, b => b.Module == "quantum_agent");
+        Assert.False(inspector.HasQuantumAgentMindSection);   // ...its Mind card no longer lingers
+    }
+
     [Fact]
     public void RefreshBehaviorModuleCatalogPicksUpModulesLoadedAfterSelection()
     {

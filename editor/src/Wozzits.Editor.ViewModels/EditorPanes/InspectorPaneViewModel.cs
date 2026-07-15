@@ -2342,6 +2342,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
         Behaviors.Remove(behavior);
         _inspectedSceneNode?.Behaviors.RemoveAll(b => b.Id == behavior.Id);
+        // A removed behavior can strand a sub-card that backs onto it: the Mind card needs
+        // a quantum_agent, the Statechart Runner card needs a statechart_runner. These are
+        // recomputed on node selection, not on removal, so re-evaluate them here -- otherwise
+        // the Mind "Detach" card lingers after its quantum_agent is gone.
+        RefreshQuantumAgentMindSection();
+        RefreshStatechartRunnerSection();
         NotifyComponentStateChanged();
     }
 
