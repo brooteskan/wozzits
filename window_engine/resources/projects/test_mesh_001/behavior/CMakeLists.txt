@@ -74,6 +74,14 @@ add_terrain_collision_behavior_module(
     tank_actuators
     tank_actuators_plugin.cpp)
 
+# enemy_tank_v1 -- a fresh, chart-driven enemy tank built up from scratch (source
+# under enemy_tank_v1/). STEP 1 = a body that just drives toward the player; the
+# quantum mind + statechart arrive in later steps. Kept apart from quantum_tank_agent
+# so it can evolve without disturbing the existing tank.
+add_terrain_collision_behavior_module(
+    enemy_tank_v1
+    enemy_tank_v1/enemy_tank_v1.cpp)
+
 # --- cognition gallery -------------------------------------------------------
 # Reusable quantum-cognition building blocks (source grouped under cognition/).
 # The helper forces the DLL output to behavior/build/clang-debug regardless of
