@@ -77,6 +77,7 @@ public enum OpKind
     Add, Sub, Mul, Min, Max, MulAdd, Clamp01,  // math
     Eq, Lt, Gt, And, Or, Not, Select,          // logic
     Proximity,                                 // sensors
+    ReadState,                                 // reads a behavior-published named scalar (v37)
 }
 
 /// <summary>A side-effect-free op. Fields used depend on <see cref="Op"/>.</summary>
@@ -87,6 +88,7 @@ public sealed class PureOp
     public string Agent { get; set; } = "";       // reads
     public int Slot { get; set; }                 // reads: marginal/committed slot, memory qubit
     public string Target { get; set; } = "";      // proximity: a Binding.Port
+    public string Name { get; set; } = "";        // read_state: the published scalar name
     public List<ValueRef> Ins { get; } = new();   // math/logic operands
     public ValueRef? Cond { get; set; }           // select
     public ValueRef? A { get; set; }              // select

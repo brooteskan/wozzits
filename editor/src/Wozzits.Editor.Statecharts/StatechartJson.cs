@@ -32,7 +32,7 @@ public static class StatechartJson
         ("max", OpKind.Max), ("mul_add", OpKind.MulAdd), ("clamp01", OpKind.Clamp01),
         ("eq", OpKind.Eq), ("lt", OpKind.Lt), ("gt", OpKind.Gt), ("and", OpKind.And),
         ("or", OpKind.Or), ("not", OpKind.Not), ("select", OpKind.Select),
-        ("proximity", OpKind.Proximity),
+        ("proximity", OpKind.Proximity), ("read_state", OpKind.ReadState),
     };
 
     private static readonly (string Name, EffectKind Kind)[] EffectTable =
@@ -140,6 +140,9 @@ public static class StatechartJson
                 break;
             case OpKind.Proximity:
                 op.Target = Str(p, "target");
+                break;
+            case OpKind.ReadState:
+                op.Name = Str(p, "name");
                 break;
             case OpKind.Select:
                 op.Cond = LoadRef(Member(p, "cond"));
@@ -341,6 +344,9 @@ public static class StatechartJson
                 break;
             case OpKind.Proximity:
                 o["target"] = p.Target;
+                break;
+            case OpKind.ReadState:
+                o["name"] = p.Name;
                 break;
             case OpKind.Select:
                 o["cond"] = EmitRef(p.Cond);
@@ -554,6 +560,8 @@ public static class StatechartJson
                 errors.Add($"pure op '{p.Id}' reads unknown agent '{p.Agent}'");
             if (p.Op == OpKind.Proximity && !bindingPorts.Contains(p.Target))
                 errors.Add($"proximity '{p.Id}' names unknown target binding '{p.Target}'");
+            if (p.Op == OpKind.ReadState && p.Name.Length == 0)
+                errors.Add($"read_state '{p.Id}' needs a scalar name");
             foreach (var dep in OpRefs(p))
                 if (!pureIds.Contains(dep))
                     errors.Add($"pure op '{p.Id}' references unknown op '{dep}'");

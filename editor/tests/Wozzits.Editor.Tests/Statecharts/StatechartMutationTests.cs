@@ -160,6 +160,49 @@ public sealed class StatechartMutationTests
     }
 
     [Fact]
+    public void Add_Read_State_Op_Names_Its_Scalar_With_No_Wired_Inputs()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+
+        var node = pane.AddOp(OpKind.ReadState)!;
+        var op = chart.Pure.First(p => p.Id == node.NodeId);
+
+        Assert.True(node.IsReadStateOp);
+        Assert.Empty(node.InputPorts);              // reads a published name, not wired operands
+        Assert.False(node.ShowOperandInputs);
+        Assert.Equal("read state", node.Subtitle);  // no scalar named yet
+
+        node.ScalarNameEditor!.Value = "damage";    // author the scalar name in the inspector
+        Assert.Equal("damage", op.Name);
+        Assert.Equal("read damage", node.Subtitle);  // the card names the scalar it reads
+    }
+
+    [Fact]
+    public void Read_State_Op_RoundTrips_Through_Json()
+    {
+        var chart = new Chart { Name = "t" };
+        chart.Pure.Add(new PureOp { Id = "hp", Op = OpKind.ReadState, Name = "damage" });
+
+        var back = StatechartJson.Load(StatechartJson.Emit(chart, indented: false));
+
+        var op = back.Pure.First(p => p.Id == "hp");
+        Assert.Equal(OpKind.ReadState, op.Op);
+        Assert.Equal("damage", op.Name);
+    }
+
+    [Fact]
+    public void Read_State_Without_A_Name_Is_A_Validation_Error()
+    {
+        var chart = new Chart { Name = "t" };
+        chart.Pure.Add(new PureOp { Id = "hp", Op = OpKind.ReadState, Name = "" });
+
+        Assert.Contains(
+            StatechartJson.Validate(chart),
+            e => e.Contains("read_state") && e.Contains("hp"));
+    }
+
+    [Fact]
     public void Add_Proximity_Op_Defaults_To_The_First_Binding()
     {
         var chart = Golden("traffic_light.sc.json");

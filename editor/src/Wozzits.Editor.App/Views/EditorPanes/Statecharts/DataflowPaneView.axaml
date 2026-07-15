@@ -36,6 +36,7 @@
                                 <MenuItem Header="committed — read its decision" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Committed}"/>
                                 <MenuItem Header="memory" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Memory}"/>
                                 <MenuItem Header="proximity" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Proximity}"/>
+                                <MenuItem Header="read state — a behavior's published number" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.ReadState}"/>
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>

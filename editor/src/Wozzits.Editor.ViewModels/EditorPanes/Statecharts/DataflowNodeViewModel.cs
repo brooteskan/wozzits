@@ -63,6 +63,16 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
                     v => { if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var s) && s >= 0) { op.Slot = s; OnPropertyChanged(nameof(Subtitle)); } },
                     () => SlotEdited?.Invoke());
             }
+            // read_state reads a behavior-published named scalar; the name is free-text
+            // (an open vocabulary, like an event name), edited here and shown on the card.
+            if (op.Op == OpKind.ReadState)
+            {
+                ScalarNameEditor = new EditableFieldViewModel(
+                    "reads scalar",
+                    () => op.Name,
+                    v => { op.Name = v; OnPropertyChanged(nameof(Subtitle)); },
+                    () => ScalarNameEdited?.Invoke());
+            }
         }
     }
 
@@ -79,12 +89,15 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public string Title => NodeId;
 
-    // A read op's card announces which qubit it reads -- e.g. "qubit 3 committed" -- so the graph
-    // reads at a glance without opening the inspector. Other node kinds keep the subtitle they were
-    // built with (binding / agent / the op kind). Refreshed live when the qubit is re-picked.
-    public string Subtitle => Model is PureOp { IsRead: true } op
-        ? $"qubit {op.Slot.ToString(CultureInfo.InvariantCulture)} {ReadOpWord(op.Op)}"
-        : _subtitle;
+    // A read op's card announces what it reads -- "qubit 3 committed", "read damage" -- so the
+    // graph reads at a glance without opening the inspector. Other node kinds keep the subtitle
+    // they were built with (binding / agent / the op kind). Refreshed live on a re-pick/rename.
+    public string Subtitle => Model switch
+    {
+        PureOp { IsRead: true } r => $"qubit {r.Slot.ToString(CultureInfo.InvariantCulture)} {ReadOpWord(r.Op)}",
+        PureOp { Op: OpKind.ReadState } rs => rs.Name.Length > 0 ? $"read {rs.Name}" : "read state",
+        _ => _subtitle,
+    };
 
     private static string ReadOpWord(OpKind op) => op switch
     {
@@ -318,9 +331,20 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public bool IsProximityOp { get; }
 
-    // The operand-inputs section is for value inputs only -- reads/proximity take a ref, not a
-    // value, so they show their picker instead.
-    public bool ShowOperandInputs => HasInputPorts && !IsReadOp && !IsProximityOp;
+    // read_state senses a behavior-published named scalar (v37) -- like proximity it takes a
+    // typed name in the inspector, not wired value inputs.
+    public bool IsReadStateOp => Model is PureOp { Op: OpKind.ReadState };
+
+    // The scalar-name field for a read_state op (free-text, an open vocabulary); null otherwise.
+    public EditableFieldViewModel? ScalarNameEditor { get; }
+
+    public bool HasScalarName => ScalarNameEditor is not null;
+
+    public Action? ScalarNameEdited { get; set; }
+
+    // The operand-inputs section is for value inputs only -- reads/proximity/read_state take a
+    // ref or a name, not value inputs, so they show their picker instead.
+    public bool ShowOperandInputs => HasInputPorts && !IsReadOp && !IsProximityOp && !IsReadStateOp;
 
     public EditableFieldViewModel? SlotEditor { get; }
 

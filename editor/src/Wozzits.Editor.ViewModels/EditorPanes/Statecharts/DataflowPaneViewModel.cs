@@ -639,7 +639,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
     // value operand (a read's agent / a proximity target is wired differently, not as an op ref).
     private static ValueRef? OperandSlot(PureOp op, int index) => op.Op switch
     {
-        OpKind.Marginal or OpKind.Committed or OpKind.Memory or OpKind.Proximity => null,
+        OpKind.Marginal or OpKind.Committed or OpKind.Memory or OpKind.Proximity or OpKind.ReadState => null,
         OpKind.Select => index switch
         {
             0 => op.Cond ??= ValueRef.Number(0),
@@ -778,6 +778,10 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
                 break;
             case OpKind.Proximity:
                 op.Target = chart.Bindings.Count > 0 ? chart.Bindings[0].Port : string.Empty;
+                break;
+            case OpKind.ReadState:
+                // A behavior-published scalar name (open vocabulary); typed in the
+                // inspector. No operands -- so it must NOT fall to the default 2-in case.
                 break;
             case OpKind.Clamp01:
             case OpKind.Not:
@@ -982,6 +986,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             node.SlotEdited = MarkChartDirty;
             node.SlotChoiceCount = SlotCountForReadOp(p);
             node.ReadRefChanged = ReprojectPreservingSelection;
+            node.ScalarNameEdited = MarkChartDirty;
             node.OpRenameRequested = newId => RenameOp(p, newId);
             opNodes[p.Id] = node;
             opsById[p.Id] = p;
