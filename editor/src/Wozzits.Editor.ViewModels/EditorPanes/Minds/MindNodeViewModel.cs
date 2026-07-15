@@ -45,7 +45,7 @@ public sealed class MindNodeViewModel : ViewModelBase, ICanvasNode
     // Fired when the goal is committed, so the pane can mark the mind dirty.
     public Action? GoalEdited { get; set; }
 
-    // Positional index in the mind (q0, q1, ...) -- the display + bond emit use it.
+    // Positional index in the mind (qubit 0, qubit 1, ...) -- the display + bond emit use it.
     public int Index { get; }
 
     public string NodeId => Qubit.Id;
@@ -60,7 +60,8 @@ public sealed class MindNodeViewModel : ViewModelBase, ICanvasNode
 
     public double CenterY => _y + NodeHeight / 2.0;
 
-    public string Title => $"q{Index}";
+    // "qubit N", matching what a statechart read op calls its qubit -- so slot ↔ qubit lines up.
+    public string Title => $"qubit {Index}";
 
     // "+0.4" / "-0.25" / "—" (no bias); drives the node's goal line.
     public string GoalLabel => Qubit.Goal == 0.0

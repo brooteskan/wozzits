@@ -1496,14 +1496,14 @@
                                 </Grid>
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
                                       IsVisible="{Binding SelectedStatechartNode.HasSlotChoices}">
-                                    <TextBlock Text="slot" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBlock Text="qubit" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
                                     <ComboBox Grid.Column="1" Classes="InspectorInput" HorizontalAlignment="Stretch"
                                               ItemsSource="{Binding SelectedStatechartNode.SlotChoices}"
                                               SelectedItem="{Binding SelectedStatechartNode.SelectedSlot, Mode=TwoWay}"/>
                                 </Grid>
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
                                       IsVisible="{Binding !SelectedStatechartNode.HasSlotChoices}">
-                                    <TextBlock Text="slot" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBlock Text="qubit" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
                                     <TextBox Grid.Column="1" Classes="InspectorInput"
                                              Text="{Binding SelectedStatechartNode.SlotEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                 </Grid>

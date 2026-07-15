@@ -57,7 +57,7 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
             if (op.IsRead)
             {
                 SlotEditor = new EditableFieldViewModel(
-                    op.Op == OpKind.Memory ? "qubit" : "slot",
+                    "qubit",   // a read op indexes a qubit of the mind -- same numbering as the mind graph's qubit N
                     () => op.Slot.ToString(CultureInfo.InvariantCulture),
                     v => { if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var s) && s >= 0) op.Slot = s; },
                     () => SlotEdited?.Invoke());
