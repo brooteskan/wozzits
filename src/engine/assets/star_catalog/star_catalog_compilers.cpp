@@ -328,6 +328,14 @@ namespace wz::engine::assets::internal
                     .min = 0.0,
                     .max = 20.0,
                 },
+                {
+                    // No min/max: a ~6e-8 sr value has no usable linear slider
+                    // range, so this stays a typed numeric field.
+                    .name = "solid_angle",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Star solid angle (sr)",
+                    .default_num = 6.0e-8,
+                },
             },
             .compile = [&logger, &table, gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
