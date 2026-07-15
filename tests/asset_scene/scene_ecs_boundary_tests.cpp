@@ -456,6 +456,50 @@ TEST(SceneECSBoundary, CountsSceneSourceComponents)
         wz::scene::SceneAuthoredComponentKind::SceneSource));
 }
 
+// A node carrying a motion filter reports Kind::MotionFilter, counts in the
+// authored summary, and is runtime-relevant on its own (the filter pass conditions
+// the driven transform, so a filter-only node still has runtime work to do).
+TEST(SceneECSBoundary, CountsMotionFilterComponents)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "motion_filter_inventory";
+
+    SceneNodeAsset filtered{};
+    filtered.id = "chase_camera";
+    filtered.motion_filter = SceneMotionFilterAsset{};
+    filtered.motion_filter->translation_smoothing[1] = 0.25f;
+    filtered.motion_filter->pitch.level = true;
+
+    // A motion filter alone is enough to make a node runtime-relevant: it does
+    // not need a Motion component to pair with, since it conditions whatever
+    // drives the node (a behavior, or a moving parent).
+    EXPECT_TRUE(has_runtime_relevant_components(filtered));
+    EXPECT_FALSE(has_asset_authoring_recipes(filtered));
+
+    const auto components = authored_components_for_node(filtered);
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::MotionFilter), 1);
+    // MotionFilter is its own kind, not folded into Motion.
+    EXPECT_EQ(std::count(
+        components.begin(),
+        components.end(),
+        wz::scene::SceneAuthoredComponentKind::Motion), 0);
+
+    scene.nodes.push_back(std::move(filtered));
+
+    const auto summary = summarize_authored_scene_components(scene);
+    EXPECT_EQ(summary.nodes, 1u);
+    EXPECT_EQ(summary.motion_filters, 1u);
+    EXPECT_EQ(summary.motions, 0u);
+
+    EXPECT_TRUE(wz::scene::is_runtime_relevant_component(
+        wz::scene::SceneAuthoredComponentKind::MotionFilter));
+}
+
 TEST(SceneECSBoundary, AssetBackedRenderableDoesNotEmbedAssetDefinition)
 {
     using namespace wz::engine::assets;

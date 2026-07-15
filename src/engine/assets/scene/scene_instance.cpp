@@ -457,6 +457,8 @@ namespace wz::engine::assets
                 instance.proximities.size()),
             .motions = static_cast<uint32_t>(
                 instance.motions.size()),
+            .motion_filters = static_cast<uint32_t>(
+                instance.motion_filters.size()),
             .behaviors = static_cast<uint32_t>(
                 instance.behaviors.size()),
             .compute_kernels = instance.compute_kernels,

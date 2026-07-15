@@ -83,6 +83,11 @@ namespace wz::scene
         EditorHandle,
         Proximity,
         Motion,
+        // Per-DOF smoothing/clamp of a node's DRIVEN transform, applied by the
+        // runtime motion-filter pass. Distinct from Motion: Motion integrates a
+        // velocity, MotionFilter only conditions the result of whatever drives
+        // the node (a behavior, or a moving parent).
+        MotionFilter,
         Behavior,
         ComputeKernel,
         RenderShader,
@@ -151,6 +156,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::EventListener:
         case SceneAuthoredComponentKind::Proximity:
         case SceneAuthoredComponentKind::Motion:
+        case SceneAuthoredComponentKind::MotionFilter:
         case SceneAuthoredComponentKind::Behavior:
         case SceneAuthoredComponentKind::SceneSource:
             return SceneComponentDomain::RuntimeRelevant;
@@ -246,6 +252,7 @@ namespace wz::scene
         uint32_t event_triggers = 0;
         uint32_t proximities = 0;
         uint32_t motions = 0;
+        uint32_t motion_filters = 0;
         uint32_t behaviors = 0;
         uint32_t compute_kernels = 0;
         uint32_t render_shaders = 0;
@@ -274,6 +281,7 @@ namespace wz::scene
         uint32_t event_listeners = 0;
         uint32_t proximities = 0;
         uint32_t motions = 0;
+        uint32_t motion_filters = 0;
         uint32_t behaviors = 0;
         uint32_t compute_kernels = 0;
         uint32_t render_shaders = 0;

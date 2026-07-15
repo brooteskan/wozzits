@@ -1978,6 +1978,9 @@ namespace wz::engine::assets
         if (node.motion) {
             out.push_back(Kind::Motion);
         }
+        if (node.motion_filter) {
+            out.push_back(Kind::MotionFilter);
+        }
         if (node.behavior || !node.behaviors.empty()) {
             out.push_back(Kind::Behavior);
         }
@@ -3119,6 +3122,7 @@ namespace wz::engine::assets
             || node.event_listener.has_value()
             || node.proximity.has_value()
             || node.motion.has_value()
+            || node.motion_filter.has_value()
             || node.behavior.has_value()
             || !node.behaviors.empty()
             || node.compute_kernel.has_value()
@@ -3381,6 +3385,9 @@ namespace wz::engine::assets
             }
             if (node.motion) {
                 ++out.motions;
+            }
+            if (node.motion_filter) {
+                ++out.motion_filters;
             }
             if (node.behavior) {
                 ++out.behaviors;

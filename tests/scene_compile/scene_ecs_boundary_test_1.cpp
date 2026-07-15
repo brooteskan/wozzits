@@ -149,6 +149,9 @@ TEST(SceneECSBoundary, ClassifiesRuntimeRelevantComponents)
         scene_component_domain(SceneAuthoredComponentKind::Motion),
         SceneComponentDomain::RuntimeRelevant);
     EXPECT_EQ(
+        scene_component_domain(SceneAuthoredComponentKind::MotionFilter),
+        SceneComponentDomain::RuntimeRelevant);
+    EXPECT_EQ(
         scene_component_domain(SceneAuthoredComponentKind::Behavior),
         SceneComponentDomain::RuntimeRelevant);
 
@@ -168,6 +171,10 @@ TEST(SceneECSBoundary, ClassifiesRuntimeRelevantComponents)
         SceneAuthoredComponentKind::Proximity));
     EXPECT_TRUE(is_runtime_relevant_component(
         SceneAuthoredComponentKind::Motion));
+    EXPECT_TRUE(is_runtime_relevant_component(
+        SceneAuthoredComponentKind::MotionFilter));
+    EXPECT_FALSE(is_editor_authoring_component(
+        SceneAuthoredComponentKind::MotionFilter));
     EXPECT_TRUE(is_runtime_relevant_component(
         SceneAuthoredComponentKind::Behavior));
     EXPECT_FALSE(is_exportable_component(
