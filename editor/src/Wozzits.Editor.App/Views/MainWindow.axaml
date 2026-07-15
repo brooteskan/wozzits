@@ -40,12 +40,14 @@
                           ToggleType="CheckBox"
                           IsChecked="{Binding FrameProfilingEnabled, Mode=TwoWay}"/>
             </MenuItem>
-            <MenuItem Header="_Prefabs" SubmenuOpened="OnPrefabsMenuOpened">
-                <MenuItem Header="_Open Prefab" x:Name="OpenPrefabMenu"/>
+            <MenuItem Header="S_cenelets" SubmenuOpened="OnPrefabsMenuOpened">
+                <MenuItem Header="_New Scenelet" Command="{Binding NewSceneletCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Open Scenelet" x:Name="OpenPrefabMenu"/>
                 <MenuItem Header="_Back to Scene"
                           Command="{Binding BackToSceneCommand}"/>
                 <Separator/>
-                <MenuItem Header="_Refresh Prefab List"
+                <MenuItem Header="_Refresh Scenelet List"
                           Command="{Binding RefreshSceneletsCommand}"/>
             </MenuItem>
             <MenuItem Header="_Statecharts" SubmenuOpened="OnStatechartsMenuOpened">

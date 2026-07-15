@@ -81,6 +81,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             BackToScene, () => _editorSession is not null && IsEditingPrefab);
         RefreshSceneletsCommand = new RelayCommand(
             RefreshScenelets, () => _editorSession is not null);
+        NewSceneletCommand = new RelayCommand(
+            NewScenelet,
+            () => _editorSession is not null && !string.IsNullOrWhiteSpace(_projectDirectory));
         RefreshStatechartsCommand = new RelayCommand(
             RefreshStatecharts, () => !string.IsNullOrWhiteSpace(_projectDirectory));
         NewStatechartCommand = new RelayCommand(
@@ -185,6 +188,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IRelayCommand<SceneletInfo?> OpenSceneletCommand { get; }
     public IRelayCommand BackToSceneCommand { get; }
     public IRelayCommand RefreshSceneletsCommand { get; }
+    public IRelayCommand NewSceneletCommand { get; }
 
     public IRelayCommand RefreshStatechartsCommand { get; }
 
@@ -422,7 +426,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // Diagnostic: tells us whether the engine handed back scenelets (a non-zero
         // count with an empty menu = a XAML binding problem, not an ABI/engine one).
         AppendEditorLog(
-            $"[editor] Prefab list: {Scenelets.Count} scenelet(s) "
+            $"[editor] Scenelet list: {Scenelets.Count} scenelet(s) "
             + $"[{string.Join(", ", Scenelets.Select(s => s.Name))}].");
     }
 
@@ -436,13 +440,83 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         if (!result.Ok)
         {
             AppendEditorLog(
-                $"[editor] Open prefab '{scenelet.Name}' failed: {result.Error}");
+                $"[editor] Open scenelet '{scenelet.Name}' failed: {result.Error}");
             return;
         }
         EditingPrefabName = scenelet.Name;
-        AppendEditorLog($"[editor] Editing prefab '{scenelet.Name}'.");
+        AppendEditorLog($"[editor] Editing scenelet '{scenelet.Name}'.");
         ReloadSceneFromRuntime();
     }
+
+    // Create a fresh, minimal scenelet (one empty root node) in the project's scenelets
+    // folder and open it for editing -- the Scenelets menu is the one place scenelets are
+    // created/opened, mirroring New Chart / New Mind. Opening re-scans the scenelets dir,
+    // so the new file registers as a spawnable prefab AND joins the catalog immediately;
+    // you then build it up in the viewport (add the body, attach behaviors).
+    private void NewScenelet()
+    {
+        if (_editorSession is null || string.IsNullOrWhiteSpace(_projectDirectory))
+        {
+            return;
+        }
+
+        var dir = Path.Combine(_projectDirectory, "scenelets");
+        Directory.CreateDirectory(dir);
+        var name = FreshSceneletName(dir);
+        var path = Path.Combine(dir, name + ".scene.json");
+
+        try
+        {
+            File.WriteAllText(path, MinimalSceneletJson(name));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppendEditorLog($"[editor] Could not create scenelet '{name}': {ex.Message}");
+            return;
+        }
+
+        // Open by resource-relative path: load_scene re-scans scenelets/, so the fresh
+        // file registers + appears in the catalog, which RefreshScenelets then republishes.
+        OpenScenelet(new SceneletInfo(name, $"scenelets/{name}.scene.json"));
+        RefreshScenelets();
+        AppendEditorLog($"[editor] Created scenelet '{name}'");
+    }
+
+    private static string FreshSceneletName(string dir)
+    {
+        for (int i = 1; ; i++)
+        {
+            var name = "untitled" + i;
+            if (!File.Exists(Path.Combine(dir, name + ".scene.json")))
+            {
+                return name;
+            }
+        }
+    }
+
+    // A valid, empty scenelet: one root node named after the scenelet, no renderable or
+    // behaviors -- the starting point you flesh out in the viewport.
+    private static string MinimalSceneletJson(string name) => $$"""
+        {
+          "schema": "wozzits.scene.v0",
+          "name": "{{name}}",
+          "nodes": [
+            {
+              "id": "root",
+              "parent": null,
+              "name": "{{name}}",
+              "transform": {
+                "translation": [0, 0, 0],
+                "rotation_quat": [0, 0, 0, 1],
+                "scale": [1, 1, 1]
+              },
+              "visible": true,
+              "active": true
+            }
+          ],
+          "defaults": {}
+        }
+        """;
 
     private void BackToScene()
     {
