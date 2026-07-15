@@ -132,6 +132,17 @@ public sealed class GraphInteraction
         var node = NodeUnder(e.Source);
         if (node is not null)
         {
+            // Double-click a node: activate it (dataflow -> open a ref agent's mind). Detected
+            // here via ClickCount because the pointer capture below suppresses the card's
+            // DoubleTapped gesture.
+            if (e.ClickCount == 2 && vm is DataflowPaneViewModel dataflowVm
+                && node is DataflowNodeViewModel dataflowNode)
+            {
+                dataflowVm.ActivateNode(dataflowNode);
+                e.Handled = true;
+                return;
+            }
+
             if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
             {
                 vm.ToggleSelection(node);

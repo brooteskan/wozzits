@@ -102,11 +102,14 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         get => Model is AgentDecl { Mind.Length: > 0 } a ? a.Mind : NoMind;
         set
         {
-            if (Model is not AgentDecl a)
+            // Guard the transient null a ComboBox writes back while it rebinds (e.g. when the
+            // node is re-selected) -- without this the ref's mind silently resets to none. Only
+            // an explicit "(none)" clears it.
+            if (Model is not AgentDecl a || value is null)
             {
                 return;
             }
-            var mind = string.IsNullOrEmpty(value) || value == NoMind ? string.Empty : value;
+            var mind = value == NoMind ? string.Empty : value;
             if (a.Mind != mind)
             {
                 a.Mind = mind;

@@ -96,6 +96,20 @@ public sealed class RefAgentSlotTests
         Assert.Equal("tank_mind", pane.Nodes.First(n => n.NodeId == "mind").SelectedMind);   // value stuck
     }
 
+    // Regression: a ComboBox writes a transient null while it rebinds (re-selecting the node).
+    // That must NOT clear the ref's mind -- otherwise the mind looks like it "didn't survive".
+    [Fact]
+    public void ComboBox_Transient_Null_Does_Not_Clear_The_Mind()
+    {
+        var pane = new DataflowPaneViewModel();
+        pane.Project(RefReadingChart("tank_mind"));
+
+        var node = pane.Nodes.First(n => n.NodeId == "mind");
+        node.SelectedMind = null!;   // the transient null on rebind
+
+        Assert.Equal("tank_mind", node.SelectedMind);   // preserved, not reset to (none)
+    }
+
     [Fact]
     public void Ref_Mind_RoundTrips_Through_Json()
     {

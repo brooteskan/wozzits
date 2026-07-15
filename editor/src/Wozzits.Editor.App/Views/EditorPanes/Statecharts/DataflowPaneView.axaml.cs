@@ -2,7 +2,6 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
-using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Wozzits.Editor.App.Controls;
@@ -25,17 +24,6 @@ public partial class DataflowPaneView : UserControl
     // actually landed (relative to the card's top-left) and hand those offsets to the node. The
     // statechart card's header is shorter than the asset-graph card the constants were tuned for,
     // so without this the wires attach a row too low and short of the dots.
-    // Double-click a card: route it to the pane, which opens the referenced mind if the card
-    // is a REFERENCE agent (the pane holds the host-window resolver). No-op for other cards.
-    private void OnNodeDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        if ((sender as Control)?.DataContext is DataflowNodeViewModel node
-            && DataContext is DataflowPaneViewModel pane)
-        {
-            pane.ActivateNode(node);
-        }
-    }
-
     private void CardLoaded(object? sender, RoutedEventArgs e) => MeasurePorts(sender as Border);
 
     private void CardSizeChanged(object? sender, SizeChangedEventArgs e) => MeasurePorts(sender as Border);
