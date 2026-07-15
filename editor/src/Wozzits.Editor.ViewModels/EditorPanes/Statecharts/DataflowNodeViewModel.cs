@@ -23,12 +23,13 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
     private double _y;
     private bool _isSelected;
     private bool _isDimmed;
+    private readonly string _subtitle;
 
     public DataflowNodeViewModel(DataflowNodeKind kind, string nodeId, string subtitle, object model)
     {
         Kind = kind;
         NodeId = nodeId;
-        Subtitle = subtitle;
+        _subtitle = subtitle;
         Model = model;
         PropertyRows = BuildRows(model);
         SpecFields = kind == DataflowNodeKind.Agent && model is AgentDecl agent
@@ -59,7 +60,7 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
                 SlotEditor = new EditableFieldViewModel(
                     "qubit",   // a read op indexes a qubit of the mind -- same numbering as the mind graph's qubit N
                     () => op.Slot.ToString(CultureInfo.InvariantCulture),
-                    v => { if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var s) && s >= 0) op.Slot = s; },
+                    v => { if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var s) && s >= 0) { op.Slot = s; OnPropertyChanged(nameof(Subtitle)); } },
                     () => SlotEdited?.Invoke());
             }
         }
@@ -78,7 +79,20 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public string Title => NodeId;
 
-    public string Subtitle { get; }
+    // A read op's card announces which qubit it reads -- e.g. "qubit 3 committed" -- so the graph
+    // reads at a glance without opening the inspector. Other node kinds keep the subtitle they were
+    // built with (binding / agent / the op kind). Refreshed live when the qubit is re-picked.
+    public string Subtitle => Model is PureOp { IsRead: true } op
+        ? $"qubit {op.Slot.ToString(CultureInfo.InvariantCulture)} {ReadOpWord(op.Op)}"
+        : _subtitle;
+
+    private static string ReadOpWord(OpKind op) => op switch
+    {
+        OpKind.Marginal => "marginal",
+        OpKind.Committed => "committed",
+        OpKind.Memory => "memory",
+        _ => op.ToString().ToLowerInvariant(),
+    };
 
     public object Model { get; }
 
@@ -349,6 +363,7 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
             {
                 op.Slot = s;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(Subtitle));
                 SlotEdited?.Invoke();
             }
         }

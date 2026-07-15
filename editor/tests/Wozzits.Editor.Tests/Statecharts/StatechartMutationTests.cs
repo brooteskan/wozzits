@@ -141,6 +141,25 @@ public sealed class StatechartMutationTests
     }
 
     [Fact]
+    public void Read_Op_Card_Subtitle_Names_Its_Qubit_And_Refreshes_Live()
+    {
+        var chart = Golden("traffic_light.sc.json");
+        var pane = Dataflow(chart);
+
+        var read = pane.AddOp(OpKind.Committed)!;
+        Assert.Equal("qubit 0 committed", read.Subtitle);   // the card says which qubit, not just "committed"
+
+        var raised = new List<string?>();
+        read.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        read.SelectedSlot = "3";                            // re-pick the qubit in the inspector
+        Assert.Equal("qubit 3 committed", read.Subtitle);   // card recomputed from the new qubit
+        Assert.Contains(nameof(read.Subtitle), raised);     // ...and notified, so the canvas repaints
+
+        // A non-read op is unaffected -- it keeps its plain op-kind subtitle.
+        Assert.Equal("Mul", pane.AddOp(OpKind.Mul)!.Subtitle);
+    }
+
+    [Fact]
     public void Add_Proximity_Op_Defaults_To_The_First_Binding()
     {
         var chart = Golden("traffic_light.sc.json");
