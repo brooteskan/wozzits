@@ -2316,6 +2316,58 @@ public sealed partial class ProjectOpeningTests
         Assert.Contains(("host", "runner.1"), session.RemovedBehaviors);
     }
 
+    // A module rebuilt with NEW declared params must show them without restarting the
+    // editor. The inspector caches the module schema (rebuilding it reloads every project
+    // DLL, so it is not per-selection work), and a rebuild reloads the DLLs but used to
+    // leave that cache stale -- so a module that just grew params kept showing none, which
+    // reads as "the editor ignored my change".
+    [Fact]
+    public void RebuiltModuleDeclaringNewParamsShowsThemWithoutRestart()
+    {
+        var session = new RecordingEditorSession();   // param catalog starts empty
+        var inspector = new InspectorPaneViewModel(session);
+        inspector.Inspect(new SceneTreeNodeViewModel(new EngineSceneNode
+        {
+            Id = "tank",
+            DisplayName = "tank",
+            Kind = "node",
+            Visible = true,
+            Behaviors = [new EngineSceneBehavior { Id = "b.1", Module = "enemy_tank_v1" }],
+        }));
+
+        // The module declares nothing yet, so the card has no typed fields.
+        Assert.False(inspector.Behaviors.Single().HasConfig);
+
+        // You add declared params and hit Rebuild: the freshly built DLL reports them.
+        session.BehaviorModuleParamCatalog = new EngineBehaviorModuleCatalogResponse
+        {
+            Ok = true,
+            Modules =
+            [
+                new EngineBehaviorModule
+                {
+                    Module = "enemy_tank_v1",
+                    Params =
+                    [
+                        new EngineBehaviorModuleParam
+                        {
+                            Key = "target_0",
+                            Label = "Target 0",
+                            Type = 3,                  // string
+                            DefaultString = "tank",
+                        },
+                    ],
+                },
+            ],
+        };
+
+        inspector.RefreshDeclaredParams();
+
+        var row = Assert.Single(inspector.Behaviors.Single().Config);
+        Assert.Equal("target_0", row.Key);
+        Assert.Equal("Target 0", row.Label);
+    }
+
     // A failed rebuild must be visible ON the card, not just in a console full of live
     // behavior output -- otherwise the stale DLL reads as "the editor ignored my change".
     [Fact]

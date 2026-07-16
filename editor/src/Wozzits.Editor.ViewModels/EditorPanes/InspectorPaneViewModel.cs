@@ -2214,9 +2214,24 @@ public sealed class InspectorPaneViewModel : ViewModelBase
                 : _buildErrors.Where(
                     e => e.Contains(module, StringComparison.OrdinalIgnoreCase)));
 
-    // can render typed fields. Pulled once per inspector lifetime from the device-free,
-    // project-aware module catalog (built-ins + this project's own behavior DLLs).
+    // can render typed fields. Pulled lazily from the device-free, project-aware module
+    // catalog (built-ins + this project's own behavior DLLs) and cached -- rebuilding it
+    // reloads every project DLL, so it is not something to do per selection.
     private EngineBehaviorModuleCatalogResponse? _moduleParamCatalog;
+
+    // Drop the cached schema and repopulate the open node. A rebuild reloads the DLLs into
+    // the engine, but the params a module DECLARES can change with them -- and nothing used
+    // to tell the inspector its cached schema was stale. The card then kept rendering the
+    // OLD params (i.e. none, for a module that just grew some) until the editor restarted,
+    // which reads as "the editor ignored my change".
+    public void RefreshDeclaredParams()
+    {
+        _moduleParamCatalog = null;
+        if (_inspectedSceneNode is not null)
+        {
+            Inspect(_inspectedSceneNode);   // re-pulls the catalog while rebuilding the cards
+        }
+    }
 
     private IReadOnlyList<EngineBehaviorModuleParam> DeclaredParamsFor(string module)
     {

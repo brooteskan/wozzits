@@ -637,6 +637,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         AppendEditorLog(reload.Ok
             ? "[editor] Behavior modules reloaded."
             : $"[editor] Behavior reload skipped: {reload.Error}");
+
+        // The DLLs just changed, so the config params they DECLARE may have too. The
+        // inspector caches that schema, so without this a module that just grew params
+        // keeps showing none until the editor restarts.
+        Inspector.RefreshDeclaredParams();
     }
 
     private void AppendEditorLog(string line)
