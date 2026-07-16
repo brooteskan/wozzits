@@ -782,9 +782,12 @@ namespace
 namespace
 {
     // Declared config tunables, so the editor renders typed fields for them (a checkbox
-    // for chart_driven, a number for drive_speed) instead of nothing. The runtime read
-    // is unchanged (wz_config_bool / wz_config_float above); this just makes them
-    // discoverable + gives authoring defaults.
+    // for chart_driven, a number for drive_speed) instead of nothing.
+    //
+    // These defaults are LIVE at runtime: wz_config_* falls back to them when a field
+    // was never authored (only overrides are written to the scene), so they must agree
+    // with the pre-seeds the reads above use -- kChartDrivenDefault=false and
+    // AgentTankState::drive_speed=6.0f. Change one, change both.
     const WzBehaviorParamDesc kQuantumTankParams[] = {
         { "chart_driven", "Chart-driven (statechart owns the hull)",
             WZ_BEHAVIOR_PARAM_BOOL, 0.0, nullptr },

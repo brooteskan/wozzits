@@ -1252,60 +1252,58 @@ namespace wz::engine::behavior
             return nullptr;
         }
 
-        uint8_t get_config_bool(
-            void* user,
-            const char* key,
-            uint8_t* out_value)
+        // The DECLARED spec for `key` on the module this binding runs, or null.
+        //
+        // A param declared via WZ_BEHAVIOR_MODULE_INIT_PARAMS carries a default, and
+        // that default is what the editor renders in the field. Without this, it was
+        // ONLY that: the authored config is the sole runtime source, so a field the
+        // user never edited (nothing is written but overrides) read as absent and the
+        // module got nothing -- every module therefore had to repeat its default in
+        // C++, and the two copies could silently disagree.
+        //
+        // Resolved exactly the way dispatch resolves a binding (find_module on the
+        // component's module), so these are the params this binding actually runs
+        // under. Null registry => miss, which keeps contexts that never dispatch
+        // through a registry (some tests) on the old authored-only behavior.
+        const BehaviorParamSpec* find_declared_param(
+            BehaviorFrameContext* context, const char* key)
         {
-            auto* context = static_cast<BehaviorFrameContext*>(user);
-            const auto* entry = find_config_value(context, key);
-            if (!entry || !out_value
-                || entry->kind
-                    != wz::engine::assets::SceneBehaviorConfigValueKind::Bool)
+            if (!context || !context->registry || !context->active_behavior
+                || !key)
             {
-                return 0;
+                return nullptr;
             }
 
-            *out_value = entry->bool_value ? uint8_t{ 1 } : uint8_t{ 0 };
-            return 1;
-        }
-
-        uint8_t get_config_number(
-            void* user,
-            const char* key,
-            double* out_value)
-        {
-            auto* context = static_cast<BehaviorFrameContext*>(user);
-            const auto* entry = find_config_value(context, key);
-            if (!entry || !out_value
-                || entry->kind
-                    != wz::engine::assets::SceneBehaviorConfigValueKind::Number)
-            {
-                return 0;
+            const auto module_handle =
+                context->registry->find_module(context->active_behavior->module);
+            if (!module_handle) {
+                return nullptr;
             }
 
-            *out_value = entry->number_value;
-            return 1;
+            const BehaviorModuleRegistration* module =
+                context->registry->get_module(*module_handle);
+            if (!module) {
+                return nullptr;
+            }
+
+            for (const auto& param : module->params) {
+                if (param.key == key) {
+                    return &param;
+                }
+            }
+            return nullptr;
         }
 
-        uint8_t get_config_string(
-            void* user,
-            const char* key,
+        // Shared string out-copy, so the authored and declared-default paths hand
+        // back byte-identical truncation + required-size semantics.
+        uint8_t copy_config_string_out(
+            const std::string& value,
             char* out_buffer,
             uint32_t buffer_size,
             uint32_t* out_required_size)
         {
-            auto* context = static_cast<BehaviorFrameContext*>(user);
-            const auto* entry = find_config_value(context, key);
-            if (!entry
-                || entry->kind
-                    != wz::engine::assets::SceneBehaviorConfigValueKind::String)
-            {
-                return 0;
-            }
-
             const uint32_t required_size =
-                static_cast<uint32_t>(entry->string_value.size() + 1u);
+                static_cast<uint32_t>(value.size() + 1u);
             if (out_required_size) {
                 *out_required_size = required_size;
             }
@@ -1317,13 +1315,113 @@ namespace wz::engine::behavior
             const uint32_t copy_size =
                 std::min(buffer_size - 1u, required_size - 1u);
             if (copy_size > 0u) {
-                std::memcpy(
-                    out_buffer,
-                    entry->string_value.data(),
-                    copy_size);
+                std::memcpy(out_buffer, value.data(), copy_size);
             }
             out_buffer[copy_size] = '\0';
             return required_size <= buffer_size ? uint8_t{ 1 } : uint8_t{ 0 };
+        }
+
+        // The three config reads share one contract: an AUTHORED value of the
+        // matching type wins; otherwise the module's DECLARED default; otherwise a
+        // miss (return 0, out-param untouched -- which is what lets a caller
+        // pre-seed its own default and have it survive).
+        //
+        // A declared default is only consulted for the matching type, so a param
+        // declared FLOAT never satisfies a string read. An authored value of the
+        // WRONG type is treated as no authored value and falls through to the
+        // default: the declared type is the schema, and a mistyped entry silently
+        // reading as "absent" is the failure this whole path exists to remove.
+
+        uint8_t get_config_bool(
+            void* user,
+            const char* key,
+            uint8_t* out_value)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!out_value) {
+                return 0;
+            }
+
+            if (const auto* entry = find_config_value(context, key);
+                entry
+                && entry->kind
+                    == wz::engine::assets::SceneBehaviorConfigValueKind::Bool)
+            {
+                *out_value = entry->bool_value ? uint8_t{ 1 } : uint8_t{ 0 };
+                return 1;
+            }
+
+            // BehaviorParamSpec has no default_bool -- a BOOL param's default rides
+            // in default_number, matching WzBehaviorParamDesc on the ABI.
+            if (const auto* param = find_declared_param(context, key);
+                param && param->type == BehaviorParamType::Bool)
+            {
+                *out_value =
+                    param->default_number != 0.0 ? uint8_t{ 1 } : uint8_t{ 0 };
+                return 1;
+            }
+            return 0;
+        }
+
+        uint8_t get_config_number(
+            void* user,
+            const char* key,
+            double* out_value)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+            if (!out_value) {
+                return 0;
+            }
+
+            if (const auto* entry = find_config_value(context, key);
+                entry
+                && entry->kind
+                    == wz::engine::assets::SceneBehaviorConfigValueKind::Number)
+            {
+                *out_value = entry->number_value;
+                return 1;
+            }
+
+            if (const auto* param = find_declared_param(context, key);
+                param && param->type == BehaviorParamType::Float)
+            {
+                *out_value = param->default_number;
+                return 1;
+            }
+            return 0;
+        }
+
+        uint8_t get_config_string(
+            void* user,
+            const char* key,
+            char* out_buffer,
+            uint32_t buffer_size,
+            uint32_t* out_required_size)
+        {
+            auto* context = static_cast<BehaviorFrameContext*>(user);
+
+            if (const auto* entry = find_config_value(context, key);
+                entry
+                && entry->kind
+                    == wz::engine::assets::SceneBehaviorConfigValueKind::String)
+            {
+                return copy_config_string_out(
+                    entry->string_value,
+                    out_buffer,
+                    buffer_size,
+                    out_required_size);
+            }
+
+            if (const auto* param = find_declared_param(context, key);
+                param && param->type == BehaviorParamType::String)
+            {
+                return copy_config_string_out(
+                    param->default_string,
+                    out_buffer,
+                    buffer_size,
+                    out_required_size);
+            }
+            return 0;
         }
 
         void* get_instance_state(void* user)
