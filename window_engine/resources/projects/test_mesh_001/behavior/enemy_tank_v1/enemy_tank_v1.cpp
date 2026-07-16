@@ -30,9 +30,11 @@ namespace
 
     void tank_init(const WzBehaviorInitFacts* facts, WzBehaviorEntityId, void*)
     {
-        // Ensure the state block exists (zeroed on first alloc, preserved across
-        // rebuilds). The target is resolved lazily on the first frame, where the
-        // by-name lookup is available.
+        // Allocate the state block. On FIRST init this constructs TankState in place, so
+        // the default member initializer runs and `target` really is INVALID (not a
+        // zeroed 0, which would read as a plausible entity id). A later init -- a hot
+        // reload or a structural rebuild -- returns the preserved block AS-IS, so an
+        // already-acquired target survives.
         (void)wz_instance_state<TankState>(facts);
     }
 
@@ -41,7 +43,7 @@ namespace
         const WzBehaviorEvent* event,
         void*)
     {
-        if (!facts || !event || wz_event_kind(event) != WZ_EVENT_FRAME_UPDATE) {
+        if (!facts || !event) {
             return;
         }
         TankState* s = wz_instance_state<TankState>(facts);
@@ -49,13 +51,30 @@ namespace
             return;
         }
 
-        // Resolve the player ONCE, by its unique node name "tank" (robust to the scene
-        // rebuilding / the player respawning -- an id would go stale, a name won't).
-        if (s->target == WZ_INVALID_BEHAVIOR_ENTITY) {
-            wz_find_entity_by_name(facts, "tank", &s->target);
-            if (s->target == WZ_INVALID_BEHAVIOR_ENTITY) {
-                return;   // player not in the scene yet -- try again next frame
-            }
+        // ACQUIRE THE TARGET -- once, off the frame path.
+        //
+        // self.start fires exactly ONCE per binding, the first time this tank
+        // materializes (authored or spawned). A respawned tank is a NEW binding, so it
+        // acquires again; an existing one is never re-notified, and the host preserves
+        // that across rebuilds.
+        //
+        // Finding the player is a one-time LOOKUP, not a question worth re-asking sixty
+        // times a second -- so it does not belong in frame.update. (Acquiring a target
+        // and steering toward it are different jobs on different clocks: this is the
+        // one-shot half.) We resolve by NAME rather than a scene id because a spawned
+        // prefab's authored ids are prefixed on spawn, but its node names survive.
+        if (wz_event_kind(event) == WZ_EVENT_SELF_START) {
+            const uint8_t found = wz_find_entity_by_name(facts, "tank", &s->target);
+            wz_log_infof(facts, "[enemy_tank_v1] acquire player: %u", found);
+            return;
+        }
+
+        // No target -> nothing to chase. (If this tank just sits there, the acquire log
+        // above tells you whether it ever found the player.)
+        if (wz_event_kind(event) != WZ_EVENT_FRAME_UPDATE
+            || s->target == WZ_INVALID_BEHAVIOR_ENTITY)
+        {
+            return;
         }
 
         // Turn the nose toward the player and drive forward. face_yaw_rate returns a yaw
@@ -66,7 +85,7 @@ namespace
         tank_drive::drive_facing(facts, event, yaw, kChaseSpeed);
     }
 
-    const char* kChannels[] = { "frame.update" };
+    const char* kChannels[] = { "self.start", "frame.update" };
 }
 
 WZ_BEHAVIOR_MODULE_INIT("enemy_tank_v1", tank_init, tank_on_event, kChannels)
