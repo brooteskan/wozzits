@@ -602,30 +602,37 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         AppendEditorLog("[editor] Rebuilding behavior modules...");
 
-        BehaviorBuildOutcome outcome;
+        BehaviorBuildResult result;
         try
         {
-            outcome = await _behaviorBuilder.RebuildAsync(
+            result = await _behaviorBuilder.RebuildAsync(
                 _projectDirectory,
                 AppendEditorLog);
         }
         catch (Exception ex)
         {
             AppendEditorLog($"[editor] Behavior rebuild error: {ex.Message}");
+            Inspector.SetBuildErrors([$"Behavior rebuild error: {ex.Message}"]);
             return;
         }
 
-        switch (outcome)
+        switch (result.Outcome)
         {
             case BehaviorBuildOutcome.Failed:
                 AppendEditorLog(
                     "[editor] Behavior rebuild failed; modules not reloaded.");
+                // Put the diagnostics where the user is looking. The console has them
+                // too, but it is full of live behavior output -- a failed build there
+                // reads as "nothing happened", and the stale DLL gets blamed on the
+                // editor instead of on the compile error.
+                Inspector.SetBuildErrors(result.Errors);
                 return;
             case BehaviorBuildOutcome.Skipped:
                 // Nothing was built, so there is nothing to hot-reload.
                 return;
         }
 
+        Inspector.SetBuildErrors([]);   // built clean -> drop any stale failure
         var reload = _editorSession.ReloadBehaviorModules();
         AppendEditorLog(reload.Ok
             ? "[editor] Behavior modules reloaded."

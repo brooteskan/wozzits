@@ -17,6 +17,19 @@ public enum BehaviorBuildOutcome
     Failed,
 }
 
+// A rebuild's outcome plus the compiler/CMake diagnostics it produced. Every line is
+// STILL streamed to `log` (the console keeps the full transcript); this captures just
+// the error lines so the UI can put them where the user is actually looking. A failed
+// build that only whispers into a busy console reads as "nothing happened" -- and then
+// the stale DLL gets blamed on the editor.
+public sealed record BehaviorBuildResult(
+    BehaviorBuildOutcome Outcome,
+    IReadOnlyList<string> Errors)
+{
+    public static BehaviorBuildResult Of(BehaviorBuildOutcome outcome) =>
+        new(outcome, []);
+}
+
 // Compiles a project's behavior-module DLLs by driving CMake, mirroring the old
 // imgui toolhost editor's rebuild step (cmake --preset / cmake --build, in the
 // project's behavior/ folder). All tool output (including compiler errors) is
@@ -35,7 +48,22 @@ public sealed class BehaviorModuleBuilder
     private static readonly string ConfigureSubdir =
         Path.Combine("build", "cmake-clang-debug");
 
-    public async Task<BehaviorBuildOutcome> RebuildAsync(
+    // Cap what we hand the UI: a catastrophic build can emit hundreds of lines, and an
+    // error block nobody can scroll past is no better than a log nobody reads.
+    private const int MaxCapturedErrors = 40;
+
+    // A compiler/CMake diagnostic worth surfacing.
+    //   clang:  foo.cpp:25:13: error: constant expression evaluates to -1 ...
+    //   MSVC:   foo.cpp(25,13): error C2440: ...
+    //   CMake:  CMake Error at CMakeLists.txt:5 ...
+    // Deliberately narrow: ninja's "FAILED:" / "build stopped" summaries and our own
+    // "cmake ... failed (exit 1)" line are noise once the real diagnostic is shown.
+    internal static bool IsDiagnosticLine(string line) =>
+        line.Contains(": error", StringComparison.OrdinalIgnoreCase)
+        || line.Contains(": fatal error", StringComparison.OrdinalIgnoreCase)
+        || line.StartsWith("CMake Error", StringComparison.OrdinalIgnoreCase);
+
+    public async Task<BehaviorBuildResult> RebuildAsync(
         string projectDirectory,
         Action<string> log,
         CancellationToken cancellationToken = default)
@@ -45,7 +73,7 @@ public sealed class BehaviorModuleBuilder
         if (string.IsNullOrWhiteSpace(projectDirectory))
         {
             log(LogPrefix + "No project directory; skipping behavior rebuild.");
-            return BehaviorBuildOutcome.Skipped;
+            return BehaviorBuildResult.Of(BehaviorBuildOutcome.Skipped);
         }
 
         var behaviorDir = Path.Combine(projectDirectory, BehaviorFolderName);
@@ -53,7 +81,19 @@ public sealed class BehaviorModuleBuilder
         {
             log(LogPrefix
                 + $"No {BehaviorFolderName}/CMakeLists.txt under {projectDirectory}; nothing to build.");
-            return BehaviorBuildOutcome.Skipped;
+            return BehaviorBuildResult.Of(BehaviorBuildOutcome.Skipped);
+        }
+
+        // Tee: every line still goes to the console verbatim; diagnostics are also kept
+        // so a failure can be shown on the behavior card instead of only whispered here.
+        var errors = new List<string>();
+        void Tee(string line)
+        {
+            log(line);
+            if (errors.Count < MaxCapturedErrors && IsDiagnosticLine(line))
+            {
+                errors.Add(line);
+            }
         }
 
         // A behavior folder copied from another project (or another machine)
@@ -75,19 +115,19 @@ public sealed class BehaviorModuleBuilder
         }
 
         // Configure then build — the same two steps the imgui toolhost ran.
-        if (!await RunStepAsync(behaviorDir, $"--preset {Preset}", log, cancellationToken)
+        if (!await RunStepAsync(behaviorDir, $"--preset {Preset}", Tee, cancellationToken)
                 .ConfigureAwait(false))
         {
-            return BehaviorBuildOutcome.Failed;
+            return new BehaviorBuildResult(BehaviorBuildOutcome.Failed, errors);
         }
-        if (!await RunStepAsync(behaviorDir, $"--build --preset {Preset}", log, cancellationToken)
+        if (!await RunStepAsync(behaviorDir, $"--build --preset {Preset}", Tee, cancellationToken)
                 .ConfigureAwait(false))
         {
-            return BehaviorBuildOutcome.Failed;
+            return new BehaviorBuildResult(BehaviorBuildOutcome.Failed, errors);
         }
 
         log(LogPrefix + "Behavior modules built.");
-        return BehaviorBuildOutcome.Built;
+        return BehaviorBuildResult.Of(BehaviorBuildOutcome.Built);
     }
 
     private static async Task<bool> RunStepAsync(

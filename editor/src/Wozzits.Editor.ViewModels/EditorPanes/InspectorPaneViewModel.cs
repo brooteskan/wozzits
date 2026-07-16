@@ -2163,10 +2163,57 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             ApplyBehaviorFields,
             ApplyBehaviorEvents,
             RemoveBehavior,
-            WriteBehaviorConfig);
+            WriteBehaviorConfig)
+        {
+            // Carry over a failure from the last rebuild, so selecting the node again
+            // still shows why this module's card looks stale.
+            BuildErrors = JoinErrorsFor(behavior.Module),
+        };
     }
 
     // The config params a behavior MODULE declares (key/type/default), so the inspector
+    // Diagnostics from the LAST behavior rebuild; empty when it built clean. A failed
+    // rebuild used to be one line in a console full of live behavior output, so the
+    // stale DLL that resulted looked like a broken editor. These surface on the
+    // Behaviors section and on the card whose module the compiler named.
+    private IReadOnlyList<string> _buildErrors = [];
+
+    public void SetBuildErrors(IReadOnlyList<string>? errors)
+    {
+        _buildErrors = errors ?? [];
+        OnPropertyChanged(nameof(HasBuildFailure));
+        OnPropertyChanged(nameof(BuildFailureSummary));
+        OnPropertyChanged(nameof(BuildErrorText));
+        // Update the cards already on screen -- a rebuild usually happens while the node
+        // you are working on is still selected, so waiting for a reselect is too late.
+        foreach (var behavior in Behaviors)
+        {
+            behavior.BuildErrors = JoinErrorsFor(behavior.Module);
+        }
+    }
+
+    public bool HasBuildFailure => _buildErrors.Count > 0;
+
+    public string BuildFailureSummary =>
+        $"Last rebuild FAILED ({_buildErrors.Count} error"
+        + (_buildErrors.Count == 1 ? "" : "s")
+        + "). The modules were NOT reloaded — the engine is still running the previous build.";
+
+    public string BuildErrorText => string.Join("\n", _buildErrors);
+
+    // Attribute a diagnostic to a module by name. The project convention is that a
+    // module's CMake target, folder and source file all carry the module name
+    // (add_terrain_collision_behavior_module(enemy_tank_v1 enemy_tank_v1/enemy_tank_v1.cpp)),
+    // so the compiler's file path names it. It is a heuristic -- which is why the whole
+    // list ALSO shows on the section banner, so nothing is ever hidden by a miss.
+    private string JoinErrorsFor(string module) =>
+        string.Join(
+            "\n",
+            string.IsNullOrEmpty(module)
+                ? []
+                : _buildErrors.Where(
+                    e => e.Contains(module, StringComparison.OrdinalIgnoreCase)));
+
     // can render typed fields. Pulled once per inspector lifetime from the device-free,
     // project-aware module catalog (built-ins + this project's own behavior DLLs).
     private EngineBehaviorModuleCatalogResponse? _moduleParamCatalog;
@@ -4287,6 +4334,25 @@ public sealed class InspectorBehaviorViewModel : ViewModelBase
     public IRelayCommand ApplyEventsCommand { get; }
 
     public IRelayCommand RemoveCommand { get; }
+
+    // Compiler diagnostics from the last rebuild that NAMED this module; empty when the
+    // last build was clean. Shown on the card, because that is where you find out the
+    // hard way that a build failed: the fields you expected simply are not there.
+    private string _buildErrors = string.Empty;
+
+    public string BuildErrors
+    {
+        get => _buildErrors;
+        set
+        {
+            if (SetProperty(ref _buildErrors, value ?? string.Empty))
+            {
+                OnPropertyChanged(nameof(HasBuildErrors));
+            }
+        }
+    }
+
+    public bool HasBuildErrors => _buildErrors.Length > 0;
 
     // Build the editable config rows: one TYPED field per param the module DECLARES
     // (checkbox for bool, number/text box otherwise), seeded from the node's current

@@ -2316,6 +2316,53 @@ public sealed partial class ProjectOpeningTests
         Assert.Contains(("host", "runner.1"), session.RemovedBehaviors);
     }
 
+    // A failed rebuild must be visible ON the card, not just in a console full of live
+    // behavior output -- otherwise the stale DLL reads as "the editor ignored my change".
+    [Fact]
+    public void BuildErrorsSurfaceOnTheModuleTheCompilerNamed()
+    {
+        var session = new RecordingEditorSession();
+        var inspector = new InspectorPaneViewModel(session);
+        inspector.Inspect(new SceneTreeNodeViewModel(new EngineSceneNode
+        {
+            Id = "tank",
+            DisplayName = "tank",
+            Kind = "node",
+            Visible = true,
+            Behaviors =
+            [
+                new EngineSceneBehavior { Id = "b.1", Module = "enemy_tank_v1" },
+                new EngineSceneBehavior { Id = "b.2", Module = "hit_logger" },
+            ],
+        }));
+
+        Assert.False(inspector.HasBuildFailure);
+        Assert.All(inspector.Behaviors, b => Assert.False(b.HasBuildErrors));
+
+        inspector.SetBuildErrors(
+        [
+            "D:/p/behavior/enemy_tank_v1/enemy_tank_v1.cpp:25:13: error: cannot be narrowed",
+            "CMake Error at CMakeLists.txt:5 (add_library):",
+        ]);
+
+        // The section banner shows the WHOLE list, so an error that matches no card
+        // (the CMake one) is still visible.
+        Assert.True(inspector.HasBuildFailure);
+        Assert.Contains("2 errors", inspector.BuildFailureSummary);
+        Assert.Contains("CMake Error", inspector.BuildErrorText);
+
+        // ...and the card the compiler named carries its own diagnostic; the other doesn't.
+        var named = inspector.Behaviors.First(b => b.Module == "enemy_tank_v1");
+        Assert.True(named.HasBuildErrors);
+        Assert.Contains("cannot be narrowed", named.BuildErrors);
+        Assert.False(inspector.Behaviors.First(b => b.Module == "hit_logger").HasBuildErrors);
+
+        // A clean rebuild clears it -- a stale error block is its own kind of lie.
+        inspector.SetBuildErrors([]);
+        Assert.False(inspector.HasBuildFailure);
+        Assert.All(inspector.Behaviors, b => Assert.False(b.HasBuildErrors));
+    }
+
     // Regression: removing the quantum_agent behavior must also drop its "Mind" sub-card.
     // That card auto-reveals for a quantum_agent, and it used to linger after the behavior
     // was gone because its visibility was only recomputed on node selection, not on removal.

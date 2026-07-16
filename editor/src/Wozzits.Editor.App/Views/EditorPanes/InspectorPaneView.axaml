@@ -1043,6 +1043,31 @@
                                             Click="OnAddBehaviorClick"
                                             ToolTip.Tip="Add behavior from imported modules"/>
                                 </Grid>
+                                <!-- Last rebuild failed: say so HERE, not only in the console.
+                                     A stale DLL otherwise reads as "the editor is broken": the
+                                     card just quietly lacks the fields you added. Shows every
+                                     diagnostic, so a failure in a module you have not selected
+                                     (or one the per-card match missed) is still visible. -->
+                                <Border IsVisible="{Binding HasBuildFailure}"
+                                        Background="{DynamicResource WozzitsPanelInsetBrush}"
+                                        BorderBrush="{DynamicResource WozzitsErrorBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Padding="8"
+                                        Margin="0,0,0,8">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="{Binding BuildFailureSummary}"
+                                                   Classes="InspectorError"
+                                                   FontWeight="SemiBold"/>
+                                        <ScrollViewer MaxHeight="140"
+                                                      HorizontalScrollBarVisibility="Auto">
+                                            <SelectableTextBlock Text="{Binding BuildErrorText}"
+                                                                 Classes="InspectorError"
+                                                                 FontFamily="Consolas,monospace"
+                                                                 TextWrapping="NoWrap"/>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </Border>
                                 <TextBlock Text="No behavior bindings."
                                            Classes="PaneEmptyState"
                                            IsVisible="{Binding HasNoBehaviors}"/>
@@ -1067,6 +1092,29 @@
                                                             Command="{Binding RemoveCommand}"
                                                             Classes="InspectorApplyButton"/>
                                                 </Grid>
+                                                <!-- The last rebuild failed ON THIS MODULE: the
+                                                     compiler named it. Right here is where you
+                                                     notice, because this is the card whose fields
+                                                     did not change. -->
+                                                <Border IsVisible="{Binding HasBuildErrors}"
+                                                        Background="{DynamicResource WozzitsPanelInsetBrush}"
+                                                        BorderBrush="{DynamicResource WozzitsErrorBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="8">
+                                                    <StackPanel Spacing="4">
+                                                        <TextBlock Text="This module failed to build — the engine is still running the previous DLL."
+                                                                   Classes="InspectorError"
+                                                                   FontWeight="SemiBold"/>
+                                                        <ScrollViewer MaxHeight="120"
+                                                                      HorizontalScrollBarVisibility="Auto">
+                                                            <SelectableTextBlock Text="{Binding BuildErrors}"
+                                                                                 Classes="InspectorError"
+                                                                                 FontFamily="Consolas,monospace"
+                                                                                 TextWrapping="NoWrap"/>
+                                                        </ScrollViewer>
+                                                    </StackPanel>
+                                                </Border>
                                                 <Border Height="1"
                                                         Background="{DynamicResource WozzitsPanelBorderBrush}"
                                                         Margin="0,0,0,2"/>

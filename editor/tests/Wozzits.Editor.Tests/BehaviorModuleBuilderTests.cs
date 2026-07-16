@@ -17,11 +17,12 @@ public sealed class BehaviorModuleBuilderTests
             var log = new List<string>();
             var builder = new BehaviorModuleBuilder();
 
-            var outcome = await builder.RebuildAsync(projectDir, log.Add);
+            var result = await builder.RebuildAsync(projectDir, log.Add);
 
             // No behavior/CMakeLists.txt -> nothing to build (not a failure), and
             // CMake is never invoked, so the test needs no toolchain.
-            Assert.Equal(BehaviorBuildOutcome.Skipped, outcome);
+            Assert.Equal(BehaviorBuildOutcome.Skipped, result.Outcome);
+            Assert.Empty(result.Errors);
             Assert.Contains(log, line => line.Contains("nothing to build"));
         }
         finally
@@ -36,9 +37,29 @@ public sealed class BehaviorModuleBuilderTests
         var log = new List<string>();
         var builder = new BehaviorModuleBuilder();
 
-        var outcome = await builder.RebuildAsync(string.Empty, log.Add);
+        var result = await builder.RebuildAsync(string.Empty, log.Add);
 
-        Assert.Equal(BehaviorBuildOutcome.Skipped, outcome);
+        Assert.Equal(BehaviorBuildOutcome.Skipped, result.Outcome);
+        Assert.Empty(result.Errors);
+    }
+
+    // A failed rebuild used to leave nothing behind but a line in a busy console, so the
+    // stale DLL looked like a broken editor. These pin WHICH lines get captured for the UI.
+    [Theory]
+    [InlineData("D:/p/enemy_tank_v1/enemy_tank_v1.cpp:25:13: error: constant expression evaluates to -1", true)]
+    [InlineData("D:/p/foo.cpp(25,13): error C2440: cannot convert", true)]
+    [InlineData("D:/p/foo.cpp:9:1: fatal error: 'bar.h' file not found", true)]
+    [InlineData("CMake Error at CMakeLists.txt:5 (add_library):", true)]
+    // Noise: ninja's summaries and our own step line are not diagnostics -- the real
+    // error is already captured, and these would just pad the block.
+    [InlineData("FAILED: [code=1] CMakeFiles/enemy_tank_v1.dir/enemy_tank_v1.cpp.obj", false)]
+    [InlineData("ninja: build stopped: subcommand failed.", false)]
+    [InlineData("[behavior/build] cmake --build --preset clang-debug failed (exit 1).", false)]
+    [InlineData("4 errors generated.", false)]
+    [InlineData("[1/2] Building CXX object CMakeFiles/enemy_tank_v1.dir/enemy_tank_v1.cpp.obj", false)]
+    public void DiagnosticLinesAreTheCompilerErrorsNotTheNoise(string line, bool isDiagnostic)
+    {
+        Assert.Equal(isDiagnostic, BehaviorModuleBuilder.IsDiagnosticLine(line));
     }
 
     [Fact]
