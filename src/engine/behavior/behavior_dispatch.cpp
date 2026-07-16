@@ -590,8 +590,13 @@ namespace wz::engine::behavior
         if (!context.behavior_state) {
             context.behavior_state = &scene.behavior_state;
         }
-        // So facts.actuator_lookup can resolve behavior-registered actuators the
-        // statechart runner calls this frame (the open actuator vocabulary).
+        // EVERY dispatch entry point must wire this, not just the per-frame one: the
+        // facts built from this context resolve two things through the registry --
+        // actuator_lookup (the open statechart actuator vocabulary) and the
+        // declared-param fallback behind wz_config_* (a module's default lives on its
+        // registration, since only overrides are authored). A null registry silently
+        // degrades both: actuator calls no-op and every config read misses, which reads
+        // as "my module does nothing" with no error anywhere.
         context.registry = &registry;
 
         context.commands->clear();
@@ -694,6 +699,7 @@ namespace wz::engine::behavior
         if (!context.behavior_state) {
             context.behavior_state = &scene.behavior_state;
         }
+        context.registry = &registry;
         dispatch_event_to_modules(scene, registry, context, event);
     }
 
@@ -711,6 +717,8 @@ namespace wz::engine::behavior
         if (!context.behavior_state) {
             context.behavior_state = &scene.behavior_state;
         }
+
+        context.registry = &registry;
 
         // One-shot lifecycle pass: dispatch WZ_EVENT_SCENE_LOADED to subscribed
         // modules only (no per-frame frame.update/input/etc., and not the legacy
@@ -734,6 +742,11 @@ namespace wz::engine::behavior
         if (!context.behavior_state) {
             context.behavior_state = &scene.behavior_state;
         }
+
+        // Load-bearing here in particular: acquiring config on self.start is the
+        // intended one-shot pattern, so this is a common place to read a declared
+        // default.
+        context.registry = &registry;
 
         // One-shot lifecycle pass: dispatch WZ_EVENT_SELF_START to subscribed
         // modules only, and only for bindings that have not started yet. The
@@ -787,6 +800,7 @@ namespace wz::engine::behavior
         if (!context.scene) {
             context.scene = &scene;
         }
+        context.registry = &registry;
         const BehaviorEvent event{
             .kind = static_cast<WzBehaviorEventKind>(
                 payload.status == WZ_SPAWN_STATUS_FAILED
@@ -824,6 +838,8 @@ namespace wz::engine::behavior
         if (!context.behavior_state) {
             context.behavior_state = &scene.behavior_state;
         }
+
+        context.registry = &registry;
 
         // Self-paced wakes: fire WZ_EVENT_COGNITION_TICK only for bindings whose
         // scheduled wake is due at the current sim-time. A binding with no entry is

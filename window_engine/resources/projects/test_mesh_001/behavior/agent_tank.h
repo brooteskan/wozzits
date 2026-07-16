@@ -184,7 +184,9 @@ struct QuantumTankState {
     // only on a CHANGE, so the announcement fires once per collapse.
     int8_t last_decision = -2;
 
-    float drive_speed = 6.0f; // remove soon
+    // Placeholder, not the default: quantum_tank_init reads "drive_speed" on init, which
+    // lands the authored value or the default declared in kQuantumTankParams. // remove soon
+    float drive_speed = 0.0f;
 
     // Hand ACTUATION to a statechart (config "chart_driven" != 0). The mind still
     // senses / decides / learns / fires / handles pool-death every frame -- only the

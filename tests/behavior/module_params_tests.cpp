@@ -179,6 +179,54 @@ namespace
         return api->register_module_desc(api->user, &desc);
     }
 
+    // Same probe + same declared params, but subscribed to self.start -- the one-shot
+    // lifecycle path an acquire actually runs on.
+    void self_start_default_handler(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void* user)
+    {
+        auto* probe = static_cast<ConfigDefaultProbe*>(user);
+        ASSERT_NE(probe, nullptr);
+        ASSERT_NE(facts, nullptr);
+        if (!wz_is_event(event, WZ_EVENT_SELF_START)) {
+            return;
+        }
+
+        ++probe->calls;
+        probe->mode_read = wz_config_string(
+            facts,
+            "mode",
+            probe->mode,
+            sizeof(probe->mode),
+            &probe->mode_required);
+        probe->speed_read = wz_config_number(facts, "speed", &probe->speed);
+    }
+
+    uint8_t register_self_start_default_pack(WzBehaviorPluginApi* api)
+    {
+        if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION
+            || !api->register_module_desc || !g_config_default_probe)
+        {
+            return 0;
+        }
+        static const char* channels[] = { "self.start" };
+        static const WzBehaviorParamDesc params[] = {
+            { "speed", "Speed", WZ_BEHAVIOR_PARAM_FLOAT, 6.0, nullptr },
+            { "mode", "Mode", WZ_BEHAVIOR_PARAM_STRING, 0.0, "idle" },
+        };
+        WzBehaviorModuleDesc desc{};
+        desc.size = sizeof(desc);
+        desc.module = "self_start_default_mod";
+        desc.on_event = self_start_default_handler;
+        desc.event_channels = channels;
+        desc.event_channel_count = 1u;
+        desc.params = params;
+        desc.param_count = 2u;
+        desc.module_user_data = g_config_default_probe;
+        return api->register_module_desc(api->user, &desc);
+    }
+
     // Declares NOTHING but reads the same keys: the regression guard for every
     // module that pre-seeds its own default and never declared a param table.
     struct NoParamsProbe
@@ -303,6 +351,45 @@ TEST(BehaviorModuleParams, AuthoredConfigOverridesTheDeclaredDefault)
     EXPECT_EQ(probe.eager_read, 1u);
     EXPECT_EQ(probe.eager, 0u)
         << "an authored false must beat a declared default of true";
+
+    g_config_default_probe = nullptr;
+}
+
+// The default must arrive on the ONE-SHOT lifecycle paths too, not just frame.update.
+// Acquiring config on self.start is the intended pattern (resolve once, off the frame
+// path), so it is the likeliest place to read a declared default -- and the fallback
+// resolves through context.registry, which every dispatch entry point must wire.
+TEST(BehaviorModuleParams, DeclaredDefaultsReachSelfStart)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ConfigDefaultProbe probe{};
+    g_config_default_probe = &probe;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_self_start_default_pack));
+
+    SceneInstance scene = scene_with_behavior(4u, "self_start_default_mod", "");
+    // self.start needs a stable binding id to dedupe on, and its own channel.
+    scene.behaviors[0].component.binding_id = "n4.behavior.1";
+    scene.behaviors[0].component.events = { "self.start" };
+    scene.behaviors[0].component.channel_mask =
+        wz::engine::behavior::channel_mask_for_token("self.start");
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .commands = &frame_storage.behavior_commands,
+    };
+
+    dispatch_self_start(scene, registry, context);
+
+    ASSERT_EQ(probe.calls, 1u) << "self.start did not reach the module";
+    EXPECT_EQ(probe.speed_read, 1u);
+    EXPECT_DOUBLE_EQ(probe.speed, 6.0);
+    EXPECT_EQ(probe.mode_read, 1u);
+    EXPECT_STREQ(probe.mode, "idle")
+        << "a declared default must resolve on self.start, not only frame.update";
 
     g_config_default_probe = nullptr;
 }

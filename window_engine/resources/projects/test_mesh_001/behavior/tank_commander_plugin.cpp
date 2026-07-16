@@ -33,7 +33,8 @@ namespace
         }
         // Hand the ORDER phase machine to an attached statechart (config "chart_driven"):
         // the chart drives deliberating/holding + the reanneal cadence; the reward/goal/
-        // rearm math + reinforce deploys stay here. Default off => the C++ order machine.
+        // rearm math + reinforce deploys stay here. The 0 is a throwaway -- the read
+        // lands the authored value or the default declared in kCommanderParams (off).
         uint8_t chart_driven = 0;
         (void)wz_config_bool(facts, "chart_driven", &chart_driven);
         state->chart_driven = (chart_driven != 0u);

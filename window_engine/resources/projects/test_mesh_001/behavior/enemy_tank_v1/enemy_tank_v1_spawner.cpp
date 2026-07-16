@@ -20,8 +20,8 @@ namespace
 {
     struct SpawnState { uint8_t spawned; };
 
-    // Read a string config into `buf`; leaves the buffer's existing (default) contents
-    // untouched when the key is absent, exactly like the tanks' config reads.
+    // Read a string config into `buf`: the authored value if the field was edited,
+    // else the default declared in kParams below.
     void read_config_string(
         const WzBehaviorFrameFacts* facts, const char* key, char* buf, uint32_t cap)
     {
@@ -47,8 +47,10 @@ namespace
             return;
         }
 
-        char prefab[64] = "enemy_tank_v1";
-        char exists[64] = "enemy_tank_v1";
+        // Defaults are declared ONCE, in kParams below -- wz_config_* falls back to them
+        // when a field was never edited, so there is no C++ copy to drift.
+        char prefab[64] = "";
+        char exists[64] = "";
         read_config_string(facts, "prefab", prefab, sizeof(prefab));
         read_config_string(facts, "exists_name", exists, sizeof(exists));
 
@@ -64,8 +66,9 @@ namespace
         }
 
         // Spawn offset in the spawner's frame (== world position when the spawner sits
-        // at the origin, e.g. on the scene root).
-        float x = 430.0f, y = 260.0f, z = 500.0f;
+        // at the origin, e.g. on the scene root). Zeroes are placeholders, never the
+        // default: each read lands the authored value or the kParams default.
+        float x = 0.0f, y = 0.0f, z = 0.0f;
         (void)wz_config_float(facts, "spawn_x", &x);
         (void)wz_config_float(facts, "spawn_y", &y);
         (void)wz_config_float(facts, "spawn_z", &z);

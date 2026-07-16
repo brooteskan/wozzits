@@ -27,12 +27,6 @@ namespace
     };
 
 
-    // Flip to true + rebuild this plugin to hand hull actuation (drive + turret aim) to
-    // an attached tank_combat statechart -- the C++ mind still senses / decides / learns
-    // / fires / recycles, only the physical APPLY is skipped. Also settable per-instance
-    // via a "chart_driven" config key on this behavior (overrides this default when set).
-    constexpr bool kChartDrivenDefault = false;
-
     void quantum_tank_init(
         const WzBehaviorInitFacts* facts,
         WzBehaviorEntityId self,
@@ -55,12 +49,12 @@ namespace
         // Authorable knob: how fast the tank advances when it commits to ENGAGE.
         (void)wz_config_float(facts, "drive_speed", &state->drive_speed);
 
-        // Hand hull actuation to an attached statechart: default from the compile-time
-        // switch above, overridden per-instance by the "chart_driven" config (a declared
-        // BOOL param -> editable as a checkbox in the inspector). The mind computes +
-        // learns as always; only the physical drive/aim APPLY is skipped so the chart's
+        // Hand hull actuation to an attached statechart: off unless the "chart_driven"
+        // config says otherwise (a declared BOOL param -> a checkbox in the inspector,
+        // its default declared once in kQuantumTankParams). The mind computes + learns
+        // as always; only the physical drive/aim APPLY is skipped so the chart's
         // actuators own the hull.
-        uint8_t chart_driven = kChartDrivenDefault ? 1u : 0u;
+        uint8_t chart_driven = 0;
         (void)wz_config_bool(facts, "chart_driven", &chart_driven);
         state->chart_driven = (chart_driven != 0u);
 
@@ -784,10 +778,10 @@ namespace
     // Declared config tunables, so the editor renders typed fields for them (a checkbox
     // for chart_driven, a number for drive_speed) instead of nothing.
     //
-    // These defaults are LIVE at runtime: wz_config_* falls back to them when a field
-    // was never authored (only overrides are written to the scene), so they must agree
-    // with the pre-seeds the reads above use -- kChartDrivenDefault=false and
-    // AgentTankState::drive_speed=6.0f. Change one, change both.
+    // This table is the ONLY place these defaults live. wz_config_* falls back to it
+    // when a field was never authored (only overrides are written to the scene), so the
+    // reads above initialize their locals to a throwaway 0 and let the read land the
+    // real value. Change a default here and every node that never overrode it follows.
     const WzBehaviorParamDesc kQuantumTankParams[] = {
         { "chart_driven", "Chart-driven (statechart owns the hull)",
             WZ_BEHAVIOR_PARAM_BOOL, 0.0, nullptr },
