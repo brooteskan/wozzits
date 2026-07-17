@@ -669,7 +669,11 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
 
     // As above, but re-select the previously selected state by id after the rebuild, so an
     // inspector-driven edit (add/delete transition) keeps its selection and refreshes.
-    private void ReprojectPreservingSelection()
+    // Rebuild the canvas from the chart, keeping the current selection. PUBLIC so the
+    // document can reproject after a DATAFLOW-pane structural edit: the effect rows'
+    // picker lists (op sources, agents, binding targets) are derived at projection time,
+    // so an op renamed on the other canvas must reproject this one to show its new id.
+    public void ReprojectPreservingSelection()
     {
         var selectedId = _selectedState?.StateId;
         ReprojectPreservingLayout();

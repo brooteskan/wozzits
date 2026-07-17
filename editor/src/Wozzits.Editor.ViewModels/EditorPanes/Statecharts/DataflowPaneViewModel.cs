@@ -232,6 +232,13 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
     private void UpdateSelectedNode() =>
         SelectedNode = SelectedNodes.Count == 1 ? SelectedNodes[0] : null;
 
+    // The chart's id VOCABULARY changed: an op/agent/binding was added, deleted, or renamed.
+    // The control pane derives its effect-row picker lists (op sources, agents, binding
+    // targets) at projection time, so the document reprojects it off this event — without
+    // it, a rename leaves e.g. a Call arg's source dropdown offering the old id until the
+    // chart is closed and reopened.
+    public event Action? VocabularyChanged;
+
     // Add a pure op of the given kind with default (constant) operands, select it, and place
     // it at a clear row below the existing nodes. Returns the new node (null if no chart).
     public DataflowNodeViewModel? AddOp(OpKind kind)
@@ -245,6 +252,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         _chart.Pure.Add(NewOp(kind, id, _chart));
         IsDirty = true;
         ReprojectPreservingLayout();
+        VocabularyChanged?.Invoke();
         return PlaceAndSelect(id);
     }
 
@@ -270,6 +278,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             : new AgentDecl { Id = id, Owned = false, Host = "self" });
         IsDirty = true;
         ReprojectPreservingLayout();
+        VocabularyChanged?.Invoke();
         return PlaceAndSelect(id);
     }
 
@@ -286,6 +295,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
         _chart.Bindings.Add(new Binding { Port = port, Find = port, Subtree = true });
         IsDirty = true;
         ReprojectPreservingLayout();
+        VocabularyChanged?.Invoke();
         return PlaceAndSelect(port);
     }
 
@@ -332,6 +342,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
 
         IsDirty = true;
         ReprojectPreservingLayout();
+        VocabularyChanged?.Invoke();
         if (Nodes.FirstOrDefault(n => n.NodeId == newId) is { } renamed)
         {
             SelectOnly(renamed);
@@ -396,6 +407,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
 
         IsDirty = true;
         ReprojectPreservingLayout();
+        VocabularyChanged?.Invoke();
         if (Nodes.FirstOrDefault(n => n.NodeId == newId) is { } renamed)
         {
             SelectOnly(renamed);
@@ -739,6 +751,7 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
 
         IsDirty = true;
         ReprojectPreservingLayout();
+        VocabularyChanged?.Invoke();
     }
 
     // Remove effects that write a deleted agent or drive a deleted binding, and disconnect any

@@ -36,6 +36,12 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
         Control.Project(chart);
         Dataflow.Project(chart);
 
+        // A dataflow-pane structural edit (op/agent/binding add, delete, or rename) changes
+        // the id vocabulary the control pane's effect pickers offer, and those lists are
+        // derived at projection time — reproject the control pane so e.g. a renamed op
+        // shows under its new name in a Call arg's source dropdown immediately.
+        Dataflow.VocabularyChanged += Control.ReprojectPreservingSelection;
+
         // Cross-layer focus: selecting a state on the control canvas dims the dataflow to
         // just the ops feeding that state (David's "simplify the dataflow by selection").
         Control.PropertyChanged += (_, e) =>
