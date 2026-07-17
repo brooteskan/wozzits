@@ -1073,6 +1073,43 @@ public sealed class StatechartMutationTests
         Assert.Equal(opId, cond.Op);
     }
 
+    // A reward effect's agent, qubit, and pole must all be authorable -- they used to be
+    // baked to the first agent / qubit 0 / |1> at creation with no UI, so a chart could not
+    // reward one pole in one place and the other elsewhere (the chapter-6 dead end), nor aim
+    // a reward at a mind on another node (chapter-7 doctrine).
+    [Fact]
+    public void Reward_Effect_Agent_Qubit_And_Pole_Are_Editable()
+    {
+        var chart = new Chart { Name = "scratch" };
+        var control = new ControlPaneViewModel();
+        var dataflow = new DataflowPaneViewModel();
+        control.Project(chart);
+        dataflow.Project(chart);
+
+        dataflow.AddAgent();                       // an owned agent
+        var refId = dataflow.AddAgentRef()!.NodeId; // a second agent to pick
+        var state = control.AddState()!;
+        control.AddEffect(state.Model, EffectSlot.Entry, EffectKind.Reward);
+        control.Project(chart);                    // thread AvailableAgents to the row
+
+        var row = control.States
+            .First(s => s.StateId == state.Model.Id)
+            .EntryEffectRows.First();
+
+        Assert.True(row.IsReward);
+        Assert.True(row.HasQubit);
+        Assert.Contains(refId, row.AvailableAgents);
+
+        row.SelectedEffectAgent = refId;
+        row.QubitEditor!.Value = "2";
+        row.SelectedRewardPole = "toward |0>";     // Toward == true
+
+        var reward = chart.States.First(s => s.Id == state.Model.Id).Entry[0];
+        Assert.Equal(refId, reward.Agent);
+        Assert.Equal(2, reward.Slot);
+        Assert.True(reward.Toward);
+    }
+
     [Fact]
     public void Author_A_Well_Formed_Chart_From_An_Empty_One()
     {

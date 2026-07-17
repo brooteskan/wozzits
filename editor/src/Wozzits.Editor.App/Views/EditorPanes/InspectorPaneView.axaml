@@ -1731,6 +1731,17 @@
                                                               IsVisible="{Binding IsActuator}"
                                                               ItemsSource="{Binding TargetBindings}"
                                                               SelectedItem="{Binding SelectedTargetBind, Mode=TwoWay}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsAgentEffect}"
+                                                              ItemsSource="{Binding AvailableAgents}"
+                                                              SelectedItem="{Binding SelectedEffectAgent, Mode=TwoWay}"/>
+                                                    <TextBox Classes="InspectorInput" Width="56"
+                                                             IsVisible="{Binding HasQubit}" PlaceholderText="qubit"
+                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="104"
+                                                              IsVisible="{Binding IsReward}"
+                                                              ItemsSource="{Binding RewardPoles}"
+                                                              SelectedItem="{Binding SelectedRewardPole, Mode=TwoWay}"/>
                                                     <StackPanel Orientation="Horizontal" Spacing="6"
                                                                 IsVisible="{Binding HasValueSource}">
                                                         <ComboBox Classes="InspectorInput" MinWidth="108"
@@ -1810,6 +1821,17 @@
                                                               IsVisible="{Binding IsActuator}"
                                                               ItemsSource="{Binding TargetBindings}"
                                                               SelectedItem="{Binding SelectedTargetBind, Mode=TwoWay}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsAgentEffect}"
+                                                              ItemsSource="{Binding AvailableAgents}"
+                                                              SelectedItem="{Binding SelectedEffectAgent, Mode=TwoWay}"/>
+                                                    <TextBox Classes="InspectorInput" Width="56"
+                                                             IsVisible="{Binding HasQubit}" PlaceholderText="qubit"
+                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="104"
+                                                              IsVisible="{Binding IsReward}"
+                                                              ItemsSource="{Binding RewardPoles}"
+                                                              SelectedItem="{Binding SelectedRewardPole, Mode=TwoWay}"/>
                                                     <StackPanel Orientation="Horizontal" Spacing="6"
                                                                 IsVisible="{Binding HasValueSource}">
                                                         <ComboBox Classes="InspectorInput" MinWidth="108"
@@ -1889,6 +1911,17 @@
                                                               IsVisible="{Binding IsActuator}"
                                                               ItemsSource="{Binding TargetBindings}"
                                                               SelectedItem="{Binding SelectedTargetBind, Mode=TwoWay}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsAgentEffect}"
+                                                              ItemsSource="{Binding AvailableAgents}"
+                                                              SelectedItem="{Binding SelectedEffectAgent, Mode=TwoWay}"/>
+                                                    <TextBox Classes="InspectorInput" Width="56"
+                                                             IsVisible="{Binding HasQubit}" PlaceholderText="qubit"
+                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="104"
+                                                              IsVisible="{Binding IsReward}"
+                                                              ItemsSource="{Binding RewardPoles}"
+                                                              SelectedItem="{Binding SelectedRewardPole, Mode=TwoWay}"/>
                                                     <StackPanel Orientation="Horizontal" Spacing="6"
                                                                 IsVisible="{Binding HasValueSource}">
                                                         <ComboBox Classes="InspectorInput" MinWidth="108"

@@ -20,7 +20,6 @@ public sealed class EffectRowViewModel : ViewModelBase
     {
         _effect = effect;
         _edited = edited;
-        Label = Describe(effect);
 
         if (effect.Value is { Kind: RefKind.Const } value)
         {
@@ -28,6 +27,17 @@ public sealed class EffectRowViewModel : ViewModelBase
                 "value",
                 () => FormatConst(value),
                 text => SetConst(value, text),
+                edited);
+        }
+
+        // The qubit an agent effect addresses (set_goal/measure_at/reward). Editable in
+        // place; a change refreshes the read-only label so it does not go stale.
+        if (HasQubit)
+        {
+            QubitEditor = new EditableFieldViewModel(
+                "qubit",
+                () => _effect.Slot.ToString(CultureInfo.InvariantCulture),
+                SetQubit,
                 edited);
         }
     }
@@ -69,10 +79,83 @@ public sealed class EffectRowViewModel : ViewModelBase
     public const string ConstSentinel = "(constant)";
 
     // The read-only prefix: kind plus its agent/target, without the "= value" tail.
-    public string Label { get; }
+    // Computed (not cached) so editing the agent / qubit / toward refreshes it.
+    public string Label => Describe(_effect);
 
     // The full formatted line (used by the state's derived string list / tests).
     public string Display => Format(_effect);
+
+    // ── agent-targeting effects (set_goal/measure_at/set_decoherence/rearm/reward) ──
+    // Which agent the effect drives, and — for reward — which memory qubit and which
+    // pole. These used to be baked to the first agent / qubit 0 / |1> at creation with
+    // no way to change them, so a chart could not e.g. reward one pole here and the
+    // other there, or target a mind on a different node. Now each is a live control.
+    public bool IsAgentEffect =>
+        _effect.Kind is EffectKind.SetGoal or EffectKind.MeasureAt
+            or EffectKind.SetDecoherence or EffectKind.Rearm or EffectKind.Reward;
+
+    public bool HasQubit =>
+        _effect.Kind is EffectKind.SetGoal or EffectKind.MeasureAt or EffectKind.Reward;
+
+    public bool IsReward => _effect.Kind == EffectKind.Reward;
+
+    public string SelectedEffectAgent
+    {
+        get => _effect.Agent;
+        set
+        {
+            // Guard the transient null a rebinding ComboBox writes back.
+            if (value is null || value == _effect.Agent)
+            {
+                return;
+            }
+            _effect.Agent = value;
+            RaiseLabel();
+            _edited?.Invoke();
+        }
+    }
+
+    // Editable memory/decision qubit for set_goal/measure_at/reward; null otherwise.
+    public EditableFieldViewModel? QubitEditor { get; }
+
+    // The two poles a reward can reinforce, for the toward picker. Order matters: index
+    // 0 is |0>, which maps to Toward == true (see Describe).
+    public IReadOnlyList<string> RewardPoles { get; } = new[] { "toward |0>", "toward |1>" };
+
+    public string SelectedRewardPole
+    {
+        get => _effect.Toward ? "toward |0>" : "toward |1>";
+        set
+        {
+            if (value is null)
+            {
+                return;
+            }
+            var toward = value == "toward |0>";
+            if (toward != _effect.Toward)
+            {
+                _effect.Toward = toward;
+                RaiseLabel();
+                _edited?.Invoke();
+            }
+        }
+    }
+
+    private void RaiseLabel()
+    {
+        OnPropertyChanged(nameof(Label));
+        OnPropertyChanged(nameof(Display));
+    }
+
+    private void SetQubit(string text)
+    {
+        if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var q)
+            && q >= 0 && q != _effect.Slot)
+        {
+            _effect.Slot = q;
+            RaiseLabel();
+        }
+    }
 
     // Editable constant value, or null when the effect is op-valued or valueless.
     public EditableFieldViewModel? ValueEditor { get; }
@@ -182,6 +265,8 @@ public sealed class EffectRowViewModel : ViewModelBase
         {
             _availableAgents = value ?? Array.Empty<string>();
             foreach (var a in CallArgs) a.Agents = _availableAgents;
+            OnPropertyChanged();                          // refresh the agent picker's items
+            OnPropertyChanged(nameof(SelectedEffectAgent));
         }
     }
 
