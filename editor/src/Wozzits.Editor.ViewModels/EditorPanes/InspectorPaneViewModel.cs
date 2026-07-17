@@ -4591,10 +4591,15 @@ public sealed class InspectorBehaviorViewModel : ViewModelBase
         }
 
         // Config keys the module did not declare (rare) stay editable as text so the
-        // editor never silently hides authored state.
+        // editor never silently hides authored state -- EXCEPT keys a dedicated
+        // inspector section owns. mind/mind_ir have the Mind picker; chart/chart_ir
+        // have the Statechart Runner picker. The _ir ones are compiled blobs no one
+        // hand-edits, and surfacing all four as raw text sends the author to the wrong
+        // control (and a detach that blanks rather than removes a key would otherwise
+        // leave a confusing empty field behind).
         foreach (var c in behavior.Config)
         {
-            if (seen.Contains(c.Name))
+            if (seen.Contains(c.Name) || SectionOwnedConfigKeys.Contains(c.Name))
             {
                 continue;
             }
@@ -4607,6 +4612,17 @@ public sealed class InspectorBehaviorViewModel : ViewModelBase
 
         return rows;
     }
+
+    // Config keys managed by a purpose-built inspector section, so BuildConfigRows does
+    // not also surface them as raw text fields. Keyed by name because the value is the
+    // same across every module that uses it.
+    private static readonly HashSet<string> SectionOwnedConfigKeys = new(StringComparer.Ordinal)
+    {
+        QuantumAgentMindAttachment.ConfigMind,
+        QuantumAgentMindAttachment.ConfigMindIr,
+        StatechartRunnerAttachment.ConfigChart,
+        StatechartRunnerAttachment.ConfigChartIr,
+    };
 }
 
 // One editable behavior-config field, typed by the module's declared param (checkbox
