@@ -36,8 +36,9 @@ public sealed class TransitionRowViewModel : ViewModelBase
                 text => transition.Trigger.EventName = text?.Trim() ?? string.Empty,
                 edited);
         }
-        else
+        else if (transition.Trigger.Kind != TriggerKind.Guard)
         {
+            // commit (and any future read-only kind); a guard shows its condition picker.
             TriggerText = TriggerLabel(transition.Trigger);
         }
 
@@ -75,6 +76,63 @@ public sealed class TransitionRowViewModel : ViewModelBase
     public string? TriggerText { get; }
 
     public bool HasTriggerText => TriggerText is not null;
+
+    // ── guard condition (the op whose value gates the transition) ──────────────
+    // A guard fires when its condition op is non-zero. The condition is picked from the
+    // chart's ops the same way an effect's value source is; "(always)" means a constant
+    // guard that always fires (the SetTriggerKind seed). Without this the kind picker can
+    // select "guard" but there is no way to say WHICH op gates it -- the transition is
+    // stuck always-firing. Mirrors EffectRowViewModel.SelectedValueSource.
+    public const string AlwaysSentinel = "(always)";
+
+    public bool IsGuard => _transition.Trigger.Kind == TriggerKind.Guard;
+
+    private IReadOnlyList<string> _guardSources = new[] { AlwaysSentinel };
+
+    // The pane threads "(always) + the chart's ops" here after building the state.
+    public IReadOnlyList<string> GuardSources
+    {
+        get => _guardSources;
+        set
+        {
+            _guardSources = value is { Count: > 0 } ? value : new[] { AlwaysSentinel };
+            OnPropertyChanged();
+        }
+    }
+
+    // Invoked when the guard's source flips between an op and the always-constant (the pane
+    // reprojects, since the canvas wire op -> transition appears/disappears).
+    public Action? GuardSourceChanged { get; set; }
+
+    public string SelectedGuardSource
+    {
+        get => _transition.Trigger.Cond is { Kind: RefKind.Op } op && !string.IsNullOrEmpty(op.Op)
+            ? op.Op
+            : AlwaysSentinel;
+        set
+        {
+            var cond = _transition.Trigger.Cond;
+            // Guard the transient null a rebinding ComboBox writes back, and no-op an
+            // unchanged pick.
+            if (cond is null || value is null || value == SelectedGuardSource)
+            {
+                return;
+            }
+            if (value == AlwaysSentinel)
+            {
+                cond.Kind = RefKind.Const;
+                cond.Op = string.Empty;
+                cond.Const = 1;   // a constant guard fires always
+            }
+            else
+            {
+                cond.Kind = RefKind.Op;
+                cond.Op = value;
+            }
+            OnPropertyChanged();
+            GuardSourceChanged?.Invoke();
+        }
+    }
 
     public string ActionSummary { get; }
 

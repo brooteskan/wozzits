@@ -35,6 +35,7 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
             {
                 DeleteRequested = () => TransitionDeleteRequested?.Invoke(t),
                 TriggerKindChangeRequested = k => TransitionKindChangeRequested?.Invoke(t, k),
+                GuardSourceChanged = () => EffectValueSourceChanged?.Invoke(),
             }).ToList();
         NameEditor = new EditableFieldViewModel("name", () => Model.Id, v => RenameRequested?.Invoke(v));
     }
@@ -137,6 +138,12 @@ public sealed class StateNodeViewModel : ViewModelBase, ICanvasNode
             foreach (var r in DoEffectRows) r.ValueSources = sources;
             foreach (var r in EntryEffectRows) r.ValueSources = sources;
             foreach (var r in ExitEffectRows) r.ValueSources = sources;
+
+            // A guard picks its condition from the same ops, with "(always)" for a
+            // constant guard instead of the effect list's "(constant)".
+            var guardSources = new List<string> { TransitionRowViewModel.AlwaysSentinel };
+            guardSources.AddRange(value);
+            foreach (var r in TransitionRows) r.GuardSources = guardSources;
         }
     }
 

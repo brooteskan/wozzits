@@ -1031,6 +1031,48 @@ public sealed class StatechartMutationTests
         Assert.True(pane.IsDirty);
     }
 
+    // Selecting trigger kind "guard" must then let you pick WHICH op gates the transition.
+    // The SetTriggerKind seed makes a guard always-fire (cond = const 1); without the
+    // condition picker the transition is stuck there -- the reader could pick "guard" and
+    // had no next control (the chapter-6 dead end).
+    [Fact]
+    public void Guard_Transition_Picks_Its_Condition_Op()
+    {
+        var chart = new Chart { Name = "scratch" };
+        var control = new ControlPaneViewModel();
+        var dataflow = new DataflowPaneViewModel();
+        control.Project(chart);
+        dataflow.Project(chart);
+
+        // A committed read op the guard can gate on, and two states with a transition.
+        var a = control.AddState()!;
+        var b = control.AddState()!;
+        Assert.True(control.TryAddTransition(a.Model.Id, b.Model.Id));
+        dataflow.AddOp(OpKind.Committed);
+        var opId = chart.Pure[0].Id;
+
+        // Re-project so the op reaches the transition row's guard sources (the pane threads
+        // AvailableOps after building states, exactly as a real edit round-trips).
+        control.Project(chart);
+        var fromA = control.States.First(s => s.StateId == a.Model.Id);
+        var row = fromA.TransitionRows.First();
+
+        // The reader's flow: kind -> guard, then pick the op.
+        row.SelectedTriggerKind = TriggerKind.Guard;
+        control.Project(chart);   // SetTriggerKind reprojects; refetch the row
+        row = control.States.First(s => s.StateId == a.Model.Id).TransitionRows.First();
+
+        Assert.True(row.IsGuard);
+        Assert.Contains(opId, row.GuardSources);
+        Assert.Equal(TransitionRowViewModel.AlwaysSentinel, row.SelectedGuardSource);   // seed: always-fire
+
+        row.SelectedGuardSource = opId;
+
+        var cond = chart.States.First(s => s.Id == a.Model.Id).Transitions[0].Trigger.Cond;
+        Assert.Equal(RefKind.Op, cond!.Kind);
+        Assert.Equal(opId, cond.Op);
+    }
+
     [Fact]
     public void Author_A_Well_Formed_Chart_From_An_Empty_One()
     {
