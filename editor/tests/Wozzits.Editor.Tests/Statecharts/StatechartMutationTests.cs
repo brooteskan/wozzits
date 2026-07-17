@@ -1110,6 +1110,56 @@ public sealed class StatechartMutationTests
         Assert.True(reward.Toward);
     }
 
+    // A reward's strength must survive being set and then re-inspected (click off, click
+    // back) -- it read back as the default 0 because the LostFocus binding never committed
+    // on a click-away that moved no focus. The value box is now PropertyChanged-committed.
+    [Fact]
+    public void Reward_Strength_Survives_Reproject()
+    {
+        var chart = new Chart { Name = "scratch" };
+        var control = new ControlPaneViewModel();
+        var dataflow = new DataflowPaneViewModel();
+        control.Project(chart);
+        dataflow.Project(chart);
+        dataflow.AddAgent();
+        var state = control.AddState()!;
+        control.AddEffect(state.Model, EffectSlot.Entry, EffectKind.Reward);
+        control.Project(chart);
+
+        var row = control.States.First(s => s.StateId == state.Model.Id).EntryEffectRows.First();
+        row.ValueEditor!.Value = "0.4";
+        row.SelectedRewardPole = "toward |0>";
+        row.SelectedEffectAgent = chart.Agents[0].Id;
+
+        control.Project(chart);   // click off + back on
+        var row2 = control.States.First(s => s.StateId == state.Model.Id).EntryEffectRows.First();
+        Assert.Equal("0.4", row2.ValueEditor!.Value);
+    }
+
+    // The field echoes the raw text mid-edit, so a PropertyChanged-committed decimal does
+    // not get reformatted between keystrokes ("0." must not snap to "0" and eat the point).
+    [Fact]
+    public void EditableField_Echoes_Raw_Input_Not_The_Models_Reformat()
+    {
+        double model = 0;
+        var field = new EditableFieldViewModel(
+            "value",
+            () => model.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            text =>
+            {
+                if (double.TryParse(text, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var d))
+                {
+                    model = d;
+                }
+            });
+
+        field.Value = "0.";   // mid-typing "0.4": the model reformats 0.0 -> "0"
+        Assert.Equal("0.", field.Value);   // but the field keeps what was typed
+        field.Value = "0.4";
+        Assert.Equal(0.4, model);
+    }
+
     [Fact]
     public void Author_A_Well_Formed_Chart_From_An_Empty_One()
     {

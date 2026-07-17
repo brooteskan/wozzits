@@ -19,16 +19,23 @@ public sealed class EditableFieldViewModel : ViewModelBase
 
     public string Name { get; }
 
+    // The raw edited text, cached so a PropertyChanged-triggered binding echoes exactly
+    // what the user typed rather than the model's reformat of it (e.g. typing "0." must
+    // not snap back to "0" and eat the decimal). The field VM is rebuilt on reproject, so
+    // a fresh instance reads the model via _get(); the cache only lives across keystrokes.
+    private string? _raw;
+
     public string Value
     {
-        get => _get();
+        get => _raw ??= _get();
         set
         {
-            if (_get() == value)
+            if ((_raw ?? _get()) == value)
             {
                 return;
             }
 
+            _raw = value;
             _set(value);
             OnPropertyChanged();
             _edited?.Invoke();

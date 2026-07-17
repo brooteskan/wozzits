@@ -1737,7 +1737,7 @@
                                                               SelectedItem="{Binding SelectedEffectAgent, Mode=TwoWay}"/>
                                                     <TextBox Classes="InspectorInput" Width="56"
                                                              IsVisible="{Binding HasQubit}" PlaceholderText="qubit"
-                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                     <ComboBox Classes="InspectorInput" MinWidth="104"
                                                               IsVisible="{Binding IsReward}"
                                                               ItemsSource="{Binding RewardPoles}"
@@ -1749,7 +1749,7 @@
                                                                   SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
                                                         <TextBox Classes="InspectorInput" Width="80"
                                                                  IsVisible="{Binding IsEditable}"
-                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                     </StackPanel>
                                                     <StackPanel Orientation="Vertical" Spacing="4" IsVisible="{Binding IsCall}">
                                                         <ComboBox Classes="InspectorInput" MinWidth="120"
@@ -1768,7 +1768,7 @@
                                                                                       SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
                                                                             <TextBox Classes="InspectorInput" Width="70"
                                                                                      IsVisible="{Binding IsEditable}"
-                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                                             <ComboBox Classes="InspectorInput" MinWidth="100"
                                                                                       IsVisible="{Binding IsBinding}"
                                                                                       ItemsSource="{Binding Bindings}"
@@ -1827,7 +1827,7 @@
                                                               SelectedItem="{Binding SelectedEffectAgent, Mode=TwoWay}"/>
                                                     <TextBox Classes="InspectorInput" Width="56"
                                                              IsVisible="{Binding HasQubit}" PlaceholderText="qubit"
-                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                     <ComboBox Classes="InspectorInput" MinWidth="104"
                                                               IsVisible="{Binding IsReward}"
                                                               ItemsSource="{Binding RewardPoles}"
@@ -1839,7 +1839,7 @@
                                                                   SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
                                                         <TextBox Classes="InspectorInput" Width="80"
                                                                  IsVisible="{Binding IsEditable}"
-                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                     </StackPanel>
                                                     <StackPanel Orientation="Vertical" Spacing="4" IsVisible="{Binding IsCall}">
                                                         <ComboBox Classes="InspectorInput" MinWidth="120"
@@ -1858,7 +1858,7 @@
                                                                                       SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
                                                                             <TextBox Classes="InspectorInput" Width="70"
                                                                                      IsVisible="{Binding IsEditable}"
-                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                                             <ComboBox Classes="InspectorInput" MinWidth="100"
                                                                                       IsVisible="{Binding IsBinding}"
                                                                                       ItemsSource="{Binding Bindings}"
@@ -1917,7 +1917,7 @@
                                                               SelectedItem="{Binding SelectedEffectAgent, Mode=TwoWay}"/>
                                                     <TextBox Classes="InspectorInput" Width="56"
                                                              IsVisible="{Binding HasQubit}" PlaceholderText="qubit"
-                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                     <ComboBox Classes="InspectorInput" MinWidth="104"
                                                               IsVisible="{Binding IsReward}"
                                                               ItemsSource="{Binding RewardPoles}"
@@ -1929,7 +1929,7 @@
                                                                   SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
                                                         <TextBox Classes="InspectorInput" Width="80"
                                                                  IsVisible="{Binding IsEditable}"
-                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                     </StackPanel>
                                                     <StackPanel Orientation="Vertical" Spacing="4" IsVisible="{Binding IsCall}">
                                                         <ComboBox Classes="InspectorInput" MinWidth="120"
@@ -1948,7 +1948,7 @@
                                                                                       SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
                                                                             <TextBox Classes="InspectorInput" Width="70"
                                                                                      IsVisible="{Binding IsEditable}"
-                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                                                                             <ComboBox Classes="InspectorInput" MinWidth="100"
                                                                                       IsVisible="{Binding IsBinding}"
                                                                                       ItemsSource="{Binding Bindings}"
