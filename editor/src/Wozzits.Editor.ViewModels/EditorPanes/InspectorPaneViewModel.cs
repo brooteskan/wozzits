@@ -1524,12 +1524,32 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         get => _selectedAgentMind;
         set
         {
+            // Guard the transient null a ComboBox writes back while its ItemsSource
+            // churns (RefreshQuantumAgentMindSection clears + repopulates QuantumAgentMinds
+            // on every reselect / scenelet reopen). Without this, that writeback lands
+            // AFTER the restore below set the field, silently resetting the picker to
+            // "Pick a mind" even though the node's config names a mind -- the same
+            // resets-to-none hazard the ref-agent mind picker guards against. Programmatic
+            // clears assign the field directly (ResetQuantumAgentMindSelection).
+            if (value is null)
+            {
+                return;
+            }
             if (SetProperty(ref _selectedAgentMind, value))
             {
                 QuantumAgentMindStatus = string.Empty;
                 OnPropertyChanged(nameof(HasSelectedQuantumAgentMind));
             }
         }
+    }
+
+    // Clear the picker selection past the setter's null guard (a real reset, not the
+    // ComboBox's transient rebind null).
+    private void ResetQuantumAgentMindSelection()
+    {
+        _selectedAgentMind = null;
+        OnPropertyChanged(nameof(SelectedQuantumAgentMind));
+        OnPropertyChanged(nameof(HasSelectedQuantumAgentMind));
     }
 
     public bool HasSelectedQuantumAgentMind => _selectedAgentMind is not null;
@@ -1557,7 +1577,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     private void RefreshQuantumAgentMindSection()
     {
-        SelectedQuantumAgentMind = null;
+        ResetQuantumAgentMindSelection();
+        QuantumAgentMindStatus = string.Empty;
         QuantumAgentMinds.Clear();
         if (HasSceneNodeSelection && _mindsProvider is not null)
         {
@@ -1657,7 +1678,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMindIr, string.Empty);
         SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMind, string.Empty);
 
-        SelectedQuantumAgentMind = null;
+        ResetQuantumAgentMindSelection();
         QuantumAgentMindStatus = "Detached — the quantum_agent uses its scalar config.";
     }
 

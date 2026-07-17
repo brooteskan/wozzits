@@ -5,6 +5,7 @@ using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
 using Wozzits.Editor.ViewModels;
 using Wozzits.Editor.ViewModels.EditorPanes;
+using Wozzits.Editor.ViewModels.EditorPanes.Minds;
 using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 namespace Wozzits.Editor.Tests;
@@ -2366,6 +2367,53 @@ public sealed partial class ProjectOpeningTests
         var row = Assert.Single(inspector.Behaviors.Single().Config);
         Assert.Equal("target_0", row.Key);
         Assert.Equal("Target 0", row.Label);
+    }
+
+    // A quantum_agent whose config names a mind must show that mind in the picker after a
+    // reselect / scenelet reopen -- not reset to "Pick a mind". RefreshQuantumAgentMindSection
+    // clears + repopulates the minds ItemsSource, and the bound ComboBox writes a transient
+    // null back through the setter AFTER the restore set the field; without a null guard that
+    // writeback silently clears the selection (it looked fine only until the editor restarted).
+    [Fact]
+    public void QuantumAgentMindSelectionSurvivesItemsSourceChurn()
+    {
+        var session = new RecordingEditorSession();
+        var inspector = new InspectorPaneViewModel(session);
+        inspector.SetMindsProvider(() =>
+        [
+            new MindFileInfo("first_mind", "behavior/minds/first_mind.mind.json"),
+            new MindFileInfo("other_mind", "behavior/minds/other_mind.mind.json"),
+        ]);
+
+        inspector.Inspect(new SceneTreeNodeViewModel(new EngineSceneNode
+        {
+            Id = "tank",
+            DisplayName = "tank",
+            Kind = "node",
+            Visible = true,
+            Behaviors =
+            [
+                new EngineSceneBehavior
+                {
+                    Id = "b.1",
+                    Module = "quantum_agent",
+                    Config =
+                    [
+                        new EngineSceneBehaviorConfig { Name = "mind", Kind = "string", Value = "first_mind" },
+                        new EngineSceneBehaviorConfig { Name = "mind_ir", Kind = "string", Value = "{\"qubits\":1}" },
+                    ],
+                },
+            ],
+        }));
+
+        // The restore picked the mind the config names.
+        Assert.True(inspector.HasQuantumAgentMindSection);
+        Assert.Equal("first_mind", inspector.SelectedQuantumAgentMind?.Name);
+
+        // The ComboBox writes null back while its ItemsSource churns -- the setter must ignore it.
+        inspector.SelectedQuantumAgentMind = null;
+
+        Assert.Equal("first_mind", inspector.SelectedQuantumAgentMind?.Name);
     }
 
     // A failed rebuild must be visible ON the card, not just in a console full of live
