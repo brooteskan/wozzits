@@ -813,11 +813,16 @@ namespace wz::engine::editor
                 node.renderable = renderable;
             }
 
-            // Surface the authored render-program ref so a grafted scene-source
-            // child whose program was re-applied from a host override (issue #213)
-            // reveals + pre-selects the "Render program" section in the inspector,
-            // matching the JSON node path (read_node).
+            // Surface the authored render-binding refs so this path matches the
+            // JSON node path (read_node): the render-program ref (a grafted
+            // scene-source child whose program was re-applied from a host override,
+            // issue #213) AND the geometry ref (a mesh assigned directly on the
+            // node, #213 increment 2). Missing the geometry copy here made a
+            // node's Geometry section vanish from the inspector after any
+            // runtime-snapshot reload (e.g. a scenelet round trip) until the
+            // editor restarted onto the JSON path.
             node.render_program_node_id = source.render_program_node_id;
+            node.geometry_node_id = source.geometry_asset_node_id;
 
             // Custom-renderable ingredients (issue #229/#230): surface the
             // authored bindings + constant overrides so the inspector
