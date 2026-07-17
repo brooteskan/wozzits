@@ -233,6 +233,9 @@
                                                 <MenuItem Header="Subtree from asset"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="subtree_from_asset"/>
+                                                <MenuItem Header="Geometry (mesh)"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="geometry"/>
                                                 <MenuItem Header="Render program"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="render_program"/>
@@ -517,6 +520,64 @@
                                 <TextBlock Text="No render-program nodes in the asset graph."
                                            Classes="PaneEmptyState"
                                            IsVisible="{Binding !HasAvailableRenderPrograms}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Geometry (issue #213 increment 2): assign a MESH to this
+                             node directly — the geometry half of the renderable
+                             binding, paired at assembly with the render program above
+                             (or one inherited from an ancestor). No GLB subtree graft
+                             needed. Attached via "Add Component → Geometry (mesh)"
+                             (gated on HasGeometrySection), removed via the header ✕.
+                             Choosing a node applies immediately, mirroring the
+                             render-program picker. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasGeometrySection}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Geometry"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveGeometryComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove geometry"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Mesh"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableGeometrySources}"
+                                              SelectedItem="{Binding SelectedGeometryOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a mesh node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableGeometrySources}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding GeometryReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <TextBlock Text="No mesh nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableGeometrySources}"/>
 
                             </StackPanel>
                         </Border>

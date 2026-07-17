@@ -1492,6 +1492,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     node.Id,
                     node.DisplayName)));
 
+        // Thread the "Geometry" picker (issue #213 increment 2) the same way:
+        // mesh-producing nodes, so a scene node can pair a mesh with a render
+        // program directly instead of grafting a GLB subtree.
+        Inspector.SetAvailableGeometrySources(
+            AssetGraph.Nodes
+                .Where(IsMeshNode)
+                .Select(node => new InspectorAssetGraphRefOptionViewModel(
+                    node.Id,
+                    node.DisplayName)));
+
         // Thread the "Collision" picker (terrain-stick track) the same way: the
         // inspector takes plain option data, filtered to Collision outputs.
         RefreshInspectorCollisionSources();
@@ -1543,6 +1553,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         node.OutputPorts.Any(port => port.Type == RenderProgramAssetTypeId);
 
     private const uint RenderProgramAssetTypeId = 1049;
+
+    // True when a node produces a Mesh the geometry binding can reference
+    // (kAssetTypeMesh = 130 in type_extensions.h) — the mesh half of the #213
+    // renderable binding, paired with a render program at assembly.
+    private static bool IsMeshNode(AssetGraphNodeCardViewModel node) =>
+        node.OutputPorts.Any(port => port.Type == MeshAssetTypeId);
+
+    private const uint MeshAssetTypeId = 130;
 
     // True when a node produces a Collision asset the Collision component can
     // reference (kAssetTypeCollisionAsset = 150 in type_extensions.h).

@@ -48,6 +48,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // geometry-by-ingredients picker was dropped: geometry now comes from the graft
     // or a pre-built renderable, so only the program is authored here.)
     private InspectorAssetGraphRefOptionViewModel? _selectedRenderProgramOption;
+    private InspectorAssetGraphRefOptionViewModel? _selectedGeometryOption;
+    private string _geometryReferenceLabel = string.Empty;
+    private bool _hasGeometrySection;
     private bool _hasRenderableIngredientsSection;
     private string _renderableIngredientsHint = string.Empty;
     private Func<string, SceneTreeNodeViewModel?>? _sceneNodeLookup;
@@ -175,6 +178,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // "Render program" (issue #213): pick a render-program node; the header ✕
         // clears it and hides the section, mirroring the camera.
         RemoveRenderProgramComponentCommand = new RelayCommand(RemoveRenderProgramComponent);
+        RemoveGeometryComponentCommand = new RelayCommand(RemoveGeometryComponent);
         // "Collision" / "Motion" (terrain-stick track): the header ✕ removes the
         // component via the generic remove verb and hides the section, like camera.
         RemoveCollisionComponentCommand = new RelayCommand(RemoveCollisionComponent);
@@ -227,6 +231,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
         AvailableRenderPrograms { get; } = [];
 
+    // The mesh-producing asset-graph nodes the "Geometry" picker offers (issue
+    // #213 increment 2). Threaded in the same way, filtered to Mesh outputs.
+    public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
+        AvailableGeometrySources { get; } = [];
+
     // The Collision asset-graph nodes the "Collision" picker offers (terrain-stick
     // track). Threaded in from MainWindowViewModel on every selection, filtered to
     // Collision outputs (kAssetTypeCollisionAsset = 150).
@@ -277,6 +286,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     // "Render program" (issue #213).
     public IRelayCommand RemoveRenderProgramComponentCommand { get; }
+
+    public IRelayCommand RemoveGeometryComponentCommand { get; }
 
     // "Collision" / "Motion" (terrain-stick track).
     public IRelayCommand RemoveCollisionComponentCommand { get; }
@@ -549,6 +560,56 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         get => _hasRenderProgramSection;
         private set => SetProperty(ref _hasRenderProgramSection, value);
+    }
+
+    // ─── Geometry (issue #213 increment 2) ───────────────────────────────────────
+
+    // The mesh node chosen in the "Geometry" picker: the GEOMETRY half of the same
+    // renderable binding the render-program section authors, so a node can pair a
+    // mesh with a program directly — no GLB subtree graft required. A user pick
+    // applies immediately (no Apply button), mirroring the program picker.
+    // Programmatic restores assign the field, not this setter.
+    public InspectorAssetGraphRefOptionViewModel? SelectedGeometryOption
+    {
+        get => _selectedGeometryOption;
+        set
+        {
+            if (SetProperty(ref _selectedGeometryOption, value)
+                && value is not null)
+            {
+                ApplyGeometry();
+            }
+        }
+    }
+
+    public bool HasAvailableGeometrySources => AvailableGeometrySources.Count > 0;
+
+    // Optimistic "Referencing: <node>" line for the picked mesh. Empty => "(none)".
+    public string GeometryReferenceLabel
+    {
+        get => _geometryReferenceLabel;
+        private set
+        {
+            if (SetProperty(ref _geometryReferenceLabel, value))
+            {
+                OnPropertyChanged(nameof(GeometryReferenceDisplay));
+            }
+        }
+    }
+
+    public string GeometryReferenceDisplay =>
+        string.IsNullOrWhiteSpace(GeometryReferenceLabel)
+            ? "(none)"
+            : $"Referencing: {GeometryReferenceLabel}";
+
+    // Gates the "Geometry" section, mirroring HasRenderProgramSection: attached via
+    // "Add Component → Geometry (mesh)" rather than always shown. Attaching does NOT
+    // call the generic AddNodeComponent verb (the engine rejects "geometry") — it
+    // just reveals the picker so the user references a mesh-producing node.
+    public bool HasGeometrySection
+    {
+        get => _hasGeometrySection;
+        private set => SetProperty(ref _hasGeometrySection, value);
     }
 
     // ── Renderable bindings + constants (issue #230) ────────────────────────
@@ -1212,6 +1273,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             // that has them shows them on (re)select instead of starting hidden.
             RestoreSubtreeReferenceState(node);
             RestoreRenderProgramState(node);
+            RestoreGeometryState(node);
             RestoreRenderableIngredientsState(node);
 
             ComponentsHeader = $"{Header} Components";
@@ -1994,6 +2056,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             SubtreeReferenceLabel = string.Empty;
             HasSubtreeSection = false;
             ResetRenderProgramState();
+            ResetGeometryState();
             ResetRenderableIngredientsState();
             ResetCollisionState();
             ResetMotionState();
@@ -2452,6 +2515,16 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
+        // "Geometry" is the MESH half of the same renderable binding (issue #213
+        // increment 2): reveal its picker; the dedicated geometry verb applies on
+        // pick, so do NOT call the generic verb (the engine rejects "geometry").
+        if (string.Equals(kind, "geometry", StringComparison.Ordinal))
+        {
+            HasGeometrySection = true;
+            LastEditError = string.Empty;
+            return;
+        }
+
         // "Statechart runner" is an authored-chart behavior, not a default-toggle component:
         // reveal its card (a chart picker); the runner is added + configured on Attach.
         if (string.Equals(kind, "statechart_runner", StringComparison.Ordinal))
@@ -2877,6 +2950,105 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             HasRenderProgramSection = false;
         }
         OnPropertyChanged(nameof(SelectedRenderProgramOption));
+    }
+
+    // ─── Geometry (issue #213 increment 2) ───────────────────────────────────────
+
+    // Replace the geometry picker's options with the current Mesh-producing
+    // asset-graph nodes (threaded in from MainWindowViewModel). Same
+    // selection-preserving shape as SetAvailableRenderPrograms.
+    public void SetAvailableGeometrySources(
+        IEnumerable<InspectorAssetGraphRefOptionViewModel> options)
+    {
+        var previousId = _selectedGeometryOption?.Id;
+        AvailableGeometrySources.Clear();
+        InspectorAssetGraphRefOptionViewModel? restored = null;
+        foreach (var option in options)
+        {
+            AvailableGeometrySources.Add(option);
+            if (previousId is { } id && option.Id == id)
+            {
+                restored = option;
+            }
+        }
+        _selectedGeometryOption = restored;
+        OnPropertyChanged(nameof(SelectedGeometryOption));
+        OnPropertyChanged(nameof(HasAvailableGeometrySources));
+    }
+
+    // Author the node's geometry from the picked mesh node — invoked from the
+    // picker's selection setter, so choosing a node applies immediately. Pairs with
+    // the render program (its own section above; inherited down the tree when this
+    // node doesn't carry one), completing the mesh+program binding on one node with
+    // no GLB subtree graft.
+    private void ApplyGeometry()
+    {
+        if (!EnsureCanApply() || SelectedGeometryOption is not { } option)
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeGeometryAsset(NodeId, option.Id);
+        SetEditResponse(response);
+        if (response.Ok)
+        {
+            GeometryReferenceLabel = option.Label;
+            if (_inspectedSceneNode is not null)
+            {
+                _inspectedSceneNode.GeometryNodeId = option.Id;
+            }
+        }
+    }
+
+    // Remove the "Geometry" component (the section's ✕), mirroring the render
+    // program ✕: clear the geometry on the engine side (id 0, the node stops
+    // drawing) and hide the section. Re-attach via "Add Component → Geometry".
+    private void RemoveGeometryComponent()
+    {
+        if (EnsureCanApply())
+        {
+            SetEditResponse(_editorSession!.SetNodeGeometryAsset(NodeId, 0));
+        }
+
+        // Clear the cached tree-node VM too, so reselect keeps the geometry removed.
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.GeometryNodeId = null;
+        }
+
+        ResetGeometryState();
+    }
+
+    // Clear the geometry picker selection + optimistic label and re-hide the
+    // section. Used by the ✕ remove path (the cached VM is cleared separately there).
+    private void ResetGeometryState()
+    {
+        SelectedGeometryOption = null;
+        GeometryReferenceLabel = string.Empty;
+        HasGeometrySection = false;
+    }
+
+    // Reveal + pre-select the "Geometry" section from the node's persisted geometry
+    // ref (issue #213), or hide it when the node has none. The option field is
+    // assigned directly (not the setter) so revealing never re-applies.
+    private void RestoreGeometryState(SceneTreeNodeViewModel node)
+    {
+        if (node.GeometryNodeId is { } geometryId)
+        {
+            var option = AvailableGeometrySources.FirstOrDefault(
+                o => o.Id == geometryId);
+            _selectedGeometryOption = option;
+            GeometryReferenceLabel = option?.Label
+                ?? $"#{geometryId.ToString(CultureInfo.InvariantCulture)}";
+            HasGeometrySection = true;
+        }
+        else
+        {
+            _selectedGeometryOption = null;
+            GeometryReferenceLabel = string.Empty;
+            HasGeometrySection = false;
+        }
+        OnPropertyChanged(nameof(SelectedGeometryOption));
     }
 
     // ─── Collision (terrain-stick track) ─────────────────────────────────────────
