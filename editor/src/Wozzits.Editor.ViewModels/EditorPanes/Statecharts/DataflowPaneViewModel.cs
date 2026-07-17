@@ -971,6 +971,12 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             Nodes.Add(node);
         }
 
+        // "self" + the chart's binding ports: what a REF agent's host picker offers. A
+        // host set to a port means the referenced quantum_agent lives on the port's
+        // resolved entity (the doctrine pattern), not on the runner's own node.
+        var hostChoices = new List<string> { DataflowNodeViewModel.SelfHost };
+        hostChoices.AddRange(chart.Bindings.Select(b => b.Port));
+
         foreach (var a in chart.Agents)
         {
             var node = new DataflowNodeViewModel(DataflowNodeKind.Agent, a.Id, a.Owned ? "agent" : "agent (ref)", a);
@@ -978,6 +984,8 @@ public sealed class DataflowPaneViewModel : ViewModelBase, IEditorCanvas, IWirin
             node.SpecEdited = MarkChartDirty;
             node.AgentRenameRequested = newId => RenameAgent(a, newId);
             node.AgentTargetEdited = MarkChartDirty;
+            node.HostChoices = hostChoices;
+            node.HostChanged = MarkChartDirty;
             node.MindChoices = _mindChoices;
             // A mind change alters only the read ops' slot COUNTS (not the graph structure), so
             // refresh those IN PLACE -- reprojecting here would rebuild the very node the mind

@@ -148,6 +148,50 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
 
     public Action? MindRefChanged { get; set; }
 
+    // A REF (owned == false) can also pick WHICH node hosts the referenced
+    // quantum_agent: "self" (the runner's own node, the default) or any of the chart's
+    // binding ports — the port's resolved entity then hosts the agent. This is the
+    // doctrine pattern: a mind on a persistent node (e.g. the spawner), rewarded and
+    // read by every spawned tank's chart, so learning survives the individual.
+    public bool HasHostPicker =>
+        Kind == DataflowNodeKind.Agent && Model is AgentDecl { Owned: false };
+
+    public const string SelfHost = "self";
+
+    private IReadOnlyList<string> _hostChoices = new[] { SelfHost };
+
+    public IReadOnlyList<string> HostChoices
+    {
+        get => _hostChoices;
+        set
+        {
+            _hostChoices = value is { Count: > 0 } ? value : new[] { SelfHost };
+            OnPropertyChanged();
+        }
+    }
+
+    public string SelectedHost
+    {
+        get => Model is AgentDecl { Host.Length: > 0 } a ? a.Host : SelfHost;
+        set
+        {
+            // Same transient-null guard as the mind picker: a rebinding ComboBox
+            // writes null back; only a real pick changes the host.
+            if (Model is not AgentDecl a || value is null)
+            {
+                return;
+            }
+            if (a.Host != value)
+            {
+                a.Host = value;
+                OnPropertyChanged();
+                HostChanged?.Invoke();
+            }
+        }
+    }
+
+    public Action? HostChanged { get; set; }
+
     public double X
     {
         get => _x;
@@ -438,10 +482,10 @@ public sealed class DataflowNodeViewModel : ViewModelBase, ICanvasNode
         _ => Array.Empty<InspectorRow>(),
     };
 
+    // Host is now an editable picker (SelectedHost), not a read-only row.
     private static IReadOnlyList<InspectorRow> BuildAgentRows(AgentDecl a) => new List<InspectorRow>
     {
         new("owned", a.Owned ? "yes" : "no"),
-        new("host", a.Host),
     };
 
     // Read/proximity refs are now editable pickers (SelectedReadAgent / SlotEditor /

@@ -29,7 +29,8 @@ public sealed class StatechartInspectorTests
         var agent = Dataflow("traffic_light.sc.json").Nodes.First(n => n.Kind == DataflowNodeKind.Agent);
 
         Assert.Contains(agent.PropertyRows, r => r.Name == "owned" && r.Value == "yes");
-        Assert.Contains(agent.PropertyRows, r => r.Name == "host" && r.Value == "self");
+        Assert.Equal("self", agent.SelectedHost);   // now an editable picker (refs only), not a read-only row
+        Assert.False(agent.HasHostPicker);          // owned agents are always host=self
         Assert.Contains(agent.SpecFields, f => f.Name == "decisions");   // spec is now an editable field
     }
 
