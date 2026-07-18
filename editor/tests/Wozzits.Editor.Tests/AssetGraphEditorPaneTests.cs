@@ -1,4 +1,6 @@
 using System.Threading;
+using Dock.Model.Core;
+using Dock.Model.Mvvm.Controls;
 using Wozzits.Editor.Protocol;
 using Wozzits.Editor.ViewModels;
 using Wozzits.Editor.ViewModels.EditorPanes;
@@ -969,5 +971,162 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal(
             "Could not load asset graph: asset graph parse failed",
             viewModel.AssetGraph.EmptyState);
+    }
+
+    // --- Editing inside a sub-graph drill-in tab (woguls/wozzits-editor#1) -------------
+
+    [Fact]
+    public void AddingANodeInsideADrillInTabJoinsThatSubGraph()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = GraphSnapshotOf(1, 2),
+            NextAddedNodeId = 1000u,
+        };
+
+        var grouping = new AssetGraphGroupingModel();
+        var landscape = grouping.CreateSubGraph("Landscape", [1ul]);
+        var pane = new AssetGraphEditorPaneViewModel(editorSession, grouping, landscape);
+        pane.LoadSnapshot(editorSession.AssetGraphSnapshot);
+
+        // The reload after the add sees the node the engine just created.
+        editorSession.AssetGraphSnapshot = GraphSnapshotOf(1, 2, 1000);
+
+        Assert.True(pane.AddNodeAt(schema: 0xE7000002ul, type: 7u, graphX: 300, graphY: 200));
+
+        // It joins the sub-graph the tab is showing...
+        Assert.Same(landscape, grouping.SubGraphOfNode(1000));
+
+        // ...and draws on the canvas it was dropped on. Before the fix it was ungrouped,
+        // so the projection hid it here and it surfaced on the root canvas only.
+        Assert.True(pane.Nodes.Single(node => node.Id == 1000ul).IsCanvasVisible);
+    }
+
+    [Fact]
+    public void AddingANodeOnTheRootCanvasLeavesItUngrouped()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = GraphSnapshotOf(1, 2),
+            NextAddedNodeId = 1000u,
+        };
+
+        var grouping = new AssetGraphGroupingModel();
+        grouping.CreateSubGraph("Landscape", [1ul]);
+        var pane = new AssetGraphEditorPaneViewModel(editorSession, grouping, context: null);
+        pane.LoadSnapshot(editorSession.AssetGraphSnapshot);
+
+        editorSession.AssetGraphSnapshot = GraphSnapshotOf(1, 2, 1000);
+
+        Assert.True(pane.AddNodeAt(schema: 0xE7000002ul, type: 7u, graphX: 300, graphY: 200));
+
+        // A root-canvas drop joins no group -- membership follows the pane you drop on.
+        Assert.Null(grouping.SubGraphOfNode(1000));
+        Assert.True(pane.Nodes.Single(node => node.Id == 1000ul).IsCanvasVisible);
+    }
+
+    [Fact]
+    public void AddingANodeInADrillInTabRefreshesTheRootCanvas()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = GraphSnapshotOf(1, 2),
+            NextAddedNodeId = 1000u,
+        };
+
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: GraphSnapshotOf(1, 2)),
+            editorSession: editorSession);
+
+        viewModel.AssetGraph.SelectNode(
+            viewModel.AssetGraph.Nodes.Single(node => node.Id == 1ul));
+        var landscape = viewModel.AssetGraph.CreateSubGraphFromSelection("Landscape");
+        Assert.NotNull(landscape);
+
+        viewModel.AssetGraph.OpenSubGraph(landscape);
+        var drillIn = GraphPanes(viewModel.EditorLayout)
+            .Single(pane => !ReferenceEquals(pane, viewModel.AssetGraph));
+
+        editorSession.AssetGraphSnapshot = GraphSnapshotOf(1, 2, 1000);
+        Assert.True(drillIn.AddNodeAt(schema: 0xE7000002ul, type: 7u, graphX: 300, graphY: 200));
+
+        // Each pane holds its own snapshot of the one draft, so the shell re-pulls the
+        // others; without that the root canvas keeps listing the pre-add node set.
+        Assert.Contains(viewModel.AssetGraph.Nodes, node => node.Id == 1000ul);
+        Assert.Same(landscape, viewModel.AssetGraph.SubGraphOfNode(1000));
+    }
+
+    [Fact]
+    public void AddingANodeInADrillInTabLeavesTheInspectorOnTheNewNode()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = GraphSnapshotOf(1, 2),
+            NextAddedNodeId = 1000u,
+        };
+
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: GraphSnapshotOf(1, 2)),
+            editorSession: editorSession);
+
+        viewModel.AssetGraph.SelectNode(
+            viewModel.AssetGraph.Nodes.Single(node => node.Id == 1ul));
+        var landscape = viewModel.AssetGraph.CreateSubGraphFromSelection("Landscape");
+        Assert.NotNull(landscape);
+
+        viewModel.AssetGraph.OpenSubGraph(landscape);
+        var drillIn = GraphPanes(viewModel.EditorLayout)
+            .Single(pane => !ReferenceEquals(pane, viewModel.AssetGraph));
+
+        // Leave a selection on the ROOT pane: re-pulling it restores that selection, which
+        // re-raises SelectedNodeChanged and would otherwise steal the inspector back.
+        viewModel.AssetGraph.SelectNode(
+            viewModel.AssetGraph.Nodes.Single(node => node.Id == 2ul));
+        Assert.Equal("2", viewModel.Inspector.AssetGraphNodeId);
+
+        editorSession.AssetGraphSnapshot = GraphSnapshotOf(1, 2, 1000);
+        Assert.True(drillIn.AddNodeAt(schema: 0xE7000002ul, type: 7u, graphX: 300, graphY: 200));
+
+        Assert.Equal("1000", viewModel.Inspector.AssetGraphNodeId);
+    }
+
+    private static EngineAssetGraphSnapshotResponse GraphSnapshotOf(params ulong[] nodeIds) =>
+        new()
+        {
+            Ok = true,
+            Snapshot = new EngineAssetGraphSnapshot
+            {
+                Zoom = 1.0,
+                Nodes = nodeIds
+                    .Select((id, index) => new EngineAssetGraphNode
+                    {
+                        Id = id,
+                        TypeName = "Node",
+                        DisplayName = $"node {id}",
+                        X = index * 300,
+                    })
+                    .ToList(),
+            },
+        };
+
+    // Every asset-graph pane in the dock tree: the root canvas plus one drill-in tab per
+    // opened sub-graph.
+    private static IEnumerable<AssetGraphEditorPaneViewModel> GraphPanes(IDockable? dockable)
+    {
+        if (dockable is Document { Context: AssetGraphEditorPaneViewModel pane })
+        {
+            yield return pane;
+        }
+
+        if (dockable is IDock { VisibleDockables: { } children })
+        {
+            foreach (var child in children)
+            {
+                foreach (var nested in GraphPanes(child))
+                {
+                    yield return nested;
+                }
+            }
+        }
     }
 }

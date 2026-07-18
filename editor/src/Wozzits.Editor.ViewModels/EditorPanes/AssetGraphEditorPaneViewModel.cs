@@ -82,6 +82,12 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     // inspector (sub-graphs are nameable there).
     public event Action<AssetGraphSubGraph?>? SelectedSubGraphChanged;
 
+    // Raised when this pane adds or removes nodes, so the shell can re-pull the other open
+    // panes. Every pane holds its own snapshot of the one draft, so a structural edit in a
+    // drill-in tab leaves the root canvas (and any sibling tab) listing a stale node set.
+    // Carries the acting pane, which has already reloaded and must not be reloaded again.
+    public event Action<AssetGraphEditorPaneViewModel>? GraphMutated;
+
     // The currently selected sub-graph proxy (mutually exclusive with node selection).
     public AssetGraphSubGraph? SelectedSubGraph
     {
@@ -506,6 +512,16 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
 
         LastEditError = string.Empty;
+
+        // A node dropped on a drill-in tab joins that tab's sub-graph. Without this the
+        // node is ungrouped, so the canvas projection's membership test fails and the card
+        // is hidden on the very pane it was dropped on — it would surface on the root
+        // canvas only. Assign before the reload so the refreshed projection draws it here.
+        if (_context is not null)
+        {
+            _grouping.AddNodes(_context.Id, [response.NodeId]);
+        }
+
         if (!ReloadGraphFromSessionPreservingLayout())
         {
             return false;
@@ -518,10 +534,20 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
             added.Y = Math.Max(CanvasPadding, graphY);
             EnsureGraphBounds();
             CommitNodePosition(added);
-            SelectNode(added);
         }
 
         MarkGraphDraft();
+        GraphMutated?.Invoke(this);
+
+        // Select LAST. Re-pulling the other panes restores each one's own selection, and
+        // the restore raises SelectedNodeChanged -- so selecting before the fan-out would
+        // leave the inspector pointed at a background pane's node instead of the node the
+        // user just dropped here.
+        if (added is not null)
+        {
+            SelectNode(added);
+        }
+
         return true;
     }
 
@@ -562,6 +588,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
 
         MarkGraphDraft();
+        GraphMutated?.Invoke(this);
         return true;
     }
 

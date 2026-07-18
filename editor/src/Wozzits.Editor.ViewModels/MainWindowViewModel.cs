@@ -792,6 +792,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _assetGraphDock = layoutFactory.AssetGraphDock;
         AssetGraph.OpenSubGraphRequested += OnOpenSubGraphRequested;
         AssetGraph.SelectedSubGraphChanged += OnAssetGraphSubGraphSelected;
+        AssetGraph.GraphMutated += OnAssetGraphMutated;
     }
 
     // Guards against re-entrancy: clearing one pane raises its
@@ -897,6 +898,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         pane.OpenSubGraphRequested += OnOpenSubGraphRequested;
         pane.SelectedNodeChanged += OnAssetGraphNodeSelected;
         pane.SelectedSubGraphChanged += OnAssetGraphSubGraphSelected;
+        pane.GraphMutated += OnAssetGraphMutated;
 
         var document = new Document
         {
@@ -1672,16 +1674,45 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     // badges and wire-hiding refresh (the reroute model is shared across panes).
     private void OnInspectorRerouteChanged()
     {
-        AssetGraph.ReapplyProjection();
+        ForEachAssetGraphPane(pane => pane.ReapplyProjection());
+    }
+
+    // A graph pane added or removed nodes. Every pane holds its own snapshot of the one
+    // draft, so re-pull the others; the acting pane already reloaded itself and reloading
+    // it again would discard the drop position it just pinned.
+    private void OnAssetGraphMutated(AssetGraphEditorPaneViewModel sender)
+    {
+        ForEachAssetGraphPane(pane =>
+        {
+            if (!ReferenceEquals(pane, sender))
+            {
+                pane.RefreshFromSession();
+            }
+        });
+    }
+
+    // Visit every open asset-graph pane exactly once: the root canvas plus one drill-in tab
+    // per opened sub-graph. The root pane is itself the dock's first document, so it comes
+    // out of the walk -- the trailing add covers the headless case where no dock was built.
+    private void ForEachAssetGraphPane(Action<AssetGraphEditorPaneViewModel> visit)
+    {
+        var visited = new HashSet<AssetGraphEditorPaneViewModel>();
+
         if (_assetGraphDock?.VisibleDockables is { } dockables)
         {
             foreach (var dockable in dockables)
             {
-                if (dockable is Document { Context: AssetGraphEditorPaneViewModel pane })
+                if (dockable is Document { Context: AssetGraphEditorPaneViewModel pane }
+                    && visited.Add(pane))
                 {
-                    pane.ReapplyProjection();
+                    visit(pane);
                 }
             }
+        }
+
+        if (visited.Add(AssetGraph))
+        {
+            visit(AssetGraph);
         }
     }
 
