@@ -1220,6 +1220,35 @@ public sealed class StatechartMutationTests
         Assert.Equal(0.4, model);
     }
 
+    // Changing an effect's value source (e.g. set_goal from op `bias` to op `doctrine`) must
+    // mark the chart DIRTY -- Save All only saves dirty documents, so without this the edit was
+    // silently dropped on reload. It only reprojected before.
+    [Fact]
+    public void Changing_An_Effect_Value_Source_Marks_The_Chart_Dirty()
+    {
+        var chart = new Chart { Name = "scratch" };
+        var control = new ControlPaneViewModel();
+        var dataflow = new DataflowPaneViewModel();
+        control.Project(chart);
+        dataflow.Project(chart);
+
+        dataflow.AddAgent();
+        dataflow.AddOp(OpKind.Marginal);
+        var opId = chart.Pure[0].Id;
+        var state = control.AddState()!;
+        control.AddEffect(state.Model, EffectSlot.Do, EffectKind.SetGoal);
+        control.Project(chart);
+        control.ClearDirty();   // baseline: authored, saved
+
+        var row = control.States.First(s => s.StateId == state.Model.Id).DoEffectRows.First();
+        Assert.False(control.IsDirty);
+
+        row.SelectedValueSource = opId;   // constant -> the op
+
+        Assert.True(control.IsDirty);
+        Assert.Equal(opId, chart.States.First(s => s.Id == state.Model.Id).Do[0].Value!.Op);
+    }
+
     [Fact]
     public void Author_A_Well_Formed_Chart_From_An_Empty_One()
     {

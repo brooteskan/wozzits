@@ -737,7 +737,11 @@ public sealed class ControlPaneViewModel : ViewModelBase, IEditorCanvas, ITransi
                 TransitionKindChangeRequested = (t, k) => SetTriggerKind(s, t, k),
                 EffectAddRequested = (slot, kind) => AddEffect(s, slot, kind),
                 EffectDeleteRequested = e => DeleteEffect(s, e),
-                EffectValueSourceChanged = ReprojectPreservingSelection,
+                // Changing an effect's value source (constant<->op, or op->op like
+                // bias->doctrine) or a guard's condition op must mark the chart DIRTY, not
+                // just reproject -- otherwise Save All (which only saves dirty documents)
+                // skips it and the change is lost on reload. Mirrors TransitionEdited above.
+                EffectValueSourceChanged = () => { MarkChartDirty(); ReprojectPreservingSelection(); },
                 SetInitialRequested = () => SetInitial(s),
                 RenameRequested = newId => RenameState(s, newId),
                 AvailableOps = opIds,

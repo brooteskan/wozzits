@@ -376,6 +376,53 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             _editorSession.SaveScene();
         }
+
+        // The walk above only covers the OPEN scene. A runner in a scenelet that is not the
+        // open document keeps a stale chart_ir -- and spawned tanks read scenelets, so that is
+        // the copy gameplay actually runs. Refresh those files on disk too.
+        RefreshSceneletEmbedded("statechart_runner", "chart", "chart_ir", savedCharts);
+    }
+
+    // Re-embed just-saved charts/minds into behaviours in the project's scenelet FILES (the
+    // templates the spawner instantiates). The in-scene refreshes can't see them; without this,
+    // editing a chart or mind never reaches a spawned actor and its doctrine/reward work
+    // silently runs an old compiled copy. Behaviours already carrying the current IR (e.g. in a
+    // scenelet that is also the open scene) are skipped, so this never double-writes.
+    private void RefreshSceneletEmbedded(
+        string module, string nameKey, string irKey,
+        IReadOnlyDictionary<string, string> savedByName)
+    {
+        if (savedByName.Count == 0 || string.IsNullOrWhiteSpace(_projectDirectory))
+        {
+            return;
+        }
+
+        var dir = Path.Combine(_projectDirectory, "scenelets");
+        if (!Directory.Exists(dir))
+        {
+            return;
+        }
+
+        foreach (var path in Directory.EnumerateFiles(dir, "*.scene.json"))
+        {
+            try
+            {
+                if (SceneletRunnerRefresh.TryRefresh(
+                        File.ReadAllText(path), module, nameKey, irKey, savedByName,
+                        out var updated, out var count))
+                {
+                    File.WriteAllText(path, updated);
+                    AppendEditorLog(
+                        $"[editor] Refreshed {count} {module} in scenelet '{Path.GetFileName(path)}'");
+                }
+            }
+            catch (Exception ex)
+                when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            {
+                AppendEditorLog(
+                    $"[editor] Scenelet refresh failed for '{Path.GetFileName(path)}': {ex.Message}");
+            }
+        }
     }
 
     private void LoadSubGraphSidecar()
@@ -1404,6 +1451,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         {
             _editorSession.SaveScene();
         }
+
+        // Same scenelet blind-spot as runners: a quantum_agent in a scenelet (e.g. the tank's
+        // own mind) keeps a stale mind_ir until refreshed on disk.
+        RefreshSceneletEmbedded(
+            QuantumAgentMindAttachment.Module,
+            QuantumAgentMindAttachment.ConfigMind,
+            QuantumAgentMindAttachment.ConfigMindIr,
+            savedMinds);
     }
 
     // Thread the asset graph's "Scene from GLB" nodes into the inspector's "Subtree
