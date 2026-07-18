@@ -5,8 +5,44 @@
 
 #include <cstdint>
 
+// Declared, not included: this is a geometry header, and clipmap_view.h (the
+// renderer) includes it. Pulling in asset/compiler.h for the sole purpose of
+// naming ParamBlock in a declaration would drag the whole asset-compiler system
+// into the render layer. The decoder's callers are compilers, which include it
+// anyway.
+namespace wz::asset
+{
+    struct ParamBlock;
+}
+
 namespace wz::engine::assets
 {
+    // Physical, authored clipmap parameters (editor / asset-graph path). A
+    // consumer derives the geometric lattice (level_count / base_resolution /
+    // cell_size) from these plus the height field's resolution N:
+    // cell_size = world_extent / N, then
+    // resolve_clipmap_lattice(horizon, triangle_budget, cell_size).
+    //
+    // Shared, not per-compiler: the lattice MESH recipe and the
+    // ClipmapLatticeSchedule recipe read the SAME authored dials, so a
+    // duplicated struct would be one more place for the two to drift apart —
+    // the exact failure the schedule asset exists to remove. Doubles as the
+    // typed AssetNode::meta payload for programmatic (non-ParamBlock) callers.
+    struct ClipmapLatticePhysicalParams
+    {
+        float world_extent = 256.0f;
+        float horizon = 128.0f;
+        uint32_t triangle_budget = 200000u;
+    };
+
+    // Decode the authored dials from a graph/editor ParamBlock, falling back to
+    // the struct's own defaults for any param the block does not carry. The
+    // param NAMES here are the contract every clipmap recipe declares in its
+    // AssetCompiler::parameters.
+    [[nodiscard]] ClipmapLatticePhysicalParams
+    clipmap_lattice_physical_params_from_params(
+        const wz::asset::ParamBlock& params);
+
     // Resolved parameters for a geometry-clipmap lattice. Mirrors the authored
     // ClipmapLatticeMeshDesc but holds only the geometry-relevant fields, after
     // sanitization (base_resolution >= 1, level_count >= 1, positive cell_size).

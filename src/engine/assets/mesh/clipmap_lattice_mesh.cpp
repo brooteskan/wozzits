@@ -2,6 +2,10 @@
 
 #include <engine/assets/mesh/clipmap_lattice_mesh.h>
 
+// The ParamBlock decoder defined below needs the full type; the header only
+// forward-declares it so the render layer does not inherit this include.
+#include <asset/compiler.h>
+
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -189,6 +193,19 @@ namespace wz::engine::assets
             }
         }
     } // namespace
+
+    ClipmapLatticePhysicalParams
+    clipmap_lattice_physical_params_from_params(
+        const wz::asset::ParamBlock& params)
+    {
+        ClipmapLatticePhysicalParams p{};
+        p.world_extent =
+            params.get<float>("world_extent", p.world_extent);
+        p.horizon = params.get<float>("horizon", p.horizon);
+        p.triangle_budget =
+            params.get<uint32_t>("triangle_budget", p.triangle_budget);
+        return p;
+    }
 
     ClipmapLatticeParams sanitize_clipmap_lattice_params(
         uint32_t level_count,

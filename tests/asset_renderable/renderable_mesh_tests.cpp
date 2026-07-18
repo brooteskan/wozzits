@@ -168,6 +168,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
     CollisionAssetTable collision_table;
     PlacementTable placement_table;
     PlacedFieldTable placed_field_table;
+    ClipmapLatticeScheduleTable clipmap_lattice_schedule_table;
     AudioClipTable audio_clip_table;
     AudioClipBankTable audio_clip_bank_table;
     AudioRenderableTable audio_renderable_table;
@@ -290,6 +291,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         .collision_table = collision_table,
         .placement_table = placement_table,
         .placed_field_table = placed_field_table,
+        .clipmap_lattice_schedule_table = clipmap_lattice_schedule_table,
         .audio_clip_table = audio_clip_table,
         .audio_clip_bank_table = audio_clip_bank_table,
         .audio_renderable_table = audio_renderable_table,
@@ -544,6 +546,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
     CollisionAssetTable collision_table;
     PlacementTable placement_table;
     PlacedFieldTable placed_field_table;
+    ClipmapLatticeScheduleTable clipmap_lattice_schedule_table;
     AudioClipTable audio_clip_table;
     AudioClipBankTable audio_clip_bank_table;
     AudioRenderableTable audio_renderable_table;
@@ -660,6 +663,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
         .collision_table = collision_table,
         .placement_table = placement_table,
         .placed_field_table = placed_field_table,
+        .clipmap_lattice_schedule_table = clipmap_lattice_schedule_table,
         .audio_clip_table = audio_clip_table,
         .audio_clip_bank_table = audio_clip_bank_table,
         .audio_renderable_table = audio_renderable_table,

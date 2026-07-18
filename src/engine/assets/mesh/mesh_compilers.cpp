@@ -372,30 +372,11 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
-        // Physical, authored clipmap parameters (editor / asset-graph path).
-        // The compiler derives the geometric lattice (level_count /
-        // base_resolution / cell_size) from these plus the height field's
-        // resolution N: cell_size = world_extent / N, then
-        // resolve_clipmap_lattice(horizon, triangle_budget, cell_size).
-        struct ClipmapLatticePhysicalParams
-        {
-            float world_extent = 256.0f;
-            float horizon = 128.0f;
-            uint32_t triangle_budget = 200000u;
-        };
-
-        ClipmapLatticePhysicalParams
-        clipmap_lattice_physical_params_from_params(
-            const wz::asset::ParamBlock& params)
-        {
-            ClipmapLatticePhysicalParams p{};
-            p.world_extent =
-                params.get<float>("world_extent", p.world_extent);
-            p.horizon = params.get<float>("horizon", p.horizon);
-            p.triangle_budget =
-                params.get<uint32_t>("triangle_budget", p.triangle_budget);
-            return p;
-        }
+        // ClipmapLatticePhysicalParams + clipmap_lattice_physical_params_from_
+        // params now live in engine/assets/mesh/clipmap_lattice_mesh.h, next to
+        // resolve_clipmap_lattice: the ClipmapLatticeSchedule recipe reads the
+        // same authored dials, and a second copy of the struct would let the two
+        // recipes drift apart.
 
         wz::asset::AssetNode compile_procedural_mesh_node(
             const wz::asset::AssetNode& input,

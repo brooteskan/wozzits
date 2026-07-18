@@ -333,6 +333,17 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000A04ull
     };
 
+    // ClipmapLatticeSchedule: the RESOLVED geometry-clipmap LOD schedule
+    // (base_resolution / level_count / cell_size, plus achieved horizon and
+    // triangle count) → kAssetTypeClipmapLatticeSchedule. Derived from authored
+    // world_extent / horizon / triangle_budget and ONE scalar-field dep whose
+    // width supplies N. Same "world-data" range (0xA00-0xAFF) as Placement and
+    // PlacedField, next after them, since a schedule describes how placed world
+    // data is tiled.
+    inline constexpr wz::asset::SchemaID kClipmapLatticeScheduleSchema{
+        0xF11E'CA55'E7'000A05ull
+    };
+
     // Collision schemas intentionally occupy 0x000B00-0x000B7F. These IDs
     // are persisted in disk-cache keys, so keep them stable; reserve
     // 0x000B80-0x000BFF for future audio schemas.

@@ -377,6 +377,18 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypePlacedField =
         static_cast<wz::asset::AssetType>(200);
 
+    // Implemented: CPU-side RESOLVED geometry-clipmap LOD schedule — the lattice
+    // {base_resolution, level_count, cell_size} the resolver derives from an
+    // authored horizon + triangle budget and a height field's resolution, plus
+    // the horizon actually reached and the exact triangle count. ONE producer of
+    // the schedule, shared downstream: the clipmap's visual lattice and its
+    // collision reconstruction read the SAME numbers instead of each re-deriving
+    // (or hand-typing) them, so the two can never disagree about where a LOD ring
+    // sits. Runtime data is owned by ClipmapLatticeScheduleTable. Next after
+    // kAssetTypePlacedField (200) in the geometry/terrain-domain range.
+    inline constexpr wz::asset::AssetType kAssetTypeClipmapLatticeSchedule =
+        static_cast<wz::asset::AssetType>(201);
+
 
     // ─── Renderer/backend GPU-resident asset types: 512–1023 ────────────────────
     // Backend-owned or backend-facing resources.

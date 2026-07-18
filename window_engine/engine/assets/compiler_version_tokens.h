@@ -115,6 +115,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kTerrainVisualProxyCompilerVersion = 5;
     inline constexpr uint64_t kPlacementCompilerVersion = 1;
     inline constexpr uint64_t kPlacedFieldCompilerVersion = 1;
+    inline constexpr uint64_t kClipmapLatticeScheduleCompilerVersion = 1;
     // Bumped 2 -> 3: the collision-from-height-field recipe now accepts an
     // optional Placement input port that overrides its origin/size/vertical/
     // base when connected (issue #218 Phase 1). Bump invalidates stale caches.

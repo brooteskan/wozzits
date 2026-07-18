@@ -87,6 +87,11 @@ namespace wz::engine::assets::internal
         register_placement_compilers(registry, ctx.logger, ctx.placement_table);
         register_placed_field_compilers(
             registry, ctx.logger, ctx.placed_field_table);
+        register_clipmap_lattice_schedule_compilers(
+            registry,
+            ctx.logger,
+            ctx.scalar_fields_table,
+            ctx.clipmap_lattice_schedule_table);
         register_audio_clip_compilers(registry, ctx.logger, ctx.audio_clip_table);
         register_audio_clip_bank_compilers(
             registry, ctx.logger, ctx.audio_clip_bank_table, ctx.audio_clip_table);

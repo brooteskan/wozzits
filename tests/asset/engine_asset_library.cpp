@@ -236,6 +236,13 @@ float4 main(PSIn input) : SV_TARGET
 
             { kPlacementSchema, kAssetTypePlacement },
             { kPlacedFieldSchema, kAssetTypePlacedField },
+            // Params-only recipe like its Placement/PlacedField siblings: the
+            // typed create API keys via make_clipmap_lattice_schedule_key,
+            // graph-authored nodes go through the generic draft key path.
+            {
+                kClipmapLatticeScheduleSchema,
+                kAssetTypeClipmapLatticeSchedule,
+            },
 
             { kJSONDocumentSchema, kAssetTypeJSONDocument },
             { kTOMLDocumentSchema, kAssetTypeTOMLDocument },
