@@ -2401,6 +2401,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         _inspectedSceneNode?.Behaviors.Add(added);
         Behaviors.Add(CreateBehaviorViewModel(added));
         NewBehaviorModule = string.Empty;
+        // A quantum_agent reveals the Mind picker; a statechart_runner its chart picker.
+        // Recompute both from the now-updated behavior list, so an ADDED behavior surfaces
+        // its section immediately instead of only on the next reselect (mirrors
+        // RemoveBehavior, which already refreshes these).
+        RefreshQuantumAgentMindSection();
+        RefreshStatechartRunnerSection();
         NotifyComponentStateChanged();
     }
 

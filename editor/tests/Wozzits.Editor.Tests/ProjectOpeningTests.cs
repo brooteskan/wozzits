@@ -2416,6 +2416,33 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("first_mind", inspector.SelectedQuantumAgentMind?.Name);
     }
 
+    // Adding a quantum_agent must reveal its Mind picker immediately -- not only after the
+    // node is reselected. AddBehavior updated the behavior list but skipped the section
+    // refresh that RemoveBehavior already did, so the picker stayed hidden.
+    [Fact]
+    public void AddingQuantumAgentRevealsTheMindPickerWithoutReselect()
+    {
+        var session = new RecordingEditorSession();
+        var inspector = new InspectorPaneViewModel(session);
+        inspector.SetMindsProvider(() => [new MindFileInfo("doctrine", "behavior/minds/doctrine.mind.json")]);
+        inspector.Inspect(new SceneTreeNodeViewModel(new EngineSceneNode
+        {
+            Id = "spawner",
+            DisplayName = "spawner",
+            Kind = "node",
+            Visible = true,
+            Behaviors = [new EngineSceneBehavior { Id = "b.1", Module = "enemy_tank_v1_spawner" }],
+        }));
+
+        Assert.False(inspector.HasQuantumAgentMindSection);   // no agent yet
+
+        inspector.NewBehaviorModule = "quantum_agent";
+        inspector.AddBehaviorCommand.Execute(null);
+
+        Assert.True(inspector.HasQuantumAgentMindSection);     // revealed without a reselect
+        Assert.Contains(inspector.QuantumAgentMinds, m => m.Name == "doctrine");
+    }
+
     // A failed rebuild must be visible ON the card, not just in a console full of live
     // behavior output -- otherwise the stale DLL reads as "the editor ignored my change".
     [Fact]
