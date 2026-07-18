@@ -87,7 +87,9 @@ namespace wz::engine::assets
         const CollisionOccupancyData& occupancy,
         uint32_t projection_resolution_x = 0,
         uint32_t projection_resolution_y = 0,
-        const wz::asset::AssetKey& placement_key = {}) noexcept
+        const wz::asset::AssetKey& placement_key = {},
+        uint32_t render_lod_base_resolution = 0,
+        uint32_t render_lod_level_count = 0) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
         h = detail::mix64(h, collision_hash_float(origin[0]));
@@ -99,6 +101,20 @@ namespace wz::engine::assets
         h = mix_collision_occupancy(h, occupancy);
         h = detail::mix64(h, projection_resolution_x);
         h = detail::mix64(h, projection_resolution_y);
+
+        // The render-LOD reconstruction schedule changes the COMPILED asset
+        // (CollisionAssetData::render_lod_*), so it has to be part of the
+        // content hash or two collisions differing only in their schedule
+        // share a key and the second silently serves the first's cache entry.
+        // Mixed only when non-default so an asset with the schedule disabled
+        // (the common case, and every asset authored before this) keeps its
+        // original key — same back-compat rule the placement dep follows below.
+        // These trail placement_key purely to keep every existing call site's
+        // positional arguments valid.
+        if (render_lod_base_resolution != 0u || render_lod_level_count != 0u) {
+            h = detail::mix64(h, render_lod_base_resolution);
+            h = detail::mix64(h, render_lod_level_count);
+        }
 
         wz::asset::Hash deps_hash = detail::key_to_dep_hash(scalar_field_key);
         if (!(placement_key == wz::asset::AssetKey{})) {

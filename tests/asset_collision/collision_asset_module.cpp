@@ -913,3 +913,55 @@ TEST(CollisionAssetModule, PlacementDrivenFlagSurvivesDiskCache)
     EXPECT_FLOAT_EQ(second.vertical_scale, first.vertical_scale);
     EXPECT_FLOAT_EQ(second.base_height, first.base_height);
 }
+
+// The render-LOD reconstruction schedule (base_resolution m + level_count)
+// lands in the compiled CollisionAssetData, so it has to be part of the key:
+// while it was omitted, two collisions differing only in their schedule shared
+// a key and the second silently served the first's cached artifact.
+TEST(CollisionAssetModule, RenderLodScheduleIsPartOfTheHeightFieldKey)
+{
+    using namespace wz::engine::assets;
+
+    const float origin[2]{ 0.0f, 0.0f };
+    const float size[2]{ 1.0f, 1.0f };
+    const CollisionOccupancyData occupancy{};
+    const wz::asset::AssetKey field{};
+
+    const auto key_for = [&](uint32_t m, uint32_t levels) {
+        return make_collision_from_height_field_key(
+            "collision/schedule",
+            field,
+            origin,
+            size,
+            1.0f,
+            0.0f,
+            occupancy,
+            0,
+            0,
+            wz::asset::AssetKey{},
+            m,
+            levels);
+    };
+
+    // Disabled is the default and describes every asset authored before the
+    // schedule existed, so it must reproduce the original key byte for byte.
+    EXPECT_TRUE(
+        key_for(0u, 0u)
+        == make_collision_from_height_field_key(
+            "collision/schedule",
+            field,
+            origin,
+            size,
+            1.0f,
+            0.0f,
+            occupancy));
+
+    // The live mismatch this guards: resolve_clipmap_lattice returns (m=128,
+    // L=7) for test_mesh_001 while the collision node is hand-authored (64, 6).
+    EXPECT_FALSE(key_for(128u, 7u) == key_for(64u, 6u));
+
+    // Either component alone must move the key.
+    EXPECT_FALSE(key_for(128u, 7u) == key_for(64u, 7u));
+    EXPECT_FALSE(key_for(128u, 7u) == key_for(128u, 6u));
+    EXPECT_FALSE(key_for(128u, 7u) == key_for(0u, 0u));
+}
