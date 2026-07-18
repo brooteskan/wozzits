@@ -8,6 +8,7 @@
 #include <engine/assets/disk_cache_keys.h>
 #include <engine/assets/disk_cache_paths.h>
 #include <engine/assets/placement/placement.h>
+#include <engine/assets/scalar_field/scalar_field_compilers.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -503,6 +504,53 @@ namespace wz::engine::assets::internal
             return offset == bytes.size();
         }
 
+        // Populate CollisionAssetData::height_mips from height_samples, or clear
+        // them when this asset has no render-LOD reconstruction to serve.
+        //
+        // The gate matches make_height_field_ray_lod's own enable condition, so
+        // the pyramid exists exactly when something will read it: a heightfield
+        // nobody draws as a clipmap keeps its 0-byte vector. Level 0 is dropped
+        // because it is height_samples verbatim -- storing the full chain would
+        // double the resident cost of the largest member for no gain.
+        //
+        // Called from the producers AND after a disk-cache load, since the mips
+        // are derived rather than serialized.
+        void build_collision_height_mips(CollisionAssetData& data)
+        {
+            data.height_mips.clear();
+            if (data.shape_kind != CollisionShapeKind::TerrainHeightField
+                || data.render_lod_level_count < 1u
+                || data.render_lod_base_resolution < 2u
+                || data.resolution_x < 2u
+                || data.resolution_y < 2u
+                || data.height_samples.size()
+                    != static_cast<size_t>(data.resolution_x)
+                        * data.resolution_y)
+            {
+                return;
+            }
+
+            // The SAME builder the resident GPU texture's pyramid comes from,
+            // so the CPU levels are the GPU levels rather than a lookalike.
+            std::vector<ScalarFieldMipLevel> pyramid =
+                build_scalar_field_mip_pyramid(
+                    data.height_samples,
+                    data.resolution_x,
+                    data.resolution_y);
+            if (pyramid.size() < 2u) {
+                return;   // a 1x1 field has no coarser level
+            }
+
+            data.height_mips.reserve(pyramid.size() - 1u);
+            for (size_t level = 1u; level < pyramid.size(); ++level) {
+                data.height_mips.push_back(CollisionHeightMipLevel{
+                    .width = pyramid[level].width,
+                    .height = pyramid[level].height,
+                    .values = std::move(pyramid[level].values),
+                });
+            }
+        }
+
         bool load_cached_terrain_collision_impl(
             const EngineAssetCacheSettings& cache,
             const wz::asset::AssetKey& key,
@@ -532,6 +580,9 @@ namespace wz::engine::assets::internal
             }
 
             data = std::move(loaded);
+            // Derived, not serialized: rebuild from the samples we just read so
+            // a cache hit and a fresh compile produce identical assets.
+            build_collision_height_mips(data);
             const auto elapsed =
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now() - started).count();
@@ -1463,6 +1514,7 @@ namespace wz::engine::assets::internal
             data.bounds_max[2] = data.origin[1] + data.size[1];
             data.render_lod_base_resolution = desc.render_lod_base_resolution;
             data.render_lod_level_count = desc.render_lod_level_count;
+            build_collision_height_mips(data);
             return data;
         }
 

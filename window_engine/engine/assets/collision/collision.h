@@ -70,6 +70,17 @@ namespace wz::engine::assets
         std::vector<CollisionTriangleBounds> cell_bounds;
     };
 
+    // One coarser level of the box-filtered mip chain over a heightfield's
+    // samples. Row-major, index x + y*width, tightly packed. Mirrors the
+    // ScalarFieldMipLevel the resident GPU height texture is built from -- see
+    // CollisionAssetData::height_mips for why the two agree.
+    struct CollisionHeightMipLevel
+    {
+        uint32_t width = 0;
+        uint32_t height = 0;
+        std::vector<float> values;
+    };
+
     struct CollisionAssetData
     {
         CollisionSourceKind source_kind = CollisionSourceKind::Mesh;
@@ -117,6 +128,28 @@ namespace wz::engine::assets
         // Only ray queries consult these; height/nearest sampling is unaffected.
         uint32_t render_lod_base_resolution = 0;
         uint32_t render_lod_level_count = 0;
+
+        // Box-filtered mip chain over height_samples, from level 1 outward --
+        // level 0 IS height_samples, so it is not duplicated here. Present only
+        // when render-LOD reconstruction is configured above; a heightfield with
+        // no clipmap drawing it pays nothing.
+        //
+        // These are the levels the clipmap VS samples: a level-L ring reads mip
+        // L of the resident height texture. That texture's pyramid is built by
+        // build_scalar_field_mip_pyramid from the RAW field, while these are
+        // built from height_samples, which have vertical_scale / base_height
+        // already baked in -- the two still agree, because a box filter is a
+        // mean and mean(a*x + b) == a*mean(x) + b, so baking the affine before
+        // or after filtering yields the same surface.
+        //
+        // DERIVED, never serialized: rebuilt after a disk-cache load from the
+        // samples themselves, so it cannot go stale against them.
+        //
+        // Caveat: the agreement holds at the field's NATIVE resolution. A
+        // collision built with a projection_resolution that resamples the grid
+        // has its own sample lattice, and its pyramid is then an approximation
+        // of the drawn one rather than a match.
+        std::vector<CollisionHeightMipLevel> height_mips;
 
         uint32_t source_triangle_count = 0;
         uint32_t accepted_triangle_count = 0;

@@ -2,6 +2,9 @@
 #include <engine/assets/collision/collision.h>
 #include <engine/assets/key_factories/collision.h>
 #include <engine/assets/placed_field_asset_module.h>
+// For build_scalar_field_mip_pyramid: the mip test filters the GPU's way and
+// requires the collision's pyramid to match through the vertical-scale bake.
+#include <engine/assets/scalar_field/scalar_field_compilers.h>
 #include <engine/assets/schema_ids.h>
 
 #include <gtest/gtest.h>
@@ -912,6 +915,232 @@ TEST(CollisionAssetModule, PlacementDrivenFlagSurvivesDiskCache)
     EXPECT_FLOAT_EQ(second.size[1], first.size[1]);
     EXPECT_FLOAT_EQ(second.vertical_scale, first.vertical_scale);
     EXPECT_FLOAT_EQ(second.base_height, first.base_height);
+}
+
+namespace
+{
+    // Author a heightfield collision whose world frame comes from a Placement
+    // (so vertical_scale / base_height are non-trivial and get BAKED into
+    // height_samples) and whose render-LOD schedule comes from a
+    // ClipmapLatticeSchedule. Returns the collision key; `assets` keeps owning
+    // everything. kVertical / kBase are what the samples were baked with.
+    constexpr uint32_t kMipFieldN = 16u;
+    constexpr float kMipVertical = 30.0f;
+    constexpr float kMipBase = 5.0f;
+
+    wz::asset::AssetKey author_mip_collision(
+        wz::engine::assets::EngineAssetLibrary& assets,
+        const char* tag,
+        bool with_schedule)
+    {
+        using namespace wz::engine::assets;
+
+        const auto field = assets.scalar_fields().create_procedural_scalar_field({
+            .name = std::string("collision/mip_height_") + tag,
+            .width = kMipFieldN,
+            .height = kMipFieldN,
+            .depth = 1,
+            .generator = ScalarFieldGenerator::RadialGradient,
+        });
+        EXPECT_TRUE(field.valid());
+
+        const auto placement = assets.placements().create_placement({
+            .name = std::string("collision/mip_frame_") + tag,
+            .origin = { 0.0f, 0.0f, 0.0f },
+            .extent = { 1000.0f, kMipVertical, 1000.0f },
+            .base_height = kMipBase,
+        });
+        EXPECT_TRUE(placement.valid());
+
+        std::vector<wz::asset::AssetKey> deps{ field.output, placement.output };
+
+        if (with_schedule) {
+            const auto schedule =
+                assets.clipmap_lattice_schedules().create_clipmap_lattice_schedule({
+                    .name = std::string("collision/mip_schedule_") + tag,
+                    .field_key = field.output,
+                    .world_extent = 1000.0f,
+                    .horizon = 1000.0f,
+                    .triangle_budget = 200000u,
+                });
+            EXPECT_TRUE(schedule.valid());
+            deps.push_back(schedule.output);
+        }
+
+        const float origin[2] = { 0.0f, 0.0f };
+        const float size[2] = { 1000.0f, 1000.0f };
+        const CollisionOccupancyData occupancy{};
+        const wz::asset::AssetKey key = make_collision_from_height_field_key(
+            std::string("collision/mips_") + tag,
+            field.output,
+            origin,
+            size,
+            1.0f,
+            0.0f,
+            occupancy,
+            0,
+            0,
+            placement.output);
+
+        CollisionFromHeightFieldCompileDesc compile_desc{};
+        compile_desc.height_field = field.output;
+        compile_desc.occupancy = occupancy;
+
+        wz::asset::AssetNode node{};
+        node.key = key;
+        node.type = kAssetTypeCollisionAsset;
+        node.schema = kCollisionFromHeightFieldSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = compile_desc;
+        EXPECT_TRUE(assets.system().register_asset(std::move(node), deps));
+        return key;
+    }
+}
+
+// The mip chain the drawn-surface reconstruction will read. The claim that
+// matters is COMMUTATION: the clipmap's GPU pyramid is box-filtered from the
+// RAW field and the shader applies vertical_scale / base_height afterwards,
+// while these are box-filtered from height_samples which already have that
+// affine baked in. Because a box filter is a mean, mean(a*x + b) ==
+// a*mean(x) + b, so the two are the same surface. This test un-bakes the
+// samples, builds the pyramid the GPU way, re-applies the affine, and requires
+// the result to match -- if that identity ever broke, the CPU reconstruction
+// would silently diverge from what is drawn.
+TEST(CollisionAssetModule, HeightFieldMipsMatchTheGpuPyramidThroughTheBake)
+{
+    const wz::fs::Path root = test_root("wozzits_collision_mips_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const wz::asset::AssetKey key = author_mip_collision(assets, "match", true);
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const CollisionAssetData* data =
+        assets.collisions().get_collision_data(
+            assets.collisions().get_collision(CollisionAsset{ .output = key }));
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    ASSERT_EQ(data->resolution_x, kMipFieldN);
+    ASSERT_EQ(data->resolution_y, kMipFieldN);
+
+    // floor(log2(16)) + 1 == 5 levels in the full chain; level 0 is
+    // height_samples, so 4 coarser levels are stored.
+    ASSERT_EQ(data->height_mips.size(), 4u);
+    EXPECT_EQ(data->height_mips[0].width, 8u);
+    EXPECT_EQ(data->height_mips[1].width, 4u);
+    EXPECT_EQ(data->height_mips[2].width, 2u);
+    EXPECT_EQ(data->height_mips[3].width, 1u);
+
+    // The bake really happened: the scale fields are zeroed out and the samples
+    // carry the affine instead. The generator's range is not assumed here, only
+    // that a [0,1] field maps into [base, base + vertical].
+    EXPECT_FLOAT_EQ(data->vertical_scale, 1.0f);
+    EXPECT_FLOAT_EQ(data->base_height, 0.0f);
+    EXPECT_GE(data->min_height, kMipBase);
+    EXPECT_LE(data->max_height, kMipBase + kMipVertical);
+    EXPECT_GT(data->max_height, data->min_height);
+
+    // Un-bake to what the GPU texture holds, then filter the GPU's way.
+    std::vector<float> raw(data->height_samples.size());
+    for (size_t i = 0; i < raw.size(); ++i) {
+        raw[i] = (data->height_samples[i] - kMipBase) / kMipVertical;
+    }
+    const std::vector<internal::ScalarFieldMipLevel> gpu_pyramid =
+        internal::build_scalar_field_mip_pyramid(
+            raw, data->resolution_x, data->resolution_y);
+    ASSERT_EQ(gpu_pyramid.size(), data->height_mips.size() + 1u);
+
+    for (size_t level = 0; level < data->height_mips.size(); ++level) {
+        const auto& cpu = data->height_mips[level];
+        const auto& gpu = gpu_pyramid[level + 1u];
+        ASSERT_EQ(cpu.width, gpu.width);
+        ASSERT_EQ(cpu.height, gpu.height);
+        ASSERT_EQ(cpu.values.size(), gpu.values.size());
+        for (size_t i = 0; i < cpu.values.size(); ++i) {
+            EXPECT_NEAR(
+                cpu.values[i],
+                gpu.values[i] * kMipVertical + kMipBase,
+                1e-3f)
+                << "level " << level << " texel " << i;
+        }
+    }
+}
+
+// No clipmap drawing this field means nothing will read a pyramid, so it must
+// not cost anything: the largest member of the asset stays un-duplicated.
+TEST(CollisionAssetModule, HeightFieldMipsAreAbsentWithoutARenderLodSchedule)
+{
+    const wz::fs::Path root = test_root("wozzits_collision_no_mips_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const wz::asset::AssetKey key = author_mip_collision(assets, "none", false);
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const CollisionAssetData* data =
+        assets.collisions().get_collision_data(
+            assets.collisions().get_collision(CollisionAsset{ .output = key }));
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+    EXPECT_EQ(data->render_lod_level_count, 0u);
+    EXPECT_TRUE(data->height_mips.empty());
+    EXPECT_FALSE(data->height_samples.empty());
+}
+
+// The mips are DERIVED, not serialized, so the disk-cache path has to rebuild
+// them. A cache hit that returned an asset with no pyramid would make the
+// reconstruction silently fall back to the true surface on the second run.
+TEST(CollisionAssetModule, HeightFieldMipsAreRebuiltAfterADiskCacheHit)
+{
+    const wz::fs::Path root = test_root("wozzits_collision_mip_cache_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    using namespace wz::engine::assets;
+
+    const auto resolve_mips = [&]() {
+        EngineAssetLibrary assets{ device, logger, root };
+        const wz::asset::AssetKey key =
+            author_mip_collision(assets, "cache", true);
+        EXPECT_TRUE(assets.commit());
+        EXPECT_TRUE(assets.resolve_all().ok());
+        const CollisionAssetData* data =
+            assets.collisions().get_collision_data(
+                assets.collisions().get_collision(
+                    CollisionAsset{ .output = key }));
+        EXPECT_NE(data, nullptr);
+        return data ? data->height_mips : std::vector<CollisionHeightMipLevel>{};
+    };
+
+    const auto first = resolve_mips();
+    ASSERT_FALSE(first.empty());
+
+    // Second library over the same cache root: this one loads the collision
+    // from the serialized blob rather than compiling it.
+    const auto second = resolve_mips();
+    ASSERT_EQ(second.size(), first.size());
+    for (size_t level = 0; level < first.size(); ++level) {
+        ASSERT_EQ(second[level].width, first[level].width);
+        ASSERT_EQ(second[level].values.size(), first[level].values.size());
+        for (size_t i = 0; i < first[level].values.size(); ++i) {
+            EXPECT_FLOAT_EQ(second[level].values[i], first[level].values[i]);
+        }
+    }
 }
 
 // A connected ClipmapLatticeSchedule SUPERSEDES the authored render_lod_*
