@@ -27,6 +27,13 @@
 
 namespace wz::engine::rendering
 {
+    // The geomorph band, as a fraction of a ring's world half-extent. MUST equal
+    // CLIPMAP_MORPH_START / CLIPMAP_MORPH_END in clipmap_vs.hlsl -- the shader
+    // tunes transition quality with these, and a mismatch moves the CPU
+    // surface's transition band away from the drawn one.
+    inline constexpr float kClipmapMorphStart = 0.80f;
+    inline constexpr float kClipmapMorphEnd = 0.98f;
+
     // One mip level of a height pyramid, row-major, index x + y*width.
     struct ClipmapHeightMipView
     {
@@ -68,4 +75,76 @@ namespace wz::engine::rendering
         float world_x,
         float world_z,
         uint32_t mip) noexcept;
+
+    // How the lattice is placed for a frame: the observer it is centred on plus
+    // the schedule it was built from. c0 / base_resolution / level_count all
+    // come from the ClipmapLatticeSchedule the lattice mesh was built from, so
+    // a caller reading the same schedule describes the same rings.
+    struct ClipmapDrawnSurfaceParams
+    {
+        float observer_xz[2]{ 0.0f, 0.0f };
+        float c0 = 1.0f;                 // finest lattice cell, metres
+        uint32_t base_resolution = 0;    // m: cells across a ring
+        uint32_t level_count = 0;        // L: number of rings
+
+        [[nodiscard]] bool valid() const noexcept
+        {
+            return c0 > 0.0f && base_resolution >= 2u && level_count >= 1u;
+        }
+    };
+
+    // The coarser ring's TRIANGULATED height at a world XZ -- the geomorph
+    // target. Mirrors sample_height_coarse: four taps on the level-(L+1) lattice
+    // grid, bilinear-blended, NOT one texture tap at the point. The distinction
+    // matters because the rasteriser interpolates linearly between the coarse
+    // ring's vertices, and a texture bilinear has knots elsewhere.
+    [[nodiscard]] float clipmap_sample_height_coarse(
+        const ClipmapHeightFieldView& field,
+        float world_x,
+        float world_z,
+        float two_cL,
+        uint32_t coarse_mip) noexcept;
+
+    // The height the VS gives a lattice vertex of ring `level` sitting at
+    // lattice offset (g_x, g_z) from the ring centre: the per-level snap, the
+    // mip-L tap, and the geomorph blend toward the coarser ring's triangulated
+    // surface over the ring's outer band.
+    //
+    // Includes the interior position trim: at the ring's outer edge the vertex
+    // itself MOVES, its snap blending toward the next coarser ring's, and it
+    // reads the height wherever it lands. That was nearly left out on the
+    // argument that the trim's endpoints coincide with the untrimmed grid --
+    // true, but at intermediate blends the vertex sits up to a cell away, and
+    // the pinning test measures that as a real height difference.
+    //
+    // Mirrors the shader including its quirks. In particular the OUTERMOST ring
+    // still morphs toward a level that is not drawn -- the VS has no
+    // level_count to know it is last -- so the outer band is coarsened a little
+    // more than the ring itself. That is what is on screen, so it is what this
+    // reproduces.
+    [[nodiscard]] float clipmap_drawn_vertex_height(
+        const ClipmapHeightFieldView& field,
+        const ClipmapDrawnSurfaceParams& params,
+        uint32_t level,
+        float g_x,
+        float g_z) noexcept;
+
+    // The drawn surface at an arbitrary world XZ: pick the ring covering the
+    // point, then blend the four surrounding lattice vertices of that ring the
+    // way the rasteriser does across a cell.
+    //
+    // Unlike the functions above this is not a line-for-line shader mirror --
+    // the GPU gets ring membership and cell topology from the lattice MESH, not
+    // from code. It is the CPU statement of what that mesh means.
+    //
+    // Each vertex carries its own trim and geomorph (see above), so the one
+    // term left out here is the exact diagonal split of each quad: this blends
+    // the four corners bilinearly rather than picking the triangle the point
+    // actually falls in. Measured at 0.03 m RMS against this clipmap's real
+    // heightfield, versus the 1.2-3.2 m the reconstruction as a whole closes.
+    [[nodiscard]] float clipmap_drawn_surface_height(
+        const ClipmapHeightFieldView& field,
+        const ClipmapDrawnSurfaceParams& params,
+        float world_x,
+        float world_z) noexcept;
 }
