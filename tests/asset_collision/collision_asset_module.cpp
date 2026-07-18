@@ -1288,3 +1288,107 @@ TEST(CollisionAssetModule, RenderLodScheduleIsPartOfTheHeightFieldKey)
     EXPECT_FALSE(key_for(128u, 7u) == key_for(128u, 6u));
     EXPECT_FALSE(key_for(128u, 7u) == key_for(0u, 0u));
 }
+
+// The resample maps a destination texel onto a source texel through the same
+// grid convention the samples are later READ on. Get that wrong and a collision
+// built at a non-native projection_resolution lands its samples somewhere the
+// sampler does not look for them -- invisible at the native default, which is
+// exactly why it went unnoticed.
+//
+// The two conventions are distinguishable by where the LAST destination texel
+// lands. Downsampling an 8-wide field to 4:
+//   - placement-driven (N cells):   x * 8/4 = 0, 2, 4, 6  -- an exact decimation
+//   - standalone (N-1 intervals):   x * 7/3 = 0, 2.33, 4.67, 7  -- reaches the end
+TEST(CollisionAssetModule, ResampleFollowsTheGridConventionOfItsSource)
+{
+    const wz::fs::Path root = test_root("wozzits_collision_resample_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    // Monotonic in x, so "which source texel did this land on" is readable
+    // straight off the value.
+    const auto field = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "collision/resample_ramp",
+        .width = 8,
+        .height = 8,
+        .depth = 1,
+        .generator = ScalarFieldGenerator::GradientX,
+    });
+    ASSERT_TRUE(field.valid());
+
+    const auto placement = assets.placements().create_placement({
+        .name = "collision/resample_frame",
+        .origin = { 0.0f, 0.0f, 0.0f },
+        .extent = { 8.0f, 1.0f, 8.0f },
+        .base_height = 0.0f,
+    });
+    ASSERT_TRUE(placement.valid());
+
+    const auto build = [&](const char* name,
+                           bool with_placement,
+                           uint32_t projection) {
+        CollisionFromHeightFieldDesc desc{};
+        desc.name = name;
+        desc.height_field = field;
+        if (with_placement) {
+            desc.placement = placement;
+        }
+        else {
+            desc.size[0] = 8.0f;
+            desc.size[1] = 8.0f;
+        }
+        desc.projection_resolution_x = projection;
+        desc.projection_resolution_y = projection;
+        return assets.collisions().create_from_height_field(desc);
+    };
+
+    const auto native_placed = build("collision/native_placed", true, 0);
+    const auto small_placed = build("collision/small_placed", true, 4);
+    const auto small_standalone = build("collision/small_standalone", false, 4);
+    ASSERT_TRUE(native_placed.valid());
+    ASSERT_TRUE(small_placed.valid());
+    ASSERT_TRUE(small_standalone.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto data_of = [&](const CollisionAsset& asset) {
+        const CollisionAssetData* d = assets.collisions().get_collision_data(
+            assets.collisions().get_collision(asset));
+        EXPECT_NE(d, nullptr);
+        return d;
+    };
+    const CollisionAssetData* native = data_of(native_placed);
+    const CollisionAssetData* placed = data_of(small_placed);
+    const CollisionAssetData* standalone = data_of(small_standalone);
+    ASSERT_NE(native, nullptr);
+    ASSERT_NE(placed, nullptr);
+    ASSERT_NE(standalone, nullptr);
+
+    ASSERT_EQ(native->resolution_x, 8u);
+    ASSERT_EQ(placed->resolution_x, 4u);
+    ASSERT_EQ(standalone->resolution_x, 4u);
+
+    // Placement-driven: an EXACT decimation, dest x taking source texel 2x.
+    for (uint32_t x = 0; x < 4u; ++x) {
+        EXPECT_NEAR(
+            placed->height_samples[x],
+            native->height_samples[2u * x],
+            1e-5f)
+            << "dest texel " << x << " should be source texel " << (2u * x);
+    }
+
+    // Standalone: stretched so the last dest texel reaches the last source one,
+    // which the cell convention never gets to.
+    EXPECT_NEAR(
+        standalone->height_samples[3],
+        native->height_samples[7],
+        1e-5f);
+    EXPECT_GT(standalone->height_samples[3], placed->height_samples[3])
+        << "the two conventions must actually differ, or this proves nothing";
+}

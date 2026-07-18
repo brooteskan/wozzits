@@ -1326,6 +1326,10 @@ namespace wz::engine::assets::internal
             float size[2]{ 1.0f, 1.0f };
             float vertical_scale = 1.0f;
             float base_height = 0.0f;
+            // Which grid the SOURCE and DESTINATION are both read on. Part of
+            // the mapping because it is what makes a texel index a world
+            // position -- see height_field_grid_span in collision.h.
+            bool placement_driven = false;
         };
 
         float grid_height_sample_at(
@@ -1396,24 +1400,33 @@ namespace wz::engine::assets::internal
                 return false;
             }
 
+            // Destination texel -> source texel, through the convention BOTH
+            // grids are read on: texel i sits at normalised u = i/span, so
+            // source_coord = i * span_src / span_dst. That reduces to the old
+            // (src-1)/(res-1) for a standalone field, to src/res for a
+            // placement-driven one -- matching how the samples are read back --
+            // and to the identity in either when res == src, which is the
+            // native-resolution default and therefore unchanged for every
+            // existing asset.
+            const float span_src_x =
+                height_field_grid_span(mapping.placement_driven, src_w);
+            const float span_src_z =
+                height_field_grid_span(mapping.placement_driven, src_h);
+            const float span_dst_x =
+                height_field_grid_span(mapping.placement_driven, resolution_x);
+            const float span_dst_z =
+                height_field_grid_span(mapping.placement_driven, resolution_y);
+
             std::vector<float> samples;
             samples.resize(static_cast<size_t>(resolution_x) * resolution_y);
             float min_height = std::numeric_limits<float>::infinity();
             float max_height = -std::numeric_limits<float>::infinity();
             for (uint32_t z = 0; z < resolution_y; ++z) {
                 const float source_z =
-                    resolution_y > 1u
-                        ? static_cast<float>(z)
-                            * static_cast<float>(src_h - 1u)
-                            / static_cast<float>(resolution_y - 1u)
-                        : 0.0f;
+                    static_cast<float>(z) * span_src_z / span_dst_z;
                 for (uint32_t x = 0; x < resolution_x; ++x) {
                     const float source_x =
-                        resolution_x > 1u
-                            ? static_cast<float>(x)
-                                * static_cast<float>(src_w - 1u)
-                                / static_cast<float>(resolution_x - 1u)
-                            : 0.0f;
+                        static_cast<float>(x) * span_src_x / span_dst_x;
                     const float height =
                         bilinear_grid_height_sample(
                             src_values,
@@ -1503,6 +1516,7 @@ namespace wz::engine::assets::internal
             mapping.size[1] = desc.size[1];
             mapping.vertical_scale = desc.vertical_scale;
             mapping.base_height = desc.base_height;
+            mapping.placement_driven = desc.placement_driven;
 
             const bool projected = resample_heightfield_grid(
                 data,
@@ -1523,6 +1537,7 @@ namespace wz::engine::assets::internal
             data.bounds_max[0] = data.origin[0] + data.size[0];
             data.bounds_max[1] = data.max_height;
             data.bounds_max[2] = data.origin[1] + data.size[1];
+            data.placement_driven = desc.placement_driven;
             data.render_lod_base_resolution = desc.render_lod_base_resolution;
             data.render_lod_level_count = desc.render_lod_level_count;
             data.render_lod_cell_size = desc.render_lod_cell_size;
@@ -2195,6 +2210,11 @@ namespace wz::engine::assets::internal
                         schedule->level_count;
                     resolved_desc.render_lod_cell_size = schedule->cell_size;
                 }
+                // A connected placement bakes world-frame mapping values into
+                // the compiled data; flag it so the runtime does not compose
+                // the carrying node's transform on top (issue #224), and so the
+                // resample and the sampler agree on the grid.
+                resolved_desc.placement_driven = (placement != nullptr);
                 desc = &resolved_desc;
                 if (field->depth != 1) {
                     logger.error(
@@ -2226,10 +2246,6 @@ namespace wz::engine::assets::internal
 
                 CollisionAssetData data =
                     collision_from_height_field(*desc, *field);
-                // A connected placement bakes world-frame mapping values into
-                // the compiled data; flag it so the runtime does not compose
-                // the carrying node's transform on top (issue #224).
-                data.placement_driven = (placement != nullptr);
                 if (!data.valid()) {
                     const std::string reason =
                         "compiled height field collision asset is invalid "

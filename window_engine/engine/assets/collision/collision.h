@@ -70,6 +70,40 @@ namespace wz::engine::assets
         std::vector<CollisionTriangleBounds> cell_bounds;
     };
 
+    // How many sample INTERVALS a heightfield's footprint is divided into --
+    // the one number that fixes where every texel sits. A normalised position u
+    // maps to sample coordinate u * span, and the pitch is size / span.
+    //
+    // Which answer is right is declared by the field's SOURCE, not chosen once
+    // globally:
+    //
+    //  - placement_driven: the extent came from a Placement, which defines it
+    //    as N * c0 -- N cells of the clipmap's finest lattice size. So
+    //    `resolution` CELLS span the footprint and texel i sits at
+    //    i * size/resolution, exactly where clipmap_vs.hlsl reads it. Anything
+    //    else shears against the render by up to half a texel (0.12 m on a
+    //    4096-texel landscape), which on a slope leaves an actor standing
+    //    beside the ground it is drawn on rather than on it.
+    //
+    //  - otherwise: a standalone heightfield declares nothing of the kind. Its
+    //    extent is the span from the first sample to the last, so
+    //    resolution-1 intervals cover it. A 3-sample field over 2 m has samples
+    //    at 0, 1 and 2.
+    //
+    // Lives here, next to the data it describes, because BOTH the compiler that
+    // resamples a field onto this grid and the sampler that reads it back have
+    // to agree. It was previously spelled out at each call site, which is how
+    // the collision and the renderer came to disagree without anything noticing.
+    [[nodiscard]] inline float height_field_grid_span(
+        bool placement_driven,
+        uint32_t resolution) noexcept
+    {
+        if (placement_driven) {
+            return resolution >= 1u ? static_cast<float>(resolution) : 1.0f;
+        }
+        return resolution > 1u ? static_cast<float>(resolution - 1u) : 1.0f;
+    }
+
     // One coarser level of the box-filtered mip chain over a heightfield's
     // samples. Row-major, index x + y*width, tightly packed. Mirrors the
     // ScalarFieldMipLevel the resident GPU height texture is built from -- see
@@ -237,6 +271,14 @@ namespace wz::engine::assets
         // Opt in to constraining actors to the DRAWN surface (see
         // CollisionAssetData::constrain_to_drawn_surface).
         bool constrain_to_drawn_surface = false;
+
+        // Set by the compiler when a Placement (directly or through a
+        // PlacedField) supplied this collision's world frame. Decides the
+        // sample grid the field is resampled onto AND read back on -- see
+        // height_field_grid_span -- so it has to be known before the resample,
+        // which is why it is an input here rather than only an output flag on
+        // the compiled data.
+        bool placement_driven = false;
     };
 
     class CollisionAssetTable

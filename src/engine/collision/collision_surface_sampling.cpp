@@ -15,43 +15,10 @@ namespace wz::engine::collision
 {
     namespace
     {
-        // How many sample INTERVALS the footprint is divided into -- the one
-        // number that fixes where every texel sits. A normalised position u
-        // maps to sample coordinate u * span, and the pitch is size / span.
-        //
-        // Which answer is right is declared by the field's SOURCE, not chosen
-        // once globally:
-        //
-        //  - placement_driven: the extent came from a Placement, which defines
-        //    it as N * c0 -- N cells of the clipmap's finest lattice size. So
-        //    `resolution` CELLS span the footprint and texel i sits at
-        //    i * size/resolution, which is exactly where clipmap_vs.hlsl reads
-        //    it. Anything else shears against the render by up to half a texel
-        //    (0.12 m on the live 4096-texel landscape), which on a slope is a
-        //    height error no reconstruction can remove -- an actor standing
-        //    beside the ground it is drawn on rather than on it.
-        //
-        //  - otherwise: a standalone heightfield declares nothing of the kind.
-        //    Its extent is simply the span from the first sample to the last,
-        //    so resolution-1 intervals cover it and the last sample lands on
-        //    the far edge. A 3-sample field over 2 m has samples at 0, 1, 2.
-        //
-        // Kept in one function because this was previously written out at five
-        // call sites, which is how the render and the collision came to
-        // disagree without anything noticing.
-        float height_field_grid_span(
-            bool placement_driven,
-            uint32_t resolution) noexcept
-        {
-            if (placement_driven) {
-                return resolution >= 1u
-                    ? static_cast<float>(resolution)
-                    : 1.0f;
-            }
-            return resolution > 1u
-                ? static_cast<float>(resolution - 1u)
-                : 1.0f;
-        }
+        // height_field_grid_span lives in engine/assets/collision/collision.h,
+        // next to the data it describes, so the compiler that resamples a field
+        // onto this grid and this sampler that reads it back cannot disagree.
+        using wz::engine::assets::height_field_grid_span;
 
         float height_field_pitch(
             const wz::engine::assets::CollisionAssetData& data,
