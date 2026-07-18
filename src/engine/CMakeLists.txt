@@ -218,6 +218,7 @@ target_sources(window_engine PRIVATE
     assets/authoring/asset_graph_authoring.cpp
     assets/authoring/scene_authoring.cpp
 
+    rendering/clipmap_drawn_surface.cpp
     rendering/clipmap_view.cpp
     rendering/renderable_gpu_cache.cpp
     rendering/renderable_pipeline_cache.cpp
