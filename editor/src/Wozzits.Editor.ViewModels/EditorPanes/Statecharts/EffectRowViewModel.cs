@@ -394,7 +394,7 @@ public sealed class EffectRowViewModel : ViewModelBase
 
     private static void SetConst(ValueRef v, string text)
     {
-        if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+        if (TryParseNumber(text, out var d))
         {
             v.Const = d;
             v.IsBool = false;
@@ -405,4 +405,13 @@ public sealed class EffectRowViewModel : ViewModelBase
             v.IsBool = true;
         }
     }
+
+    // Parse a user-typed number tolerant of locale: invariant first (the format the
+    // getter renders and the JSON stores), then the current culture, so a "0,4" typed on
+    // a decimal-comma system still lands as 0.4 instead of failing and leaving the old
+    // value. NumberStyles.Float (no thousands separators) so a lone comma is a decimal
+    // point, not a group mark that would swallow it.
+    internal static bool TryParseNumber(string text, out double value) =>
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+        || double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
 }

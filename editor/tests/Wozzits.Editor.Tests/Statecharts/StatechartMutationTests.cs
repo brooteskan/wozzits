@@ -1136,6 +1136,66 @@ public sealed class StatechartMutationTests
         Assert.Equal("0.4", row2.ValueEditor!.Value);
     }
 
+    // The reward strength the user typed must survive a full save -> load, not just a
+    // reproject: they set 0.4, saved, quit, reloaded, and it was 0 again.
+    [Fact]
+    public void Reward_Strength_Survives_Save_And_Load()
+    {
+        var chart = new Chart { Name = "scratch" };
+        var control = new ControlPaneViewModel();
+        var dataflow = new DataflowPaneViewModel();
+        control.Project(chart);
+        dataflow.Project(chart);
+        dataflow.AddAgent();
+        var state = control.AddState()!;
+        control.AddEffect(state.Model, EffectSlot.Entry, EffectKind.Reward);
+        control.Project(chart);
+
+        var row = control.States.First(s => s.StateId == state.Model.Id).EntryEffectRows.First();
+        row.ValueEditor!.Value = "0.4";
+
+        var json = StatechartJson.Emit(chart, indented: false);
+        var reloaded = StatechartJson.Load(json);
+
+        var reward = reloaded.States.First(s => s.Id == state.Model.Id).Entry[0];
+        Assert.Equal(EffectKind.Reward, reward.Kind);
+        Assert.NotNull(reward.Value);
+        Assert.Equal(0.4, reward.Value!.Const);
+    }
+
+    // On a decimal-comma system the strength box produced "0,4", which the invariant-only
+    // parse rejected -- so the value silently stayed 0. The parse now falls back to the
+    // current culture.
+    [Fact]
+    public void Reward_Strength_Accepts_A_Decimal_Comma_On_A_Comma_Locale()
+    {
+        var prev = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture =
+                new System.Globalization.CultureInfo("de-DE");   // decimal comma
+
+            var chart = new Chart { Name = "scratch" };
+            var control = new ControlPaneViewModel();
+            var dataflow = new DataflowPaneViewModel();
+            control.Project(chart);
+            dataflow.Project(chart);
+            dataflow.AddAgent();
+            var state = control.AddState()!;
+            control.AddEffect(state.Model, EffectSlot.Entry, EffectKind.Reward);
+            control.Project(chart);
+
+            var row = control.States.First(s => s.StateId == state.Model.Id).EntryEffectRows.First();
+            row.ValueEditor!.Value = "0,4";   // as the comma-locale textbox emits it
+
+            Assert.Equal(0.4, chart.States.First(s => s.Id == state.Model.Id).Entry[0].Value!.Const);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = prev;
+        }
+    }
+
     // The field echoes the raw text mid-edit, so a PropertyChanged-committed decimal does
     // not get reformatted between keystrokes ("0." must not snap to "0" and eat the point).
     [Fact]

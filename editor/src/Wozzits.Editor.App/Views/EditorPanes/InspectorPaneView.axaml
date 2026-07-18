@@ -366,10 +366,6 @@
                                                 </ComboBox.ItemTemplate>
                                             </ComboBox>
                                         </Grid>
-                                        <Button Content="Attach mind"
-                                                Command="{Binding AttachMindCommand}"
-                                                Classes="InspectorApplyButton"
-                                                IsVisible="{Binding HasSelectedQuantumAgentMind}"/>
                                         <TextBlock Text="{Binding QuantumAgentMindStatus}"
                                                    Classes="PaneEmptyState"
                                                    TextWrapping="Wrap"

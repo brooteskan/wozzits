@@ -1531,15 +1531,19 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             // "Pick a mind" even though the node's config names a mind -- the same
             // resets-to-none hazard the ref-agent mind picker guards against. Programmatic
             // clears assign the field directly (ResetQuantumAgentMindSelection).
-            if (value is null)
+            if (value is null || ReferenceEquals(value, _selectedAgentMind))
             {
                 return;
             }
-            if (SetProperty(ref _selectedAgentMind, value))
-            {
-                QuantumAgentMindStatus = string.Empty;
-                OnPropertyChanged(nameof(HasSelectedQuantumAgentMind));
-            }
+            _selectedAgentMind = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasSelectedQuantumAgentMind));
+            // Picking a mind APPLIES it -- compile + embed + save, no separate button.
+            // Every other inspector picker (render program, geometry, guard, host) applies
+            // on pick; this one used to need a second "Attach mind" click, which read as
+            // "I picked it, why didn't it save?". Programmatic restores assign the field
+            // directly (Restore... / ResetQuantumAgentMindSelection) so they never re-apply.
+            AttachMind();
         }
     }
 
