@@ -1073,6 +1073,35 @@ namespace wz::app
         // surface a terrain_constrained Motion actor sticks to. Guard the asset
         // library; if absent, the collision frame is left whatever it was (empty),
         // which makes the constraint pass a no-op rather than fabricating a surface.
+        // Publish the observer for this frame's collision queries. A geometry
+        // clipmap draws a heightfield RELATIVE TO THE CAMERA -- which ring
+        // covers a point, and where that ring's grid is snapped to, both move
+        // with it -- so anything reconstructing the DRAWN surface rather than
+        // the true field needs the camera, and the collision frame is where it
+        // belongs: adjacent to the surfaces it qualifies, written by the host
+        // that owns the view, read through the reference callers already hold.
+        //
+        // Freshness differs by source, and the difference is structural rather
+        // than a plumbing choice:
+        //  - free-fly: update_free_fly() has already run this tick, so the pose
+        //    below is frame-N current.
+        //  - scene camera: its world matrix is produced BY this pass (behaviors
+        //    move it, the constraint may snap it, the motion filter damps it),
+        //    so the settled pose is frame N-1's. That is the only well-defined
+        //    fixed point without iterating -- if the camera rides a constrained
+        //    actor, camera(N) would otherwise depend on constraint(N) which
+        //    depends on camera(N). The coupling is weak in practice: the
+        //    constraint writes Y and ring selection reads XZ.
+        if (view_.scene_source_active()) {
+            frame_storage_.collision.observer_world_position =
+                view_.active_view().world_position;
+        }
+        else {
+            const wz::bench::FlyingCamera& fly = view_.free_fly_camera();
+            frame_storage_.collision.observer_world_position =
+                wz::math::Vec3{ .x = fly.x, .y = fly.y, .z = fly.z };
+        }
+
         if (ctx_.assets) {
             wz::engine::collision::build_collision_frame(
                 *behavior_scene_,

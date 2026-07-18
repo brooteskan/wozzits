@@ -118,6 +118,23 @@ namespace wz::engine::collision
 
     struct CollisionFrameStorage
     {
+        // The observer this frame's queries are answered for.
+        //
+        // Almost every collision query is view-independent and ignores this. The
+        // exception is a heightfield DRAWN as a geometry clipmap: its rings are
+        // centred on the camera, so which ring covers a point -- and where that
+        // ring's grid is snapped to -- move with it. Reconstructing the DRAWN
+        // surface rather than the true field therefore needs the observer, and
+        // this is the only thing every constraint caller already holds a
+        // reference to.
+        //
+        // Written by the host each frame BEFORE build_collision_frame. Left at
+        // the origin by every hand-built storage (unit tests, headless), which
+        // is a well-defined observer rather than a missing one: with no clipmap
+        // reconstruction configured nothing reads it, and with one configured
+        // the origin puts the finest ring there.
+        wz::math::Vec3 observer_world_position{};
+
         std::vector<CollisionWorldEntry> world;
         std::vector<TerrainConstraintSurfaceEntry>
             terrain_constraint_surfaces;

@@ -672,3 +672,36 @@ TEST(CollisionFrameWorldBuilder, NonPlacementSurfaceComposesNodeTransform)
     EXPECT_FLOAT_EQ(surface.world_from_local.m[10], 512.0f);
 }
 
+// The observer is written by the HOST before build_collision_frame runs, so the
+// build must carry it rather than reset it. Nothing in the build has any reason
+// to touch the field today -- which is exactly why it could acquire a
+// storage-clearing line later and silently drop the camera, leaving a clipmap
+// reconstruction quietly answering for an observer at the origin.
+TEST(CollisionFrameWorldBuilder, BuildPreservesTheObserverWrittenByTheHost)
+{
+    using namespace wz::engine::assets;
+
+    CollisionFrameStorage frame{};
+    // Defaulted storages -- unit tests, headless runs -- get a well-defined
+    // observer at the origin rather than an uninitialised one.
+    EXPECT_FLOAT_EQ(frame.observer_world_position.x, 0.0f);
+    EXPECT_FLOAT_EQ(frame.observer_world_position.y, 0.0f);
+    EXPECT_FLOAT_EQ(frame.observer_world_position.z, 0.0f);
+
+    frame.observer_world_position =
+        wz::math::Vec3{ .x = 130.0f, .y = 42.0f, .z = -77.5f };
+
+    SceneAssetData scene{};
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    EngineAssetLibrary assets{ device, logger, {} };
+    build_collision_frame(result.instance, assets.collisions(), frame);
+
+    EXPECT_FLOAT_EQ(frame.observer_world_position.x, 130.0f);
+    EXPECT_FLOAT_EQ(frame.observer_world_position.y, 42.0f);
+    EXPECT_FLOAT_EQ(frame.observer_world_position.z, -77.5f);
+}
+
