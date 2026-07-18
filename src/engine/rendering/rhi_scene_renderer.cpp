@@ -497,7 +497,8 @@ namespace wz::engine::rendering
             const ea::ClipmapLandscapeRenderSettings& settings,
             uint32_t heightmap_width,
             uint32_t heightmap_height,
-            uint32_t base_resolution)
+            uint32_t base_resolution,
+            uint32_t level_count)
         {
             const wz::engine::rendering::ClipmapViewTransform view =
                 wz::engine::rendering::compute_clipmap_view(
@@ -518,13 +519,22 @@ namespace wz::engine::rendering
 
             // Per-level snap inputs. The VS reconstructs each level's world
             // placement + snap from the camera XZ and c0 (== lattice world
-            // scale). When view_snapped is off (an arbitrary supplied static
-            // mesh, #205) the VS skips per-level snapping and treats position.y
-            // as real geometry: pass the flag so it branches.
+            // scale).
+            //
+            // snap_params.w carries the RING COUNT, with 0 meaning "not a
+            // clipmap" -- an arbitrary supplied static mesh (#205), whose
+            // position.y is real geometry and which skips per-level logic
+            // entirely. It used to be a bare 0/1 flag; widening it to the count
+            // costs nothing (the cbuffer is full at 32 dwords, and a float
+            // carrying a boolean had the room) and lets the VS recognise its
+            // OUTERMOST ring, which it otherwise cannot: without the count it
+            // morphs that ring toward a coarser level that is never drawn.
             out.snap_params[0] = view.camera_world_xz[0];
             out.snap_params[1] = view.camera_world_xz[1];
             out.snap_params[2] = view.lattice_world_scale;  // c0
-            out.snap_params[3] = view.view_snapped ? 1.0f : 0.0f;
+            out.snap_params[3] = view.view_snapped
+                ? static_cast<float>(level_count < 1u ? 1u : level_count)
+                : 0.0f;
 
             out.world_to_uv[0] = view.world_to_uv_scale[0];
             out.world_to_uv[1] = view.world_to_uv_scale[1];
@@ -1628,7 +1638,8 @@ namespace wz::engine::rendering
             placement,
             realized.heightmap_width,
             realized.heightmap_height,
-            realized.clipmap_base_resolution);
+            realized.clipmap_base_resolution,
+            realized.clipmap_level_count);
         const auto* bytes = reinterpret_cast<const uint8_t*>(&constants);
         out.assign(bytes, bytes + sizeof(constants));
     }

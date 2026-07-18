@@ -248,6 +248,9 @@ namespace
             "static const float  c0          = WZ_C0;\n"
             "static const float  lattice_m   = WZ_M;\n"
             "static const float  max_mip     = WZ_MAXMIP;\n"
+            // snap_params.w in the real cbuffer: the ring count, which is what
+            // lets the VS recognise its outermost ring.
+            "static const float  level_count = WZ_LEVELS;\n"
             "#define CLIPMAP_MORPH_START 0.80f\n"
             "#define CLIPMAP_MORPH_END   0.98f\n"
             "\n"
@@ -295,7 +298,13 @@ namespace
             "    float morph_end   = CLIPMAP_MORPH_END * half_world;\n"
             "    float a = saturate(\n"
             "        (dist - morph_start) / max(morph_end - morph_start, 1e-6f));\n"
-            "    float  a_trim   = saturate((dist - (half_world - twoCL)) / twoCL);\n"
+            "    bool is_outermost = (level + 1.5f) >= level_count;\n"
+            "    if (is_outermost) {\n"
+            "        a = 0.0f;\n"
+            "    }\n"
+            "    float  a_trim   = is_outermost\n"
+            "        ? 0.0f\n"
+            "        : saturate((dist - (half_world - twoCL)) / twoCL);\n"
             "    float2 T_coarse = floor(camera_xz / fourCL) * fourCL;\n"
             "    float2 T        = lerp(T_fine, T_coarse, a_trim);\n"
             "    float mip_fine   = min(level, max_mip);\n"
@@ -325,6 +334,7 @@ namespace
         std::string ms = std::to_string(kLatticeM) + ".0f";
         // floor(log2(64)) + 1 == 7 levels, so the coarsest mip index is 6.
         std::string maxmip = "6.0f";
+        std::string levels_s = std::to_string(kLatticeLevels) + ".0f";
 
         const D3D_SHADER_MACRO macros[] = {
             { "WZ_W2UV", w2uv.c_str() },
@@ -333,6 +343,7 @@ namespace
             { "WZ_C0", c0s.c_str() },
             { "WZ_M", ms.c_str() },
             { "WZ_MAXMIP", maxmip.c_str() },
+            { "WZ_LEVELS", levels_s.c_str() },
             { nullptr, nullptr },
         };
 

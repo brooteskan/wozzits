@@ -177,6 +177,12 @@ namespace wz::engine::rendering
             0.5f * static_cast<float>(params.base_resolution) * c_l;
         const float dist = (std::max)(std::abs(g_x), std::abs(g_z));
 
+        // The OUTERMOST ring has no coarser neighbour to hand off to, so it
+        // neither morphs nor trims: it stays rigid to its edge, reading its own
+        // mip. Mirrors the same suppression in clipmap_vs.hlsl, which needs the
+        // ring count in snap_params.w to know it is last.
+        const bool is_outermost = level + 1u >= params.level_count;
+
         // POSITION trim. Each ring snaps to its OWN grid, so two adjacent rings
         // can land up to one coarse cell apart; the shader absorbs that in a
         // one-coarse-cell ring at the outer edge by blending this ring's snap
@@ -188,7 +194,7 @@ namespace wz::engine::rendering
         // vertex sits up to a cell away from where the untrimmed grid would put
         // it, and the pinning test measures that as a real height difference
         // rather than a rounding one.
-        const float a_trim = apply_trim
+        const float a_trim = (apply_trim && !is_outermost)
             ? std::clamp((dist - (half_world - two_cl)) / two_cl, 0.0f, 1.0f)
             : 0.0f;
         const float t_coarse_x =
@@ -202,11 +208,13 @@ namespace wz::engine::rendering
 
         const float morph_start = kClipmapMorphStart * half_world;
         const float morph_end = kClipmapMorphEnd * half_world;
-        const float a = std::clamp(
-            (dist - morph_start)
-                / (std::max)(morph_end - morph_start, 1e-6f),
-            0.0f,
-            1.0f);
+        const float a = is_outermost
+            ? 0.0f
+            : std::clamp(
+                (dist - morph_start)
+                    / (std::max)(morph_end - morph_start, 1e-6f),
+                0.0f,
+                1.0f);
 
         const uint32_t last_mip =
             static_cast<uint32_t>(field.levels.size()) - 1u;

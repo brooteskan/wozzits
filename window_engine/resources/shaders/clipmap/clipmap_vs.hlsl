@@ -34,7 +34,7 @@
 //   ------  -----  -----------------------------------------------------------
 //      0      64   float4x4 view_projection      (column-major, mul(VP,p))
 //     64      16   float4   snap_params          (xy=camera world XZ, z=c0,
-//                                                  w=view_snapped flag)
+//                                                  w=ring count, 0=not a clipmap)
 //     80      16   float4   world_to_uv          (xy=scale, zw=offset)
 //     96      16   float4   texel_and_vertical   (xy=texel_world_size,
 //                                                  z=vertical_scale,
@@ -48,7 +48,8 @@
 cbuffer Clipmap : register(b0, space2)
 {
     float4x4 view_projection;
-    float4   snap_params;         // xy = camera world XZ, z = c0, w = snapped?
+    float4   snap_params;         // xy = camera world XZ, z = c0,
+                                  // w = ring count (0 = not view-snapped)
     float4   world_to_uv;         // xy = uv scale, zw = uv offset
     float4   texel_and_vertical;  // xy = texel world size, z = vscale, w = base
     float4   texel_dims_extent;   // xy = texel dims (float), z = m,
@@ -159,7 +160,11 @@ VSOut main(uint vid : SV_VertexID)
 
     float2 camera_xz   = snap_params.xy;
     float  c0          = snap_params.z;             // finest cell world size
-    bool   view_snapped = snap_params.w > 0.5f;
+    // Ring count, 0 for an arbitrary supplied static mesh (#205). The count --
+    // not just "is this a clipmap" -- is what lets the outermost ring know it
+    // is last; see the morph suppression below.
+    float  level_count  = snap_params.w;
+    bool   view_snapped = level_count > 0.5f;
 
     float vertical_scale = texel_and_vertical.z;
     float base_height    = texel_and_vertical.w;
@@ -200,6 +205,17 @@ VSOut main(uint vid : SV_VertexID)
         float a = saturate(
             (dist - morph_start) / max(morph_end - morph_start, 1e-6f));
 
+        // The OUTERMOST ring has no coarser neighbour to hand off to, so it
+        // must not morph toward one. Without the ring count the VS could not
+        // tell, and blended this ring's outer band toward a level that is never
+        // drawn: the far field was coarsened past its own mip for no reason,
+        // and the trim below stretched the horizon edge as the camera crossed a
+        // snap cell. Last ring => rigid to its edge, reading its own mip.
+        bool is_outermost = (level + 1.5f) >= level_count;
+        if (is_outermost) {
+            a = 0.0f;
+        }
+
         // POSITION geomorph (interior trim): each level snaps to its OWN grid,
         // so two adjacent levels can land up to one coarse cell apart, opening a
         // thin gap at the seam on the short side. Absorb that offset in a single
@@ -208,7 +224,9 @@ VSOut main(uint vid : SV_VertexID)
         // ONLY across that ring. The rest of the level stays RIGID (translates
         // whole with T_fine — no internal inch-worm); just the thin outer ring
         // stretches/collapses to keep the boundary closed as the snaps drift.
-        float  a_trim   = saturate((dist - (half_world - twoCL)) / twoCL);
+        float  a_trim   = is_outermost
+            ? 0.0f
+            : saturate((dist - (half_world - twoCL)) / twoCL);
         float2 T_coarse = floor(camera_xz / fourCL) * fourCL;
         float2 T        = lerp(T_fine, T_coarse, a_trim);
         // g.xz are world offsets from the lattice center (world-sized mesh), so
