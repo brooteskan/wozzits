@@ -1105,11 +1105,16 @@ namespace wz::engine::behavior
                 }
 
                 wz::engine::collision::CollisionSurfaceSample sample{};
+                // Same observer the constraint pass uses, so a behaviour
+                // sampling the terrain and the constraint that places the actor
+                // cannot disagree about where the ground is.
                 if (!wz::engine::collision::sample_terrain_surface(
                         entry,
                         world_x,
                         world_z,
-                        sample)
+                        sample,
+                        context->frame_storage->collision
+                            .observer_world_position)
                     || !sample.hit)
                 {
                     return 0;

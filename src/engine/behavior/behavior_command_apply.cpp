@@ -593,11 +593,15 @@ namespace wz::engine::behavior
                 [&](const wz::engine::collision::CollisionWorldEntry& entry)
             {
                 wz::engine::collision::CollisionSurfaceSample sample{};
+                // The observer the host published for this frame. Only a
+                // heightfield opted into drawn-surface reconstruction reads it;
+                // every other collider answers the same regardless.
                 if (wz::engine::collision::sample_terrain_surface(
                         entry,
                         world_x,
                         world_z,
-                        sample)
+                        sample,
+                        collision.observer_world_position)
                     && sample.hit)
                 {
                     if (!found_surface
@@ -618,7 +622,8 @@ namespace wz::engine::behavior
                         entry,
                         world_x,
                         world_z,
-                        nearest_sample)
+                        nearest_sample,
+                        collision.observer_world_position)
                     || !nearest_sample.hit)
                 {
                     return;

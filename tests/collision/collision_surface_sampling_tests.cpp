@@ -1,5 +1,10 @@
 #include <engine/collision/collision_surface_sampling.h>
 
+#include <engine/assets/scalar_field/scalar_field_compilers.h>
+
+#include <cmath>
+#include <vector>
+
 #include <gtest/gtest.h>
 
 namespace
@@ -545,4 +550,196 @@ TEST(CollisionSurfaceSampling, HeightFieldRayLodIsFullResUnderShooter)
 
     EXPECT_NEAR(plain_hit.position.y, 0.0f, 1e-2f);
     EXPECT_NEAR(lod_hit.position.y, plain_hit.position.y, 1e-2f);
+}
+
+// ── Constraining to the DRAWN surface (clipmap reconstruction) ───────────────
+
+namespace
+{
+    // A 64x64 field over a 64 m footprint (so c0 = 1 m/texel) that is flat at
+    // height 10 except for a narrow trench four texels wide running along Z.
+    // Narrow is the point: a coarse clipmap ring samples every 2^L-th texel and
+    // box-filters, so it BRIDGES a trench finer than its cell and draws ground
+    // where the true field has a hole. An actor placed by the true field then
+    // stands at the bottom of a trench the player cannot see.
+    constexpr uint32_t kTrenchN = 64u;
+    constexpr float kTrenchFloorX = 32.0f;
+    constexpr float kRimHeight = 10.0f;
+
+    wz::engine::assets::CollisionAssetData trench_surface(
+        bool constrain_to_drawn_surface)
+    {
+        using namespace wz::engine::assets;
+
+        std::vector<float> samples(
+            static_cast<size_t>(kTrenchN) * kTrenchN, kRimHeight);
+        for (uint32_t z = 0; z < kTrenchN; ++z) {
+            for (uint32_t x = 0; x < kTrenchN; ++x) {
+                const float d = std::abs(
+                    static_cast<float>(x) - kTrenchFloorX);
+                if (d < 2.0f) {
+                    samples[static_cast<size_t>(z) * kTrenchN + x] =
+                        kRimHeight * (d / 2.0f);
+                }
+            }
+        }
+
+        CollisionAssetData surface{};
+        surface.shape_kind = CollisionShapeKind::TerrainHeightField;
+        surface.occupancy.queryable = true;
+        surface.supports_height_query = true;
+        surface.resolution_x = kTrenchN;
+        surface.resolution_y = kTrenchN;
+        surface.origin[0] = 0.0f;
+        surface.origin[1] = 0.0f;
+        surface.size[0] = static_cast<float>(kTrenchN);
+        surface.size[1] = static_cast<float>(kTrenchN);
+        surface.min_height = 0.0f;
+        surface.max_height = kRimHeight;
+        surface.bounds_min[0] = 0.0f;
+        surface.bounds_min[1] = 0.0f;
+        surface.bounds_min[2] = 0.0f;
+        surface.bounds_max[0] = static_cast<float>(kTrenchN);
+        surface.bounds_max[1] = kRimHeight;
+        surface.bounds_max[2] = static_cast<float>(kTrenchN);
+        surface.height_samples = samples;
+
+        // A clipmap schedule matching a lattice of 8 cells per ring over 4
+        // rings: ring 0 reaches 4 m, ring 3 reaches 32 m.
+        surface.render_lod_base_resolution = 8u;
+        surface.render_lod_level_count = 4u;
+        surface.render_lod_cell_size = 1.0f;
+        surface.placement_driven = true;
+        surface.constrain_to_drawn_surface = constrain_to_drawn_surface;
+
+        // What the compiler builds; done by hand here through the same builder.
+        const std::vector<internal::ScalarFieldMipLevel> pyramid =
+            internal::build_scalar_field_mip_pyramid(
+                surface.height_samples, kTrenchN, kTrenchN);
+        for (size_t level = 1; level < pyramid.size(); ++level) {
+            surface.height_mips.push_back(CollisionHeightMipLevel{
+                pyramid[level].width,
+                pyramid[level].height,
+                pyramid[level].values });
+        }
+        return surface;
+    }
+
+    float sample_height_at(
+        const wz::engine::assets::CollisionAssetData& surface,
+        const wz::math::Vec3& observer)
+    {
+        wz::engine::collision::CollisionSurfaceSample sample{};
+        EXPECT_TRUE(wz::engine::collision::sample_terrain_surface(
+            surface_entry(surface),
+            kTrenchFloorX,
+            32.0f,
+            sample,
+            observer));
+        return sample.position.y;
+    }
+}
+
+// The behaviour this whole track exists for. Standing in the trench with the
+// observer alongside, the finest ring covers the actor and the drawn ground IS
+// the true ground. Move the observer away and the actor falls into a coarse
+// ring whose cells bridge the trench -- so the drawn ground rises, and an actor
+// constrained to it rises with it instead of sinking out of sight.
+TEST(CollisionSurfaceSampling, DrawnSurfaceConstraintTracksTheObserver)
+{
+    const auto surface = trench_surface(/*constrain_to_drawn_surface*/ true);
+
+    // Observer beside the actor: ring 0, cell 1 m, nothing decimated.
+    const float near_height = sample_height_at(
+        surface, wz::math::Vec3{ .x = kTrenchFloorX, .y = 0.0f, .z = 32.0f });
+    EXPECT_NEAR(near_height, 0.0f, 0.5f)
+        << "with the observer alongside, the drawn ground is the true ground";
+
+    // Observer 20 m away: the actor is past rings 0-2, so it lands on ring 3,
+    // whose 8 m cells cannot resolve a 4 m trench.
+    const float far_height = sample_height_at(
+        surface,
+        wz::math::Vec3{ .x = kTrenchFloorX + 20.0f, .y = 0.0f, .z = 32.0f });
+    EXPECT_GT(far_height, near_height + 2.0f)
+        << "a coarse ring should bridge the trench and lift the drawn ground";
+    EXPECT_LE(far_height, kRimHeight + 0.01f);
+}
+
+// Off by default, and off means genuinely view-independent: the same query
+// answers identically however far the observer is, which is the property a
+// physical surface has and the drawn one gives up.
+TEST(CollisionSurfaceSampling, TrueSurfaceConstraintIgnoresTheObserver)
+{
+    const auto surface = trench_surface(/*constrain_to_drawn_surface*/ false);
+
+    const float near_height = sample_height_at(
+        surface, wz::math::Vec3{ .x = kTrenchFloorX, .y = 0.0f, .z = 32.0f });
+    const float far_height = sample_height_at(
+        surface,
+        wz::math::Vec3{ .x = kTrenchFloorX + 20.0f, .y = 0.0f, .z = 32.0f });
+
+    EXPECT_FLOAT_EQ(near_height, far_height);
+}
+
+// The two surfaces do NOT coincide even under the observer, and it is worth
+// knowing why before reading a height difference as a reconstruction error.
+//
+// They disagree about where a sample SITS. The drawn surface follows the
+// clipmap, which spreads `resolution` texels across the footprint (texel i at
+// origin + i*size/resolution). The bicubic spreads `resolution - 1` intervals
+// across it (texel i at origin + i*size/(resolution-1)). The grids therefore
+// shear apart by up to half a texel across the footprint, and on a slope that
+// is a height difference no amount of correct reconstruction removes.
+//
+// Half a texel of a 64 m / 64 texel field is 0.5 m, which on this deliberately
+// steep trench wall is metres of height; on the live 4096-texel landscape it is
+// 0.12 m. Unifying the two conventions is a separate change -- this test exists
+// so the offset is a recorded fact rather than a surprise in a bug report.
+TEST(CollisionSurfaceSampling, DrawnAndTrueSurfacesShearByTheSamplingConvention)
+{
+    const auto drawn = trench_surface(/*constrain_to_drawn_surface*/ true);
+    const auto truth = trench_surface(/*constrain_to_drawn_surface*/ false);
+
+    // Observer alongside, so the actor is in ring 0 and NO decimation applies:
+    // whatever is left is the convention shear alone.
+    const wz::math::Vec3 observer{
+        .x = kTrenchFloorX, .y = 0.0f, .z = 32.0f };
+    const float drawn_height = sample_height_at(drawn, observer);
+    const float true_height = sample_height_at(truth, observer);
+
+    // The drawn side reads the trench floor; the bicubic reads half a texel up
+    // the wall. Both are "correct" for their own grid.
+    EXPECT_NEAR(drawn_height, 0.0f, 0.5f);
+    EXPECT_GT(true_height, drawn_height);
+
+    // Bounded by the shear, not unbounded: half a texel up a wall that climbs
+    // kRimHeight over two texels.
+    EXPECT_LT(true_height - drawn_height, 0.5f * kRimHeight);
+}
+
+// Height moves to the drawn surface; ORIENTATION does not. The drawn surface is
+// piecewise bilinear over cells as wide as a coarse ring, so its gradient is
+// piecewise constant and an actor aligning to it would snap between facets. The
+// normal stays on the smooth bicubic, so it is unchanged by the opt-in.
+TEST(CollisionSurfaceSampling, DrawnSurfaceLeavesTheNormalOnTheSmoothField)
+{
+    const auto drawn = trench_surface(/*constrain_to_drawn_surface*/ true);
+    const auto truth = trench_surface(/*constrain_to_drawn_surface*/ false);
+    const wz::math::Vec3 observer{
+        .x = kTrenchFloorX + 20.0f, .y = 0.0f, .z = 32.0f };
+
+    // Off the trench floor, where the true surface has a real slope to report.
+    const float probe_x = kTrenchFloorX + 1.0f;
+    wz::engine::collision::CollisionSurfaceSample drawn_sample{};
+    wz::engine::collision::CollisionSurfaceSample truth_sample{};
+    ASSERT_TRUE(wz::engine::collision::sample_terrain_surface(
+        surface_entry(drawn), probe_x, 32.0f, drawn_sample, observer));
+    ASSERT_TRUE(wz::engine::collision::sample_terrain_surface(
+        surface_entry(truth), probe_x, 32.0f, truth_sample, observer));
+
+    EXPECT_NE(drawn_sample.position.y, truth_sample.position.y)
+        << "the heights should differ -- otherwise this proves nothing";
+    EXPECT_FLOAT_EQ(drawn_sample.normal.x, truth_sample.normal.x);
+    EXPECT_FLOAT_EQ(drawn_sample.normal.y, truth_sample.normal.y);
+    EXPECT_FLOAT_EQ(drawn_sample.normal.z, truth_sample.normal.z);
 }

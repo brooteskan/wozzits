@@ -305,6 +305,9 @@ namespace wz::engine::assets::internal
             append_scalar(out, static_cast<uint8_t>(data.placement_driven));
             append_scalar(out, data.render_lod_base_resolution);
             append_scalar(out, data.render_lod_level_count);
+            append_scalar(out, data.render_lod_cell_size);
+            append_scalar(out, static_cast<uint8_t>(
+                data.constrain_to_drawn_surface));
             return out;
         }
 
@@ -496,11 +499,15 @@ namespace wz::engine::assets::internal
             data.supports_ray_query = supports_ray != 0u;
             data.supports_overlap_query = supports_overlap != 0u;
             data.placement_driven = placement_driven != 0u;
+            uint8_t drawn_surface = 0u;
             if (!read_scalar(bytes, offset, data.render_lod_base_resolution)
-                || !read_scalar(bytes, offset, data.render_lod_level_count))
+                || !read_scalar(bytes, offset, data.render_lod_level_count)
+                || !read_scalar(bytes, offset, data.render_lod_cell_size)
+                || !read_scalar(bytes, offset, drawn_surface))
             {
                 return false;
             }
+            data.constrain_to_drawn_surface = drawn_surface != 0u;
             return offset == bytes.size();
         }
 
@@ -813,6 +820,10 @@ namespace wz::engine::assets::internal
                 params.get<uint32_t>(
                     "render_lod_level_count",
                     desc.render_lod_level_count);
+            desc.constrain_to_drawn_surface =
+                params.get<bool>(
+                    "constrain_to_drawn_surface",
+                    desc.constrain_to_drawn_surface);
             return desc;
         }
 
@@ -1514,6 +1525,8 @@ namespace wz::engine::assets::internal
             data.bounds_max[2] = data.origin[1] + data.size[1];
             data.render_lod_base_resolution = desc.render_lod_base_resolution;
             data.render_lod_level_count = desc.render_lod_level_count;
+            data.render_lod_cell_size = desc.render_lod_cell_size;
+            data.constrain_to_drawn_surface = desc.constrain_to_drawn_surface;
             build_collision_height_mips(data);
             return data;
         }
@@ -2001,6 +2014,15 @@ namespace wz::engine::assets::internal
                     .min = 0,
                     .max = 64,
                 },
+                // Off by default: turning it on changes where actors stand, and
+                // trades view-independent physics for agreement with the
+                // picture. Authored per collision so the two can be compared
+                // in one scene.
+                {
+                    .name = "constrain_to_drawn_surface",
+                    .type = wz::asset::ParamType::Bool,
+                    .label = "Constrain to drawn surface",
+                },
             },
             .compile =
                 [&logger, &scalar_fields_table, &collision_table,
@@ -2171,6 +2193,7 @@ namespace wz::engine::assets::internal
                         schedule->base_resolution;
                     resolved_desc.render_lod_level_count =
                         schedule->level_count;
+                    resolved_desc.render_lod_cell_size = schedule->cell_size;
                 }
                 desc = &resolved_desc;
                 if (field->depth != 1) {

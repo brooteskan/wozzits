@@ -1,11 +1,14 @@
 #include <engine/collision/collision_surface_sampling.h>
 
+#include <engine/rendering/clipmap_drawn_surface.h>
 #include <math/vec3.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <span>
 #include <vector>
 
 namespace wz::engine::collision
@@ -462,11 +465,90 @@ namespace wz::engine::collision
         // keep an actor that drove off the terrain riding the boundary instead of
         // falling through (the precise sampler stays exact; only the nearest-
         // surface fallback clamps).
+        // Reconstruct the DRAWN clipmap surface at a LOCAL XZ, when this asset
+        // opted in and carries everything the reconstruction needs. Returns
+        // false when it does not, leaving the caller on the true surface.
+        //
+        // Requires placement_driven: the schedule's cell size is in world
+        // metres, and only a placement-driven collision measures its own
+        // origin/size in those same units. A collision scaled by its scene
+        // node would silently reconstruct rings of the wrong size -- and it
+        // could not be sharing the clipmap's Placement anyway, so it is not a
+        // configuration the drawn surface is defined for.
+        bool drawn_surface_local_height(
+            const wz::engine::assets::CollisionAssetData& data,
+            const CollisionWorldEntry& entry,
+            const wz::math::Vec3& observer_world,
+            float local_x,
+            float local_z,
+            float& out_height) noexcept
+        {
+            if (!data.constrain_to_drawn_surface
+                || !data.placement_driven
+                || data.render_lod_level_count < 1u
+                || data.render_lod_base_resolution < 2u
+                || !(data.render_lod_cell_size > 0.0f)
+                || data.height_mips.empty()
+                || data.height_samples.empty())
+            {
+                return false;
+            }
+
+            // Level 0 IS height_samples; the stored chain starts at level 1.
+            // Fixed capacity, no allocation: this runs per actor per frame,
+            // times the footprint ring. 24 levels covers a 16M-texel field.
+            std::array<wz::engine::rendering::ClipmapHeightMipView, 24> levels{};
+            size_t used = 0;
+            levels[used++] = wz::engine::rendering::ClipmapHeightMipView{
+                data.height_samples.data(),
+                data.resolution_x,
+                data.resolution_y,
+            };
+            for (const auto& mip : data.height_mips) {
+                if (used >= levels.size()) {
+                    break;
+                }
+                levels[used++] = wz::engine::rendering::ClipmapHeightMipView{
+                    mip.values.data(), mip.width, mip.height };
+            }
+
+            wz::engine::rendering::ClipmapHeightFieldView field{};
+            field.levels = std::span<const
+                wz::engine::rendering::ClipmapHeightMipView>(
+                    levels.data(), used);
+            field.world_origin[0] = data.origin[0];
+            field.world_origin[1] = data.origin[1];
+            field.world_size[0] = data.size[0];
+            field.world_size[1] = data.size[1];
+
+            wz::math::Vec3 local_observer{};
+            if (!inverse_affine_point(
+                    entry.world_from_local, observer_world, local_observer))
+            {
+                return false;
+            }
+
+            wz::engine::rendering::ClipmapDrawnSurfaceParams params{};
+            params.observer_xz[0] = local_observer.x;
+            params.observer_xz[1] = local_observer.z;
+            params.c0 = data.render_lod_cell_size;
+            params.base_resolution = data.render_lod_base_resolution;
+            params.level_count = data.render_lod_level_count;
+            if (!field.valid() || !params.valid()) {
+                return false;
+            }
+
+            out_height = wz::engine::rendering::clipmap_drawn_surface_height(
+                field, params, local_x, local_z);
+            return true;
+        }
+
         bool sample_height_field_surface(
             const CollisionWorldEntry& entry,
             float world_x,
             float world_z,
             CollisionSurfaceSample& out_sample,
+            const wz::math::Vec3& observer,
             bool clamp_to_bounds = false) noexcept
         {
             const auto& data = *entry.resolved;
@@ -535,9 +617,33 @@ namespace wz::engine::collision
                     sample_z,
                     step_x,
                     step_z);
+            // HEIGHT may come from the drawn surface; the NORMAL never does.
+            //
+            // Splitting them is deliberate. The drawn surface is piecewise
+            // bilinear over cells as wide as a coarse ring -- 15 m on the live
+            // landscape -- so its gradient is piecewise constant, and an actor
+            // aligning to it would snap between facets as it crossed cell
+            // boundaries. The bicubic's gradient is smooth and is what the
+            // orientation blend was tuned against, so eval.d_height_d* stay in
+            // charge of the normal below. The pipeline already separates the
+            // two: height comes from the centre sample, orientation from the
+            // averaged footprint ring.
+            float surface_height = eval.height;
+            float drawn_height = 0.0f;
+            if (drawn_surface_local_height(
+                    data,
+                    entry,
+                    observer,
+                    local_probe.x,
+                    local_probe.z,
+                    drawn_height))
+            {
+                surface_height = drawn_height;
+            }
+
             const wz::math::Vec3 local_position{
                 .x = local_probe.x,
-                .y = eval.height,
+                .y = surface_height,
                 .z = local_probe.z,
             };
 
@@ -1469,7 +1575,8 @@ namespace wz::engine::collision
         const CollisionWorldEntry& entry,
         float world_x,
         float world_z,
-        CollisionSurfaceSample& out_sample) noexcept
+        CollisionSurfaceSample& out_sample,
+        const wz::math::Vec3& observer) noexcept
     {
         out_sample = CollisionSurfaceSample{};
         if (!entry.enabled
@@ -1486,7 +1593,8 @@ namespace wz::engine::collision
                 entry,
                 world_x,
                 world_z,
-                out_sample);
+                out_sample,
+                observer);
 
         case wz::engine::assets::CollisionShapeKind::TerrainMeshSurface:
             return sample_mesh_surface(
@@ -1504,7 +1612,8 @@ namespace wz::engine::collision
         const CollisionWorldEntry& entry,
         float world_x,
         float world_z,
-        CollisionSurfaceSample& out_sample) noexcept
+        CollisionSurfaceSample& out_sample,
+        const wz::math::Vec3& observer) noexcept
     {
         out_sample = CollisionSurfaceSample{};
         if (!entry.enabled
@@ -1526,6 +1635,7 @@ namespace wz::engine::collision
                 world_x,
                 world_z,
                 out_sample,
+                observer,
                 /*clamp_to_bounds=*/true);
 
         case wz::engine::assets::CollisionShapeKind::TerrainMeshSurface:

@@ -125,9 +125,34 @@ namespace wz::engine::assets
         // clipmap LOD schedule (base_resolution m + level_count) so a RAY query
         // can reconstruct the drawn coarse surface (the finest cell c0 is derived
         // as size/resolution). 0 = disabled: ray uses the true full-res surface.
-        // Only ray queries consult these; height/nearest sampling is unaffected.
+        // Ray queries consult these unconditionally; HEIGHT sampling does so
+        // only when constrain_to_drawn_surface is set below.
         uint32_t render_lod_base_resolution = 0;
         uint32_t render_lod_level_count = 0;
+
+        // The lattice's finest cell (metres), from the same
+        // ClipmapLatticeSchedule as the two above. Carried rather than derived:
+        // it equals size/resolution only while the collision samples the field
+        // at its native resolution, and a projection_resolution that resamples
+        // the grid would break that silently.
+        float render_lod_cell_size = 0.0f;
+
+        // Opt in to standing on the DRAWN surface instead of the true one.
+        //
+        // A terrain-constrained actor normally snaps to the full-resolution
+        // bicubic -- the physical truth, and independent of where anyone is
+        // looking. With a clipmap drawing this field, that truth is not what is
+        // on screen: coarse rings read box-filtered mips at wide cell spacing,
+        // so the drawn ground sits above a valley floor and below a ridge, by
+        // more the further it is from the camera. An actor placed by the truth
+        // then visibly sinks or floats out there.
+        //
+        // Setting this trades the view-independence for agreement with the
+        // picture: heights are answered from the reconstruction, which is a
+        // function of the OBSERVER as well as the position, so an actor's
+        // ground moves as the camera does. Orientation is deliberately NOT
+        // switched over -- see collision_surface_sampling.
+        bool constrain_to_drawn_surface = false;
 
         // Box-filtered mip chain over height_samples, from level 1 outward --
         // level 0 IS height_samples, so it is not duplicated here. Present only
@@ -202,10 +227,16 @@ namespace wz::engine::assets
         uint32_t projection_resolution_x = 0;
         uint32_t projection_resolution_y = 0;
 
-        // Render-LOD reconstruction schedule for ray queries (see
-        // CollisionAssetData). 0 = disabled.
+        // Render-LOD reconstruction schedule (see CollisionAssetData). 0 =
+        // disabled. Normally supplied by a connected ClipmapLatticeSchedule,
+        // which supersedes anything authored here.
         uint32_t render_lod_base_resolution = 0;
         uint32_t render_lod_level_count = 0;
+        float render_lod_cell_size = 0.0f;
+
+        // Opt in to constraining actors to the DRAWN surface (see
+        // CollisionAssetData::constrain_to_drawn_surface).
+        bool constrain_to_drawn_surface = false;
     };
 
     class CollisionAssetTable
