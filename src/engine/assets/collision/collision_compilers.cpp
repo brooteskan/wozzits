@@ -1578,6 +1578,7 @@ namespace wz::engine::assets::internal
         CollisionAssetTable& collision_table,
         PlacementTable& placement_table,
         PlacedFieldTable& placed_field_table,
+        ClipmapLatticeScheduleTable& clipmap_lattice_schedule_table,
         const wz::asset::AssetSystem* asset_system,
         const EngineAssetCacheSettings& cache_settings)
     {
@@ -1839,6 +1840,16 @@ namespace wz::engine::assets::internal
                     kAssetTypePlacedField,
                     wz::asset::InputPortRequirement::Optional,
                 },
+                // Optional resolved clipmap LOD schedule. When connected it
+                // supersedes the authored render_lod_* params, so the ray
+                // reconstruction of the DRAWN surface reads the same (m, L)
+                // the lattice mesh was built from instead of a hand-typed
+                // copy. When absent, behaviour is unchanged.
+                {
+                    "schedule",
+                    kAssetTypeClipmapLatticeSchedule,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .parameters = {
                 {
@@ -1941,7 +1952,8 @@ namespace wz::engine::assets::internal
             },
             .compile =
                 [&logger, &scalar_fields_table, &collision_table,
-                 &placement_table, &placed_field_table, asset_system,
+                 &placement_table, &placed_field_table,
+                 &clipmap_lattice_schedule_table, asset_system,
                  cache_settings](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode> dep_nodes,
@@ -1978,6 +1990,7 @@ namespace wz::engine::assets::internal
                 // fixed count/order.
                 const ScalarFieldData* field = nullptr;
                 const PlacementData* placement = nullptr;
+                const ClipmapLatticeScheduleData* schedule = nullptr;
                 for (size_t i = 0;
                     i < dep_nodes.size() && i < dep_handles.size();
                     ++i)
@@ -1990,6 +2003,14 @@ namespace wz::engine::assets::internal
                     else if (dep_nodes[i].type == kAssetTypePlacement) {
                         if (!placement) {
                             placement = placement_table.get(dep_handles[i]);
+                        }
+                    }
+                    else if (dep_nodes[i].type
+                        == kAssetTypeClipmapLatticeSchedule)
+                    {
+                        if (!schedule) {
+                            schedule = clipmap_lattice_schedule_table.get(
+                                dep_handles[i]);
                         }
                     }
                 }
@@ -2075,6 +2096,29 @@ namespace wz::engine::assets::internal
                     resolved_desc.size[1] = placement->extent[2];
                     resolved_desc.vertical_scale = placement->extent[1];
                     resolved_desc.base_height = placement->base_height;
+                }
+                // A connected ClipmapLatticeSchedule SUPERSEDES the authored
+                // render_lod_* params. Those describe how the clipmap DRAWS
+                // this field — how many rings and how wide the innermost one
+                // is — so they belong to the lattice, not to the collision,
+                // and hand-typing them here is what let them fall out of step
+                // with what is actually drawn (authored 64/6 against a real
+                // 128/7). Connect the same schedule the lattice mesh consumes
+                // and the reconstruction tracks the render by construction.
+                if (schedule) {
+                    if (!schedule->valid()) {
+                        logger.error(
+                            "collision height field clipmap lattice schedule "
+                            "is invalid");
+                        return compile_failed_node(
+                            input,
+                            "collision height field clipmap lattice schedule "
+                            "is invalid");
+                    }
+                    resolved_desc.render_lod_base_resolution =
+                        schedule->base_resolution;
+                    resolved_desc.render_lod_level_count =
+                        schedule->level_count;
                 }
                 desc = &resolved_desc;
                 if (field->depth != 1) {

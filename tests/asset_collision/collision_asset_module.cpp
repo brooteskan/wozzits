@@ -914,6 +914,100 @@ TEST(CollisionAssetModule, PlacementDrivenFlagSurvivesDiskCache)
     EXPECT_FLOAT_EQ(second.base_height, first.base_height);
 }
 
+// A connected ClipmapLatticeSchedule SUPERSEDES the authored render_lod_*
+// params. Those describe how the clipmap DRAWS the field, so they belong to the
+// lattice; hand-typing a copy on the collision is what let the reconstruction
+// fall out of step with what is actually drawn. The authored values here (64/6)
+// are the exact wrong pair test_mesh_001 carried, against the 128/7 the resolver
+// really returns for a 4096 field at extent 1000 / horizon 1000 / budget 200k.
+TEST(CollisionAssetModule, ConnectedScheduleSupersedesAuthoredRenderLod)
+{
+    const wz::fs::Path root =
+        test_root("wozzits_collision_schedule_tests");
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    // width is what the schedule reads as N; height stays at the collision's
+    // minimum of 2 (it needs two samples per axis to bilinear-sample) so the
+    // field costs 8K samples instead of 16M.
+    const auto field = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "collision/schedule_height",
+        .width = 4096,
+        .height = 2,
+        .depth = 1,
+        .generator = ScalarFieldGenerator::GradientX,
+    });
+    ASSERT_TRUE(field.valid());
+
+    const auto schedule =
+        assets.clipmap_lattice_schedules().create_clipmap_lattice_schedule({
+            .name = "collision/schedule",
+            .field_key = field.output,
+            .world_extent = 1000.0f,
+            .horizon = 1000.0f,
+            .triangle_budget = 200000u,
+        });
+    ASSERT_TRUE(schedule.valid());
+
+    const float origin[2] = { 0.0f, 0.0f };
+    const float size[2] = { 1000.0f, 1000.0f };
+    const CollisionOccupancyData occupancy{};
+    const wz::asset::AssetKey collision_key =
+        make_collision_from_height_field_key(
+            "collision/from_schedule",
+            field.output,
+            origin,
+            size,
+            1.0f,
+            0.0f,
+            occupancy,
+            0,
+            0,
+            wz::asset::AssetKey{},
+            64u,
+            6u);
+
+    CollisionFromHeightFieldCompileDesc compile_desc{};
+    compile_desc.height_field = field.output;
+    compile_desc.origin[0] = origin[0];
+    compile_desc.origin[1] = origin[1];
+    compile_desc.size[0] = size[0];
+    compile_desc.size[1] = size[1];
+    compile_desc.occupancy = occupancy;
+    // The stale hand-typed pair the schedule must override.
+    compile_desc.render_lod_base_resolution = 64u;
+    compile_desc.render_lod_level_count = 6u;
+
+    wz::asset::AssetNode node{};
+    node.key = collision_key;
+    node.type = kAssetTypeCollisionAsset;
+    node.schema = kCollisionFromHeightFieldSchema;
+    node.stage = wz::asset::AssetStage::Source;
+    node.payload = std::vector<uint8_t>{};
+    node.meta = compile_desc;
+    ASSERT_TRUE(assets.system().register_asset(
+        std::move(node), { field.output, schedule.output }));
+
+    ASSERT_TRUE(assets.commit());
+    EXPECT_TRUE(assets.resolve_all().ok());
+
+    const CollisionAssetData* data =
+        assets.collisions().get_collision_data(
+            assets.collisions().get_collision(
+                CollisionAsset{ .output = collision_key }));
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+
+    // The schedule's resolved lattice, not the authored 64/6.
+    EXPECT_EQ(data->render_lod_base_resolution, 128u);
+    EXPECT_EQ(data->render_lod_level_count, 7u);
+}
+
 // The render-LOD reconstruction schedule (base_resolution m + level_count)
 // lands in the compiled CollisionAssetData, so it has to be part of the key:
 // while it was omitted, two collisions differing only in their schedule shared

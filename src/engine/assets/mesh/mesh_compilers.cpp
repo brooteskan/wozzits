@@ -747,10 +747,12 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_clipmap_lattice_mesh_node(
             const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
-            ScalarFieldTable& scalar_field_table)
+            ScalarFieldTable& scalar_field_table,
+            ClipmapLatticeScheduleTable& clipmap_lattice_schedule_table)
         {
             // Two authoring paths produce the geometric lattice parameters:
             //
@@ -786,20 +788,64 @@ namespace wz::engine::assets::internal
             }
             else {
                 // Path (2): derive from physical params + the height field's
-                // resolution. The height field is a REQUIRED input port, so
-                // exactly one compiled ScalarField dependency must be present.
-                if (dep_handles.size() != 1) {
-                    logger.error(
-                        "clipmap lattice mesh requires exactly one height "
-                        "field dependency");
-                    return compile_failed_node(input);
+                // resolution. Deps are resolved by TYPE, not position: the
+                // height field is required, the schedule is optional, and the
+                // editor is free to connect them in either order.
+                const ScalarFieldData* field = nullptr;
+                const ClipmapLatticeScheduleData* schedule = nullptr;
+                for (size_t i = 0;
+                    i < dep_nodes.size() && i < dep_handles.size();
+                    ++i)
+                {
+                    if (dep_nodes[i].type == kAssetTypeScalarField) {
+                        if (!field) {
+                            field = scalar_field_table.get(dep_handles[i]);
+                        }
+                    }
+                    else if (dep_nodes[i].type
+                        == kAssetTypeClipmapLatticeSchedule)
+                    {
+                        if (!schedule) {
+                            schedule = clipmap_lattice_schedule_table.get(
+                                dep_handles[i]);
+                        }
+                    }
                 }
 
-                const ScalarFieldData* field =
-                    scalar_field_table.get(dep_handles[0]);
+                // A connected ClipmapLatticeSchedule SUPERSEDES this recipe's
+                // own dials: it has already run resolve_clipmap_lattice over
+                // the same authored inputs, and it is what the collision reads
+                // to reconstruct the drawn surface. Deriving the lattice twice
+                // is exactly the drift the schedule asset exists to remove, so
+                // when one is connected we take its answer verbatim and never
+                // look at world_extent / horizon / triangle_budget here.
+                if (schedule && schedule->valid()) {
+                    lattice_params = sanitize_clipmap_lattice_params(
+                        schedule->level_count,
+                        schedule->base_resolution,
+                        schedule->cell_size);
+                    MeshData scheduled = make_clipmap_lattice_mesh(
+                        lattice_params);
+                    if (!scheduled.valid()) {
+                        logger.error(
+                            "clipmap lattice mesh builder produced invalid "
+                            "mesh data from the connected schedule");
+                        return compile_failed_node(input);
+                    }
+                    wz::asset::ResourceHandle scheduled_handle =
+                        mesh_table.add(std::move(scheduled));
+                    if (!scheduled_handle.valid()) {
+                        logger.error(
+                            "failed to store clipmap lattice mesh");
+                        return compile_failed_node(input);
+                    }
+                    return compiled_mesh_node(input, scheduled_handle);
+                }
+
                 if (!field || !field->valid()) {
                     logger.error(
-                        "clipmap lattice mesh height field is invalid");
+                        "clipmap lattice mesh requires a valid height field "
+                        "dependency when no schedule is connected");
                     return compile_failed_node(input);
                 }
 
@@ -862,6 +908,7 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         MeshTable& mesh_table,
         ScalarFieldTable& scalar_field_table,
+        ClipmapLatticeScheduleTable& clipmap_lattice_schedule_table,
         const EngineAssetCacheSettings& cache_settings)
     {
         // ── Procedural mesh compilers ─────────────────────────────────────────
@@ -984,6 +1031,18 @@ namespace wz::engine::assets::internal
             .output_type = kAssetTypeMesh,
             .input_ports = {
                 { "height_field", kAssetTypeScalarField },
+                // Optional resolved schedule. When connected it supersedes
+                // this recipe's world_extent / horizon / triangle_budget: the
+                // schedule has already resolved them, and the terrain
+                // collision reads the SAME schedule to reconstruct the drawn
+                // surface, so the mesh and the collision cannot disagree about
+                // how many rings there are or how big their cells are. When
+                // absent, behaviour is unchanged (fully back-compatible).
+                {
+                    "schedule",
+                    kAssetTypeClipmapLatticeSchedule,
+                    wz::asset::InputPortRequirement::Optional,
+                },
             },
             .parameters = {
                 {
@@ -1016,15 +1075,16 @@ namespace wz::engine::assets::internal
                     .max = 100000000,
                 },
             },
-            .compile = [&logger, &mesh_table, &scalar_field_table](
+            .compile = [&logger, &mesh_table, &scalar_field_table,
+                        &clipmap_lattice_schedule_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
                 return compile_clipmap_lattice_mesh_node(
-                    input, dep_handles, logger, mesh_table,
-                    scalar_field_table);
+                    input, dep_nodes, dep_handles, logger, mesh_table,
+                    scalar_field_table, clipmap_lattice_schedule_table);
             }
             });
 

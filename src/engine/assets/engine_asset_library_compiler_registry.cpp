@@ -43,6 +43,7 @@ namespace wz::engine::assets::internal
             ctx.logger,
             ctx.mesh_table,
             ctx.scalar_fields_table,
+            ctx.clipmap_lattice_schedule_table,
             ctx.cache_settings);
         register_mesh_derived_field_compilers(
             registry,
@@ -98,7 +99,7 @@ namespace wz::engine::assets::internal
         register_audio_renderable_compilers(
             registry, ctx.logger, ctx.audio_renderable_table, ctx.audio_clip_table,
             ctx.audio_clip_bank_table);
-        register_collision_compilers(registry, ctx.logger, ctx.scalar_fields_table, ctx.mesh_table, ctx.terrain_table, ctx.collision_table, ctx.placement_table, ctx.placed_field_table, ctx.asset_system, ctx.cache_settings);
+        register_collision_compilers(registry, ctx.logger, ctx.scalar_fields_table, ctx.mesh_table, ctx.terrain_table, ctx.collision_table, ctx.placement_table, ctx.placed_field_table, ctx.clipmap_lattice_schedule_table, ctx.asset_system, ctx.cache_settings);
         register_gaussian_splat_compilers(
             registry,
             ctx.logger,

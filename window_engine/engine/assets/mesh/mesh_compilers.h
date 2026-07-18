@@ -3,6 +3,7 @@
 #include <asset/compiler.h>
 #include <engine/assets/asset_cache_settings.h>
 #include <logging/logger.h>
+#include <engine/assets/clipmap_lattice_schedule/clipmap_lattice_schedule.h>
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/scalar_field/scalar_field.h>
 
@@ -14,11 +15,16 @@ namespace wz::engine::assets::internal {
     // registrar needs the ScalarFieldTable to resolve that dep. The typed
     // (ClipmapLatticeMeshDesc) authoring path supplies explicit geometric
     // parameters and no dependency, so the field table is unused for it.
+    //
+    // A ClipmapLatticeSchedule may be connected instead, in which case it
+    // supplies the resolved lattice directly and the schedule table is what
+    // resolves that dep — see the compiler's optional "schedule" port.
     void register_mesh_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         MeshTable& mesh_table,
         ScalarFieldTable& scalar_field_table,
+        ClipmapLatticeScheduleTable& clipmap_lattice_schedule_table,
         const EngineAssetCacheSettings& cache_settings
     );
 

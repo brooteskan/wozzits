@@ -5,6 +5,7 @@
 #include <asset/compiler.h>
 #include <asset/system.h>
 #include <engine/assets/asset_cache_settings.h>
+#include <engine/assets/clipmap_lattice_schedule/clipmap_lattice_schedule.h>
 #include <engine/assets/collision/collision.h>
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/placement/placement.h>
@@ -25,6 +26,9 @@ namespace wz::engine::assets::internal
         CollisionAssetTable& collision_table,
         PlacementTable& placement_table,
         PlacedFieldTable& placed_field_table,
+        // Resolves the OPTIONAL clipmap-lattice-schedule port, which supersedes
+        // the authored render_lod_* params on the height-field recipe.
+        ClipmapLatticeScheduleTable& clipmap_lattice_schedule_table,
         const wz::asset::AssetSystem* asset_system,
         const EngineAssetCacheSettings& cache_settings);
 

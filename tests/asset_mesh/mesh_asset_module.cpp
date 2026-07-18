@@ -801,6 +801,101 @@ TEST(MeshAssetModule, DerivesClipmapLatticeMeshFromHeightField)
     EXPECT_EQ(data->index_count(), expected_tris * 3u);
 }
 
+// A connected ClipmapLatticeSchedule SUPERSEDES the recipe's own dials. The
+// schedule is the single producer of (m, L) and the terrain collision reads the
+// SAME asset to reconstruct the drawn surface, so resolving the lattice twice
+// is exactly the drift it exists to remove. Authored params and schedule are
+// deliberately given DIFFERENT horizons here, so a mesh built from the params
+// and a mesh built from the schedule have different triangle counts and the
+// assertion can only pass if the schedule won.
+TEST(MeshAssetModule, ConnectedScheduleSupersedesAuthoredClipmapParams)
+{
+    namespace ea = wz::engine::assets;
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    auto assets = make_assets(device, logger);
+
+    constexpr uint32_t kN = 64u;
+    const auto height = assets.scalar_fields().create_procedural_scalar_field({
+        .name = "clipmap/schedule_height",
+        .width = kN,
+        .height = kN,
+        .generator = ea::ScalarFieldGenerator::RadialGradient,
+        });
+    ASSERT_TRUE(height.valid());
+
+    constexpr float kWorldExtent = 256.0f;
+    constexpr float kAuthoredHorizon = 96.0f;   // what the node's params say
+    constexpr float kScheduleHorizon = 24.0f;   // what the schedule says
+    constexpr int64_t kTriangleBudget = 50000;
+
+    const auto schedule =
+        assets.clipmap_lattice_schedules().create_clipmap_lattice_schedule({
+            .name = "clipmap/schedule",
+            .field_key = height.output,
+            .world_extent = kWorldExtent,
+            .horizon = kScheduleHorizon,
+            .triangle_budget = static_cast<uint32_t>(kTriangleBudget),
+        });
+    ASSERT_TRUE(schedule.valid());
+
+    wz::asset::ParamBlock params;
+    params.values["world_extent"] = static_cast<double>(kWorldExtent);
+    params.values["horizon"] = static_cast<double>(kAuthoredHorizon);
+    params.values["triangle_budget"] = kTriangleBudget;
+
+    const wz::asset::AssetKey mesh_key{
+        .content_hash = ea::detail::hash_u64(
+            ea::detail::mix64(
+                ea::kProceduralClipmapLatticeMeshSchema.value, 0x736368656411ull)),
+        .schema_hash = ea::detail::hash_u64(
+            ea::kProceduralClipmapLatticeMeshSchema.value),
+        .compiler_hash = ea::detail::hash_u64(ea::kMeshCompilerVersion),
+        .deps_hash = ea::detail::combine_dep_hashes(
+            ea::detail::key_to_dep_hash(height.output),
+            ea::detail::key_to_dep_hash(schedule.output)),
+    };
+
+    wz::asset::AssetNode node{};
+    node.key = mesh_key;
+    node.type = ea::kAssetTypeMesh;
+    node.schema = ea::kProceduralClipmapLatticeMeshSchema;
+    node.stage = wz::asset::AssetStage::Source;
+    node.meta = params;
+
+    ASSERT_TRUE(assets.system().register_asset(
+        std::move(node), { height.output, schedule.output }));
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    EXPECT_TRUE(report.ok());
+
+    const auto handle = assets.meshes().get_mesh(ea::MeshAsset{ .output = mesh_key });
+    ASSERT_TRUE(handle.valid());
+    const auto* data = assets.meshes().get_mesh_data(handle);
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->valid());
+
+    const float s = kWorldExtent / static_cast<float>(kN);
+    const auto tris_for = [](const ea::ClipmapLatticeParams& p) {
+        const uint64_t mm = p.base_resolution;
+        const uint64_t ll = p.level_count;
+        return 2ull * mm * mm + (ll - 1ull) * ((3ull * mm * mm) / 2ull);
+    };
+    const uint64_t from_schedule = tris_for(
+        ea::resolve_clipmap_lattice(
+            kScheduleHorizon, static_cast<uint64_t>(kTriangleBudget), s).params);
+    const uint64_t from_params = tris_for(
+        ea::resolve_clipmap_lattice(
+            kAuthoredHorizon, static_cast<uint64_t>(kTriangleBudget), s).params);
+
+    // Guard the guard: if these ever coincide the test proves nothing.
+    ASSERT_NE(from_schedule, from_params);
+    EXPECT_EQ(data->index_count(), from_schedule * 3u);
+}
+
 TEST(MeshAssetModule, ResolvesDefaultPlaceholderMesh)
 {
     wz::Logger logger;
