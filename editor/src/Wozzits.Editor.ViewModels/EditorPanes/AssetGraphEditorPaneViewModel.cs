@@ -82,10 +82,11 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     // inspector (sub-graphs are nameable there).
     public event Action<AssetGraphSubGraph?>? SelectedSubGraphChanged;
 
-    // Raised when this pane adds or removes nodes, so the shell can re-pull the other open
-    // panes. Every pane holds its own snapshot of the one draft, so a structural edit in a
-    // drill-in tab leaves the root canvas (and any sibling tab) listing a stale node set.
-    // Carries the acting pane, which has already reloaded and must not be reloaded again.
+    // Raised when this pane adds or removes nodes, or takes nodes from another pane, so the
+    // shell can re-pull the other open panes. Every pane holds its own snapshot of the one
+    // draft, so such an edit leaves the root canvas (and any sibling tab) listing a stale
+    // node set or stale positions. Carries the acting pane, which is already current and
+    // must not be reloaded again.
     public event Action<AssetGraphEditorPaneViewModel>? GraphMutated;
 
     // The currently selected sub-graph proxy (mutually exclusive with node selection).
@@ -659,6 +660,73 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     public AssetGraphSubGraph? SubGraphOfNode(ulong nodeId)
     {
         return _grouping.SubGraphOfNode(nodeId);
+    }
+
+    // This pane's sub-graph, or null on the root canvas. Lets a drag source describe where
+    // the nodes are coming from without reaching into the grouping model.
+    public AssetGraphSubGraph? Context => _context;
+
+    // Take nodes dragged in from another graph pane (or this one): they join the sub-graph
+    // this canvas is showing, or leave their group entirely when dropped on the root, and
+    // land at the drop point keeping the shape they had in the source pane. Membership is
+    // editor-only and a node's position already lives in the graph's editor layout, so a
+    // cross-pane move never touches the engine graph, an asset key, or compilation --
+    // which is why, unlike a node edit, it does not mark the graph a draft.
+    public bool AcceptDroppedNodes(
+        IReadOnlyList<AssetGraphNodeDrop> drops,
+        double graphX,
+        double graphY)
+    {
+        if (drops.Count == 0 || RejectIfGraphOperationRunning())
+        {
+            return false;
+        }
+
+        var landed = new List<AssetGraphNodeCardViewModel>();
+        foreach (var drop in drops)
+        {
+            var node = Nodes.FirstOrDefault(candidate => candidate.Id == drop.NodeId);
+            if (node is null)
+            {
+                continue;
+            }
+
+            // Membership follows the canvas it lands on. Both calls are no-ops when the
+            // node is already where it landed, so a drag back into its own pane just moves.
+            if (_context is null)
+            {
+                _grouping.RemoveNode(node.Id);
+            }
+            else
+            {
+                _grouping.AddNodes(_context.Id, [node.Id]);
+            }
+
+            node.X = Math.Max(CanvasPadding, graphX + drop.OffsetX);
+            node.Y = Math.Max(CanvasPadding, graphY + drop.OffsetY);
+            CommitNodePosition(node);
+            landed.Add(node);
+        }
+
+        if (landed.Count == 0)
+        {
+            return false;
+        }
+
+        RefreshCanvasProjection();
+        EnsureGraphBounds();
+        GraphMutated?.Invoke(this);
+
+        // Select LAST, for the same reason AddNodeAt does: re-pulling the other panes
+        // restores their selections, which would otherwise take the inspector back.
+        ClearSelection();
+        foreach (var node in landed)
+        {
+            AddNodeToSelection(node);
+        }
+        SelectedNode = landed[0];
+
+        return true;
     }
 
     // Replace the current groupings with ones loaded from the editor sidecar (project

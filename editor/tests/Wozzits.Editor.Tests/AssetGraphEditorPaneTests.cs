@@ -1090,6 +1090,136 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal("1000", viewModel.Inspector.AssetGraphNodeId);
     }
 
+    // --- Moving nodes between panes (cross-pane drag/drop) ----------------------------
+
+    [Fact]
+    public void DraggingANodeIntoASubGraphPaneJoinsThatSubGraph()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = GraphSnapshotOf(1, 2),
+        };
+
+        var grouping = new AssetGraphGroupingModel();
+        var landscape = grouping.CreateSubGraph("Landscape", [1ul]);
+        var drillIn = new AssetGraphEditorPaneViewModel(editorSession, grouping, landscape);
+        drillIn.LoadSnapshot(editorSession.AssetGraphSnapshot);
+
+        // Node 2 is ungrouped, living on the root canvas. Drop it on the drill-in.
+        Assert.True(drillIn.AcceptDroppedNodes([new AssetGraphNodeDrop(2ul, 0, 0)], 400, 300));
+
+        Assert.Same(landscape, grouping.SubGraphOfNode(2));
+
+        var card = drillIn.Nodes.Single(node => node.Id == 2ul);
+        Assert.True(card.IsCanvasVisible);
+        Assert.Equal(400, card.X);
+        Assert.Equal(300, card.Y);
+
+        // The landing position is committed, so the other panes pick it up when they
+        // re-pull rather than keeping the node where it used to sit.
+        Assert.Contains(
+            editorSession.AssetGraphPositions,
+            position => position.NodeId == 2ul);
+    }
+
+    [Fact]
+    public void DraggingANodeOntoTheRootCanvasLeavesItsSubGraph()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = GraphSnapshotOf(1, 2),
+        };
+
+        var grouping = new AssetGraphGroupingModel();
+        grouping.CreateSubGraph("Landscape", [1ul, 2ul]);
+        var root = new AssetGraphEditorPaneViewModel(editorSession, grouping, context: null);
+        root.LoadSnapshot(editorSession.AssetGraphSnapshot);
+
+        Assert.True(root.AcceptDroppedNodes([new AssetGraphNodeDrop(1ul, 0, 0)], 200, 150));
+
+        // Dropping on the root canvas means "no group".
+        Assert.Null(grouping.SubGraphOfNode(1));
+        Assert.True(root.Nodes.Single(node => node.Id == 1ul).IsCanvasVisible);
+    }
+
+    [Fact]
+    public void DraggingANodeBetweenTwoSubGraphsMovesItOut()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = GraphSnapshotOf(1, 2, 3),
+        };
+
+        var grouping = new AssetGraphGroupingModel();
+        var landscape = grouping.CreateSubGraph("Landscape", [1ul, 3ul]);
+        var sky = grouping.CreateSubGraph("Sky", [2ul]);
+        var skyPane = new AssetGraphEditorPaneViewModel(editorSession, grouping, sky);
+        skyPane.LoadSnapshot(editorSession.AssetGraphSnapshot);
+
+        Assert.True(skyPane.AcceptDroppedNodes([new AssetGraphNodeDrop(1ul, 0, 0)], 300, 300));
+
+        // A node lives in exactly one sub-graph.
+        Assert.Same(sky, grouping.SubGraphOfNode(1));
+        Assert.DoesNotContain(1ul, landscape.MemberNodeIds);
+    }
+
+    [Fact]
+    public void DraggingSeveralNodesKeepsTheirShape()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = GraphSnapshotOf(1, 2, 3),
+        };
+
+        var grouping = new AssetGraphGroupingModel();
+        var landscape = grouping.CreateSubGraph("Landscape", [1ul]);
+        var drillIn = new AssetGraphEditorPaneViewModel(editorSession, grouping, landscape);
+        drillIn.LoadSnapshot(editorSession.AssetGraphSnapshot);
+
+        // Offsets are measured from the card actually under the cursor.
+        Assert.True(drillIn.AcceptDroppedNodes(
+            [new AssetGraphNodeDrop(2ul, 0, 0), new AssetGraphNodeDrop(3ul, 40, 25)],
+            400,
+            300));
+
+        var anchor = drillIn.Nodes.Single(node => node.Id == 2ul);
+        var trailing = drillIn.Nodes.Single(node => node.Id == 3ul);
+        Assert.Equal(400, anchor.X);
+        Assert.Equal(300, anchor.Y);
+        Assert.Equal(440, trailing.X);
+        Assert.Equal(325, trailing.Y);
+        Assert.Same(landscape, grouping.SubGraphOfNode(3));
+    }
+
+    [Fact]
+    public void DraggingANodeIntoASubGraphPaneCollapsesItOnTheRootCanvas()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            AssetGraphSnapshot = GraphSnapshotOf(1, 2),
+        };
+
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(assetGraph: GraphSnapshotOf(1, 2)),
+            editorSession: editorSession);
+
+        viewModel.AssetGraph.SelectNode(
+            viewModel.AssetGraph.Nodes.Single(node => node.Id == 1ul));
+        var landscape = viewModel.AssetGraph.CreateSubGraphFromSelection("Landscape");
+        Assert.NotNull(landscape);
+
+        viewModel.AssetGraph.OpenSubGraph(landscape);
+        var drillIn = GraphPanes(viewModel.EditorLayout)
+            .Single(pane => !ReferenceEquals(pane, viewModel.AssetGraph));
+
+        // Node 2 sits on the root canvas; drag it across into the sub-graph tab.
+        Assert.True(drillIn.AcceptDroppedNodes([new AssetGraphNodeDrop(2ul, 0, 0)], 400, 300));
+
+        // The root canvas re-pulls and now shows it behind the proxy instead of loose.
+        Assert.False(
+            viewModel.AssetGraph.Nodes.Single(node => node.Id == 2ul).IsCanvasVisible);
+    }
+
     private static EngineAssetGraphSnapshotResponse GraphSnapshotOf(params ulong[] nodeIds) =>
         new()
         {

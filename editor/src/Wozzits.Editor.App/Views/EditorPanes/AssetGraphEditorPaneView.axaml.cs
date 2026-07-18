@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -9,12 +11,40 @@ using Wozzits.Editor.ViewModels.EditorPanes;
 
 namespace Wozzits.Editor.App.Views.EditorPanes;
 
+// Drag payload for moving nodes BETWEEN graph panes -- dock a sub-graph beside the root
+// canvas (or another sub-graph) and drag nodes across to regroup them. In-process only,
+// like the asset browser's schema drag (issue woguls/wozzits-editor#1).
+internal static class AssetGraphNodeDrag
+{
+    public static readonly DataFormat<AssetGraphNodeDragPayload> NodesFormat =
+        DataFormat.CreateInProcessFormat<AssetGraphNodeDragPayload>(
+            "wozzits-asset-graph-nodes");
+}
+
+// The dragged nodes, each with its offset from the card under the cursor. The source pane
+// needs no mention: the drop target raises GraphMutated and the shell re-pulls every other
+// pane, so the node leaving its old canvas takes care of itself.
+internal sealed record AssetGraphNodeDragPayload(
+    IReadOnlyList<AssetGraphNodeDrop> Nodes);
+
 public partial class AssetGraphEditorPaneView : UserControl
 {
     private static readonly TimeSpan ZoomPersistInterval = TimeSpan.FromSeconds(15);
+    // How far past the pane edge the pointer must travel before an in-canvas node move
+    // turns into a cross-pane drag.
+    private const double CrossPaneDragMargin = 12.0;
     private readonly DispatcherTimer _zoomPersistTimer;
     private AssetGraphNodeCardViewModel? _dragNode;
     private Control? _dragControl;
+    // Where the dragged nodes sat when the in-canvas move began. If the pointer leaves the
+    // pane the move becomes a cross-pane drag, and the source has to be put back: from that
+    // point the landing position is the drop target's to decide, and a cancelled drag must
+    // leave the source canvas untouched.
+    private List<(AssetGraphNodeCardViewModel Node, double X, double Y)>? _dragStartPositions;
+    // DoDragDropAsync only accepts the PRESS args, but a cross-pane drag is not recognised
+    // until the pointer has moved out of the pane -- so hold the press that started the
+    // gesture and hand it over when the move escalates.
+    private PointerPressedEventArgs? _dragPressArgs;
     private AssetGraphSubGraph? _dragProxy;
     private Control? _dragProxyControl;
     private Avalonia.Point _lastPointerPosition;
@@ -95,17 +125,25 @@ public partial class AssetGraphEditorPaneView : UserControl
 
     private void GraphDragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = e.DataTransfer.Contains(AssetBrowserDrag.SchemaFormat)
-            ? DragDropEffects.Copy
-            : DragDropEffects.None;
+        if (e.DataTransfer.Contains(AssetBrowserDrag.SchemaFormat))
+        {
+            e.DragEffects = DragDropEffects.Copy;
+        }
+        else if (e.DataTransfer.Contains(AssetGraphNodeDrag.NodesFormat))
+        {
+            e.DragEffects = DragDropEffects.Move;
+        }
+        else
+        {
+            e.DragEffects = DragDropEffects.None;
+        }
+
         e.Handled = true;
     }
 
     private void GraphDrop(object? sender, DragEventArgs e)
     {
-        if (DataContext is not AssetGraphEditorPaneViewModel graph
-            || e.DataTransfer.TryGetValue(AssetBrowserDrag.SchemaFormat)
-                is not { } schema)
+        if (DataContext is not AssetGraphEditorPaneViewModel graph)
         {
             return;
         }
@@ -115,6 +153,24 @@ public partial class AssetGraphEditorPaneView : UserControl
         var position = e.GetPosition(AssetGraphCanvas);
         const double cardWidthHalf = 110.0;
         const double cardHeightHalf = 58.0;
+
+        // Nodes dragged over from another graph pane: regroup them onto this canvas. The
+        // offsets are measured from the dragged card's top-left, so anchor the drop there.
+        if (e.DataTransfer.TryGetValue(AssetGraphNodeDrag.NodesFormat) is { } nodes)
+        {
+            graph.AcceptDroppedNodes(
+                nodes.Nodes,
+                position.X - cardWidthHalf,
+                position.Y - cardHeightHalf);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.DataTransfer.TryGetValue(AssetBrowserDrag.SchemaFormat) is not { } schema)
+        {
+            return;
+        }
+
         graph.AddNodeAt(
             schema.Schema,
             (uint)schema.Type,
@@ -155,13 +211,18 @@ public partial class AssetGraphEditorPaneView : UserControl
 
         _dragNode = node;
         _dragControl = control;
+        // The press above guarantees the node is selected, so the selection IS the drag set
+        // (the same set MoveSelectedNodesByGraphDelta will move).
+        _dragStartPositions = [.. graph.SelectedNodes.Select(
+            selected => (Node: selected, selected.X, selected.Y))];
+        _dragPressArgs = e;
         _lastPointerPosition = ToGraphPosition(e);
         e.Pointer.Capture(control);
         Focus();
         e.Handled = true;
     }
 
-    private void NodeCardPointerMoved(object? sender, PointerEventArgs e)
+    private async void NodeCardPointerMoved(object? sender, PointerEventArgs e)
     {
         if (_dragNode is null
             || _dragControl is null
@@ -177,6 +238,20 @@ public partial class AssetGraphEditorPaneView : UserControl
             return;
         }
 
+        // Dragged clear of this pane: hand the move over to whichever pane it is dropped
+        // on. The pointer is captured by the card, so moves keep arriving out here. The
+        // margin keeps a drag that merely grazes the edge an ordinary in-canvas move.
+        var local = e.GetPosition(this);
+        if (local.X < -CrossPaneDragMargin
+            || local.Y < -CrossPaneDragMargin
+            || local.X > Bounds.Width + CrossPaneDragMargin
+            || local.Y > Bounds.Height + CrossPaneDragMargin)
+        {
+            e.Handled = true;
+            await BeginCrossPaneNodeDrag(graph);
+            return;
+        }
+
         var current = ToGraphPosition(e);
         graph.MoveSelectedNodesByGraphDelta(
             _dragNode,
@@ -184,6 +259,53 @@ public partial class AssetGraphEditorPaneView : UserControl
             current.Y - _lastPointerPosition.Y);
         _lastPointerPosition = current;
         e.Handled = true;
+    }
+
+    // Escalate an in-canvas node move into a real drag/drop once it leaves the pane, so it
+    // can land on another graph pane docked alongside.
+    private async Task BeginCrossPaneNodeDrag(AssetGraphEditorPaneViewModel graph)
+    {
+        var anchor = _dragNode;
+        var press = _dragPressArgs;
+        if (anchor is null || press is null)
+        {
+            return;
+        }
+
+        // Put the nodes back BEFORE measuring, so the offsets describe the layout the user
+        // started from rather than wherever the abandoned in-canvas drag left them.
+        RestoreDragStartPositions();
+
+        var payload = new AssetGraphNodeDragPayload(
+            [.. graph.SelectedNodes.Select(selected => new AssetGraphNodeDrop(
+                selected.Id,
+                selected.X - anchor.X,
+                selected.Y - anchor.Y))]);
+
+        press.Pointer.Capture(null);
+        _dragNode = null;
+        _dragControl = null;
+        _dragPressArgs = null;
+
+        var transfer = new DataTransfer();
+        transfer.Add(DataTransferItem.Create(AssetGraphNodeDrag.NodesFormat, payload));
+        await DragDrop.DoDragDropAsync(press, transfer, DragDropEffects.Move);
+    }
+
+    private void RestoreDragStartPositions()
+    {
+        if (_dragStartPositions is null)
+        {
+            return;
+        }
+
+        foreach (var (node, x, y) in _dragStartPositions)
+        {
+            node.X = x;
+            node.Y = y;
+        }
+
+        _dragStartPositions = null;
     }
 
     private void NodeCardPointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -197,6 +319,8 @@ public partial class AssetGraphEditorPaneView : UserControl
         e.Pointer.Capture(null);
         _dragNode = null;
         _dragControl = null;
+        _dragStartPositions = null;
+        _dragPressArgs = null;
         e.Handled = true;
     }
 
