@@ -681,40 +681,47 @@ TEST(CollisionSurfaceSampling, TrueSurfaceConstraintIgnoresTheObserver)
     EXPECT_FLOAT_EQ(near_height, far_height);
 }
 
-// The two surfaces do NOT coincide even under the observer, and it is worth
-// knowing why before reading a height difference as a reconstruction error.
+// The drawn and true surfaces now share ONE sampling grid, which is the
+// convention fix. They used to shear: the clipmap places texel i at
+// origin + i*size/resolution, while the collision bicubic placed it at
+// origin + i*size/(resolution-1), so the two grids drifted apart by up to half
+// a texel across the footprint. That is 0.12 m on the live 4096-texel
+// landscape and metres on a wall as steep as this trench -- an actor stood
+// beside the ground it was drawn on rather than on it, whichever surface it was
+// constrained to, and no amount of correct reconstruction could remove it.
 //
-// They disagree about where a sample SITS. The drawn surface follows the
-// clipmap, which spreads `resolution` texels across the footprint (texel i at
-// origin + i*size/resolution). The bicubic spreads `resolution - 1` intervals
-// across it (texel i at origin + i*size/(resolution-1)). The grids therefore
-// shear apart by up to half a texel across the footprint, and on a slope that
-// is a height difference no amount of correct reconstruction removes.
-//
-// Half a texel of a 64 m / 64 texel field is 0.5 m, which on this deliberately
-// steep trench wall is metres of height; on the live 4096-texel landscape it is
-// 0.12 m. Unifying the two conventions is a separate change -- this test exists
-// so the offset is a recorded fact rather than a surprise in a bug report.
-TEST(CollisionSurfaceSampling, DrawnAndTrueSurfacesShearByTheSamplingConvention)
+// The convention is declared by the field's SOURCE rather than picked once
+// globally: a placement-driven extent means N cells, which is what the
+// Placement and the renderer both mean by it, while a standalone heightfield
+// still spans first-sample-to-last.
+TEST(CollisionSurfaceSampling, DrawnAndTrueSurfacesShareOneSamplingGrid)
 {
     const auto drawn = trench_surface(/*constrain_to_drawn_surface*/ true);
     const auto truth = trench_surface(/*constrain_to_drawn_surface*/ false);
 
-    // Observer alongside, so the actor is in ring 0 and NO decimation applies:
-    // whatever is left is the convention shear alone.
+    // Observer alongside, so the actor sits in ring 0 and NOTHING is decimated:
+    // any residue left here is pure grid disagreement.
     const wz::math::Vec3 observer{
         .x = kTrenchFloorX, .y = 0.0f, .z = 32.0f };
-    const float drawn_height = sample_height_at(drawn, observer);
-    const float true_height = sample_height_at(truth, observer);
 
-    // The drawn side reads the trench floor; the bicubic reads half a texel up
-    // the wall. Both are "correct" for their own grid.
-    EXPECT_NEAR(drawn_height, 0.0f, 0.5f);
-    EXPECT_GT(true_height, drawn_height);
+    // At exact sample positions the two must agree outright -- that is what
+    // sharing a grid means. Walk across the trench so floor, wall and rim are
+    // all covered.
+    for (int i = -4; i <= 4; ++i) {
+        const float x = kTrenchFloorX + static_cast<float>(i);
+        wz::engine::collision::CollisionSurfaceSample drawn_sample{};
+        wz::engine::collision::CollisionSurfaceSample truth_sample{};
+        ASSERT_TRUE(wz::engine::collision::sample_terrain_surface(
+            surface_entry(drawn), x, 32.0f, drawn_sample, observer));
+        ASSERT_TRUE(wz::engine::collision::sample_terrain_surface(
+            surface_entry(truth), x, 32.0f, truth_sample, observer));
+        EXPECT_NEAR(drawn_sample.position.y, truth_sample.position.y, 1e-3f)
+            << "grids disagree at x = " << x;
+    }
 
-    // Bounded by the shear, not unbounded: half a texel up a wall that climbs
-    // kRimHeight over two texels.
-    EXPECT_LT(true_height - drawn_height, 0.5f * kRimHeight);
+    // And both find the trench floor where the data puts it.
+    EXPECT_NEAR(sample_height_at(drawn, observer), 0.0f, 1e-3f);
+    EXPECT_NEAR(sample_height_at(truth, observer), 0.0f, 1e-3f);
 }
 
 // Height moves to the drawn surface; ORIENTATION does not. The drawn surface is

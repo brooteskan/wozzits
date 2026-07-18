@@ -15,6 +15,53 @@ namespace wz::engine::collision
 {
     namespace
     {
+        // How many sample INTERVALS the footprint is divided into -- the one
+        // number that fixes where every texel sits. A normalised position u
+        // maps to sample coordinate u * span, and the pitch is size / span.
+        //
+        // Which answer is right is declared by the field's SOURCE, not chosen
+        // once globally:
+        //
+        //  - placement_driven: the extent came from a Placement, which defines
+        //    it as N * c0 -- N cells of the clipmap's finest lattice size. So
+        //    `resolution` CELLS span the footprint and texel i sits at
+        //    i * size/resolution, which is exactly where clipmap_vs.hlsl reads
+        //    it. Anything else shears against the render by up to half a texel
+        //    (0.12 m on the live 4096-texel landscape), which on a slope is a
+        //    height error no reconstruction can remove -- an actor standing
+        //    beside the ground it is drawn on rather than on it.
+        //
+        //  - otherwise: a standalone heightfield declares nothing of the kind.
+        //    Its extent is simply the span from the first sample to the last,
+        //    so resolution-1 intervals cover it and the last sample lands on
+        //    the far edge. A 3-sample field over 2 m has samples at 0, 1, 2.
+        //
+        // Kept in one function because this was previously written out at five
+        // call sites, which is how the render and the collision came to
+        // disagree without anything noticing.
+        float height_field_grid_span(
+            bool placement_driven,
+            uint32_t resolution) noexcept
+        {
+            if (placement_driven) {
+                return resolution >= 1u
+                    ? static_cast<float>(resolution)
+                    : 1.0f;
+            }
+            return resolution > 1u
+                ? static_cast<float>(resolution - 1u)
+                : 1.0f;
+        }
+
+        float height_field_pitch(
+            const wz::engine::assets::CollisionAssetData& data,
+            float size,
+            uint32_t resolution) noexcept
+        {
+            return size
+                / height_field_grid_span(data.placement_driven, resolution);
+        }
+
         bool normalize_checked(wz::math::Vec3& v) noexcept
         {
             const float len_sq = v.x * v.x + v.y * v.y + v.z * v.z;
@@ -592,24 +639,14 @@ namespace wz::engine::collision
 
             const float clamped_u = (std::clamp)(u, 0.0f, 1.0f);
             const float clamped_v = (std::clamp)(v, 0.0f, 1.0f);
-            const float sample_x =
-                data.resolution_x > 1u
-                    ? clamped_u * static_cast<float>(data.resolution_x - 1u)
-                    : 0.0f;
-            const float sample_z =
-                data.resolution_y > 1u
-                    ? clamped_v * static_cast<float>(data.resolution_y - 1u)
-                    : 0.0f;
-            const float step_x =
-                data.resolution_x > 1u
-                    ? data.size[0]
-                        / static_cast<float>(data.resolution_x - 1u)
-                    : data.size[0];
-            const float step_z =
-                data.resolution_y > 1u
-                    ? data.size[1]
-                        / static_cast<float>(data.resolution_y - 1u)
-                    : data.size[1];
+            const float span_x = height_field_grid_span(
+                data.placement_driven, data.resolution_x);
+            const float span_z = height_field_grid_span(
+                data.placement_driven, data.resolution_y);
+            const float sample_x = clamped_u * span_x;
+            const float sample_z = clamped_v * span_z;
+            const float step_x = data.size[0] / span_x;
+            const float step_z = data.size[1] / span_z;
             const HeightFieldEvaluation eval =
                 smooth_height_field_evaluation(
                     data,
@@ -1211,10 +1248,10 @@ namespace wz::engine::collision
             const float v =
                 (std::clamp)((local_z - data.origin[1]) / data.size[1],
                     0.0f, 1.0f);
-            const float sample_x =
-                u * static_cast<float>(data.resolution_x - 1u);
-            const float sample_z =
-                v * static_cast<float>(data.resolution_y - 1u);
+            const float sample_x = u * height_field_grid_span(
+                data.placement_driven, data.resolution_x);
+            const float sample_z = v * height_field_grid_span(
+                data.placement_driven, data.resolution_y);
             return bilinear_height_sample(data, sample_x, sample_z);
         }
 
@@ -1264,9 +1301,9 @@ namespace wz::engine::collision
             lod.origin_x = data.origin[0];
             lod.origin_z = data.origin[1];
             lod.step_x =
-                data.size[0] / static_cast<float>(data.resolution_x - 1u);
+                height_field_pitch(data, data.size[0], data.resolution_x);
             lod.step_z =
-                data.size[1] / static_cast<float>(data.resolution_y - 1u);
+                height_field_pitch(data, data.size[1], data.resolution_y);
             lod.inner_half = 0.5f
                 * static_cast<float>(data.render_lod_base_resolution)
                 * lod.step_x;
@@ -1340,10 +1377,10 @@ namespace wz::engine::collision
             float local_z,
             CollisionSurfaceSample& out_sample) noexcept
         {
-            const float step_x = data.size[0]
-                / static_cast<float>(data.resolution_x - 1u);
-            const float step_z = data.size[1]
-                / static_cast<float>(data.resolution_y - 1u);
+            const float step_x =
+                height_field_pitch(data, data.size[0], data.resolution_x);
+            const float step_z =
+                height_field_pitch(data, data.size[1], data.resolution_y);
 
             const wz::math::Vec3 local_position{
                 .x = local_x,
@@ -1522,12 +1559,9 @@ namespace wz::engine::collision
             // barely moves in XZ, so fall back to a single span and just test the
             // endpoints. Step count is bounded so a grazing ray can't spin.
             const float span = t1 - t0;
-            const float cell =
-                (std::min)(
-                    data.size[0]
-                        / static_cast<float>(data.resolution_x - 1u),
-                    data.size[1]
-                        / static_cast<float>(data.resolution_y - 1u));
+            const float cell = (std::min)(
+                height_field_pitch(data, data.size[0], data.resolution_x),
+                height_field_pitch(data, data.size[1], data.resolution_y));
             const float horizontal = std::sqrt(
                 local_dir.x * local_dir.x + local_dir.z * local_dir.z);
             constexpr uint32_t k_max_steps = 4096u;
