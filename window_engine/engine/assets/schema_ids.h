@@ -344,6 +344,12 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000A05ull
     };
 
+    // Atmosphere: the GLOBAL fog a frame is viewed through (colour, density,
+    // start distance, height falloff, enabled) → kAssetTypeAtmosphere. A pure
+    // params recipe with NO dependency, like Placement: fog is authored, never
+    // derived. Same "world-data" range (0xA00-0xAFF) as Placement, PlacedField
+    // and ClipmapLatticeSchedule, next after them, since an atmosphere describes
+
     // Collision schemas intentionally occupy 0x000B00-0x000B7F. These IDs
     // are persisted in disk-cache keys, so keep them stable; reserve
     // 0x000B80-0x000BFF for future audio schemas.
@@ -747,5 +753,13 @@ namespace wz::engine::assets {
     // star buffer. Source dep: one kAssetTypeRawFile. Produces kAssetTypeStarCatalog.
     inline constexpr wz::asset::SchemaID kStarCatalogFromPLYSchema{
         0xF11E'CA55'E7'001005ull
+    };
+
+    // Global atmosphere (the fog every program looks through): a params-only
+    // recipe with no input ports. Produces kAssetTypeAtmosphere. Lighting /
+    // environment range, beside the direct-light and ambient-lighting recipes
+    // -- it is scene-level environment state, not a terrain recipe.
+    inline constexpr wz::asset::SchemaID kAtmosphereSchema{
+        0xF11E'CA55'E7'001006ull
     };
 }

@@ -112,6 +112,10 @@ target_sources(window_engine PRIVATE
     assets/clipmap_lattice_schedule/clipmap_lattice_schedule_compilers.cpp
     assets/clipmap_lattice_schedule_asset_module.cpp
 
+    assets/atmosphere/atmosphere.cpp
+    assets/atmosphere/atmosphere_compilers.cpp
+    assets/atmosphere_asset_module.cpp
+
     assets/audio/audio_clip.cpp
     assets/audio/wav_decoder.cpp
     assets/audio/audio_clip_compilers.cpp

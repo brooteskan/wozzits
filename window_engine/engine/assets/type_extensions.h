@@ -389,7 +389,6 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeClipmapLatticeSchedule =
         static_cast<wz::asset::AssetType>(201);
 
-
     // ─── Renderer/backend GPU-resident asset types: 512–1023 ────────────────────
     // Backend-owned or backend-facing resources.
     //
@@ -1353,6 +1352,26 @@ namespace wz::engine::assets {
     // as kAssetTypeSkyGaussian.
     inline constexpr wz::asset::AssetType kAssetTypeStarCatalog =
         static_cast<wz::asset::AssetType>(2288);
+
+    // Implemented: CPU-side GLOBAL ATMOSPHERE for a frame -- the fog every
+    // program looks through {colour, density, start distance, height falloff,
+    // enabled}. Fog belongs to the world and the observer, not to any one thing
+    // being drawn, so every program must read the SAME values or the scene
+    // disagrees with itself. ONE producer for the atmosphere half of the
+    // VIEW-frequency constants (RenderBindingViewHead::CameraFog), filled once
+    // per frame at a frequency no renderable owns. Runtime data owned by
+    // AtmosphereTable.
+    //
+    // Sits in this range beside kAssetTypeDirectLight (2268) and
+    // kAssetTypeAmbientLighting -- both implemented, both scene-level
+    // environment state consumed by rendering, which is exactly what this is.
+    // Distinct from the reserved kAssetTypeSkyAtmosphereSettings (2275), a
+    // physically-inspired SKY SCATTERING model, and from kAssetTypeFogVolume
+    // (2276), which is a volume with a density field; this is the homogeneous
+    // analytic term, which is what a distant horizon needs and what a froxel
+    // volume would fall back to beyond its range anyway.
+    inline constexpr wz::asset::AssetType kAssetTypeAtmosphere =
+        static_cast<wz::asset::AssetType>(2289);
 
     // ─── Cinematic asset types: 2300–2319 ───────────────────────────────────────
     //

@@ -236,6 +236,7 @@ namespace wz::engine::assets
         , placement_table_{}
         , placed_field_table_{}
         , clipmap_lattice_schedule_table_{}
+        , atmosphere_table_{}
         , audio_clip_table_{}
         , audio_clip_bank_table_{}
         , audio_renderable_table_{}
@@ -288,6 +289,7 @@ namespace wz::engine::assets
                 .placed_field_table        = placed_field_table_,
                 .clipmap_lattice_schedule_table =
                     clipmap_lattice_schedule_table_,
+                .atmosphere_table          = atmosphere_table_,
                 .audio_clip_table          = audio_clip_table_,
                 .audio_clip_bank_table     = audio_clip_bank_table_,
                 .audio_renderable_table    = audio_renderable_table_,
@@ -352,6 +354,7 @@ namespace wz::engine::assets
         , placed_fields_(system_, logger_, placed_field_table_)
         , clipmap_lattice_schedules_(
             system_, logger_, clipmap_lattice_schedule_table_)
+        , atmospheres_(system_, logger_, atmosphere_table_)
         , audio_clips_(system_, logger_, files_, audio_clip_table_)
         , audio_clip_banks_(
             system_, logger_, audio_clip_bank_table_, files_)

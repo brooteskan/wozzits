@@ -243,6 +243,10 @@ float4 main(PSIn input) : SV_TARGET
                 kClipmapLatticeScheduleSchema,
                 kAssetTypeClipmapLatticeSchedule,
             },
+            // Params-only recipe like Placement: the typed create API keys via
+            // make_atmosphere_key, graph-authored nodes go through the generic
+            // draft key path.
+            { kAtmosphereSchema, kAssetTypeAtmosphere },
 
             { kJSONDocumentSchema, kAssetTypeJSONDocument },
             { kTOMLDocumentSchema, kAssetTypeTOMLDocument },
