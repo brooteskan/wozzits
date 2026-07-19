@@ -118,6 +118,13 @@ namespace wz::engine::assets
         // A star catalog's resident point buffer (source C, #266), bound by the
         // star-field render branch and expanded to instanced billboards.
         StarCatalog,
+        // VIEW-frequency constants (register space 0): the observer and the
+        // atmosphere it looks through, identical for every program in a frame.
+        // A StructuredBuffer rather than a cbuffer because the DX12 pipeline
+        // realizes exactly ONE root-constant block per program and the object
+        // block already claims it -- see wozzits-rhi#7. Descriptor tables are
+        // already plural, so this needs nothing from that layer.
+        ViewConstants,
     };
 
     // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
@@ -125,7 +132,7 @@ namespace wz::engine::assets
     // it as a Tag (enum → name), and authored render-binding-layout rows name
     // their semantic as a string that resolves back to the enum (name → enum).
     // Index == enum value; a new DescriptorSemantic member extends this array.
-    inline constexpr std::array<std::string_view, 13> kDescriptorSemanticNames = {
+    inline constexpr std::array<std::string_view, 14> kDescriptorSemanticNames = {
         "unknown",
         "splat_cloud",
         "sorted_splat_indices",
@@ -139,6 +146,7 @@ namespace wz::engine::assets
         "pulled_mesh_normals",
         "sky_gaussian_points",
         "star_catalog",
+        "view_constants",
     };
 
     [[nodiscard]] constexpr std::string_view descriptor_semantic_name(

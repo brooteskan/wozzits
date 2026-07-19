@@ -72,17 +72,23 @@ namespace wz::engine::assets
         uint32_t constants_dwords = 0;
         std::vector<RenderBindingConstantField> constant_fields;
 
-        // View-frequency block (register space 0) — frame state every program
-        // sees identically: the observer, and the atmosphere it looks through.
-        // Present iff view_constants_semantic is non-empty.
+        // View-frequency state (register space 0): the observer, and the
+        // atmosphere it looks through -- identical for every program in a frame.
+        // None = the layout wants none of it, and derives byte-identically to a
+        // layout authored before this existed.
+        //
+        // Delivered as a one-element STRUCTURED BUFFER, not a cbuffer. The DX12
+        // pipeline realizes exactly one root-constant block per program and the
+        // object block already claims it; a second makes pipeline realization
+        // fail outright (wozzits-rhi#7). Descriptor tables are already plural,
+        // so a buffer costs that layer nothing.
         //
         // Head-only by design, unlike the object block above. The object tail
         // exists so a recipe can carry per-INSTANCE parameters; view state has
         // no per-instance variation by definition, so an authored tail here
         // would only be a way to disagree with what the renderer fills.
-        std::string view_constants_semantic;
-        ShaderVisibility view_constants_visibility = ShaderVisibility::All;
         RenderBindingViewHead view_head = RenderBindingViewHead::None;
+        ShaderVisibility view_visibility = ShaderVisibility::All;
 
         // SRV rows; registers derive from row order (t0, t1, …).
         std::vector<RenderBindingRow> bindings;
@@ -96,7 +102,7 @@ namespace wz::engine::assets
 
         [[nodiscard]] bool has_view_constants() const noexcept
         {
-            return !view_constants_semantic.empty();
+            return view_head != RenderBindingViewHead::None;
         }
 
         [[nodiscard]] uint32_t view_constants_dwords() const noexcept

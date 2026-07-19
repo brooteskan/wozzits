@@ -104,28 +104,6 @@ namespace wz::engine::assets
             }
         }
 
-        if (!layout.has_view_constants()) {
-            // Same contradiction the object block rejects: a head with no
-            // semantic would silently vanish from the derived SRG.
-            if (layout.view_head != RenderBindingViewHead::None) {
-                error = "view head declared without a view_constants_semantic";
-                return false;
-            }
-        }
-        else if (layout.view_head == RenderBindingViewHead::None) {
-            // The reverse is just as bad -- a named block of zero dwords would
-            // emit an empty cbuffer and a root parameter nothing ever fills.
-            error = "view_constants_semantic declared with no view head";
-            return false;
-        }
-        else if (layout.view_constants_semantic == layout.constants_semantic) {
-            // Two cbuffers of the same name in one shader will not compile, and
-            // the collision is silent until the program is built.
-            error = "view and object constants share a semantic name: "
-                + layout.view_constants_semantic;
-            return false;
-        }
-
         if (layout.bindings.size() > kMaxRenderBindingLayoutBindings) {
             error = "too many binding rows";
             return false;
@@ -145,18 +123,22 @@ namespace wz::engine::assets
             });
         }
 
-        // Appended AFTER the object block, so an existing layout's derived rows
-        // keep their exact positions and a layout with no view block produces
-        // byte-identical output to before this existed. The rhi bridge groups
-        // by register_space rather than by order, so nothing downstream cares
-        // which came first.
+        // The view row, when the layout wants one. A StructuredBufferSRV at
+        // space 0 rather than a second root-constant block: the DX12 pipeline
+        // realizes only one of those per program and the object block has it,
+        // so a second would make the program fail to realize (wozzits-rhi#7).
+        //
+        // Emitted BEFORE the object rows so it always lands on t0 of its own
+        // space regardless of how many object bindings a recipe declares, and
+        // so the object rows keep their existing t-registers exactly.
         if (layout.has_view_constants()) {
-            out.root_constants.push_back(RootConstantBinding{
-                .visibility = layout.view_constants_visibility,
+            out.descriptor_bindings.push_back(DescriptorBinding{
+                .kind = DescriptorKind::StructuredBufferSRV,
+                .visibility = layout.view_visibility,
+                .semantic = DescriptorSemantic::ViewConstants,
                 .shader_register = 0,
                 .register_space = kRenderBindingLayoutViewRegisterSpace,
-                .value_count = layout.view_constants_dwords(),
-                .semantic = layout.view_constants_semantic,
+                .descriptor_count = 1,
             });
         }
 
@@ -361,29 +343,38 @@ namespace wz::engine::assets
             out += "};\n";
         }
 
-        // View-frequency block (space 0). Emitted only when the layout declares
-        // one, so a shader compiled against a layout without it sees exactly the
-        // text it saw before this existed.
+        // View-frequency state (space 0), emitted only when the layout wants
+        // it -- so a shader compiled against a layout without one sees exactly
+        // the text it saw before this existed.
+        //
+        // A one-element StructuredBuffer, not a cbuffer: the DX12 pipeline
+        // realizes one root-constant block per program and the object block
+        // already has it, so a second would make the program fail to realize
+        // (wozzits-rhi#7). Emitted here rather than with the object rows below
+        // because the struct must precede the declaration, and because it lives
+        // in its own register space where t0 is always free.
         if (layout.has_view_constants()) {
             const std::string view_space =
                 "space" + std::to_string(kRenderBindingLayoutViewRegisterSpace);
             out += "\n// Frame state, identical for every program this frame:\n"
                    "// the observer, and the atmosphere it looks through.\n";
-            out += "cbuffer " + layout.view_constants_semantic
-                + " : register(b0, " + view_space + ")\n{\n";
             switch (layout.view_head) {
             case RenderBindingViewHead::CameraFog:
-                out += "    float4 wz_view_camera : packoffset(c0);"
-                       "       // xyz = camera world position\n"
-                       "    float4 wz_view_fog_color : packoffset(c1);"
-                       "    // rgb = fog colour, w = density\n"
-                       "    float4 wz_view_fog_params : packoffset(c2);"
-                       "   // x = start, y = height falloff, z = enabled\n";
+                out += "struct WzViewConstants\n"
+                       "{\n"
+                       "    float4 camera;      // xyz = camera world position\n"
+                       "    float4 fog_color;   // rgb = colour, w = density\n"
+                       "    float4 fog_params;  // x = start, y = height "
+                       "falloff, z = enabled\n"
+                       "};\n";
                 break;
             case RenderBindingViewHead::None:
                 break;
             }
-            out += "};\n";
+            out += "StructuredBuffer<WzViewConstants> "
+                + std::string(descriptor_semantic_name(
+                    DescriptorSemantic::ViewConstants))
+                + " : register(t0, " + view_space + ");\n";
         }
 
         if (!srg.descriptor_bindings.empty()) {
@@ -477,13 +468,14 @@ namespace wz::engine::assets
                 "\n"
                 "float3 wz_fog_from_view(float3 color, float3 world_pos)\n"
                 "{\n"
-                "    if (wz_view_fog_params.z < 0.5f) { return color; }\n"
+                "    WzViewConstants v = view_constants[0];\n"
+                "    if (v.fog_params.z < 0.5f) { return color; }\n"
                 "    return wz_apply_fog(\n"
                 "        color,\n"
-                "        wz_view_fog_color.rgb,\n"
-                "        wz_view_fog_color.w,\n"
-                "        wz_view_fog_params.x,\n"
-                "        length(world_pos - wz_view_camera.xyz));\n"
+                "        v.fog_color.rgb,\n"
+                "        v.fog_color.w,\n"
+                "        v.fog_params.x,\n"
+                "        length(world_pos - v.camera.xyz));\n"
                 "}\n";
         }
 
