@@ -757,6 +757,17 @@ namespace wz::app
         // ViewController.
         void materialize_active_view();
 
+        // The frame's global fog, or nullptr for "no fog" — what render_scene
+        // hands the renderer's view-frequency constants (6c51cf5 / da6c952).
+        //
+        // Thin wrapper over resolve_scene_frame_atmosphere (which owns the
+        // selection + resolution rules and is tested device-free). The app adds
+        // only the part that needs app state: the duplicate warning, latched on
+        // the offending node id via atmosphere_duplicate_warned_for_ because this
+        // runs every frame and an unlatched warn would bury the log at frame rate.
+        [[nodiscard]] const wz::engine::assets::AtmosphereData*
+        resolve_frame_atmosphere();
+
         // #221 single edit seam for transforms: write `transform` as the LOCAL
         // pose of node `id` into the live simulation polytree (the same const_cast
         // idiom the constraint pipeline / behavior_command_apply use), then set
@@ -1149,6 +1160,13 @@ namespace wz::app
         // graft and save_scene excludes them (not populated for flatten — those
         // become authored). document_.dirty() is the unsaved-edit flag.
         SceneDocument document_{};
+
+        // The node id of the duplicate Atmosphere resolve_frame_atmosphere last
+        // warned about, so a frame-rate loop reports an authoring error ONCE.
+        // Keyed by id rather than a latched bool so it self-heals: authoring the
+        // duplicate away clears it, and moving it to a different node warns again
+        // for the new one. Empty = no duplicate outstanding.
+        wz::scene::AuthoredEntityId atmosphere_duplicate_warned_for_{};
 
         // Source scene file, for save_scene (persist live edits).
         wz::fs::Path  scene_source_path_{};

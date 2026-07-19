@@ -1835,6 +1835,47 @@ namespace wz::engine::assets::internal
                 node.ambient_lighting = lighting;
             }
 
+            // An atmosphere component is present whenever the node carries an
+            // "atmosphere" object. Like collision (#216/#217) it needs no
+            // resolved 'asset' key to exist: the persisted intent is the
+            // asset-graph node id, and the key is re-bridged on every (re)bind
+            // by bridge_scene_atmosphere_keys.
+            const auto* atmosphere = find_member(node_val, "atmosphere");
+            if (atmosphere
+                && atmosphere->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneAtmosphereAsset component{};
+
+                // Optional pre-resolved key. Absent for a pure graph reference;
+                // when present it must still parse (fail closed on a bad ref).
+                auto asset = read_string(*atmosphere, "asset");
+                if (asset && !asset->empty()) {
+                    auto key = parse_asset_key_string(*asset);
+                    if (!key) {
+                        logger.error("atmosphere.asset on node '"
+                            + node.id + "' could not be parsed: "
+                            + std::string(*asset));
+                        return std::nullopt;
+                    }
+                    component.atmosphere_asset = *key;
+                }
+
+                const auto aid =
+                    read_number(*atmosphere, "atmosphere_asset_node_id");
+                if (aid && *aid > 0.0) {
+                    component.atmosphere_asset_node_id =
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(*aid);
+                    component.atmosphere_asset = {};
+                }
+
+                auto enabled = read_bool(*atmosphere, "enabled");
+                if (enabled) {
+                    component.enabled = *enabled;
+                }
+
+                node.atmosphere = component;
+            }
+
             const auto* hdri =
                 find_member(node_val, "hdri_environment");
             if (hdri && hdri->kind == wz::json::JSONValueKind::Object) {

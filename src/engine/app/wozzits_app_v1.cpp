@@ -269,6 +269,13 @@ namespace wz::app
         const uint32_t collisions_bridged =
             wz::engine::assets::bridge_scene_collision_keys(document_.nodes(), draft);
         (void)collisions_bridged;
+        // Same for the authored atmosphere reference: a graph swap mints a new
+        // Atmosphere key, so the frame's fog must follow the authored node id or
+        // render_scene resolves nothing and the scene silently clears.
+        const uint32_t atmospheres_bridged =
+            wz::engine::assets::bridge_scene_atmosphere_keys(
+                document_.nodes(), draft);
+        (void)atmospheres_bridged;
         const std::size_t bind_grafted = graft_scene_sources();
         // Assemble the freshly grafted children's intrinsic geometry bindings
         // (#213 increment 3) — the pre-graft assemble above ran before they
@@ -507,6 +514,10 @@ namespace wz::app
         // graph is committed by now (materialize ran above), so the referenced
         // collision node's key resolves.
         wz::engine::assets::bridge_scene_collision_keys(
+            document_.nodes(), graph_draft_);
+        // Same for the authored atmosphere reference, so the frame's fog is
+        // resolved before the first render_scene of a freshly loaded scene.
+        wz::engine::assets::bridge_scene_atmosphere_keys(
             document_.nodes(), graph_draft_);
         // Flatten any glb_scene_source node authored with consume_mode=Flatten:
         // expand persistently (and drop the descriptor), exactly like the editor
@@ -2668,6 +2679,36 @@ namespace wz::app
         return std::nullopt;
     }
 
+    const wz::engine::assets::AtmosphereData*
+    WozzitsApp_v1::resolve_frame_atmosphere()
+    {
+        if (!ctx_.assets) {
+            return nullptr;
+        }
+
+        const wz::engine::assets::SceneFrameAtmosphere frame =
+            wz::engine::assets::resolve_scene_frame_atmosphere(
+                document_.nodes(), *ctx_.assets);
+
+        // Latch on the duplicate's id so this per-frame path warns ONCE, and
+        // clears itself when the authoring is fixed.
+        const wz::scene::AuthoredEntityId duplicate_id =
+            frame.duplicate ? frame.duplicate->id
+                            : wz::scene::AuthoredEntityId{};
+        if (duplicate_id != atmosphere_duplicate_warned_for_) {
+            atmosphere_duplicate_warned_for_ = duplicate_id;
+            if (frame.duplicate) {
+                ctx_.logger.warn(
+                    "scene authors more than one Atmosphere: using '"
+                    + frame.source->id + "', ignoring '" + frame.duplicate->id
+                    + "'. Atmosphere is frame-global state, so a second one is"
+                    " an authoring error rather than a blend.");
+            }
+        }
+
+        return frame.atmosphere;
+    }
+
     bool WozzitsApp_v1::render_scene()
     {
         if (!ctx_.assets) {
@@ -2684,13 +2725,14 @@ namespace wz::app
         // Mat4->TRS->Mat4 write-back into document_.nodes() is gone.
         const std::vector<wz::math::Mat4> world_transforms =
             scene_world_transforms();
-        // No atmosphere: resolving the scene-authored Atmosphere asset (6c51cf5)
-        // and handing it to the renderer is a later seam. nullptr means "no
-        // fog"; the camera still reaches the view constants.
+        // The frame's global fog, resolved from the scene-authored Atmosphere
+        // asset (6c51cf5). nullptr -- no node authors one, the one that does is
+        // switched off, or its key has not resolved -- means "no fog"; the camera
+        // still reaches the view constants either way.
         return renderer_.render_scene(
             document_.nodes(), *ctx_.assets, view_.active_view().view_projection,
             view_.active_view().world_position, world_transforms,
-            /*atmosphere*/ nullptr);
+            resolve_frame_atmosphere());
     }
 
     void WozzitsApp_v1::set_prefer_scene_camera(bool prefer)

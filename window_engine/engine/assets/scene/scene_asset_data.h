@@ -95,6 +95,31 @@ namespace wz::engine::assets
         float dominant_light_confidence = 0.0f;
     };
 
+    // The frame's global fog, bound BY REFERENCE to an authored asset-graph
+    // Atmosphere node (6c51cf5). Sits beside ambient_lighting/hdri_environment as
+    // per-node environment state, but unlike them it is FRAME-GLOBAL: the medium
+    // every program looks through, packed once per frame into the view-frequency
+    // constants. It lives on a node only because that is where the scene language
+    // puts authored state — the node's transform means nothing to it, and a second
+    // node carrying one is an authoring error, not a blend.
+    //
+    // Identity follows SceneCollisionAsset: atmosphere_asset_node_id is the
+    // persisted intent (a stable asset-graph anchor), atmosphere_asset is the
+    // current resolved key, disposable and re-derived by
+    // bridge_scene_atmosphere_keys on every (re)bind. See the
+    // authored-vs-resolved identity rule.
+    struct SceneAtmosphereAsset
+    {
+        wz::asset::AssetKey atmosphere_asset{};
+        // 0 = unbound. Draft node ids are handed out from 1 (draft.h
+        // next_node_id), so 0 is never a real anchor and needs no optional<>.
+        wz::asset::AssetGraphDraftNodeId atmosphere_asset_node_id = 0;
+        // Master switch for THIS binding, distinct from AtmosphereData::
+        // fog_enabled (the asset's own switch). Disabled here means the frame
+        // has no atmosphere at all, exactly as if the component were absent.
+        bool enabled = true;
+    };
+
     enum class SceneSkyVisualKind : uint8_t
     {
         None = 0,
@@ -1219,6 +1244,7 @@ namespace wz::engine::assets
         std::optional<SceneDirectLightSourceAsset> direct_light_source;
         std::optional<SceneAmbientLightingAsset> ambient_lighting;
         std::optional<SceneHDRIEnvironmentAsset> hdri_environment;
+        std::optional<SceneAtmosphereAsset> atmosphere;
         std::optional<SceneSkyVisualAsset> sky_visual;
         std::optional<SceneSkySurfaceAsset> sky_surface;
 
@@ -1645,6 +1671,31 @@ namespace wz::engine::assets
         node.hdri_environment = std::move(environment);
     }
 
+    // Author the frame's fog by REFERENCE: point the node's Atmosphere component
+    // at an authored asset-graph Atmosphere node. Creates the component if absent.
+    // The resolved key (atmosphere_asset) is left for
+    // bridge_scene_atmosphere_keys to fill on (re)bind. Mirrors
+    // attach_collision_asset_node.
+    inline void attach_atmosphere_asset_node(
+        SceneNodeAsset& node,
+        wz::asset::AssetGraphDraftNodeId node_id)
+    {
+        if (!node.atmosphere) {
+            node.atmosphere.emplace();
+        }
+        node.atmosphere->atmosphere_asset_node_id = node_id;
+        node.atmosphere->atmosphere_asset = {};
+    }
+
+    inline void detach_atmosphere_asset_node(SceneNodeAsset& node)
+    {
+        if (!node.atmosphere) {
+            return;
+        }
+        node.atmosphere->atmosphere_asset_node_id = 0;
+        node.atmosphere->atmosphere_asset = {};
+    }
+
     inline void attach_sky_visual(
         SceneNodeAsset& node,
         SceneSkyVisualAsset visual = {})
@@ -1887,6 +1938,9 @@ namespace wz::engine::assets
         }
         if (node.hdri_environment) {
             out.push_back(Kind::HDRIEnvironment);
+        }
+        if (node.atmosphere) {
+            out.push_back(Kind::Atmosphere);
         }
         if (node.sky_visual) {
             out.push_back(Kind::SkyVisual);
@@ -3109,6 +3163,7 @@ namespace wz::engine::assets
             || node.direct_light_source.has_value()
             || node.ambient_lighting.has_value()
             || node.hdri_environment.has_value()
+            || node.atmosphere.has_value()
             || node.sky_visual.has_value()
             || node.sky_surface.has_value()
             || node.input_receiver.has_value()
@@ -3295,6 +3350,9 @@ namespace wz::engine::assets
             }
             if (node.hdri_environment) {
                 ++out.hdri_environments;
+            }
+            if (node.atmosphere) {
+                ++out.atmospheres;
             }
             if (node.sky_visual) {
                 ++out.sky_visuals;

@@ -1026,6 +1026,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_scene scene_materialize_light_tests)
     rs_add_test_group(asset_scene scene_materialize_terrain_tests)
     rs_add_test_group(asset_scene scene_materialize_default_scene_tests)
+    rs_add_test_group(asset_scene scene_atmosphere_binding_tests)
 
     rs_add_test_group(asset_gltf gltf_importer)
 

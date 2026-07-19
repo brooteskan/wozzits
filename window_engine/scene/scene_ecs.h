@@ -64,6 +64,11 @@ namespace wz::scene
         Light,
         AmbientLighting,
         HDRIEnvironment,
+        // The frame's global fog. Scene-level environment state like
+        // AmbientLighting/HDRIEnvironment, but frame-global rather than
+        // per-node: its runtime projection is the single view-frequency
+        // constant block, not anything the node itself draws.
+        Atmosphere,
         SkyVisual,
         SkySurface,
         InputReceiver,
@@ -115,6 +120,7 @@ namespace wz::scene
         case SceneAuthoredComponentKind::Light:
         case SceneAuthoredComponentKind::AmbientLighting:
         case SceneAuthoredComponentKind::HDRIEnvironment:
+        case SceneAuthoredComponentKind::Atmosphere:
         case SceneAuthoredComponentKind::SkyVisual:
         case SceneAuthoredComponentKind::SkySurface:
         case SceneAuthoredComponentKind::AuxiliaryVisual:
@@ -235,6 +241,7 @@ namespace wz::scene
         uint32_t lights = 0;
         uint32_t ambient_lighting = 0;
         uint32_t hdri_environments = 0;
+        uint32_t atmospheres = 0;
         uint32_t sky_visuals = 0;
         uint32_t sky_surfaces = 0;
         uint32_t input_receivers = 0;
@@ -269,6 +276,7 @@ namespace wz::scene
         uint32_t lights = 0;
         uint32_t ambient_lighting = 0;
         uint32_t hdri_environments = 0;
+        uint32_t atmospheres = 0;
         uint32_t sky_draws = 0;
         uint32_t input_receivers = 0;
         uint32_t flying_camera_controllers = 0;

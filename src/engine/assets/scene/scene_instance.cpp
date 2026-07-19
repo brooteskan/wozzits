@@ -434,6 +434,8 @@ namespace wz::engine::assets
             .ambient_lighting = count_ambient_lighting_records(
                 instance.lights),
             .hdri_environments = instance.hdri_environments,
+            .atmospheres = static_cast<uint32_t>(
+                instance.atmospheres.size()),
             .sky_draws = static_cast<uint32_t>(instance.sky_draws.size()),
             .input_receivers = static_cast<uint32_t>(
                 instance.input_receivers.size()),
@@ -787,6 +789,17 @@ namespace wz::engine::assets
                         .is_trigger = collision.is_trigger,
                         .enabled = collision.enabled,
                         .constrain_movement = collision.constrain_movement,
+                    },
+                });
+            }
+
+            if (node.atmosphere) {
+                const auto& atmosphere = *node.atmosphere;
+                inst.atmospheres.push_back({
+                    .node = h,
+                    .component = AtmosphereComponent{
+                        .atmosphere_asset = atmosphere.atmosphere_asset,
+                        .enabled = atmosphere.enabled,
                     },
                 });
             }

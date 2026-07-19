@@ -669,6 +669,14 @@ namespace wz::app
             wz::engine::assets::bridge_scene_collision_keys(
                 document_.nodes(), graph_draft_);
 
+            // Same for any atmosphere the spawned subtree carries. Frame-global
+            // state in a prefab is an authoring error render_scene warns about,
+            // but bridging it here keeps the spawn path a faithful bind: the
+            // component resolves however the node entered the document, so the
+            // error surfaces as a duplicate warning rather than as silence.
+            wz::engine::assets::bridge_scene_atmosphere_keys(
+                document_.nodes(), graph_draft_);
+
             // Compile the freshly registered spawn renderables. This commit()+
             // resolve_all() is the INCREMENTAL replacement for the old full-scene
             // trailing rematerialize_render_bindings(): commit finalizes only the new

@@ -84,6 +84,16 @@ namespace wz::engine::assets
         bool constrain_movement = false;
     };
 
+    // The frame's global fog, as the runtime sees it. Carries only the resolved
+    // key + the switch: the AtmosphereData itself lives in the asset library's
+    // AtmosphereTable, and the renderer's caller resolves it there each frame, so
+    // an edited Atmosphere asset takes effect without rebuilding the scene.
+    struct AtmosphereComponent
+    {
+        wz::asset::AssetKey atmosphere_asset{};
+        bool enabled = true;
+    };
+
     struct AudioListenerComponent
     {
         bool active = true;
@@ -455,6 +465,10 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<GroundBoundaryComponent>> ground_boundaries;
         std::vector<SceneComponentRecord<CollisionComponent>> collisions;
         std::vector<SceneComponentRecord<TerrainComponent>> terrains;
+        // Frame-global, so authoring more than one is an error rather than a
+        // blend; kept as a table anyway (not a scalar) so the duplicate is
+        // VISIBLE to whoever reports it instead of being silently dropped here.
+        std::vector<SceneComponentRecord<AtmosphereComponent>> atmospheres;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<AudioSourceComponent>> audio_sources;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;
