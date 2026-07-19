@@ -557,6 +557,45 @@ TEST(ProjectSceneSnapshot, SurfacesMotionFilterComponentAndFieldsFromNodes)
     EXPECT_FLOAT_EQ(node.motion_filter->terrain_floor_offset, 1.5f);
 }
 
+// A camera on a grafted / scenelet-round-trip node must surface the same way as
+// its sibling components: the removable `components` entry AND node.camera field
+// values. The editor reveals its Camera section on node.camera presence, so a
+// marker-only projection left a spawned tank's camera node with no Camera section
+// at all (the "camera component not showing" report). Camera was the lone
+// optional component whose value struct this path skipped.
+TEST(ProjectSceneSnapshot, SurfacesCameraComponentAndFieldsFromNodes)
+{
+    wz::engine::assets::SceneNodeAsset cam;
+    cam.id = "camera";
+    wz::engine::assets::SceneCameraAsset c;
+    c.fov_y = 1.2f;
+    c.near_plane = 0.25f;
+    c.far_plane = 750.0f;
+    c.aspect = 1.5f;
+    cam.camera = c;
+
+    const wz::engine::editor::SceneSnapshot snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes({ cam });
+
+    ASSERT_EQ(snapshot.roots.size(), 1u);
+    const auto& node = snapshot.roots[0];
+
+    // Present as a removable component (matches read_node's list).
+    const bool listed = std::any_of(
+        node.components.begin(), node.components.end(),
+        [](const auto& entry) { return entry.kind == "camera"; });
+    EXPECT_TRUE(listed);
+
+    // And the field values are surfaced -- the section's actual gate.
+    ASSERT_TRUE(node.camera.has_value());
+    ASSERT_TRUE(node.camera->fov_y);
+    EXPECT_DOUBLE_EQ(*node.camera->fov_y, static_cast<double>(1.2f));
+    ASSERT_TRUE(node.camera->far_plane);
+    EXPECT_DOUBLE_EQ(*node.camera->far_plane, 750.0);
+    // With the values present the node resolves to a camera kind, like the JSON path.
+    EXPECT_EQ(node.kind, "camera");
+}
+
 // issue #213: an empty grafted set yields a valid-but-empty snapshot (no roots),
 // which the editor treats as "nothing to merge" — never a crash or a fallback to
 // "everything is a root".

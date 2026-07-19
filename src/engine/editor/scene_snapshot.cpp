@@ -773,10 +773,13 @@ namespace wz::engine::editor
         }
 
         // Build a flat snapshot node from a live SceneNodeAsset (issue #213): the
-        // lean projection of a runtime-grafted node — id/name/parent/visible/local
-        // transform + renderable presence. Grafted nodes are not authored/editable
-        // here, so camera/components/behaviors/scene_source are intentionally not
-        // surfaced.
+        // projection of a runtime-grafted node — id/name/parent/visible/local
+        // transform + renderable presence. It must mirror read_node's authored
+        // components read-back (camera, collision, motion, motion filter, audio
+        // source, behaviors, render-binding refs) so a scenelet-round-trip / spawned
+        // node reveals + restores the same inspector sections the JSON path does;
+        // each removable component appears in `components` (the section's gate) AND
+        // carries its field values. Only derived/non-authorable state is omitted.
         FlatSceneSnapshotNode flat_node_from_asset(
             const wz::engine::assets::SceneNodeAsset& source)
         {
@@ -927,6 +930,18 @@ namespace wz::engine::editor
             // Motion/Collision/Motion Filter/Audio section and re-adding the
             // component overwrote the still-present saved fields with defaults.
             if (source.camera) {
+                // Surface the camera field VALUES, not just the marker: the editor
+                // reveals its Camera section on node.camera presence (HasCameraComponent
+                // gates on node.Camera != null), so a marker alone left a grafted /
+                // scenelet-round-trip camera node with no Camera section at all. Every
+                // sibling component above copies its value struct; camera was the lone
+                // omission -- mirror read_node, which fills node.camera.
+                node.camera = SceneSnapshotCamera{
+                    .fov_y = source.camera->fov_y,
+                    .near_plane = source.camera->near_plane,
+                    .far_plane = source.camera->far_plane,
+                    .aspect = source.camera->aspect,
+                };
                 node.components.push_back(SceneSnapshotComponent{
                     .kind = "camera", .display_name = "Camera" });
             }
