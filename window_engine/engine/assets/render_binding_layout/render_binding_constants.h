@@ -48,6 +48,45 @@ namespace wz::engine::assets
         return 0u;
     }
 
+    // Head of the VIEW-frequency root-constant block (register space 0).
+    //
+    // Everything above describes what one DRAW needs. This describes what the
+    // FRAME needs -- state that is a property of the world and the observer
+    // rather than of any renderable, so every program should see the same
+    // values and none should carry its own copy.
+    //
+    // It exists because the alternative is worse. Fog needs the camera
+    // position, and today each recipe carries the camera inside its own head at
+    // its own offset (snap_params.xy for camera-snapped terrain,
+    // camera_and_diameter for splat clouds), so a shared helper would have to
+    // know which head it was compiled against. Hoisting the observer to its own
+    // frequency is what makes a helper genuinely uniform -- and it is the same
+    // place scene lighting belongs, which the clipmap pixel shader currently
+    // hardcodes for want of anywhere to put it.
+    //
+    // OPTIONAL: a layout that declares None emits no space-0 registers and its
+    // derived SRG is byte-identical to one authored before this existed.
+    enum class RenderBindingViewHead : uint8_t
+    {
+        None,
+        // Observer + atmosphere. 12 dwords:
+        //   c0  float4  camera_world_position.xyz, unused
+        //   c1  float4  fog_color.rgb, fog_density
+        //   c2  float4  fog_start_distance, fog_height_falloff, enabled, unused
+        // Filled once per frame from the camera and the Atmosphere asset.
+        CameraFog,
+    };
+
+    [[nodiscard]] constexpr uint32_t render_binding_view_head_dwords(
+        RenderBindingViewHead head) noexcept
+    {
+        switch (head) {
+        case RenderBindingViewHead::None:      return 0u;
+        case RenderBindingViewHead::CameraFog: return 12u;
+        }
+        return 0u;
+    }
+
     enum class RenderBindingConstantType : uint8_t
     {
         Float,

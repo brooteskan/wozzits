@@ -104,6 +104,28 @@ namespace wz::engine::assets
             }
         }
 
+        if (!layout.has_view_constants()) {
+            // Same contradiction the object block rejects: a head with no
+            // semantic would silently vanish from the derived SRG.
+            if (layout.view_head != RenderBindingViewHead::None) {
+                error = "view head declared without a view_constants_semantic";
+                return false;
+            }
+        }
+        else if (layout.view_head == RenderBindingViewHead::None) {
+            // The reverse is just as bad -- a named block of zero dwords would
+            // emit an empty cbuffer and a root parameter nothing ever fills.
+            error = "view_constants_semantic declared with no view head";
+            return false;
+        }
+        else if (layout.view_constants_semantic == layout.constants_semantic) {
+            // Two cbuffers of the same name in one shader will not compile, and
+            // the collision is silent until the program is built.
+            error = "view and object constants share a semantic name: "
+                + layout.view_constants_semantic;
+            return false;
+        }
+
         if (layout.bindings.size() > kMaxRenderBindingLayoutBindings) {
             error = "too many binding rows";
             return false;
@@ -120,6 +142,21 @@ namespace wz::engine::assets
                 .register_space = kRenderBindingLayoutRegisterSpace,
                 .value_count = layout.total_constants_dwords(),
                 .semantic = layout.constants_semantic,
+            });
+        }
+
+        // Appended AFTER the object block, so an existing layout's derived rows
+        // keep their exact positions and a layout with no view block produces
+        // byte-identical output to before this existed. The rhi bridge groups
+        // by register_space rather than by order, so nothing downstream cares
+        // which came first.
+        if (layout.has_view_constants()) {
+            out.root_constants.push_back(RootConstantBinding{
+                .visibility = layout.view_constants_visibility,
+                .shader_register = 0,
+                .register_space = kRenderBindingLayoutViewRegisterSpace,
+                .value_count = layout.view_constants_dwords(),
+                .semantic = layout.view_constants_semantic,
             });
         }
 

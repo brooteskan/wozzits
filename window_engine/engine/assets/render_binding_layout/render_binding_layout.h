@@ -29,6 +29,11 @@ namespace wz::engine::assets
     // matching presets 1–4 (the space RhiSceneRenderer binds per draw).
     inline constexpr uint32_t kRenderBindingLayoutRegisterSpace = 2u;
 
+    // View-frequency register space. The slot convention is view=0, material=1,
+    // object=2, and the rhi bridge derives one SRG per register space, so rows
+    // stamped here become a binding_slot 0 group with no bridge change.
+    inline constexpr uint32_t kRenderBindingLayoutViewRegisterSpace = 0u;
+
     // RenderBindingConstantsHead / RenderBindingConstantType /
     // RenderBindingConstantField moved to render_binding_constants.h (a leaf
     // header) so render_program.h and renderable.h can carry the constants
@@ -67,6 +72,18 @@ namespace wz::engine::assets
         uint32_t constants_dwords = 0;
         std::vector<RenderBindingConstantField> constant_fields;
 
+        // View-frequency block (register space 0) — frame state every program
+        // sees identically: the observer, and the atmosphere it looks through.
+        // Present iff view_constants_semantic is non-empty.
+        //
+        // Head-only by design, unlike the object block above. The object tail
+        // exists so a recipe can carry per-INSTANCE parameters; view state has
+        // no per-instance variation by definition, so an authored tail here
+        // would only be a way to disagree with what the renderer fills.
+        std::string view_constants_semantic;
+        ShaderVisibility view_constants_visibility = ShaderVisibility::All;
+        RenderBindingViewHead view_head = RenderBindingViewHead::None;
+
         // SRV rows; registers derive from row order (t0, t1, …).
         std::vector<RenderBindingRow> bindings;
         // Static-sampler rows; registers derive from row order (s0, s1).
@@ -75,6 +92,16 @@ namespace wz::engine::assets
         [[nodiscard]] bool has_constants() const noexcept
         {
             return !constants_semantic.empty();
+        }
+
+        [[nodiscard]] bool has_view_constants() const noexcept
+        {
+            return !view_constants_semantic.empty();
+        }
+
+        [[nodiscard]] uint32_t view_constants_dwords() const noexcept
+        {
+            return render_binding_view_head_dwords(view_head);
         }
 
         [[nodiscard]] uint32_t tail_dwords() const noexcept;

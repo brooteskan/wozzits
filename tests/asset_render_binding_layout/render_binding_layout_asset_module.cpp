@@ -538,3 +538,119 @@ TEST(RenderBindingPrelude, CameraSnappedTerrainHeadEmitsNamedTerrainMembers)
             "Texture2D<float4> scalar_field_texture : register(t2, space2);"),
         std::string::npos);
 }
+
+// ── View-frequency block (register space 0) ──────────────────────────────────
+// Frame state every program sees identically -- the observer, and the
+// atmosphere it looks through -- as opposed to the object block, which
+// describes one draw.
+
+// The safety property. This touches the derivation every authored program goes
+// through, so a layout that declares no view block must produce exactly the
+// rows it produced before the block existed: one root-constant binding, in the
+// object space, and nothing at space 0.
+TEST(RenderBindingLayout, LayoutWithoutViewBlockIsUnchanged)
+{
+    using namespace wz::engine::assets;
+
+    const RenderBindingLayoutData layout = clipmap_layout();
+    ASSERT_FALSE(layout.has_view_constants());
+
+    RenderBindingLayoutSrg srg{};
+    std::string error;
+    ASSERT_TRUE(build_render_binding_layout_srg(layout, srg, error)) << error;
+
+    ASSERT_EQ(srg.root_constants.size(), 1u);
+    EXPECT_EQ(srg.root_constants[0].register_space,
+              kRenderBindingLayoutRegisterSpace);
+    for (const auto& binding : srg.descriptor_bindings) {
+        EXPECT_EQ(binding.register_space, kRenderBindingLayoutRegisterSpace);
+    }
+    for (const auto& sampler : srg.static_samplers) {
+        EXPECT_EQ(sampler.register_space, kRenderBindingLayoutRegisterSpace);
+    }
+}
+
+// With one declared, the derivation gains a SECOND root-constant binding at
+// space 0. The rhi bridge groups by register space, so this is what becomes a
+// binding_slot 0 group -- no bridge change needed for that to happen.
+TEST(RenderBindingLayout, ViewBlockDerivesRootConstantsAtSpaceZero)
+{
+    using namespace wz::engine::assets;
+
+    RenderBindingLayoutData layout = clipmap_layout();
+    layout.view_constants_semantic = "wz_view";
+    layout.view_head = RenderBindingViewHead::CameraFog;
+
+    RenderBindingLayoutSrg srg{};
+    std::string error;
+    ASSERT_TRUE(build_render_binding_layout_srg(layout, srg, error)) << error;
+
+    ASSERT_EQ(srg.root_constants.size(), 2u);
+
+    const auto* object = &srg.root_constants[0];
+    const auto* view = &srg.root_constants[1];
+    if (object->register_space == kRenderBindingLayoutViewRegisterSpace) {
+        std::swap(object, view);
+    }
+
+    EXPECT_EQ(object->register_space, kRenderBindingLayoutRegisterSpace);
+    EXPECT_EQ(object->semantic, "clipmap");
+
+    EXPECT_EQ(view->register_space, kRenderBindingLayoutViewRegisterSpace);
+    EXPECT_EQ(view->semantic, "wz_view");
+    // 12 dwords: camera_world_position, fog colour + density, fog params.
+    EXPECT_EQ(view->value_count, 12u);
+    EXPECT_EQ(view->shader_register, 0u);
+
+    // Both blocks sit at b0 in their OWN space, which is the whole point of
+    // separating them by frequency.
+    EXPECT_EQ(object->shader_register, view->shader_register);
+    EXPECT_NE(object->register_space, view->register_space);
+}
+
+// A head with no semantic would silently vanish from the derived SRG -- the
+// same contradiction the object block already rejects.
+TEST(RenderBindingLayout, SrgRejectsViewHeadWithoutSemantic)
+{
+    using namespace wz::engine::assets;
+
+    RenderBindingLayoutData layout = clipmap_layout();
+    layout.view_head = RenderBindingViewHead::CameraFog;
+
+    RenderBindingLayoutSrg srg{};
+    std::string error;
+    EXPECT_FALSE(build_render_binding_layout_srg(layout, srg, error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_FALSE(layout.valid());
+}
+
+// And the reverse: a named block of zero dwords would emit an empty cbuffer
+// and a root parameter nothing ever fills.
+TEST(RenderBindingLayout, SrgRejectsViewSemanticWithoutHead)
+{
+    using namespace wz::engine::assets;
+
+    RenderBindingLayoutData layout = clipmap_layout();
+    layout.view_constants_semantic = "wz_view";
+
+    RenderBindingLayoutSrg srg{};
+    std::string error;
+    EXPECT_FALSE(build_render_binding_layout_srg(layout, srg, error));
+    EXPECT_FALSE(layout.valid());
+}
+
+// Two cbuffers of the same name will not compile, and the collision is silent
+// until the program is built -- much later, and much harder to read.
+TEST(RenderBindingLayout, SrgRejectsViewAndObjectSharingASemanticName)
+{
+    using namespace wz::engine::assets;
+
+    RenderBindingLayoutData layout = clipmap_layout();
+    layout.view_constants_semantic = layout.constants_semantic;
+    layout.view_head = RenderBindingViewHead::CameraFog;
+
+    RenderBindingLayoutSrg srg{};
+    std::string error;
+    EXPECT_FALSE(build_render_binding_layout_srg(layout, srg, error));
+    EXPECT_NE(error.find("share a semantic"), std::string::npos) << error;
+}
