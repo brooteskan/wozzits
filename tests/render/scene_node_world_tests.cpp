@@ -1,16 +1,24 @@
 // tests/render/scene_node_world_tests.cpp
 //
-// Unit coverage for compute_scene_node_world_transforms (the RHI render path's
-// hierarchical transform composition). Pure CPU: no device. Verifies children
-// inherit parent translation + scale, the result is independent of node order,
-// chains compose fully, and dangling / cyclic parents resolve safely.
+// Unit coverage for the RHI render path's device-free helpers. Pure CPU: no
+// device, so these always run rather than skipping on a machine without a GPU.
+//
+//   * compute_scene_node_world_transforms / _effective_visibility (the
+//     hierarchical transform + visibility composition): children inherit
+//     parent translation + scale, the result is independent of node order,
+//     chains compose fully, and dangling / cyclic parents resolve safely.
+//   * make_view_constants (the VIEW-frequency block): its byte layout matches
+//     the WzViewConstants struct the binding prelude emits, and it packs the
+//     observer + the frame's atmosphere into it.
 
 #include <engine/rendering/rhi_scene_renderer.h>
 
+#include <engine/assets/atmosphere/atmosphere.h>
 #include <engine/assets/scene/scene_asset_data.h>
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
@@ -197,4 +205,108 @@ TEST(SceneNodeVisibility, ParentCycleTerminates)
     nodes[0].visible = false;
     const auto vis = er::compute_scene_node_effective_visibility(nodes);
     ASSERT_EQ(vis.size(), 2u);  // must not hang
+}
+
+// ─── View-frequency constants ───────────────────────────────────────────────
+//
+// The shader side of this contract is generated text, not code anything here
+// can call, so the two halves can only be held together by agreeing on a byte
+// layout. These pin the CPU half against what render_binding_layout.cpp emits
+// for RenderBindingViewHead::CameraFog:
+//
+//     struct WzViewConstants
+//     {
+//         float4 camera;      // xyz = camera world position
+//         float4 fog_color;   // rgb = colour, w = density
+//         float4 fog_params;  // x = start, y = height falloff, z = enabled
+//     };
+//
+// A drift here is invisible until a shader silently reads the wrong dial.
+
+TEST(ViewConstants, LayoutMatchesTheGeneratedHlslStruct)
+{
+    // 12 dwords, three float4s, no padding between them: HLSL 16-byte-aligns
+    // each float4 and so does this, which is why the tight C++ struct and the
+    // StructuredBuffer element agree without any packing gymnastics.
+    EXPECT_EQ(sizeof(er::ViewConstants), 48u);
+    EXPECT_EQ(offsetof(er::ViewConstants, camera), 0u);
+    EXPECT_EQ(offsetof(er::ViewConstants, fog_color), 16u);
+    EXPECT_EQ(offsetof(er::ViewConstants, fog_params), 32u);
+    EXPECT_EQ(sizeof(er::ViewConstants::camera), 16u);
+    EXPECT_EQ(sizeof(er::ViewConstants::fog_color), 16u);
+    EXPECT_EQ(sizeof(er::ViewConstants::fog_params), 16u);
+}
+
+TEST(ViewConstants, NullAtmosphereDisablesFogButStillCarriesTheCamera)
+{
+    const wz::math::Vec3 camera{ 3.0f, -4.0f, 5.0f };
+    const er::ViewConstants v = er::make_view_constants(camera, nullptr);
+
+    // The camera is VIEW state, not fog state: a program reading the observer
+    // must get it whether or not an atmosphere was authored.
+    EXPECT_FLOAT_EQ(v.camera[0], 3.0f);
+    EXPECT_FLOAT_EQ(v.camera[1], -4.0f);
+    EXPECT_FLOAT_EQ(v.camera[2], 5.0f);
+    EXPECT_FLOAT_EQ(v.camera[3], 0.0f);   // unused
+
+    // fog_params.z is the flag wz_fog_from_view tests before doing anything.
+    // Off, not "on with zero density" -- the helper returns early.
+    EXPECT_FLOAT_EQ(v.fog_params[2], 0.0f);
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_FLOAT_EQ(v.fog_color[i], 0.0f) << "fog_color[" << i << "]";
+    }
+    EXPECT_FLOAT_EQ(v.fog_params[0], 0.0f);
+    EXPECT_FLOAT_EQ(v.fog_params[1], 0.0f);
+    EXPECT_FLOAT_EQ(v.fog_params[3], 0.0f);
+}
+
+TEST(ViewConstants, PopulatedAtmospherePacksEveryDialAtItsOwnSlot)
+{
+    ea::AtmosphereData atmosphere{};
+    atmosphere.fog_color[0] = 0.1f;
+    atmosphere.fog_color[1] = 0.2f;
+    atmosphere.fog_color[2] = 0.3f;
+    atmosphere.fog_density = 0.04f;
+    atmosphere.fog_start_distance = 250.0f;
+    atmosphere.fog_height_falloff = 0.75f;
+    atmosphere.fog_enabled = true;
+    ASSERT_TRUE(atmosphere.valid());
+
+    const wz::math::Vec3 camera{ -11.0f, 22.0f, -33.0f };
+    const er::ViewConstants v = er::make_view_constants(camera, &atmosphere);
+
+    EXPECT_FLOAT_EQ(v.camera[0], -11.0f);
+    EXPECT_FLOAT_EQ(v.camera[1], 22.0f);
+    EXPECT_FLOAT_EQ(v.camera[2], -33.0f);
+
+    // Every value distinct, so a transposed pair fails rather than passing by
+    // coincidence: colour in rgb, DENSITY in w (not a fourth colour channel).
+    EXPECT_FLOAT_EQ(v.fog_color[0], 0.1f);
+    EXPECT_FLOAT_EQ(v.fog_color[1], 0.2f);
+    EXPECT_FLOAT_EQ(v.fog_color[2], 0.3f);
+    EXPECT_FLOAT_EQ(v.fog_color[3], 0.04f);
+
+    EXPECT_FLOAT_EQ(v.fog_params[0], 250.0f);   // start distance
+    EXPECT_FLOAT_EQ(v.fog_params[1], 0.75f);    // height falloff
+    EXPECT_FLOAT_EQ(v.fog_params[2], 1.0f);     // enabled
+}
+
+TEST(ViewConstants, AuthoredButDisabledAtmosphereKeepsItsDialsAndStaysOff)
+{
+    // Authoring the dials with the fog switched off is the documented way to
+    // stage an atmosphere (see AtmosphereData::valid). The values must survive
+    // the pack -- only the flag says whether the shader uses them.
+    ea::AtmosphereData atmosphere{};
+    atmosphere.fog_color[0] = 0.9f;
+    atmosphere.fog_density = 0.5f;
+    atmosphere.fog_start_distance = 10.0f;
+    atmosphere.fog_enabled = false;
+
+    const er::ViewConstants v =
+        er::make_view_constants(wz::math::Vec3{ 0.0f, 0.0f, 0.0f }, &atmosphere);
+
+    EXPECT_FLOAT_EQ(v.fog_params[2], 0.0f);   // off
+    EXPECT_FLOAT_EQ(v.fog_color[0], 0.9f);    // but not erased
+    EXPECT_FLOAT_EQ(v.fog_color[3], 0.5f);
+    EXPECT_FLOAT_EQ(v.fog_params[0], 10.0f);
 }

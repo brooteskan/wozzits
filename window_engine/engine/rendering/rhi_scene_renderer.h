@@ -42,12 +42,63 @@
 namespace wz::engine::assets
 {
     class EngineAssetLibrary;
+    struct AtmosphereData;
     struct SceneNodeAsset;
     struct SceneRenderableConstantOverride;
 }
 
 namespace wz::engine::rendering
 {
+    // ─── ViewConstants ──────────────────────────────────────────────────────
+    //
+    // The VIEW-frequency block: the observer, and the atmosphere it looks
+    // through. Filled ONCE per frame and read by every program in that frame,
+    // at a frequency no renderable owns — which is the whole point of the
+    // space-0 group (a8d3450). Fog is its first tenant; scene lighting is the
+    // obvious next one.
+    //
+    // Packed BYTE-FOR-BYTE to match the WzViewConstants struct the binding
+    // prelude emits for RenderBindingViewHead::CameraFog (render_binding_
+    // layout.cpp), which a shader reads as view_constants[0] off a one-element
+    // StructuredBuffer at register(t0, space0). A buffer rather than a cbuffer
+    // because the DX12 pipeline realizes exactly ONE root-constant block per
+    // program and the object block already claims it (3e25b63, wozzits-rhi#7).
+    //
+    //   offset  field
+    //   ------  ------------------------------------------------------------
+    //      0     camera       (xyz = camera world position, w unused)
+    //     16     fog_color    (rgb = colour, w = density)
+    //     32     fog_params   (x = fog start distance, y = height falloff,
+    //                           z = enabled (1 or 0), w unused)
+    //   ------
+    //    48 bytes = 12 dwords.
+    //
+    // Declared here rather than beside the per-draw constant structs in
+    // rhi_scene_renderer.cpp because the packing is unit-tested: the ONLY
+    // thing holding this and the generated HLSL together is that the two
+    // agree on these offsets, and nothing else checks it.
+    struct ViewConstants
+    {
+        float camera[4];
+        float fog_color[4];
+        float fog_params[4];
+    };
+    static_assert(sizeof(ViewConstants) == 48,
+        "view constants must be 48 bytes (12 dwords) to match the "
+        "RenderBindingViewHead::CameraFog SRG row and the HLSL WzViewConstants "
+        "struct the binding prelude emits");
+
+    // Build the frame's view constants. The camera goes in REGARDLESS of the
+    // atmosphere — it is view state, not fog state, and hoisting the observer
+    // to its own frequency is what makes a shared fog helper possible at all.
+    // A null atmosphere means "no fog": zeroed fog terms with fog_params.z
+    // (enabled) 0, which is exactly the value wz_fog_from_view tests before it
+    // does anything, so a frame with no authored atmosphere returns the shaded
+    // colour untouched.
+    [[nodiscard]] ViewConstants make_view_constants(
+        const wz::math::Vec3& camera_world_pos,
+        const wz::engine::assets::AtmosphereData* atmosphere) noexcept;
+
     class RhiSceneRenderer
     {
     public:
@@ -79,12 +130,21 @@ namespace wz::engine::rendering
         // to composing the transforms itself via
         // compute_scene_node_world_transforms(nodes) — the pre-#221 behavior the
         // renderer-unit tests rely on.
+        //
+        // atmosphere is the frame's global fog (the resolved Atmosphere asset,
+        // 6c51cf5). It reaches the shaders through the VIEW-frequency group at
+        // register space 0, never through a per-draw constant, because fog
+        // belongs to the world and the observer rather than to any one thing
+        // being drawn — every program must see the same values or the scene
+        // disagrees with itself. nullptr means "no fog"; the camera is packed
+        // into the view constants either way.
         bool render_scene(
             std::span<const wz::engine::assets::SceneNodeAsset> nodes,
             wz::engine::assets::EngineAssetLibrary& assets,
             const wz::math::Mat4& view_projection,
             const wz::math::Vec3& camera_world_pos,
-            std::span<const wz::math::Mat4> world_transforms = {});
+            std::span<const wz::math::Mat4> world_transforms = {},
+            const wz::engine::assets::AtmosphereData* atmosphere = nullptr);
 
         // Invalidate every realized cache after a wholesale asset-graph swap.
         // The caches (realized programs/renderables/registered shaders) are
@@ -152,6 +212,23 @@ namespace wz::engine::rendering
             wz::rhi::GpuResourceHandle  indices{};
             wz::rhi::GpuResourceHandle  normals{};   // empty unless a lit layout pulls them
             wz::rhi::ShaderResourceGroup object_srg{};
+            // The VIEW-frequency group (register space 0), pointing at the
+            // renderer's single view-constants buffer. Built ONLY when this
+            // renderable's realized program has a slot-0 layout that declares
+            // the view_constants row — i.e. when its binding layout opted into
+            // a view head. has_view_srg gates whether the draw packet carries
+            // it; false is the normal case (nothing authored declares a view
+            // head), and the packet is then byte-identical to what it was
+            // before this existed.
+            //
+            // Per-renderable rather than one shared group because the SRG is
+            // built against a SPECIFIC layout and validates against its hash;
+            // two programs may declare different slot-0 layouts. They all bind
+            // the same buffer. Its address must be stable — DrawPacket stores
+            // SRG POINTERS — which holds because RealizedRenderable lives in a
+            // node-based unordered_map, exactly as object_srg relies on.
+            wz::rhi::ShaderResourceGroup view_srg{};
+            bool                        has_view_srg = false;
             wz::rhi::DrawPacket         packet{};
             // True only for the CPU-upload fallback path, where the renderer
             // acquired these pull buffers and must release them. Resident
@@ -257,6 +334,24 @@ namespace wz::engine::rendering
             const wz::math::Vec3& camera_world_pos,
             std::vector<uint8_t>& out);
 
+        // Find-or-create the renderer's single view-constants buffer, seeded
+        // with the current frame's values. Acquired LAZILY — on the first
+        // realize of a program that actually asks for view constants — so a
+        // renderer whose programs never do (every one of them today)
+        // allocates nothing and its resident_gpu_resource_count is unchanged.
+        // Null handle on failure; the caller fails the realize.
+        wz::rhi::GpuResourceHandle ensure_view_constants_buffer();
+
+        // Point `realized`'s view SRG at that buffer, against the program's
+        // slot-0 layout. Binds only where that layout declares the
+        // view_constants row; a null slot0_layout, or one without the row, is
+        // the NORMAL case and succeeds silently having bound nothing — unlike
+        // the slot-2 object group, whose absence is an error. Returns false
+        // only when a declared view block could not be satisfied.
+        bool bind_view_constants(
+            RealizedRenderable& realized,
+            const wz::rhi::ShaderResourceGroupLayout* slot0_layout);
+
         EngineGpuContext&           gpu_;
         wz::Logger&                 logger_;
         RhiContext                  ctx_;
@@ -290,6 +385,21 @@ namespace wz::engine::rendering
         // Monotonic render-call counter -- the only "clock" the renderer has.
         // Drives the star-field twinkle phase (#266) at a nominal 60 fps.
         uint64_t render_scene_calls_ = 0;
+
+        // This frame's view constants, packed at the top of render_scene. Held
+        // as state (rather than passed down) because ensure_renderable may
+        // acquire the buffer MID-frame, and it must be seeded with the same
+        // values the frame's refresh already wrote — otherwise the first draw
+        // of a newly realized renderable reads whatever the allocation held.
+        ViewConstants view_constants_{};
+
+        // The one small buffer behind every view SRG, refreshed in place each
+        // frame (the #145 door: acquire WriteOnce, then update). Renderer-owned
+        // and graph-INDEPENDENT, so it deliberately survives on_graph_changed:
+        // it is keyed by no AssetKey and nothing about a graph swap invalidates
+        // the observer. The handle stays stable, so the recorder's cached
+        // descriptor tables stay valid across the refresh.
+        wz::rhi::GpuResourceHandle view_constants_buffer_{};
     };
 
     // Compose each scene node's world transform from its local TRS and its

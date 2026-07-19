@@ -6,6 +6,7 @@
 
 #include <engine/rendering/rhi_scene_renderer.h>
 
+#include <engine/assets/atmosphere/atmosphere.h>
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/mesh/mesh.h>
 #include <engine/assets/rhi_asset_identity.h>
@@ -677,6 +678,44 @@ namespace wz::engine::rendering
         }
     }
 
+    // The VIEW-frequency block (the struct + its offset table live in
+    // rhi_scene_renderer.h, which is where the byte layout is pinned). Unlike
+    // every packer above it this is per-FRAME, not per-draw, and it goes to the
+    // shader through a one-element StructuredBuffer at register space 0 rather
+    // than through root constants.
+    ViewConstants make_view_constants(
+        const wz::math::Vec3& camera_world_pos,
+        const ea::AtmosphereData* atmosphere) noexcept
+    {
+        ViewConstants out{};
+
+        // The observer, unconditionally. This is the half of the block that is
+        // not fog: a program reading the camera from here must get it whether
+        // or not anybody authored an atmosphere.
+        out.camera[0] = camera_world_pos.x;
+        out.camera[1] = camera_world_pos.y;
+        out.camera[2] = camera_world_pos.z;
+        out.camera[3] = 0.0f;   // unused; kept zero so the block is stable
+
+        if (!atmosphere) {
+            // No atmosphere authored for this frame. Zeros with enabled == 0 —
+            // NOT a zero-density fog that still evaluates. wz_fog_from_view
+            // returns early on this flag, so the shaded colour is untouched.
+            return out;
+        }
+
+        out.fog_color[0] = atmosphere->fog_color[0];
+        out.fog_color[1] = atmosphere->fog_color[1];
+        out.fog_color[2] = atmosphere->fog_color[2];
+        out.fog_color[3] = atmosphere->fog_density;
+
+        out.fog_params[0] = atmosphere->fog_start_distance;
+        out.fog_params[1] = atmosphere->fog_height_falloff;
+        out.fog_params[2] = atmosphere->fog_enabled ? 1.0f : 0.0f;
+        out.fog_params[3] = 0.0f;   // unused
+        return out;
+    }
+
     std::vector<wz::math::Mat4> compute_scene_node_world_transforms(
         std::span<const ea::SceneNodeAsset> nodes)
     {
@@ -946,6 +985,98 @@ namespace wz::engine::rendering
         return ok;
     }
 
+    wz::rhi::GpuResourceHandle RhiSceneRenderer::ensure_view_constants_buffer()
+    {
+        if (view_constants_buffer_.valid()) {
+            return view_constants_buffer_;
+        }
+
+        // A one-element structured buffer: stride == the struct, so the SRV the
+        // backend builds matches StructuredBuffer<WzViewConstants> and the
+        // shader's view_constants[0] resolves. WriteOnce (not WriteFrequent):
+        // that enum member has no backend implementation anywhere, and
+        // WriteOnce is what GpuResourceRegistry::update actually requires — it
+        // rejects only cpu_access == None. Anonymous identity (asset_id 0) on
+        // purpose: this belongs to the renderer, not to any asset, so there is
+        // no AssetKey to derive one from and nothing should find it by one.
+        const wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::buffer(
+            sizeof(ViewConstants),
+            static_cast<uint32_t>(sizeof(ViewConstants)),
+            wz::rhi::ResourceUsage_Sampled,
+            wz::rhi::ResourceCpuAccess::WriteOnce);
+
+        view_constants_buffer_ = gpu_.resources.acquire(desc);
+        if (!view_constants_buffer_.valid()) {
+            logger_.error(
+                "RhiSceneRenderer: view constants buffer acquire failed");
+            return {};
+        }
+
+        // Seed with the current frame's values. render_scene's per-frame
+        // refresh already ran by the time a realize gets here, but it skipped
+        // this buffer because it did not exist yet — without this the first
+        // draw binding it would read the raw allocation.
+        gpu_.resources.update(
+            view_constants_buffer_, &view_constants_, sizeof(view_constants_));
+        return view_constants_buffer_;
+    }
+
+    bool RhiSceneRenderer::bind_view_constants(
+        RealizedRenderable& realized,
+        const wz::rhi::ShaderResourceGroupLayout* slot0_layout)
+    {
+        realized.has_view_srg = false;
+
+        // Absent is the NORMAL case and not an error: no authored binding
+        // layout declares a view head today, so every existing program lands
+        // here and its packet gains nothing. Contrast the slot-2 lookup, which
+        // logs and fails — an object group really is mandatory.
+        if (!slot0_layout) {
+            return true;
+        }
+
+        const wz::rhi::Tag semantic = gpu_.descriptor_semantics.find(
+            ea::descriptor_semantic_name(ea::DescriptorSemantic::ViewConstants));
+
+        // A slot-0 group is NOT by itself proof of a view block. Register space
+        // 0 is also where the legacy BuiltinRenderProgram descs put their root
+        // constants and SRVs (fill_builtin_render_program_defaults —
+        // GaussianSplatPullDebug binds SplatCloud at t0 space0, MeshMaskStyle
+        // two SRVs there), so "has a space-0 group" and "wants view constants"
+        // are different questions. Those builtins carry nothing at space 2 and
+        // so already fail this renderer's mandatory object-SRG check upstream,
+        // but keying off the SEMANTIC costs one lookup and makes that an
+        // observation rather than a load-bearing assumption: a group that does
+        // not declare the row could never be satisfied by binding the view
+        // buffer, and would turn a working draw into a failed realize.
+        //
+        // Same shape as the wants_normals test in ensure_renderable: bind a
+        // resource only where the layout actually asks for it.
+        if (!semantic.valid()
+            || !wz::rhi::find_descriptor_binding_index(*slot0_layout, semantic))
+        {
+            return true;
+        }
+
+        const wz::rhi::GpuResourceHandle buffer = ensure_view_constants_buffer();
+        if (!buffer.valid()) {
+            logger_.error(
+                "RhiSceneRenderer: view constants unavailable for a program "
+                "that declares a view block");
+            return false;
+        }
+
+        realized.view_srg.reset(*slot0_layout);
+        if (!realized.view_srg.set(semantic, buffer).has_value()
+            || !realized.view_srg.satisfies(*slot0_layout))
+        {
+            logger_.error("RhiSceneRenderer: view SRG build failed");
+            return false;
+        }
+        realized.has_view_srg = true;
+        return true;
+    }
+
     const RhiSceneRenderer::RealizedProgram* RhiSceneRenderer::realize_program(
         ea::EngineAssetLibrary& assets, const wz::asset::AssetKey& program_key)
     {
@@ -1082,6 +1213,16 @@ namespace wz::engine::rendering
             failed_renderables_.insert(renderable_key);
             return nullptr;
         }
+        // The VIEW-frequency group, looked up exactly the same way but at the
+        // view register space (0). nullptr means the program's binding layout
+        // declares nothing there — the case for every program that exists —
+        // and is handled silently by bind_view_constants below, which also
+        // checks the group actually declares the view_constants row.
+        const wz::rhi::ShaderResourceGroupLayout* slot0_layout =
+            registered
+                ? wz::rhi::find_shader_resource_group_layout(
+                    registered->shader_resource_groups, 0)
+                : nullptr;
 
         // ── Gaussian-splat-cloud branch (#208) ──────────────────────────────
         // No pull mesh: bind the resident decoded splat StructuredBuffer (asset-
@@ -1129,6 +1270,11 @@ namespace wz::engine::rendering
                 failed_renderables_.insert(renderable_key);
                 return nullptr;
             }
+            if (!bind_view_constants(srealized, slot0_layout)) {
+                realized_renderables_.erase(sit);
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
 
             // Non-indexed quad draw: 6 verts per splat (two self-contained
             // triangles), all in one DrawInstanced(6 * splat_count, 1, 0, 0). The
@@ -1148,6 +1294,9 @@ namespace wz::engine::rendering
                     reinterpret_cast<const uint8_t*>(&initial_splat),
                     sizeof(initial_splat) })
                 .add_shader_resource_group(srealized.object_srg);
+            if (srealized.has_view_srg) {
+                builder.add_shader_resource_group(srealized.view_srg);
+            }
             if (!builder.add_draw_item(wz::rhi::DrawRequest{
                     forward_, srealized.program, nullptr,
                     wz::rhi::StreamBufferIndices{}, 0,
@@ -1211,6 +1360,11 @@ namespace wz::engine::rendering
                 failed_renderables_.insert(renderable_key);
                 return nullptr;
             }
+            if (!bind_view_constants(trealized, slot0_layout)) {
+                realized_renderables_.erase(tit);
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
 
             // 6 verts per star (two self-contained triangles), one non-indexed
             // draw of 6 * star_count. TriangleList program; the VS pulls each
@@ -1228,6 +1382,9 @@ namespace wz::engine::rendering
                     reinterpret_cast<const uint8_t*>(&initial_star),
                     sizeof(initial_star) })
                 .add_shader_resource_group(trealized.object_srg);
+            if (trealized.has_view_srg) {
+                builder.add_shader_resource_group(trealized.view_srg);
+            }
             if (!builder.add_draw_item(wz::rhi::DrawRequest{
                     forward_, trealized.program, nullptr,
                     wz::rhi::StreamBufferIndices{}, 0,
@@ -1499,6 +1656,16 @@ namespace wz::engine::rendering
             failed_renderables_.insert(renderable_key);
             return nullptr;
         }
+        if (!bind_view_constants(realized, slot0_layout)) {
+            if (realized.owns_buffers) {
+                release_unrealized_pull_buffers(
+                    gpu_.resources, realized.positions, realized.indices,
+                    realized.normals);
+            }
+            realized_renderables_.erase(it);
+            failed_renderables_.insert(renderable_key);
+            return nullptr;
+        }
 
         wz::rhi::GeometryView geometry;
         geometry.index_buffer = realized.indices;
@@ -1539,6 +1706,9 @@ namespace wz::engine::rendering
             builder.set_root_constants(initial_constants);
         }
         builder.add_shader_resource_group(realized.object_srg);
+        if (realized.has_view_srg) {
+            builder.add_shader_resource_group(realized.view_srg);
+        }
         if (!builder.add_draw_item(wz::rhi::DrawRequest{
                 forward_, realized.program, nullptr,
                 wz::rhi::StreamBufferIndices{}, 0,
@@ -1649,7 +1819,8 @@ namespace wz::engine::rendering
         ea::EngineAssetLibrary& assets,
         const wz::math::Mat4& view_projection,
         const wz::math::Vec3& camera_world_pos,
-        std::span<const wz::math::Mat4> world_transforms)
+        std::span<const wz::math::Mat4> world_transforms,
+        const ea::AtmosphereData* atmosphere)
     {
         ID3D12GraphicsCommandList* cmd =
             wz::gpu::dx12::internal::get_command_list(gpu_.device);
@@ -1658,6 +1829,25 @@ namespace wz::engine::rendering
         }
 
         ++render_scene_calls_;   // the renderer's only clock (star twinkle, #266)
+
+        // The frame's VIEW-frequency state: one pack, one upload, read by every
+        // program that declared a view block. Packed unconditionally (it is
+        // three float4s) so a mid-frame realize can seed a freshly acquired
+        // buffer with the same values; the UPLOAD is skipped while no program
+        // has asked for the buffer, which is every frame today.
+        view_constants_ = make_view_constants(camera_world_pos, atmosphere);
+        if (view_constants_buffer_.valid()) {
+            // Refresh in place: the handle and identity are stable, so the
+            // recorder's cached descriptor tables keep viewing the same
+            // resource and only the bytes change (the #145 per-frame door).
+            if (!gpu_.resources.update(
+                    view_constants_buffer_, &view_constants_,
+                    sizeof(view_constants_)))
+            {
+                logger_.error(
+                    "RhiSceneRenderer: view constants refresh failed");
+            }
+        }
 
         // Per-frame precise reclamation: drain any pending release whose last
         // touch the GPU has now passed, then tag this frame's timeline onto the

@@ -2684,9 +2684,13 @@ namespace wz::app
         // Mat4->TRS->Mat4 write-back into document_.nodes() is gone.
         const std::vector<wz::math::Mat4> world_transforms =
             scene_world_transforms();
+        // No atmosphere: resolving the scene-authored Atmosphere asset (6c51cf5)
+        // and handing it to the renderer is a later seam. nullptr means "no
+        // fog"; the camera still reaches the view constants.
         return renderer_.render_scene(
             document_.nodes(), *ctx_.assets, view_.active_view().view_projection,
-            view_.active_view().world_position, world_transforms);
+            view_.active_view().world_position, world_transforms,
+            /*atmosphere*/ nullptr);
     }
 
     void WozzitsApp_v1::set_prefer_scene_camera(bool prefer)
