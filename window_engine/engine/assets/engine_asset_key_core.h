@@ -102,6 +102,19 @@ namespace wz::engine::assets {
             return { v, 0 };
         }
 
+        // Reinterpret a float as its bit pattern, so a float dial can be folded
+        // into a key exactly rather than through a lossy numeric conversion.
+        //
+        // Lives here rather than in one key factory because every factory with
+        // float dials needs it, and two headers each defining their own `inline`
+        // copy is a redefinition error the moment one TU includes both.
+        [[nodiscard]] inline uint64_t float_bits(float value) noexcept {
+            uint32_t bits = 0;
+            static_assert(sizeof(float) == sizeof(uint32_t));
+            std::memcpy(&bits, &value, sizeof(bits));
+            return static_cast<uint64_t>(bits);
+        }
+
         // Fold one AssetKey's full content into a single Hash, for use as deps_hash.
         // All four component hashes are mixed so any upstream change propagates.
         [[nodiscard]] constexpr wz::asset::Hash key_to_dep_hash(

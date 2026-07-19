@@ -150,6 +150,23 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000203ull
     };
 
+    // Procedural TERRAIN scalar field recipe: fractal noise shaped into a
+    // plausible landscape, with a radial basin that flattens the middle.
+    //
+    // A separate schema from kScalarFieldProceduralSchema rather than a sixth
+    // entry in its generator enum: that recipe's whole dial set is
+    // frequency + amplitude, shared by every generator, and terrain needs eight
+    // dials that mean nothing to Checkerboard. Splitting keeps each recipe's
+    // dials honest and leaves the procedural key factory's identity untouched.
+    //
+    // Emits values normalised to exactly [0, 1], the same contract the Gaea .r32
+    // path arrives with, so a procedural field and a hand-authored one are
+    // interchangeable under one Placement with no re-tuning.
+    // Produces kAssetTypeScalarField output.
+    inline constexpr wz::asset::SchemaID kScalarFieldTerrainSchema{
+    0xF11E'CA55'E7'000204ull
+    };
+
     // Vector field recipe: interpret a raw float32 file dependency as
     // VectorFieldData. Values are interleaved by sample, then channel, then
     // component. Produces kAssetTypeVectorField output.

@@ -6,6 +6,7 @@
 #include <engine/assets/key_factories/scalar_field.h>
 #include <engine/assets/key_factories/scalar_field_gaea_r32.h>
 #include <engine/assets/key_factories/scalar_field_procedural.h>
+#include <engine/assets/key_factories/scalar_field_terrain.h>
 
 #include <vector>
 
@@ -112,6 +113,59 @@ namespace wz::engine::assets
 
         out.output = key;
         return out;
+    }
+
+    ScalarFieldAsset ScalarFieldAssetModule::create_terrain_scalar_field(
+        const TerrainScalarFieldDesc& desc)
+    {
+        // name is an identity input to the key factory, so an empty one would
+        // alias every other unnamed terrain that happened to share these dials.
+        if (desc.name.empty()) {
+            logger_.error("terrain scalar field requires a name");
+            return ScalarFieldAsset{};
+        }
+
+        const TerrainScalarFieldCompileDesc compile_desc{
+            .resolution    = desc.resolution,
+            .ridge_count   = desc.ridge_count,
+            .ridginess     = desc.ridginess,
+            .roughness     = desc.roughness,
+            .detail        = desc.detail,
+            .seed          = desc.seed,
+            .basin_radius  = desc.basin_radius,
+            .basin_falloff = desc.basin_falloff,
+            .basin_depth   = desc.basin_depth,
+            .format        = desc.format,
+            .domain_kind   = desc.domain_kind,
+        };
+
+        const wz::asset::AssetKey key = make_terrain_scalar_field_key(
+            desc.name,
+            compile_desc.resolution,
+            compile_desc.ridge_count,
+            compile_desc.ridginess,
+            compile_desc.roughness,
+            compile_desc.detail,
+            compile_desc.seed,
+            compile_desc.basin_radius,
+            compile_desc.basin_falloff,
+            compile_desc.basin_depth,
+            static_cast<uint8_t>(compile_desc.format),
+            static_cast<uint8_t>(compile_desc.domain_kind)
+        );
+
+        wz::asset::AssetNode node;
+        node.key     = key;
+        node.type    = kAssetTypeScalarField;
+        node.schema  = kScalarFieldTerrainSchema;
+        node.stage   = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta    = compile_desc;
+
+        if (!system_.register_asset(std::move(node)))
+            return ScalarFieldAsset{ .output = key };
+
+        return ScalarFieldAsset{ .output = key };
     }
 
     ScalarFieldAsset ScalarFieldAssetModule::create_scalar_field_from_gaea_r32(

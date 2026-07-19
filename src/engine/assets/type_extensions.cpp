@@ -443,6 +443,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kRenderBindingLayoutSchema, "Render binding layout");
             WZ_ADD_SCHEMA(kScalarFieldFromRawF32Schema, "Scalar field from raw F32");
             WZ_ADD_SCHEMA(kScalarFieldProceduralSchema, "Procedural scalar field");
+            WZ_ADD_SCHEMA(kScalarFieldTerrainSchema, "Procedural terrain field");
             WZ_ADD_SCHEMA(kScalarFieldFromGaeaR32Schema, "Scalar field from Gaea R32");
             WZ_ADD_SCHEMA(kVectorFieldFromRawF32Schema, "Vector field from raw F32");
             WZ_ADD_SCHEMA(kGaussianSplatFromPLYSchema, "Gaussian splat from PLY");

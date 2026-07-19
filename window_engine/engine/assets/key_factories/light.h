@@ -14,12 +14,9 @@ namespace wz::engine::assets
 {
     namespace detail
     {
-        [[nodiscard]] inline uint64_t float_bits(float value) noexcept
-        {
-            uint32_t bits = 0;
-            std::memcpy(&bits, &value, sizeof(bits));
-            return static_cast<uint64_t>(bits);
-        }
+        // float_bits now lives in engine_asset_key_core.h — every key factory
+        // with float dials needs it, and a second inline definition here breaks
+        // any TU that includes both this header and another factory's.
 
         [[nodiscard]] inline uint64_t mix_float3(
             float x,

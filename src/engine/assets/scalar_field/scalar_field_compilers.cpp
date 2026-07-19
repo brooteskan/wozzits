@@ -13,6 +13,7 @@
 #include <wozzits/rhi/gpu_resource.h>
 #include <wozzits/rhi/gpu_resource_registry.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -105,6 +106,155 @@ namespace wz::engine::assets::internal
                     desc.domain_kind,
                     kScalarFieldDomainOptions);
             return desc;
+        }
+
+        TerrainScalarFieldCompileDesc
+        terrain_scalar_field_desc_from_params(
+            const wz::asset::ParamBlock& params)
+        {
+            TerrainScalarFieldCompileDesc desc{};
+            desc.resolution =
+                params.get<uint32_t>("resolution", desc.resolution);
+            desc.ridge_count =
+                params.get<float>("ridge_count", desc.ridge_count);
+            desc.ridginess =
+                params.get<float>("ridginess", desc.ridginess);
+            desc.roughness =
+                params.get<float>("roughness", desc.roughness);
+            desc.detail = params.get<uint32_t>("detail", desc.detail);
+            desc.seed = params.get<uint32_t>("seed", desc.seed);
+            desc.basin_radius =
+                params.get<float>("basin_radius", desc.basin_radius);
+            desc.basin_falloff =
+                params.get<float>("basin_falloff", desc.basin_falloff);
+            desc.basin_depth =
+                params.get<float>("basin_depth", desc.basin_depth);
+            desc.domain_kind =
+                enum_param(
+                    params,
+                    "domain_kind",
+                    desc.domain_kind,
+                    kScalarFieldDomainOptions);
+            return desc;
+        }
+
+
+        // ─── Terrain noise ────────────────────────────────────────────────────
+        //
+        // Gradient (Perlin-style) noise with a hash-derived lattice, so the field
+        // is fully determined by (x, y, seed) with no permutation table to ship
+        // or to shuffle. Deterministic across runs and platforms: integer ops and
+        // float arithmetic only, no RNG state, no std::random.
+
+        // Murmur3 finaliser over the lattice coordinate and the seed.
+        [[nodiscard]] uint32_t terrain_hash2(
+            int32_t x, int32_t y, uint32_t seed) noexcept
+        {
+            uint32_t h = seed;
+            h ^= static_cast<uint32_t>(x) * 0x8DA6B343u;
+            h ^= static_cast<uint32_t>(y) * 0xD8163841u;
+            h ^= h >> 16; h *= 0x85EBCA6Bu;
+            h ^= h >> 13; h *= 0xC2B2AE35u;
+            h ^= h >> 16;
+            return h;
+        }
+
+        // Eight unit gradients. Perlin's improved-noise trick: a small fixed set
+        // beats random directions, and the 45-degree diagonals keep it from
+        // looking axis-aligned at the scales a silhouette is read at.
+        constexpr float kTerrainGradients[8][2] = {
+            {  1.0f,        0.0f       },
+            { -1.0f,        0.0f       },
+            {  0.0f,        1.0f       },
+            {  0.0f,       -1.0f       },
+            {  0.70710678f, 0.70710678f},
+            { -0.70710678f, 0.70710678f},
+            {  0.70710678f,-0.70710678f},
+            { -0.70710678f,-0.70710678f},
+        };
+
+        // One octave. Returns roughly [-1, 1]: raw 2D gradient noise peaks at
+        // +/-sqrt(2)/2, so the result is scaled by sqrt(2) to fill the range.
+        [[nodiscard]] float terrain_noise2(
+            float x, float y, uint32_t seed) noexcept
+        {
+            const float fx = std::floor(x);
+            const float fy = std::floor(y);
+            const auto  ix = static_cast<int32_t>(fx);
+            const auto  iy = static_cast<int32_t>(fy);
+            const float tx = x - fx;
+            const float ty = y - fy;
+
+            // Quintic fade: zero first AND second derivative at the lattice, so
+            // octaves stack without creasing along the grid lines.
+            const float u = tx * tx * tx * (tx * (tx * 6.0f - 15.0f) + 10.0f);
+            const float v = ty * ty * ty * (ty * (ty * 6.0f - 15.0f) + 10.0f);
+
+            const auto corner = [&](int32_t cx, int32_t cy,
+                                    float dx, float dy) -> float {
+                const float* g =
+                    kTerrainGradients[terrain_hash2(cx, cy, seed) & 7u];
+                return g[0] * dx + g[1] * dy;
+            };
+
+            const float n00 = corner(ix,     iy,     tx,        ty       );
+            const float n10 = corner(ix + 1, iy,     tx - 1.0f, ty       );
+            const float n01 = corner(ix,     iy + 1, tx,        ty - 1.0f);
+            const float n11 = corner(ix + 1, iy + 1, tx - 1.0f, ty - 1.0f);
+
+            const float a = n00 + u * (n10 - n00);
+            const float b = n01 + u * (n11 - n01);
+            return (a + v * (b - a)) * 1.41421356f;
+        }
+
+        // Stacked octaves, returning the plain and ridged sums together so both
+        // are paid for once. Both come back in [0, 1] so `ridginess` can blend
+        // them without one range swamping the other.
+        struct TerrainOctaveSums
+        {
+            float plain = 0.0f;    // fBm mapped to [0, 1]: rounded hills
+            float ridged = 0.0f;   // 1 - |fBm|: sharp crests
+        };
+
+        [[nodiscard]] TerrainOctaveSums terrain_octaves(
+            float x,
+            float y,
+            uint32_t octaves,
+            float roughness,
+            uint32_t seed) noexcept
+        {
+            float amplitude = 1.0f;
+            float frequency = 1.0f;
+            float plain_sum = 0.0f;
+            float ridged_sum = 0.0f;
+            float norm = 0.0f;
+
+            for (uint32_t o = 0; o < octaves; ++o) {
+                // Decorrelate octaves by walking the seed, not the coordinate:
+                // offsetting the position would make octaves share a lattice and
+                // line their features up.
+                const float n = terrain_noise2(
+                    x * frequency,
+                    y * frequency,
+                    seed + o * 0x9E3779B9u);
+
+                plain_sum += n * amplitude;
+                // Simple 1 - |n| ridging. Not the classic weighted form (where
+                // each octave is scaled by the previous one's value): that
+                // produces prettier branching ridges but makes the dial
+                // interact with `roughness` in a way an author cannot predict.
+                ridged_sum += (1.0f - std::fabs(n)) * amplitude;
+                norm += amplitude;
+
+                amplitude *= roughness;
+                frequency *= 2.0f;
+            }
+
+            const float inv = (norm > 0.0f) ? (1.0f / norm) : 0.0f;
+            return TerrainOctaveSums{
+                .plain  = 0.5f + 0.5f * (plain_sum * inv),
+                .ridged = ridged_sum * inv,
+            };
         }
 
         template<typename T>
@@ -1027,6 +1177,318 @@ namespace wz::engine::assets::internal
                     logger);
 
                 // ── 5. Publish residency + store + return compiled node ───────
+
+                return finalize_scalar_field(
+                    input,
+                    std::move(data),
+                    scalar_field_table,
+                    gpu_resources,
+                    rhi_resource_tracker,
+                    logger);
+            }
+            });
+
+
+        // ── Scalar field compiler (procedural terrain) ────────────────────────
+        //
+        // Dispatches on kScalarFieldTerrainSchema. Fractal noise shaped into a
+        // landscape, with a radial basin that flattens the middle so a far layer
+        // can ring a near one without erupting through it.
+        //
+        // Two contracts hold this recipe together, both documented on
+        // TerrainScalarFieldCompileDesc:
+        //   - output is normalised to exactly [0, 1], matching what a Gaea .r32
+        //     arrives with, so the two are interchangeable under one Placement;
+        //   - no dial is in world units, so nothing here can drift out of step
+        //     with the Placement that supplies the world footprint.
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kScalarFieldTerrainSchema,
+            .output_type = kAssetTypeScalarField,
+            // Every param the desc decoder reads must be declared here, or the
+            // editor stores it as a string, pb.get<T> ignores strings, and the
+            // dial goes silently dead.
+            .parameters = {
+                {
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
+                    .name = "resolution",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Resolution",
+                    .default_num = 1024,
+                    .min = 2,
+                    .max = 8192,
+                },
+                {
+                    .name = "ridge_count",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Ridge count",
+                    .default_num = 6.0,
+                    .min = 1.0,
+                    .max = 64.0,
+                },
+                {
+                    .name = "ridginess",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Ridginess",
+                    .default_num = 0.6,
+                    .min = 0.0,
+                    .max = 1.0,
+                },
+                {
+                    .name = "roughness",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Roughness",
+                    .default_num = 0.5,
+                    .min = 0.0,
+                    .max = 1.0,
+                },
+                {
+                    .name = "detail",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Detail",
+                    .default_num = 6,
+                    .min = 1,
+                    .max = 12,
+                },
+                {
+                    .name = "seed",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Seed",
+                    .default_num = 0,
+                    .min = 0,
+                    .max = 2147483647.0,
+                },
+                {
+                    .name = "basin_radius",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Basin radius",
+                    .default_num = 0.35,
+                    .min = 0.0,
+                    .max = 1.5,
+                },
+                {
+                    .name = "basin_falloff",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Basin falloff",
+                    .default_num = 0.25,
+                    .min = 0.0,
+                    .max = 1.5,
+                },
+                {
+                    .name = "basin_depth",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Basin depth",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 1.0,
+                },
+                {
+                    .name = "domain_kind",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Domain",
+                    .default_num =
+                        static_cast<double>(
+                            ScalarFieldDomainKind::Spatial2D),
+                    .options = kScalarFieldDomainOptions,
+                },
+            },
+            .compile = [&logger, &scalar_field_table, cache_settings,
+                        gpu_resources, rhi_resource_tracker](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                // ── 1. Validate metadata ──────────────────────────────────────
+
+                TerrainScalarFieldCompileDesc param_desc{};
+                const auto* desc =
+                    std::any_cast<TerrainScalarFieldCompileDesc>(&input.meta);
+                if (!desc) {
+                    if (const auto* params =
+                            std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                    {
+                        param_desc =
+                            terrain_scalar_field_desc_from_params(*params);
+                        desc = &param_desc;
+                    }
+                }
+
+                if (!desc) {
+                    logger.error("terrain scalar field node missing "
+                        "TerrainScalarFieldCompileDesc");
+                    return compile_failed_node(input);
+                }
+
+                if (desc->resolution < 2) {
+                    logger.error(
+                        "terrain scalar field needs resolution >= 2 (got "
+                        + std::to_string(desc->resolution) + ")");
+                    return compile_failed_node(input);
+                }
+
+                // A zero here would produce an entirely flat field, which reads
+                // as a broken asset rather than as an authored choice — so it
+                // fails loudly instead of being clamped behind the author's back.
+                if (desc->detail == 0) {
+                    logger.error(
+                        "terrain scalar field needs detail >= 1 octave");
+                    return compile_failed_node(input);
+                }
+
+                if (desc->format != ScalarFieldFormat::Float32) {
+                    logger.error(
+                        "terrain scalar field only supports Float32");
+                    return compile_failed_node(input);
+                }
+
+                if (!dep_nodes.empty()) {
+                    logger.error(
+                        "terrain scalar field should not have dependencies");
+                    return compile_failed_node(input);
+                }
+
+                ScalarFieldData cached_data{};
+                if (load_cached_scalar_field_impl(
+                        cache_settings, input.key, logger, cached_data))
+                {
+                    return finalize_scalar_field(
+                        input,
+                        std::move(cached_data),
+                        scalar_field_table,
+                        gpu_resources,
+                        rhi_resource_tracker,
+                        logger);
+                }
+
+                // ── 2. Generate values ────────────────────────────────────────
+
+                const uint32_t n = desc->resolution;
+                const uint32_t count = n * n;
+
+                // Blend weights are clamped: a lerp weight outside [0, 1] has no
+                // meaning. The key factory folds in the AUTHORED value, so two
+                // out-of-range dials that clamp together cost a duplicate cache
+                // entry but never disagree about what they produced.
+                const float ridginess = std::clamp(desc->ridginess, 0.0f, 1.0f);
+                const float roughness = std::clamp(desc->roughness, 0.0f, 1.0f);
+                const float basin_depth =
+                    std::clamp(desc->basin_depth, 0.0f, 1.0f);
+
+                // Field-relative basin geometry: distance from the centre sample
+                // divided by the centre-to-edge distance, so 1.0 is the edge
+                // midpoint and ~1.414 the corners.
+                const float centre = 0.5f * static_cast<float>(n - 1);
+                const float inv_half = (centre > 0.0f) ? (1.0f / centre) : 0.0f;
+                const float basin_inner = desc->basin_radius;
+                const float basin_outer =
+                    desc->basin_radius + desc->basin_falloff;
+
+                std::vector<float> values(count);
+
+                for (uint32_t y = 0; y < n; ++y) {
+                    for (uint32_t x = 0; x < n; ++x) {
+                        // ridge_count cycles span the field exactly, which is
+                        // what makes the dial countable on screen.
+                        const float u =
+                            static_cast<float>(x) / static_cast<float>(n);
+                        const float v =
+                            static_cast<float>(y) / static_cast<float>(n);
+
+                        const TerrainOctaveSums sums = terrain_octaves(
+                            u * desc->ridge_count,
+                            v * desc->ridge_count,
+                            desc->detail,
+                            roughness,
+                            desc->seed);
+
+                        float h = sums.plain
+                            + ridginess * (sums.ridged - sums.plain);
+
+                        // Multiplicative basin: pulls toward the valley floor
+                        // rather than digging a hole, so partial depths keep a
+                        // hint of the terrain's character.
+                        const float dx = static_cast<float>(x) - centre;
+                        const float dy = static_cast<float>(y) - centre;
+                        const float r =
+                            std::sqrt(dx * dx + dy * dy) * inv_half;
+
+                        float t = 0.0f;
+                        if (basin_outer > basin_inner) {
+                            const float s = std::clamp(
+                                (r - basin_inner) /
+                                    (basin_outer - basin_inner),
+                                0.0f, 1.0f);
+                            t = s * s * (3.0f - 2.0f * s);
+                        } else {
+                            // Zero falloff is a hard step, not a divide by zero.
+                            t = (r >= basin_outer) ? 1.0f : 0.0f;
+                        }
+
+                        h *= (1.0f - basin_depth) + basin_depth * t;
+
+                        values[x + y * n] = h;
+                    }
+                }
+
+                // ── 3. Normalise to exactly [0, 1] ────────────────────────────
+                //
+                // The swap-compatibility contract: a terrain field and a Gaea
+                // .r32 must mean the same thing under one Placement, so peaks
+                // land at extent[1] metres either way. Rescaling here rather
+                // than trusting the noise to fill the range is what makes
+                // "set extent_y = 900 and your peaks are 900 m" literally true.
+
+                float raw_min = values[0];
+                float raw_max = values[0];
+                for (const float v : values) {
+                    if (v < raw_min) raw_min = v;
+                    if (v > raw_max) raw_max = v;
+                }
+
+                const float span = raw_max - raw_min;
+                if (span > 1e-8f) {
+                    const float inv_span = 1.0f / span;
+                    for (float& v : values) {
+                        v = (v - raw_min) * inv_span;
+                    }
+                } else {
+                    // Degenerate but legal: a fully-basined field is flat.
+                    for (float& v : values) {
+                        v = 0.0f;
+                    }
+                }
+
+                // ── 4. Validate values; compute min/max ───────────────────────
+
+                float min_val = 0.0f;
+                float max_val = 0.0f;
+
+                if (!compute_min_max(values, min_val, max_val,
+                                     logger, "terrain scalar field"))
+                {
+                    return compile_failed_node(input);
+                }
+
+                // ── 5. Store in ScalarFieldTable ──────────────────────────────
+
+                ScalarFieldData data;
+                data.width = n;
+                data.height = n;
+                data.depth = 1;
+                data.format = desc->format;
+                data.domain_kind = desc->domain_kind;
+                data.min_value = min_val;
+                data.max_value = max_val;
+                data.values = std::move(values);
+
+                store_cached_scalar_field(
+                    cache_settings, input.key, data, logger);
+
+                // ── 6. Publish residency + store + return compiled node ───────
 
                 return finalize_scalar_field(
                     input,

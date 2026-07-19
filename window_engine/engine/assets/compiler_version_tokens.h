@@ -33,6 +33,11 @@ namespace wz::engine::assets {
 
     inline constexpr uint64_t kHLSLCompilerVersion = 1;
     inline constexpr uint64_t kScalarFieldCompilerVersion = 1;
+    // Its own token, not kScalarFieldCompilerVersion: the terrain generator will
+    // be tuned (warp, better ridged fBm) long after the file-backed recipes have
+    // settled, and sharing a token would force every Gaea field in every project
+    // to recompile for a change that cannot affect them.
+    inline constexpr uint64_t kScalarFieldTerrainCompilerVersion = 1;
     inline constexpr uint64_t kVectorFieldCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatCompilerVersion = 1;
     inline constexpr uint64_t kCSVCompilerVersion = 1;

@@ -22,7 +22,11 @@ namespace wz::engine::assets
         {
             return type == kAssetTypeScalarField
                 && (schema == kScalarFieldFromRawF32Schema
-                    || schema == kScalarFieldProceduralSchema);
+                    || schema == kScalarFieldProceduralSchema
+                    // Worth caching more than the others: a 2048-square terrain
+                    // is 4M samples through six octaves of gradient noise, all
+                    // of it recomputed on every project open otherwise.
+                    || schema == kScalarFieldTerrainSchema);
         }
     }
 

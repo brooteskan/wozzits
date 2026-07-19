@@ -52,6 +52,38 @@ namespace wz::engine::assets
         ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
     };
 
+    // Describes a procedural TERRAIN scalar field asset to register: fractal
+    // noise shaped into a landscape, with a radial basin that flattens the
+    // middle so a far layer can ring a near one without erupting through it.
+    //
+    // Every default here must match TerrainScalarFieldCompileDesc and the
+    // compiler's declared ParamDecl defaults — three declarations of one value,
+    // and nothing but a test stops them drifting apart.
+    //
+    // Output is normalised to exactly [0, 1], the same contract a Gaea .r32
+    // arrives with, so the two are interchangeable under one Placement. No dial
+    // is in world units: the world footprint lives in the Placement, and a
+    // generator that also spoke in metres could silently disagree with it.
+    struct TerrainScalarFieldDesc
+    {
+        std::string name;
+
+        uint32_t resolution = 1024;   // square
+
+        float    ridge_count = 6.0f;  // major ridges across the field
+        float    ridginess   = 0.6f;  // 0 rounded hills, 1 sharp crests
+        float    roughness   = 0.5f;  // per-octave amplitude falloff
+        uint32_t detail      = 6;     // octaves
+        uint32_t seed        = 0;
+
+        float basin_radius  = 0.35f;  // fractions of the field half-width
+        float basin_falloff = 0.25f;
+        float basin_depth   = 1.0f;   // 1 = flat middle, 0 = basin off
+
+        ScalarFieldFormat     format      = ScalarFieldFormat::Float32;
+        ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
+    };
+
     // Describes a Gaea .r32 scalar field asset to register.
     // path is relative to the EngineAssetLibrary's resource_root. Dimensions are
     // derived from the file's sample count (square convention) at compile time,
@@ -106,6 +138,12 @@ namespace wz::engine::assets
 
         // Register a procedural scalar field asset in the DAG.
         ScalarFieldAsset create_procedural_scalar_field(const ProceduralScalarFieldDesc& desc);
+
+        // Register a procedural terrain scalar field asset in the DAG.
+        // Returns an invalid asset if name is empty: name is an identity input
+        // to the key factory, so an unnamed terrain would collide with every
+        // other unnamed terrain sharing its dials.
+        ScalarFieldAsset create_terrain_scalar_field(const TerrainScalarFieldDesc& desc);
 
         // Register a Gaea .r32 scalar field asset in the DAG. The compiler derives
         // a square grid from the file's sample count (Gaea's convention).

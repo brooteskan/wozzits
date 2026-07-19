@@ -167,6 +167,72 @@ namespace wz::engine::assets {
     };
 
 
+    // ─── TerrainScalarFieldCompileDesc ────────────────────────────────────────────
+    //
+    // Stored in AssetNode::meta for procedural TERRAIN scalar field nodes
+    // (kScalarFieldTerrainSchema). Fractal noise shaped into a landscape, for
+    // authoring a far-horizon layer without leaving the editor — and for standing
+    // in while the real hand-authored field is still being built.
+    //
+    // ── Two rules the dials follow ───────────────────────────────────────────────
+    //
+    // 1. The output is normalised to exactly [0, 1]. Vertical scale lives in the
+    //    Placement (extent[1] is world Y per unit field value), so this recipe
+    //    never speaks in metres. That is also what makes a procedural field and a
+    //    Gaea .r32 field interchangeable under one Placement.
+    //
+    // 2. No dial is in world units. The world footprint lives in the Placement
+    //    too, and a generator that also took metres could silently disagree with
+    //    it. So spatial dials are FIELD-RELATIVE: ridge_count is "how many ridges
+    //    span the field", the basin dials are fractions of the half-width. An
+    //    author converts once, in their head, and the asset can never lie.
+    //
+    // name is intentionally absent, as in ProceduralScalarFieldCompileDesc: it is
+    // an identity input to the key factory, not a compile input.
+
+    struct TerrainScalarFieldCompileDesc
+    {
+        // Square by construction. A clipmap footprint is square, and a width !=
+        // height field under a square Placement silently stretches the world.
+        uint32_t resolution = 1024;
+
+        // How many major ridges span the field. Pure grid-space, so it cannot
+        // drift out of step with the Placement the way a wavelength in metres
+        // could — and the author can count them on screen to check.
+        float ridge_count = 6.0f;
+
+        // 0 = plain fBm (rounded hills), 1 = ridged fBm (sharp alpine crests).
+        // The most visible dial in silhouette, which is what a far field is for.
+        float ridginess = 0.6f;
+
+        // Per-octave amplitude falloff (persistence). 0 = smooth rolling, 1 =
+        // every octave contributes equally and the surface is harsh.
+        float roughness = 0.5f;
+
+        // Octave count. Buys near-field crispness; most of it is sub-pixel at
+        // horizon distance, so it matters less here than an author expects.
+        uint32_t detail = 6;
+
+        uint32_t seed = 0;
+
+        // ── Basin ────────────────────────────────────────────────────────────────
+        //
+        // Flattens the middle of the field toward the valley floor so a far layer
+        // can ring a near one without erupting through it. Radii are fractions of
+        // the field HALF-width: 1.0 reaches the edge midpoint, ~1.414 the corners.
+        //
+        // Multiplicative, so it pulls toward the low ground rather than digging a
+        // hole — lerp(h, 0, depth) is the same thing and keeps a hint of the
+        // terrain's character at partial depth.
+        float basin_radius  = 0.35f;   // flat out to here
+        float basin_falloff = 0.25f;   // ramp width from floor to full relief
+        float basin_depth   = 1.0f;    // 1 = flat, 0 = basin disabled
+
+        ScalarFieldFormat     format = ScalarFieldFormat::Float32;
+        ScalarFieldDomainKind domain_kind = ScalarFieldDomainKind::Spatial2D;
+    };
+
+
     // ─── ScalarFieldTable ─────────────────────────────────────────────────────────
     //
     // Runtime owner of resolved scalar field data. The AssetSystem stores only
