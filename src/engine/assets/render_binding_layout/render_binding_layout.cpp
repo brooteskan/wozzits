@@ -361,6 +361,31 @@ namespace wz::engine::assets
             out += "};\n";
         }
 
+        // View-frequency block (space 0). Emitted only when the layout declares
+        // one, so a shader compiled against a layout without it sees exactly the
+        // text it saw before this existed.
+        if (layout.has_view_constants()) {
+            const std::string view_space =
+                "space" + std::to_string(kRenderBindingLayoutViewRegisterSpace);
+            out += "\n// Frame state, identical for every program this frame:\n"
+                   "// the observer, and the atmosphere it looks through.\n";
+            out += "cbuffer " + layout.view_constants_semantic
+                + " : register(b0, " + view_space + ")\n{\n";
+            switch (layout.view_head) {
+            case RenderBindingViewHead::CameraFog:
+                out += "    float4 wz_view_camera : packoffset(c0);"
+                       "       // xyz = camera world position\n"
+                       "    float4 wz_view_fog_color : packoffset(c1);"
+                       "    // rgb = fog colour, w = density\n"
+                       "    float4 wz_view_fog_params : packoffset(c2);"
+                       "   // x = start, y = height falloff, z = enabled\n";
+                break;
+            case RenderBindingViewHead::None:
+                break;
+            }
+            out += "};\n";
+        }
+
         if (!srg.descriptor_bindings.empty()) {
             out += '\n';
         }
@@ -429,7 +454,40 @@ namespace wz::engine::assets
             "{\n"
             "    return normalize(world_pos - origin);\n"
             "}\n"
-            "#endif // WZ_STANDARD_HELPERS\n";
+            "\n"
+            "// Exponential distance fog past a start radius. Takes its terms as\n"
+            "// ARGUMENTS rather than reading the view block, so it stays in the\n"
+            "// no-bindings contract of this section and compiles against a\n"
+            "// layout that declares nothing.\n"
+            "float3 wz_apply_fog(float3 color, float3 fog_color,\n"
+            "                    float density, float start, float distance)\n"
+            "{\n"
+            "    float d = max(distance - start, 0.0f);\n"
+            "    return lerp(color, fog_color, saturate(1.0f - exp(-d * density)));\n"
+            "}\n";
+
+        // The binding-aware one-liner, emitted only when the layout declares a
+        // view block -- it names cbuffer members, so it cannot be unconditional.
+        // It sits HERE rather than beside the cbuffer above because HLSL needs
+        // wz_apply_fog declared before it is called, and that lives in this
+        // section. The cbuffer is declared earlier in the prelude, so reading it
+        // from here is fine.
+        if (layout.view_head == RenderBindingViewHead::CameraFog) {
+            out +=
+                "\n"
+                "float3 wz_fog_from_view(float3 color, float3 world_pos)\n"
+                "{\n"
+                "    if (wz_view_fog_params.z < 0.5f) { return color; }\n"
+                "    return wz_apply_fog(\n"
+                "        color,\n"
+                "        wz_view_fog_color.rgb,\n"
+                "        wz_view_fog_color.w,\n"
+                "        wz_view_fog_params.x,\n"
+                "        length(world_pos - wz_view_camera.xyz));\n"
+                "}\n";
+        }
+
+        out += "#endif // WZ_STANDARD_HELPERS\n";
 
         return true;
     }

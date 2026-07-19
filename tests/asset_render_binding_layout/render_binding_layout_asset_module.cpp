@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#define WIN32_LEAN_AND_MEAN
+#include <d3dcompiler.h>
+#include <wrl/client.h>
+
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/key_factories/render_binding_layout.h>
 #include <engine/assets/render_binding_layout/render_binding_layout.h>
@@ -653,4 +657,87 @@ TEST(RenderBindingLayout, SrgRejectsViewAndObjectSharingASemanticName)
     std::string error;
     EXPECT_FALSE(build_render_binding_layout_srg(layout, srg, error));
     EXPECT_NE(error.find("share a semantic"), std::string::npos) << error;
+}
+
+// ── The generated prelude must actually COMPILE ──────────────────────────────
+// The prelude is generated text prepended to every authored shader, so a syntax
+// error in the generator breaks every program at once -- and a golden-text test
+// would not catch it, because the text can be exactly what was intended and
+// still not be valid HLSL. These compile it for real.
+//
+// No device needed: D3DCompile is the compiler library, not the runtime.
+
+namespace
+{
+    bool compile_hlsl_source(const std::string& source,
+                             const char* entry,
+                             const char* profile,
+                             std::string& error)
+    {
+        Microsoft::WRL::ComPtr<ID3DBlob> code;
+        Microsoft::WRL::ComPtr<ID3DBlob> errors;
+        const HRESULT hr = D3DCompile(
+            source.c_str(), source.size(), nullptr, nullptr, nullptr,
+            entry, profile, 0, 0, code.GetAddressOf(), errors.GetAddressOf());
+        if (SUCCEEDED(hr) && code && code->GetBufferSize() > 0u) {
+            return true;
+        }
+        error = errors
+            ? static_cast<const char*>(errors->GetBufferPointer())
+            : "no diagnostic";
+        return false;
+    }
+}
+
+TEST(RenderBindingPrelude, ViewBlockPreludeCompilesAndFogsAOneLiner)
+{
+    using namespace wz::engine::assets;
+
+    RenderBindingLayoutData layout = clipmap_layout();
+    layout.view_constants_semantic = "wz_view";
+    layout.view_head = RenderBindingViewHead::CameraFog;
+
+    std::string prelude;
+    std::string error;
+    ASSERT_TRUE(generate_hlsl_binding_prelude(layout, prelude, error)) << error;
+
+    // The one-liner a shader is meant to write, against the real prelude.
+    const std::string source = prelude +
+        "\nfloat4 main(float3 world_pos : TEXCOORD0) : SV_TARGET\n"
+        "{\n"
+        "    float3 lit = float3(0.4f, 0.5f, 0.3f);\n"
+        "    return float4(wz_fog_from_view(lit, world_pos), 1.0f);\n"
+        "}\n";
+
+    ASSERT_TRUE(compile_hlsl_source(source, "main", "ps_5_1", error))
+        << "generated view-block prelude does not compile:\n" << error;
+}
+
+// The standard helper section is documented as pure functions with no bindings,
+// so that it compiles against a layout declaring nothing. wz_apply_fog has to
+// hold that line -- if it reached for the view cbuffer instead of taking its
+// terms as arguments, every layout without a view block would stop compiling.
+TEST(RenderBindingPrelude, StandardHelpersCompileWithoutAnyViewBlock)
+{
+    using namespace wz::engine::assets;
+
+    RenderBindingLayoutData layout{};   // declares nothing at all
+    std::string prelude;
+    std::string error;
+    ASSERT_TRUE(generate_hlsl_binding_prelude(layout, prelude, error)) << error;
+
+    EXPECT_EQ(prelude.find("wz_fog_from_view"), std::string::npos)
+        << "the binding-aware wrapper must not be emitted without a view block";
+
+    const std::string source = prelude +
+        "\nfloat4 main() : SV_TARGET\n"
+        "{\n"
+        "    float3 c = wz_apply_fog(float3(1, 0, 0), float3(0.5f, 0.6f, 0.7f),\n"
+        "                            0.001f, 100.0f, 2000.0f);\n"
+        "    return float4(c + wz_origin_relative_direction(\n"
+        "        float3(1, 2, 3), float3(0, 0, 0)), 1.0f);\n"
+        "}\n";
+
+    ASSERT_TRUE(compile_hlsl_source(source, "main", "ps_5_1", error))
+        << "bindings-free helper section does not compile standalone:\n" << error;
 }
