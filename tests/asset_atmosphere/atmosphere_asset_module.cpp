@@ -247,10 +247,68 @@ TEST(AtmosphereAssetModule, AllDefaultAtmosphereIsValidAndMeansNoFog)
     EXPECT_FLOAT_EQ(data->fog_density, 0.0f);
     EXPECT_FLOAT_EQ(data->fog_start_distance, 0.0f);
     EXPECT_FLOAT_EQ(data->fog_height_falloff, 0.0f);
-    // The default colour is a pale daylight haze, inert while the fog is off.
-    EXPECT_FLOAT_EQ(data->fog_color[0], 0.6f);
+    // Grey, inert while the fog is off -- and the SAME grey the editor path
+    // starts from. ParamDecl broadcasts one default_num to all three channels,
+    // so grey is the only colour a graph-authored node can default to; pinning
+    // it here keeps AtmosphereDesc from drifting to a prettier value that would
+    // make "an atmosphere nobody has touched" mean two different things.
+    EXPECT_FLOAT_EQ(data->fog_color[0], 0.7f);
     EXPECT_FLOAT_EQ(data->fog_color[1], 0.7f);
-    EXPECT_FLOAT_EQ(data->fog_color[2], 0.8f);
+    EXPECT_FLOAT_EQ(data->fog_color[2], 0.7f);
+}
+
+// The three defaults that must agree, checked against each other directly
+// rather than through a compile. AtmosphereDesc (this API), AtmosphereCompileDesc
+// (the typed meta the compiler reads) and the compiler's declared ParamDecl (what
+// the editor seeds a new node with) are three separate declarations of one value,
+// and nothing but a test stops them drifting apart -- which is exactly what had
+// happened when AtmosphereDesc alone said 0.6/0.7/0.8.
+TEST(AtmosphereAssetModule, EveryDefaultDeclarationAgrees)
+{
+    using namespace wz::engine::assets;
+
+    const AtmosphereDesc        authoring{};
+    const AtmosphereCompileDesc compile{};
+    const AtmosphereData        runtime{};
+
+    for (int c = 0; c < 3; ++c) {
+        EXPECT_FLOAT_EQ(authoring.fog_color[c], compile.fog_color[c]) << c;
+        EXPECT_FLOAT_EQ(authoring.fog_color[c], runtime.fog_color[c]) << c;
+    }
+    EXPECT_FLOAT_EQ(authoring.fog_density, compile.fog_density);
+    EXPECT_FLOAT_EQ(authoring.fog_start_distance, compile.fog_start_distance);
+    EXPECT_FLOAT_EQ(authoring.fog_height_falloff, compile.fog_height_falloff);
+    EXPECT_EQ(authoring.fog_enabled, compile.fog_enabled);
+
+    // ...and the fourth declaration: what the editor writes into a fresh node.
+    const wz::asset::CompilerRegistry registry =
+        wz::engine::editor::build_asset_graph_schema_registry();
+    const wz::asset::AssetCompiler* compiler =
+        registry.find(kAtmosphereSchema, kAssetTypeAtmosphere);
+    ASSERT_NE(compiler, nullptr);
+
+    for (const wz::asset::ParamDecl& decl : compiler->parameters) {
+        if (decl.name == "fog_color") {
+            // Broadcast to all three channels, so one number covers the colour.
+            EXPECT_FLOAT_EQ(
+                static_cast<float>(decl.default_num), authoring.fog_color[0]);
+            EXPECT_FLOAT_EQ(
+                static_cast<float>(decl.default_num), authoring.fog_color[1]);
+            EXPECT_FLOAT_EQ(
+                static_cast<float>(decl.default_num), authoring.fog_color[2]);
+        } else if (decl.name == "fog_density") {
+            EXPECT_FLOAT_EQ(
+                static_cast<float>(decl.default_num), authoring.fog_density);
+        } else if (decl.name == "fog_start_distance") {
+            EXPECT_FLOAT_EQ(
+                static_cast<float>(decl.default_num),
+                authoring.fog_start_distance);
+        } else if (decl.name == "fog_height_falloff") {
+            EXPECT_FLOAT_EQ(
+                static_cast<float>(decl.default_num),
+                authoring.fog_height_falloff);
+        }
+    }
 }
 
 // Every dial is folded into content_hash, so nudging the fog colour re-keys the

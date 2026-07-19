@@ -13,12 +13,19 @@ namespace wz::engine::assets
 {
     // Authoring recipe for an Atmosphere: the global fog dials. name contributes
     // to the asset key so differently-named atmospheres with identical dials are
-    // distinct assets. Defaults mirror the compiler's declared parameter
-    // defaults — a pale haze that is switched off.
+    // distinct assets.
+    //
+    // Every default here must match AtmosphereCompileDesc and the compiler's
+    // declared ParamDecl defaults, or "an atmosphere nobody has touched" means
+    // two different things depending on whether the graph or this API built it.
+    // The colour is grey rather than a prettier pale blue because ParamDecl
+    // broadcasts one default_num to all three channels (param_defaults.h), so
+    // grey is the only value the editor path can express — the other two sites
+    // have to meet it there.
     struct AtmosphereDesc
     {
         std::string name;
-        float fog_color[3]{ 0.6f, 0.7f, 0.8f };  // linear RGB at full density
+        float fog_color[3]{ 0.7f, 0.7f, 0.7f };  // linear RGB at full density
         float fog_density = 0.0f;                // thickness per metre
         float fog_start_distance = 0.0f;         // metres before fog accumulates
         float fog_height_falloff = 0.0f;         // rate the fog thins with height
