@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 
+#include <engine/assets/atmosphere_asset_module.h>
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/placement_asset_module.h>
@@ -28,6 +29,7 @@
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/render_program/render_program_asset_module.h>
 #include <engine/assets/engine_asset_key_factory.h>
+#include <engine/assets/key_factories/hlsl_shader.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/renderable_asset_module.h>
 #include <engine/assets/rhi_asset_identity.h>
@@ -45,6 +47,7 @@
 #include <asset/system.h>
 
 #include <gpu/gpu.h>
+#include <gpu/shader_types.h>
 #include <math/mat4.h>
 #include <math/math_types.h>
 #include <window/window2.h>
@@ -167,6 +170,56 @@ float4 main(PSIn input) : SV_TARGET
 }
 )";
 
+    // View-frequency fog first light. These are BODIES, not whole shaders:
+    // neither declares a cbuffer, a register, or a sampler. Every declaration
+    // they use — the terrain constant block, the two pull buffers, the height
+    // texture, the static sampler, and the space-0 view-constants buffer —
+    // arrives from the generated binding prelude (#231), which the 0x105 node
+    // prepends before the HLSL compiler ever sees them. If the layout stopped
+    // declaring a row, these would fail to compile rather than read a stale
+    // register.
+    //
+    // Separate strings from kTerrainVs/kTerrainPs, which hand-declare their
+    // bindings and are shared by the tests above.
+    constexpr const char* kFogTerrainVsBody = R"(
+struct VSOut
+{
+    float4 pos       : SV_POSITION;
+    float3 world_pos : TEXCOORD0;
+};
+
+VSOut main(uint vid : SV_VertexID)
+{
+    uint   idx = pulled_mesh_indices[vid];
+    float3 p   = pulled_mesh_positions[idx];
+    float2 uv  = p.xz * world_to_uv.xy + world_to_uv.zw;
+    float  h   = scalar_field_texture.SampleLevel(sampler0, uv, 0.0f).x;
+    p.y += h * texel_and_vertical.z + texel_and_vertical.w;
+
+    VSOut o;
+    o.pos       = mul(view_projection, float4(p, 1.0f));
+    o.world_pos = p;
+    return o;
+}
+)";
+
+    // The one-liner the whole sequence exists to make writable: a shader fogs
+    // by naming the world position and nothing else. wz_fog_from_view reads
+    // view_constants[0] — a binding this body never mentions.
+    constexpr const char* kFogTerrainPsBody = R"(
+struct PSIn
+{
+    float4 pos       : SV_POSITION;
+    float3 world_pos : TEXCOORD0;
+};
+
+float4 main(PSIn input) : SV_TARGET
+{
+    float3 colour = float3(0.3f, 0.5f, 0.2f);
+    return float4(wz_fog_from_view(colour, input.world_pos), 1.0f);
+}
+)";
+
     void write_text_file(const fs::path& path, const char* text)
     {
         fs::create_directories(path.parent_path());
@@ -249,6 +302,18 @@ float4 main(PSIn input) : SV_TARGET
                 .visibility = ea::ShaderVisibility::Vertex,
             },
         };
+        return layout;
+    }
+
+    // The same camera-snapped terrain SRG plus a VIEW-frequency block: one
+    // extra StructuredBuffer row at register space 0, which the renderer fills
+    // once per frame with the observer + the frame's atmosphere (a8d3450 /
+    // da6c952). The object rows are untouched, so the recipe, the height
+    // binding and the footprint derivation are identical to terrain_layout().
+    ea::RenderBindingLayoutData fog_terrain_layout()
+    {
+        ea::RenderBindingLayoutData layout = terrain_layout();
+        layout.view_head = ea::RenderBindingViewHead::CameraFog;
         return layout;
     }
 
@@ -344,6 +409,12 @@ float4 main(PSIn input) : SV_TARGET
                 root / "shaders" / "terrain" / "terrain_vs.hlsl", kTerrainVs);
             write_text_file(
                 root / "shaders" / "terrain" / "terrain_ps.hlsl", kTerrainPs);
+            write_text_file(
+                root / "shaders" / "terrain" / "fog_vs_body.hlsl",
+                kFogTerrainVsBody);
+            write_text_file(
+                root / "shaders" / "terrain" / "fog_ps_body.hlsl",
+                kFogTerrainPsBody);
         }
 
         void TearDown() override
@@ -411,6 +482,116 @@ float4 main(PSIn input) : SV_TARGET
                 custom_program_desc("custom/program", layout.output);
             desc.vertex_shader = shaders.vertex_shader;
             desc.pixel_shader = shaders.pixel_shader;
+            out.program = assets.render_programs().create_custom(desc);
+            EXPECT_TRUE(out.program.valid());
+            return out;
+        }
+
+        // Register one shader THROUGH the binding prelude: a body file that
+        // declares no bindings → a 0x105 prelude node wiring that body to the
+        // authored layout → an HLSL shader node compiling the combined source.
+        // This is the DAG route (#231), so a layout edit re-keys the prelude and
+        // the shader; the alternative (an HLSL #include) would let generated
+        // declarations go stale against the root signature.
+        wz::asset::AssetKey register_prelude_shader(
+            ea::EngineAssetLibrary& assets,
+            const char* body_path,
+            const wz::asset::AssetKey& layout_key,
+            uint64_t prelude_id,
+            wz::gpu::ShaderStage stage,
+            const char* target)
+        {
+            const wz::asset::AssetKey body =
+                assets.files().register_file_node(
+                    body_path,
+                    ea::kHLSLFileSchema,
+                    wz::asset::AssetType::ShaderSource);
+            EXPECT_FALSE(body == wz::asset::AssetKey{});
+
+            const wz::asset::AssetKey prelude_key =
+                test_renderable_key(prelude_id);
+            wz::asset::AssetNode prelude{};
+            prelude.key = prelude_key;
+            prelude.type = wz::asset::AssetType::ShaderSource;
+            prelude.schema = ea::kHLSLBindingPreludeSchema;
+            prelude.stage = wz::asset::AssetStage::Source;
+            prelude.residency = wz::asset::ResidencyIntent::CompileOnly;
+            prelude.payload = std::vector<uint8_t>{};
+            prelude.meta = wz::asset::ParamBlock{};
+            // Port order: source(0), binding_layout(1).
+            EXPECT_TRUE(assets.system().register_asset(
+                std::move(prelude),
+                std::vector<wz::asset::AssetKey>{ body, layout_key }));
+
+            // Same key derivation ShaderAssetModule uses, with the PRELUDE
+            // output standing in for the source file.
+            const wz::asset::AssetKey shader_key = ea::make_hlsl_shader_key(
+                prelude_key, static_cast<uint8_t>(stage), "main", target);
+            wz::asset::AssetNode shader{};
+            shader.key = shader_key;
+            shader.type = wz::asset::AssetType::Shader;
+            shader.schema = ea::kHLSLShaderSchema;
+            shader.stage = wz::asset::AssetStage::Source;
+            shader.payload = std::vector<uint8_t>{};
+            shader.meta = wz::gpu::HLSLCompileDesc{
+                .stage = stage,
+                .entry = "main",
+                .target = target,
+                .primary_source_index = 0,
+            };
+            EXPECT_TRUE(assets.system().register_asset(
+                std::move(shader),
+                std::vector<wz::asset::AssetKey>{ prelude_key }));
+            return shader_key;
+        }
+
+        // build_ingredients' sibling for the prelude route: identical mesh,
+        // height field and authored layout, but both shaders come from
+        // binding-free bodies combined with the layout's generated
+        // declarations. space2 registers still require SM 5.1.
+        Ingredients build_prelude_ingredients(
+            ea::EngineAssetLibrary& assets,
+            const ea::RenderBindingLayoutData& layout_data,
+            uint64_t prelude_id_base)
+        {
+            Ingredients out{};
+            out.mesh = assets.meshes().create_procedural_mesh({
+                .name = "prelude/cube",
+                .kind = ea::ProceduralMeshKind::Cube,
+            });
+            EXPECT_TRUE(out.mesh.valid());
+
+            out.field = assets.scalar_fields().create_procedural_scalar_field({
+                .name = "prelude/field",
+                .width = 16,
+                .height = 16,
+                .generator = ea::ScalarFieldGenerator::RadialGradient,
+            });
+            EXPECT_TRUE(out.field.valid());
+
+            const auto layout =
+                assets.render_binding_layouts().create_render_binding_layout({
+                    .name = "prelude/layout",
+                    .layout = layout_data,
+                });
+            EXPECT_TRUE(layout.valid());
+
+            ea::CustomRenderProgramDesc desc =
+                custom_program_desc("prelude/program", layout.output);
+            desc.vertex_shader = register_prelude_shader(
+                assets,
+                "shaders/terrain/fog_vs_body.hlsl",
+                layout.output,
+                prelude_id_base,
+                wz::gpu::ShaderStage::Vertex,
+                "vs_5_1");
+            desc.pixel_shader = register_prelude_shader(
+                assets,
+                "shaders/terrain/fog_ps_body.hlsl",
+                layout.output,
+                prelude_id_base + 1,
+                wz::gpu::ShaderStage::Pixel,
+                "ps_5_1");
             out.program = assets.render_programs().create_custom(desc);
             EXPECT_TRUE(out.program.valid());
             return out;
@@ -798,6 +979,263 @@ TEST_F(CustomRenderableFixture, CameraSnappedTerrainWithoutHeightBindingFails)
     ASSERT_TRUE(state.has_value());
     EXPECT_NE(
         state->detail.find("scalar_field_texture"), std::string::npos)
+        << "detail was: " << state->detail;
+}
+
+// ── View-frequency fog: first light ─────────────────────────────────────────
+//
+// The whole chain in one draw, running end to end for the first time: an
+// authored layout declares view_head = CameraFog → the SRG derivation puts a
+// view_constants StructuredBuffer row at register space 0 (3e25b63) → the
+// binding prelude emits WzViewConstants, that buffer, and wz_fog_from_view
+// (1bd882f) → a pixel body that names no binding at all fogs with one line →
+// RhiSceneRenderer packs the observer + the resolved Atmosphere into the buffer
+// and binds it as the packet's slot-0 group (da6c952) → the frame draws.
+//
+// WHAT THIS PROVES
+//   * The pixel shader compiled against the GENERATED declarations. Its body
+//     declares no cbuffer and no register, so everything it names came from the
+//     layout by way of the 0x105 prelude node.
+//   * The fog term is genuinely in the drawn shader. The body's only colour
+//     expression is wz_fog_from_view, which the prelude emits ONLY for a layout
+//     with a view head — the sibling test below shows the same body failing to
+//     compile without one.
+//   * The program realized, and from the asset compiler rather than a
+//     render-time bridge. Its root signature and the declarations the shader
+//     compiled against are ONE derivation of ONE layout
+//     (build_render_binding_layout_srg, re-emitted as text by the prelude), so
+//     a realized program means the space-0 row is present on both sides of it.
+//   * The renderer reached bind_view_constants and acquired the view buffer —
+//     which happens only after the semantic gate finds view_constants in the
+//     program's slot-0 group.
+//   * The bytes uploaded into that buffer are the atmosphere authored here.
+//
+// WHAT THIS DOES NOT PROVE
+//   That the PIXELS came out fogged. Render-target readback is impractical in
+//   this harness (see tests/gpu/texture_mip.cpp), so nothing here compares a
+//   fogged frame against an unfogged one, and the fog arithmetic itself is
+//   unverified on the GPU. What is verified is that the term is compiled in,
+//   the buffer is bound, and the values in it are the authored ones.
+TEST_F(CustomRenderableFixture, ViewFogPreludeBindsViewConstantsAndDraws)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    ea::EngineAssetLibrary assets(gpu, logger, root.string());
+
+    const Ingredients ingredients =
+        build_prelude_ingredients(assets, fog_terrain_layout(), 40);
+
+    const ea::PlacementAsset placement =
+        assets.placements().create_placement(ea::PlacementDesc{
+            .name = "terrain/fog_placement",
+            .origin = { 0.0f, 0.0f, 0.0f },
+            .extent = { 16.0f, 4.0f, 16.0f },
+            .base_height = 0.0f,
+        });
+    ASSERT_TRUE(placement.valid());
+
+    // A fog nobody could mistake for the default: magenta, thick, and starting
+    // close enough that the cube sits well inside it. Every dial distinct, so a
+    // transposed pair shows up in the pack assertions below.
+    const ea::AtmosphereAsset atmosphere_asset =
+        assets.atmospheres().create_atmosphere(ea::AtmosphereDesc{
+            .name = "terrain/fog",
+            .fog_color = { 0.85f, 0.20f, 0.55f },
+            .fog_density = 0.25f,
+            .fog_start_distance = 1.0f,
+            .fog_height_falloff = 0.125f,
+            .fog_enabled = true,
+        });
+    ASSERT_TRUE(atmosphere_asset.valid());
+
+    // Same port-ordered wiring as the terrain test above: geometry(0),
+    // program(1), field at binding0(2), Placement at the placement port(10).
+    std::vector<wz::asset::AssetKey> ports(11);
+    ports[0] = ingredients.mesh.output;
+    ports[1] = ingredients.program.key;
+    ports[2] = ingredients.field.output;
+    ports[10] = placement.output;
+
+    wz::asset::ParamBlock params;
+    params.values["binding0_semantic"] = std::string("scalar_field_texture");
+    const wz::asset::AssetKey renderable_key = register_custom_renderable(
+        assets, 30, std::move(params), std::move(ports));
+
+    ASSERT_TRUE(assets.commit());
+    const ea::ResolveReport resolve = assets.resolve_all();
+    for (const ea::ResolveFailure& f : resolve.failures) {
+        ADD_FAILURE() << "resolve failure: error="
+                      << static_cast<int>(f.error) << " " << f.detail;
+    }
+    // The pixel body calls wz_fog_from_view and declares nothing. Resolving at
+    // all means the prelude supplied the helper AND every register the vertex
+    // body uses.
+    ASSERT_TRUE(resolve.ok());
+
+    const ea::RhiRenderableRecipe* recipe =
+        assets.renderables().get_rhi_renderable_recipe(
+            ea::RenderableAsset{ .output = renderable_key });
+    ASSERT_NE(recipe, nullptr);
+    EXPECT_TRUE(recipe->custom);
+    // The view block is additive: the object side of the recipe is exactly what
+    // the no-view-head terrain test asserts.
+    EXPECT_EQ(
+        recipe->constants_head,
+        ea::RenderBindingConstantsHead::CameraSnappedTerrain);
+    EXPECT_TRUE(recipe->height_texture_key == ingredients.field.output);
+
+    const ea::AtmosphereHandle atmosphere_handle =
+        assets.atmospheres().get_atmosphere(atmosphere_asset);
+    ASSERT_TRUE(atmosphere_handle.valid());
+    const ea::AtmosphereData* atmosphere =
+        assets.atmospheres().get_atmosphere_data(atmosphere_handle);
+    ASSERT_NE(atmosphere, nullptr);
+    ASSERT_TRUE(atmosphere->fog_enabled);
+
+    wz::engine::rendering::RhiSceneRenderer renderer(gpu, logger);
+    ea::SceneNodeAsset node{};
+    node.id = wz::scene::AuthoredEntityId{ 1 };
+    node.name = "fog_terrain";
+    node.visible = true;
+    node.renderable_asset = renderable_key;
+    const std::vector<ea::SceneNodeAsset> nodes{ node };
+
+    const wz::math::Vec3 camera_world_pos{ 2.0f, 5.0f, -3.0f };
+
+    // The height field went resident during resolve; what the RENDER acquires
+    // on top of that is the observable below.
+    const std::size_t resident_before = renderer.resident_gpu_resource_count();
+
+    ASSERT_TRUE(wz::gpu::begin_frame(device));
+    wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+    const bool recorded = renderer.render_scene(
+        nodes, assets, wz::math::Mat4::identity(), camera_world_pos,
+        /*world_transforms*/ {}, atmosphere);
+    EXPECT_TRUE(recorded)
+        << "the view-fog renderable failed to realize or the recorder rejected "
+           "the draw";
+    ASSERT_TRUE(wz::gpu::end_frame(device));
+    wz::gpu::present(device, /*sync_interval*/ 0);
+
+    // The program came from the asset compiler, so the root signature it
+    // realized against is the one derived from the authored layout — including
+    // the space-0 row the pixel shader references.
+    EXPECT_GT(renderer.registered_program_count(), 0u);
+    EXPECT_EQ(renderer.render_time_program_bridge_count(), 0u)
+        << "the fog program was bridged at render time, not produced by the "
+           "asset compiler";
+
+    // THREE resources acquired by the render, not two: the mesh-pull positions
+    // and indices every custom renderable needs, PLUS the view-constants
+    // buffer. That third one is the proof the view SRG was built —
+    // ensure_view_constants_buffer() is reachable only from
+    // bind_view_constants(), and only past the gate that looks the
+    // view_constants semantic up in the program's slot-0 group.
+    //
+    // This assertion carries the binding half of the test on its own, and it
+    // was mutation-verified: stubbing bind_view_constants to return without
+    // binding drops this delta to 2 — while `recorded` above stays TRUE. The
+    // draw succeeding does NOT detect an unbound view group, so do not delete
+    // this in the belief the frame would have caught it. (Measured directly:
+    // the same terrain scene through a no-view-head layout acquires 2.)
+    EXPECT_EQ(renderer.resident_gpu_resource_count() - resident_before, 3u)
+        << "the render did not acquire the view-constants buffer";
+
+    // The two SRGs the packet carries — the object group and the view group —
+    // each resolve to a descriptor table.
+    EXPECT_GT(renderer.cached_descriptor_table_count(), 0u);
+
+    // And the bytes inside that buffer. make_view_constants is the function
+    // render_scene called, so re-running it on the same observer and the same
+    // resolved atmosphere reproduces exactly what was uploaded.
+    const wz::engine::rendering::ViewConstants uploaded =
+        wz::engine::rendering::make_view_constants(
+            camera_world_pos, atmosphere);
+    EXPECT_FLOAT_EQ(uploaded.camera[0], 2.0f);
+    EXPECT_FLOAT_EQ(uploaded.camera[1], 5.0f);
+    EXPECT_FLOAT_EQ(uploaded.camera[2], -3.0f);
+    EXPECT_FLOAT_EQ(uploaded.fog_color[0], 0.85f);
+    EXPECT_FLOAT_EQ(uploaded.fog_color[1], 0.20f);
+    EXPECT_FLOAT_EQ(uploaded.fog_color[2], 0.55f);
+    EXPECT_FLOAT_EQ(uploaded.fog_color[3], 0.25f);    // density in .w
+    EXPECT_FLOAT_EQ(uploaded.fog_params[0], 1.0f);    // start distance
+    EXPECT_FLOAT_EQ(uploaded.fog_params[1], 0.125f);  // height falloff
+    // The flag wz_fog_from_view tests before it does anything. On — so the
+    // helper the shader calls takes its fog branch rather than returning early.
+    EXPECT_FLOAT_EQ(uploaded.fog_params[2], 1.0f);
+}
+
+// The fog term in that pixel body is load-bearing, not decoration.
+// wz_fog_from_view is emitted only for a layout that declares a view head
+// (1bd882f), so the SAME body against the plain terrain layout does not
+// compile. That is what makes the shader the test above draws with provably a
+// fogging one, rather than one that merely could have been.
+TEST_F(CustomRenderableFixture, FogPixelBodyDoesNotCompileWithoutAViewHead)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    ea::EngineAssetLibrary assets(gpu, logger, root.string());
+
+    // terrain_layout(), NOT fog_terrain_layout(): identical object rows, no
+    // view head. Same bodies, same prelude node, same shader nodes.
+    const Ingredients ingredients =
+        build_prelude_ingredients(assets, terrain_layout(), 50);
+    ASSERT_TRUE(ingredients.program.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const ea::ResolveReport resolve = assets.resolve_all();
+    EXPECT_FALSE(resolve.ok())
+        << "a body calling wz_fog_from_view compiled against a layout that "
+           "declares no view block";
+
+    bool named_the_helper = false;
+    std::string details;
+    for (const ea::ResolveFailure& f : resolve.failures) {
+        named_the_helper = named_the_helper
+            || f.detail.find("wz_fog_from_view") != std::string::npos;
+        details += f.detail + "\n";
+    }
+    EXPECT_TRUE(named_the_helper)
+        << "the compile failed for some other reason; details were:\n"
+        << details;
+}
+
+// The other half of the ownership rule the view row needed. A declared
+// view_constants row is satisfied WITHOUT a port (that is what lets the test
+// above compile at all), so the matching restriction has to hold too: a
+// renderable may not author a binding for it, because the value is per-FRAME
+// state the renderer packs and no renderable has a copy of. Untested, that
+// rejection could be deleted and only the permissive half would remain.
+TEST_F(CustomRenderableFixture, ViewConstantsCannotBeBoundFromAPort)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    ea::EngineAssetLibrary assets(gpu, logger, root.string());
+
+    // The hand-declared terrain shaders are fine here: nothing has to READ the
+    // view block for the layout to declare the row.
+    const Ingredients ingredients = build_ingredients(
+        assets, fog_terrain_layout(),
+        "shaders/terrain/terrain_vs.hlsl", "shaders/terrain/terrain_ps.hlsl");
+
+    wz::asset::ParamBlock params;
+    params.values["binding0_semantic"] = std::string("view_constants");
+    const wz::asset::AssetKey renderable_key = register_custom_renderable(
+        assets,
+        31,
+        std::move(params),
+        { ingredients.mesh.output,
+          ingredients.program.key,
+          ingredients.field.output });
+
+    ASSERT_TRUE(assets.commit());
+    const ea::ResolveReport resolve = assets.resolve_all();
+    EXPECT_FALSE(resolve.ok());
+
+    // Named for what is actually wrong. Falling through to the source-type
+    // lookup would report "a Scalar field cannot back binding 'view_constants'",
+    // which reads as "wire a different asset" — but nothing can back this row.
+    const auto state = assets.system().node_resolve_state(renderable_key);
+    ASSERT_TRUE(state.has_value());
+    EXPECT_NE(
+        state->detail.find("the renderer fills each"), std::string::npos)
         << "detail was: " << state->detail;
 }
 

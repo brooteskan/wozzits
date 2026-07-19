@@ -36,6 +36,17 @@ namespace wz::engine::assets::internal
             "Camera-snapped terrain (32)",
         };
 
+        // RenderBindingViewHead — the VIEW-frequency block at register space 0
+        // (a8d3450): the observer plus the atmosphere it looks through, filled
+        // once per frame by the renderer rather than per draw. Option index IS
+        // the enum value, so "None" must stay first — that is the value every
+        // layout authored before this param existed decodes to, and it derives
+        // byte-identically to one with no view block at all.
+        constexpr std::array<std::string_view, 2> kViewHeadOptions = {
+            "None",
+            "Camera + fog (12)",
+        };
+
         constexpr std::array<std::string_view, 5> kConstantTypeOptions = {
             "Float",
             "Float2",
@@ -136,6 +147,16 @@ namespace wz::engine::assets::internal
                 params.get<uint32_t>(
                     "constants_dwords",
                     layout.constants_dwords);
+
+            // The view block is head-only (no semantic, no tail, no authored
+            // size): the renderer owns every dword in it, so this one dial is
+            // the whole authored surface.
+            layout.view_head =
+                enum_param(
+                    params,
+                    "view_head",
+                    layout.view_head,
+                    kViewHeadOptions);
 
             for (uint32_t i = 0;
                  i < kMaxRenderBindingLayoutConstantFields;
@@ -240,6 +261,14 @@ namespace wz::engine::assets::internal
                 .default_num =
                     static_cast<double>(RenderBindingConstantsHead::None),
                 .options = kConstantsHeadOptions,
+            });
+            parameters.push_back({
+                .name = "view_head",
+                .type = ParamType::Enum,
+                .label = "View head",
+                .default_num =
+                    static_cast<double>(RenderBindingViewHead::None),
+                .options = kViewHeadOptions,
             });
             for (uint32_t i = 0;
                  i < kMaxRenderBindingLayoutConstantFields;

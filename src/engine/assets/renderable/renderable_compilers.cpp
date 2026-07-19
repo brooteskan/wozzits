@@ -401,6 +401,19 @@ namespace wz::engine::assets::internal
                         || semantic == DescriptorSemantic::PulledMeshNormals;
                 };
 
+            // The RENDERER owns the view-frequency rows (register space 0):
+            // they carry the observer and the frame's atmosphere, which are
+            // per-FRAME state that no renderable has a copy of. RhiSceneRenderer
+            // packs them once per frame and binds the group on any program whose
+            // layout declares the row (da6c952), so — exactly like the geometry
+            // port above — an authored binding may not claim one, and a declared
+            // row is satisfied without any port supplying it.
+            const auto renderer_owned =
+                [](DescriptorSemantic semantic) noexcept
+                {
+                    return semantic == DescriptorSemantic::ViewConstants;
+                };
+
             std::vector<DescriptorSemantic> bound;
             for (const CustomRenderableCompileDesc::Binding& binding :
                  desc.bindings)
@@ -421,6 +434,11 @@ namespace wz::engine::assets::internal
                 if (geometry_owned(*semantic)) {
                     return "semantic '" + binding.semantic
                         + "' is bound by the geometry port";
+                }
+                if (renderer_owned(*semantic)) {
+                    return "semantic '" + binding.semantic
+                        + "' is view-frequency state the renderer fills each "
+                          "frame; it cannot be bound from a port";
                 }
                 const DescriptorBinding* row = nullptr;
                 for (const DescriptorBinding& candidate :
@@ -479,14 +497,16 @@ namespace wz::engine::assets::internal
             }
 
             // Every SRV row of the layout must now be satisfied — by the
-            // geometry port (mesh-pull rows) or an authored binding.
+            // geometry port (mesh-pull rows), the renderer (view-frequency
+            // rows), or an authored binding.
             for (const DescriptorBinding& row : program.descriptor_bindings) {
                 if (row.kind != DescriptorKind::TextureSRV
                     && row.kind != DescriptorKind::StructuredBufferSRV)
                 {
                     continue;
                 }
-                if (geometry_owned(row.semantic)) {
+                if (geometry_owned(row.semantic) || renderer_owned(row.semantic))
+                {
                     continue;
                 }
                 if (std::find(bound.begin(), bound.end(), row.semantic)
