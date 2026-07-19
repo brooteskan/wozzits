@@ -658,6 +658,37 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_camera(
+        SceneNodeCameraEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Coalesce by id -- an fov/far drag streams many, only the latest matters.
+        for (SceneNodeCameraEdit& pending : pending_camera_edits_) {
+            if (pending.node_id == edit.node_id) {
+                pending.camera = edit.camera;
+                return;
+            }
+        }
+        pending_camera_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_cameras(
+        const std::function<void(const SceneNodeCameraEdit&)>& applier)
+    {
+        std::vector<SceneNodeCameraEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_camera_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_camera_edits_);
+        }
+
+        for (const SceneNodeCameraEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_scene_source(
         SceneNodeSceneSourceEdit edit)
     {
@@ -1365,6 +1396,13 @@ namespace wz::app
                             // rebuilds the runtime scene so apply_motion_filters
                             // sees the new fields next frame.
                             app.set_node_motion_filter(edit.node_id, edit.filter);
+                        });
+                    control->service_pending_scene_node_cameras(
+                        [&app](const SceneNodeCameraEdit& edit) {
+                            // Set the whole Camera component; the apply rebuilds the
+                            // runtime scene so the view controller re-reads it, and
+                            // marks the scene dirty so Save All persists the fields.
+                            app.set_node_camera(edit.node_id, edit.camera);
                         });
                     control->service_pending_scene_node_scene_sources(
                         [&app](const SceneNodeSceneSourceEdit& edit) {

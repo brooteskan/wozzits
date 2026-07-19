@@ -379,6 +379,14 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             const wz::engine::assets::SceneMotionFilterAsset& filter);
 
+        // Live edit: set the node's Camera component field values (fov/near/far/
+        // aspect). No-op (logged) when the node or its camera is missing. Marks the
+        // scene dirty so Save All persists the change, and rebuilds the runtime
+        // scene so the live view re-reads the camera.
+        bool set_node_camera(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneCameraAsset& camera);
+
         // Flatten the node's referenced Scene asset into the live scene (#213):
         // resolve the node's scene_source, expand its GLB-named nodes as real,
         // persistent children of the node in document_.nodes() (id "<host>/<glbname>",

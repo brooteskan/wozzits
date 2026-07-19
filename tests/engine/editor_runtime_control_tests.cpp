@@ -16,6 +16,7 @@
 namespace
 {
     using wz::app::EditorRuntimeControl;
+    using wz::app::SceneNodeCameraEdit;
     using wz::app::SceneNodePropertiesEdit;
     using wz::app::SceneNodeTransformEdit;
 
@@ -106,6 +107,31 @@ TEST(EditorRuntimeControl, PropertiesPostCoalescesByIdAndDrainsOnce)
     std::vector<SceneNodePropertiesEdit> again;
     control.service_pending_scene_node_properties(
         [&again](const SceneNodePropertiesEdit& edit) { again.push_back(edit); });
+    EXPECT_TRUE(again.empty());
+}
+
+TEST(EditorRuntimeControl, CameraPostCoalescesByIdAndDrainsOnce)
+{
+    EditorRuntimeControl control;
+    wz::engine::assets::SceneCameraAsset first;
+    first.far_plane = 1000.f;
+    wz::engine::assets::SceneCameraAsset second;
+    second.far_plane = 2000.f;
+    control.post_scene_node_camera(
+        SceneNodeCameraEdit{ .node_id = "cam", .camera = first });
+    control.post_scene_node_camera(
+        SceneNodeCameraEdit{ .node_id = "cam", .camera = second });
+
+    std::vector<SceneNodeCameraEdit> applied;
+    control.service_pending_scene_node_cameras(
+        [&applied](const SceneNodeCameraEdit& edit) { applied.push_back(edit); });
+
+    ASSERT_EQ(applied.size(), 1u);                        // one node -> one apply
+    EXPECT_FLOAT_EQ(applied[0].camera.far_plane, 2000.f); // latest wins
+
+    std::vector<SceneNodeCameraEdit> again;
+    control.service_pending_scene_node_cameras(
+        [&again](const SceneNodeCameraEdit& edit) { again.push_back(edit); });
     EXPECT_TRUE(again.empty());
 }
 

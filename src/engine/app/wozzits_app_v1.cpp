@@ -1879,6 +1879,28 @@ namespace wz::app
         return true;
     }
 
+    bool WozzitsApp_v1::set_node_camera(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneCameraAsset& camera)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_camera: no-op (node '" + node_id + "' missing)");
+            return false;
+        }
+        node->camera = camera;
+        document_.dirty() = true;
+
+        // Rebuild so the live view controller re-reads the camera params next
+        // frame. Camera edits are edit-time and coalesced by id, so a rebuild per
+        // service cycle is fine; a lighter in-place patch (as the motion filter
+        // does for a field tweak) could replace this later if it ever matters.
+        apply_scene_change(SceneChange::runtime_rebuild());
+        return true;
+    }
+
     // Extract a short seam identifier from a source_location function name --
     // "void wz::app::WozzitsApp_v1::set_node_renderable_program(...)" -> the bare
     // "set_node_renderable_program". CSV-safe (a bare identifier: no comma) and

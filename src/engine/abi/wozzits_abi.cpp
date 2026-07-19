@@ -2320,6 +2320,48 @@ extern "C"
         }
     }
 
+    WzResult wz_host_runtime_set_node_camera(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        double fov_y,
+        double near_plane,
+        double far_plane,
+        double aspect)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            wz::engine::assets::SceneCameraAsset camera;
+            camera.fov_y = static_cast<float>(fov_y);
+            camera.near_plane = static_cast<float>(near_plane);
+            camera.far_plane = static_cast<float>(far_plane);
+            camera.aspect = static_cast<float>(aspect);
+
+            runtime->control.post_scene_node_camera(
+                wz::app::SceneNodeCameraEdit{
+                    .node_id = node_id_utf8,
+                    .camera = camera,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node camera post failed");
+        }
+    }
+
     WzResult wz_host_runtime_set_node_scene_source(
         WzHostRuntime* runtime,
         const char* node_id_utf8,

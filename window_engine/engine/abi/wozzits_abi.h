@@ -1517,6 +1517,24 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_motion_filter(
     const char* node_id_utf8,
     const WzEditorSceneMotionFilter* filter);
 
+// Author node `node_id_utf8`'s Camera component field VALUES: fov_y, near, far,
+// and aspect (the editor sends all four on any change). DEFERRED (applied next
+// frame) and NON-BLOCKING; coalesced by id. The engine rebuilds the runtime
+// scene so the view controller re-reads the camera, and marks the scene dirty so
+// Save All persists the fields. An empty node id, unknown/missing node, or a node
+// without a camera is a logged engine-thread no-op. HOST-CAPABILITY GATE
+// (require_host_scene_authoring): WZ_RESULT_INVALID_ARGUMENT for a null runtime,
+// an empty node id, or a non-host caller. This carries editable field values,
+// distinct from the presence-only "camera" component add/remove token. Additive
+// exported fn — no WZ_ABI_VERSION bump (no shared struct-layout change).
+WZ_ABI_API WzResult wz_host_runtime_set_node_camera(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    double fov_y,
+    double near_plane,
+    double far_plane,
+    double aspect);
+
 // Author the PREFERRED asset-graph-backed Scene-source component on node
 // `node_id_utf8` (issue #213): point it at the authored "Scene from GLB"
 // asset-graph node `asset_graph_node_id`, or CLEAR the scene source when the id

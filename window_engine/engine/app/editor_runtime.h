@@ -315,6 +315,18 @@ namespace wz::app
         wz::engine::assets::SceneMotionFilterAsset filter;
     };
 
+    // A live edit to a node's Camera component field values (fov_y / near / far /
+    // aspect). Like the Motion Filter edit the whole component is sent per change
+    // and coalesced by id (an fov/far drag streams many; only the latest matters).
+    // Applied via WozzitsApp_v1::set_node_camera, which rebuilds the runtime scene
+    // so the view controller re-reads the camera. This carries editable field
+    // VALUES, distinct from the presence-only "camera" SceneNodeComponentEdit token.
+    struct SceneNodeCameraEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        wz::engine::assets::SceneCameraAsset camera;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -558,6 +570,15 @@ namespace wz::app
             const std::function<
                 void(const SceneNodeMotionFilterEdit&)>& applier);
 
+        // Owner thread: queue a set of a node's Camera component field values
+        // (non-blocking; coalesced by id, like the Motion Filter edit). Applied on
+        // the engine thread's next frame.
+        void post_scene_node_camera(SceneNodeCameraEdit edit);
+
+        void service_pending_scene_node_cameras(
+            const std::function<
+                void(const SceneNodeCameraEdit&)>& applier);
+
         // Owner thread: queue a set/clear of a node's preferred Scene source
         // (non-blocking; appended in order — NOT coalesced). Applied on the
         // engine thread's next frame, like the renderable edits (issue #213).
@@ -694,6 +715,7 @@ namespace wz::app
         std::vector<SceneNodeCollisionEdit> pending_collision_edits_;
         std::vector<SceneNodeMotionTerrainEdit> pending_motion_terrain_edits_;
         std::vector<SceneNodeMotionFilterEdit> pending_motion_filter_edits_;
+        std::vector<SceneNodeCameraEdit> pending_camera_edits_;
         std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
         std::vector<SceneNodeGlbSceneSourceEdit> pending_glb_scene_source_edits_;
         std::vector<SceneNodeGlbStyleEdit> pending_glb_style_edits_;
