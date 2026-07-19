@@ -1842,6 +1842,50 @@ public sealed partial class WozzitsEngineNativeClient
             out value);
     }
 
+    // Author a node's Camera field values against the live viewport runtime (the
+    // seam every other component edit uses). Mirrors SetRuntimeSceneNodeTransform:
+    // no-op when no viewport is up, and a mid-edit / unparseable field is skipped
+    // quietly so the next valid keystroke posts all four.
+    internal EngineMutationResponse SetRuntimeSceneNodeCamera(
+        IntPtr runtime,
+        string nodeId,
+        EngineSceneCameraEdit edit)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+        if (!TryParseLiveCamera(edit, out var c))
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeCamera(
+            runtime,
+            nodeId,
+            c.FovY, c.Near, c.Far, c.Aspect));
+    }
+
+    private static bool TryParseLiveCamera(
+        EngineSceneCameraEdit edit,
+        out (double FovY, double Near, double Far, double Aspect) value)
+    {
+        value = default;
+        if (TryParseComponent(edit.FieldOfViewY, out var fov)
+            && TryParseComponent(edit.NearPlane, out var near)
+            && TryParseComponent(edit.FarPlane, out var far)
+            && TryParseComponent(edit.Aspect, out var aspect))
+        {
+            value = (fov, near, far, aspect);
+            return true;
+        }
+        return false;
+    }
+
     internal EngineMutationResponse SetSceneNodeTransform(
         string projectDirectory,
         string nodeId,

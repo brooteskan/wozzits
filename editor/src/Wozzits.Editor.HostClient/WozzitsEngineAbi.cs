@@ -731,6 +731,21 @@ internal static partial class WozzitsEngineAbi
         string nodeIdUtf8,
         in WzEditorSceneMotionFilterAbi filter);
 
+    // Author a node's CAMERA component field values (fov_y / near / far / aspect;
+    // the editor sends all four on any change). Live + host-gated, no-op success
+    // when no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_camera",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeCamera(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        double fovY,
+        double nearPlane,
+        double farPlane,
+        double aspect);
+
     // Point a node at a "Scene from GLB" asset-graph node so the runtime grafts
     // that GLB's hierarchy as the node's children (issue #213 piece 2). The id is
     // the asset-graph node's id (0 = clear); consumeMode uses the WZ_SCENE_SOURCE_*

@@ -396,10 +396,15 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         string nodeId,
         EngineSceneCameraEdit edit)
     {
-        return _client.SetSceneNodeCamera(
-            _projectDirectory,
-            nodeId,
-            edit);
+        // Route through the live runtime seam like every other component edit
+        // (transform, collision, motion, motion filter). The old file path
+        // (_client.SetSceneNodeCamera) hit an engine stub that discarded the edit,
+        // so camera changes never applied or saved.
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetRuntimeSceneNodeCamera(runtime.Handle, nodeId, edit);
     }
 
     public EngineAddSceneNodeResponse AddNodeBehavior(string nodeId, string module)
