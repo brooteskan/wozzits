@@ -424,35 +424,119 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         IsConnectionPreviewRejected = rejected;
     }
 
+    // Complete a drawn wire onto an input port (the drag-drop path); both endpoints have a
+    // card on this canvas. The preview line is always cleared once the drop resolves.
     public bool ConnectToInputPort(
         AssetGraphNodeCardViewModel fromNode,
+        AssetGraphPortViewModel inputPort)
+    {
+        var connected = ConnectResolvedSourceToInput(fromNode.Id, inputPort);
+        CancelConnectionPreview();
+        return connected;
+    }
+
+    // Connect an input port to a source identified by NAME OR NUMBER, without a drawn wire.
+    // The source need not have a card on this canvas, so this is how a node inside a drill-in
+    // references a node defined outside its sub-graph (issue woguls/wozzits-editor#1). The
+    // engine edge is ordinary; the sub-graph boundary is editor-only, so the compiler is
+    // unaffected.
+    public bool ConnectInputByReference(
+        AssetGraphPortViewModel inputPort,
+        string sourceReference)
+    {
+        if (!TryResolveSourceReference(sourceReference, out var fromNodeId, out var error))
+        {
+            LastEditError = error;
+            return false;
+        }
+
+        if (!ConnectResolvedSourceToInput(fromNodeId, inputPort))
+        {
+            return false;
+        }
+
+        // The source often lives on another pane (e.g. the root canvas while we author from
+        // a drill-in), so let the shell re-pull the other panes to show the new edge.
+        GraphMutated?.Invoke(this);
+        return true;
+    }
+
+    // Resolve a user-typed source reference to a live node id. A number (optionally
+    // '#'-prefixed) is a direct node id -- the universal reference, since not every node
+    // type can be renamed. Otherwise a named reroute, then a node display name (both
+    // case-insensitive); a name that matches several nodes is rejected in favour of the id.
+    public bool TryResolveSourceReference(
+        string sourceReference,
+        out ulong nodeId,
+        out string error)
+    {
+        nodeId = 0;
+        error = string.Empty;
+        var trimmed = (sourceReference ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            error = "Enter a source node name or id.";
+            return false;
+        }
+
+        var numeric = trimmed.StartsWith('#') ? trimmed[1..].Trim() : trimmed;
+        if (ulong.TryParse(numeric, out var id) && Nodes.Any(node => node.Id == id))
+        {
+            nodeId = id;
+            return true;
+        }
+
+        // Named reroutes take priority over display names; fall back to display names only
+        // when no reroute matches.
+        var matches = Nodes
+            .Where(node => string.Equals(
+                _reroutes.NameOf(node.Id), trimmed, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (matches.Count == 0)
+        {
+            matches = Nodes
+                .Where(node => string.Equals(
+                    node.DisplayName, trimmed, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        if (matches.Count == 1)
+        {
+            nodeId = matches[0].Id;
+            return true;
+        }
+
+        error = matches.Count > 1
+            ? $"“{trimmed}” matches {matches.Count} nodes — use the node id number instead."
+            : $"No node named or numbered “{trimmed}”.";
+        return false;
+    }
+
+    private bool ConnectResolvedSourceToInput(
+        ulong fromNodeId,
         AssetGraphPortViewModel inputPort)
     {
         if (_editorSession is null)
         {
             LastEditError = "Engine editor session is not available.";
-            CancelConnectionPreview();
             return false;
         }
         if (RejectIfGraphOperationRunning())
         {
-            CancelConnectionPreview();
             return false;
         }
 
         var check = _editorSession.ConnectAssetGraphNodes(
-            fromNode.Id,
+            fromNodeId,
             inputPort.Owner.Id,
             inputPort.Index);
         if (!check.Ok || !check.Check.Compatible)
         {
             LastEditError = ConnectionError(check);
-            CancelConnectionPreview();
             return false;
         }
 
         LastEditError = string.Empty;
-        CancelConnectionPreview();
         if (!ReloadGraphFromSessionPreservingLayout())
         {
             return false;
@@ -889,10 +973,7 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
 
             foreach (var port in node.InputPorts)
             {
-                port.RerouteName =
-                    incoming.TryGetValue((node.Id, port.Index), out var source)
-                        ? _reroutes.NameOf(source)
-                        : null;
+                port.RerouteName = UsageLabelFor(node.Id, port.Index, incoming);
             }
 
             node.RerouteBadges.Clear();
@@ -912,6 +993,39 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
                 }
             }
         }
+    }
+
+    // The usage label for an input port: the named reroute feeding it, or -- when the
+    // source has no card on this canvas (a node outside this drill-in's sub-graph) -- the
+    // external source's own name, so a connect-by-reference still reads as a labelled
+    // reference even though its wire is off-canvas. Null when the source is drawn as a wire.
+    private string? UsageLabelFor(
+        ulong nodeId,
+        uint portIndex,
+        IReadOnlyDictionary<(ulong Node, uint Port), ulong> incoming)
+    {
+        if (!incoming.TryGetValue((nodeId, portIndex), out var source))
+        {
+            return null;
+        }
+
+        var name = _reroutes.NameOf(source);
+        if (name is not null)
+        {
+            return name;
+        }
+
+        return RepresentativeOnCanvas(source).OnCanvas ? null : ExternalSourceLabel(source);
+    }
+
+    // A short label for a source node that isn't on this canvas: its display name, or a
+    // "#id" fallback so an unnamed node is still identifiable.
+    private string ExternalSourceLabel(ulong nodeId)
+    {
+        var source = Nodes.FirstOrDefault(node => node.Id == nodeId);
+        return source is not null && !string.IsNullOrWhiteSpace(source.DisplayName)
+            ? source.DisplayName
+            : $"#{nodeId}";
     }
 
     // How a node appears on this canvas: as a visible card (OnCanvas, no proxy), collapsed

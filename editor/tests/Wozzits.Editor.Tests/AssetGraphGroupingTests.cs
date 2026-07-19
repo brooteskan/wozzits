@@ -597,6 +597,121 @@ public sealed class AssetGraphGroupingTests
         Assert.False(reroutes.IsReroute(5));
     }
 
+    // --- Connect by name or number -----------------------------------------------------
+
+    [Fact]
+    public void ResolvesSourceReferenceByNumericId()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(Snapshot(10, 20));
+
+        Assert.True(pane.TryResolveSourceReference("20", out var id, out var error));
+        Assert.Equal(20ul, id);
+        Assert.Equal(string.Empty, error);
+
+        // A '#'-prefixed id resolves the same way.
+        Assert.True(pane.TryResolveSourceReference("#10", out var hashId, out _));
+        Assert.Equal(10ul, hashId);
+    }
+
+    [Fact]
+    public void ResolvesSourceReferenceByRerouteNameCaseInsensitively()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(SnapshotWithEdges([1, 2], (1, 2)));
+        pane.LoadReroutes(new[] { new PersistedReroute { SourceNodeId = 1, Name = "Shared" } });
+
+        Assert.True(pane.TryResolveSourceReference("shared", out var id, out _));
+        Assert.Equal(1ul, id);
+    }
+
+    [Fact]
+    public void ResolvesSourceReferenceByDisplayName()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(Snapshot(1, 2, 3));
+
+        Assert.True(pane.TryResolveSourceReference("node 2", out var id, out _));
+        Assert.Equal(2ul, id);
+    }
+
+    [Fact]
+    public void AmbiguousDisplayNameReferenceIsRejectedInFavourOfId()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(SnapshotWithDisplayNames((1, "dup"), (2, "dup")));
+
+        Assert.False(pane.TryResolveSourceReference("dup", out _, out var error));
+        Assert.Contains("id", error);
+
+        // The number still resolves each node unambiguously.
+        Assert.True(pane.TryResolveSourceReference("2", out var id, out _));
+        Assert.Equal(2ul, id);
+    }
+
+    [Fact]
+    public void UnknownSourceReferenceIsRejected()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(Snapshot(1, 2));
+
+        Assert.False(pane.TryResolveSourceReference("ghost", out _, out var error));
+        Assert.NotEqual(string.Empty, error);
+
+        Assert.False(pane.TryResolveSourceReference("   ", out _, out var blank));
+        Assert.NotEqual(string.Empty, blank);
+    }
+
+    [Fact]
+    public void DrillInInputFedFromOutsideShowsExternalUsageBadge()
+    {
+        var grouping = new AssetGraphGroupingModel();
+        var inside = grouping.CreateSubGraph("Inside", [3ul]);
+
+        // Node 1 lives outside the sub-graph and feeds node 3's input. Inside the drill-in,
+        // node 1 has no card and its wire is hidden -- but the input still reads as a
+        // labelled reference to "node 1", so the connect-by-reference is visible.
+        var drill = new AssetGraphEditorPaneViewModel(grouping: grouping, context: inside);
+        drill.LoadSnapshot(SnapshotWithEdges([1, 3], (1, 3)));
+
+        Assert.True(NodeById(drill, 3).IsCanvasVisible);
+        Assert.False(NodeById(drill, 1).IsCanvasVisible);
+        Assert.True(EdgeBetween(drill, 1, 3).IsRenderHidden);
+        Assert.Equal("node 1", NodeById(drill, 3).InputPorts[0].RerouteName);
+        Assert.Contains(NodeById(drill, 3).RerouteBadges, badge => badge.Contains("node 1"));
+    }
+
+    [Fact]
+    public void PlainOnCanvasWireHasNoUsageBadge()
+    {
+        var pane = new AssetGraphEditorPaneViewModel();
+        pane.LoadSnapshot(SnapshotWithEdges([1, 2], (1, 2)));
+
+        // A wire drawn between two visible cards is not a reference badge.
+        Assert.Null(NodeById(pane, 2).InputPorts[0].RerouteName);
+        Assert.Empty(NodeById(pane, 2).RerouteBadges);
+    }
+
+    private static EngineAssetGraphSnapshotResponse SnapshotWithDisplayNames(
+        params (ulong Id, string DisplayName)[] nodes) =>
+        new()
+        {
+            Ok = true,
+            Snapshot = new EngineAssetGraphSnapshot
+            {
+                Nodes = nodes
+                    .Select(node => new EngineAssetGraphNode
+                    {
+                        Id = node.Id,
+                        TypeName = "Node",
+                        DisplayName = node.DisplayName,
+                        InputPorts = [new EngineAssetGraphPort { Index = 0, Label = "in" }],
+                        OutputPorts = [new EngineAssetGraphPort { Index = 0, Label = "out" }],
+                    })
+                    .ToList(),
+            },
+        };
+
     private static ulong[] Members(AssetGraphSubGraph subGraph) =>
         subGraph.MemberNodeIds.OrderBy(id => id).ToArray();
 

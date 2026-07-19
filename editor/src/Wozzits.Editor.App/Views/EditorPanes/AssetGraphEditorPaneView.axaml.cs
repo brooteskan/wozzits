@@ -766,12 +766,21 @@ public partial class AssetGraphEditorPaneView : UserControl
 
         var items = new List<Control>();
 
-        if (PortUnderPointer(_rightDownSource) is { IsOutput: true } outputPort)
+        var port = PortUnderPointer(_rightDownSource);
+        if (port is { IsOutput: true } outputPort)
         {
             var owner = outputPort.Owner;
             items.Add(graph.IsReroute(owner.Id)
                 ? BuildMenuItem("Remove named reroute", () => graph.RemoveReroute(owner))
                 : BuildMenuItem("Create named reroute", () => graph.CreateReroute(owner)));
+        }
+        else if (port is { IsInput: true } inputPort)
+        {
+            // Connect this input to a source referenced by name or number -- the way to
+            // reference a node outside this drill-in's sub-graph, which has no card here.
+            items.Add(BuildMenuItem(
+                "Connect to source by name or number…",
+                () => _ = PromptConnectInputByReferenceAsync(graph, inputPort)));
         }
         else if (SubGraphUnderPointer(_rightDownSource) is { } proxy)
         {
@@ -810,6 +819,29 @@ public partial class AssetGraphEditorPaneView : UserControl
         var item = new MenuItem { Header = header };
         item.Click += (_, _) => action();
         return item;
+    }
+
+    // Prompt for a source node (name or #id) and connect it to the given input port. The
+    // source can be anywhere in the graph -- including off this drill-in canvas -- so this
+    // is how an input references a node defined outside the sub-graph.
+    private async Task PromptConnectInputByReferenceAsync(
+        AssetGraphEditorPaneViewModel graph,
+        AssetGraphPortViewModel inputPort)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            return;
+        }
+
+        var label = string.IsNullOrWhiteSpace(inputPort.Label) ? "input" : inputPort.Label;
+        var reference = await new TextPromptWindow(
+                "Connect to source",
+                $"Source node feeding “{label}” (name or #id):")
+            .ShowDialog<string?>(owner);
+        if (!string.IsNullOrWhiteSpace(reference))
+        {
+            graph.ConnectInputByReference(inputPort, reference);
+        }
     }
 
     private void SetScrollOffsetForGraphPoint(
