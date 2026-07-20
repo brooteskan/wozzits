@@ -171,6 +171,7 @@ TEST(AtmosphereAssetModule, ParamBlockDialsRoundTripThroughCompile)
     params.values["fog_start_distance"] = 250.0;
     params.values["fog_height_falloff"] = 0.015625;
     params.values["fog_enabled"] = true;
+    params.values["fog_saturation"] = 1.75;
 
     const wz::asset::AssetKey key = make_atmosphere_key(
         "atmosphere/params",
@@ -178,7 +179,8 @@ TEST(AtmosphereAssetModule, ParamBlockDialsRoundTripThroughCompile)
         0.0625f,
         250.0f,
         0.015625f,
-        /*fog_enabled=*/true);
+        /*fog_enabled=*/true,
+        /*fog_saturation=*/1.75f);
 
     wz::asset::AssetNode node{};
     node.key = key;
@@ -205,6 +207,7 @@ TEST(AtmosphereAssetModule, ParamBlockDialsRoundTripThroughCompile)
     EXPECT_FLOAT_EQ(data->fog_start_distance, 250.0f);
     EXPECT_FLOAT_EQ(data->fog_height_falloff, 0.015625f);
     EXPECT_TRUE(data->fog_enabled);
+    EXPECT_FLOAT_EQ(data->fog_saturation, 1.75f);
 }
 
 // An all-default atmosphere is VALID -- it means "no fog", not "unfinished".
@@ -279,6 +282,8 @@ TEST(AtmosphereAssetModule, EveryDefaultDeclarationAgrees)
     EXPECT_FLOAT_EQ(authoring.fog_start_distance, compile.fog_start_distance);
     EXPECT_FLOAT_EQ(authoring.fog_height_falloff, compile.fog_height_falloff);
     EXPECT_EQ(authoring.fog_enabled, compile.fog_enabled);
+    EXPECT_FLOAT_EQ(authoring.fog_saturation, compile.fog_saturation);
+    EXPECT_FLOAT_EQ(authoring.fog_saturation, runtime.fog_saturation);
 
     // ...and the fourth declaration: what the editor writes into a fresh node.
     const wz::asset::CompilerRegistry registry =
@@ -307,6 +312,10 @@ TEST(AtmosphereAssetModule, EveryDefaultDeclarationAgrees)
             EXPECT_FLOAT_EQ(
                 static_cast<float>(decl.default_num),
                 authoring.fog_height_falloff);
+        } else if (decl.name == "fog_saturation") {
+            EXPECT_FLOAT_EQ(
+                static_cast<float>(decl.default_num),
+                authoring.fog_saturation);
         }
     }
 }

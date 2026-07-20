@@ -41,7 +41,8 @@ namespace wz::engine::assets
         float fog_density,
         float fog_start_distance,
         float fog_height_falloff,
-        bool fog_enabled) noexcept
+        bool fog_enabled,
+        float fog_saturation) noexcept
     {
         uint64_t h = detail::fnv1a_64(name);
         h = detail::mix64(h, atmosphere_hash_float(fog_color[0]));
@@ -51,6 +52,7 @@ namespace wz::engine::assets
         h = detail::mix64(h, atmosphere_hash_float(fog_start_distance));
         h = detail::mix64(h, atmosphere_hash_float(fog_height_falloff));
         h = detail::mix64(h, fog_enabled ? 1ull : 0ull);
+        h = detail::mix64(h, atmosphere_hash_float(fog_saturation));
 
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),

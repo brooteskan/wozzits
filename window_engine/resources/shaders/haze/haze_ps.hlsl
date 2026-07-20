@@ -13,8 +13,9 @@
 // the visible backdrop -- lighting from one dome, appearance from another.
 //
 // Division of labour: the ATMOSPHERE (view-frequency CameraFog, t0/space0) still
-// authors the AMOUNT + PROFILE of the haze -- density, the horizon band, on/off --
-// while the sky provides the COLOUR. fog_color becomes a spectral TINT on the
+// authors the AMOUNT + PROFILE of the haze -- density, the horizon band, on/off,
+// and a SATURATION dial (fog_params.w) on the scattered sky colour -- while the
+// sky provides the COLOUR itself. fog_color becomes a spectral TINT on the
 // scattered sky radiance (set it white for pure sky colour).
 //
 // Object-space bindings (register space 2) mirror the sky dome
@@ -30,7 +31,7 @@ struct WzViewConstants
     float4 camera_world_position;
     float4 fog_color_density;   // rgb = fog_color (now a tint), w = fog_density
     float4 fog_params;          // x = start_distance, y = height_falloff,
-                                //   z = enabled (0/1), w = unused
+                                //   z = enabled (0/1), w = haze saturation
 };
 
 StructuredBuffer<WzViewConstants> view_constants : register(t0, space0);
@@ -114,6 +115,19 @@ float4 main(PSIn input) : SV_TARGET
     sky_gaussian.GetDimensions(count, stride);
     float3 haze_color =
         (count > 0u) ? sky_radiance(dir) * fog_tint : fog_tint;
+
+    // SATURATION from the atmosphere (fog_params.w): pull the scattered sky
+    // colour toward or away from its own luminance. 1 = the sky's colour
+    // untouched, 0 = greyscale, >1 = boosted for a vivid horizon glow. Distant
+    // haze often reads best a touch desaturated. The atmosphere defaults this to
+    // 1, so it is a no-op until dialled; the no-atmosphere path leaves the haze
+    // invisible (enabled = 0) regardless, so a 0 here never greys a live dome.
+    float  saturation = v.fog_params.w;
+    float  luma       = dot(haze_color, float3(0.2126f, 0.7152f, 0.0722f));
+    // max(,0) guards saturation > 1: extrapolating past the sky colour can push a
+    // channel negative, and negative airlight radiance is meaningless.
+    haze_color        =
+        max(lerp(float3(luma, luma, luma), haze_color, saturation), 0.0f);
 
     // AMOUNT from the atmosphere: the horizon band (densest at the horizon,
     // thinning to nothing by `reach` elevation) times the authored density. Same

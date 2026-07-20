@@ -121,7 +121,10 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kPlacementCompilerVersion = 1;
     inline constexpr uint64_t kPlacedFieldCompilerVersion = 1;
     inline constexpr uint64_t kClipmapLatticeScheduleCompilerVersion = 1;
-    inline constexpr uint64_t kAtmosphereCompilerVersion = 1;
+    // Bumped 1 -> 2: AtmosphereData grew fog_saturation, packed into the
+    // formerly-unused fog_params.w so the environment-lit haze can desaturate or
+    // boost the sky colour it scatters. Recompile so cached atmospheres carry it.
+    inline constexpr uint64_t kAtmosphereCompilerVersion = 2;
     inline constexpr uint64_t kFrameEnvironmentCompilerVersion = 1;
     // Bumped 2 -> 3: the collision-from-height-field recipe now accepts an
     // optional Placement input port that overrides its origin/size/vertical/

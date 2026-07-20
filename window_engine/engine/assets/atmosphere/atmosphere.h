@@ -46,7 +46,8 @@ namespace wz::engine::assets
     //
     // Immutable, CPU-side global fog state. The field order matches the c1/c2
     // rows of the CameraFog view head (fog_color.rgb, fog_density | start,
-    // height_falloff, enabled) so a consumer can pack it without reshuffling.
+    // height_falloff, enabled, saturation) so a consumer can pack it without
+    // reshuffling.
     //
     // Defaults describe a pale daylight haze that is switched OFF: an atmosphere
     // nobody has authored must not silently tint a scene, so fog_enabled starts
@@ -67,11 +68,20 @@ namespace wz::engine::assets
         // than evaluating it with a zero density.
         bool fog_enabled = false;
 
+        // Colourfulness of the haze the sky paints on the dome: 1 = the sky's
+        // own colour, 0 = greyscale (luminance only), >1 = boosted. Packed into
+        // the previously-unused fog_params.w (the last CameraFog slot) and
+        // applied by the environment-lit haze, which takes its colour from the
+        // sky. Distant haze often reads best slightly desaturated, or pushed the
+        // other way for a vivid horizon glow — hence a dial, defaulting to 1 (no
+        // change) so existing atmospheres look identical.
+        float fog_saturation = 1.0f;
+
         // An all-default atmosphere IS valid — it just means "no fog". This
         // rejects only values that could not describe a medium at all: a
-        // negative density or start distance, or any non-finite number that
-        // would poison the constants it is packed into. fog_enabled is
-        // deliberately not a validity input; authoring the dials with the fog
+        // negative density, start distance, or saturation, or any non-finite
+        // number that would poison the constants it is packed into. fog_enabled
+        // is deliberately not a validity input; authoring the dials with the fog
         // switched off is the normal way to stage it.
         bool valid() const noexcept
         {
@@ -81,8 +91,10 @@ namespace wz::engine::assets
                 && std::isfinite(fog_density)
                 && std::isfinite(fog_start_distance)
                 && std::isfinite(fog_height_falloff)
+                && std::isfinite(fog_saturation)
                 && fog_density >= 0.0f
-                && fog_start_distance >= 0.0f;
+                && fog_start_distance >= 0.0f
+                && fog_saturation >= 0.0f;
         }
     };
 
@@ -104,6 +116,7 @@ namespace wz::engine::assets
         float fog_start_distance = 0.0f;
         float fog_height_falloff = 0.0f;
         bool  fog_enabled = false;
+        float fog_saturation = 1.0f;
     };
 
 

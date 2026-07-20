@@ -50,6 +50,8 @@ namespace wz::engine::assets::internal
                     "fog_height_falloff", desc.fog_height_falloff);
             desc.fog_enabled =
                 params.get<bool>("fog_enabled", desc.fog_enabled);
+            desc.fog_saturation =
+                params.get<float>("fog_saturation", desc.fog_saturation);
             return desc;
         }
 
@@ -128,6 +130,17 @@ namespace wz::engine::assets::internal
                     .type = wz::asset::ParamType::Bool,
                     .label = "Fog enabled",
                 },
+                {
+                    // Colourfulness of the sky the haze scatters: 0 greyscale,
+                    // 1 the sky's own colour, up to 4 for a vivid horizon glow.
+                    // Reaches the haze through fog_params.w.
+                    .name = "fog_saturation",
+                    .type = wz::asset::ParamType::Float,
+                    .label = "Fog saturation",
+                    .default_num = 1.0,
+                    .min = 0.0,
+                    .max = 4.0,
+                },
             },
             .compile = [&logger, &atmosphere_table](
                 const wz::asset::AssetNode& input,
@@ -165,6 +178,7 @@ namespace wz::engine::assets::internal
                 data.fog_start_distance = desc.fog_start_distance;
                 data.fog_height_falloff = desc.fog_height_falloff;
                 data.fog_enabled = desc.fog_enabled;
+                data.fog_saturation = desc.fog_saturation;
                 if (!data.valid()) {
                     logger.error("compiled atmosphere is invalid");
                     return compile_failed_node(

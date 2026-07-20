@@ -37,6 +37,7 @@ namespace wz::engine::assets
         compile_desc.fog_start_distance = desc.fog_start_distance;
         compile_desc.fog_height_falloff = desc.fog_height_falloff;
         compile_desc.fog_enabled = desc.fog_enabled;
+        compile_desc.fog_saturation = desc.fog_saturation;
 
         const wz::asset::AssetKey key =
             make_atmosphere_key(
@@ -45,7 +46,8 @@ namespace wz::engine::assets
                 desc.fog_density,
                 desc.fog_start_distance,
                 desc.fog_height_falloff,
-                desc.fog_enabled);
+                desc.fog_enabled,
+                desc.fog_saturation);
 
         wz::asset::AssetNode node{};
         node.key = key;

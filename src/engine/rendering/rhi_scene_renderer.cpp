@@ -712,7 +712,7 @@ namespace wz::engine::rendering
         out.fog_params[0] = atmosphere->fog_start_distance;
         out.fog_params[1] = atmosphere->fog_height_falloff;
         out.fog_params[2] = atmosphere->fog_enabled ? 1.0f : 0.0f;
-        out.fog_params[3] = 0.0f;   // unused
+        out.fog_params[3] = atmosphere->fog_saturation;
         return out;
     }
 

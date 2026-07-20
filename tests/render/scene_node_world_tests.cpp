@@ -270,6 +270,7 @@ TEST(ViewConstants, PopulatedAtmospherePacksEveryDialAtItsOwnSlot)
     atmosphere.fog_start_distance = 250.0f;
     atmosphere.fog_height_falloff = 0.75f;
     atmosphere.fog_enabled = true;
+    atmosphere.fog_saturation = 1.5f;
     ASSERT_TRUE(atmosphere.valid());
 
     const wz::math::Vec3 camera{ -11.0f, 22.0f, -33.0f };
@@ -289,6 +290,7 @@ TEST(ViewConstants, PopulatedAtmospherePacksEveryDialAtItsOwnSlot)
     EXPECT_FLOAT_EQ(v.fog_params[0], 250.0f);   // start distance
     EXPECT_FLOAT_EQ(v.fog_params[1], 0.75f);    // height falloff
     EXPECT_FLOAT_EQ(v.fog_params[2], 1.0f);     // enabled
+    EXPECT_FLOAT_EQ(v.fog_params[3], 1.5f);     // saturation
 }
 
 TEST(ViewConstants, AuthoredButDisabledAtmosphereKeepsItsDialsAndStaysOff)

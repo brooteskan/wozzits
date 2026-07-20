@@ -30,6 +30,7 @@ namespace wz::engine::assets
         float fog_start_distance = 0.0f;         // metres before fog accumulates
         float fog_height_falloff = 0.0f;         // rate the fog thins with height
         bool  fog_enabled = false;               // master switch
+        float fog_saturation = 1.0f;             // colourfulness of scattered sky
     };
 
     // Returned by create_atmosphere(). Wraps the DAG output node key.
