@@ -340,6 +340,19 @@ namespace wz::app
         wz::engine::assets::SceneAtmosphereAsset atmosphere;
     };
 
+    // A live edit to a node's FrameEnvironment component: which FrameEnvironment
+    // asset-graph node the frame's environment reads (environment_asset_node_id) +
+    // enabled. Coalesced by id like the Atmosphere edit; applied via
+    // WozzitsApp_v1::set_node_environment, which rebuilds the runtime scene so the
+    // renderer re-resolves the frame environment. The resolved environment_asset
+    // key re-bridges on (re)bind, so only the node id + enabled travel here. This is
+    // the value edit, distinct from the presence-only "environment" component token.
+    struct SceneNodeEnvironmentEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        wz::engine::assets::SceneEnvironmentAsset environment;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -601,6 +614,15 @@ namespace wz::app
             const std::function<
                 void(const SceneNodeAtmosphereEdit&)>& applier);
 
+        // Owner thread: queue a set of a node's FrameEnvironment component values
+        // (non-blocking; coalesced by id, like the Atmosphere edit). Applied on the
+        // engine thread's next frame.
+        void post_scene_node_environment(SceneNodeEnvironmentEdit edit);
+
+        void service_pending_scene_node_environments(
+            const std::function<
+                void(const SceneNodeEnvironmentEdit&)>& applier);
+
         // Owner thread: queue a set/clear of a node's preferred Scene source
         // (non-blocking; appended in order — NOT coalesced). Applied on the
         // engine thread's next frame, like the renderable edits (issue #213).
@@ -739,6 +761,7 @@ namespace wz::app
         std::vector<SceneNodeMotionFilterEdit> pending_motion_filter_edits_;
         std::vector<SceneNodeCameraEdit> pending_camera_edits_;
         std::vector<SceneNodeAtmosphereEdit> pending_atmosphere_edits_;
+        std::vector<SceneNodeEnvironmentEdit> pending_environment_edits_;
         std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
         std::vector<SceneNodeGlbSceneSourceEdit> pending_glb_scene_source_edits_;
         std::vector<SceneNodeGlbStyleEdit> pending_glb_style_edits_;

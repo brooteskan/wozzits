@@ -812,6 +812,27 @@ namespace wz::engine::assets
             return obj;
         }
 
+        JSONValuePtr environment_value(const SceneEnvironmentAsset& environment)
+        {
+            auto obj = object_value();
+            // Persist only the authored node id (the stable intent); the resolved
+            // key is re-bridged on every (re)bind, mirroring atmosphere. The key
+            // is exported only when there is no node id to re-derive it from, so a
+            // reference-authored environment never carries a stale key on disk.
+            if (environment.environment_asset_node_id != 0) {
+                add_member(*obj, "environment_asset_node_id",
+                    number_value(static_cast<double>(
+                        environment.environment_asset_node_id)));
+            }
+            else if (!(environment.environment_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(
+                        asset_key_string(environment.environment_asset)));
+            }
+            add_member(*obj, "enabled", bool_value(environment.enabled));
+            return obj;
+        }
+
         JSONValuePtr hdri_environment_value(
             const SceneHDRIEnvironmentAsset& environment)
         {
@@ -2169,6 +2190,10 @@ namespace wz::engine::assets
             if (node.atmosphere) {
                 add_member(*obj, "atmosphere",
                     atmosphere_value(*node.atmosphere));
+            }
+            if (node.environment) {
+                add_member(*obj, "environment",
+                    environment_value(*node.environment));
             }
             if (node.sky_visual) {
                 add_member(*obj, "sky_visual",

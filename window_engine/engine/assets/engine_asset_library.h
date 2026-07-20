@@ -60,6 +60,8 @@
 #include <engine/assets/clipmap_lattice_schedule_asset_module.h>
 #include <engine/assets/atmosphere/atmosphere.h>
 #include <engine/assets/atmosphere_asset_module.h>
+#include <engine/assets/environment/environment.h>
+#include <engine/assets/environment_asset_module.h>
 
 #include <engine/assets/audio/audio_clip.h>
 #include <engine/assets/audio_clip_asset_module.h>
@@ -311,6 +313,9 @@ namespace wz::engine::assets
         AtmosphereAssetModule&       atmospheres()       { return atmospheres_; }
         const AtmosphereAssetModule& atmospheres() const { return atmospheres_; }
 
+        EnvironmentAssetModule&       environments()       { return environments_; }
+        const EnvironmentAssetModule& environments() const { return environments_; }
+
         AudioClipAssetModule&       audio_clips()       { return audio_clips_; }
         const AudioClipAssetModule& audio_clips() const { return audio_clips_; }
 
@@ -476,6 +481,7 @@ namespace wz::engine::assets
         PlacedFieldTable            placed_field_table_;
         ClipmapLatticeScheduleTable clipmap_lattice_schedule_table_;
         AtmosphereTable             atmosphere_table_;
+        EnvironmentTable            environment_table_;
         AudioClipTable              audio_clip_table_;
         AudioClipBankTable          audio_clip_bank_table_;
         AudioRenderableTable        audio_renderable_table_;
@@ -524,6 +530,7 @@ namespace wz::engine::assets
         PlacedFieldAssetModule      placed_fields_;
         ClipmapLatticeScheduleAssetModule clipmap_lattice_schedules_;
         AtmosphereAssetModule       atmospheres_;
+        EnvironmentAssetModule      environments_;
         AudioClipAssetModule        audio_clips_;
         AudioClipBankAssetModule    audio_clip_banks_;
         AudioRenderableAssetModule  audio_renderables_;

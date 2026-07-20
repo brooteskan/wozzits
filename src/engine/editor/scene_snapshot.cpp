@@ -690,6 +690,29 @@ namespace wz::engine::editor
             return out;
         }
 
+        // "environment" object (read-back). Tolerant: a missing block is absent.
+        // Field names match scene_json_export's environment export (the authored
+        // node id + enabled; the resolved environment_asset key re-bridges on bind).
+        std::optional<SceneSnapshotEnvironment> read_environment(
+            const wz::json::JSONValue& obj)
+        {
+            const auto* source = wz::json::find_member(obj, "environment");
+            if (!source || source->kind != wz::json::JSONValueKind::Object) {
+                return std::nullopt;
+            }
+            SceneSnapshotEnvironment out;
+            if (const auto node_id = wz::json::read_number(
+                    *source, "environment_asset_node_id");
+                node_id && *node_id > 0.0)
+            {
+                out.environment_asset_node_id =
+                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+            }
+            out.enabled =
+                wz::json::read_bool(*source, "enabled").value_or(true);
+            return out;
+        }
+
         // Read the authored custom-renderable ingredients (issue #229/#230)
         // from a node's "renderable_bindings" / "renderable_constants" arrays.
         // Tolerant: missing blocks yield empty vectors; field names match
@@ -940,6 +963,18 @@ namespace wz::engine::editor
                     .enabled = source.atmosphere->enabled,
                 };
             }
+            if (source.environment) {
+                // environment_asset_node_id is a plain id with 0 = unbound; the
+                // snapshot carries an optional, so map 0 -> nullopt.
+                std::optional<wz::asset::AssetGraphDraftNodeId> ref;
+                if (source.environment->environment_asset_node_id != 0) {
+                    ref = source.environment->environment_asset_node_id;
+                }
+                node.environment = SceneSnapshotEnvironment{
+                    .environment_asset_node_id = ref,
+                    .enabled = source.environment->enabled,
+                };
+            }
 
             // Surface behavior bindings. Without this, a tree rebuilt from the
             // running scene (e.g. after the prefab-editor open_scene round-trip)
@@ -1008,6 +1043,10 @@ namespace wz::engine::editor
             if (source.atmosphere) {
                 node.components.push_back(SceneSnapshotComponent{
                     .kind = "atmosphere", .display_name = "Atmosphere" });
+            }
+            if (source.environment) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "environment", .display_name = "Environment" });
             }
 
             node.kind = node_kind(node);
@@ -1110,6 +1149,12 @@ namespace wz::engine::editor
                     .display_name = "Atmosphere",
                 });
             }
+            if (has_component_object(value, "environment")) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "environment",
+                    .display_name = "Environment",
+                });
+            }
             node.behaviors = read_behaviors(value);
             node.scene_source = read_scene_source(value);
             // Persisted Collision/Motion component field values (read-back gap
@@ -1119,6 +1164,7 @@ namespace wz::engine::editor
             node.motion_filter = read_motion_filter(value);
             node.audio_source = read_audio_source(value);
             node.atmosphere = read_atmosphere(value);
+            node.environment = read_environment(value);
             // Authored render-binding refs (issue #213): surface the persisted
             // node ids so the inspector reveals + pre-selects these sections.
             node.scene_source_node_id =

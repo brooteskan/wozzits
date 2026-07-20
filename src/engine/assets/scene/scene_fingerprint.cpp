@@ -129,6 +129,7 @@ namespace wz::engine::assets
             const bool has_hdri_environment =
                 node.hdri_environment.has_value();
             const bool has_atmosphere = node.atmosphere.has_value();
+            const bool has_environment = node.environment.has_value();
             const bool has_sky_visual = node.sky_visual.has_value();
             const bool has_sky_surface = node.sky_surface.has_value();
             const bool has_scene_import_source =
@@ -179,6 +180,7 @@ namespace wz::engine::assets
             fp.mix_value(has_ambient_lighting);
             fp.mix_value(has_hdri_environment);
             fp.mix_value(has_atmosphere);
+            fp.mix_value(has_environment);
             fp.mix_value(has_sky_visual);
             fp.mix_value(has_sky_surface);
             fp.mix_value(has_scene_import_source);
@@ -377,6 +379,13 @@ namespace wz::engine::assets
                 mix_asset_key(fp, atmosphere.atmosphere_asset);
                 fp.mix_value(atmosphere.atmosphere_asset_node_id);
                 fp.mix_value(atmosphere.enabled);
+            }
+
+            if (node.environment) {
+                const auto& env = *node.environment;
+                mix_asset_key(fp, env.environment_asset);
+                fp.mix_value(env.environment_asset_node_id);
+                fp.mix_value(env.enabled);
             }
 
             if (node.sky_visual) {

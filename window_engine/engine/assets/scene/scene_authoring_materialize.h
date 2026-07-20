@@ -17,6 +17,7 @@ namespace wz::engine::assets
 {
     class EngineAssetLibrary;
     struct AtmosphereData;
+    struct EnvironmentData;
 
     struct SceneAuthoringMaterializeOptions
     {
@@ -86,6 +87,14 @@ namespace wz::engine::assets
         std::span<SceneNodeAsset> nodes,
         const wz::asset::AssetGraphDraft& draft);
 
+    // The frame's environment analogue of bridge_scene_atmosphere_keys: re-point
+    // each node's Environment component at the freshly committed FrameEnvironment
+    // key its environment_asset_node_id names, clearing first so a removed/renamed
+    // reference stops resolving the previous graph's key.
+    uint32_t bridge_scene_environment_keys(
+        std::span<SceneNodeAsset> nodes,
+        const wz::asset::AssetGraphDraft& draft);
+
     // The frame's global fog: which authored node supplies it, and the resolved
     // data a renderer's VIEW-frequency constants are filled from (6c51cf5 /
     // da6c952). The read half of the atmosphere binding, downstream of
@@ -122,6 +131,34 @@ namespace wz::engine::assets
     // caching, which is what lets an edited Atmosphere asset take effect without
     // rebuilding the scene.
     [[nodiscard]] SceneFrameAtmosphere resolve_scene_frame_atmosphere(
+        std::span<const SceneNodeAsset> nodes,
+        const EngineAssetLibrary& assets);
+
+    // The frame's global environment: which authored node supplies it, and the
+    // resolved bundle a renderer reads its pieces from. The read half of the
+    // Environment binding, downstream of bridge_scene_environment_keys (node id
+    // -> key; this resolves key -> data). Successor to SceneFrameAtmosphere; the
+    // app prefers this and falls back to that.
+    struct SceneFrameEnvironment
+    {
+        // Null whenever the frame authors no (enabled, resolved) environment.
+        const EnvironmentData* environment = nullptr;
+        // The node `environment` came from, or null when nothing was selected.
+        const SceneNodeAsset* source = nullptr;
+        // A SECOND enabled environment, if the scene authors one -- reported, not
+        // warned about here (this runs per frame; the warning policy is the
+        // caller's), exactly like SceneFrameAtmosphere::duplicate.
+        const SceneNodeAsset* duplicate = nullptr;
+    };
+
+    // Select the first node carrying an ENABLED Environment component and resolve
+    // its bridged key through `assets`. Frame-global, so a second enabled one is
+    // an authoring error rather than a blend: the first wins, the second comes
+    // back in `duplicate`. Null `environment` when none is authored, the selected
+    // one is disabled, or its key has not bridged / does not resolve (transient
+    // mid-edit, silent by design). The pointer is INTO the library's
+    // EnvironmentTable, valid until the next resolve; callers re-resolve per frame.
+    [[nodiscard]] SceneFrameEnvironment resolve_scene_frame_environment(
         std::span<const SceneNodeAsset> nodes,
         const EngineAssetLibrary& assets);
 

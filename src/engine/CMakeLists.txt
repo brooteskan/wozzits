@@ -116,6 +116,10 @@ target_sources(window_engine PRIVATE
     assets/atmosphere/atmosphere_compilers.cpp
     assets/atmosphere_asset_module.cpp
 
+    assets/environment/environment.cpp
+    assets/environment/environment_compilers.cpp
+    assets/environment_asset_module.cpp
+
     assets/audio/audio_clip.cpp
     assets/audio/wav_decoder.cpp
     assets/audio/audio_clip_compilers.cpp

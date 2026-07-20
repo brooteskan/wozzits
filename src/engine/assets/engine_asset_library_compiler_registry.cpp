@@ -95,6 +95,8 @@ namespace wz::engine::assets::internal
             ctx.clipmap_lattice_schedule_table);
         register_atmosphere_compilers(
             registry, ctx.logger, ctx.atmosphere_table);
+        register_environment_compilers(
+            registry, ctx.logger, ctx.environment_table);
         register_audio_clip_compilers(registry, ctx.logger, ctx.audio_clip_table);
         register_audio_clip_bank_compilers(
             registry, ctx.logger, ctx.audio_clip_bank_table, ctx.audio_clip_table);

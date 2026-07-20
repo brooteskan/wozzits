@@ -51,6 +51,7 @@ namespace wz::engine::editor
             PlacedFieldTable            placed_field_table;
             ClipmapLatticeScheduleTable clipmap_lattice_schedule_table;
             AtmosphereTable             atmosphere_table;
+            EnvironmentTable            environment_table;
             AudioClipTable              audio_clip_table;
             AudioClipBankTable          audio_clip_bank_table;
             AudioRenderableTable        audio_renderable_table;
@@ -106,6 +107,7 @@ namespace wz::engine::editor
                     .clipmap_lattice_schedule_table =
                         clipmap_lattice_schedule_table,
                     .atmosphere_table          = atmosphere_table,
+                    .environment_table         = environment_table,
                     .audio_clip_table          = audio_clip_table,
                     .audio_clip_bank_table     = audio_clip_bank_table,
                     .audio_renderable_table    = audio_renderable_table,

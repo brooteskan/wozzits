@@ -5383,6 +5383,32 @@ namespace wz::engine::assets
         return bridged;
     }
 
+    uint32_t bridge_scene_environment_keys(
+        std::span<SceneNodeAsset> nodes,
+        const wz::asset::AssetGraphDraft& draft)
+    {
+        uint32_t bridged = 0;
+        for (SceneNodeAsset& node : nodes) {
+            if (!node.environment
+                || node.environment->environment_asset_node_id == 0) {
+                continue;
+            }
+            // Clear first (same reasoning as atmosphere/collision): a
+            // removed/renamed authored environment must stop resolving the
+            // previous key, leaving the frame with no environment rather than a
+            // stale one.
+            node.environment->environment_asset = {};
+            const auto it = draft.node_index.find(
+                node.environment->environment_asset_node_id);
+            if (it != draft.node_index.end()) {
+                node.environment->environment_asset =
+                    draft.nodes[it->second].node.key;
+                ++bridged;
+            }
+        }
+        return bridged;
+    }
+
     SceneFrameAtmosphere resolve_scene_frame_atmosphere(
         std::span<const SceneNodeAsset> nodes,
         const EngineAssetLibrary& assets)
@@ -5415,6 +5441,42 @@ namespace wz::engine::assets
         out.atmosphere = assets.atmospheres().get_atmosphere_data(
             assets.atmospheres().find_atmosphere(
                 AtmosphereAsset{ .output = key }));
+        return out;
+    }
+
+    SceneFrameEnvironment resolve_scene_frame_environment(
+        std::span<const SceneNodeAsset> nodes,
+        const EngineAssetLibrary& assets)
+    {
+        SceneFrameEnvironment out{};
+
+        for (const SceneNodeAsset& node : nodes) {
+            if (!node.environment || !node.environment->enabled) {
+                continue;
+            }
+            if (!out.source) {
+                out.source = &node;
+                continue;
+            }
+            out.duplicate = &node;
+            break;
+        }
+
+        if (!out.source) {
+            return out;
+        }
+
+        const wz::asset::AssetKey key =
+            out.source->environment->environment_asset;
+        if (key == wz::asset::AssetKey{}) {
+            return out;
+        }
+
+        // find_ rather than get_: get_ logs on a miss, and a miss here is a
+        // transient state (an unbridged key mid-edit), not an error.
+        out.environment = assets.environments().get_environment_data(
+            assets.environments().find_environment(
+                EnvironmentAsset{ .output = key }));
         return out;
     }
 

@@ -395,6 +395,14 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             const wz::engine::assets::SceneAtmosphereAsset& atmosphere);
 
+        // Live edit: set the node's FrameEnvironment component (which
+        // FrameEnvironment asset the frame reads, via environment_asset_node_id, +
+        // enabled). No-op (logged) when the node is missing. Marks the scene dirty
+        // so Save All persists it, and rebuilds so the renderer re-resolves it.
+        bool set_node_environment(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneEnvironmentAsset& environment);
+
         // Flatten the node's referenced Scene asset into the live scene (#213):
         // resolve the node's scene_source, expand its GLB-named nodes as real,
         // persistent children of the node in document_.nodes() (id "<host>/<glbname>",
@@ -1183,6 +1191,11 @@ namespace wz::app
         // duplicate away clears it, and moving it to a different node warns again
         // for the new one. Empty = no duplicate outstanding.
         wz::scene::AuthoredEntityId atmosphere_duplicate_warned_for_{};
+
+        // Same, for a duplicate FrameEnvironment (the successor path). Kept
+        // separate from the atmosphere latch so each warns and self-heals on its
+        // own authoring.
+        wz::scene::AuthoredEntityId environment_duplicate_warned_for_{};
 
         // Source scene file, for save_scene (persist live edits).
         wz::fs::Path  scene_source_path_{};

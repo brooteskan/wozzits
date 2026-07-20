@@ -276,6 +276,12 @@ namespace wz::app
             wz::engine::assets::bridge_scene_atmosphere_keys(
                 document_.nodes(), draft);
         (void)atmospheres_bridged;
+        // Same for the authored FrameEnvironment reference (the successor to the
+        // standalone atmosphere): follow the node id across a graph swap.
+        const uint32_t environments_bridged =
+            wz::engine::assets::bridge_scene_environment_keys(
+                document_.nodes(), draft);
+        (void)environments_bridged;
         const std::size_t bind_grafted = graft_scene_sources();
         // Assemble the freshly grafted children's intrinsic geometry bindings
         // (#213 increment 3) — the pre-graft assemble above ran before they
@@ -518,6 +524,10 @@ namespace wz::app
         // Same for the authored atmosphere reference, so the frame's fog is
         // resolved before the first render_scene of a freshly loaded scene.
         wz::engine::assets::bridge_scene_atmosphere_keys(
+            document_.nodes(), graph_draft_);
+        // Same for the authored FrameEnvironment reference, so the frame's
+        // environment is resolved before the first render_scene of a load.
+        wz::engine::assets::bridge_scene_environment_keys(
             document_.nodes(), graph_draft_);
         // Flatten any glb_scene_source node authored with consume_mode=Flatten:
         // expand persistently (and drop the descriptor), exactly like the editor
@@ -1922,6 +1932,27 @@ namespace wz::app
         return true;
     }
 
+    bool WozzitsApp_v1::set_node_environment(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneEnvironmentAsset& environment)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_environment: no-op (node '" + node_id + "' missing)");
+            return false;
+        }
+        node->environment = environment;
+        document_.dirty() = true;
+
+        // Rebuild so the renderer re-resolves the frame environment next frame (the
+        // environment_asset key is re-bridged from environment_asset_node_id on the
+        // rebind). Edits are coalesced by id, so a rebuild per service cycle is fine.
+        apply_scene_change(SceneChange::runtime_rebuild());
+        return true;
+    }
+
     // Extract a short seam identifier from a source_location function name --
     // "void wz::app::WozzitsApp_v1::set_node_renderable_program(...)" -> the bare
     // "set_node_renderable_program". CSV-safe (a bare identifier: no comma) and
@@ -2729,12 +2760,58 @@ namespace wz::app
             return nullptr;
         }
 
+        // Prefer the FrameEnvironment: the single connected producer. Its
+        // atmosphere role feeds the same view-frequency fog path a standalone
+        // Atmosphere did. A scene that authors an Environment (even one whose
+        // atmosphere role is empty) takes this branch; the standalone path below
+        // is the back-compat fallback for scenes authored before FrameEnvironment.
+        const wz::engine::assets::SceneFrameEnvironment env =
+            wz::engine::assets::resolve_scene_frame_environment(
+                document_.nodes(), *ctx_.assets);
+
+        // Duplicate-environment warning, latched by id so this per-frame path
+        // warns ONCE and self-heals when the authoring is fixed.
+        {
+            const wz::scene::AuthoredEntityId env_duplicate_id =
+                env.duplicate ? env.duplicate->id
+                              : wz::scene::AuthoredEntityId{};
+            if (env_duplicate_id != environment_duplicate_warned_for_) {
+                environment_duplicate_warned_for_ = env_duplicate_id;
+                if (env.duplicate) {
+                    ctx_.logger.warn(
+                        "scene authors more than one Environment: using '"
+                        + env.source->id + "', ignoring '" + env.duplicate->id
+                        + "'. The frame environment is global state, so a second"
+                        " one is an authoring error rather than a blend.");
+                }
+            }
+        }
+
+        if (env.source) {
+            // A FrameEnvironment is authored. Its atmosphere role is the frame's
+            // fog; an empty role means "environment authored, no fog" -- NOT a
+            // reason to fall through to a legacy standalone atmosphere. An
+            // unresolved bundle (mid-edit) likewise yields no fog this frame.
+            if (!env.environment) {
+                return nullptr;
+            }
+            const wz::asset::AssetKey atmosphere_key =
+                env.environment->atmosphere;
+            if (atmosphere_key == wz::asset::AssetKey{}) {
+                return nullptr;
+            }
+            return ctx_.assets->atmospheres().get_atmosphere_data(
+                ctx_.assets->atmospheres().find_atmosphere(
+                    wz::engine::assets::AtmosphereAsset{
+                        .output = atmosphere_key }));
+        }
+
+        // Back-compat: no FrameEnvironment authored -- resolve a standalone
+        // Atmosphere component the way scenes did before the environment node.
         const wz::engine::assets::SceneFrameAtmosphere frame =
             wz::engine::assets::resolve_scene_frame_atmosphere(
                 document_.nodes(), *ctx_.assets);
 
-        // Latch on the duplicate's id so this per-frame path warns ONCE, and
-        // clears itself when the authoring is fixed.
         const wz::scene::AuthoredEntityId duplicate_id =
             frame.duplicate ? frame.duplicate->id
                             : wz::scene::AuthoredEntityId{};

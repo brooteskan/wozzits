@@ -124,6 +124,16 @@ namespace wz::engine::editor
         bool enabled = true;
     };
 
+    // Authored FrameEnvironment-component field values surfaced read-back so the
+    // editor inspector restores them: which FrameEnvironment asset-graph node the
+    // frame's environment reads, plus whether it is enabled. The resolved
+    // environment_asset key re-bridges on bind, so only the node id is surfaced.
+    struct SceneSnapshotEnvironment
+    {
+        std::optional<wz::asset::AssetGraphDraftNodeId> environment_asset_node_id;
+        bool enabled = true;
+    };
+
     // The high-impact subset of a MeshRenderStyleData that the editor reads back
     // and re-authors for a GLB component (issue #213 Phase 3b-2): surface +
     // wireframe enabled flags and RGBA colors. The rest of MeshRenderStyleData is
@@ -235,6 +245,7 @@ namespace wz::engine::editor
         std::optional<SceneSnapshotMotionFilter> motion_filter;
         std::optional<SceneSnapshotAudioSource> audio_source;
         std::optional<SceneSnapshotAtmosphere> atmosphere;
+        std::optional<SceneSnapshotEnvironment> environment;
         // Custom-renderable ingredients (issue #229/#230), surfaced read-back
         // (possibly empty) so the inspector pre-fills its binding rows +
         // constant overrides from the node's persisted state.

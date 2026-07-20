@@ -34,6 +34,8 @@
 #include <engine/assets/clipmap_lattice_schedule/clipmap_lattice_schedule_compilers.h>
 #include <engine/assets/atmosphere/atmosphere.h>
 #include <engine/assets/atmosphere/atmosphere_compilers.h>
+#include <engine/assets/environment/environment.h>
+#include <engine/assets/environment/environment_compilers.h>
 #include <engine/assets/audio/audio_clip.h>
 #include <engine/assets/audio/audio_clip_compilers.h>
 #include <engine/assets/audio/audio_clip_bank.h>
@@ -132,6 +134,7 @@ namespace wz::engine::assets::internal {
         PlacedFieldTable&           placed_field_table;
         ClipmapLatticeScheduleTable& clipmap_lattice_schedule_table;
         AtmosphereTable&            atmosphere_table;
+        EnvironmentTable&           environment_table;
         AudioClipTable&             audio_clip_table;
         AudioClipBankTable&         audio_clip_bank_table;
         AudioRenderableTable&       audio_renderable_table;

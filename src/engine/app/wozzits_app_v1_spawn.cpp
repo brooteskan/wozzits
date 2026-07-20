@@ -677,6 +677,10 @@ namespace wz::app
             wz::engine::assets::bridge_scene_atmosphere_keys(
                 document_.nodes(), graph_draft_);
 
+            // Same for any FrameEnvironment the spawned subtree carries.
+            wz::engine::assets::bridge_scene_environment_keys(
+                document_.nodes(), graph_draft_);
+
             // Compile the freshly registered spawn renderables. This commit()+
             // resolve_all() is the INCREMENTAL replacement for the old full-scene
             // trailing rematerialize_render_bindings(): commit finalizes only the new

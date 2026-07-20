@@ -779,4 +779,14 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kAtmosphereSchema{
         0xF11E'CA55'E7'001006ull
     };
+
+    // FrameEnvironment: the single CONNECTED producer of a frame's global
+    // environment. A pure AGGREGATOR with up to four OPTIONAL input ports
+    // (atmosphere, ambient lighting, HDRI environment, directional light) and no
+    // dials but a name. Produces kAssetTypeFrameEnvironment. Next after
+    // kAtmosphereSchema in the lighting/environment range, since it gathers
+    // exactly that scene-level environment state.
+    inline constexpr wz::asset::SchemaID kFrameEnvironmentSchema{
+        0xF11E'CA55'E7'001007ull
+    };
 }

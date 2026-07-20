@@ -120,6 +120,30 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    // The frame's global environment, bound BY REFERENCE to an authored
+    // asset-graph FrameEnvironment node -- the single CONNECTED producer of the
+    // frame's atmosphere / ambient / HDRI / directional light. Sits beside
+    // atmosphere as per-node environment state and, like it, is FRAME-GLOBAL: a
+    // second node carrying one is an authoring error, not a blend. This is the
+    // successor to the standalone atmosphere component -- the renderer prefers a
+    // frame environment and falls back to a standalone atmosphere for scenes
+    // authored before it existed (back-compat).
+    //
+    // Identity follows SceneAtmosphereAsset: environment_asset_node_id is the
+    // persisted intent (a stable asset-graph anchor); environment_asset is the
+    // current resolved key, disposable and re-derived by
+    // bridge_scene_environment_keys on every (re)bind.
+    struct SceneEnvironmentAsset
+    {
+        wz::asset::AssetKey environment_asset{};
+        // 0 = unbound. Draft node ids are handed out from 1, so 0 is never a real
+        // anchor and needs no optional<>.
+        wz::asset::AssetGraphDraftNodeId environment_asset_node_id = 0;
+        // Master switch for THIS binding. Disabled means the frame has no
+        // environment at all, exactly as if the component were absent.
+        bool enabled = true;
+    };
+
     enum class SceneSkyVisualKind : uint8_t
     {
         None = 0,
@@ -1245,6 +1269,7 @@ namespace wz::engine::assets
         std::optional<SceneAmbientLightingAsset> ambient_lighting;
         std::optional<SceneHDRIEnvironmentAsset> hdri_environment;
         std::optional<SceneAtmosphereAsset> atmosphere;
+        std::optional<SceneEnvironmentAsset> environment;
         std::optional<SceneSkyVisualAsset> sky_visual;
         std::optional<SceneSkySurfaceAsset> sky_surface;
 
@@ -1694,6 +1719,31 @@ namespace wz::engine::assets
         }
         node.atmosphere->atmosphere_asset_node_id = 0;
         node.atmosphere->atmosphere_asset = {};
+    }
+
+    // Author the frame's environment by REFERENCE: point the node's Environment
+    // component at an authored asset-graph FrameEnvironment node. Creates the
+    // component if absent. The resolved key is left for
+    // bridge_scene_environment_keys to fill on (re)bind. Mirrors
+    // attach_atmosphere_asset_node.
+    inline void attach_environment_asset_node(
+        SceneNodeAsset& node,
+        wz::asset::AssetGraphDraftNodeId node_id)
+    {
+        if (!node.environment) {
+            node.environment.emplace();
+        }
+        node.environment->environment_asset_node_id = node_id;
+        node.environment->environment_asset = {};
+    }
+
+    inline void detach_environment_asset_node(SceneNodeAsset& node)
+    {
+        if (!node.environment) {
+            return;
+        }
+        node.environment->environment_asset_node_id = 0;
+        node.environment->environment_asset = {};
     }
 
     inline void attach_sky_visual(
@@ -2664,7 +2714,8 @@ namespace wz::engine::assets
             || kind == "motion_filter"
             || kind == "audio_source"
             || kind == "audio_listener"
-            || kind == "atmosphere";
+            || kind == "atmosphere"
+            || kind == "environment";
     }
 
     // True if node `node_id` currently carries the optional component `kind`.
@@ -2702,6 +2753,9 @@ namespace wz::engine::assets
         }
         if (kind == "atmosphere") {
             return node->atmosphere.has_value();
+        }
+        if (kind == "environment") {
+            return node->environment.has_value();
         }
         return false;
     }
@@ -2752,6 +2806,10 @@ namespace wz::engine::assets
             node->atmosphere = SceneAtmosphereAsset{};
             return true;
         }
+        if (kind == "environment") {
+            node->environment = SceneEnvironmentAsset{};
+            return true;
+        }
         return false;
     }
 
@@ -2798,6 +2856,10 @@ namespace wz::engine::assets
         }
         if (kind == "atmosphere") {
             node->atmosphere.reset();
+            return true;
+        }
+        if (kind == "environment") {
+            node->environment.reset();
             return true;
         }
         return false;

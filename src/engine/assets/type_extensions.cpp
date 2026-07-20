@@ -82,6 +82,7 @@ namespace wz::engine::assets
             WZ_ADD_TYPE(kAssetTypePlacedField);
             WZ_ADD_TYPE(kAssetTypeClipmapLatticeSchedule);
             WZ_ADD_TYPE(kAssetTypeAtmosphere);
+            WZ_ADD_TYPE(kAssetTypeFrameEnvironment);
             WZ_ADD_TYPE(kAssetTypePointCloud);
             WZ_ADD_TYPE(kAssetTypeVoxelGrid);
             WZ_ADD_TYPE(kAssetTypeCurve);
@@ -368,6 +369,7 @@ namespace wz::engine::assets
                 kAssetTypeClipmapLatticeSchedule,
                 "Clipmap lattice schedule");
             WZ_SET_TYPE_NAME(kAssetTypeAtmosphere, "Atmosphere");
+            WZ_SET_TYPE_NAME(kAssetTypeFrameEnvironment, "Frame environment");
             WZ_SET_TYPE_NAME(kAssetTypeAudioClip, "Audio clip");
             WZ_SET_TYPE_NAME(kAssetTypeAudioBank, "Audio clip bank");
             WZ_SET_TYPE_NAME(kAssetTypeAudioRenderable, "Audio renderable");
@@ -477,6 +479,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(
                 kClipmapLatticeScheduleSchema, "Clipmap lattice schedule");
             WZ_ADD_SCHEMA(kAtmosphereSchema, "Atmosphere");
+            WZ_ADD_SCHEMA(kFrameEnvironmentSchema, "Frame environment");
             WZ_ADD_SCHEMA(kAudioClipFromWavSchema, "Audio clip from WAV");
             WZ_ADD_SCHEMA(kAudioClipProceduralToneSchema, "Procedural tone");
             WZ_ADD_SCHEMA(kAudioRenderableSchema, "Audio renderable");

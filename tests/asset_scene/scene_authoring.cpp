@@ -551,6 +551,25 @@ TEST(SceneNodeList, AtmosphereIsAnAddableOptionalComponent)
     EXPECT_FALSE(node_has_optional_component(nodes, "sky", "atmosphere"));
 }
 
+TEST(SceneNodeList, EnvironmentIsAnAddableOptionalComponent)
+{
+    std::vector<SceneNodeAsset> nodes(1);
+    nodes[0].id = "sky";
+
+    EXPECT_TRUE(is_optional_component_kind("environment"));
+    EXPECT_FALSE(node_has_optional_component(nodes, "sky", "environment"));
+
+    // Add default-constructs the component (unbound ref, enabled by default).
+    EXPECT_TRUE(add_node_optional_component(nodes, "sky", "environment"));
+    ASSERT_TRUE(find_scene_node(nodes, "sky")->environment.has_value());
+    EXPECT_TRUE(node_has_optional_component(nodes, "sky", "environment"));
+
+    // Remove resets it to nullopt.
+    EXPECT_TRUE(remove_node_optional_component(nodes, "sky", "environment"));
+    EXPECT_FALSE(find_scene_node(nodes, "sky")->environment.has_value());
+    EXPECT_FALSE(node_has_optional_component(nodes, "sky", "environment"));
+}
+
 TEST(SceneJsonExport, MotionFilterRoundTripsAllChannels)
 {
     std::vector<SceneNodeAsset> nodes(1);

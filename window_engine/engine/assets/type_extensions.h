@@ -1373,6 +1373,17 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeAtmosphere =
         static_cast<wz::asset::AssetType>(2289);
 
+    // Implemented: CPU-side FRAME ENVIRONMENT -- the single CONNECTED producer of
+    // a frame's global environment. A pure AGGREGATOR of the frame-global pieces
+    // (atmosphere, ambient lighting, HDRI/EnvironmentMap, global directional
+    // light), each fed in by an OPTIONAL edge and referenced once by the scene, so
+    // the graph shows what the frame is built from instead of leaving those pieces
+    // as unconnected islands. Runtime data (a bundle of the referenced keys) is
+    // owned by EnvironmentTable. Sits beside the pieces it gathers (2268-2289);
+    // sky is not a port yet because it is inline scene state, not an asset node.
+    inline constexpr wz::asset::AssetType kAssetTypeFrameEnvironment =
+        static_cast<wz::asset::AssetType>(2290);
+
     // ─── Cinematic asset types: 2300–2319 ───────────────────────────────────────
     //
     // Camera rigs, camera paths, timelines, cutscenes, sequencer tracks, and

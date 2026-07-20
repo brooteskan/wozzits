@@ -434,6 +434,19 @@ namespace wz::engine::editor
                     node.atmosphere->enabled ? 1u : 0u;
             }
 
+            if (node.environment) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_ENVIRONMENT;
+                out.environment.has_environment_ref =
+                    node.environment->environment_asset_node_id ? 1u : 0u;
+                out.environment.environment_asset_node_id =
+                    node.environment->environment_asset_node_id
+                        ? static_cast<uint64_t>(
+                              *node.environment->environment_asset_node_id)
+                        : 0ull;
+                out.environment.enabled =
+                    node.environment->enabled ? 1u : 0u;
+            }
+
             // Custom-renderable ingredients (issue #229/#230): always-valid
             // tables, possibly empty — presence is the count, no HAS_* flag.
             std::vector<WzEditorSceneRenderableBinding> renderable_bindings;
