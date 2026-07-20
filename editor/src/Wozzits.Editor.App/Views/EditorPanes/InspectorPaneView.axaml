@@ -260,6 +260,9 @@
                                                 <MenuItem Header="Atmosphere"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="atmosphere"/>
+                                                <MenuItem Header="Environment"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="environment"/>
                                                 <MenuItem Header="Statechart Runner"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="statechart_runner"/>
@@ -860,6 +863,63 @@
                                 <TextBlock Text="No atmosphere nodes in the asset graph."
                                            Classes="PaneEmptyState"
                                            IsVisible="{Binding !HasAvailableAtmospheres}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Environment: which FrameEnvironment asset the frame's
+                             environment reads + an enabled flag. The picked reference
+                             + the toggle apply immediately (no Apply button). -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasEnvironmentComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Environment"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveEnvironmentComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove environment"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Environment asset"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableEnvironments}"
+                                              SelectedItem="{Binding SelectedEnvironmentOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick an environment node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableEnvironments}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding EnvironmentReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding EnvironmentEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No environment nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableEnvironments}"/>
 
                             </StackPanel>
                         </Border>

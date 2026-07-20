@@ -72,6 +72,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _atmosphereReferenceLabel = string.Empty;
     private bool _hasAtmosphereComponent;
     private bool _atmosphereEnabled = true;
+    // "Environment" section: the FrameEnvironment asset-graph node the frame's
+    // environment reads + an enabled flag. One combined live seam, like atmosphere.
+    private InspectorAssetGraphRefOptionViewModel? _selectedEnvironmentOption;
+    private string _environmentReferenceLabel = string.Empty;
+    private bool _hasEnvironmentComponent;
+    private bool _environmentEnabled = true;
     // "Motion" section (terrain-stick track): the terrain-constraint fields of the
     // node's Motion component. Optimistic/session-local display, same as collision.
     private bool _hasMotionComponent;
@@ -190,6 +196,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         RemoveCollisionComponentCommand = new RelayCommand(RemoveCollisionComponent);
         RemoveMotionComponentCommand = new RelayCommand(RemoveMotionComponent);
         RemoveAtmosphereComponentCommand = new RelayCommand(RemoveAtmosphereComponent);
+        RemoveEnvironmentComponentCommand =
+            new RelayCommand(RemoveEnvironmentComponent);
         RemoveMotionFilterComponentCommand =
             new RelayCommand(RemoveMotionFilterComponent);
         // "Audio Source" (audio-track item 10): the header ✕ removes the component
@@ -255,6 +263,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
         AvailableAtmospheres { get; } = [];
 
+    // The FrameEnvironment asset-graph nodes the "Environment" picker offers.
+    // Threaded in from MainWindowViewModel on every selection, filtered to
+    // FrameEnvironment outputs (kAssetTypeFrameEnvironment = 2290).
+    public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
+        AvailableEnvironments { get; } = [];
+
     // The audio-renderable asset-graph nodes the "Audio Source" picker offers
     // (audio-track item 10). Threaded in from MainWindowViewModel on every
     // selection, filtered to audio-renderable outputs (kAssetTypeAudioRenderable
@@ -309,6 +323,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     // "Atmosphere" section header ✕.
     public IRelayCommand RemoveAtmosphereComponentCommand { get; }
+
+    // "Environment" section header ✕.
+    public IRelayCommand RemoveEnvironmentComponentCommand { get; }
 
     public IRelayCommand RemoveMotionFilterComponentCommand { get; }
 
@@ -799,6 +816,67 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             if (SetProperty(ref _atmosphereEnabled, value))
             {
                 OnAtmosphereFieldEdited();
+            }
+        }
+    }
+
+    // ─── Environment ─────────────────────────────────────────────────────────────
+
+    // The FrameEnvironment asset-graph node chosen in the picker. Bound TwoWay to
+    // the ComboBox; a pick applies immediately. Programmatic restores assign the
+    // field, not this setter.
+    public InspectorAssetGraphRefOptionViewModel? SelectedEnvironmentOption
+    {
+        get => _selectedEnvironmentOption;
+        set
+        {
+            if (SetProperty(ref _selectedEnvironmentOption, value)
+                && value is not null)
+            {
+                ApplyEnvironment();
+            }
+        }
+    }
+
+    public bool HasAvailableEnvironments => AvailableEnvironments.Count > 0;
+
+    // "Referencing: <node>" line for the picked FrameEnvironment asset.
+    // Empty => "(none)".
+    public string EnvironmentReferenceLabel
+    {
+        get => _environmentReferenceLabel;
+        private set
+        {
+            if (SetProperty(ref _environmentReferenceLabel, value))
+            {
+                OnPropertyChanged(nameof(EnvironmentReferenceDisplay));
+            }
+        }
+    }
+
+    public string EnvironmentReferenceDisplay =>
+        string.IsNullOrWhiteSpace(EnvironmentReferenceLabel)
+            ? "(none)"
+            : $"Referencing: {EnvironmentReferenceLabel}";
+
+    // Gates the "Environment" section: shown when the node HAS an environment
+    // component (added via Add-Component → Environment, removed via the ✕).
+    public bool HasEnvironmentComponent
+    {
+        get => _hasEnvironmentComponent;
+        private set => SetProperty(ref _hasEnvironmentComponent, value);
+    }
+
+    // The master switch for this environment binding. Toggling re-applies
+    // SetNodeEnvironment with the current selection (or 0).
+    public bool EnvironmentEnabled
+    {
+        get => _environmentEnabled;
+        set
+        {
+            if (SetProperty(ref _environmentEnabled, value))
+            {
+                OnEnvironmentFieldEdited();
             }
         }
     }
@@ -2163,6 +2241,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             ResetMotionState();
             ResetMotionFilterState();
             ResetAtmosphereState();
+            ResetEnvironmentState();
             ComponentsHeader = "Components";
             SetTransformFields(null);
             HasCameraComponent = false;
@@ -2291,6 +2370,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         RestoreMotionFilterState(node);
         RestoreAudioSourceState(node);
         RestoreAtmosphereState(node);
+        RestoreEnvironmentState(node);
 
         if (node.Camera is not null)
         {
@@ -2697,6 +2777,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         else if (string.Equals(kind, "atmosphere", StringComparison.Ordinal))
         {
             HasAtmosphereComponent = true;
+            MirrorComponentAdded(kind);
+        }
+        else if (string.Equals(kind, "environment", StringComparison.Ordinal))
+        {
+            HasEnvironmentComponent = true;
             MirrorComponentAdded(kind);
         }
         else if (!Components.Any(
@@ -3444,6 +3529,140 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         _atmosphereEnabled = true;
         OnPropertyChanged(nameof(AtmosphereEnabled));
         HasAtmosphereComponent = false;
+    }
+
+    // ─── Environment ─────────────────────────────────────────────────────────────
+
+    // Thread in the FrameEnvironment asset-graph nodes the picker offers, restoring
+    // the prior selection by id (mirrors SetAvailableAtmospheres).
+    public void SetAvailableEnvironments(
+        IEnumerable<InspectorAssetGraphRefOptionViewModel> options)
+    {
+        var previousId = _selectedEnvironmentOption?.Id;
+        AvailableEnvironments.Clear();
+        InspectorAssetGraphRefOptionViewModel? restored = null;
+        foreach (var option in options)
+        {
+            AvailableEnvironments.Add(option);
+            if (previousId is { } id && option.Id == id)
+            {
+                restored = option;
+            }
+        }
+        _selectedEnvironmentOption = restored;
+        OnPropertyChanged(nameof(SelectedEnvironmentOption));
+        OnPropertyChanged(nameof(HasAvailableEnvironments));
+    }
+
+    // Apply the environment reference from the picked node — invoked from the
+    // picker's selection setter, so choosing a node applies immediately.
+    private void ApplyEnvironment()
+    {
+        if (!EnsureCanApply() || SelectedEnvironmentOption is not { } option)
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeEnvironment(
+            NodeId, option.Id, EnvironmentEnabled);
+        SetEditResponse(response);
+        if (response.Ok)
+        {
+            EnvironmentReferenceLabel = option.Label;
+        }
+        MirrorEnvironmentEdit();
+    }
+
+    // Re-push the environment binding when the enabled flag toggles, with the
+    // current selection (or 0 when nothing is picked). Suppressed while a node's
+    // values are being loaded so selecting a node doesn't echo back.
+    private void OnEnvironmentFieldEdited()
+    {
+        if (_suppressLiveEdits || !EnsureCanApply())
+        {
+            return;
+        }
+
+        var assetId = SelectedEnvironmentOption is { } option ? option.Id : 0ul;
+        SetEditResponse(_editorSession!.SetNodeEnvironment(
+            NodeId, assetId, EnvironmentEnabled));
+        MirrorEnvironmentEdit();
+    }
+
+    // Mirror the live environment edit onto the cached tree-node VM so an immediate
+    // reselect — before the next snapshot refresh — shows the edit.
+    private void MirrorEnvironmentEdit()
+    {
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.Environment = new EngineSceneNodeEnvironment
+            {
+                EnvironmentAssetNodeId = SelectedEnvironmentOption?.Id,
+                Enabled = EnvironmentEnabled,
+            };
+        }
+    }
+
+    // Remove the Environment component (the section's ✕): remove it on the engine
+    // via the generic verb and hide the section. Re-attach via "Add Component →
+    // Environment".
+    private void RemoveEnvironmentComponent()
+    {
+        if (EnsureCanApply())
+        {
+            var response = _editorSession!.RemoveNodeComponent(NodeId, "environment");
+            SetEditResponse(response);
+        }
+
+        MirrorComponentRemoved("environment");
+        ResetEnvironmentState();
+    }
+
+    // Reveal the "Environment" section when the node carries the component and
+    // restore its persisted field values from the snapshot: pre-select the
+    // referenced FrameEnvironment asset (matching by id) and the enabled flag. Runs
+    // under _suppressLiveEdits so populating the fields doesn't echo a live edit.
+    private void RestoreEnvironmentState(SceneTreeNodeViewModel node)
+    {
+        var has = node.Components.Any(
+            c => string.Equals(c.Kind, "environment", StringComparison.Ordinal));
+        if (!has)
+        {
+            ResetEnvironmentState();
+            return;
+        }
+
+        HasEnvironmentComponent = true;
+
+        var environment = node.Environment;
+        if (environment?.EnvironmentAssetNodeId is { } assetNodeId)
+        {
+            var option = AvailableEnvironments.FirstOrDefault(
+                o => o.Id == assetNodeId);
+            _selectedEnvironmentOption = option;
+            EnvironmentReferenceLabel = option?.Label
+                ?? $"#{assetNodeId.ToString(CultureInfo.InvariantCulture)}";
+        }
+        else
+        {
+            _selectedEnvironmentOption = null;
+            EnvironmentReferenceLabel = string.Empty;
+        }
+        OnPropertyChanged(nameof(SelectedEnvironmentOption));
+
+        _environmentEnabled = environment?.Enabled ?? true;
+        OnPropertyChanged(nameof(EnvironmentEnabled));
+    }
+
+    private void ResetEnvironmentState()
+    {
+        _selectedEnvironmentOption = null;
+        OnPropertyChanged(nameof(SelectedEnvironmentOption));
+        EnvironmentReferenceLabel = string.Empty;
+        // Reset the flag without echoing a live edit.
+        _environmentEnabled = true;
+        OnPropertyChanged(nameof(EnvironmentEnabled));
+        HasEnvironmentComponent = false;
     }
 
     // ─── Audio Source (audio-track item 10) ──────────────────────────────────────

@@ -1339,6 +1339,30 @@ public sealed partial class WozzitsEngineNativeClient
             enabled ? (byte)1 : (byte)0));
     }
 
+    internal EngineMutationResponse SetNodeEnvironment(
+        IntPtr runtime,
+        string nodeId,
+        ulong environmentAssetNodeId,
+        bool enabled)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        // environmentAssetNodeId 0 clears the environment reference; enabled is the
+        // master switch and applies regardless, so both forms are valid.
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeEnvironment(
+            runtime,
+            nodeId,
+            environmentAssetNodeId,
+            enabled ? (byte)1 : (byte)0));
+    }
+
     internal EngineMutationResponse SetNodeMotionTerrain(
         IntPtr runtime,
         string nodeId,

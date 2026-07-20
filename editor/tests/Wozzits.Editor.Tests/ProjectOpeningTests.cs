@@ -4233,6 +4233,18 @@ public sealed partial class ProjectOpeningTests
             return new EngineMutationResponse { Ok = true };
         }
 
+        public List<(string NodeId, ulong EnvironmentAssetNodeId, bool Enabled)>
+            Environments { get; } = [];
+
+        public EngineMutationResponse SetNodeEnvironment(
+            string nodeId,
+            ulong environmentAssetNodeId,
+            bool enabled)
+        {
+            Environments.Add((nodeId, environmentAssetNodeId, enabled));
+            return new EngineMutationResponse { Ok = true };
+        }
+
         public record MotionTerrainEdit(
             string NodeId,
             bool TerrainConstrained,

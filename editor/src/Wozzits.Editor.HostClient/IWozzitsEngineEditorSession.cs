@@ -293,6 +293,14 @@ public interface IWozzitsEngineEditorSession
         ulong atmosphereAssetNodeId,
         bool enabled);
 
+    // Author a node's FrameEnvironment component: which FrameEnvironment asset-graph
+    // node the frame's environment reads (0 clears the reference) + an enabled flag.
+    // Live + host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeEnvironment(
+        string nodeId,
+        ulong environmentAssetNodeId,
+        bool enabled);
+
     // Author the node's MOTION component terrain-constraint fields (terrain-stick
     // track): whether the node sticks to the terrain surface, ride height,
     // footprint radius, surface-alignment toggle, and alignment strength. Live +

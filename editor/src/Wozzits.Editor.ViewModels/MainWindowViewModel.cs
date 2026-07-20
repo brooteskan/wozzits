@@ -1569,6 +1569,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         // Thread the "Atmosphere" picker, filtered to Atmosphere outputs.
         RefreshInspectorAtmosphereSources();
+
+        // Thread the "Environment" picker, filtered to FrameEnvironment outputs.
+        RefreshInspectorEnvironmentSources();
     }
 
     // Thread the "Audio Source" picker with the asset-graph nodes whose OUTPUT
@@ -1616,6 +1619,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     node.DisplayName)));
     }
 
+    private void RefreshInspectorEnvironmentSources()
+    {
+        Inspector.SetAvailableEnvironments(
+            AssetGraph.Nodes
+                .Where(IsEnvironmentNode)
+                .Select(node => new InspectorAssetGraphRefOptionViewModel(
+                    node.Id,
+                    node.DisplayName)));
+    }
+
     // True when a node produces a render program the render-program component can
     // consume (RenderProgram = 1049 in type_extensions.h, the value the engine's
     // assemble routes on).
@@ -1645,6 +1658,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         node.OutputPorts.Any(port => port.Type == AtmosphereAssetTypeId);
 
     private const uint AtmosphereAssetTypeId = 2289;
+
+    // True when a node produces a FrameEnvironment asset the Environment component
+    // can reference (kAssetTypeFrameEnvironment = 2290 in type_extensions.h).
+    private static bool IsEnvironmentNode(AssetGraphNodeCardViewModel node) =>
+        node.OutputPorts.Any(port => port.Type == EnvironmentAssetTypeId);
+
+    private const uint EnvironmentAssetTypeId = 2290;
 
     // True for a "Scene from GLB" asset-graph node — the only graftable subtree
     // source the picker offers (issue #213 piece 2).

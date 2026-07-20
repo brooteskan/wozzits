@@ -427,6 +427,11 @@ public sealed record EngineSceneNode
     // reference + enabled on select + after reload.
     public EngineSceneNodeAtmosphere? Atmosphere { get; init; }
 
+    // The node's FrameEnvironment component (which FrameEnvironment asset the frame
+    // reads + enabled), or null when the node has none. The inspector restores the
+    // reference + enabled on select + after reload.
+    public EngineSceneNodeEnvironment? Environment { get; init; }
+
     // Custom-renderable ingredients (issue #229/#230), empty when the node has
     // none: the authored semantic bindings + per-instance constant overrides.
     // The inspector pre-fills its binding rows + constant editors from these.
@@ -538,6 +543,15 @@ public sealed record EngineSceneNodeAudioSource
 public sealed record EngineSceneNodeAtmosphere
 {
     public ulong? AtmosphereAssetNodeId { get; init; }
+
+    public bool Enabled { get; init; } = true;
+}
+
+// EnvironmentAssetNodeId is the authored FrameEnvironment asset-graph node id the
+// frame's environment reads (null when none); Enabled is this binding's switch.
+public sealed record EngineSceneNodeEnvironment
+{
+    public ulong? EnvironmentAssetNodeId { get; init; }
 
     public bool Enabled { get; init; } = true;
 }

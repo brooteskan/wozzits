@@ -8,7 +8,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 32;
+    internal const uint AbiVersion = 33;
 
     private static int _resolverRegistered;
 
@@ -716,6 +716,20 @@ internal static partial class WozzitsEngineAbi
         ulong atmosphereAssetNodeId,
         byte enabled);
 
+    // Author a node's FRAME ENVIRONMENT component: the FrameEnvironment asset-graph
+    // node the frame's environment reads (0 clears the ref) + enabled. One combined
+    // seam (ref + a single bool), like atmosphere. Live + host-gated, no-op success
+    // when no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_environment",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeEnvironment(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        ulong environmentAssetNodeId,
+        byte enabled);
+
     // Author a node's MOTION component terrain-constraint fields (terrain-stick
     // track): whether the node sticks to the terrain surface, plus ride height,
     // footprint radius, surface-alignment toggle, and alignment strength. Live +
@@ -1251,6 +1265,17 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneAtmosphereAbi.Enabled),
             9);
 
+        AssertSize<WzEditorSceneEnvironmentAbi>(16);
+        AssertOffset<WzEditorSceneEnvironmentAbi>(
+            nameof(WzEditorSceneEnvironmentAbi.EnvironmentAssetNodeId),
+            0);
+        AssertOffset<WzEditorSceneEnvironmentAbi>(
+            nameof(WzEditorSceneEnvironmentAbi.HasEnvironmentRef),
+            8);
+        AssertOffset<WzEditorSceneEnvironmentAbi>(
+            nameof(WzEditorSceneEnvironmentAbi.Enabled),
+            9);
+
         AssertSize<WzEditorSceneAudioSourceAbi>(16);
         AssertOffset<WzEditorSceneAudioSourceAbi>(
             nameof(WzEditorSceneAudioSourceAbi.AudioRenderableNodeId),
@@ -1284,7 +1309,7 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneRenderableConstantAbi.Value0),
             16);
 
-        AssertSize<WzEditorSceneNodeAbi>(752);
+        AssertSize<WzEditorSceneNodeAbi>(768);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -1357,6 +1382,9 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Atmosphere),
             736);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.Environment),
+            752);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -1829,6 +1857,9 @@ internal readonly struct WzEditorSceneNodeAbi
     // Atmosphere component field values, valid iff HasAtmosphere. Appended last
     // to mirror the native struct (the added struct is the ABI v32 bump).
     public readonly WzEditorSceneAtmosphereAbi Atmosphere;
+    // FrameEnvironment component field values, valid iff HasEnvironment. Appended
+    // last to mirror the native struct (the added struct is the ABI v33 bump).
+    public readonly WzEditorSceneEnvironmentAbi Environment;
 }
 
 // One authored semantic resource binding of a node's custom-renderable
@@ -1875,6 +1906,19 @@ internal readonly struct WzEditorSceneAtmosphereAbi
 {
     public readonly ulong AtmosphereAssetNodeId;
     public readonly byte HasAtmosphereRef;
+    public readonly byte Enabled;
+    public readonly byte Reserved0;
+    public readonly byte Reserved1;
+    public readonly uint Reserved2;
+}
+
+// Authored FrameEnvironment-component field values surfaced read-back. Mirrors
+// WzEditorSceneEnvironment. Present iff HasEnvironment.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneEnvironmentAbi
+{
+    public readonly ulong EnvironmentAssetNodeId;
+    public readonly byte HasEnvironmentRef;
     public readonly byte Enabled;
     public readonly byte Reserved0;
     public readonly byte Reserved1;
@@ -2151,6 +2195,9 @@ internal static class WzEditorSceneNodeFlags
     // Atmosphere component present: the node's Atmosphere struct carries the
     // authored asset-graph ref + enabled (read-back).
     public const uint HasAtmosphere = 1u << 15;
+    // FrameEnvironment component present: the node's Environment struct carries the
+    // authored asset-graph ref + enabled (read-back).
+    public const uint HasEnvironment = 1u << 16;
 }
 
 internal static class WzEditorSceneCameraFlags

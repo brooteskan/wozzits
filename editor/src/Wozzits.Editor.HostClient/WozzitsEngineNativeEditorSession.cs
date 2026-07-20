@@ -624,6 +624,19 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             runtime.Handle, nodeId, atmosphereAssetNodeId, enabled);
     }
 
+    public EngineMutationResponse SetNodeEnvironment(
+        string nodeId,
+        ulong environmentAssetNodeId,
+        bool enabled)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeEnvironment(
+            runtime.Handle, nodeId, environmentAssetNodeId, enabled);
+    }
+
     public EngineMutationResponse SetNodeMotionTerrain(
         string nodeId,
         bool terrainConstrained,

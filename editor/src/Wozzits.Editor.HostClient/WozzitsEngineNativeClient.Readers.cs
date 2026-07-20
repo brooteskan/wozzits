@@ -410,6 +410,10 @@ public sealed partial class WozzitsEngineNativeClient
                 HasFlag(node.Flags, WzEditorSceneNodeFlags.HasAtmosphere)
                     ? ReadSceneAtmosphere(node.Atmosphere)
                     : null,
+            Environment =
+                HasFlag(node.Flags, WzEditorSceneNodeFlags.HasEnvironment)
+                    ? ReadSceneEnvironment(node.Environment)
+                    : null,
             // Authored render-binding refs (issue #213): the node id or null, so the
             // inspector reveals + pre-selects these sections from persisted state.
             SceneSourceNodeId =
@@ -509,6 +513,18 @@ public sealed partial class WozzitsEngineNativeClient
                 ? atmosphere.AtmosphereAssetNodeId
                 : null,
             Enabled = atmosphere.Enabled != 0,
+        };
+    }
+
+    private static EngineSceneNodeEnvironment ReadSceneEnvironment(
+        WzEditorSceneEnvironmentAbi environment)
+    {
+        return new EngineSceneNodeEnvironment
+        {
+            EnvironmentAssetNodeId = environment.HasEnvironmentRef != 0
+                ? environment.EnvironmentAssetNodeId
+                : null,
+            Enabled = environment.Enabled != 0,
         };
     }
 
