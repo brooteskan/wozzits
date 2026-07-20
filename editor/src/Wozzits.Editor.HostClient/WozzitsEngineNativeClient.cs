@@ -1315,6 +1315,30 @@ public sealed partial class WozzitsEngineNativeClient
             constrainMovement ? (byte)1 : (byte)0));
     }
 
+    internal EngineMutationResponse SetNodeAtmosphere(
+        IntPtr runtime,
+        string nodeId,
+        ulong atmosphereAssetNodeId,
+        bool enabled)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        // atmosphereAssetNodeId 0 clears the atmosphere reference; enabled is the
+        // master switch and applies regardless, so both forms are valid.
+        return InvokeMutation(() => WozzitsEngineAbi.WzEditorRuntimeSetNodeAtmosphere(
+            runtime,
+            nodeId,
+            atmosphereAssetNodeId,
+            enabled ? (byte)1 : (byte)0));
+    }
+
     internal EngineMutationResponse SetNodeMotionTerrain(
         IntPtr runtime,
         string nodeId,

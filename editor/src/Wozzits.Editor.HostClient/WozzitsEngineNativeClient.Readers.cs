@@ -406,6 +406,10 @@ public sealed partial class WozzitsEngineNativeClient
                 HasFlag(node.Flags, WzEditorSceneNodeFlags.HasAudioSource)
                     ? ReadSceneAudioSource(node.AudioSource)
                     : null,
+            Atmosphere =
+                HasFlag(node.Flags, WzEditorSceneNodeFlags.HasAtmosphere)
+                    ? ReadSceneAtmosphere(node.Atmosphere)
+                    : null,
             // Authored render-binding refs (issue #213): the node id or null, so the
             // inspector reveals + pre-selects these sections from persisted state.
             SceneSourceNodeId =
@@ -493,6 +497,18 @@ public sealed partial class WozzitsEngineNativeClient
                 : null,
             AutoPlay = audioSource.AutoPlay != 0,
             Enabled = audioSource.Enabled != 0,
+        };
+    }
+
+    private static EngineSceneNodeAtmosphere ReadSceneAtmosphere(
+        WzEditorSceneAtmosphereAbi atmosphere)
+    {
+        return new EngineSceneNodeAtmosphere
+        {
+            AtmosphereAssetNodeId = atmosphere.HasAtmosphereRef != 0
+                ? atmosphere.AtmosphereAssetNodeId
+                : null,
+            Enabled = atmosphere.Enabled != 0,
         };
     }
 

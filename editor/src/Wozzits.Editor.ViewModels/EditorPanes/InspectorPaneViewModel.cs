@@ -66,6 +66,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _collisionReferenceLabel = string.Empty;
     private bool _hasCollisionComponent;
     private bool _collisionConstrainMovement;
+    // "Atmosphere" section: the Atmosphere asset-graph node the frame's fog reads +
+    // an enabled flag. One combined live seam (ref + enabled), like collision.
+    private InspectorAssetGraphRefOptionViewModel? _selectedAtmosphereOption;
+    private string _atmosphereReferenceLabel = string.Empty;
+    private bool _hasAtmosphereComponent;
+    private bool _atmosphereEnabled = true;
     // "Motion" section (terrain-stick track): the terrain-constraint fields of the
     // node's Motion component. Optimistic/session-local display, same as collision.
     private bool _hasMotionComponent;
@@ -183,6 +189,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         // component via the generic remove verb and hides the section, like camera.
         RemoveCollisionComponentCommand = new RelayCommand(RemoveCollisionComponent);
         RemoveMotionComponentCommand = new RelayCommand(RemoveMotionComponent);
+        RemoveAtmosphereComponentCommand = new RelayCommand(RemoveAtmosphereComponent);
         RemoveMotionFilterComponentCommand =
             new RelayCommand(RemoveMotionFilterComponent);
         // "Audio Source" (audio-track item 10): the header ✕ removes the component
@@ -242,6 +249,12 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
         AvailableCollisionSources { get; } = [];
 
+    // The Atmosphere asset-graph nodes the "Atmosphere" picker offers. Threaded in
+    // from MainWindowViewModel on every selection, filtered to Atmosphere outputs
+    // (kAssetTypeAtmosphere = 2289).
+    public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
+        AvailableAtmospheres { get; } = [];
+
     // The audio-renderable asset-graph nodes the "Audio Source" picker offers
     // (audio-track item 10). Threaded in from MainWindowViewModel on every
     // selection, filtered to audio-renderable outputs (kAssetTypeAudioRenderable
@@ -293,6 +306,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public IRelayCommand RemoveCollisionComponentCommand { get; }
 
     public IRelayCommand RemoveMotionComponentCommand { get; }
+
+    // "Atmosphere" section header ✕.
+    public IRelayCommand RemoveAtmosphereComponentCommand { get; }
 
     public IRelayCommand RemoveMotionFilterComponentCommand { get; }
 
@@ -723,6 +739,66 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             if (SetProperty(ref _collisionConstrainMovement, value))
             {
                 OnCollisionFieldEdited();
+            }
+        }
+    }
+
+    // ─── Atmosphere ──────────────────────────────────────────────────────────────
+
+    // The Atmosphere asset-graph node chosen in the picker. Bound TwoWay to the
+    // ComboBox; a pick applies immediately (no Apply button). Programmatic restores
+    // assign the field, not this setter.
+    public InspectorAssetGraphRefOptionViewModel? SelectedAtmosphereOption
+    {
+        get => _selectedAtmosphereOption;
+        set
+        {
+            if (SetProperty(ref _selectedAtmosphereOption, value)
+                && value is not null)
+            {
+                ApplyAtmosphere();
+            }
+        }
+    }
+
+    public bool HasAvailableAtmospheres => AvailableAtmospheres.Count > 0;
+
+    // "Referencing: <node>" line for the picked Atmosphere asset. Empty => "(none)".
+    public string AtmosphereReferenceLabel
+    {
+        get => _atmosphereReferenceLabel;
+        private set
+        {
+            if (SetProperty(ref _atmosphereReferenceLabel, value))
+            {
+                OnPropertyChanged(nameof(AtmosphereReferenceDisplay));
+            }
+        }
+    }
+
+    public string AtmosphereReferenceDisplay =>
+        string.IsNullOrWhiteSpace(AtmosphereReferenceLabel)
+            ? "(none)"
+            : $"Referencing: {AtmosphereReferenceLabel}";
+
+    // Gates the "Atmosphere" section: shown when the node HAS an atmosphere
+    // component (added via Add-Component → Atmosphere, removed via the section's ✕).
+    public bool HasAtmosphereComponent
+    {
+        get => _hasAtmosphereComponent;
+        private set => SetProperty(ref _hasAtmosphereComponent, value);
+    }
+
+    // The master switch for this atmosphere binding. Toggling re-applies
+    // SetNodeAtmosphere with the current selection (or 0).
+    public bool AtmosphereEnabled
+    {
+        get => _atmosphereEnabled;
+        set
+        {
+            if (SetProperty(ref _atmosphereEnabled, value))
+            {
+                OnAtmosphereFieldEdited();
             }
         }
     }
@@ -2086,6 +2162,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             ResetCollisionState();
             ResetMotionState();
             ResetMotionFilterState();
+            ResetAtmosphereState();
             ComponentsHeader = "Components";
             SetTransformFields(null);
             HasCameraComponent = false;
@@ -2187,13 +2264,14 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         foreach (var component in node.Components)
         {
-            // Camera, Collision, Motion, and Audio Source are shown + removed via
-            // their own parameter sections below, not as generic rows.
+            // Camera, Collision, Motion, Audio Source, and Atmosphere are shown +
+            // removed via their own parameter sections below, not as generic rows.
             if (string.Equals(component.Kind, "camera", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "collision", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "motion", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "motion_filter", StringComparison.Ordinal)
-                || string.Equals(component.Kind, "audio_source", StringComparison.Ordinal))
+                || string.Equals(component.Kind, "audio_source", StringComparison.Ordinal)
+                || string.Equals(component.Kind, "atmosphere", StringComparison.Ordinal))
             {
                 continue;
             }
@@ -2212,6 +2290,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         RestoreMotionState(node);
         RestoreMotionFilterState(node);
         RestoreAudioSourceState(node);
+        RestoreAtmosphereState(node);
 
         if (node.Camera is not null)
         {
@@ -2615,6 +2694,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             HasAudioSourceComponent = true;
             MirrorComponentAdded(kind);
         }
+        else if (string.Equals(kind, "atmosphere", StringComparison.Ordinal))
+        {
+            HasAtmosphereComponent = true;
+            MirrorComponentAdded(kind);
+        }
         else if (!Components.Any(
             c => string.Equals(c.Kind, kind, StringComparison.Ordinal)))
         {
@@ -2706,6 +2790,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             "motion_filter" => "Motion Filter",
             "audio_source" => "Audio Source",
             "audio_listener" => "Audio Listener",
+            "atmosphere" => "Atmosphere",
             _ => kind,
         };
     }
@@ -3221,6 +3306,144 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         _collisionConstrainMovement = false;
         OnPropertyChanged(nameof(CollisionConstrainMovement));
         HasCollisionComponent = false;
+    }
+
+    // ─── Atmosphere ──────────────────────────────────────────────────────────────
+
+    // Replace the atmosphere picker's options with the current Atmosphere asset-
+    // graph nodes (threaded in from MainWindowViewModel). Preserves the active
+    // selection by id; the field (not the setter) is assigned so restore never
+    // re-applies.
+    public void SetAvailableAtmospheres(
+        IEnumerable<InspectorAssetGraphRefOptionViewModel> options)
+    {
+        var previousId = _selectedAtmosphereOption?.Id;
+        AvailableAtmospheres.Clear();
+        InspectorAssetGraphRefOptionViewModel? restored = null;
+        foreach (var option in options)
+        {
+            AvailableAtmospheres.Add(option);
+            if (previousId is { } id && option.Id == id)
+            {
+                restored = option;
+            }
+        }
+        _selectedAtmosphereOption = restored;
+        OnPropertyChanged(nameof(SelectedAtmosphereOption));
+        OnPropertyChanged(nameof(HasAvailableAtmospheres));
+    }
+
+    // Apply the atmosphere reference from the picked node — invoked from the
+    // picker's selection setter, so choosing a node applies immediately. Pushes the
+    // chosen node id + the current enabled flag (one combined seam). The seam takes
+    // a ulong, so the id is passed straight through (no uint clamp).
+    private void ApplyAtmosphere()
+    {
+        if (!EnsureCanApply() || SelectedAtmosphereOption is not { } option)
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeAtmosphere(
+            NodeId, option.Id, AtmosphereEnabled);
+        SetEditResponse(response);
+        if (response.Ok)
+        {
+            AtmosphereReferenceLabel = option.Label;
+        }
+        MirrorAtmosphereEdit();
+    }
+
+    // Re-push the atmosphere binding when the enabled flag toggles, with the
+    // current selection (or 0 when nothing is picked). Suppressed while a node's
+    // values are being loaded so selecting a node doesn't echo back.
+    private void OnAtmosphereFieldEdited()
+    {
+        if (_suppressLiveEdits || !EnsureCanApply())
+        {
+            return;
+        }
+
+        var assetId = SelectedAtmosphereOption is { } option ? option.Id : 0ul;
+        SetEditResponse(_editorSession!.SetNodeAtmosphere(
+            NodeId, assetId, AtmosphereEnabled));
+        MirrorAtmosphereEdit();
+    }
+
+    // Mirror the live atmosphere edit onto the cached tree-node VM so an immediate
+    // reselect — before the next snapshot refresh — shows the edit.
+    private void MirrorAtmosphereEdit()
+    {
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.Atmosphere = new EngineSceneNodeAtmosphere
+            {
+                AtmosphereAssetNodeId = SelectedAtmosphereOption?.Id,
+                Enabled = AtmosphereEnabled,
+            };
+        }
+    }
+
+    // Remove the Atmosphere component (the section's ✕): remove it on the engine
+    // via the generic verb and hide the section. Re-attach via "Add Component →
+    // Atmosphere".
+    private void RemoveAtmosphereComponent()
+    {
+        if (EnsureCanApply())
+        {
+            var response = _editorSession!.RemoveNodeComponent(NodeId, "atmosphere");
+            SetEditResponse(response);
+        }
+
+        MirrorComponentRemoved("atmosphere");
+        ResetAtmosphereState();
+    }
+
+    // Reveal the "Atmosphere" section when the node carries the component and
+    // restore its persisted field values from the snapshot: pre-select the
+    // referenced Atmosphere asset (matching by id) and the enabled flag. Runs under
+    // _suppressLiveEdits so populating the fields doesn't echo a live edit.
+    private void RestoreAtmosphereState(SceneTreeNodeViewModel node)
+    {
+        var has = node.Components.Any(
+            c => string.Equals(c.Kind, "atmosphere", StringComparison.Ordinal));
+        if (!has)
+        {
+            ResetAtmosphereState();
+            return;
+        }
+
+        HasAtmosphereComponent = true;
+
+        var atmosphere = node.Atmosphere;
+        if (atmosphere?.AtmosphereAssetNodeId is { } assetNodeId)
+        {
+            var option = AvailableAtmospheres.FirstOrDefault(
+                o => o.Id == assetNodeId);
+            _selectedAtmosphereOption = option;
+            AtmosphereReferenceLabel = option?.Label
+                ?? $"#{assetNodeId.ToString(CultureInfo.InvariantCulture)}";
+        }
+        else
+        {
+            _selectedAtmosphereOption = null;
+            AtmosphereReferenceLabel = string.Empty;
+        }
+        OnPropertyChanged(nameof(SelectedAtmosphereOption));
+
+        _atmosphereEnabled = atmosphere?.Enabled ?? true;
+        OnPropertyChanged(nameof(AtmosphereEnabled));
+    }
+
+    private void ResetAtmosphereState()
+    {
+        _selectedAtmosphereOption = null;
+        OnPropertyChanged(nameof(SelectedAtmosphereOption));
+        AtmosphereReferenceLabel = string.Empty;
+        // Reset the flag without echoing a live edit.
+        _atmosphereEnabled = true;
+        OnPropertyChanged(nameof(AtmosphereEnabled));
+        HasAtmosphereComponent = false;
     }
 
     // ─── Audio Source (audio-track item 10) ──────────────────────────────────────

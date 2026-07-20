@@ -285,6 +285,14 @@ public interface IWozzitsEngineEditorSession
         uint assetGraphNodeId,
         bool constrainMovement);
 
+    // Author a node's Atmosphere component: which Atmosphere asset-graph node the
+    // frame's fog reads (0 clears the reference) + an enabled flag. Live +
+    // host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeAtmosphere(
+        string nodeId,
+        ulong atmosphereAssetNodeId,
+        bool enabled);
+
     // Author the node's MOTION component terrain-constraint fields (terrain-stick
     // track): whether the node sticks to the terrain surface, ride height,
     // footprint radius, surface-alignment toggle, and alignment strength. Live +

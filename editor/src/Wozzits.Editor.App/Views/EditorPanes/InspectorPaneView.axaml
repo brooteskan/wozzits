@@ -257,6 +257,9 @@
                                                 <MenuItem Header="Audio Listener"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="audio_listener"/>
+                                                <MenuItem Header="Atmosphere"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="atmosphere"/>
                                                 <MenuItem Header="Statechart Runner"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="statechart_runner"/>
@@ -800,6 +803,63 @@
                                 <TextBlock Text="No audio renderable nodes in the asset graph."
                                            Classes="PaneEmptyState"
                                            IsVisible="{Binding !HasAvailableAudioRenderables}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Atmosphere: which Atmosphere asset the frame's fog
+                             reads + an enabled flag. The picked reference + the
+                             toggle apply immediately (no Apply button). -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasAtmosphereComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Atmosphere"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveAtmosphereComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove atmosphere"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Atmosphere asset"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableAtmospheres}"
+                                              SelectedItem="{Binding SelectedAtmosphereOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick an atmosphere node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableAtmospheres}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AtmosphereReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding AtmosphereEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No atmosphere nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableAtmospheres}"/>
 
                             </StackPanel>
                         </Border>

@@ -422,6 +422,11 @@ public sealed record EngineSceneNode
     // policy on select + after reload.
     public EngineSceneNodeAudioSource? AudioSource { get; init; }
 
+    // The node's Atmosphere component (which Atmosphere asset the frame's fog
+    // reads + enabled), or null when the node has none. The inspector restores the
+    // reference + enabled on select + after reload.
+    public EngineSceneNodeAtmosphere? Atmosphere { get; init; }
+
     // Custom-renderable ingredients (issue #229/#230), empty when the node has
     // none: the authored semantic bindings + per-instance constant overrides.
     // The inspector pre-fills its binding rows + constant editors from these.
@@ -524,6 +529,15 @@ public sealed record EngineSceneNodeAudioSource
     public ulong? AudioRenderableNodeId { get; init; }
 
     public bool AutoPlay { get; init; } = true;
+
+    public bool Enabled { get; init; } = true;
+}
+
+// AtmosphereAssetNodeId is the authored Atmosphere asset-graph node id the frame's
+// fog reads (null when none); Enabled is the master switch for this binding.
+public sealed record EngineSceneNodeAtmosphere
+{
+    public ulong? AtmosphereAssetNodeId { get; init; }
 
     public bool Enabled { get; init; } = true;
 }

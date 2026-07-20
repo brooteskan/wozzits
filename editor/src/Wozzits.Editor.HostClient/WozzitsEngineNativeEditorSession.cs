@@ -611,6 +611,19 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             runtime.Handle, nodeId, assetGraphNodeId, constrainMovement);
     }
 
+    public EngineMutationResponse SetNodeAtmosphere(
+        string nodeId,
+        ulong atmosphereAssetNodeId,
+        bool enabled)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeAtmosphere(
+            runtime.Handle, nodeId, atmosphereAssetNodeId, enabled);
+    }
+
     public EngineMutationResponse SetNodeMotionTerrain(
         string nodeId,
         bool terrainConstrained,
