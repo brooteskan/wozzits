@@ -1,0 +1,134 @@
+{
+  "schema": "wozzits.statechart.ir.v0",
+  "name": "commander_order",
+  "bindings": [],
+  "agents": [
+    {
+      "id": "mind",
+      "owned": false,
+      "host": "self"
+    }
+  ],
+  "pure": [
+    {
+      "id": "reinforce_c",
+      "op": "committed",
+      "agent": "mind",
+      "slot": 4
+    },
+    {
+      "id": "want_reinforce",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "reinforce_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "hold_reinforce",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "reinforce_c"
+        },
+        {
+          "const": 1
+        }
+      ]
+    }
+  ],
+  "regions": [
+    {
+      "id": "order",
+      "initial": "deliberating",
+      "states": [
+        "deliberating",
+        "holding"
+      ]
+    },
+    {
+      "id": "reinforce",
+      "initial": "idle",
+      "states": [
+        "idle",
+        "deploying"
+      ]
+    }
+  ],
+  "states": [
+    {
+      "id": "deliberating",
+      "do": [],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "commit",
+            "agent": "mind",
+            "slot": 0
+          },
+          "target": "holding"
+        }
+      ]
+    },
+    {
+      "id": "holding",
+      "do": [],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "after",
+            "seconds": 4
+          },
+          "target": "deliberating",
+          "actions": [
+            {
+              "kind": "call",
+              "fn": "reanneal",
+              "args": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "idle",
+      "do": [],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "guard",
+            "cond": {
+              "op": "want_reinforce"
+            }
+          },
+          "target": "deploying"
+        }
+      ]
+    },
+    {
+      "id": "deploying",
+      "do": [
+        {
+          "kind": "call",
+          "fn": "request_reinforcement",
+          "args": []
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "guard",
+            "cond": {
+              "op": "hold_reinforce"
+            }
+          },
+          "target": "idle"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "readOnly": false,
+  "control": {
+    "zoom": 1,
+    "positions": {
+      "state1": {
+        "x": 69,
+        "y": 91
+      }
+    }
+  },
+  "dataflow": {
+    "zoom": 1,
+    "positions": {}
+  }
+}

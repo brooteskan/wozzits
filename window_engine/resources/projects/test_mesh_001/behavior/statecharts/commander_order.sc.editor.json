@@ -1,0 +1,45 @@
+{
+  "readOnly": false,
+  "control": {
+    "zoom": 1,
+    "positions": {
+      "deliberating": {
+        "x": 46,
+        "y": 72
+      },
+      "holding": {
+        "x": 336,
+        "y": 72
+      },
+      "idle": {
+        "x": 46,
+        "y": 250
+      },
+      "deploying": {
+        "x": 336,
+        "y": 250
+      }
+    }
+  },
+  "dataflow": {
+    "zoom": 1,
+    "positions": {
+      "mind": {
+        "x": 28,
+        "y": 28
+      },
+      "reinforce_c": {
+        "x": 300,
+        "y": 28
+      },
+      "want_reinforce": {
+        "x": 620,
+        "y": 28
+      },
+      "hold_reinforce": {
+        "x": 620,
+        "y": 140
+      }
+    }
+  }
+}

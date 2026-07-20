@@ -82,6 +82,10 @@ add_terrain_collision_behavior_module(
     enemy_tank_v1
     enemy_tank_v1/enemy_tank_v1.cpp)
 
+add_terrain_collision_behavior_module(
+    enemy_tank_v1_actuators
+    enemy_tank_v1/enemy_tank_v1_actuators.cpp)
+
 # Drops an enemy_tank_v1 tank into the world (spawns its prefab once at scene start).
 # Config-driven: attach it to a node and point `prefab` at the v1 tank prefab.
 add_terrain_collision_behavior_module(

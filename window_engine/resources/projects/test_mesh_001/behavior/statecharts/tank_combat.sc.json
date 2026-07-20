@@ -1,0 +1,276 @@
+{
+  "schema": "wozzits.statechart.ir.v0",
+  "name": "tank_combat",
+  "bindings": [
+    {
+      "port": "player",
+      "find": "tank",
+      "scope": "global"
+    }
+  ],
+  "agents": [
+    {
+      "id": "mind",
+      "owned": false,
+      "host": "self",
+      "mind": "tank_mind"
+    }
+  ],
+  "pure": [
+    {
+      "id": "blink_c",
+      "op": "committed",
+      "agent": "mind",
+      "slot": 4
+    },
+    {
+      "id": "want_blink",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "blink_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "posture_c",
+      "op": "committed",
+      "agent": "mind",
+      "slot": 1
+    },
+    {
+      "id": "want_circle",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "posture_c"
+        },
+        {
+          "const": 1
+        }
+      ]
+    },
+    {
+      "id": "want_close",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "posture_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "fire_c",
+      "op": "committed",
+      "agent": "mind",
+      "slot": 3
+    },
+    {
+      "id": "want_fire",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "fire_c"
+        },
+        {
+          "const": 0
+        }
+      ]
+    },
+    {
+      "id": "hold_fire",
+      "op": "eq",
+      "ins": [
+        {
+          "op": "fire_c"
+        },
+        {
+          "const": 1
+        }
+      ]
+    }
+  ],
+  "regions": [
+    {
+      "id": "combat",
+      "initial": "hunt",
+      "states": [
+        "hunt",
+        "circle",
+        "evade"
+      ]
+    },
+    {
+      "id": "weapons",
+      "initial": "hold",
+      "states": [
+        "hold",
+        "shoot"
+      ]
+    }
+  ],
+  "states": [
+    {
+      "id": "hunt",
+      "do": [
+        {
+          "kind": "call",
+          "fn": "pursue",
+          "args": [
+            {
+              "bind": "player"
+            },
+            {
+              "const": 3
+            }
+          ]
+        },
+        {
+          "kind": "call",
+          "fn": "aim_at",
+          "args": [
+            {
+              "bind": "player"
+            }
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "guard",
+            "cond": {
+              "op": "want_blink"
+            }
+          },
+          "target": "evade"
+        },
+        {
+          "trigger": {
+            "kind": "guard",
+            "cond": {
+              "op": "want_circle"
+            }
+          },
+          "target": "circle"
+        }
+      ]
+    },
+    {
+      "id": "circle",
+      "do": [
+        {
+          "kind": "call",
+          "fn": "orbit",
+          "args": [
+            {
+              "bind": "player"
+            },
+            {
+              "const": 30
+            },
+            {
+              "const": 3
+            }
+          ]
+        },
+        {
+          "kind": "call",
+          "fn": "aim_at",
+          "args": [
+            {
+              "bind": "player"
+            }
+          ]
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "guard",
+            "cond": {
+              "op": "want_blink"
+            }
+          },
+          "target": "evade"
+        },
+        {
+          "trigger": {
+            "kind": "guard",
+            "cond": {
+              "op": "want_close"
+            }
+          },
+          "target": "hunt"
+        }
+      ]
+    },
+    {
+      "id": "evade",
+      "do": [
+        {
+          "kind": "call",
+          "fn": "halt",
+          "args": []
+        }
+      ],
+      "entry": [
+        {
+          "kind": "call",
+          "fn": "blink",
+          "args": []
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "after",
+            "seconds": 3
+          },
+          "target": "hunt"
+        }
+      ]
+    },
+    {
+      "id": "hold",
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "guard",
+            "cond": {
+              "op": "want_fire"
+            }
+          },
+          "target": "shoot"
+        }
+      ]
+    },
+    {
+      "id": "shoot",
+      "do": [
+        {
+          "kind": "call",
+          "fn": "fire_cannon",
+          "args": []
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "guard",
+            "cond": {
+              "op": "hold_fire"
+            }
+          },
+          "target": "hold"
+        }
+      ]
+    }
+  ]
+}

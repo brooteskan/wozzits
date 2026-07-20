@@ -1,0 +1,22 @@
+{
+  "schema": "wozzits.statechart.ir.v0",
+  "name": "untitled1",
+  "bindings": [],
+  "agents": [],
+  "pure": [],
+  "regions": [
+    {
+      "id": "region1",
+      "initial": "state1",
+      "states": [
+        "state1"
+      ]
+    }
+  ],
+  "states": [
+    {
+      "id": "state1",
+      "transitions": []
+    }
+  ]
+}

@@ -5,23 +5,23 @@
     {
       "id": "enemy_tank_root",
       "parent": null,
-      "name": "enemy tank",
+      "name": "enemy_tank_v1",
       "transform": {
         "translation": [
-          -39.118911743164062,
+          -60.011756896972656,
           0,
-          -3.5408987998962402
+          28.813159942626953
         ],
         "rotation_quat": [
           0,
-          0.89547771215438843,
+          -0.5521738529205322,
           0,
-          -0.44510629773139954
+          0.8337289690971375
         ],
         "scale": [
-          1.0007719993591309,
+          1.0009011030197144,
           1,
-          1.0007719993591309
+          1.0009011030197144
         ]
       },
       "visible": true,
@@ -59,37 +59,25 @@
       "behaviors": [
         {
           "id": "enemy_tank_root.behavior.1",
+          "module": "enemy_tank_v1",
+          "name": "",
+          "enabled": true,
+          "apply_in_editor": false,
+          "config": {
+            "fuel_capacity": 100,
+            "target_0": "playertank",
+            "target_1": "depot"
+          }
+        },
+        {
+          "id": "enemy_tank_root.behavior.2",
           "module": "quantum_agent",
           "name": "",
           "enabled": true,
           "apply_in_editor": false,
           "config": {
-            "decisions": 5,
-            "goal": 0.59999999999999998,
-            "posture_goal": -0.5,
-            "coupling": 0.29999999999999999,
-            "gamma_start": 3,
-            "anneal_seconds": 3,
-            "confidence": 0.75,
-            "decoherence": 0.29999999999999999,
-            "think_interval": 0.25,
-            "memory": 2
-          }
-        },
-        {
-          "id": "enemy_tank_root.behavior.2",
-          "module": "quantum_tank_agent",
-          "name": "",
-          "enabled": true,
-          "apply_in_editor": false,
-          "events": [
-            "self.start",
-            "self.activated",
-            "frame.update"
-          ],
-          "config": {
-            "chart_driven": true,
-            "drive_speed": 1
+            "mind_ir": "{\"schema\":\"wozzits.mind.ir.v0\",\"qubits\":1,\"name\":\"untitled2\",\"chi\":0,\"memory\":1,\"clock\":{\"gamma_start\":2,\"gamma_end\":0,\"anneal_seconds\":0.3,\"relax_rate\":10},\"commit\":{\"confidence\":0.65,\"decoherence\":0}}",
+            "mind": "first_mind"
           }
         },
         {
@@ -103,8 +91,8 @@
             "frame.update"
           ],
           "config": {
-            "chart": "tank_combat",
-            "chart_ir": "{\"schema\":\"wozzits.statechart.ir.v0\",\"name\":\"tank_combat\",\"bindings\":[{\"port\":\"player\",\"find\":\"tank\",\"scope\":\"global\"}],\"agents\":[{\"id\":\"mind\",\"owned\":false,\"host\":\"self\"}],\"pure\":[{\"id\":\"blink_c\",\"op\":\"committed\",\"agent\":\"mind\",\"slot\":4},{\"id\":\"want_blink\",\"op\":\"eq\",\"ins\":[{\"op\":\"blink_c\"},{\"const\":0}]}],\"regions\":[{\"id\":\"combat\",\"initial\":\"hunt\",\"states\":[\"hunt\",\"evade\"]}],\"states\":[{\"id\":\"hunt\",\"do\":[{\"kind\":\"call\",\"fn\":\"pursue\",\"args\":[{\"bind\":\"player\"},{\"const\":3}]},{\"kind\":\"call\",\"fn\":\"aim_at\",\"args\":[{\"bind\":\"player\"}]}],\"transitions\":[{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"want_blink\"}},\"target\":\"evade\"}]},{\"id\":\"evade\",\"do\":[{\"kind\":\"call\",\"fn\":\"halt\",\"args\":[]}],\"entry\":[{\"kind\":\"call\",\"fn\":\"blink\",\"args\":[]}],\"transitions\":[{\"trigger\":{\"kind\":\"after\",\"seconds\":3},\"target\":\"hunt\"}]}]}"
+            "chart": "hunt_or_refuel",
+            "chart_ir": "{\"schema\":\"wozzits.statechart.ir.v0\",\"name\":\"hunt_or_refuel\",\"bindings\":[{\"port\":\"bind1\",\"find\":\"playertank\",\"scope\":\"global\"},{\"port\":\"bind2\",\"find\":\"Enemy Tank V1 spawner\",\"scope\":\"global\"},{\"port\":\"bind3\",\"find\":\"depot\",\"scope\":\"global\"}],\"agents\":[{\"id\":\"mind\",\"owned\":false,\"host\":\"self\",\"mind\":\"first_mind\"},{\"id\":\"doc\",\"owned\":false,\"host\":\"bind2\",\"mind\":\"doctrine\"}],\"pure\":[{\"id\":\"read_fuel\",\"op\":\"read_state\",\"name\":\"fuel\"},{\"id\":\"fuelscale\",\"op\":\"mul\",\"ins\":[{\"op\":\"read_fuel\"},{\"const\":2}]},{\"id\":\"bias\",\"op\":\"add\",\"ins\":[{\"op\":\"fuelscale\"},{\"const\":-1}]},{\"id\":\"c\",\"op\":\"committed\",\"agent\":\"mind\",\"slot\":0},{\"id\":\"near\",\"op\":\"proximity\",\"target\":\"bind1\"},{\"id\":\"reached\",\"op\":\"lt\",\"ins\":[{\"op\":\"near\"},{\"const\":25}]},{\"id\":\"clear\",\"op\":\"gt\",\"ins\":[{\"op\":\"near\"},{\"const\":10}]},{\"id\":\"low\",\"op\":\"lt\",\"ins\":[{\"op\":\"read_fuel\"},{\"const\":0.15}]},{\"id\":\"recovered\",\"op\":\"gt\",\"ins\":[{\"op\":\"read_fuel\"},{\"const\":0.35}]},{\"id\":\"critical\",\"op\":\"lt\",\"ins\":[{\"op\":\"read_fuel\"},{\"const\":0.05}]},{\"id\":\"mem\",\"op\":\"memory\",\"agent\":\"doc\",\"q\":0},{\"id\":\"learned\",\"op\":\"mul\",\"ins\":[{\"op\":\"mem\"},{\"const\":0.5}]},{\"id\":\"doctrine\",\"op\":\"add\",\"ins\":[{\"op\":\"learned\"},{\"op\":\"bias\"}]},{\"id\":\"mem_t\",\"op\":\"memory\",\"agent\":\"doc\",\"q\":1},{\"id\":\"closed\",\"op\":\"read_state\",\"name\":\"closed\"},{\"id\":\"progress\",\"op\":\"mul\",\"ins\":[{\"op\":\"closed\"},{\"const\":0.012}]},{\"id\":\"tgt\",\"op\":\"read_state\",\"name\":\"target\"},{\"id\":\"is_returning\",\"op\":\"gt\",\"ins\":[{\"op\":\"tgt\"},{\"const\":0.5}]},{\"id\":\"is_pursuing\",\"op\":\"lt\",\"ins\":[{\"op\":\"tgt\"},{\"const\":0.5}]},{\"id\":\"refuelled\",\"op\":\"gt\",\"ins\":[{\"op\":\"read_fuel\"},{\"const\":0.9}]},{\"id\":\"depot_near\",\"op\":\"proximity\",\"target\":\"bind3\"},{\"id\":\"at_depot\",\"op\":\"lt\",\"ins\":[{\"op\":\"depot_near\"},{\"const\":10}]},{\"id\":\"negfuel\",\"op\":\"mul\",\"ins\":[{\"op\":\"read_fuel\"},{\"const\":-1}]},{\"id\":\"cutfine\",\"op\":\"add\",\"ins\":[{\"op\":\"negfuel\"},{\"const\":1}]},{\"id\":\"throttlescale\",\"op\":\"mul\",\"ins\":[{\"op\":\"mem_t\"},{\"const\":0.5}]},{\"id\":\"throttle\",\"op\":\"add\",\"ins\":[{\"op\":\"throttlescale\"},{\"const\":0.5}]}],\"regions\":[{\"id\":\"region1\",\"initial\":\"decide\",\"states\":[\"decide\",\"reconsider\"]},{\"id\":\"combat\",\"initial\":\"seeking\",\"states\":[\"seeking\",\"contact\"]},{\"id\":\"life\",\"initial\":\"ok\",\"states\":[\"ok\",\"reserve\",\"stranded\"]},{\"id\":\"legs\",\"initial\":\"pursuing\",\"states\":[\"pursuing\",\"returning\",\"arrived\"]}],\"states\":[{\"id\":\"decide\",\"do\":[{\"kind\":\"set_goal\",\"agent\":\"mind\",\"slot\":0,\"value\":{\"op\":\"doctrine\"}},{\"kind\":\"call\",\"fn\":\"choose_target\",\"args\":[{\"op\":\"c\"}]}],\"transitions\":[{\"trigger\":{\"kind\":\"after\",\"seconds\":1},\"target\":\"reconsider\"}],\"entry\":[{\"kind\":\"call\",\"fn\":\"set_throttle\",\"args\":[{\"op\":\"throttle\"}]}]},{\"id\":\"reconsider\",\"do\":[{\"kind\":\"set_goal\",\"agent\":\"mind\",\"slot\":0,\"value\":{\"op\":\"doctrine\"}},{\"kind\":\"rearm\",\"agent\":\"mind\"}],\"transitions\":[{\"trigger\":{\"kind\":\"after\",\"seconds\":4},\"target\":\"decide\"}]},{\"id\":\"seeking\",\"transitions\":[{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"reached\"}},\"target\":\"contact\"}]},{\"id\":\"ok\",\"transitions\":[{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"low\"}},\"target\":\"reserve\"}]},{\"id\":\"contact\",\"entry\":[{\"kind\":\"reward\",\"agent\":\"doc\",\"q\":0,\"toward\":true,\"strength\":{\"const\":0.4}}],\"transitions\":[{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"clear\"}},\"target\":\"seeking\"}]},{\"id\":\"reserve\",\"entry\":[{\"kind\":\"reward\",\"agent\":\"doc\",\"q\":0,\"toward\":false,\"strength\":{\"const\":0.4}}],\"transitions\":[{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"recovered\"}},\"target\":\"ok\"},{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"critical\"}},\"target\":\"stranded\"}]},{\"id\":\"stranded\",\"entry\":[{\"kind\":\"reward\",\"agent\":\"doc\",\"q\":0,\"toward\":false,\"strength\":{\"const\":1}}],\"transitions\":[{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"recovered\"}},\"target\":\"ok\"}]},{\"id\":\"pursuing\",\"transitions\":[{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"is_returning\"}},\"target\":\"returning\"}]},{\"id\":\"returning\",\"transitions\":[{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"at_depot\"}},\"target\":\"arrived\"}]},{\"id\":\"arrived\",\"entry\":[{\"kind\":\"reward\",\"agent\":\"doc\",\"q\":1,\"toward\":true,\"strength\":{\"op\":\"progress\"}},{\"kind\":\"reward\",\"agent\":\"doc\",\"q\":1,\"toward\":false,\"strength\":{\"op\":\"cutfine\"}}],\"transitions\":[{\"trigger\":{\"kind\":\"guard\",\"cond\":{\"op\":\"is_pursuing\"}},\"target\":\"pursuing\"}]}]}"
           }
         }
       ]
@@ -378,18 +366,18 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        8.9462347030639648,
+        8.946234703063965,
         25.055749893188477,
         14.62761116027832
       ],
       "orientation": [
-        -0.22179588675498962,
-        0.78362482786178589,
-        -0.51752853393554688,
-        -0.26249414682388306
+        -0.21726708114147186,
+        0.8045260310173035,
+        -0.4697660505771637,
+        -0.2912949323654175
       ],
       "move_speed": 8,
-      "look_speed": 0.00050000002374872565,
+      "look_speed": 0.0005000000237487257,
       "boost_multiplier": 4,
       "roll_speed": 1.5
     }

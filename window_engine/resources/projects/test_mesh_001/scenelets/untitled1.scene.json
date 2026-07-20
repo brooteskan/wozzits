@@ -1,0 +1,19 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "untitled1",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "name": "untitled1",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "active": true
+    }
+  ],
+  "defaults": {}
+}

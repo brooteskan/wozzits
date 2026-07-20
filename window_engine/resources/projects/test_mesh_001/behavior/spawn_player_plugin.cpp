@@ -59,7 +59,7 @@ namespace
         // breaks that: once the tank exists we never spawn again.
         WzBehaviorEntityId player = WZ_INVALID_BEHAVIOR_ENTITY;
         const uint8_t have_player =
-            wz_find_entity_by_name(facts, "tank", &player)
+            wz_find_entity_by_name(facts, "playertank", &player)
             && player != WZ_INVALID_BEHAVIOR_ENTITY;
 
         if (!have_player) {

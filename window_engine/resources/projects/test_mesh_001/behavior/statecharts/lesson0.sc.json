@@ -1,0 +1,71 @@
+{
+  "schema": "wozzits.statechart.ir.v0",
+  "name": "untitled2",
+  "bindings": [
+    {
+      "port": "bind1",
+      "find": "lit_sphere_1",
+      "scope": "subtree"
+    }
+  ],
+  "agents": [],
+  "pure": [],
+  "regions": [
+    {
+      "id": "mode",
+      "initial": "deliberate",
+      "states": [
+        "deliberate",
+        "hold"
+      ]
+    }
+  ],
+  "states": [
+    {
+      "id": "deliberate",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "bind1"
+          },
+          "value": {
+            "const": 100
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "after",
+            "seconds": 3
+          },
+          "target": "hold"
+        }
+      ]
+    },
+    {
+      "id": "hold",
+      "do": [
+        {
+          "kind": "set_scale",
+          "target": {
+            "bind": "bind1"
+          },
+          "value": {
+            "const": 200
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "trigger": {
+            "kind": "after",
+            "seconds": 4
+          },
+          "target": "deliberate"
+        }
+      ]
+    }
+  ]
+}

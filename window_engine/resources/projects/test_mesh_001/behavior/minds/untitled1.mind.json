@@ -1,0 +1,16 @@
+{
+  "schema": "wozzits.mind.ir.v0",
+  "qubits": 1,
+  "name": "untitled1",
+  "chi": 0,
+  "clock": {
+    "gamma_start": 2,
+    "gamma_end": 0,
+    "anneal_seconds": 4,
+    "relax_rate": 1
+  },
+  "commit": {
+    "confidence": 0.8,
+    "decoherence": 0
+  }
+}

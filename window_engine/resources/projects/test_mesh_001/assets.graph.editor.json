@@ -1,0 +1,239 @@
+{
+  "version": 1,
+  "subGraphs": [
+    {
+      "id": "296f18cc2b70463c93e578a6d2d29125",
+      "name": "Green and Red cubes",
+      "proxyX": 231.4842529296875,
+      "proxyY": 105.05147552034464,
+      "memberNodeIds": [
+        108,
+        110,
+        111,
+        112,
+        114,
+        116,
+        117,
+        120,
+        121,
+        122,
+        123
+      ]
+    },
+    {
+      "id": "5ac33ca4a90a40548657921f65046dcc",
+      "name": "Tank from glb",
+      "proxyX": 235.22678916578468,
+      "proxyY": 788.3379792316191,
+      "memberNodeIds": [
+        9,
+        21,
+        23,
+        24
+      ]
+    },
+    {
+      "id": "4f00a5c937fd4bc48216be72c15df501",
+      "name": "Landscape",
+      "proxyX": 922.1357533872354,
+      "proxyY": 337.8624467831853,
+      "memberNodeIds": [
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        25,
+        26,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        58,
+        125
+      ]
+    },
+    {
+      "id": "9b45d2122b6747abbed2e3cd7b349a1d",
+      "name": "Stars",
+      "proxyX": 662.389890725046,
+      "proxyY": 379.8494790431596,
+      "memberNodeIds": [
+        92,
+        93,
+        94,
+        95,
+        96,
+        100,
+        101,
+        102
+      ]
+    },
+    {
+      "id": "4aa06be567654a149654c9f87da5d5c2",
+      "name": "Command hut",
+      "proxyX": 234.9821854377043,
+      "proxyY": 429.59940650695535,
+      "memberNodeIds": [
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        67
+      ]
+    },
+    {
+      "id": "ba33f72644584f7d8c6a8d7c39e770ac",
+      "name": "Tank Render Program",
+      "proxyX": 235.8503394903696,
+      "proxyY": 599.5212327020831,
+      "memberNodeIds": [
+        2,
+        3,
+        4,
+        5,
+        10
+      ]
+    },
+    {
+      "id": "d2f234f0df714edaad23012a9deaa66d",
+      "name": "Audio",
+      "proxyX": 640.2855308051095,
+      "proxyY": 612.0450725747655,
+      "memberNodeIds": [
+        31,
+        32,
+        33,
+        34,
+        36,
+        38,
+        39,
+        41,
+        56,
+        57
+      ]
+    },
+    {
+      "id": "d362bd0ece8f4769bcf88a9415f9684e",
+      "name": "Sky Program",
+      "proxyX": 668.9037929186193,
+      "proxyY": 196.57082915414202,
+      "memberNodeIds": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79
+      ]
+    },
+    {
+      "id": "88c306c38ce54cafb74eb0fa70042c3e",
+      "name": "Night Sky",
+      "proxyX": 664.9864449936298,
+      "proxyY": 289.89218347915147,
+      "memberNodeIds": [
+        88,
+        89,
+        90,
+        91
+      ]
+    },
+    {
+      "id": "50d0d6bca0b4497c82f6d383a8db1d71",
+      "name": "Tank Effects",
+      "proxyX": 239.97505604455068,
+      "proxyY": 699.219113271222,
+      "memberNodeIds": [
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        103,
+        104,
+        105,
+        106
+      ]
+    },
+    {
+      "id": "73de47edfb1744c692a296b96253b4a0",
+      "name": "Lit Sky",
+      "proxyX": 658.0283061886626,
+      "proxyY": 102.97553872753633,
+      "memberNodeIds": [
+        70,
+        71,
+        72,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87
+      ]
+    },
+    {
+      "id": "2a8fad58dbef482dbda0826da884f11d",
+      "name": "Haze Sphere Renderable",
+      "proxyX": 1212.553825309612,
+      "proxyY": 107.59526987818106,
+      "memberNodeIds": [
+        133,
+        134,
+        135,
+        136,
+        137,
+        138,
+        139
+      ]
+    },
+    {
+      "id": "205bbbaa6a6248f990133fbe71c98ad5",
+      "name": "Far Terrain",
+      "proxyX": 1215.015852380838,
+      "proxyY": 327.233032761798,
+      "memberNodeIds": [
+        126,
+        127,
+        128,
+        129,
+        130,
+        132
+      ]
+    },
+    {
+      "id": "558d475d123d42a68d6f481b488a72ce",
+      "name": "Frame Environment",
+      "proxyX": 1210.0255332474276,
+      "proxyY": 452.54309067714655,
+      "memberNodeIds": [
+        140,
+        141
+      ]
+    }
+  ],
+  "reroutes": [
+    {
+      "sourceNodeId": 73,
+      "name": "sky_sphere"
+    },
+    {
+      "sourceNodeId": 79,
+      "name": "sky_program"
+    }
+  ]
+}
