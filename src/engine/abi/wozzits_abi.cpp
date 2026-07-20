@@ -2362,6 +2362,46 @@ extern "C"
         }
     }
 
+    WzResult wz_host_runtime_set_node_atmosphere(
+        WzHostRuntime* runtime,
+        const char* node_id_utf8,
+        uint64_t atmosphere_asset_node_id,
+        uint8_t enabled)
+    {
+        if (const WzResult gate = require_host_scene_authoring(runtime);
+            gate.code != WZ_RESULT_OK)
+        {
+            return gate;
+        }
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
+        }
+
+        try {
+            // The resolved atmosphere_asset key re-bridges from the node id on the
+            // rebind, so only the authored node id + enabled travel here.
+            wz::engine::assets::SceneAtmosphereAsset atmosphere;
+            atmosphere.atmosphere_asset_node_id = atmosphere_asset_node_id;
+            atmosphere.enabled = (enabled != 0);
+
+            runtime->control.post_scene_node_atmosphere(
+                wz::app::SceneNodeAtmosphereEdit{
+                    .node_id = node_id_utf8,
+                    .atmosphere = atmosphere,
+                });
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "set node atmosphere post failed");
+        }
+    }
+
     WzResult wz_host_runtime_set_node_scene_source(
         WzHostRuntime* runtime,
         const char* node_id_utf8,

@@ -16,7 +16,11 @@ extern "C" {
 // 30 -> 31: WzEditorSceneNode grew a motion_filter struct (the Motion Filter
 // component's per-DOF fields, surfaced read-back so the inspector restores them
 // on select + reload) — a struct layout change, so readers must match.
-#define WZ_ABI_VERSION 31u
+// 31 -> 32: WzEditorSceneNode grew an atmosphere struct (the Atmosphere
+// component's asset-graph node ref + enabled, surfaced read-back so the inspector
+// restores them on select + reload), plus the live-edit verb
+// wz_host_runtime_set_node_atmosphere — a struct layout change, readers must match.
+#define WZ_ABI_VERSION 32u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -218,6 +222,11 @@ enum
     // Motion Filter component present: the node's `motion_filter` struct carries
     // the authored per-DOF fields so the inspector restores them (read-back).
     WZ_EDITOR_SCENE_NODE_HAS_MOTION_FILTER = 1u << 14u,
+    // Atmosphere component present: the node's `atmosphere` struct carries the
+    // authored Atmosphere asset-graph node ref + enabled so the inspector restores
+    // them on select + after reload (read-back). Frame-global fog, authored on a
+    // node like the other scene-level components.
+    WZ_EDITOR_SCENE_NODE_HAS_ATMOSPHERE = 1u << 15u,
 };
 
 typedef uint32_t WzEditorSceneCameraFlags;
@@ -395,6 +404,24 @@ typedef struct WzEditorSceneAudioSource
     uint32_t reserved1;
 } WzEditorSceneAudioSource;
 
+// Authored Atmosphere-component field values surfaced read-back so the inspector
+// restores them on select + after reload (present iff WZ_EDITOR_SCENE_NODE_HAS_
+// ATMOSPHERE). `has_atmosphere_ref` is 0/1; `atmosphere_asset_node_id` is the
+// authored Atmosphere asset-graph node id (valid iff has_atmosphere_ref).
+// `enabled` is 0/1. The node id + enabled are ALSO the payload of the live-edit
+// verb wz_host_runtime_set_node_atmosphere (the editor sends both on any change).
+// Mirrors SceneAtmosphereAsset; the resolved atmosphere_asset key re-bridges on
+// bind, so only the authored node id + enabled are surfaced here.
+typedef struct WzEditorSceneAtmosphere
+{
+    uint64_t atmosphere_asset_node_id;
+    uint8_t has_atmosphere_ref;
+    uint8_t enabled;
+    uint8_t reserved0;
+    uint8_t reserved1;
+    uint32_t reserved2;
+} WzEditorSceneAtmosphere;
+
 typedef struct WzEditorSceneComponent
 {
     WzEditorStringSpan kind;
@@ -493,6 +520,10 @@ typedef struct WzEditorSceneNode
     // MOTION_FILTER. Appended last so existing field offsets are unchanged (the
     // node STRIDE changed — that is the WZ_ABI_VERSION 31 bump).
     WzEditorSceneMotionFilter motion_filter;
+    // Atmosphere component field values, valid iff WZ_EDITOR_SCENE_NODE_HAS_
+    // ATMOSPHERE. Appended last so existing field offsets are unchanged (the node
+    // STRIDE changed — that is the WZ_ABI_VERSION 32 bump).
+    WzEditorSceneAtmosphere atmosphere;
 } WzEditorSceneNode;
 
 typedef struct WzEditorSceneSnapshot
@@ -803,6 +834,11 @@ static_assert(offsetof(WzEditorSceneAudioSource, enabled) == 10);
 static_assert(offsetof(WzEditorSceneAudioSource, reserved0) == 11);
 static_assert(offsetof(WzEditorSceneAudioSource, reserved1) == 12);
 
+static_assert(sizeof(WzEditorSceneAtmosphere) == 16);
+static_assert(offsetof(WzEditorSceneAtmosphere, atmosphere_asset_node_id) == 0);
+static_assert(offsetof(WzEditorSceneAtmosphere, has_atmosphere_ref) == 8);
+static_assert(offsetof(WzEditorSceneAtmosphere, enabled) == 9);
+
 static_assert(sizeof(WzEditorSceneComponent) == 32);
 static_assert(offsetof(WzEditorSceneComponent, kind) == 0);
 static_assert(offsetof(WzEditorSceneComponent, display_name) == 16);
@@ -826,7 +862,7 @@ static_assert(sizeof(WzEditorSceneRenderableConstant) == 32);
 static_assert(offsetof(WzEditorSceneRenderableConstant, name) == 0);
 static_assert(offsetof(WzEditorSceneRenderableConstant, value) == 16);
 
-static_assert(sizeof(WzEditorSceneNode) == 736);
+static_assert(sizeof(WzEditorSceneNode) == 752);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -850,6 +886,7 @@ static_assert(offsetof(WzEditorSceneNode, renderable_bindings) == 632);
 static_assert(offsetof(WzEditorSceneNode, renderable_constants) == 648);
 static_assert(offsetof(WzEditorSceneNode, render_order) == 664);
 static_assert(offsetof(WzEditorSceneNode, motion_filter) == 668);
+static_assert(offsetof(WzEditorSceneNode, atmosphere) == 736);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);
@@ -1534,6 +1571,23 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_camera(
     double near_plane,
     double far_plane,
     double aspect);
+
+// Author node `node_id_utf8`'s Atmosphere component: which Atmosphere asset-graph
+// node the frame's fog reads (`atmosphere_asset_node_id`, or 0 to clear the ref)
+// and whether it is `enabled` (0/1). Creates the component if absent. DEFERRED
+// (applied next frame) and NON-BLOCKING; coalesced by id. The engine rebuilds the
+// runtime scene so the renderer re-resolves the frame atmosphere, and marks the
+// scene dirty so Save All persists the reference + enabled. An empty node id or an
+// unknown/missing node is a logged engine-thread no-op. HOST-CAPABILITY GATE
+// (require_host_scene_authoring): WZ_RESULT_INVALID_ARGUMENT for a null runtime, an
+// empty node id, or a non-host caller. This carries editable field values, distinct
+// from the presence-only "atmosphere" component add/remove token. The read-back
+// node-struct grew (WzEditorSceneAtmosphere) — WZ_ABI_VERSION 32 bump.
+WZ_ABI_API WzResult wz_host_runtime_set_node_atmosphere(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint64_t atmosphere_asset_node_id,
+    uint8_t enabled);
 
 // Author the PREFERRED asset-graph-backed Scene-source component on node
 // `node_id_utf8` (issue #213): point it at the authored "Scene from GLB"

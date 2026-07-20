@@ -2663,7 +2663,8 @@ namespace wz::engine::assets
             || kind == "motion"
             || kind == "motion_filter"
             || kind == "audio_source"
-            || kind == "audio_listener";
+            || kind == "audio_listener"
+            || kind == "atmosphere";
     }
 
     // True if node `node_id` currently carries the optional component `kind`.
@@ -2698,6 +2699,9 @@ namespace wz::engine::assets
         }
         if (kind == "audio_listener") {
             return node->audio_listener.has_value();
+        }
+        if (kind == "atmosphere") {
+            return node->atmosphere.has_value();
         }
         return false;
     }
@@ -2744,6 +2748,10 @@ namespace wz::engine::assets
             node->audio_listener = SceneAudioListenerAsset{};
             return true;
         }
+        if (kind == "atmosphere") {
+            node->atmosphere = SceneAtmosphereAsset{};
+            return true;
+        }
         return false;
     }
 
@@ -2786,6 +2794,10 @@ namespace wz::engine::assets
         }
         if (kind == "audio_listener") {
             node->audio_listener.reset();
+            return true;
+        }
+        if (kind == "atmosphere") {
+            node->atmosphere.reset();
             return true;
         }
         return false;

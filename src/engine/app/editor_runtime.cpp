@@ -689,6 +689,38 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_atmosphere(
+        SceneNodeAtmosphereEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Coalesce by id -- toggling enabled / re-picking the asset streams a few,
+        // only the latest matters.
+        for (SceneNodeAtmosphereEdit& pending : pending_atmosphere_edits_) {
+            if (pending.node_id == edit.node_id) {
+                pending.atmosphere = edit.atmosphere;
+                return;
+            }
+        }
+        pending_atmosphere_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_atmospheres(
+        const std::function<void(const SceneNodeAtmosphereEdit&)>& applier)
+    {
+        std::vector<SceneNodeAtmosphereEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_atmosphere_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_atmosphere_edits_);
+        }
+
+        for (const SceneNodeAtmosphereEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_scene_source(
         SceneNodeSceneSourceEdit edit)
     {
@@ -1403,6 +1435,14 @@ namespace wz::app
                             // runtime scene so the view controller re-reads it, and
                             // marks the scene dirty so Save All persists the fields.
                             app.set_node_camera(edit.node_id, edit.camera);
+                        });
+                    control->service_pending_scene_node_atmospheres(
+                        [&app](const SceneNodeAtmosphereEdit& edit) {
+                            // Set the whole Atmosphere component; the apply rebuilds
+                            // the runtime scene so the renderer re-resolves the frame
+                            // atmosphere, and marks the scene dirty so Save All
+                            // persists the reference + enabled flag.
+                            app.set_node_atmosphere(edit.node_id, edit.atmosphere);
                         });
                     control->service_pending_scene_node_scene_sources(
                         [&app](const SceneNodeSceneSourceEdit& edit) {

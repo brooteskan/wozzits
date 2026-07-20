@@ -421,6 +421,19 @@ namespace wz::engine::editor
                     node.audio_source->enabled ? 1u : 0u;
             }
 
+            if (node.atmosphere) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_ATMOSPHERE;
+                out.atmosphere.has_atmosphere_ref =
+                    node.atmosphere->atmosphere_asset_node_id ? 1u : 0u;
+                out.atmosphere.atmosphere_asset_node_id =
+                    node.atmosphere->atmosphere_asset_node_id
+                        ? static_cast<uint64_t>(
+                              *node.atmosphere->atmosphere_asset_node_id)
+                        : 0ull;
+                out.atmosphere.enabled =
+                    node.atmosphere->enabled ? 1u : 0u;
+            }
+
             // Custom-renderable ingredients (issue #229/#230): always-valid
             // tables, possibly empty — presence is the count, no HAS_* flag.
             std::vector<WzEditorSceneRenderableBinding> renderable_bindings;

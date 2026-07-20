@@ -1901,6 +1901,27 @@ namespace wz::app
         return true;
     }
 
+    bool WozzitsApp_v1::set_node_atmosphere(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneAtmosphereAsset& atmosphere)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_atmosphere: no-op (node '" + node_id + "' missing)");
+            return false;
+        }
+        node->atmosphere = atmosphere;
+        document_.dirty() = true;
+
+        // Rebuild so the renderer re-resolves the frame atmosphere next frame (the
+        // atmosphere_asset key is re-bridged from atmosphere_asset_node_id on the
+        // rebind). Edits are coalesced by id, so a rebuild per service cycle is fine.
+        apply_scene_change(SceneChange::runtime_rebuild());
+        return true;
+    }
+
     // Extract a short seam identifier from a source_location function name --
     // "void wz::app::WozzitsApp_v1::set_node_renderable_program(...)" -> the bare
     // "set_node_renderable_program". CSV-safe (a bare identifier: no comma) and
