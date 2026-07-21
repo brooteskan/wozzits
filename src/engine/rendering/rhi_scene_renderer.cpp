@@ -198,6 +198,10 @@ namespace wz::engine::rendering
         {
             wz::asset::AssetKey mesh_key{};
             wz::asset::AssetKey program_key{};
+            // Compositing order, copied from the recipe; drives the submit loop's
+            // world -> overlay ordering.
+            wz::engine::assets::DrawLayer draw_layer =
+                wz::engine::assets::DrawLayer::World;
             uint64_t buffer_identity = 0;
 
             // Set when the asset compiler has published GPU-resident pull buffers
@@ -298,6 +302,7 @@ namespace wz::engine::rendering
                 return PullMeshSource{
                     .mesh_key = recipe->mesh_key,
                     .program_key = recipe->program_key,
+                    .draw_layer = recipe->draw_layer,
                     .buffer_identity =
                         ea::rhi_asset_identity(recipe->mesh_key),
                     .clipmap = clipmap_binding_for(assets, *recipe),
@@ -330,6 +335,7 @@ namespace wz::engine::rendering
                     static_cast<uint32_t>(cloud->splat_count());
                 return PullMeshSource{
                     .program_key = recipe->program_key,
+                    .draw_layer = recipe->draw_layer,
                     .splat = binding,
                 };
             }
@@ -355,6 +361,7 @@ namespace wz::engine::rendering
                     static_cast<uint32_t>(catalog->stars.size());
                 return PullMeshSource{
                     .program_key = recipe->program_key,
+                    .draw_layer = recipe->draw_layer,
                     .star = binding,
                 };
             }
@@ -377,6 +384,7 @@ namespace wz::engine::rendering
                 return PullMeshSource{
                     .mesh_key = sparse->source_mesh_key,
                     .program_key = recipe->program_key,
+                    .draw_layer = recipe->draw_layer,
                     .buffer_identity =
                         ea::rhi_asset_identity(recipe->gpu_sparse_mesh_key),
                     .resident_key = recipe->gpu_sparse_mesh_key,
@@ -393,6 +401,7 @@ namespace wz::engine::rendering
             return PullMeshSource{
                 .mesh_key = recipe->mesh_key,
                 .program_key = recipe->program_key,
+                .draw_layer = recipe->draw_layer,
                 .buffer_identity = ea::rhi_asset_identity(recipe->mesh_key),
                 .style = recipe->style,
             };
@@ -1305,6 +1314,7 @@ namespace wz::engine::rendering
                 realized_renderables_.try_emplace(renderable_key);
             RealizedRenderable& srealized = sit->second;
             srealized.renderable_key = renderable_key;
+            srealized.draw_layer = source->draw_layer;
             srealized.program = program->program;
             srealized.owns_buffers = false;  // buffer is asset-owned
             srealized.is_splat_cloud = true;
@@ -1395,6 +1405,7 @@ namespace wz::engine::rendering
                 realized_renderables_.try_emplace(renderable_key);
             RealizedRenderable& trealized = tit->second;
             trealized.renderable_key = renderable_key;
+            trealized.draw_layer = source->draw_layer;
             trealized.program = program->program;
             trealized.owns_buffers = false;  // buffer is asset-owned
             trealized.is_star_field = true;
@@ -1561,6 +1572,7 @@ namespace wz::engine::rendering
         auto [it, inserted] = realized_renderables_.try_emplace(renderable_key);
         RealizedRenderable& realized = it->second;
         realized.renderable_key = renderable_key;
+        realized.draw_layer = source->draw_layer;
         realized.program = program->program;
         realized.positions = positions_handle;
         realized.indices = indices_handle;
@@ -1968,9 +1980,32 @@ namespace wz::engine::rendering
         const std::vector<std::uint8_t> node_effective_visible =
             compute_scene_node_effective_visibility(nodes);
 
-        for (const ea::SceneNodeAsset& node : nodes) {
-            const std::size_t node_index =
-                static_cast<std::size_t>(&node - nodes.data());
+        // Draw order: world geometry first, the overlay layer last (on top). The
+        // renderer records into the command list in this order, and overlays are
+        // depth-disabled + alpha-blended, so recording them last is what puts them
+        // over the scene -- an overlay has no depth to sort by. A STABLE partition:
+        // node order is preserved within a layer, so authored ordering still
+        // breaks ties. Realizing here is free -- ensure_renderable is cached, so
+        // the main loop below finds each renderable already built.
+        std::vector<std::size_t> draw_order;
+        draw_order.reserve(nodes.size());
+        for (int layer = 0; layer < ea::kDrawLayerCount; ++layer) {
+            for (std::size_t i = 0; i < nodes.size(); ++i) {
+                if (!node_effective_visible[i] || !nodes[i].renderable_asset) {
+                    continue;
+                }
+                const RealizedRenderable* r =
+                    ensure_renderable(assets, *nodes[i].renderable_asset);
+                if (r != nullptr
+                    && static_cast<int>(r->draw_layer) == layer)
+                {
+                    draw_order.push_back(i);
+                }
+            }
+        }
+
+        for (const std::size_t node_index : draw_order) {
+            const ea::SceneNodeAsset& node = nodes[node_index];
             if (!node_effective_visible[node_index] || !node.renderable_asset) {
                 continue;
             }

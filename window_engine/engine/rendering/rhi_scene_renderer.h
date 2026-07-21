@@ -228,6 +228,11 @@ namespace wz::engine::rendering
         struct RealizedRenderable
         {
             wz::asset::AssetKey         renderable_key{};
+            // Compositing order (copied from the recipe at realize): Overlay
+            // draws last / on top, so the submit loop records it after world
+            // geometry.
+            wz::engine::assets::DrawLayer draw_layer =
+                wz::engine::assets::DrawLayer::World;
             wz::rhi::Tag                program{};
             wz::rhi::GpuResourceHandle  positions{};
             wz::rhi::GpuResourceHandle  indices{};

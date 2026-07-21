@@ -57,6 +57,12 @@ namespace wz::engine::assets::internal
                 "HDRI environment",
             };
 
+        // DrawLayer option order == the enum (World, Overlay). Overlay draws last.
+        constexpr std::array<std::string_view, 2> kDrawLayerOptions = {
+            "world",
+            "overlay",
+        };
+
         template<class Enum, std::size_t Count>
         Enum enum_param(
             const wz::asset::ParamBlock& params,
@@ -268,6 +274,8 @@ namespace wz::engine::assets::internal
             if (port_dep_keys.size() > 1) {
                 desc.render_program_asset = port_dep_keys[1];
             }
+            desc.draw_layer = enum_param(
+                params, "draw_layer", desc.draw_layer, kDrawLayerOptions);
             for (uint32_t i = 0; i < kMaxRenderBindingLayoutBindings; ++i) {
                 const size_t port = 2u + i;
                 const wz::asset::AssetKey key =
@@ -604,6 +612,7 @@ namespace wz::engine::assets::internal
 
             out.mesh_key = desc.mesh_asset;
             out.program_key = desc.render_program_asset;
+            out.draw_layer  = desc.draw_layer;
             out.custom = true;
             out.constants_head = program.constants_head;
             out.constants_dwords = block_dwords;
@@ -681,6 +690,13 @@ namespace wz::engine::assets::internal
                     .label = kCustomConstWParams[i],
                 });
             }
+            parameters.push_back({
+                .name = "draw_layer",
+                .type = ParamType::Enum,
+                .label = "Draw layer",
+                .default_num = 0,   // world
+                .options = kDrawLayerOptions,
+            });
             return parameters;
         }
 

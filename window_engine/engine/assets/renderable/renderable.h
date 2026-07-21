@@ -263,6 +263,14 @@ namespace wz::engine::assets
         float value[4]{};
     };
 
+    // Compositing order for a renderable. World geometry draws first; the Overlay
+    // layer draws last (on top) -- for depth-disabled, alpha-blended 2D overlays /
+    // HUD. The renderer records draws in layer order, so THIS decides "on top",
+    // not depth (an overlay has no depth to sort by). Default World keeps every
+    // existing renderable exactly where it was.
+    enum class DrawLayer : uint8_t { World, Overlay };
+    inline constexpr int kDrawLayerCount = 2;
+
     struct RhiRenderableRecipe
     {
         // Exactly one geometry source is set:
@@ -272,6 +280,9 @@ namespace wz::engine::assets
         wz::asset::AssetKey mesh_key{};
         wz::asset::AssetKey gpu_sparse_mesh_key{};
         wz::asset::AssetKey program_key{};
+
+        // Compositing order (see DrawLayer): Overlay draws last / on top.
+        DrawLayer draw_layer = DrawLayer::World;
 
         // Optional clipmap-landscape binding. Empty for mesh / gpu_sparse
         // recipes — their valid() behavior is unchanged. When set,
@@ -454,6 +465,9 @@ namespace wz::engine::assets
         // Render program (kAssetTypeRenderProgram) with an authored binding
         // layout (#227) and the MeshVertexPull binding model.
         wz::asset::AssetKey render_program_asset{};
+        // Compositing order (see DrawLayer): an overlay renderable authors
+        // "overlay" so it draws last / on top; default World.
+        DrawLayer draw_layer = DrawLayer::World;
         std::vector<Binding> bindings;
         std::vector<Constant> constants;
         // Optional Placement (kAssetTypePlacement) — the world footprint for a

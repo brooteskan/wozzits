@@ -700,6 +700,60 @@ TEST_F(CustomRenderableFixture, DrawsThroughAuthoredLayoutGenerically)
         << "object SRG (incl. the field texture) did not bind a table";
 }
 
+// The overlay draw layer (seam 3): an authored draw_layer="overlay" reaches the
+// compiled recipe, so the renderer records it in the overlay pass (on top).
+TEST_F(CustomRenderableFixture, AuthoredDrawLayerReachesTheRecipe)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    ea::EngineAssetLibrary assets(gpu, logger, root.string());
+    const Ingredients ingredients =
+        build_ingredients(assets, tint_field_layout());
+
+    wz::asset::ParamBlock params;
+    params.values["binding0_semantic"] = std::string("scalar_field_texture");
+    params.values["draw_layer"] = int64_t{ 1 };   // 1 == overlay
+    const wz::asset::AssetKey renderable_key = register_custom_renderable(
+        assets, 1, std::move(params),
+        { ingredients.mesh.output,
+          ingredients.program.key,
+          ingredients.field.output });
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const ea::RhiRenderableRecipe* recipe =
+        assets.renderables().get_rhi_renderable_recipe(
+            ea::RenderableAsset{ .output = renderable_key });
+    ASSERT_NE(recipe, nullptr);
+    EXPECT_EQ(recipe->draw_layer, ea::DrawLayer::Overlay);
+}
+
+// Unauthored defaults to World, so every existing renderable is unchanged.
+TEST_F(CustomRenderableFixture, DrawLayerDefaultsToWorld)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    ea::EngineAssetLibrary assets(gpu, logger, root.string());
+    const Ingredients ingredients =
+        build_ingredients(assets, tint_field_layout());
+
+    wz::asset::ParamBlock params;
+    params.values["binding0_semantic"] = std::string("scalar_field_texture");
+    const wz::asset::AssetKey renderable_key = register_custom_renderable(
+        assets, 1, std::move(params),
+        { ingredients.mesh.output,
+          ingredients.program.key,
+          ingredients.field.output });
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const ea::RhiRenderableRecipe* recipe =
+        assets.renderables().get_rhi_renderable_recipe(
+            ea::RenderableAsset{ .output = renderable_key });
+    ASSERT_NE(recipe, nullptr);
+    EXPECT_EQ(recipe->draw_layer, ea::DrawLayer::World);
+}
+
 // A layout row nothing supplies: compile fails and the reason names the
 // semantic, on the node (NodeResolveState::detail — the inspector channel).
 TEST_F(CustomRenderableFixture, UnboundSemanticFailsCompileWithReason)
