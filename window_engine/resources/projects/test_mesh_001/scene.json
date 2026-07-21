@@ -579,6 +579,35 @@
       "renderable": {
         "asset_graph_node_id": 106
       }
+    },
+    {
+      "id": "13",
+      "parent": "root",
+      "name": "overlay test",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "render_order": 200,
+      "renderable": {
+        "asset_graph_node_id": 151
+      }
     }
   ],
   "defaults": {
@@ -595,10 +624,10 @@
         297.47216796875
       ],
       "orientation": [
-        -0.17941486835479736,
-        -0.13477408885955811,
-        -0.063887894153594971,
-        0.97240149974822998
+        -0.10698924213647842,
+        -0.20197089016437531,
+        -0.061293765902519226,
+        0.97159880399703979
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
