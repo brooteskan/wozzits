@@ -42,9 +42,10 @@ namespace wz::engine::assets::internal
         // the enum value, so "None" must stay first — that is the value every
         // layout authored before this param existed decodes to, and it derives
         // byte-identically to one with no view block at all.
-        constexpr std::array<std::string_view, 2> kViewHeadOptions = {
+        constexpr std::array<std::string_view, 3> kViewHeadOptions = {
             "None",
             "Camera + fog (12)",
+            "Screen (4)",   // viewport size for 2D overlays (RenderBindingViewHead::Screen)
         };
 
         constexpr std::array<std::string_view, 5> kConstantTypeOptions = {
