@@ -894,6 +894,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset csv_tests)
     rs_add_test_group(asset engine_disk_cache_provider_tests)
 
+    rs_add_test_group(asset_inochi inochi_load_tests)
+
     rs_add_test_group(asset_json yyjson_wrapper)
     rs_add_test_group(asset_json json_polytree)
     rs_add_test_group(asset_json json_table)

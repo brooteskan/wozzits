@@ -1,0 +1,6 @@
+# Inochi puppet fixtures are large (Aka.inp ~9 MB; source .inx ~18 MB). Keep them
+# local, not committed, until a git-lfs or trimmed-puppet decision is made (see
+# the inochi-runtime-track). The real-puppet test GTEST_SKIPs when absent; the
+# hand-built-container test always runs.
+*.inp
+*.inx
