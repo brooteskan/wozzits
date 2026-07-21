@@ -419,7 +419,11 @@ namespace wz::engine::assets::internal
             const auto renderer_owned =
                 [](DescriptorSemantic semantic) noexcept
                 {
-                    return semantic == DescriptorSemantic::ViewConstants;
+                    // View-frequency blocks the renderer fills each frame (space
+                    // 0), not port bindings: the camera/fog block and the 2D
+                    // overlay's viewport block.
+                    return semantic == DescriptorSemantic::ViewConstants
+                        || semantic == DescriptorSemantic::ScreenConstants;
                 };
 
             std::vector<DescriptorSemantic> bound;

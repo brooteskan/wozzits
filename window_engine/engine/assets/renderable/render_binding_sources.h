@@ -59,6 +59,12 @@ namespace wz::engine::assets
             return RenderBindingSource{
                 RenderBindingKind::TextureSrv, "field_texture" };
         }
+        if (source_type == kAssetTypeTexture) {
+            // An imported image (2D overlays / materials). Resident under the
+            // "texture" discriminator (texture_compilers.cpp).
+            return RenderBindingSource{
+                RenderBindingKind::TextureSrv, "texture" };
+        }
         if (source_type == kAssetTypeVectorField) {
             return RenderBindingSource{
                 RenderBindingKind::TextureSrv, "vector_field_texture" };

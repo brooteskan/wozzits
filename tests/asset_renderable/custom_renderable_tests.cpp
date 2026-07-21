@@ -336,6 +336,114 @@ float4 main(PSIn input) : SV_TARGET
         return desc;
     }
 
+    // ── 2D overlay fixture (seam 4) ─────────────────────────────────────────
+    // A screen-space quad placed at a PIXEL rect via the Screen view head (seam
+    // 2), sampling an imported Texture (seam 1). Mirrors resources/shaders/
+    // overlay/*.hlsl; hand-declares screen_constants (plain compile route).
+    constexpr const char* kOverlayVs = R"(
+struct WzScreenConstants { float4 viewport; };
+StructuredBuffer<WzScreenConstants> screen_constants : register(t0, space0);
+
+cbuffer OverlayBlock : register(b0, space2)
+{
+    float4 rect;    // xy = top-left px, zw = size px
+    float4 params;  // x = alpha
+};
+
+StructuredBuffer<float3> positions : register(t0, space2);
+StructuredBuffer<uint>   indices   : register(t1, space2);
+
+struct VSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
+
+VSOut main(uint vid : SV_VertexID)
+{
+    uint   idx = indices[vid];
+    float3 p   = positions[idx];
+    float2 t   = float2(p.x * 0.5f + 0.5f, 0.5f - p.y * 0.5f);
+    float2 px  = rect.xy + t * rect.zw;
+    float2 vp  = screen_constants[0].viewport.xy;
+    float2 ndc = px * (2.0f / vp) - 1.0f;
+    VSOut o;
+    o.pos = float4(ndc.x, -ndc.y, 0.0f, 1.0f);
+    o.uv  = t;
+    return o;
+}
+)";
+
+    constexpr const char* kOverlayPs = R"(
+cbuffer OverlayBlock : register(b0, space2) { float4 rect; float4 params; };
+Texture2D<float4> overlay_texture : register(t2, space2);
+SamplerState      overlay_sampler : register(s0, space2);
+struct PSIn { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
+float4 main(PSIn input) : SV_TARGET
+{
+    float4 tex = overlay_texture.SampleLevel(overlay_sampler, input.uv, 0.0f);
+    return float4(tex.rgb, tex.a * params.x);
+}
+)";
+
+    // A tiny uncompressed 32-bit TGA the Texture asset decodes (seam 1).
+    std::vector<uint8_t> make_overlay_tga(int w, int h)
+    {
+        std::vector<uint8_t> tga;
+        tga.push_back(0); tga.push_back(0); tga.push_back(2);
+        tga.insert(tga.end(), 5, 0);
+        tga.push_back(0); tga.push_back(0); tga.push_back(0); tga.push_back(0);
+        tga.push_back(static_cast<uint8_t>(w & 0xFF));
+        tga.push_back(static_cast<uint8_t>((w >> 8) & 0xFF));
+        tga.push_back(static_cast<uint8_t>(h & 0xFF));
+        tga.push_back(static_cast<uint8_t>((h >> 8) & 0xFF));
+        tga.push_back(32);
+        tga.push_back(0x28);
+        for (int i = 0; i < w * h; ++i) {
+            tga.push_back(static_cast<uint8_t>((i * 97) & 0xFF));
+            tga.push_back(static_cast<uint8_t>((i * 53) & 0xFF));
+            tga.push_back(static_cast<uint8_t>((i * 37) & 0xFF));
+            tga.push_back(255);
+        }
+        return tga;
+    }
+
+    // The overlay layout: a Screen view head (space0), the two mesh-pull SRVs,
+    // the sprite (OverlayTexture) + a clamp sampler, and a per-draw rect + params
+    // tail behind a None object head (screen-space, no MVP).
+    ea::RenderBindingLayoutData overlay_layout()
+    {
+        ea::RenderBindingLayoutData layout{};
+        layout.constants_semantic = "overlay_block";
+        layout.constants_visibility = ea::ShaderVisibility::All;
+        layout.constants_head = ea::RenderBindingConstantsHead::None;
+        layout.constant_fields = {
+            { .name = "rect",   .type = ea::RenderBindingConstantType::Float4 },
+            { .name = "params", .type = ea::RenderBindingConstantType::Float4 },
+        };
+        layout.bindings = {
+            {
+                .semantic = "pulled_mesh_positions",
+                .kind = ea::RenderBindingKind::StructuredSrv,
+                .visibility = ea::ShaderVisibility::Vertex,
+            },
+            {
+                .semantic = "pulled_mesh_indices",
+                .kind = ea::RenderBindingKind::StructuredSrv,
+                .visibility = ea::ShaderVisibility::Vertex,
+            },
+            {
+                .semantic = "overlay_texture",
+                .kind = ea::RenderBindingKind::TextureSrv,
+                .visibility = ea::ShaderVisibility::Pixel,
+            },
+        };
+        layout.samplers = {
+            {
+                .kind = ea::StaticSamplerKind::LinearClamp,
+                .visibility = ea::ShaderVisibility::Pixel,
+            },
+        };
+        layout.view_head = ea::RenderBindingViewHead::Screen;
+        return layout;
+    }
+
     wz::asset::AssetKey test_renderable_key(uint64_t id)
     {
         return wz::asset::AssetKey{
@@ -752,6 +860,142 @@ TEST_F(CustomRenderableFixture, DrawLayerDefaultsToWorld)
             ea::RenderableAsset{ .output = renderable_key });
     ASSERT_NE(recipe, nullptr);
     EXPECT_EQ(recipe->draw_layer, ea::DrawLayer::World);
+}
+
+// ── 2D overlays: the whole stack in one draw (seam 4) ───────────────────────
+// Seams 1-3 converge: an imported Texture (seam 1) is bound to a screen-quad
+// custom renderable whose layout declares the Screen view head (seam 2) and
+// whose recipe is the Overlay layer (seam 3). It resolves (so the overlay
+// shaders compiled against the generated SRG), the sprite is resident under the
+// "texture" identity, and a device frame realizes the program (Screen-head SRG +
+// texture SRV, alpha-blended, depth-disabled) and records its draw.
+TEST_F(CustomRenderableFixture, OverlayRenderableDrawsATexturedScreenQuad)
+{
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    ea::EngineAssetLibrary assets(gpu, logger, root.string());
+
+    write_text_file(root / "shaders" / "overlay" / "overlay_vs.hlsl", kOverlayVs);
+    write_text_file(root / "shaders" / "overlay" / "overlay_ps.hlsl", kOverlayPs);
+
+    // The sprite: an image on disk -> RawFile -> Texture asset (seam 1).
+    {
+        const std::vector<uint8_t> tga = make_overlay_tga(8, 4);
+        std::ofstream f(root / "sprite.tga", std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(f.is_open());
+        f.write(reinterpret_cast<const char*>(tga.data()),
+                static_cast<std::streamsize>(tga.size()));
+    }
+    const wz::asset::AssetKey sprite_file = assets.files().register_file_node(
+        "sprite.tga", ea::kRawFileSchema, ea::kAssetTypeRawFile);
+    ASSERT_FALSE(sprite_file == wz::asset::AssetKey{});
+    const ea::TextureAsset sprite = assets.textures().create_from_file({
+        .name = "overlay/sprite",
+        .source_file = sprite_file,
+        .usage = ea::TextureUsage::UI,
+        .color_space = ea::TextureColorSpaceChoice::Auto,
+    });
+    ASSERT_TRUE(sprite.valid());
+
+    // Quad geometry + the overlay program: alpha-blended, depth-disabled, no
+    // culling, and the Screen-head texture layout.
+    const ea::MeshAsset quad = assets.meshes().create_procedural_mesh({
+        .name = "overlay/quad",
+        .kind = ea::ProceduralMeshKind::Quad,
+    });
+    ASSERT_TRUE(quad.valid());
+
+    const auto layout =
+        assets.render_binding_layouts().create_render_binding_layout({
+            .name = "overlay/layout",
+            .layout = overlay_layout(),
+        });
+    ASSERT_TRUE(layout.valid());
+
+    const ea::ShaderPairAsset shaders =
+        assets.shaders().create_shader_pair({
+            .name = "overlay/program",
+            .vertex_path = "shaders/overlay/overlay_vs.hlsl",
+            .pixel_path = "shaders/overlay/overlay_ps.hlsl",
+            .vertex_target = "vs_5_1",
+            .pixel_target = "ps_5_1",
+        });
+    ASSERT_TRUE(shaders.valid());
+
+    ea::CustomRenderProgramDesc pdesc =
+        custom_program_desc("overlay/program", layout.output);
+    pdesc.default_policy_flags = ea::RenderPolicy_None;
+    pdesc.blend_mode = ea::BlendMode::AlphaBlend;
+    pdesc.depth_mode = ea::DepthMode::Disabled;
+    pdesc.raster_mode = ea::RasterMode::SolidCullNone;
+    pdesc.vertex_shader = shaders.vertex_shader;
+    pdesc.pixel_shader = shaders.pixel_shader;
+    const ea::RenderProgramAsset program =
+        assets.render_programs().create_custom(pdesc);
+    ASSERT_TRUE(program.valid());
+
+    // The overlay renderable: bind the sprite at the overlay_texture port, author
+    // the pixel rect + alpha, mark it the Overlay layer.
+    wz::asset::ParamBlock params;
+    params.values["binding0_semantic"] = std::string("overlay_texture");
+    params.values["draw_layer"] = int64_t{ 1 };   // 1 == overlay
+    params.values["const0_name"] = std::string("rect");
+    params.values["const0_value"] = std::array<float, 3>{ 40.0f, 30.0f, 200.0f };
+    params.values["const0_w"] = 150.0;             // rect = (40,30) px, 200x150 px
+    params.values["const1_name"] = std::string("params");
+    params.values["const1_value"] = std::array<float, 3>{ 1.0f, 0.0f, 0.0f };
+    params.values["const1_w"] = 0.0;               // alpha = 1
+    const wz::asset::AssetKey renderable_key = register_custom_renderable(
+        assets, 50, std::move(params),
+        { quad.output, program.key, sprite.output });
+
+    ASSERT_TRUE(assets.commit());
+    const ea::ResolveReport resolve = assets.resolve_all();
+    for (const ea::ResolveFailure& f : resolve.failures) {
+        ADD_FAILURE() << "resolve failure: error="
+                      << static_cast<int>(f.error) << " " << f.detail;
+    }
+    ASSERT_TRUE(resolve.ok());
+
+    // The recipe: Overlay layer + the sprite bound as the "texture" variant.
+    const ea::RhiRenderableRecipe* recipe =
+        assets.renderables().get_rhi_renderable_recipe(
+            ea::RenderableAsset{ .output = renderable_key });
+    ASSERT_NE(recipe, nullptr);
+    EXPECT_EQ(recipe->draw_layer, ea::DrawLayer::Overlay);
+    ASSERT_EQ(recipe->bindings.size(), 1u);
+    EXPECT_EQ(recipe->bindings[0].semantic, "overlay_texture");
+    EXPECT_EQ(recipe->bindings[0].variant, "texture");
+    EXPECT_TRUE(recipe->bindings[0].key == sprite.output);
+
+    // The sprite is resident under the identity the recipe binds.
+    const wz::rhi::GpuResourceHandle sprite_tex = gpu.resources.find(
+        wz::rhi::ResourceIdentity{
+            ea::rhi_asset_identity(sprite.output, "texture"), {} });
+    ASSERT_TRUE(sprite_tex.valid()) << "overlay sprite did not become resident";
+
+    // Drive one frame: the overlay realizes (Screen-head SRG + texture SRV,
+    // alpha-blended, depth-disabled) and records its draw in the overlay pass.
+    wz::engine::rendering::RhiSceneRenderer renderer(gpu, logger);
+    ea::SceneNodeAsset node{};
+    node.id = wz::scene::AuthoredEntityId{ 1 };
+    node.name = "overlay";
+    node.visible = true;
+    node.renderable_asset = renderable_key;
+    const std::vector<ea::SceneNodeAsset> nodes{ node };
+
+    ASSERT_TRUE(wz::gpu::begin_frame(device));
+    wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+    const bool recorded = renderer.render_scene(
+        nodes, assets, wz::math::Mat4::identity(),
+        wz::math::Vec3{ 0.0f, 0.0f, -3.0f });
+    EXPECT_TRUE(recorded)
+        << "overlay renderable failed to realize or record its draw";
+    ASSERT_TRUE(wz::gpu::end_frame(device));
+    wz::gpu::present(device, /*sync_interval*/ 0);
+
+    EXPECT_GT(renderer.registered_program_count(), 0u);
+    EXPECT_GT(renderer.cached_descriptor_table_count(), 0u)
+        << "overlay object SRG (incl. the sprite texture) did not bind a table";
 }
 
 // A layout row nothing supplies: compile fails and the reason names the

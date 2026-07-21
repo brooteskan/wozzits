@@ -131,6 +131,10 @@ namespace wz::engine::assets
         // head and a 3D program's CameraFog head coexist in one frame, each bound
         // to its own per-frame buffer.
         ScreenConstants,
+        // A generic imported-image texture bound to a renderable (kAssetTypeTexture,
+        // "texture" variant) -- the 2D overlay's sprite. A distinct semantic so the
+        // overlay layout names its own row, separate from field/vector textures.
+        OverlayTexture,
     };
 
     // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
@@ -138,7 +142,7 @@ namespace wz::engine::assets
     // it as a Tag (enum → name), and authored render-binding-layout rows name
     // their semantic as a string that resolves back to the enum (name → enum).
     // Index == enum value; a new DescriptorSemantic member extends this array.
-    inline constexpr std::array<std::string_view, 15> kDescriptorSemanticNames = {
+    inline constexpr std::array<std::string_view, 16> kDescriptorSemanticNames = {
         "unknown",
         "splat_cloud",
         "sorted_splat_indices",
@@ -154,6 +158,7 @@ namespace wz::engine::assets
         "star_catalog",
         "view_constants",
         "screen_constants",
+        "overlay_texture",
     };
 
     [[nodiscard]] constexpr std::string_view descriptor_semantic_name(
