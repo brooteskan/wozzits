@@ -126,6 +126,7 @@ namespace wz::engine::assets {
     // boost the sky colour it scatters. Recompile so cached atmospheres carry it.
     inline constexpr uint64_t kAtmosphereCompilerVersion = 2;
     inline constexpr uint64_t kFrameEnvironmentCompilerVersion = 1;
+    inline constexpr uint64_t kTextureCompilerVersion = 1;
     // Bumped 2 -> 3: the collision-from-height-field recipe now accepts an
     // optional Placement input port that overrides its origin/size/vertical/
     // base when connected (issue #218 Phase 1). Bump invalidates stale caches.

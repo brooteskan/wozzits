@@ -10,6 +10,7 @@
 #include <engine/assets/toml/toml_compilers.h>
 #include <engine/assets/mesh/mesh_compilers.h>
 #include <engine/assets/diagnostics/diagnostic_timeframe_summary_compilers.h>
+#include <engine/assets/texture/texture_compilers.h>
 
 namespace wz::engine::assets::internal
 {
@@ -126,6 +127,12 @@ namespace wz::engine::assets::internal
             ctx.logger,
             ctx.star_catalog_table,
             ctx.json_table,
+            ctx.gpu_resources,
+            ctx.rhi_resource_tracker);
+        register_texture_compilers(
+            registry,
+            ctx.logger,
+            ctx.texture_table,
             ctx.gpu_resources,
             ctx.rhi_resource_tracker);
         register_data_table_compilers(registry, ctx.logger, ctx.data_table);

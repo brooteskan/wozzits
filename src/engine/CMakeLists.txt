@@ -192,6 +192,9 @@ target_sources(window_engine PRIVATE
 
     assets/star_catalog/star_catalog_compilers.cpp
     assets/star_catalog_asset_module.cpp
+    assets/texture/image_decode.cpp
+    assets/texture/texture_compilers.cpp
+    assets/texture_asset_module.cpp
 
     assets/renderable/renderable.cpp
     assets/renderable/renderable_compilers.cpp

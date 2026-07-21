@@ -79,6 +79,8 @@
 #include <engine/assets/sky_gaussian_asset_module.h>
 #include <engine/assets/star_catalog/star_catalog_table.h>
 #include <engine/assets/star_catalog_asset_module.h>
+#include <engine/assets/texture/texture.h>
+#include <engine/assets/texture_asset_module.h>
 
 #include <engine/assets/data_table_asset_module.h>
 #include <engine/assets/diagnostic_resampled_time_series_asset_module.h>
@@ -367,6 +369,9 @@ namespace wz::engine::assets
         StarCatalogAssetModule&       star_catalogs()       { return star_catalogs_; }
         const StarCatalogAssetModule& star_catalogs() const { return star_catalogs_; }
 
+        TextureAssetModule&       textures()       { return textures_; }
+        const TextureAssetModule& textures() const { return textures_; }
+
         SceneAssetModule&       scenes()       { return scenes_; }
         const SceneAssetModule& scenes() const { return scenes_; }
 
@@ -502,6 +507,7 @@ namespace wz::engine::assets
         HDRIEnvironmentTable        hdri_environment_table_;
         SkyGaussianTable            sky_gaussian_table_;
         wz::engine::starfield::StarCatalogTable star_catalog_table_;
+        TextureTable                texture_table_;
         SceneAssetTable             scene_table_;
 
         // Before system_: the wavelet compiler lambda captures a reference to
@@ -548,6 +554,7 @@ namespace wz::engine::assets
         LightAssetModule            lights_;
         SkyGaussianAssetModule      sky_gaussians_;
         StarCatalogAssetModule      star_catalogs_;
+        TextureAssetModule          textures_;
         SceneAssetModule            scenes_;
 
         ResolveReport resolve_roots_with_report(

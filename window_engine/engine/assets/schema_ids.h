@@ -789,4 +789,13 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kFrameEnvironmentSchema{
         0xF11E'CA55'E7'001007ull
     };
+
+    // Texture imported from an image file (PNG / JPG / ...): a RawFile dependency
+    // decoded to RGBA8 and made resident as a Texture2D. The authored dials --
+    // usage and colour space -- fold into content_hash. Produces
+    // kAssetTypeTexture. Next slot after the environment recipes; textures are
+    // the foundational texel source overlays and materials sample.
+    inline constexpr wz::asset::SchemaID kTextureFromFileSchema{
+        0xF11E'CA55'E7'001008ull
+    };
 }

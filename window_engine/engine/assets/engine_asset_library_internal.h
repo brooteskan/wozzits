@@ -50,6 +50,8 @@
 #include <engine/assets/sky_gaussian/sky_gaussian_compilers.h>
 #include <engine/assets/star_catalog/star_catalog_table.h>
 #include <engine/assets/star_catalog/star_catalog_compilers.h>
+#include <engine/assets/texture/texture.h>
+#include <engine/assets/texture/texture_compilers.h>
 #include <engine/assets/data_table/data_table.h>
 #include <engine/assets/data_table/data_table_compilers.h>
 #include <engine/assets/diagnostics/diagnostic_resampled_time_series.h>
@@ -155,6 +157,7 @@ namespace wz::engine::assets::internal {
         HDRIEnvironmentTable&               hdri_environment_table;
         SkyGaussianTable&                   sky_gaussian_table;
         wz::engine::starfield::StarCatalogTable& star_catalog_table;
+        TextureTable&                       texture_table;
         SceneAssetTable&                    scene_table;
         EngineAssetCacheSettings            cache_settings;
         wz::rhi::GpuResourceRegistry*       gpu_resources = nullptr;

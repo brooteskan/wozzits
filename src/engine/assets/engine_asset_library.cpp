@@ -258,6 +258,7 @@ namespace wz::engine::assets
         , hdri_environment_table_{}
         , sky_gaussian_table_{}
         , star_catalog_table_{}
+        , texture_table_{}
         , scene_table_{}
         , mesh_field_compute_(make_gpu_mesh_field_compute_backend(device))
         , system_(internal::make_engine_compiler_registry(
@@ -312,6 +313,7 @@ namespace wz::engine::assets
                 .hdri_environment_table = hdri_environment_table_,
                 .sky_gaussian_table  = sky_gaussian_table_,
                 .star_catalog_table  = star_catalog_table_,
+                .texture_table       = texture_table_,
                 .scene_table         = scene_table_,
                 .cache_settings      = cache_settings_,
                 .gpu_resources       = gpu_resources_,
@@ -387,6 +389,7 @@ namespace wz::engine::assets
             hdri_environment_table_)
         , sky_gaussians_(system_, logger_, sky_gaussian_table_)
         , star_catalogs_(system_, logger_, star_catalog_table_)
+        , textures_(system_, logger_, texture_table_)
         , scenes_(
             system_,
             logger_,

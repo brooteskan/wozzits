@@ -196,6 +196,7 @@ target_include_directories(window_engine
         "${CMAKE_CURRENT_SOURCE_DIR}/external/gltf/fastgltf/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/ply/wz_ply"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/tinyexr"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/stb"
 )
 
 target_link_libraries(window_engine
@@ -935,6 +936,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_clipmap_lattice_schedule clipmap_lattice_schedule_asset_module)
     rs_add_test_group(asset_atmosphere atmosphere_asset_module)
     rs_add_test_group(asset_environment environment_asset_module)
+    rs_add_test_group(asset_texture texture_asset_module)
     rs_add_test_group(collision proximity_frame_tests)
     rs_add_test_group(collision collision_frame_core_tests)
     rs_add_test_group(collision collision_surface_sampling_tests)
