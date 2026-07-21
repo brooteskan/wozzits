@@ -155,18 +155,83 @@ TEST(MotionFilter, TerrainFloorClampsBelowLeavesAbove)
 
 TEST(MotionFilter, RollDampedWhilePitchYawPass)
 {
+    // Roll damped, pitch/yaw un-damped. The whole orientation converges to the
+    // rigid target; while it does, the damped roll clearly lags. (Smoothing is
+    // gimbal-free on the relative rotation's log, so for one large combined step
+    // the un-damped axes are approximate rather than exact -- what holds is that
+    // roll lags and everything converges.)
     SceneMotionFilterAsset f{};
     f.roll.smoothing_time = 0.4f;  // roll damped; pitch/yaw snap
     MotionFilterState s{};
-    apply_motion_filter(make_target({ 0, 0, 0 }, 0, 0, 0), f, s, kDt);  // level
-    const Transform out =
-        apply_motion_filter(make_target({ 0, 0, 0 }, 60, 20, 30), f, s, kDt);
+    apply_motion_filter(make_target({ 0, 0, 0 }, 0, 0, 0), f, s, kDt);  // seed
+
+    Transform out;
+    for (int i = 0; i < 5; ++i) {
+        out = apply_motion_filter(make_target({ 0, 0, 0 }, 60, 20, 30), f, s, kDt);
+    }
     float e[3];
     euler_of(out.rotation, e);
-    EXPECT_NEAR(e[1], 20.0f, 0.5f);  // pitch passed through
-    EXPECT_NEAR(e[2], 30.0f, 0.5f);  // yaw passed through
-    EXPECT_GT(e[0], 0.0f);           // roll moving toward 60
-    EXPECT_LT(e[0], 60.0f);          // but lagging
+    EXPECT_GT(e[0], 0.0f);   // roll advancing toward 60
+    EXPECT_LT(e[0], 50.0f);  // but the damped axis clearly lags
+
+    for (int i = 0; i < 400; ++i) {
+        out = apply_motion_filter(make_target({ 0, 0, 0 }, 60, 20, 30), f, s, kDt);
+    }
+    euler_of(out.rotation, e);   // converges to the exact rigid target
+    EXPECT_NEAR(e[0], 60.0f, 0.5f);
+    EXPECT_NEAR(e[1], 20.0f, 0.5f);
+    EXPECT_NEAR(e[2], 30.0f, 0.5f);
+}
+
+TEST(MotionFilter, TiltedNodeYawSweepDoesNotDipAtTheGimbal)
+{
+    // Regression for the reported camera dip: the old euler-per-axis smoother
+    // decomposed the world orientation into roll/pitch/yaw and smoothed each, so
+    // at the two headings 180 deg apart where pitch folds through +/-90 the
+    // roll/yaw representation jumped 180 deg and the independent smoothing could
+    // not track it -- dipping the camera, worse the more the node was tilted (on
+    // a slope). Sweep a TILTED node through a full turn about the euler gimbal
+    // axis (world Y) and require the gimbal-free smoother to keep tracking the
+    // rigid target the whole way.
+    const float d2r = kPi / 180.0f;
+    const auto quat_target = [&](float heading_deg) {
+        // A 25 deg slope tilt about X, then a turn about world up (Y).
+        const Quaternion tilt =
+            wz::math::from_axis_angle(Vec3{ 1, 0, 0 }, 25.0f * d2r);
+        const Quaternion yaw =
+            wz::math::from_axis_angle(Vec3{ 0, 1, 0 }, heading_deg * d2r);
+        return wz::math::mul(yaw, tilt);
+    };
+    const auto mat_of = [&](const Quaternion& q) {
+        Transform t;
+        t.position = { 0, 0, 0 };
+        t.rotation = q;
+        t.scale = { 1, 1, 1 };
+        return wz::math::transform(t);
+    };
+
+    SceneMotionFilterAsset f{};   // the tank camera's config: smooth all 3 axes
+    f.roll.smoothing_time = 0.2f;
+    f.pitch.smoothing_time = 0.2f;
+    f.yaw.smoothing_time = 0.1f;
+
+    MotionFilterState s{};
+    apply_motion_filter(mat_of(quat_target(0.0f)), f, s, kDt);  // seed at heading 0
+
+    float max_err_deg = 0.0f;
+    for (int i = 1; i <= 1000; ++i) {           // 0.4 deg/step -> 400 deg, past 90 & 270
+        const float heading = 0.4f * static_cast<float>(i);
+        const Quaternion target = quat_target(heading);
+        const Transform out = apply_motion_filter(mat_of(target), f, s, kDt);
+        // Angular distance between the smoothed output and the rigid target.
+        const float c =
+            std::min(1.0f, std::abs(wz::math::dot(out.rotation, target)));
+        const float err_deg = 2.0f * std::acos(c) * kRadToDeg;
+        max_err_deg = std::max(max_err_deg, err_deg);
+    }
+    // Only the smoothing lag (a few degrees) remains; the euler fold used to
+    // spike this into the tens of degrees at heading 90 and 270.
+    EXPECT_LT(max_err_deg, 12.0f);
 }
 
 TEST(MotionFilter, RotationLimitClampsPitch)

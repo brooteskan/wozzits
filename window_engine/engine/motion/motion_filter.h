@@ -16,10 +16,15 @@
 // separate seam.
 //
 // Frames match the authored intent: translation is smoothed/clamped in WORLD
-// axes (vertical bob = world Y, terrain floor = world Y); rotation is decomposed
-// into the node's LOCAL roll/pitch/yaw (the engine's quaternion_from_euler_
-// degrees convention, so a channel here is the same axis the inspector shows)
-// and each is smoothed/leveled/limited independently.
+// axes (vertical bob = world Y, terrain floor = world Y). Rotation SMOOTHING is
+// gimbal-free -- it eases the state quaternion toward the target through the
+// RELATIVE rotation's log (its components are the node-local roll/pitch/yaw
+// increments), so a node that turns while tilted stays continuous instead of
+// dipping at the two headings where a fixed euler decomposition folds
+// (pitch = +/-90). Leveling and limiting are ABSOLUTE-angle operations, so they
+// shape the target through the roll/pitch/yaw euler channels (the engine's
+// quaternion_from_euler_degrees convention, matching the inspector) before the
+// gimbal-free smoothing eases toward it.
 
 #include <engine/assets/scene/scene_asset_data.h>  // SceneMotionFilterAsset
 #include <math/math_types.h>                        // Mat4, Transform, Vec3
@@ -39,8 +44,10 @@ namespace wz::engine::motion
         bool initialized = false;
         wz::math::Vec3 position{ 0.0f, 0.0f, 0.0f };
         wz::math::Vec3 position_velocity{ 0.0f, 0.0f, 0.0f };
-        // Roll(X) / pitch(Y) / yaw(Z) in degrees + per-axis angular velocity.
-        float rotation_euler[3]{ 0.0f, 0.0f, 0.0f };
+        // Smoothed orientation as a quaternion (gimbal-free state), plus the
+        // critically-damped spring's per-local-axis angular velocity (rad/s:
+        // roll/pitch/yaw), carried frame to frame.
+        wz::math::Quaternion rotation = wz::math::Quaternion::identity();
         float rotation_velocity[3]{ 0.0f, 0.0f, 0.0f };
     };
 

@@ -43,19 +43,6 @@ namespace wz::engine::motion
             current = target + (change + temp) * exp_;
         }
 
-        // Wrap an angle in degrees to (-180, 180].
-        float wrap_degrees(float a)
-        {
-            a = std::fmod(a, 360.0f);
-            if (a > 180.0f) {
-                a -= 360.0f;
-            }
-            if (a < -180.0f) {
-                a += 360.0f;
-            }
-            return a;
-        }
-
         // Roll(X) / pitch(Y) / yaw(Z) degrees from a quaternion -- the inverse of
         // math::quaternion_from_euler_degrees (same convention as the editor
         // snapshot's extraction), so a channel matches the inspector's rotation
@@ -101,36 +88,58 @@ namespace wz::engine::motion
             };
         }
 
-        void filter_rotation_axis(
-            float& current, float& velocity,
-            const wz::engine::assets::SceneMotionFilterRotationAxis& cfg,
-            float target_angle, float dt)
+        // Inverse of a unit quaternion = its conjugate.
+        Quaternion conjugate(const Quaternion& q)
         {
-            // Level eases toward world-level for this axis (roll/pitch flat);
-            // otherwise follow the driven target angle.
-            const float target = cfg.level ? 0.0f : target_angle;
-            if (cfg.smoothing_time > 0.0f) {
-                // Take the shortest angular path: chase a target unwrapped
-                // relative to the current angle, then re-wrap.
-                const float unwrapped = current + wrap_degrees(target - current);
-                smooth_damp(current, unwrapped, velocity, cfg.smoothing_time, dt);
-                current = wrap_degrees(current);
+            return Quaternion{ -q.x, -q.y, -q.z, q.w };
+        }
+
+        // Log of a unit quaternion -> the rotation vector (axis * angle,
+        // radians). Picks the shortest arc (w >= 0 so angle in [0, pi]), so the
+        // components are the small per-local-axis roll/pitch/yaw needed to reach
+        // the rotation. Near identity it is ~0. This is the gimbal-free stand-in
+        // for a euler decomposition: valid for any orientation, no asin fold.
+        Vec3 quat_log(Quaternion q)
+        {
+            if (q.w < 0.0f) {           // q and -q are the same rotation
+                q.x = -q.x; q.y = -q.y; q.z = -q.z; q.w = -q.w;
             }
-            else {
-                current = wrap_degrees(target);
-                velocity = 0.0f;
+            const float v = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z);
+            if (v < 1e-6f) {
+                return { 0.0f, 0.0f, 0.0f };
             }
+            const float angle = 2.0f * std::atan2(v, q.w);   // [0, pi]
+            const float s = angle / v;
+            return { q.x * s, q.y * s, q.z * s };
+        }
+
+        // exp of a rotation vector (radians) -> unit quaternion.
+        Quaternion quat_exp(const Vec3& w)
+        {
+            const float angle = std::sqrt(w.x * w.x + w.y * w.y + w.z * w.z);
+            if (angle < 1e-6f) {
+                return Quaternion::identity();
+            }
+            const Vec3 axis{ w.x / angle, w.y / angle, w.z / angle };
+            return wz::math::from_axis_angle(axis, angle);
+        }
+
+        // Shape one axis of the ABSOLUTE target angle: level pins it to the world
+        // horizon (0), limit clamps it. Smoothing is NOT done here -- it is
+        // applied later, gimbal-free, to the whole orientation.
+        float level_and_limit_angle(
+            const wz::engine::assets::SceneMotionFilterRotationAxis& cfg,
+            float target_angle)
+        {
+            float a = cfg.level ? 0.0f : target_angle;
             if (cfg.limit) {
                 const float lo =
                     std::min(cfg.limit_min_degrees, cfg.limit_max_degrees);
                 const float hi =
                     std::max(cfg.limit_min_degrees, cfg.limit_max_degrees);
-                const float clamped = std::clamp(current, lo, hi);
-                if (clamped != current) {
-                    current = clamped;
-                    velocity = 0.0f;  // no windup past the limit
-                }
+                a = std::clamp(a, lo, hi);
             }
+            return a;
         }
     }
 
@@ -147,11 +156,26 @@ namespace wz::engine::motion
         const Transform pose = wz::math::rigid_pose_from_matrix(target_world);
         const Vec3 target_pos = pose.position;
         const Vec3 scale = basis_scale(target_world);
-        float target_euler[3];
-        euler_degrees_from_quat(pose.rotation, target_euler);
+        // Target orientation. Default is the rigid target itself, so the pure
+        // smoothing case (the camera) takes the fully gimbal-free path below.
+        // Only when an axis is leveled or limited do we go through euler to shape
+        // the absolute target angles -- safe there because level/limit act near
+        // the horizon / their bounds, not at the turn gimbal.
+        Quaternion target_rot = pose.rotation;
+        if (filter.roll.level || filter.pitch.level || filter.yaw.level
+            || filter.roll.limit || filter.pitch.limit || filter.yaw.limit)
+        {
+            float te[3];
+            euler_degrees_from_quat(pose.rotation, te);
+            te[0] = level_and_limit_angle(filter.roll, te[0]);
+            te[1] = level_and_limit_angle(filter.pitch, te[1]);
+            te[2] = level_and_limit_angle(filter.yaw, te[2]);
+            target_rot =
+                wz::math::quaternion_from_euler_degrees(te[0], te[1], te[2]);
+        }
 
-        // Disabled: pass the target straight through and re-seed on re-enable so
-        // resuming doesn't spike.
+        // Disabled: pass the RIGID target straight through and re-seed on
+        // re-enable so resuming doesn't spike.
         if (!filter.enabled) {
             state.initialized = false;
             return Transform{ target_pos, pose.rotation, scale };
@@ -161,8 +185,8 @@ namespace wz::engine::motion
         if (!state.initialized) {
             state.position = target_pos;
             state.position_velocity = { 0.0f, 0.0f, 0.0f };
+            state.rotation = target_rot;
             for (int i = 0; i < 3; ++i) {
-                state.rotation_euler[i] = target_euler[i];
                 state.rotation_velocity[i] = 0.0f;
             }
             state.initialized = true;
@@ -200,20 +224,38 @@ namespace wz::engine::motion
             }
         }
 
-        // ── Rotation: per node-local axis (roll / pitch / yaw) ────────────
-        filter_rotation_axis(state.rotation_euler[0], state.rotation_velocity[0],
-            filter.roll, target_euler[0], dt);
-        filter_rotation_axis(state.rotation_euler[1], state.rotation_velocity[1],
-            filter.pitch, target_euler[1], dt);
-        filter_rotation_axis(state.rotation_euler[2], state.rotation_velocity[2],
-            filter.yaw, target_euler[2], dt);
+        // ── Rotation: gimbal-free, per node-local axis (roll / pitch / yaw) ──
+        // The relative rotation state -> target, expressed in the state's LOCAL
+        // frame; its log is the per-axis error in radians. Because that relative
+        // rotation is small frame to frame it never approaches the euler asin
+        // fold, so a tilted node turning through any heading stays continuous --
+        // no dip at the two headings 180 deg apart the euler smoother caught on.
+        const Vec3 err =
+            quat_log(wz::math::mul(conjugate(state.rotation), target_rot));
+        const float smoothing[3] = {
+            filter.roll.smoothing_time,
+            filter.pitch.smoothing_time,
+            filter.yaw.smoothing_time,
+        };
+        const float err_axis[3] = { err.x, err.y, err.z };
+        float step[3];
+        for (int i = 0; i < 3; ++i) {
+            // Critically-damped chase of the (moving) target: current starts at 0
+            // -- measured from the state we are about to rotate -- and the
+            // velocity carries the spring's momentum across frames. smoothing_time
+            // 0 snaps (returns the full error), so an un-damped axis passes
+            // straight through.
+            float cur = 0.0f;
+            smooth_damp(cur, err_axis[i], state.rotation_velocity[i],
+                smoothing[i], dt);
+            step[i] = cur;
+        }
+        state.rotation = wz::math::normalize(wz::math::mul(
+            state.rotation, quat_exp(Vec3{ step[0], step[1], step[2] })));
 
         Transform out;
         out.position = state.position;
-        out.rotation = wz::math::quaternion_from_euler_degrees(
-            state.rotation_euler[0],
-            state.rotation_euler[1],
-            state.rotation_euler[2]);
+        out.rotation = state.rotation;
         out.scale = scale;
         return out;
     }
