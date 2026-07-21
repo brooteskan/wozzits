@@ -611,6 +611,35 @@ TEST(RenderBindingLayout, ViewBlockDerivesAStructuredBufferRowAtSpaceZero)
     EXPECT_EQ(view->shader_register, 0u);
 }
 
+// The Screen view head emits its OWN semantic (ScreenConstants), 4 dwords, so an
+// overlay's viewport block and a 3D program's camera/fog block coexist in one
+// frame, each bound to its own per-frame buffer.
+TEST(RenderBindingLayout, ScreenViewHeadEmitsScreenConstantsRow)
+{
+    using namespace wz::engine::assets;
+
+    RenderBindingLayoutData layout = clipmap_layout();
+    layout.view_head = RenderBindingViewHead::Screen;
+    ASSERT_TRUE(layout.has_view_constants());
+    EXPECT_EQ(render_binding_view_head_dwords(RenderBindingViewHead::Screen), 4u);
+
+    RenderBindingLayoutSrg srg{};
+    std::string error;
+    ASSERT_TRUE(build_render_binding_layout_srg(layout, srg, error)) << error;
+
+    const DescriptorBinding* view = nullptr;
+    for (const auto& row : srg.descriptor_bindings) {
+        if (row.register_space == kRenderBindingLayoutViewRegisterSpace) {
+            ASSERT_EQ(view, nullptr) << "more than one view row";
+            view = &row;
+        }
+    }
+    ASSERT_NE(view, nullptr);
+    EXPECT_EQ(view->semantic, DescriptorSemantic::ScreenConstants);
+    EXPECT_EQ(view->kind, DescriptorKind::StructuredBufferSRV);
+    EXPECT_EQ(view->shader_register, 0u);
+}
+
 // The object rows must keep the exact t-registers they had. They are assigned
 // by row order, and a view row landing in that sequence would silently shift
 // every binding a shader reads.
@@ -692,6 +721,33 @@ TEST(RenderBindingPrelude, ViewBlockPreludeCompilesAndFogsAOneLiner)
 
     ASSERT_TRUE(compile_hlsl_source(source, "main", "ps_5_1", error))
         << "generated view-block prelude does not compile:\n" << error;
+}
+
+// The Screen head's prelude emits WzScreenConstants + the screen_constants
+// buffer. A screen-space VS one-liner that maps a pixel position to NDC through
+// the viewport must compile against it -- proof the generated struct/buffer are
+// valid HLSL.
+TEST(RenderBindingPrelude, ScreenBlockPreludeCompiles)
+{
+    using namespace wz::engine::assets;
+
+    RenderBindingLayoutData layout = clipmap_layout();
+    layout.view_head = RenderBindingViewHead::Screen;
+
+    std::string prelude;
+    std::string error;
+    ASSERT_TRUE(generate_hlsl_binding_prelude(layout, prelude, error)) << error;
+
+    const std::string source = prelude +
+        "\nfloat4 main(float2 pixel : TEXCOORD0) : SV_POSITION\n"
+        "{\n"
+        "    float2 vp  = screen_constants[0].viewport.xy;\n"
+        "    float2 ndc = pixel / vp * 2.0f - 1.0f;\n"
+        "    return float4(ndc.x, -ndc.y, 0.0f, 1.0f);\n"
+        "}\n";
+
+    ASSERT_TRUE(compile_hlsl_source(source, "main", "vs_5_1", error))
+        << "generated screen-block prelude does not compile:\n" << error;
 }
 
 // The standard helper section is documented as pure functions with no bindings,

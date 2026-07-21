@@ -716,6 +716,17 @@ namespace wz::engine::rendering
         return out;
     }
 
+    ScreenConstants make_screen_constants(
+        float viewport_width, float viewport_height) noexcept
+    {
+        ScreenConstants out{};
+        out.viewport[0] = viewport_width;
+        out.viewport[1] = viewport_height;
+        out.viewport[2] = viewport_width  > 0.0f ? 1.0f / viewport_width  : 0.0f;
+        out.viewport[3] = viewport_height > 0.0f ? 1.0f / viewport_height : 0.0f;
+        return out;
+    }
+
     std::vector<wz::math::Mat4> compute_scene_node_world_transforms(
         std::span<const ea::SceneNodeAsset> nodes)
     {
@@ -1021,6 +1032,37 @@ namespace wz::engine::rendering
         return view_constants_buffer_;
     }
 
+    wz::rhi::GpuResourceHandle RhiSceneRenderer::ensure_screen_constants_buffer()
+    {
+        if (screen_constants_buffer_.valid()) {
+            return screen_constants_buffer_;
+        }
+
+        // The screen-constants twin of ensure_view_constants_buffer: a one-element
+        // structured buffer matching StructuredBuffer<WzScreenConstants>, anonymous
+        // (renderer-owned, not an asset), WriteOnce so the per-frame refresh's
+        // update() can write it.
+        const wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::buffer(
+            sizeof(ScreenConstants),
+            static_cast<uint32_t>(sizeof(ScreenConstants)),
+            wz::rhi::ResourceUsage_Sampled,
+            wz::rhi::ResourceCpuAccess::WriteOnce);
+
+        screen_constants_buffer_ = gpu_.resources.acquire(desc);
+        if (!screen_constants_buffer_.valid()) {
+            logger_.error(
+                "RhiSceneRenderer: screen constants buffer acquire failed");
+            return {};
+        }
+
+        // Seed with the frame's values (the refresh skipped it while it did not
+        // exist), so the first draw binding it does not read the raw allocation.
+        gpu_.resources.update(
+            screen_constants_buffer_, &screen_constants_,
+            sizeof(screen_constants_));
+        return screen_constants_buffer_;
+    }
+
     bool RhiSceneRenderer::bind_view_constants(
         RealizedRenderable& realized,
         const wz::rhi::ShaderResourceGroupLayout* slot0_layout)
@@ -1035,34 +1077,45 @@ namespace wz::engine::rendering
             return true;
         }
 
-        const wz::rhi::Tag semantic = gpu_.descriptor_semantics.find(
+        // The view head is EITHER the camera/fog block or the screen block, each
+        // under its own descriptor semantic (a layout declares at most one). Bind
+        // whichever the slot-0 layout actually asks for, and nothing when it asks
+        // for neither -- keying off the SEMANTIC, not merely "has a space-0
+        // group": register space 0 is also where legacy BuiltinRenderProgram
+        // descs put their own root constants / SRVs, so a group that does not
+        // declare the row could never be satisfied by binding this buffer and
+        // would turn a working draw into a failed realize. Same shape as the
+        // wants_normals test in ensure_renderable: bind only where the layout
+        // asks for it.
+        const wz::rhi::Tag view_semantic = gpu_.descriptor_semantics.find(
             ea::descriptor_semantic_name(ea::DescriptorSemantic::ViewConstants));
+        const wz::rhi::Tag screen_semantic = gpu_.descriptor_semantics.find(
+            ea::descriptor_semantic_name(ea::DescriptorSemantic::ScreenConstants));
 
-        // A slot-0 group is NOT by itself proof of a view block. Register space
-        // 0 is also where the legacy BuiltinRenderProgram descs put their root
-        // constants and SRVs (fill_builtin_render_program_defaults —
-        // GaussianSplatPullDebug binds SplatCloud at t0 space0, MeshMaskStyle
-        // two SRVs there), so "has a space-0 group" and "wants view constants"
-        // are different questions. Those builtins carry nothing at space 2 and
-        // so already fail this renderer's mandatory object-SRG check upstream,
-        // but keying off the SEMANTIC costs one lookup and makes that an
-        // observation rather than a load-bearing assumption: a group that does
-        // not declare the row could never be satisfied by binding the view
-        // buffer, and would turn a working draw into a failed realize.
-        //
-        // Same shape as the wants_normals test in ensure_renderable: bind a
-        // resource only where the layout actually asks for it.
-        if (!semantic.valid()
-            || !wz::rhi::find_descriptor_binding_index(*slot0_layout, semantic))
+        wz::rhi::Tag semantic;
+        wz::rhi::GpuResourceHandle buffer;
+        if (view_semantic.valid()
+            && wz::rhi::find_descriptor_binding_index(
+                   *slot0_layout, view_semantic))
         {
+            semantic = view_semantic;
+            buffer = ensure_view_constants_buffer();
+        }
+        else if (screen_semantic.valid()
+            && wz::rhi::find_descriptor_binding_index(
+                   *slot0_layout, screen_semantic))
+        {
+            semantic = screen_semantic;
+            buffer = ensure_screen_constants_buffer();
+        }
+        else {
             return true;
         }
 
-        const wz::rhi::GpuResourceHandle buffer = ensure_view_constants_buffer();
         if (!buffer.valid()) {
             logger_.error(
-                "RhiSceneRenderer: view constants unavailable for a program "
-                "that declares a view block");
+                "RhiSceneRenderer: view/screen constants unavailable for a "
+                "program that declares a view block");
             return false;
         }
 
@@ -1846,6 +1899,22 @@ namespace wz::engine::rendering
             {
                 logger_.error(
                     "RhiSceneRenderer: view constants refresh failed");
+            }
+        }
+
+        // The screen block's per-frame refresh, from the render target's size.
+        // Same #145 door as the view block; only bound where a layout declares
+        // the Screen head (2D overlays), otherwise acquired-but-idle.
+        screen_constants_ = make_screen_constants(
+            static_cast<float>(wz::gpu::dx12::internal::get_width(gpu_.device)),
+            static_cast<float>(wz::gpu::dx12::internal::get_height(gpu_.device)));
+        if (screen_constants_buffer_.valid()) {
+            if (!gpu_.resources.update(
+                    screen_constants_buffer_, &screen_constants_,
+                    sizeof(screen_constants_)))
+            {
+                logger_.error(
+                    "RhiSceneRenderer: screen constants refresh failed");
             }
         }
 

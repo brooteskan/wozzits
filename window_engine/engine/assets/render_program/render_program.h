@@ -125,6 +125,12 @@ namespace wz::engine::assets
         // block already claims it -- see wozzits-rhi#7. Descriptor tables are
         // already plural, so this needs nothing from that layer.
         ViewConstants,
+        // VIEW-frequency SCREEN constants (register space 0): the viewport size,
+        // for screen-space passes (2D overlays / HUD) that place geometry in
+        // pixels. A distinct semantic from ViewConstants so an overlay's Screen
+        // head and a 3D program's CameraFog head coexist in one frame, each bound
+        // to its own per-frame buffer.
+        ScreenConstants,
     };
 
     // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
@@ -132,7 +138,7 @@ namespace wz::engine::assets
     // it as a Tag (enum → name), and authored render-binding-layout rows name
     // their semantic as a string that resolves back to the enum (name → enum).
     // Index == enum value; a new DescriptorSemantic member extends this array.
-    inline constexpr std::array<std::string_view, 14> kDescriptorSemanticNames = {
+    inline constexpr std::array<std::string_view, 15> kDescriptorSemanticNames = {
         "unknown",
         "splat_cloud",
         "sorted_splat_indices",
@@ -147,6 +153,7 @@ namespace wz::engine::assets
         "sky_gaussian_points",
         "star_catalog",
         "view_constants",
+        "screen_constants",
     };
 
     [[nodiscard]] constexpr std::string_view descriptor_semantic_name(

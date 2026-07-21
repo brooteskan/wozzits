@@ -132,10 +132,17 @@ namespace wz::engine::assets
         // space regardless of how many object bindings a recipe declares, and
         // so the object rows keep their existing t-registers exactly.
         if (layout.has_view_constants()) {
+            // The Screen head is a distinct semantic so an overlay's viewport
+            // block and a 3D program's camera/fog block coexist in one frame,
+            // each bound to its own per-frame buffer.
+            const DescriptorSemantic view_semantic =
+                layout.view_head == RenderBindingViewHead::Screen
+                    ? DescriptorSemantic::ScreenConstants
+                    : DescriptorSemantic::ViewConstants;
             out.descriptor_bindings.push_back(DescriptorBinding{
                 .kind = DescriptorKind::StructuredBufferSRV,
                 .visibility = layout.view_visibility,
-                .semantic = DescriptorSemantic::ViewConstants,
+                .semantic = view_semantic,
                 .shader_register = 0,
                 .register_space = kRenderBindingLayoutViewRegisterSpace,
                 .descriptor_count = 1,
@@ -356,8 +363,7 @@ namespace wz::engine::assets
         if (layout.has_view_constants()) {
             const std::string view_space =
                 "space" + std::to_string(kRenderBindingLayoutViewRegisterSpace);
-            out += "\n// Frame state, identical for every program this frame:\n"
-                   "// the observer, and the atmosphere it looks through.\n";
+            out += "\n// Frame state, identical for every program this frame.\n";
             switch (layout.view_head) {
             case RenderBindingViewHead::CameraFog:
                 out += "struct WzViewConstants\n"
@@ -367,14 +373,25 @@ namespace wz::engine::assets
                        "    float4 fog_params;  // x = start, y = height "
                        "falloff, z = enabled\n"
                        "};\n";
+                out += "StructuredBuffer<WzViewConstants> "
+                    + std::string(descriptor_semantic_name(
+                        DescriptorSemantic::ViewConstants))
+                    + " : register(t0, " + view_space + ");\n";
+                break;
+            case RenderBindingViewHead::Screen:
+                out += "struct WzScreenConstants\n"
+                       "{\n"
+                       "    float4 viewport;    // xy = width,height; "
+                       "zw = 1/width, 1/height\n"
+                       "};\n";
+                out += "StructuredBuffer<WzScreenConstants> "
+                    + std::string(descriptor_semantic_name(
+                        DescriptorSemantic::ScreenConstants))
+                    + " : register(t0, " + view_space + ");\n";
                 break;
             case RenderBindingViewHead::None:
                 break;
             }
-            out += "StructuredBuffer<WzViewConstants> "
-                + std::string(descriptor_semantic_name(
-                    DescriptorSemantic::ViewConstants))
-                + " : register(t0, " + view_space + ");\n";
         }
 
         if (!srg.descriptor_bindings.empty()) {

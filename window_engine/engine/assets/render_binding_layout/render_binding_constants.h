@@ -75,6 +75,13 @@ namespace wz::engine::assets
         //   c2  float4  fog_start_distance, fog_height_falloff, enabled, unused
         // Filled once per frame from the camera and the Atmosphere asset.
         CameraFog,
+        // Viewport size for screen-space passes (2D overlays / HUD). 4 dwords:
+        //   c0  float4  width, height, 1/width, 1/height
+        // Filled once per frame from the render target's dimensions, so a VS can
+        // map a pixel rect to NDC. A layout picks EITHER CameraFog OR Screen -- an
+        // overlay wants pixels, not fog -- each bound to its own per-frame buffer
+        // under its own descriptor semantic.
+        Screen,
     };
 
     [[nodiscard]] constexpr uint32_t render_binding_view_head_dwords(
@@ -83,6 +90,7 @@ namespace wz::engine::assets
         switch (head) {
         case RenderBindingViewHead::None:      return 0u;
         case RenderBindingViewHead::CameraFog: return 12u;
+        case RenderBindingViewHead::Screen:    return 4u;
         }
         return 0u;
     }

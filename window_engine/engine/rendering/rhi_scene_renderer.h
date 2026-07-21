@@ -88,6 +88,27 @@ namespace wz::engine::rendering
         "RenderBindingViewHead::CameraFog SRG row and the HLSL WzViewConstants "
         "struct the binding prelude emits");
 
+    // ─── ScreenConstants ────────────────────────────────────────────────────
+    //
+    // The VIEW-frequency block for RenderBindingViewHead::Screen: the viewport
+    // size, so a screen-space pass (2D overlays / HUD) can map a pixel rect to
+    // NDC. Packed byte-for-byte to match the WzScreenConstants struct the binding
+    // prelude emits (render_binding_layout.cpp), read as screen_constants[0] off a
+    // one-element StructuredBuffer at t0 of the view register space.
+    struct ScreenConstants
+    {
+        float viewport[4];   // xy = width, height; zw = 1/width, 1/height
+    };
+    static_assert(sizeof(ScreenConstants) == 16,
+        "screen constants must be 16 bytes (4 dwords) to match the "
+        "RenderBindingViewHead::Screen SRG row and the HLSL WzScreenConstants "
+        "struct the binding prelude emits");
+
+    // Build the frame's screen constants from the render target's dimensions.
+    // A zero dimension yields a zero inverse rather than a divide-by-zero.
+    [[nodiscard]] ScreenConstants make_screen_constants(
+        float viewport_width, float viewport_height) noexcept;
+
     // Build the frame's view constants. The camera goes in REGARDLESS of the
     // atmosphere — it is view state, not fog state, and hoisting the observer
     // to its own frequency is what makes a shared fog helper possible at all.
@@ -342,6 +363,10 @@ namespace wz::engine::rendering
         // Null handle on failure; the caller fails the realize.
         wz::rhi::GpuResourceHandle ensure_view_constants_buffer();
 
+        // The screen-constants twin: the one small buffer behind every Screen
+        // view SRG, refreshed in place each frame from the viewport size.
+        wz::rhi::GpuResourceHandle ensure_screen_constants_buffer();
+
         // Point `realized`'s view SRG at that buffer, against the program's
         // slot-0 layout. Binds only where that layout declares the
         // view_constants row; a null slot0_layout, or one without the row, is
@@ -393,6 +418,10 @@ namespace wz::engine::rendering
         // of a newly realized renderable reads whatever the allocation held.
         ViewConstants view_constants_{};
 
+        // The screen-space twin, filled from the viewport size each frame; bound
+        // where a layout declares the Screen view head (2D overlays / HUD).
+        ScreenConstants screen_constants_{};
+
         // The one small buffer behind every view SRG, refreshed in place each
         // frame (the #145 door: acquire WriteOnce, then update). Renderer-owned
         // and graph-INDEPENDENT, so it deliberately survives on_graph_changed:
@@ -400,6 +429,9 @@ namespace wz::engine::rendering
         // the observer. The handle stays stable, so the recorder's cached
         // descriptor tables stay valid across the refresh.
         wz::rhi::GpuResourceHandle view_constants_buffer_{};
+
+        // The screen-constants twin buffer (see ensure_screen_constants_buffer).
+        wz::rhi::GpuResourceHandle screen_constants_buffer_{};
     };
 
     // Compose each scene node's world transform from its local TRS and its

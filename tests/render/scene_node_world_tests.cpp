@@ -293,6 +293,24 @@ TEST(ViewConstants, PopulatedAtmospherePacksEveryDialAtItsOwnSlot)
     EXPECT_FLOAT_EQ(v.fog_params[3], 1.5f);     // saturation
 }
 
+TEST(ScreenConstants, PacksViewportSizeAndInverse)
+{
+    const er::ScreenConstants s = er::make_screen_constants(1920.0f, 1080.0f);
+    EXPECT_FLOAT_EQ(s.viewport[0], 1920.0f);
+    EXPECT_FLOAT_EQ(s.viewport[1], 1080.0f);
+    EXPECT_FLOAT_EQ(s.viewport[2], 1.0f / 1920.0f);   // for pixel -> NDC in the VS
+    EXPECT_FLOAT_EQ(s.viewport[3], 1.0f / 1080.0f);
+}
+
+TEST(ScreenConstants, ZeroDimensionYieldsZeroInverseNotDivideByZero)
+{
+    const er::ScreenConstants s = er::make_screen_constants(0.0f, 0.0f);
+    EXPECT_FLOAT_EQ(s.viewport[0], 0.0f);
+    EXPECT_FLOAT_EQ(s.viewport[1], 0.0f);
+    EXPECT_FLOAT_EQ(s.viewport[2], 0.0f);
+    EXPECT_FLOAT_EQ(s.viewport[3], 0.0f);
+}
+
 TEST(ViewConstants, AuthoredButDisabledAtmosphereKeepsItsDialsAndStaysOff)
 {
     // Authoring the dials with the fog switched off is the documented way to
