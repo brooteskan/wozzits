@@ -48,4 +48,17 @@ namespace wz::engine::assets
         out.output = key;
         return out;
     }
+
+    const PuppetData* PuppetAssetModule::get_puppet_data(
+        const wz::asset::AssetKey& key) const
+    {
+        if (key == wz::asset::AssetKey{}) {
+            return nullptr;
+        }
+        const auto* compiled = system_.find_compiled(key);
+        if (!compiled) {
+            return nullptr;
+        }
+        return table_.get(compiled->handle);
+    }
 }

@@ -194,6 +194,42 @@ namespace wz::engine::rendering
             uint32_t star_count = 0;
         };
 
+        // A puppet source (inochi S2b): the puppet key + a borrowed pointer to its
+        // compiled runtime data (source + ResidentPuppet draw metadata). Valid for
+        // the ensure_renderable call that produced this source.
+        struct PuppetBinding
+        {
+            wz::asset::AssetKey puppet_key{};
+            const ea::PuppetData* data = nullptr;
+        };
+
+        // Place a puppet on a render target: fit its puppet-space bounds into the
+        // target viewport (keeping aspect, small margin) and center it. Returns the
+        // puppet->target 2D affine the VS applies before mapping to NDC. Screen for
+        // S2; S6/RTT passes the offscreen texture's dimensions here instead -- the
+        // viewport is a PARAMETER, not a screen assumption.
+        wz::engine::assets::inochi::Affine2D puppet_target_placement(
+            const wz::engine::assets::inochi::ResidentPuppet& puppet,
+            float viewport_w,
+            float viewport_h)
+        {
+            const float pw = puppet.bounds_max[0] - puppet.bounds_min[0];
+            const float ph = puppet.bounds_max[1] - puppet.bounds_min[1];
+            float scale = 1.0f;
+            if (pw > 0.0f && ph > 0.0f && viewport_w > 0.0f && viewport_h > 0.0f) {
+                const float sx = viewport_w / pw;
+                const float sy = viewport_h / ph;
+                scale = (sx < sy ? sx : sy) * 0.9f;
+            }
+            const float pcx = 0.5f * (puppet.bounds_min[0] + puppet.bounds_max[0]);
+            const float pcy = 0.5f * (puppet.bounds_min[1] + puppet.bounds_max[1]);
+
+            wz::engine::assets::inochi::Affine2D m;
+            m.a = scale; m.b = 0.0f; m.tx = 0.5f * viewport_w - scale * pcx;
+            m.c = 0.0f;  m.d = scale; m.ty = 0.5f * viewport_h - scale * pcy;
+            return m;
+        }
+
         struct PullMeshSource
         {
             wz::asset::AssetKey mesh_key{};
@@ -226,6 +262,10 @@ namespace wz::engine::rendering
             // Set for a star-field recipe (#266). Same "no pull mesh" contract as
             // splat; ensure_renderable takes the star branch.
             std::optional<StarFieldBinding> star{};
+
+            // Set for a puppet recipe (inochi S2b): no pull mesh; ensure_renderable
+            // takes the puppet branch and records one packet per Part.
+            std::optional<PuppetBinding> puppet{};
 
             // Baked mesh-style shading (issue #195 slice A). Carried from the
             // recipe; when style.has_style is set the renderer packs the 28-dword
@@ -363,6 +403,26 @@ namespace wz::engine::rendering
                     .program_key = recipe->program_key,
                     .draw_layer = recipe->draw_layer,
                     .star = binding,
+                };
+            }
+
+            // Inochi2D puppet geometry (inochi S2b): no pull mesh. The puppet's
+            // atlases + per-Part pull buffers are asset-published resident; carry
+            // the key + the compiled data so ensure_renderable records one packet
+            // per Part in the Overlay layer.
+            if (!(recipe->puppet_key == wz::asset::AssetKey{})) {
+                const ea::PuppetData* data =
+                    assets.puppets().get_puppet_data(recipe->puppet_key);
+                if (!data || data->resident.empty()) {
+                    return std::nullopt;
+                }
+                PuppetBinding binding;
+                binding.puppet_key = recipe->puppet_key;
+                binding.data = data;
+                return PullMeshSource{
+                    .program_key = recipe->program_key,
+                    .draw_layer = recipe->draw_layer,
+                    .puppet = binding,
                 };
             }
 
@@ -1377,6 +1437,132 @@ namespace wz::engine::rendering
             return &srealized;
         }
 
+        // ── Puppet branch (inochi S2b) ──────────────────────────────────────
+        // No pull mesh; N packets, one per Part. Each Part binds its resident
+        // interleaved-vertex / index / atlas by identity into an object SRG, and
+        // its PuppetPartBlock (a 2D affine placement + opacity) as root constants.
+        // All Parts share one Screen view head (the viewport). Parts are already
+        // draw-ordered (back-to-front by zsort) in the ResidentPuppet.
+        if (source->puppet) {
+            const wz::engine::assets::inochi::ResidentPuppet& puppet =
+                source->puppet->data->resident;
+
+            auto [pit, pinserted] =
+                realized_renderables_.try_emplace(renderable_key);
+            RealizedRenderable& prealized = pit->second;
+            prealized.renderable_key = renderable_key;
+            prealized.draw_layer = source->draw_layer;
+            prealized.program = program->program;
+            prealized.owns_buffers = false;  // buffers are asset-owned
+            prealized.is_puppet = true;
+
+            // The shared Screen view head (viewport), bound once and reused by
+            // every Part packet.
+            if (!bind_view_constants(prealized, slot0_layout)) {
+                realized_renderables_.erase(pit);
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+
+            const wz::rhi::Tag verts_semantic =
+                gpu_.descriptor_semantics.find("puppet_vertices");
+            const wz::rhi::Tag idx_semantic =
+                gpu_.descriptor_semantics.find("puppet_indices");
+            const wz::rhi::Tag atlas_semantic =
+                gpu_.descriptor_semantics.find("puppet_atlas");
+
+            // Fit + center the puppet in the current viewport (screen-space for
+            // S2). The per-Part packet build below reads only the ResidentPuppet,
+            // the program/layout, the shared view SRG, this placement, and the
+            // pass -- no backbuffer assumption -- so S6/RTT reuses it verbatim.
+            const wz::engine::assets::inochi::Affine2D puppet_to_target =
+                puppet_target_placement(
+                    puppet,
+                    screen_constants_.viewport[0],
+                    screen_constants_.viewport[1]);
+
+            // Reserve so the per-Part SRG addresses the packets capture stay valid.
+            prealized.puppet_part_srgs.reserve(puppet.parts.size());
+            prealized.puppet_packets.reserve(puppet.parts.size());
+            for (const wz::engine::assets::inochi::ResidentPuppetPart& part :
+                 puppet.parts) {
+                const wz::rhi::GpuResourceHandle verts =
+                    gpu_.resources.find(part.vertices);
+                const wz::rhi::GpuResourceHandle indices =
+                    gpu_.resources.find(part.indices);
+                const wz::rhi::GpuResourceHandle atlas =
+                    part.atlas < puppet.atlases.size()
+                        ? gpu_.resources.find(puppet.atlases[part.atlas])
+                        : wz::rhi::GpuResourceHandle{};
+                if (!verts.valid() || !indices.valid() || !atlas.valid()) {
+                    realized_renderables_.erase(pit);
+                    logger_.error(
+                        "RhiSceneRenderer: puppet Part resource not resident");
+                    failed_renderables_.insert(renderable_key);
+                    return nullptr;
+                }
+
+                prealized.puppet_part_srgs.emplace_back();
+                wz::rhi::ShaderResourceGroup& part_srg =
+                    prealized.puppet_part_srgs.back();
+                part_srg.reset(*slot2_layout);
+                const bool srg_ok =
+                    part_srg.set(verts_semantic, verts).has_value()
+                    && part_srg.set(idx_semantic, indices).has_value()
+                    && part_srg.set(atlas_semantic, atlas).has_value()
+                    && part_srg.satisfies(*slot2_layout);
+                if (!srg_ok) {
+                    realized_renderables_.erase(pit);
+                    logger_.error(
+                        "RhiSceneRenderer: puppet Part object SRG build failed");
+                    failed_renderables_.insert(renderable_key);
+                    return nullptr;
+                }
+
+                // PuppetPartBlock (8 dwords): a 2D affine (Part-local px -> screen
+                // px) row-packed + opacity. affine = puppet->target o Part
+                // placement.
+                const wz::engine::assets::inochi::Affine2D m =
+                    wz::engine::assets::inochi::compose(
+                        puppet_to_target, part.placement);
+                const float block[8] = {
+                    m.a, m.b, m.tx, part.opacity,
+                    m.c, m.d, m.ty, 0.0f,
+                };
+
+                wz::rhi::GeometryView geometry;
+                geometry.vertex_count = part.index_count;  // VS pulls indices[vid]
+
+                wz::rhi::DrawPacketAllocator allocator;
+                wz::rhi::DrawPacketBuilder builder =
+                    wz::rhi::DrawPacketBuilder::begin(allocator);
+                builder
+                    .set_geometry(geometry)
+                    .set_root_constants(std::span<const uint8_t>{
+                        reinterpret_cast<const uint8_t*>(block),
+                        sizeof(block) })
+                    .add_shader_resource_group(part_srg);
+                if (prealized.has_view_srg) {
+                    builder.add_shader_resource_group(prealized.view_srg);
+                }
+                if (!builder.add_draw_item(wz::rhi::DrawRequest{
+                        forward_, prealized.program, nullptr,
+                        wz::rhi::StreamBufferIndices{}, 0,
+                        wz::rhi::DrawListMask::from(forward_) }))
+                {
+                    realized_renderables_.erase(pit);
+                    logger_.error(
+                        "RhiSceneRenderer: puppet Part draw packet build failed");
+                    failed_renderables_.insert(renderable_key);
+                    return nullptr;
+                }
+                prealized.puppet_packets.push_back(builder.end());
+            }
+
+            (void)pinserted;
+            return &prealized;
+        }
+
         // ── Star-field branch (#266) ────────────────────────────────────────
         // Mirror of the splat branch: no pull mesh; bind the resident star point
         // StructuredBuffer (asset-owned, found by the identity the star compiler
@@ -2130,6 +2316,12 @@ namespace wz::engine::rendering
                 realized->packet.root_constants.assign(
                     bytes, bytes + sizeof(constants));
             }
+            else if (realized->is_puppet) {
+                // Static per-Part packets: the affine placement + opacity were
+                // packed at realize and never change (deform is a later seam), and
+                // the Screen viewport refreshes behind the shared view SRG. Nothing
+                // to repack here.
+            }
             else {
                 const wz::math::Mat4& world =
                     node_worlds[static_cast<std::size_t>(&node - nodes.data())];
@@ -2139,8 +2331,16 @@ namespace wz::engine::rendering
                     reinterpret_cast<const uint8_t*>(mvp.m) + sizeof(mvp.m));
             }
 
-            wz::rhi::record_packet(realized->packet, forward_, recorder_);
-            ++recorded;
+            if (realized->is_puppet) {
+                for (const wz::rhi::DrawPacket& pkt : realized->puppet_packets) {
+                    wz::rhi::record_packet(pkt, forward_, recorder_);
+                    ++recorded;
+                }
+            }
+            else {
+                wz::rhi::record_packet(realized->packet, forward_, recorder_);
+                ++recorded;
+            }
         }
 
         if (recorded == 0) {

@@ -45,6 +45,11 @@ namespace wz::engine::assets
 
         PuppetAsset create_puppet_from_file(const PuppetFromFileDesc& desc);
 
+        // The compiled puppet's runtime data (source + GPU-resident draw
+        // metadata), or nullptr if the key names no compiled puppet. The
+        // renderer reads ResidentPuppet from here to record the per-Part packets.
+        const PuppetData* get_puppet_data(const wz::asset::AssetKey& key) const;
+
     private:
         wz::asset::AssetSystem& system_;
         wz::Logger& logger_;

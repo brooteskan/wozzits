@@ -296,6 +296,17 @@ namespace wz::engine::rendering
             bool is_splat_cloud = false;
             wz::engine::assets::GaussianSplatCloudRenderSettings splat_settings{};
 
+            // Inochi2D puppet renderables (inochi S2b): the FIRST N-packet
+            // renderable. A puppet records one screen-space DrawPacket per drawable
+            // Part in the Overlay layer, back-to-front by zsort. is_puppet gates the
+            // record fan-out; puppet_packets holds the per-Part packets and
+            // puppet_part_srgs their object SRGs -- reserved once at realize so
+            // their addresses stay stable (the packets hold raw SRG pointers, the
+            // same invariant object_srg relies on).
+            bool is_puppet = false;
+            std::vector<wz::rhi::DrawPacket> puppet_packets;
+            std::vector<wz::rhi::ShaderResourceGroup> puppet_part_srgs;
+
             // Star-field renderables (#266) bind the resident star point
             // StructuredBuffer (StarCatalog semantic, asset-owned) and record a
             // non-indexed draw of 6 * star_count vertices. is_star_field gates the
