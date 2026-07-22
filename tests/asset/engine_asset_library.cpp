@@ -225,6 +225,12 @@ float4 main(PSIn input) : SV_TARGET
             // still materialize through the generic draft key path — same
             // standing as the other renderable recipes above.
             { kCustomRenderableSchema, kAssetTypeRenderable },
+            // Inochi puppet (S2 render vertical): the typed create API keys via
+            // make_puppet_from_file_key / make_puppet_rhi_renderable_key, but
+            // graph-authored nodes still materialize through the generic draft
+            // key path — same standing as the renderable and from-file recipes.
+            { kPuppetFromFileSchema, kAssetTypePuppet },
+            { kPuppetRhiRenderableSchema, kAssetTypeRenderable },
             { kSceneFromJSONSchema, kAssetTypeScene },
             { kSceneFromGLBSchema, kAssetTypeScene },
 
