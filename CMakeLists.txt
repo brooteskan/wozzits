@@ -1099,6 +1099,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(render rhi_scene_renderer_rebind_tests)
     rs_add_test_group(render rhi_gaussian_splat_cloud_render_tests)
     rs_add_test_group(render rhi_star_field_render_tests)
+    rs_add_test_group(render rhi_puppet_render_tests)
     rs_add_test_group(render clipmap_view_tests)
     rs_add_test_group(render wozzits_app_behavior_dispatch_tests)
 
