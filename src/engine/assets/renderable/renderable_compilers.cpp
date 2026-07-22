@@ -1000,6 +1000,7 @@ namespace wz::engine::assets::internal
         auto* scalar_fields_table = &ctx.scalar_fields_table;
         auto* mesh_derived_field_table = &ctx.mesh_derived_field_table;
         auto* gaussian_splat_cloud_table = &ctx.gaussian_splat_cloud_table;
+        auto* puppet_table = &ctx.puppet_table;
         auto* renderable_table = &ctx.renderable_table;
         auto* rhi_renderable_table = &ctx.rhi_renderable_table;
         auto* render_program_table = &ctx.render_program_table;
@@ -1445,6 +1446,81 @@ namespace wz::engine::assets::internal
                     logger->error(
                         "failed to store gaussian splat cloud RHI renderable "
                         "recipe");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            },
+        });
+
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kPuppetRhiRenderableSchema,
+            .output_type = kAssetTypeRenderable,
+            .input_ports = {
+                { "puppet", kAssetTypePuppet },
+                { "program", kAssetTypeRenderProgram },
+            },
+            .compile = [logger, puppet_table,
+                        render_program_table, rhi_renderable_table](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                PuppetRhiRenderableCompileDesc editor_desc{};
+                const auto* desc =
+                    std::any_cast<PuppetRhiRenderableCompileDesc>(&input.meta);
+                if (!desc) {
+                    // Editor/JSON path: recover the two keys from the deps.
+                    editor_desc.puppet_asset = dep_key(dep_nodes, 0);
+                    editor_desc.render_program_asset = dep_key(dep_nodes, 1);
+                    desc = &editor_desc;
+                }
+
+                if (dep_handles.size() != 2) {
+                    logger->error(
+                        "puppet RHI renderable requires puppet and program "
+                        "dependencies");
+                    return compile_failed_node(input);
+                }
+
+                const auto* puppet = puppet_table->get(dep_handles[0]);
+                if (!puppet) {
+                    logger->error(
+                        "puppet RHI renderable source puppet is invalid");
+                    return compile_failed_node(input);
+                }
+
+                const RenderProgramData* program =
+                    render_program_table->get(dep_handles[1]);
+                if (!program || !program->valid()) {
+                    logger->error("puppet RHI renderable program is invalid");
+                    return compile_failed_node(input);
+                }
+                if (program->binding_model
+                    != RenderBindingModel::MeshVertexPull) {
+                    logger->error(
+                        "puppet RHI renderable program must use MeshVertexPull");
+                    return compile_failed_node(input);
+                }
+
+                // The puppet is resident (atlases + per-Part pull buffers, owned
+                // by the puppet asset) and the program is rhi-resident; emit an
+                // rhi renderable recipe carrying puppet_key so the renderer looks
+                // up the resident draw metadata and records one Part packet per
+                // Part in the Overlay layer.
+                const wz::asset::ResourceHandle handle =
+                    rhi_renderable_table->add(RhiRenderableRecipe{
+                        .program_key = desc->render_program_asset,
+                        .draw_layer = DrawLayer::Overlay,
+                        .puppet_key = desc->puppet_asset,
+                    });
+                if (!handle.valid()) {
+                    logger->error(
+                        "failed to store puppet RHI renderable recipe");
                     return compile_failed_node(input);
                 }
 

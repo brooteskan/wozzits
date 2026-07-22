@@ -308,6 +308,13 @@ namespace wz::engine::assets
         wz::asset::AssetKey star_catalog_key{};
         StarFieldRenderSettings star{};
 
+        // Optional Inochi2D puppet source (inochi S2b). Like the splat / star, the
+        // renderable has no pull mesh: the renderer looks up the resident puppet
+        // (PuppetTable, keyed by this) and records one screen-space DrawPacket per
+        // Part in the Overlay layer, back-to-front in zsort order. draw_layer is
+        // Overlay for a puppet.
+        wz::asset::AssetKey puppet_key{};
+
         // Optional baked mesh-render-style shading (issue #195 slice A). Only the
         // CPU pull-mesh path (mesh_key) consumes it: when style.has_style is set
         // AND the recipe's program declares the "mesh_style" root constant
@@ -340,7 +347,8 @@ namespace wz::engine::assets
                 !(mesh_key == wz::asset::AssetKey{})
                 || !(gpu_sparse_mesh_key == wz::asset::AssetKey{})
                 || !(gaussian_splat_cloud_key == wz::asset::AssetKey{})
-                || !(star_catalog_key == wz::asset::AssetKey{});
+                || !(star_catalog_key == wz::asset::AssetKey{})
+                || !(puppet_key == wz::asset::AssetKey{});
             return has_geometry
                 && !(program_key == wz::asset::AssetKey{});
         }
@@ -424,6 +432,14 @@ namespace wz::engine::assets
         wz::asset::AssetKey render_program_asset{};
         // Per-cloud render settings (splat size).
         GaussianSplatCloudRenderSettings settings{};
+    };
+
+    struct PuppetRhiRenderableCompileDesc
+    {
+        // Puppet (kAssetTypePuppet): resident atlases + per-Part pull buffers.
+        wz::asset::AssetKey puppet_asset{};
+        // Puppet render program (kAssetTypeRenderProgram, MeshVertexPull model).
+        wz::asset::AssetKey render_program_asset{};
     };
 
     struct StarFieldRhiRenderableCompileDesc

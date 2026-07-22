@@ -137,6 +137,13 @@ namespace wz::engine::assets
         // "texture" variant) -- the 2D overlay's sprite. A distinct semantic so the
         // overlay layout names its own row, separate from field/vector textures.
         OverlayTexture,
+        // An Inochi2D puppet Part's pull streams + atlas (screen-space 2D art),
+        // bound per Part by the puppet render branch: PuppetVertices = interleaved
+        // (pos,uv) StructuredBuffer, PuppetIndices = u32 StructuredBuffer,
+        // PuppetAtlas = the Part's atlas-page texture.
+        PuppetVertices,
+        PuppetIndices,
+        PuppetAtlas,
     };
 
     // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
@@ -144,7 +151,7 @@ namespace wz::engine::assets
     // it as a Tag (enum → name), and authored render-binding-layout rows name
     // their semantic as a string that resolves back to the enum (name → enum).
     // Index == enum value; a new DescriptorSemantic member extends this array.
-    inline constexpr std::array<std::string_view, 16> kDescriptorSemanticNames = {
+    inline constexpr std::array<std::string_view, 19> kDescriptorSemanticNames = {
         "unknown",
         "splat_cloud",
         "sorted_splat_indices",
@@ -161,6 +168,9 @@ namespace wz::engine::assets
         "view_constants",
         "screen_constants",
         "overlay_texture",
+        "puppet_vertices",
+        "puppet_indices",
+        "puppet_atlas",
     };
 
     [[nodiscard]] constexpr std::string_view descriptor_semantic_name(

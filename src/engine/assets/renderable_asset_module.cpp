@@ -324,6 +324,57 @@ namespace wz::engine::assets
     }
 
     RenderableAsset
+    RenderableAssetModule::create_puppet_rhi(
+        const PuppetRhiRenderableDesc& desc)
+    {
+        if (desc.name.empty()) {
+            logger_.error("puppet RHI renderable has empty name");
+            return {};
+        }
+
+        if (!desc.puppet.valid()) {
+            logger_.error(
+                "puppet RHI renderable has invalid puppet: " + desc.name);
+            return {};
+        }
+
+        if (!desc.program.valid()) {
+            logger_.error(
+                "puppet RHI renderable has invalid render program: "
+                + desc.name);
+            return {};
+        }
+
+        const wz::asset::AssetKey key =
+            make_puppet_rhi_renderable_key(
+                desc.name,
+                desc.puppet.output,
+                desc.program.key);
+
+        wz::asset::AssetNode node;
+        node.key = key;
+        node.type = kAssetTypeRenderable;
+        node.schema = kPuppetRhiRenderableSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = PuppetRhiRenderableCompileDesc{
+            .puppet_asset = desc.puppet.output,
+            .render_program_asset = desc.program.key,
+        };
+
+        // Dependency order must match the compiler's input ports:
+        // puppet, render program.
+        (void)system_.register_asset(
+            std::move(node),
+            {
+                desc.puppet.output,
+                desc.program.key,
+            });
+
+        return RenderableAsset{ .output = key };
+    }
+
+    RenderableAsset
     RenderableAssetModule::create_star_field_rhi(
         const StarFieldRhiRenderableDesc& desc)
     {
@@ -444,6 +495,7 @@ namespace wz::engine::assets
                 || schema == kGpuSparseMeshRenderableSchema
                 || schema == kGaussianSplatCloudRhiRenderableSchema
                 || schema == kStarFieldRhiRenderableSchema
+                || schema == kPuppetRhiRenderableSchema
                 || schema == kCustomRenderableSchema;
         }
     }

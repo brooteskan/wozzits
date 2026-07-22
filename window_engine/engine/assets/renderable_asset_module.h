@@ -11,6 +11,7 @@
 #include <engine/assets/gpu_sparse_mesh_asset_module.h>
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
+#include <engine/assets/puppet_asset_module.h>
 #include <engine/assets/star_catalog_asset_module.h>
 #include <engine/assets/scalar_field_asset_module.h>
 #include <engine/assets/placement_asset_module.h>
@@ -91,6 +92,15 @@ namespace wz::engine::assets
         GaussianSplatCloudRenderSettings settings{};
     };
 
+    struct PuppetRhiRenderableDesc
+    {
+        std::string name;
+        // Inochi2D puppet, resident as atlases + per-Part pull buffers.
+        PuppetAsset puppet{};
+        // Puppet render program (MeshVertexPull binding model).
+        RenderProgramAsset program{};
+    };
+
     struct StarFieldRhiRenderableDesc
     {
         std::string name;
@@ -161,6 +171,9 @@ namespace wz::engine::assets
 
         RenderableAsset create_gaussian_splat_cloud_rhi(
             const GaussianSplatCloudRhiRenderableDesc& desc);
+
+        RenderableAsset create_puppet_rhi(
+            const PuppetRhiRenderableDesc& desc);
 
         RenderableAsset create_star_field_rhi(
             const StarFieldRhiRenderableDesc& desc);

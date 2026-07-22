@@ -691,6 +691,14 @@ namespace wz::engine::assets {
         0xF11E'CA55'E7'000709ull
     };
 
+    // RHI renderable recipe (inochi S2b): an Inochi2D Puppet (resident atlases +
+    // per-Part pull buffers) + a puppet render program, drawn as N screen-space
+    // Part packets in the Overlay layer through RhiSceneRenderer. Carries
+    // puppet_key; the renderer reads the resident draw metadata from PuppetTable.
+    inline constexpr wz::asset::SchemaID kPuppetRhiRenderableSchema{
+        0xF11E'CA55'E7'00070Cull
+    };
+
     // Custom renderable recipe (issue #228): a pull mesh + a custom render
     // program whose SRG comes from an authored binding layout (#227), plus
     // semantic resource bindings (binding0..7 ports, Any-typed — the source
