@@ -964,6 +964,13 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::AssetType kAssetTypeDialogueText =
         static_cast<wz::asset::AssetType>(2170);
 
+    // Implemented: an Inochi2D puppet -- animated 2D HUD/menu art (nodes, meshes,
+    // parameters, atlas textures) imported from a .inp/.inx file. Runtime data
+    // (source + GPU-resident draw metadata) is owned by PuppetTable; atlases +
+    // per-Part pull buffers live in the wozzits-rhi registry.
+    inline constexpr wz::asset::AssetType kAssetTypePuppet =
+        static_cast<wz::asset::AssetType>(2171);
+
     // ─── Gameplay / data authored asset types: 2200–2299 ───────────────────────
     //
     // Gameplay definitions, progression data, economy data, dialogue/quest data,

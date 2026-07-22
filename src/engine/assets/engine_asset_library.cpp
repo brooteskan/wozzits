@@ -243,6 +243,7 @@ namespace wz::engine::assets
         , audio_renderable_table_{}
         , gaussian_splat_cloud_table_{}
         , gaussian_splat_color_lod_table_{}
+        , puppet_table_{}
         , data_table_{}
         , diagnostic_resampled_time_series_table_{}
         , diagnostic_timeframe_summary_table_{}
@@ -298,6 +299,7 @@ namespace wz::engine::assets
                 .audio_renderable_table    = audio_renderable_table_,
                 .gaussian_splat_cloud_table = gaussian_splat_cloud_table_,
                 .gaussian_splat_color_lod_table = gaussian_splat_color_lod_table_,
+                .puppet_table = puppet_table_,
                 .data_table = data_table_,
                 .diagnostic_resampled_time_series_table = diagnostic_resampled_time_series_table_,
                 .diagnostic_timeframe_summary_table     = diagnostic_timeframe_summary_table_,
@@ -366,6 +368,7 @@ namespace wz::engine::assets
         , audio_renderables_(system_, logger_, audio_renderable_table_)
         , gaussian_splats_(system_, logger_, gaussian_splat_cloud_table_)
         , gaussian_splat_color_lods_(system_, logger_, gaussian_splat_color_lod_table_)
+        , puppets_(system_, logger_, puppet_table_)
         , data_tables_(system_, logger_, data_table_)
         , diagnostic_resampled_time_series_(system_, logger_, diagnostic_resampled_time_series_table_)
         , diagnostic_timeframe_summaries_(system_, logger_, diagnostic_timeframe_summary_table_)

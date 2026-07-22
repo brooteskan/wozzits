@@ -46,6 +46,8 @@
 #include <engine/assets/gaussian_splat/gaussian_splat_compilers.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_color_lod_compiler.h>
+#include <engine/assets/inochi/puppet_table.h>
+#include <engine/assets/inochi/puppet_compilers.h>
 #include <engine/assets/sky_gaussian/sky_gaussian_table.h>
 #include <engine/assets/sky_gaussian/sky_gaussian_compilers.h>
 #include <engine/assets/star_catalog/star_catalog_table.h>
@@ -142,6 +144,7 @@ namespace wz::engine::assets::internal {
         AudioRenderableTable&       audio_renderable_table;
         GaussianSplatCloudTable&    gaussian_splat_cloud_table;
         GaussianSplatColorLODTable& gaussian_splat_color_lod_table;
+        PuppetTable&                puppet_table;
         DataTable&                          data_table;
         DiagnosticResampledTimeSeriesTable& diagnostic_resampled_time_series_table;
         DiagnosticTimeframeSummaryTable&    diagnostic_timeframe_summary_table;

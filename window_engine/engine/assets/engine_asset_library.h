@@ -74,6 +74,8 @@
 #include <engine/assets/gaussian_splat_asset_module.h>
 #include <engine/assets/gaussian_splat/gaussian_splat_color_lod.h>
 #include <engine/assets/gaussian_splat_color_lod_asset_module.h>
+#include <engine/assets/inochi/puppet_table.h>
+#include <engine/assets/puppet_asset_module.h>
 
 #include <engine/assets/sky_gaussian/sky_gaussian_table.h>
 #include <engine/assets/sky_gaussian_asset_module.h>
@@ -330,6 +332,9 @@ namespace wz::engine::assets
         GaussianSplatAssetModule&       gaussian_splats()         { return gaussian_splats_; }
         const GaussianSplatAssetModule& gaussian_splats()   const { return gaussian_splats_; }
 
+        PuppetAssetModule&              puppets()                 { return puppets_; }
+        const PuppetAssetModule&        puppets()           const { return puppets_; }
+
         GaussianSplatColorLODAssetModule&       gaussian_splat_color_lods()       { return gaussian_splat_color_lods_; }
         const GaussianSplatColorLODAssetModule& gaussian_splat_color_lods() const { return gaussian_splat_color_lods_; }
 
@@ -492,6 +497,7 @@ namespace wz::engine::assets
         AudioRenderableTable        audio_renderable_table_;
         GaussianSplatCloudTable     gaussian_splat_cloud_table_;
         GaussianSplatColorLODTable  gaussian_splat_color_lod_table_;
+        PuppetTable                 puppet_table_;
         DataTable                   data_table_;
         DiagnosticResampledTimeSeriesTable  diagnostic_resampled_time_series_table_;
         DiagnosticTimeframeSummaryTable     diagnostic_timeframe_summary_table_;
@@ -542,6 +548,7 @@ namespace wz::engine::assets
         AudioRenderableAssetModule  audio_renderables_;
         GaussianSplatAssetModule    gaussian_splats_;
         GaussianSplatColorLODAssetModule gaussian_splat_color_lods_;
+        PuppetAssetModule           puppets_;
         DataTableAssetModule        data_tables_;
         DiagnosticResampledTimeSeriesAssetModule diagnostic_resampled_time_series_;
         DiagnosticTimeframeSummaryAssetModule    diagnostic_timeframe_summaries_;

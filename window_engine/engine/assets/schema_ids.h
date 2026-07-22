@@ -213,6 +213,13 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000504ull
     };
 
+    // Inochi2D puppet imported from a .inp / .inx (TRNSRTS) file. Produces a
+    // kAssetTypePuppet. In the UI/text schema range (0x000C00-0x000CFF): a puppet
+    // is animated 2D HUD/menu art.
+    inline constexpr wz::asset::SchemaID kPuppetFromFileSchema{
+    0xF11E'CA55'E7'000C00ull
+    };
+
     // Mesh decimation recipe. Compiled from a kAssetTypeMesh dependency and
     // implemented through the engine mesh processing abstraction.
     inline constexpr wz::asset::SchemaID kMeshDecimationSchema{

@@ -57,6 +57,7 @@ namespace wz::engine::editor
             AudioRenderableTable        audio_renderable_table;
             GaussianSplatCloudTable     gaussian_splat_cloud_table;
             GaussianSplatColorLODTable  gaussian_splat_color_lod_table;
+            PuppetTable                 puppet_table;
             DataTable                   data_table;
             DiagnosticResampledTimeSeriesTable diagnostic_resampled_time_series_table;
             DiagnosticTimeframeSummaryTable    diagnostic_timeframe_summary_table;
@@ -115,6 +116,7 @@ namespace wz::engine::editor
                     .gaussian_splat_cloud_table = gaussian_splat_cloud_table,
                     .gaussian_splat_color_lod_table =
                         gaussian_splat_color_lod_table,
+                    .puppet_table              = puppet_table,
                     .data_table                = data_table,
                     .diagnostic_resampled_time_series_table =
                         diagnostic_resampled_time_series_table,

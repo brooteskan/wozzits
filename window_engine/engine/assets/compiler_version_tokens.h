@@ -40,6 +40,7 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kScalarFieldTerrainCompilerVersion = 1;
     inline constexpr uint64_t kVectorFieldCompilerVersion = 1;
     inline constexpr uint64_t kGaussianSplatCompilerVersion = 1;
+    inline constexpr uint64_t kInochiPuppetCompilerVersion = 1;
     inline constexpr uint64_t kCSVCompilerVersion = 1;
     inline constexpr uint64_t kJSONDocumentCompilerVersion = 1;
     inline constexpr uint64_t kTOMLDocumentCompilerVersion = 1;

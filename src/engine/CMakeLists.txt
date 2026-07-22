@@ -180,6 +180,8 @@ target_sources(window_engine PRIVATE
     assets/inochi/inochi_load.cpp
     assets/inochi/puppet_draw_list.cpp
     assets/inochi/puppet_gpu.cpp
+    assets/inochi/puppet_compilers.cpp
+    assets/puppet_asset_module.cpp
 
     assets/hdri/hdri_lighting_metadata.cpp
     assets/hdri/hdri_image_loader_tinyexr.cpp
