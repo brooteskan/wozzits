@@ -61,7 +61,12 @@ namespace wz::rhi
 
     enum class VertexStepRate : uint8_t { PerVertex, PerInstance };
 
-    enum class BlendMode : uint8_t { Opaque, AlphaBlend, Additive };
+    // Fixed-function blend recipes. Opaque / AlphaBlend / Additive are the
+    // classic trio; Multiply (Src×Dst) and Screen (Src + Dst − Src×Dst) are the
+    // 2D-puppet / overlay compositing modes (inochi runtime). A new member must
+    // be handled by every PSO builder that consumes it — the engine's DX12
+    // pipeline factories switch/branch on this and have no `default:`.
+    enum class BlendMode : uint8_t { Opaque, AlphaBlend, Additive, Multiply, Screen };
     enum class DepthMode : uint8_t { Disabled, TestNoWrite, TestWrite };
     enum class RasterMode : uint8_t { SolidCullBack, SolidCullNone, WireframeCullNone };
     // ── Vertex input (data, not an enum) ───────────────────────────────────────
