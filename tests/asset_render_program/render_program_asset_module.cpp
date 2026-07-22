@@ -20,6 +20,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+// Consume the single rhi blend enum directly (issue #272): the engine's
+// BlendMode is wz::rhi::BlendMode, so unqualified `BlendMode` in the
+// `using namespace wz::engine::assets` test bodies resolves to it.
+using wz::rhi::BlendMode;
+
 namespace
 {
     namespace fs = std::filesystem;
@@ -152,7 +157,7 @@ TEST(RenderProgramAssetModule, CreateCustomRejectsEmptyName)
         .pixel_shader  = dummy_key,
         .binding_model = wz::engine::assets::RenderBindingModel::MeshIA,
         .input_layout  = wz::engine::assets::InputLayoutKind::MeshPositionNormalUV,
-        .blend_mode    = wz::engine::assets::BlendMode::Opaque,
+        .blend_mode    = wz::rhi::BlendMode::Opaque,
         .depth_mode    = wz::engine::assets::DepthMode::TestWrite,
         .raster_mode   = wz::engine::assets::RasterMode::SolidCullNone,
         });

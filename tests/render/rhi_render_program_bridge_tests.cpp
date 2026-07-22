@@ -30,7 +30,7 @@ namespace
         src.binding_model = ea::RenderBindingModel::MeshIA;
         src.topology = ea::RenderPrimitiveTopology::TriangleList;
         src.input_layout = ea::InputLayoutKind::MeshPositionNormalUV;
-        src.blend_mode = ea::BlendMode::Opaque;
+        src.blend_mode = wz::rhi::BlendMode::Opaque;
         src.depth_mode = ea::DepthMode::TestWrite;
         src.raster_mode = ea::RasterMode::SolidCullBack;
         src.root_constants.push_back(

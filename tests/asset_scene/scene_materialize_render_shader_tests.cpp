@@ -280,7 +280,7 @@ TEST_F(
     EXPECT_EQ(
         program_data->input_layout,
         InputLayoutKind::MeshPositionNormalUV);
-    EXPECT_EQ(program_data->blend_mode, BlendMode::Opaque);
+    EXPECT_EQ(program_data->blend_mode, wz::rhi::BlendMode::Opaque);
     EXPECT_EQ(program_data->depth_mode, DepthMode::TestWrite);
     EXPECT_EQ(program_data->raster_mode, RasterMode::SolidCullNone);
     ASSERT_EQ(program_data->root_constants.size(), 1u);

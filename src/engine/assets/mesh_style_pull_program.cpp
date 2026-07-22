@@ -183,8 +183,9 @@ float4 main(PSInput input) : SV_TARGET
                     : DepthMode::TestNoWrite)
                 : DepthMode::Disabled;
         const bool transparent = is_mesh_render_style_transparent(style);
-        const BlendMode blend =
-            transparent ? BlendMode::AlphaBlend : BlendMode::Opaque;
+        const wz::rhi::BlendMode blend =
+            transparent ? wz::rhi::BlendMode::AlphaBlend
+                        : wz::rhi::BlendMode::Opaque;
 
         // Fold the derived state into the name so distinct pipeline states get
         // distinct program assets while identical states dedup to one.

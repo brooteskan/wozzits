@@ -889,7 +889,8 @@ namespace wz::engine::rendering
         : gpu_(gpu)
         , logger_(logger)
         , ctx_()
-        , cache_(gpu.device, gpu.programs, gpu.compute_programs, gpu.shaders)
+        , cache_(gpu.device, gpu.programs, gpu.compute_programs, gpu.shaders,
+                 &logger)
         , recorder_(gpu.device, cache_, gpu.resources, gpu.backend)
     {
         forward_ = ctx_.passes.acquire("forward");

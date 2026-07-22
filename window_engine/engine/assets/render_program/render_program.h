@@ -6,6 +6,10 @@
 #include <engine/assets/render_binding_layout/render_binding_constants.h>
 #include <engine/assets/renderable/renderable.h>
 
+// wz::rhi::BlendMode — the engine consumes the single rhi blend enum directly
+// rather than duplicating it (issue #272).
+#include <wozzits/rhi/render_program.h>
+
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -49,12 +53,10 @@ namespace wz::engine::assets
         GaussianSplatVertex, // per-instance: position, opacity, scale, rotation, color
     };
 
-    enum class BlendMode : uint8_t
-    {
-        Opaque,
-        AlphaBlend,
-        Additive,   // src*ONE + dst*ONE -- glow accumulation (stars, particles)
-    };
+    // BlendMode is wz::rhi::BlendMode (issue #272): the engine consumes the one
+    // rhi blend enum directly, so the fields below spell it `wz::rhi::BlendMode`.
+    // DepthMode / RasterMode remain duplicated here (bridged in
+    // rhi_render_program_bridge.cpp) pending their own consolidation.
 
     enum class DepthMode : uint8_t
     {
@@ -243,7 +245,7 @@ namespace wz::engine::assets
         uint32_t default_policy_flags = RenderPolicy_None;
 
         InputLayoutKind input_layout{};
-        BlendMode       blend_mode{};
+        wz::rhi::BlendMode blend_mode{};
         DepthMode       depth_mode{};
         RasterMode      raster_mode{};
 
@@ -264,7 +266,7 @@ namespace wz::engine::assets
 
         // Declarative pipeline state — read by DX12 factory in Phase 2+.
         InputLayoutKind input_layout{};
-        BlendMode       blend_mode{};
+        wz::rhi::BlendMode blend_mode{};
         DepthMode       depth_mode{};
         RasterMode      raster_mode{};
 

@@ -1,18 +1,30 @@
 #include <engine/rendering/rhi_dx12_pipeline.h>
 
 #include <gpu/dx12/dx12_internal.h>
+#include <logging/logger.h>
 
 #include <algorithm>
 #include <climits>
 #include <cstddef>
+#include <cstdio>
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace
 {
+    std::string hr_hex(HRESULT hr)
+    {
+        char buffer[16];
+        std::snprintf(buffer, sizeof(buffer), "0x%08lX",
+            static_cast<unsigned long>(hr));
+        return std::string(buffer);
+    }
+
     D3D12_SHADER_VISIBILITY shader_visibility(wz::rhi::ShaderStage stage)
     {
         switch (stage) {
@@ -194,7 +206,9 @@ namespace
         std::span<const wz::rhi::ShaderResourceGroupLayout>
             shader_resource_groups,
         bool allow_input_assembler,
-        const wz::engine::rendering::RhiDx12PipelineLayout& layout)
+        const wz::engine::rendering::RhiDx12PipelineLayout& layout,
+        std::string_view program_name,
+        wz::Logger* logger)
     {
         if (!device) {
             return nullptr;
@@ -289,6 +303,19 @@ namespace
             &blob,
             &error);
         if (FAILED(hr)) {
+            if (logger) {
+                std::string detail;
+                if (error) {
+                    detail.assign(
+                        static_cast<const char*>(error->GetBufferPointer()),
+                        error->GetBufferSize());
+                }
+                logger->error(
+                    std::string("RhiDx12Pipeline: root signature serialize "
+                        "failed program=") + std::string(program_name)
+                    + " hr=" + hr_hex(hr)
+                    + (detail.empty() ? std::string{} : " error=" + detail));
+            }
             if (error) {
                 error->Release();
             }
@@ -305,7 +332,16 @@ namespace
         if (error) {
             error->Release();
         }
-        return SUCCEEDED(hr) ? root_signature : nullptr;
+        if (FAILED(hr)) {
+            if (logger) {
+                logger->error(
+                    std::string("RhiDx12Pipeline: CreateRootSignature failed "
+                        "program=") + std::string(program_name)
+                    + " hr=" + hr_hex(hr));
+            }
+            return nullptr;
+        }
+        return root_signature;
     }
 
     ID3D12PipelineState* create_compute_pipeline_state(
@@ -333,7 +369,8 @@ namespace
         wz::gpu::Device& device,
         ID3D12RootSignature* root_signature,
         const wz::rhi::RenderProgramDesc& program,
-        const wz::rhi::ProgramBytecode& bytecode)
+        const wz::rhi::ProgramBytecode& bytecode,
+        wz::Logger* logger)
     {
         if (!root_signature) {
             return nullptr;
@@ -389,6 +426,35 @@ namespace
             rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
             rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         }
+        else if (program.blend_mode == wz::rhi::BlendMode::Multiply) {
+            // src*DstColor + dst*ZERO = Src×Dst. The 2D-puppet / overlay
+            // multiply blend (inochi runtime); darkens the destination by the
+            // source, the classic ink/shadow compositing operator.
+            D3D12_RENDER_TARGET_BLEND_DESC& rt =
+                desc.BlendState.RenderTarget[0];
+            rt.BlendEnable = TRUE;
+            rt.SrcBlend = D3D12_BLEND_DEST_COLOR;
+            rt.DestBlend = D3D12_BLEND_ZERO;
+            rt.BlendOp = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
+            rt.DestBlendAlpha = D3D12_BLEND_ZERO;
+            rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
+        else if (program.blend_mode == wz::rhi::BlendMode::Screen) {
+            // src*ONE + dst*InvSrcColor = Src + Dst − Src×Dst. The complement of
+            // Multiply; lightens the destination (highlight / glow compositing).
+            D3D12_RENDER_TARGET_BLEND_DESC& rt =
+                desc.BlendState.RenderTarget[0];
+            rt.BlendEnable = TRUE;
+            rt.SrcBlend = D3D12_BLEND_ONE;
+            rt.DestBlend = D3D12_BLEND_INV_SRC_COLOR;
+            rt.BlendOp = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+            rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
 
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
         switch (program.depth_mode) {
@@ -419,7 +485,16 @@ namespace
         ID3D12PipelineState* pso = nullptr;
         HRESULT hr = wz::gpu::dx12::internal::get_device(device)
             ->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso));
-        return SUCCEEDED(hr) ? pso : nullptr;
+        if (FAILED(hr)) {
+            if (logger) {
+                logger->error(
+                    std::string("RhiDx12Pipeline: CreateGraphicsPipelineState "
+                        "failed program=") + program.name
+                    + " hr=" + hr_hex(hr));
+            }
+            return nullptr;
+        }
+        return pso;
     }
 }
 
@@ -510,11 +585,13 @@ namespace wz::engine::rendering
         wz::gpu::Device& device,
         const wz::rhi::RenderProgramRegistry& programs,
         const wz::rhi::ComputeProgramRegistry& compute_programs,
-        const wz::rhi::ShaderModuleRegistry& shaders)
+        const wz::rhi::ShaderModuleRegistry& shaders,
+        wz::Logger* logger)
         : device_(&device)
         , programs_(&programs)
         , compute_programs_(&compute_programs)
         , shaders_(&shaders)
+        , logger_(logger)
     {
     }
 
@@ -566,7 +643,9 @@ namespace wz::engine::rendering
                     d3d,
                     desc->shader_resource_groups,
                     /*allow_input_assembler*/ true,
-                    *layout);
+                    *layout,
+                    desc->name,
+                    logger_);
             if (!root_signature) {
                 return nullptr;
             }
@@ -575,7 +654,8 @@ namespace wz::engine::rendering
                 *device_,
                 root_signature,
                 *desc,
-                *bytecode);
+                *bytecode,
+                logger_);
             if (!pso) {
                 root_signature->Release();
                 return nullptr;
@@ -616,7 +696,9 @@ namespace wz::engine::rendering
                 d3d,
                 compute_desc->shader_resource_groups,
                 /*allow_input_assembler*/ false,
-                *layout);
+                *layout,
+                compute_desc->name,
+                logger_);
         if (!root_signature) {
             return nullptr;
         }
