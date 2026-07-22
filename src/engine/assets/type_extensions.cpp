@@ -237,6 +237,7 @@ namespace wz::engine::assets
             WZ_ADD_TYPE(kAssetTypeCursor);
             WZ_ADD_TYPE(kAssetTypeSubtitleTrack);
             WZ_ADD_TYPE(kAssetTypeDialogueText);
+            WZ_ADD_TYPE(kAssetTypePuppet);
             WZ_ADD_TYPE(kAssetTypeItemDefinition);
             WZ_ADD_TYPE(kAssetTypeWeaponDefinition);
             WZ_ADD_TYPE(kAssetTypeAbilityDefinition);
@@ -381,6 +382,7 @@ namespace wz::engine::assets
                 "GPU mesh field buffer");
             WZ_SET_TYPE_NAME(kAssetTypeRenderable, "Renderable");
             WZ_SET_TYPE_NAME(kAssetTypeRenderProgram, "Render program");
+            WZ_SET_TYPE_NAME(kAssetTypePuppet, "Puppet");
             WZ_SET_TYPE_NAME(kAssetTypeComputePipeline, "Compute pipeline");
             WZ_SET_TYPE_NAME(
                 kAssetTypeRhiRenderableRecipe,
@@ -450,6 +452,8 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kVectorFieldFromRawF32Schema, "Vector field from raw F32");
             WZ_ADD_SCHEMA(kGaussianSplatFromPLYSchema, "Gaussian splat from PLY");
             WZ_ADD_SCHEMA(kGaussianSplatFromFieldSchema, "Gaussian splat from field");
+            WZ_ADD_SCHEMA(kPuppetFromFileSchema, "Puppet from file");
+            WZ_ADD_SCHEMA(kPuppetRhiRenderableSchema, "Puppet renderable");
             WZ_ADD_SCHEMA(kGaussianSplatColorLODSchema, "Gaussian splat color LOD");
             WZ_ADD_SCHEMA(
                 kGaussianSplatTerrainSurfaceFromHeightFieldSchema,
