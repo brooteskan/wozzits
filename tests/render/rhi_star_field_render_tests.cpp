@@ -155,7 +155,7 @@ float4 main(PSInput input) : SV_TARGET
         desc.topology = ea::RenderPrimitiveTopology::TriangleList;
         desc.default_domain = ea::RenderDomain::Splat;
         desc.input_layout = ea::InputLayoutKind::None;
-        desc.blend_mode = ea::BlendMode::Additive;
+        desc.blend_mode = wz::rhi::BlendMode::Additive;
         desc.depth_mode = ea::DepthMode::Disabled;
         desc.raster_mode = ea::RasterMode::SolidCullNone;
         desc.root_constants.push_back(ea::RootConstantBinding{

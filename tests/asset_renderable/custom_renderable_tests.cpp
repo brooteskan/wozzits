@@ -330,7 +330,7 @@ float4 main(PSIn input) : SV_TARGET
         desc.default_policy_flags =
             ea::RenderPolicy_DepthTest | ea::RenderPolicy_DepthWrite;
         desc.input_layout = ea::InputLayoutKind::None;
-        desc.blend_mode = ea::BlendMode::Opaque;
+        desc.blend_mode = wz::rhi::BlendMode::Opaque;
         desc.depth_mode = ea::DepthMode::TestWrite;
         desc.raster_mode = ea::RasterMode::SolidCullNone;
         return desc;
@@ -924,7 +924,7 @@ TEST_F(CustomRenderableFixture, OverlayRenderableDrawsATexturedScreenQuad)
     ea::CustomRenderProgramDesc pdesc =
         custom_program_desc("overlay/program", layout.output);
     pdesc.default_policy_flags = ea::RenderPolicy_None;
-    pdesc.blend_mode = ea::BlendMode::AlphaBlend;
+    pdesc.blend_mode = wz::rhi::BlendMode::AlphaBlend;
     pdesc.depth_mode = ea::DepthMode::Disabled;
     pdesc.raster_mode = ea::RasterMode::SolidCullNone;
     pdesc.vertex_shader = shaders.vertex_shader;

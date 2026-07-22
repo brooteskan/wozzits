@@ -20,6 +20,8 @@
 struct ID3D12PipelineState;
 struct ID3D12RootSignature;
 
+namespace wz { struct Logger; }
+
 namespace wz::engine::rendering
 {
     struct RhiDx12DescriptorTableParam
@@ -92,7 +94,8 @@ namespace wz::engine::rendering
         RhiDx12PipelineCache(wz::gpu::Device& device,
                              const wz::rhi::RenderProgramRegistry& programs,
                              const wz::rhi::ComputeProgramRegistry& compute_programs,
-                             const wz::rhi::ShaderModuleRegistry& shaders);
+                             const wz::rhi::ShaderModuleRegistry& shaders,
+                             wz::Logger* logger = nullptr);
         ~RhiDx12PipelineCache();
 
         RhiDx12PipelineCache(const RhiDx12PipelineCache&) = delete;
@@ -116,6 +119,7 @@ namespace wz::engine::rendering
         const wz::rhi::RenderProgramRegistry* programs_ = nullptr;
         const wz::rhi::ComputeProgramRegistry* compute_programs_ = nullptr;
         const wz::rhi::ShaderModuleRegistry* shaders_ = nullptr;
+        wz::Logger* logger_ = nullptr;
         std::vector<Entry> entries_;
     };
 }

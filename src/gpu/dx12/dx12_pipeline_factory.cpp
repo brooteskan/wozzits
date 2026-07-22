@@ -1170,7 +1170,7 @@ namespace wz::gpu::dx12::internal
         GPUHandle vertex_shader,
         GPUHandle pixel_shader)
     {
-        using BM = wz::engine::assets::BlendMode;
+        using BM = wz::rhi::BlendMode;
         using DM = wz::engine::assets::DepthMode;
         using RM = wz::engine::assets::RasterMode;
 
@@ -1217,6 +1217,34 @@ namespace wz::gpu::dx12::internal
             rt.LogicOpEnable         = FALSE;
             rt.SrcBlend              = D3D12_BLEND_SRC_ALPHA;
             rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOp               = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
+            rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
+        else if (data.blend_mode == BM::Multiply)
+        {
+            // src*DstColor + dst*ZERO = Src×Dst — 2D-puppet / overlay multiply.
+            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
+            rt.BlendEnable           = TRUE;
+            rt.LogicOpEnable         = FALSE;
+            rt.SrcBlend              = D3D12_BLEND_DEST_COLOR;
+            rt.DestBlend             = D3D12_BLEND_ZERO;
+            rt.BlendOp               = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha         = D3D12_BLEND_DEST_ALPHA;
+            rt.DestBlendAlpha        = D3D12_BLEND_ZERO;
+            rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
+        else if (data.blend_mode == BM::Screen)
+        {
+            // src*ONE + dst*InvSrcColor = Src + Dst − Src×Dst — screen.
+            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
+            rt.BlendEnable           = TRUE;
+            rt.LogicOpEnable         = FALSE;
+            rt.SrcBlend              = D3D12_BLEND_ONE;
+            rt.DestBlend             = D3D12_BLEND_INV_SRC_COLOR;
             rt.BlendOp               = D3D12_BLEND_OP_ADD;
             rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
             rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;

@@ -73,10 +73,12 @@ namespace wz::engine::assets::internal
             "Gaussian splat vertex",
         };
 
-        constexpr std::array<std::string_view, 3> kBlendModeOptions = {
+        constexpr std::array<std::string_view, 5> kBlendModeOptions = {
             "Opaque",
             "Alpha blend",
             "Additive",
+            "Multiply",
+            "Screen",
         };
 
         constexpr std::array<std::string_view, 3> kDepthModeOptions = {
@@ -401,7 +403,7 @@ namespace wz::engine::assets::internal
                 out.default_policy_flags = RenderPolicy_Wireframe;
                 // Declarative pipeline state.
                 out.input_layout = InputLayoutKind::MeshPositionOnly;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::Disabled;
                 out.raster_mode  = RasterMode::WireframeCullNone;
                 out.root_constants = {{
@@ -421,7 +423,7 @@ namespace wz::engine::assets::internal
                     | RenderPolicy_DepthTest
                     | RenderPolicy_DepthWrite;
                 out.input_layout = InputLayoutKind::MeshPositionOnly;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::TestNoWrite;
                 out.raster_mode  = RasterMode::WireframeCullNone;
                 out.root_constants = {{
@@ -441,7 +443,7 @@ namespace wz::engine::assets::internal
                     | RenderPolicy_AlphaBlend
                     | RenderPolicy_DepthTest;
                 out.input_layout = InputLayoutKind::MeshPositionOnly;
-                out.blend_mode   = BlendMode::AlphaBlend;
+                out.blend_mode   = wz::rhi::BlendMode::AlphaBlend;
                 out.depth_mode   = DepthMode::TestNoWrite;
                 out.raster_mode  = RasterMode::WireframeCullNone;
                 out.root_constants = {{
@@ -458,7 +460,7 @@ namespace wz::engine::assets::internal
                 out.default_domain    = RenderDomain::Debug;
                 out.default_policy_flags = RenderPolicy_DepthTest | RenderPolicy_DepthWrite;
                 out.input_layout = InputLayoutKind::MeshPositionOnly;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::TestWrite;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -477,7 +479,7 @@ namespace wz::engine::assets::internal
                     RenderPolicy_DepthTest
                     | RenderPolicy_DepthWrite;
                 out.input_layout = InputLayoutKind::MeshPositionNormalUV;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::TestWrite;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -496,7 +498,7 @@ namespace wz::engine::assets::internal
                     RenderPolicy_AlphaBlend
                     | RenderPolicy_DepthTest;
                 out.input_layout = InputLayoutKind::MeshPositionNormalUV;
-                out.blend_mode   = BlendMode::AlphaBlend;
+                out.blend_mode   = wz::rhi::BlendMode::AlphaBlend;
                 out.depth_mode   = DepthMode::TestNoWrite;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -515,7 +517,7 @@ namespace wz::engine::assets::internal
                     RenderPolicy_DepthTest
                     | RenderPolicy_DepthWrite;
                 out.input_layout = InputLayoutKind::MeshPositionNormalUV;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::TestWrite;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -543,7 +545,7 @@ namespace wz::engine::assets::internal
                     RenderPolicy_DepthTest
                     | RenderPolicy_DepthWrite;
                 out.input_layout = InputLayoutKind::MeshPositionNormalUV;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::TestWrite;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -581,7 +583,7 @@ namespace wz::engine::assets::internal
                     RenderPolicy_DepthTest
                     | RenderPolicy_DepthWrite;
                 out.input_layout = InputLayoutKind::MeshPositionNormalUV;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::TestWrite;
                 out.raster_mode  = RasterMode::SolidCullBack;
                 out.root_constants = {{
@@ -602,7 +604,7 @@ namespace wz::engine::assets::internal
                     RenderPolicy_DepthTest;
                 // Declarative pipeline state.
                 out.input_layout = InputLayoutKind::GaussianSplatVertex;
-                out.blend_mode   = BlendMode::AlphaBlend;
+                out.blend_mode   = wz::rhi::BlendMode::AlphaBlend;
                 out.depth_mode   = DepthMode::Disabled;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -622,7 +624,7 @@ namespace wz::engine::assets::internal
                 out.default_domain       = RenderDomain::Debug;
                 out.default_policy_flags = RenderPolicy_None;
                 out.input_layout = InputLayoutKind::None;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::Disabled;
                 out.raster_mode  = RasterMode::SolidCullBack;
                 return true;
@@ -635,7 +637,7 @@ namespace wz::engine::assets::internal
                 out.default_domain       = RenderDomain::Splat;
                 out.default_policy_flags = RenderPolicy_AlphaBlend;
                 out.input_layout = InputLayoutKind::None;
-                out.blend_mode   = BlendMode::AlphaBlend;
+                out.blend_mode   = wz::rhi::BlendMode::AlphaBlend;
                 out.depth_mode   = DepthMode::Disabled;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -673,7 +675,7 @@ namespace wz::engine::assets::internal
                 out.default_domain       = RenderDomain::Splat;
                 out.default_policy_flags = RenderPolicy_AlphaBlend;
                 out.input_layout = InputLayoutKind::None;
-                out.blend_mode   = BlendMode::AlphaBlend;
+                out.blend_mode   = wz::rhi::BlendMode::AlphaBlend;
                 out.depth_mode   = DepthMode::Disabled;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -717,7 +719,7 @@ namespace wz::engine::assets::internal
                 out.default_domain       = RenderDomain::Splat;
                 out.default_policy_flags = RenderPolicy_None;
                 out.input_layout = InputLayoutKind::None;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::TestWrite;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -761,7 +763,7 @@ namespace wz::engine::assets::internal
                 out.default_domain       = RenderDomain::Sky;
                 out.default_policy_flags = RenderPolicy_None;
                 out.input_layout = InputLayoutKind::None;
-                out.blend_mode   = BlendMode::Opaque;
+                out.blend_mode   = wz::rhi::BlendMode::Opaque;
                 out.depth_mode   = DepthMode::Disabled;
                 out.raster_mode  = RasterMode::SolidCullNone;
                 out.root_constants = {{
@@ -987,7 +989,7 @@ namespace wz::engine::assets::internal
                     .type = wz::asset::ParamType::Enum,
                     .label = "Blend mode",
                     .default_num =
-                        static_cast<double>(BlendMode::Opaque),
+                        static_cast<double>(wz::rhi::BlendMode::Opaque),
                     .options = kBlendModeOptions,
                 },
                 {

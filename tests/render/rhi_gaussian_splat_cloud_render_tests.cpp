@@ -154,7 +154,7 @@ float4 main(PSInput input) : SV_TARGET
         desc.default_domain = ea::RenderDomain::Splat;
         desc.default_policy_flags = ea::RenderPolicy_DepthTest;
         desc.input_layout = ea::InputLayoutKind::None;
-        desc.blend_mode = ea::BlendMode::AlphaBlend;
+        desc.blend_mode = wz::rhi::BlendMode::AlphaBlend;
         desc.depth_mode = ea::DepthMode::TestNoWrite;
         desc.raster_mode = ea::RasterMode::SolidCullNone;
         desc.root_constants.push_back(ea::RootConstantBinding{

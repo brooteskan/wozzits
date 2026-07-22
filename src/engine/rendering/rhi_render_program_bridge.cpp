@@ -113,15 +113,8 @@ namespace wz::engine::rendering
             return layout;
         }
 
-        wz::rhi::BlendMode map_blend(ea::BlendMode b)
-        {
-            switch (b) {
-            case ea::BlendMode::Opaque:     return wz::rhi::BlendMode::Opaque;
-            case ea::BlendMode::AlphaBlend: return wz::rhi::BlendMode::AlphaBlend;
-            case ea::BlendMode::Additive:   return wz::rhi::BlendMode::Additive;
-            }
-            return wz::rhi::BlendMode::Opaque;
-        }
+        // No map_blend: blend_mode is wz::rhi::BlendMode on both sides now
+        // (issue #272), so the bridge copies it through unchanged.
 
         wz::rhi::DepthMode map_depth(ea::DepthMode d)
         {
@@ -188,7 +181,7 @@ namespace wz::engine::rendering
             ea::RenderBindingModel binding_model{};
             ea::RenderPrimitiveTopology topology{};
             ea::InputLayoutKind input_layout{};
-            ea::BlendMode blend_mode{};
+            wz::rhi::BlendMode blend_mode{};
             ea::DepthMode depth_mode{};
             ea::RasterMode raster_mode{};
             std::span<const ea::RootConstantBinding> root_constants;
@@ -210,7 +203,7 @@ namespace wz::engine::rendering
             out.vertex_source = map_vertex_source(src.binding_model);
             out.vertex_layout = vertex_layout_for(src.input_layout);
             out.topology      = map_topology(src.topology);
-            out.blend_mode    = map_blend(src.blend_mode);
+            out.blend_mode    = src.blend_mode;
             out.depth_mode    = map_depth(src.depth_mode);
             out.raster_mode   = map_raster(src.raster_mode);
 

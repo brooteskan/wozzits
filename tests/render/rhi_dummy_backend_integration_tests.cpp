@@ -91,7 +91,7 @@ namespace
         desc.binding_model = ea::RenderBindingModel::MeshVertexPull;
         desc.input_layout = ea::InputLayoutKind::None;
         desc.topology = ea::RenderPrimitiveTopology::TriangleList;
-        desc.blend_mode = ea::BlendMode::Opaque;
+        desc.blend_mode = wz::rhi::BlendMode::Opaque;
         desc.depth_mode = ea::DepthMode::TestWrite;
         desc.raster_mode = ea::RasterMode::WireframeCullNone;
         desc.root_constants.push_back(ea::RootConstantBinding{

@@ -817,7 +817,7 @@ namespace wz::engine::assets
                 .default_policy_flags =
                     RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
                 .input_layout = InputLayoutKind::None,
-                .blend_mode = BlendMode::Opaque,
+                .blend_mode = wz::rhi::BlendMode::Opaque,
                 .depth_mode = DepthMode::TestWrite,
                 .raster_mode = RasterMode::SolidCullNone,
                 .root_constants = {{
@@ -877,7 +877,7 @@ namespace wz::engine::assets
                 .default_policy_flags =
                     RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
                 .input_layout = InputLayoutKind::None,
-                .blend_mode = BlendMode::Opaque,
+                .blend_mode = wz::rhi::BlendMode::Opaque,
                 .depth_mode = DepthMode::TestWrite,
                 .raster_mode = RasterMode::SolidCullNone,
                 .root_constants = {{
@@ -2461,7 +2461,7 @@ namespace wz::engine::assets
                     .default_policy_flags =
                         RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
                     .input_layout = InputLayoutKind::MeshPositionNormalUV,
-                    .blend_mode = BlendMode::Opaque,
+                    .blend_mode = wz::rhi::BlendMode::Opaque,
                     .depth_mode = DepthMode::TestWrite,
                     .raster_mode = RasterMode::SolidCullNone,
                     .root_constants = {{

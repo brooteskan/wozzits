@@ -279,7 +279,7 @@ TEST_F(BindingLayoutProgramFixture, LayoutProgramMatchesPreset2)
             RenderPolicy_DepthTest | RenderPolicy_DepthWrite);
         params.values["input_layout"] = static_cast<int64_t>(
             InputLayoutKind::None);
-        params.values["blend_mode"] = static_cast<int64_t>(BlendMode::Opaque);
+        params.values["blend_mode"] = static_cast<int64_t>(wz::rhi::BlendMode::Opaque);
         params.values["depth_mode"] = static_cast<int64_t>(
             DepthMode::TestWrite);
         params.values["raster_mode"] = static_cast<int64_t>(
@@ -318,7 +318,7 @@ TEST_F(BindingLayoutProgramFixture, LayoutProgramMatchesPreset2)
         .default_domain = RenderDomain::Opaque,
         .default_policy_flags = RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
         .input_layout = InputLayoutKind::None,
-        .blend_mode = BlendMode::Opaque,
+        .blend_mode = wz::rhi::BlendMode::Opaque,
         .depth_mode = DepthMode::TestWrite,
         .raster_mode = RasterMode::SolidCullBack,
         });
