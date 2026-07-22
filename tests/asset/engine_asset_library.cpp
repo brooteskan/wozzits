@@ -197,6 +197,11 @@ float4 main(PSIn input) : SV_TARGET
                 kAssetTypeGaussianSplatCloud,
             },
 
+            // Texture (2D overlay track): image-from-file GPU resource. Graph-
+            // authored nodes materialize through the generic draft key path,
+            // same standing as the mesh / splat resource recipes above.
+            { kTextureFromFileSchema, kAssetTypeTexture },
+
             { kMeshRenderStyleSchema, kAssetTypeMeshRenderStyle },
             { kRenderBindingLayoutSchema, kAssetTypeRenderBindingLayout },
             // HLSL binding prelude (#231): outputs ShaderSource by prepending
@@ -281,6 +286,11 @@ float4 main(PSIn input) : SV_TARGET
             { kDirectLightSchema, kAssetTypeDirectLight },
             { kAmbientLightingSchema, kAssetTypeAmbientLighting },
             { kHDRIEnvironmentSchema, kAssetTypeEnvironmentMap },
+            // Frame environment (frame-environment node track): the single
+            // connected producer of a frame's global environment. Graph-authored
+            // nodes materialize through the generic draft key path, same standing
+            // as the lighting/environment recipes above.
+            { kFrameEnvironmentSchema, kAssetTypeFrameEnvironment },
             // SG-sky track (umbrella #259): the fitted sky lobes and the star
             // catalog both key through the generic draft path (make_*_from_json
             // key, content_hash empty), same standing as the recipes above.
