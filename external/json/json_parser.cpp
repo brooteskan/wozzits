@@ -14,10 +14,26 @@ namespace wz::json
     {
         wz::json::JSONValuePtr copy_value(
             yyjson_val* value,
-            wz::json::JSONParseError& error)
+            wz::json::JSONParseError& error,
+            int depth = 0)
         {
             if (!value) {
                 error.message = "null yyjson value";
+                return nullptr;
+            }
+
+            // Bound nesting depth: yyjson parses iteratively, but this DOM copy
+            // recurses once per array element / object member, so a
+            // pathologically deep document (e.g. attacker-controlled asset
+            // bytes) would overflow the stack here before any consumer sees it.
+            // The guard only helps if kMaxDepth+1 frames fit on the stack, and a
+            // debug frame here is ~1 KB, so this must stay well under the ~1000
+            // that overflow a 1 MB stack -- 256 is safe in debug yet still far
+            // past any legitimate document (real JSON nests a few dozen levels).
+            // Rejecting deeper input turns a crash into a clean parse error.
+            constexpr int kMaxDepth = 256;
+            if (depth > kMaxDepth) {
+                error.message = "JSON nesting too deep";
                 return nullptr;
             }
 
@@ -55,7 +71,7 @@ namespace wz::json
                 yyjson_arr_iter_init(value, &iter);
 
                 while ((item = yyjson_arr_iter_next(&iter)) != nullptr) {
-                    auto child = copy_value(item, error);
+                    auto child = copy_value(item, error, depth + 1);
                     if (!child)
                         return nullptr;
 
@@ -91,7 +107,7 @@ namespace wz::json
                         }
                     }
 
-                    auto child = copy_value(val, error);
+                    auto child = copy_value(val, error, depth + 1);
                     if (!child)
                         return nullptr;
 

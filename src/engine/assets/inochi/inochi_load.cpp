@@ -297,14 +297,20 @@ namespace wz::engine::assets::inochi
 
             // Guard the per-cell allocations below against a malformed axis grid:
             // real Inochi params have a handful of keys per axis, so an absurd
-            // nx/ny (from bogus axis_points) means the file is malformed -- leave
-            // the grids empty rather than allocate nx*ny cells (each deform cell
-            // also holds a per-vertex array).
-            constexpr std::size_t kMaxAxisKeys = 1024;
+            // nx/ny (from bogus axis_points) means the file is malformed. Cap
+            // BOTH each axis (so nx*ny can't overflow) AND the product (so a
+            // 1024x1024 grid can't force ~1M per-cell allocations per binding --
+            // each deform cell also holds a per-vertex array). Leave the grids
+            // empty rather than allocate.
+            constexpr std::size_t kMaxAxisKeys  = 1024;
+            constexpr std::size_t kMaxGridCells = 64u * 1024u;  // 256x256, already far past any real rig
             if (nx > kMaxAxisKeys || ny > kMaxAxisKeys) {
                 return;
             }
             const std::size_t cells = nx * ny;
+            if (cells > kMaxGridCells) {
+                return;
+            }
 
             b.is_set.assign(cells, 0);
             if (const auto* js = member(jb, "isSet"); js && js->kind == j::JSONValueKind::Array) {

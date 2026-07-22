@@ -183,3 +183,85 @@ TEST(InochiLoad, ParsesRealAkaPuppet)
         EXPECT_EQ(t.rgba.size(), static_cast<std::size_t>(t.width) * t.height * 4u);
     }
 }
+
+// --- Malformed-input hardening ------------------------------------------------
+// .inp bytes are untrusted (asset files can be attacker-controlled); the loader
+// caps a few allocations sourced from the file so a small malformed input can't
+// crash or exhaust memory. These lock those caps in against regression.
+
+TEST(InochiLoad, RejectsDeeplyNestedJson)
+{
+    // A pathologically deep document must fail to parse cleanly rather than
+    // overflow the stack in the JSON DOM copy (json_parser::copy_value recurses
+    // once per nesting level). The junk value nests 2000 arrays -- well past the
+    // parser's depth cap, yet shallow enough that if the cap regressed the parse
+    // would SUCCEED and this EXPECT_FALSE would catch it, rather than crash the
+    // test process. The rest of the document is a valid puppet, so the ONLY
+    // reason to reject is the depth.
+    std::string deep;
+    deep.append(2000, '[');
+    deep.append(2000, ']');
+    const std::string json =
+        "{ \"meta\": { \"rigger\": \"t\" },"
+        "  \"nodes\": { \"uuid\": 1, \"name\": \"root\", \"type\": \"Node\","
+        "    \"transform\": { \"trans\": [0,0,0], \"rot\": [0,0,0], \"scale\": [1,1] } },"
+        "  \"junk\": " + deep + " }";
+
+    const std::vector<std::uint8_t> buf = build_inp(json, make_tga(2, 2));
+
+    ic::Puppet p;
+    std::string err;
+    EXPECT_FALSE(ic::load_puppet(buf.data(), buf.size(), p, &err));
+}
+
+TEST(InochiLoad, CapsOversizedDeformGrid)
+{
+    // nx and ny are each under the per-axis cap (1024) but their product
+    // (512*512 = 262144) exceeds the grid-cell cap, so read_binding must leave
+    // the binding's grids empty instead of allocating a quarter-million cells.
+    std::string ax;  // 512 axis keys: "0,1,2,...,511"
+    for (int i = 0; i < 512; ++i) { if (i) ax.push_back(','); ax += std::to_string(i); }
+    const std::string json =
+        "{ \"meta\": { \"rigger\": \"t\" },"
+        "  \"nodes\": { \"uuid\": 1, \"name\": \"root\", \"type\": \"Node\","
+        "    \"transform\": { \"trans\": [0,0,0], \"rot\": [0,0,0], \"scale\": [1,1] } },"
+        "  \"param\": [ { \"uuid\": 3, \"name\": \"P\", \"is_vec2\": true,"
+        "    \"axis_points\": [[" + ax + "],[" + ax + "]],"
+        "    \"bindings\": [ { \"node\": 1, \"param_name\": \"transform.t.x\","
+        "      \"interpolate_mode\": \"Linear\", \"values\": [] } ] } ] }";
+
+    const std::vector<std::uint8_t> buf = build_inp(json, make_tga(2, 2));
+
+    ic::Puppet p;
+    std::string err;
+    ASSERT_TRUE(ic::load_puppet(buf.data(), buf.size(), p, &err)) << err;
+    ASSERT_EQ(p.parameters.size(), 1u);
+    ASSERT_EQ(p.parameters[0].bindings.size(), 1u);
+    EXPECT_TRUE(p.parameters[0].bindings[0].scalar_values.empty());
+    EXPECT_TRUE(p.parameters[0].bindings[0].is_set.empty());
+}
+
+TEST(InochiLoad, RejectsBogusTextureCount)
+{
+    // TEX_SECT claims ~4 billion textures but carries no texture data. The
+    // reservation must be capped by the remaining bytes (not the claimed count),
+    // so this fails cleanly on the first truncated header instead of attempting
+    // a multi-gigabyte speculative reserve.
+    const std::string json =
+        "{ \"meta\": { \"rigger\": \"t\" },"
+        "  \"nodes\": { \"uuid\": 1, \"name\": \"root\", \"type\": \"Node\","
+        "    \"transform\": { \"trans\": [0,0,0], \"rot\": [0,0,0], \"scale\": [1,1] } } }";
+
+    std::vector<std::uint8_t> b;
+    const char magic[8] = { 'T', 'R', 'N', 'S', 'R', 'T', 'S', 0 };
+    b.insert(b.end(), magic, magic + 8);
+    put_be_u32(b, static_cast<std::uint32_t>(json.size()));
+    b.insert(b.end(), json.begin(), json.end());
+    const char tex[8] = { 'T', 'E', 'X', '_', 'S', 'E', 'C', 'T' };
+    b.insert(b.end(), tex, tex + 8);
+    put_be_u32(b, 0xFFFFFFFFu);   // absurd texture count, no data follows
+
+    ic::Puppet p;
+    std::string err;
+    EXPECT_FALSE(ic::load_puppet(b.data(), b.size(), p, &err));
+}
