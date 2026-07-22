@@ -1,13 +1,12 @@
 // resources/shaders/puppet/puppet_ps.hlsl
 //
 // An Inochi2D puppet Part's pixel shader: sample the Part's atlas page at the
-// pulled UV and modulate alpha by the Part's opacity. The program's blend mode
-// is fixed-function per Part -- Normal -> AlphaBlend, Multiply, Screen (added to
-// wz::rhi::BlendMode by #272) -- selected by the renderer when it picks the
-// puppet program variant for the Part. Destination-reading blends (Overlay,
-// SoftLight, ...) and stencil masks (ClipToLower/SliceFromLower) are later seams
-// (S5 masks, S6 composite); for S2 those Parts fall back to AlphaBlend so the
-// puppet is at least visible.
+// pulled UV and modulate alpha by the Part's opacity. S2 renders EVERY Part
+// through one AlphaBlend program; the Part's authored blend mode is carried on
+// ResidentPuppetPart but not yet consumed at draw -- per-Part Multiply/Screen
+// program variants (wz::rhi::BlendMode gained them in #272) are a deferred
+// follow-up. Destination-reading blends (Overlay, SoftLight, ...) and stencil
+// masks (ClipToLower/SliceFromLower) are later seams (S5 masks, S6 composite).
 //
 // The atlas is bound at t2 of space 2 (after the two mesh-pull SRVs, matching the
 // overlay layout); the sampler is the layout's static clamp sampler at s0. The

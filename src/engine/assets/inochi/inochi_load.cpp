@@ -213,7 +213,7 @@ namespace wz::engine::assets::inochi
         // index of this node; nodes[0] ends up being the root. out.nodes may
         // reallocate during child recursion, so this re-accesses by index rather
         // than holding a reference across the recursive calls.
-        std::size_t parse_node(const j::JSONValue& jnode, Puppet& out)
+        std::size_t parse_node(const j::JSONValue& jnode, Puppet& out, int depth = 0)
         {
             Node n;
             n.uuid = uint_or(jnode, "uuid", 0);
@@ -254,12 +254,16 @@ namespace wz::engine::assets::inochi
             out.nodes.push_back(std::move(n));
 
             const auto* kids = member(jnode, "children");
-            if (kids && kids->kind == j::JSONValueKind::Array) {
+            // Cap recursion depth against a pathologically deep tree (stack
+            // overflow); real puppet hierarchies are shallow.
+            constexpr int kMaxNodeDepth = 256;
+            if (kids && depth < kMaxNodeDepth
+                && kids->kind == j::JSONValueKind::Array) {
                 std::vector<std::size_t> child_indices;
                 child_indices.reserve(kids->array_values.size());
                 for (const auto& c : kids->array_values) {
                     if (c && c->kind == j::JSONValueKind::Object)
-                        child_indices.push_back(parse_node(*c, out));
+                        child_indices.push_back(parse_node(*c, out, depth + 1));
                 }
                 out.nodes[idx].children = std::move(child_indices);
             }
@@ -291,6 +295,15 @@ namespace wz::engine::assets::inochi
             b.target = bind_target(b.raw_target);
             b.interpolate = interp_mode(str(jb, "interpolate_mode"));
 
+            // Guard the per-cell allocations below against a malformed axis grid:
+            // real Inochi params have a handful of keys per axis, so an absurd
+            // nx/ny (from bogus axis_points) means the file is malformed -- leave
+            // the grids empty rather than allocate nx*ny cells (each deform cell
+            // also holds a per-vertex array).
+            constexpr std::size_t kMaxAxisKeys = 1024;
+            if (nx > kMaxAxisKeys || ny > kMaxAxisKeys) {
+                return;
+            }
             const std::size_t cells = nx * ny;
 
             b.is_set.assign(cells, 0);
@@ -394,7 +407,12 @@ namespace wz::engine::assets::inochi
                 return fail(error, "missing TEX_SECT marker");
             const std::uint32_t n = read_be_u32(bytes + off + 8);
             std::size_t p = off + 12;
-            out.reserve(n);
+            // Cap the reservation by what the remaining bytes could actually hold
+            // (each texture entry has a >= 5-byte header), so a bogus count can't
+            // trigger a huge speculative allocation before the loop validates
+            // each entry.
+            const std::size_t max_textures = (count > p) ? (count - p) / 5u : 0u;
+            out.reserve(n < max_textures ? n : max_textures);
             for (std::uint32_t i = 0; i < n; ++i) {
                 if (p + 5 > count) return fail(error, "truncated texture header");
                 const std::uint32_t len = read_be_u32(bytes + p);
