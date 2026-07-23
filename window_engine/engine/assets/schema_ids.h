@@ -111,6 +111,16 @@ namespace wz::engine::assets {
     0xF11E'CA55'E7'000104ull
     };
 
+    // Engine-provided render program for an Inochi2D puppet (inochi S2c). A
+    // dedicated recipe in the render-program range: two shader deps (vertex,
+    // pixel) and the FIXED puppet SRG baked by its compiler (Screen head +
+    // Puppet vertices/indices/atlas + the puppet_part constant block) — the
+    // user never authors the SRG. Produces a kAssetTypeRenderProgram; the SRG
+    // is the single source in puppet_program.h.
+    inline constexpr wz::asset::SchemaID kPuppetProgramSchema{
+    0xF11E'CA55'E7'000105ull
+    };
+
     // HLSL binding prelude (issue #231): prepends the generated shader-side
     // declarations of a render binding layout (cbuffer with packoffset, SRV
     // rows, static samplers) to an authored HLSL body, producing the combined

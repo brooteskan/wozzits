@@ -231,6 +231,7 @@ target_sources(window_engine PRIVATE
     assets/scene/asset_graph_json.cpp
     assets/scene_asset_module.cpp
     assets/mesh_style_pull_program.cpp
+    assets/puppet_program.cpp
 
     assets/authoring/asset_graph_authoring.cpp
     assets/authoring/scene_authoring.cpp
