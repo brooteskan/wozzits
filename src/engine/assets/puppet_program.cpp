@@ -12,9 +12,6 @@ namespace wz::engine::assets
 {
     namespace
     {
-        constexpr const char* kPuppetVsPath = "shaders/puppet/puppet_vs.hlsl";
-        constexpr const char* kPuppetPsPath = "shaders/puppet/puppet_ps.hlsl";
-
         // Canonical puppet shader source, embedded so it can be staged into the
         // project root on demand (the file carrier has no engine-resource
         // fallback). This is the single source of truth for the puppet shaders;
@@ -96,17 +93,17 @@ float4 main(PSIn input) : SV_TARGET
 
         bool stage_shader_source(
             wz::Logger& logger,
-            FileCarrierAssetModule& files,
+            const std::function<wz::fs::Path(const wz::fs::Path&)>& resolve_path,
             const char* project_relative_path,
             const char* source)
         {
-            const wz::fs::Path full = files.resolve_path(project_relative_path);
+            const wz::fs::Path full = resolve_path(project_relative_path);
             if (wz::fs::exists(full)) {
                 return true;
             }
 
             // <project>/shaders/puppet — both files share this directory.
-            const wz::fs::Path dir = files.resolve_path("shaders/puppet");
+            const wz::fs::Path dir = resolve_path("shaders/puppet");
             if (wz::fs::create_directories(dir) != wz::fs::FileError::None) {
                 logger.error(
                     "puppet program: failed to create shader directory: " + dir);
@@ -188,16 +185,33 @@ float4 main(PSIn input) : SV_TARGET
         return desc;
     }
 
+    bool stage_puppet_shaders(
+        wz::Logger& logger,
+        const std::function<wz::fs::Path(const wz::fs::Path&)>& resolve_path)
+    {
+        return stage_shader_source(
+                   logger,
+                   resolve_path,
+                   kPuppetVertexShaderProjectPath,
+                   kPuppetVsSource)
+            && stage_shader_source(
+                   logger,
+                   resolve_path,
+                   kPuppetPixelShaderProjectPath,
+                   kPuppetPsSource);
+    }
+
     RenderProgramAsset ensure_puppet_program(
         wz::Logger& logger,
         FileCarrierAssetModule& files,
         ShaderAssetModule& shaders,
         RenderProgramAssetModule& render_programs)
     {
-        if (!stage_shader_source(
-                logger, files, kPuppetVsPath, kPuppetVsSource)
-            || !stage_shader_source(
-                logger, files, kPuppetPsPath, kPuppetPsSource))
+        if (!stage_puppet_shaders(
+                logger,
+                [&files](const wz::fs::Path& p) {
+                    return files.resolve_path(p);
+                }))
         {
             return {};
         }
@@ -208,8 +222,8 @@ float4 main(PSIn input) : SV_TARGET
 
         const ShaderPairAsset shader_pair = shaders.create_shader_pair({
             .name = name,
-            .vertex_path = kPuppetVsPath,
-            .pixel_path = kPuppetPsPath,
+            .vertex_path = kPuppetVertexShaderProjectPath,
+            .pixel_path = kPuppetPixelShaderProjectPath,
             .vertex_entry = "main",
             .pixel_entry = "main",
             .vertex_target = "vs_5_1",

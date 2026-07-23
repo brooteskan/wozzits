@@ -181,6 +181,7 @@ target_sources(window_engine PRIVATE
     assets/inochi/puppet_draw_list.cpp
     assets/inochi/puppet_gpu.cpp
     assets/inochi/puppet_compilers.cpp
+    assets/inochi/puppet_authoring.cpp
     assets/puppet_asset_module.cpp
 
     assets/hdri/hdri_lighting_metadata.cpp

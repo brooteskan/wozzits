@@ -35,6 +35,9 @@
 
 #include <logging/logger.h>
 
+#include <file/filesystem.h>
+
+#include <functional>
 #include <string>
 
 namespace wz::engine::assets
@@ -58,4 +61,22 @@ namespace wz::engine::assets
     // (graph path), so the SRG lives in exactly one place.
     [[nodiscard]] CustomRenderProgramDesc puppet_program_srg_desc(
         const std::string& name);
+
+    // Project-root-relative paths of the canonical puppet shaders. Single source
+    // of truth for both the typed ensure_puppet_program() path and the graph-
+    // authoring routine (which references them as ShaderSource nodes).
+    inline constexpr const char* kPuppetVertexShaderProjectPath =
+        "shaders/puppet/puppet_vs.hlsl";
+    inline constexpr const char* kPuppetPixelShaderProjectPath =
+        "shaders/puppet/puppet_ps.hlsl";
+
+    // Stage the embedded puppet shader sources into <project>/shaders/puppet/
+    // (write-if-missing), resolving the project-relative paths via resolve_path.
+    // Returns false on an IO failure (directory create / write). Shared by the
+    // typed ensure_puppet_program() path (FileCarrierAssetModule::resolve_path)
+    // and the graph-authoring routine (GraphAuthoringContext::resolve_file), so
+    // the embedded sources live in exactly one place.
+    [[nodiscard]] bool stage_puppet_shaders(
+        wz::Logger& logger,
+        const std::function<wz::fs::Path(const wz::fs::Path&)>& resolve_path);
 }
