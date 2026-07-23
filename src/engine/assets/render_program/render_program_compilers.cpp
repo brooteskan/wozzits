@@ -1,5 +1,6 @@
 #include <engine/assets/render_program/render_program_compilers.h>
 #include <engine/assets/render_binding_layout/render_binding_layout.h>
+#include <engine/assets/puppet_program.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 
@@ -1163,6 +1164,97 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(
                         input,
                         "failed to store custom render program");
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+            });
+
+        // Inochi puppet render program (inochi S2c). A dedicated recipe rather
+        // than kCustomRenderProgramSchema: the puppet SRG (Screen head + Puppet
+        // vertices/indices/atlas + the puppet_part root constants) is FIXED and
+        // not param-expressible, so the compiler reads NO params and bakes the
+        // SRG from puppet_program_srg_desc() -- the single source shared with
+        // the typed ensure_puppet_program() path. Graph-authored (generic draft
+        // key), so it carries no typed key factory and is governance-allowlisted.
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kPuppetProgramSchema,
+            .output_type = kAssetTypeRenderProgram,
+            .input_ports = {
+                { "vertex_shader", wz::asset::AssetType::Shader },
+                { "pixel_shader", wz::asset::AssetType::Shader },
+            },
+            .compile = [&logger, &table, programs,
+                        descriptor_semantics, constant_semantics](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::ResourceHandle> dep_handles)
+                    -> wz::asset::AssetNode
+            {
+                // Exactly two required shader deps (vertex, pixel); with no
+                // optional ports, positions 0/1 are stable.
+                if (dep_handles.size() != 2) {
+                    logger.error(
+                        "puppet render program requires exactly two shader "
+                        "dependencies (vertex, pixel)");
+                    return compile_failed_node(
+                        input,
+                        "puppet render program requires two shader "
+                        "dependencies (vertex, pixel)");
+                }
+                if (!dep_handles[0].valid() || !dep_handles[1].valid()) {
+                    logger.error(
+                        "puppet render program shader dependencies did not "
+                        "resolve");
+                    return compile_failed_node(
+                        input,
+                        "puppet shader dependencies did not resolve");
+                }
+
+                // The fixed puppet SRG; shaders are assigned from the resolved
+                // deps below (the desc leaves them unset).
+                CustomRenderProgramDesc desc =
+                    puppet_program_srg_desc("puppet/program");
+
+                // Produce the rhi program when the shared registries are
+                // present (mirrors the custom-program path); the renderer's
+                // find-then-fallback covers the null path.
+                if (programs && descriptor_semantics && constant_semantics) {
+                    publish_custom_rhi_render_program(
+                        input.key,
+                        desc,
+                        dep_nodes[0].key,
+                        dep_nodes[1].key,
+                        *programs,
+                        *descriptor_semantics,
+                        *constant_semantics,
+                        logger);
+                }
+
+                RenderProgramData data{};
+                data.binding_model        = desc.binding_model;
+                data.topology             = desc.topology;
+                data.default_domain       = desc.default_domain;
+                data.default_policy_flags = desc.default_policy_flags;
+                data.input_layout         = desc.input_layout;
+                data.blend_mode           = desc.blend_mode;
+                data.depth_mode           = desc.depth_mode;
+                data.raster_mode          = desc.raster_mode;
+                data.root_constants       = desc.root_constants;
+                data.descriptor_bindings  = desc.descriptor_bindings;
+                data.static_samplers      = desc.static_samplers;
+                data.vertex_shader        = dep_handles[0];
+                data.pixel_shader         = dep_handles[1];
+
+                wz::asset::ResourceHandle handle = table.add(std::move(data));
+                if (!handle.valid()) {
+                    logger.error("failed to store puppet render program");
+                    return compile_failed_node(
+                        input,
+                        "failed to store puppet render program");
                 }
 
                 wz::asset::AssetNode out = input;

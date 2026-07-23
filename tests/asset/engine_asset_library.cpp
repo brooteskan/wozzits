@@ -151,6 +151,11 @@ float4 main(PSIn input) : SV_TARGET
             { kBuiltinRenderProgramSchema, kAssetTypeRenderProgram },
             { kComputePipelineSchema, kAssetTypeComputePipeline },
             { kCustomRenderProgramSchema, kAssetTypeRenderProgram },
+            // Inochi puppet program (S2c): a dedicated render-program recipe
+            // with a fixed SRG baked by its compiler; graph-authored via the
+            // generic draft key path (no typed key factory), same standing as
+            // the custom program above.
+            { kPuppetProgramSchema, kAssetTypeRenderProgram },
 
             { kScalarFieldFromRawF32Schema, kAssetTypeScalarField },
             { kScalarFieldProceduralSchema, kAssetTypeScalarField },
