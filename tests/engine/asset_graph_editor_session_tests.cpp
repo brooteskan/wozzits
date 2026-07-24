@@ -660,3 +660,39 @@ TEST(AssetGraphEditorSession, PlacementNodeParamEditsPersistAndMerge)
             std::stod(find_snapshot_param(*node, "extent_y")->value), 300.0);
     }
 }
+
+// The "Add Inochi shared assets" editor action (item 6): the session authors the
+// shared puppet-program subgraph and stages the embedded shaders into the
+// project. Device-free structural coverage (full resolve+render is covered by
+// render/rhi_puppet_authoring_render_tests); make_registry() lacks the puppet
+// compilers, so the nodes are bare but still authored and the shaders staged.
+TEST(AssetGraphEditorSession, AddInochiSharedAssetsAuthorsSubgraphAndStagesShaders)
+{
+    TempProjectRoot temp;
+    write_project(temp.root);
+    auto registry = make_registry();
+    auto session = open_session(temp.root, registry);
+    ASSERT_NE(session, nullptr);
+
+    const size_t nodes_before = session->draft().nodes.size();
+    const size_t edges_before = session->draft().edges.size();
+
+    const wz::asset::AssetGraphDraftNodeId program =
+        session->add_inochi_shared_assets();
+    ASSERT_NE(program, wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE);
+
+    // 5 nodes (VS source/shader, PS source/shader, program) + 4 edges.
+    EXPECT_EQ(session->draft().nodes.size(), nodes_before + 5u);
+    EXPECT_EQ(session->draft().edges.size(), edges_before + 4u);
+
+    // The embedded puppet shaders were staged into <project>/shaders/puppet/.
+    EXPECT_TRUE(fs::exists(temp.root / "shaders" / "puppet" / "puppet_vs.hlsl"));
+    EXPECT_TRUE(fs::exists(temp.root / "shaders" / "puppet" / "puppet_ps.hlsl"));
+
+    // Idempotent: a second call returns the same program node, adds nothing.
+    const wz::asset::AssetGraphDraftNodeId program_again =
+        session->add_inochi_shared_assets();
+    EXPECT_EQ(program_again, program);
+    EXPECT_EQ(session->draft().nodes.size(), nodes_before + 5u);
+    EXPECT_EQ(session->draft().edges.size(), edges_before + 4u);
+}

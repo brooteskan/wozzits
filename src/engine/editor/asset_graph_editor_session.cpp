@@ -1,9 +1,13 @@
 #include <engine/editor/asset_graph_editor_session.h>
 
 #include <engine/assets/authoring/asset_graph_authoring.h>
+#include <engine/assets/file_carrier_asset_module.h>
+#include <engine/assets/inochi/puppet_authoring.h>
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/editor/asset_graph_layout.h>
+
+#include <logging/logger.h>
 
 #include <cmath>
 
@@ -360,6 +364,37 @@ namespace wz::engine::editor
             ctx,
             schema,
             type);
+    }
+
+    wz::asset::AssetGraphDraftNodeId
+    AssetGraphEditorSession::add_inochi_shared_assets()
+    {
+        if (!registry_) {
+            return wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE;
+        }
+
+        // The absolute project directory — the resource root the runtime's
+        // asset library resolves file carriers against, so the staged puppet
+        // shaders and the ShaderSource node paths agree with compile-time
+        // resolution. project_root may be resource-root-relative (mirrors the
+        // resolver open_asset_graph_editor_session uses).
+        wz::fs::Path project_root = desc_.project_root;
+        if (!wz::fs::is_absolute(project_root)
+            && !desc_.resource_root.empty())
+        {
+            project_root = wz::fs::join(desc_.resource_root, project_root);
+        }
+        wz::Logger logger;
+        const wz::engine::assets::authoring::GraphAuthoringContext ctx{
+            .registry = *registry_,
+            .resolve_file =
+                [project_root](const wz::fs::Path& path) {
+                    return wz::engine::assets::resolve_file_carrier_path(
+                        project_root, path);
+                },
+        };
+        return wz::engine::assets::inochi::ensure_shared_puppet_program_node(
+            draft_, ctx, logger);
     }
 
     bool AssetGraphEditorSession::remove_node(

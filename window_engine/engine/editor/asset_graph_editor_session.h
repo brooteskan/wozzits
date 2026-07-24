@@ -109,6 +109,15 @@ namespace wz::engine::editor
             wz::asset::SchemaID schema,
             wz::asset::AssetType type);
 
+        // Find-or-create the shared "Inochi shared assets" subgraph (the puppet
+        // render program + its two shaders) in the draft, staging the embedded
+        // puppet shaders into <project>/shaders/puppet/. Added once per project;
+        // a second call returns the existing program node. Returns the puppet-
+        // program draft node id (to wire puppet renderables' program port to),
+        // or INVALID_ASSET_GRAPH_DRAFT_NODE on failure.
+        [[nodiscard]] wz::asset::AssetGraphDraftNodeId
+        add_inochi_shared_assets();
+
         // Remove a node (and any edges touching it) from the draft. Returns
         // false if the node does not exist or was already deleted.
         [[nodiscard]] bool remove_node(

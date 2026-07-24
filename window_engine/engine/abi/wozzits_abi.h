@@ -1159,6 +1159,15 @@ WZ_ABI_API WzResult wz_host_asset_graph_add_node(
     uint32_t type,
     uint64_t* out_node_id);
 
+// Find-or-create the shared "Inochi shared assets" subgraph (the puppet render
+// program + its two staged shaders) in the session's draft. Added once per
+// project; out_node_id receives the puppet-program node id so puppet renderables
+// can wire their program port to it. Idempotent: a second call returns the
+// existing program node without adding anything.
+WZ_ABI_API WzResult wz_host_asset_graph_add_inochi_shared_assets(
+    WzHostSession* session,
+    uint64_t* out_node_id);
+
 // Remove a node (and any edges touching it) from the draft.
 WZ_ABI_API WzResult wz_host_asset_graph_remove_node(
     WzHostSession* session,

@@ -977,6 +977,42 @@ extern "C"
         }
     }
 
+    WzResult wz_host_asset_graph_add_inochi_shared_assets(
+        WzHostSession* session,
+        uint64_t* out_node_id)
+    {
+        if (out_node_id) {
+            *out_node_id = 0u;
+        }
+        if (const WzResult target = validate_session(session);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        try {
+            const wz::asset::AssetGraphDraftNodeId id =
+                session->editor->add_inochi_shared_assets();
+            if (id == wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE) {
+                return result(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "could not add Inochi shared assets");
+            }
+            if (out_node_id) {
+                *out_node_id = static_cast<uint64_t>(id);
+            }
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "add Inochi shared assets failed");
+        }
+    }
+
     WzResult wz_host_session_set_node_position(
         WzHostSession* session,
         uint64_t node_id,
