@@ -218,11 +218,24 @@
     {
       "id": "558d475d123d42a68d6f481b488a72ce",
       "name": "Frame Environment",
-      "proxyX": 1210.0255332474276,
-      "proxyY": 452.54309067714655,
+      "proxyX": 1152.6719860595636,
+      "proxyY": 472.9354630106094,
       "memberNodeIds": [
         140,
         141
+      ]
+    },
+    {
+      "id": "f67243a64c6943c1bd7cc7b43c9b4915",
+      "name": "Inochi Shared Assets",
+      "proxyX": 1212.5293897009906,
+      "proxyY": 1639.3753920684487,
+      "memberNodeIds": [
+        152,
+        153,
+        154,
+        155,
+        156
       ]
     }
   ],

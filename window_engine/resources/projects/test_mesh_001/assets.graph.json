@@ -7710,6 +7710,125 @@
           }
         ]
       }
+    },
+    {
+      "node_id": 152,
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "file_source": {
+          "full_path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\projects\\test_mesh_001\\shaders/puppet/puppet_vs.hlsl",
+          "canonical_path": "shaders/puppet/puppet_vs.hlsl"
+        }
+      }
+    },
+    {
+      "node_id": 153,
+      "type": 4,
+      "schema": "0xf11eca55e7000100",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 152,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "entry",
+            "type": "string",
+            "value": "main"
+          },
+          {
+            "name": "primary_source_index",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "stage",
+            "type": "int",
+            "value": 0
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 154,
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "file_source": {
+          "full_path": "D:\\code\\wozzits\\wozzits-window-engine\\window_engine\\resources\\projects\\test_mesh_001\\shaders/puppet/puppet_ps.hlsl",
+          "canonical_path": "shaders/puppet/puppet_ps.hlsl"
+        }
+      }
+    },
+    {
+      "node_id": 155,
+      "type": 4,
+      "schema": "0xf11eca55e7000100",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 154,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          {
+            "name": "entry",
+            "type": "string",
+            "value": "main"
+          },
+          {
+            "name": "primary_source_index",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "stage",
+            "type": "int",
+            "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 156,
+      "type": 1049,
+      "schema": "0xf11eca55e7000106",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 153,
+          "to_input_port": 0
+        },
+        {
+          "from_node_id": 155,
+          "to_input_port": 1
+        }
+      ]
     }
   ],
   "layout": {
@@ -8062,8 +8181,8 @@
       },
       {
         "node_id": 73,
-        "x": 584.32848532966136,
-        "y": 719.12637495376214
+        "x": 511.68065889169998,
+        "y": 773.93087559994342
       },
       {
         "node_id": 80,
@@ -8422,55 +8541,80 @@
       },
       {
         "node_id": 142,
-        "x": 960.02728829530565,
-        "y": 598.72488202684792
+        "x": 961.93907320156768,
+        "y": 595.15621686849192
       },
       {
         "node_id": 143,
-        "x": 1228.3654177382596,
-        "y": 612.60444044631106
+        "x": 1310.3172640533633,
+        "y": 589.53556924408122
       },
       {
         "node_id": 144,
-        "x": 928.90343002135751,
-        "y": 734.15572478645765
+        "x": 887.09906673775902,
+        "y": 763.59721234289452
       },
       {
         "node_id": 145,
-        "x": 1202.4739821157664,
-        "y": 1171.3866677617752
+        "x": 1156.5107252798289,
+        "y": 1203.9440408086502
       },
       {
         "node_id": 146,
-        "x": 921.47295935235229,
-        "y": 887.11126252013742
+        "x": 769.72427103657651,
+        "y": 960.45338023393788
       },
       {
         "node_id": 147,
-        "x": 919.93078619463427,
-        "y": 1044.412924607386
+        "x": 873.96752935869677,
+        "y": 1076.970297654261
       },
       {
         "node_id": 148,
-        "x": 1202.1484740570515,
-        "y": 919.49689883221811
+        "x": 1156.185217221114,
+        "y": 952.05427187909299
       },
       {
         "node_id": 149,
-        "x": 1209.8593398456421,
-        "y": 1042.8707514496682
+        "x": 1163.8960830097046,
+        "y": 1075.4281244965432
       },
       {
         "node_id": 150,
-        "x": 1552.3619784188591,
-        "y": 912.62721840238282
+        "x": 1511.5772337519334,
+        "y": 894.78389261060283
       },
       {
         "node_id": 151,
-        "x": 1810.7460811165408,
-        "y": 919.21650371263263
+        "x": 2012.9180639046012,
+        "y": 708.84835946019098
+      },
+      {
+        "node_id": 152,
+        "x": 1184.5293897009906,
+        "y": 1611.3753920684487
+      },
+      {
+        "node_id": 153,
+        "x": 1184.5293897009906,
+        "y": 1747.3753920684487
+      },
+      {
+        "node_id": 154,
+        "x": 1184.5293897009906,
+        "y": 1883.3753920684487
+      },
+      {
+        "node_id": 155,
+        "x": 1184.5293897009906,
+        "y": 2019.3753920684487
+      },
+      {
+        "node_id": 156,
+        "x": 1184.5293897009906,
+        "y": 2155.3753920684485
       }
     ],
-    "zoom": 0.71327917652750061
+    "zoom": 1.0443120423539141
   }
 }
