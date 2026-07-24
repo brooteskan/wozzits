@@ -633,24 +633,21 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     // their program port to the returned program node.
     private void AddInochiSharedAssets()
     {
-        if (_editorSession is null)
-        {
-            return;
-        }
-
-        var response = _editorSession.AddInochiSharedAssets();
-        if (!response.Ok)
+        if (AssetGraph.AddInochiSharedAssets())
         {
             AppendEditorLog(
-                $"[editor] Add Inochi shared assets failed: {response.Error}");
-            return;
+                "[editor] Inochi shared assets ready — see the \"Inochi Shared "
+                + "Assets\" sub-graph in the asset graph (drill in for the puppet "
+                + "program + shaders).");
         }
-
-        AppendEditorLog(
-            "[editor] Added Inochi shared assets: puppet render program node "
-            + response.NodeId
-            + " (wire puppet renderables' program port to it).");
-        AssetGraph.RefreshFromSession();
+        else
+        {
+            AppendEditorLog(
+                "[editor] Add Inochi shared assets failed: "
+                + (string.IsNullOrEmpty(AssetGraph.LastEditError)
+                    ? "unknown error"
+                    : AssetGraph.LastEditError));
+        }
     }
 
     // Launch the project as a SEPARATE process (the shipped-app play path),

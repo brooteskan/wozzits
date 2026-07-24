@@ -636,6 +636,88 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         return true;
     }
 
+    // "Add Inochi shared assets" (inochi S2c item 6): provision the shared puppet
+    // render-program subgraph (VS/PS shaders -> PuppetProgram) via the engine, lay
+    // the new nodes out, and wrap them in a VISIBLE, collapsed "Inochi Shared
+    // Assets" sub-graph proxy so the user can see them (a bare add drops them,
+    // unpositioned and ungrouped, at the graph origin -- off-screen). The engine
+    // routine is idempotent, so a second call adds nothing and this just
+    // re-selects the existing group.
+    public bool AddInochiSharedAssets()
+    {
+        if (_editorSession is null)
+        {
+            LastEditError = "Engine editor session is not available.";
+            return false;
+        }
+        if (RejectIfGraphOperationRunning())
+        {
+            return false;
+        }
+
+        var before = Nodes.Select(node => node.Id).ToHashSet();
+
+        var response = _editorSession.AddInochiSharedAssets();
+        if (!response.Ok)
+        {
+            LastEditError = response.Error;
+            return false;
+        }
+        LastEditError = string.Empty;
+
+        if (!ReloadGraphFromSessionPreservingLayout())
+        {
+            return false;
+        }
+
+        var added = Nodes.Where(node => !before.Contains(node.Id)).ToList();
+        if (added.Count == 0)
+        {
+            // The engine routine is idempotent: the shared assets already exist.
+            // Re-select the group that owns the program node so the user sees it.
+            var owner = _grouping.SubGraphOfNode(response.NodeId);
+            if (owner is not null)
+            {
+                SelectSubGraph(owner);
+            }
+            return true;
+        }
+
+        // Place the new nodes in a column at the centroid of the existing content
+        // (top-left of an empty graph) so the collapsed group lands where the user
+        // is working rather than off-screen at the origin.
+        var anchorX = CanvasPadding;
+        var anchorY = CanvasPadding;
+        var prior = Nodes.Where(node => before.Contains(node.Id)).ToList();
+        if (prior.Count > 0)
+        {
+            anchorX = Math.Max(CanvasPadding, prior.Average(node => node.X));
+            anchorY = Math.Max(CanvasPadding, prior.Average(node => node.Y));
+        }
+        for (var i = 0; i < added.Count; i++)
+        {
+            added[i].X = anchorX;
+            added[i].Y = anchorY + (i * (CardHeight + 20.0));
+            CommitNodePosition(added[i]);
+        }
+        EnsureGraphBounds();
+
+        // Wrap them in a visible "Inochi Shared Assets" sub-graph. It renders as
+        // one collapsed proxy card; drilling in shows the program + its shaders.
+        var subGraph = _grouping.CreateSubGraph(
+            "Inochi Shared Assets",
+            added.Select(node => node.Id).ToList(),
+            parentId: _context?.Id);
+        subGraph.ProxyX = anchorX;
+        subGraph.ProxyY = anchorY;
+
+        RefreshCanvasProjection();
+        MarkGraphDraft();
+        GraphMutated?.Invoke(this);
+        SelectSubGraph(subGraph);
+        return true;
+    }
+
     // Remove all currently selected nodes (and their edges) from the draft.
     public bool RemoveSelectedNodes()
     {
