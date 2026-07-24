@@ -117,8 +117,12 @@ namespace wz::engine::assets {
     // Puppet vertices/indices/atlas + the puppet_part constant block) — the
     // user never authors the SRG. Produces a kAssetTypeRenderProgram; the SRG
     // is the single source in puppet_program.h.
+    // NOTE: value is 0x…106, NOT 0x…105 — 0x…105 is kHLSLBindingPreludeSchema
+    // (below). Stage 1 mistakenly duplicated it, which made every existing
+    // binding-prelude node look like a puppet program (find_puppet_program_node
+    // matched them → the editor "Add Inochi shared assets" action no-op'd).
     inline constexpr wz::asset::SchemaID kPuppetProgramSchema{
-    0xF11E'CA55'E7'000105ull
+    0xF11E'CA55'E7'000106ull
     };
 
     // HLSL binding prelude (issue #231): prepends the generated shader-side
