@@ -637,12 +637,13 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
     }
 
     // "Add Inochi shared assets" (inochi S2c item 6): provision the shared puppet
-    // render-program subgraph (VS/PS shaders -> PuppetProgram) via the engine, lay
-    // the new nodes out, and wrap them in a VISIBLE, collapsed "Inochi Shared
-    // Assets" sub-graph proxy so the user can see them (a bare add drops them,
-    // unpositioned and ungrouped, at the graph origin -- off-screen). The engine
-    // routine is idempotent, so a second call adds nothing and this just
-    // re-selects the existing group.
+    // render-program subgraph (VS/PS shaders -> PuppetProgram) via the engine, then
+    // lay the nodes out and wrap them in a VISIBLE, collapsed "Inochi Shared Assets"
+    // sub-graph proxy so the user can see them (a bare add drops them unpositioned
+    // and ungrouped at the graph origin -- off-screen). The engine routine is
+    // idempotent and returns the program node whether it just authored it or it
+    // already existed, so we anchor on THAT node and group its dependency closure
+    // rather than a before/after diff (which is empty when the nodes pre-exist).
     public bool AddInochiSharedAssets()
     {
         if (_editorSession is null)
@@ -654,8 +655,6 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         {
             return false;
         }
-
-        var before = Nodes.Select(node => node.Id).ToHashSet();
 
         var response = _editorSession.AddInochiSharedAssets();
         if (!response.Ok)
@@ -670,43 +669,48 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
             return false;
         }
 
-        var added = Nodes.Where(node => !before.Contains(node.Id)).ToList();
-        if (added.Count == 0)
+        var program = Nodes.FirstOrDefault(node => node.Id == response.NodeId);
+        if (program is null)
         {
-            // The engine routine is idempotent: the shared assets already exist.
-            // Re-select the group that owns the program node so the user sees it.
-            var owner = _grouping.SubGraphOfNode(response.NodeId);
-            if (owner is not null)
-            {
-                SelectSubGraph(owner);
-            }
+            LastEditError = "Inochi shared program node was not found after authoring.";
+            return false;
+        }
+
+        // Already wrapped in a sub-graph (idempotent re-click) -> just reveal it.
+        var existing = _grouping.SubGraphOfNode(program.Id);
+        if (existing is not null)
+        {
+            SelectSubGraph(existing);
             return true;
         }
 
-        // Place the new nodes in a column at the centroid of the existing content
-        // (top-left of an empty graph) so the collapsed group lands where the user
-        // is working rather than off-screen at the origin.
+        // The shared-asset nodes = the program plus its dependency closure (its two
+        // shaders and their source files), whether just authored or pre-existing.
+        var members = SharedPuppetAssetNodes(program);
+
+        // Lay them out in a column at the centroid of the OTHER content (top-left of
+        // an empty graph) so the collapsed group lands on-screen, not at (0,0).
         var anchorX = CanvasPadding;
         var anchorY = CanvasPadding;
-        var prior = Nodes.Where(node => before.Contains(node.Id)).ToList();
-        if (prior.Count > 0)
+        var others = Nodes.Where(node => !members.Contains(node)).ToList();
+        if (others.Count > 0)
         {
-            anchorX = Math.Max(CanvasPadding, prior.Average(node => node.X));
-            anchorY = Math.Max(CanvasPadding, prior.Average(node => node.Y));
+            anchorX = Math.Max(CanvasPadding, others.Average(node => node.X));
+            anchorY = Math.Max(CanvasPadding, others.Average(node => node.Y));
         }
-        for (var i = 0; i < added.Count; i++)
+        for (var i = 0; i < members.Count; i++)
         {
-            added[i].X = anchorX;
-            added[i].Y = anchorY + (i * (CardHeight + 20.0));
-            CommitNodePosition(added[i]);
+            members[i].X = anchorX;
+            members[i].Y = anchorY + (i * (CardHeight + 20.0));
+            CommitNodePosition(members[i]);
         }
         EnsureGraphBounds();
 
-        // Wrap them in a visible "Inochi Shared Assets" sub-graph. It renders as
-        // one collapsed proxy card; drilling in shows the program + its shaders.
+        // Wrap them in a visible "Inochi Shared Assets" sub-graph. It renders as one
+        // collapsed proxy card; drilling in shows the program + its shaders.
         var subGraph = _grouping.CreateSubGraph(
             "Inochi Shared Assets",
-            added.Select(node => node.Id).ToList(),
+            members.Select(node => node.Id).ToList(),
             parentId: _context?.Id);
         subGraph.ProxyX = anchorX;
         subGraph.ProxyY = anchorY;
@@ -716,6 +720,28 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         GraphMutated?.Invoke(this);
         SelectSubGraph(subGraph);
         return true;
+    }
+
+    // The shared puppet-program node plus its dependency closure: the shader nodes
+    // feeding its program ports, and the source-file nodes feeding those shaders,
+    // traced backward through the graph edges (ToNodeId <- FromNodeId).
+    private List<AssetGraphNodeCardViewModel> SharedPuppetAssetNodes(
+        AssetGraphNodeCardViewModel program)
+    {
+        var ids = new HashSet<ulong> { program.Id };
+        var shaderIds = Edges
+            .Where(edge => edge.ToNodeId == program.Id)
+            .Select(edge => edge.FromNodeId)
+            .ToList();
+        foreach (var shaderId in shaderIds)
+        {
+            ids.Add(shaderId);
+            foreach (var edge in Edges.Where(edge => edge.ToNodeId == shaderId))
+            {
+                ids.Add(edge.FromNodeId);
+            }
+        }
+        return Nodes.Where(node => ids.Contains(node.Id)).ToList();
     }
 
     // Remove all currently selected nodes (and their edges) from the draft.
