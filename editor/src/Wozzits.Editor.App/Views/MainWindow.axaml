@@ -60,6 +60,10 @@
                 <Separator/>
                 <MenuItem Header="_Open Mind" x:Name="OpenMindMenu"/>
             </MenuItem>
+            <MenuItem Header="_Assets">
+                <MenuItem Header="Add _Inochi Shared Assets"
+                          Command="{Binding AddInochiSharedAssetsCommand}"/>
+            </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Theme">
                     <MenuItem Header="_Blue (Daylight)"

@@ -710,6 +710,49 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    internal EngineAddNodeResponse AddInochiSharedAssets(IntPtr session)
+    {
+        if (session == IntPtr.Zero)
+        {
+            return new EngineAddNodeResponse
+            {
+                Ok = false,
+                Error = "Engine editor session is closed.",
+            };
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorAssetGraphAddInochiSharedAssets(
+                session,
+                out var nodeId);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return new EngineAddNodeResponse { Ok = false, Error = result.Message };
+            }
+
+            return new EngineAddNodeResponse { Ok = true, NodeId = nodeId };
+        }
+        catch (DllNotFoundException ex)
+        {
+            return new EngineAddNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            return new EngineAddNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (BadImageFormatException ex)
+        {
+            return new EngineAddNodeResponse { Ok = false, Error = ex.Message };
+        }
+        catch (InvalidOperationException ex)
+        {
+            return new EngineAddNodeResponse { Ok = false, Error = ex.Message };
+        }
+    }
+
     internal EngineMutationResponse RemoveAssetGraphNode(IntPtr session, ulong nodeId)
     {
         if (session == IntPtr.Zero)

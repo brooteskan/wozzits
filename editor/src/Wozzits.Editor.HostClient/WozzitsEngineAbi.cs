@@ -315,6 +315,13 @@ internal static partial class WozzitsEngineAbi
 
     [LibraryImport(
         LibraryName,
+        EntryPoint = "wz_host_asset_graph_add_inochi_shared_assets")]
+    internal static partial WzResult WzEditorAssetGraphAddInochiSharedAssets(
+        IntPtr session,
+        out ulong outNodeId);
+
+    [LibraryImport(
+        LibraryName,
         EntryPoint = "wz_host_asset_graph_remove_node")]
     internal static partial WzResult WzEditorAssetGraphRemoveNode(
         IntPtr session,

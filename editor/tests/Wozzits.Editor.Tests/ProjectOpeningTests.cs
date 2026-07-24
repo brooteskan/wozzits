@@ -4374,6 +4374,11 @@ public sealed partial class ProjectOpeningTests
             return new EngineAddNodeResponse { Ok = true, NodeId = id };
         }
 
+        public EngineAddNodeResponse AddInochiSharedAssets()
+        {
+            return new EngineAddNodeResponse { Ok = true, NodeId = NextAddedNodeId++ };
+        }
+
         public List<ulong> RemovedNodes { get; } = [];
 
         public EngineMutationResponse RemoveAssetGraphNode(ulong nodeId)

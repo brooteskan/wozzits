@@ -69,6 +69,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _projectDirectory = projectDirectory ?? string.Empty;
         SaveAllCommand = new RelayCommand(SaveAll);
         RestartViewportCommand = new RelayCommand(RestartViewport, () => _editorSession is not null);
+        AddInochiSharedAssetsCommand = new RelayCommand(
+            AddInochiSharedAssets, () => _editorSession is not null);
         RebuildBehaviorsCommand = new AsyncRelayCommand(
             RebuildBehaviorsAsync,
             () => _editorSession is not null);
@@ -175,6 +177,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     public IRootDock EditorLayout { get; private set; } = null!;
     public IRelayCommand SaveAllCommand { get; }
     public IRelayCommand RestartViewportCommand { get; }
+    public IRelayCommand AddInochiSharedAssetsCommand { get; }
     public IAsyncRelayCommand RebuildBehaviorsCommand { get; }
     public IRelayCommand LaunchStandaloneCommand { get; }
 
@@ -622,6 +625,32 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // The runtime is back (or gone): re-enable the inspector's edit surface.
         // The scene tree self-heals (it re-checks on context-menu open).
         Inspector.RefreshEditAvailability();
+    }
+
+    // "Add Inochi shared assets" (inochi S2c item 6): provision the shared puppet
+    // render program subgraph once per project via the engine authoring routine
+    // (VS/PS shaders -> PuppetProgram). Idempotent. Puppet renderables then wire
+    // their program port to the returned program node.
+    private void AddInochiSharedAssets()
+    {
+        if (_editorSession is null)
+        {
+            return;
+        }
+
+        var response = _editorSession.AddInochiSharedAssets();
+        if (!response.Ok)
+        {
+            AppendEditorLog(
+                $"[editor] Add Inochi shared assets failed: {response.Error}");
+            return;
+        }
+
+        AppendEditorLog(
+            "[editor] Added Inochi shared assets: puppet render program node "
+            + response.NodeId
+            + " (wire puppet renderables' program port to it).");
+        AssetGraph.RefreshFromSession();
     }
 
     // Launch the project as a SEPARATE process (the shipped-app play path),

@@ -54,6 +54,11 @@ public interface IWozzitsEngineEditorSession
     // Add a new authored node for (schema, type) to the draft; returns its id.
     EngineAddNodeResponse AddAssetGraphNode(ulong schema, uint type);
 
+    // Find-or-create the shared "Inochi shared assets" subgraph (the puppet
+    // render program + its two staged shaders) in the draft. Idempotent; returns
+    // the puppet-program node id.
+    EngineAddNodeResponse AddInochiSharedAssets();
+
     // Remove a node (and edges touching it) from the draft.
     EngineMutationResponse RemoveAssetGraphNode(ulong nodeId);
 

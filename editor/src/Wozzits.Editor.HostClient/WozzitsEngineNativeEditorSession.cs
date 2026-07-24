@@ -125,6 +125,13 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             : new EngineAddNodeResponse { Ok = false, Error = error };
     }
 
+    public EngineAddNodeResponse AddInochiSharedAssets()
+    {
+        return HasNativeSession(out var error)
+            ? _client.AddInochiSharedAssets(_session)
+            : new EngineAddNodeResponse { Ok = false, Error = error };
+    }
+
     public EngineMutationResponse RemoveAssetGraphNode(ulong nodeId)
     {
         return HasNativeSession(out var error)
