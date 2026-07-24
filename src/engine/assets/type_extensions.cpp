@@ -453,6 +453,7 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kGaussianSplatFromPLYSchema, "Gaussian splat from PLY");
             WZ_ADD_SCHEMA(kGaussianSplatFromFieldSchema, "Gaussian splat from field");
             WZ_ADD_SCHEMA(kPuppetFromFileSchema, "Puppet from file");
+            WZ_ADD_SCHEMA(kPuppetProgramSchema, "Puppet program");
             WZ_ADD_SCHEMA(kPuppetRhiRenderableSchema, "Puppet renderable");
             WZ_ADD_SCHEMA(kGaussianSplatColorLODSchema, "Gaussian splat color LOD");
             WZ_ADD_SCHEMA(
