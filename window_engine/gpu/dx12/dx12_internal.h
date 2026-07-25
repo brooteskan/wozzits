@@ -51,6 +51,9 @@ namespace wz::gpu::dx12::internal
     bool read_texture_rgba8_dx12(
         Device& device, GPUHandle handle, std::vector<uint8_t>& out);
     bool read_backbuffer_rgba8_dx12(Device& device, std::vector<uint8_t>& out);
+    // Draw a texture onto the currently-bound render target as a fullscreen quad
+    // (S6 "2D surface" consumer). See dx12_blit.cpp.
+    bool blit_texture_dx12(Device& device, GPUHandle texture);
 
     ID3D12PipelineState* create_triangle_pso(
         wz::gpu::Device& device,

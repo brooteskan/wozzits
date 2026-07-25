@@ -20,6 +20,7 @@ target_sources(window_engine PRIVATE
     dx12/dx12_scalar_field_texture.cpp
     dx12/dx12_vector_field_texture.cpp
     dx12/dx12_scalar_field_debug.cpp
+    dx12/dx12_blit.cpp
     dx12/dx12_mesh.cpp
     dx12/dx12_mesh_field_visualization.cpp
     dx12/dx12_mesh_wireframe_debug.cpp

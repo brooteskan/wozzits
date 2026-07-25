@@ -385,6 +385,29 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
         EXPECT_GT(drawn, 0u)
             << "the puppet left no pixels in the offscreen render target "
                "(max channel value seen = " << static_cast<int>(max_channel) << ")";
+
+        // First S6 consumer -- the 2D surface: display that offscreen texture on a
+        // screen-space quad via the fullscreen blit, then read back the backbuffer.
+        // The puppet must appear -- proving RTT -> sample-on-a-surface -> screen end
+        // to end.
+        ASSERT_TRUE(wz::gpu::begin_frame(device));
+        EXPECT_TRUE(wz::gpu::dx12::internal::blit_texture_dx12(device, rt));
+        ASSERT_TRUE(wz::gpu::end_frame(device));
+        {
+            std::vector<std::uint8_t> bb2;
+            ASSERT_TRUE(
+                wz::gpu::dx12::internal::read_backbuffer_rgba8_dx12(device, bb2));
+            std::size_t lit = 0;
+            for (std::size_t i = 0; i + 3 < bb2.size(); i += 4) {
+                if (bb2[i] > 8u || bb2[i + 1] > 8u || bb2[i + 2] > 8u) {
+                    ++lit;
+                }
+            }
+            EXPECT_GT(lit, 0u)
+                << "the puppet texture did not appear on the backbuffer via the "
+                   "fullscreen blit";
+        }
+        wz::gpu::present(device, /*sync_interval*/ 0);
         wz::gpu::release_texture(device, rt);
 
         // Structural wiring proofs:

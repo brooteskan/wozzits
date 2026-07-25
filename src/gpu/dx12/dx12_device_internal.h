@@ -51,6 +51,17 @@ namespace wz::gpu::dx12
         GPUHandle splat_cloud{};
     };
 
+    // Offscreen render-to-texture display (S6): a fullscreen-triangle blit that
+    // samples an arbitrary RGBA texture onto the current render target. Lazily
+    // built on the first blit and reused; the SRV heap holds one shader-visible
+    // descriptor rewritten per blit for the source texture.
+    struct BlitContext
+    {
+        ID3D12RootSignature*  root_sig  = nullptr;
+        ID3D12PipelineState*  pso       = nullptr;
+        ID3D12DescriptorHeap* srv_heap  = nullptr;
+    };
+
     struct DX12Device
     {
         //fences
@@ -91,6 +102,7 @@ namespace wz::gpu::dx12
         uint32_t scalar_field_srv_count = 0;
 
         ScalarFieldDebugContext* scalar_debug_ctx = nullptr;
+        BlitContext* blit_ctx = nullptr;
         MeshWireframeDebugContext* mesh_wire_debug_ctx = nullptr;
         GaussianSplatDebugContext* gaussian_splat_debug_ctx = nullptr;
 

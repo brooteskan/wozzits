@@ -729,6 +729,19 @@ namespace wz::gpu::dx12
             delete impl->scalar_debug_ctx;
             impl->scalar_debug_ctx = nullptr;
         }
+        if (impl->blit_ctx) {
+            if (impl->blit_ctx->pso) {
+                impl->blit_ctx->pso->Release();
+            }
+            if (impl->blit_ctx->root_sig) {
+                impl->blit_ctx->root_sig->Release();
+            }
+            if (impl->blit_ctx->srv_heap) {
+                impl->blit_ctx->srv_heap->Release();
+            }
+            delete impl->blit_ctx;
+            impl->blit_ctx = nullptr;
+        }
         impl->scalar_field_textures.destroy();
 
         if (impl->scalar_field_srv_heap) {
@@ -970,6 +983,8 @@ namespace wz::gpu::dx12::internal
         if (!transition_texture_to_render_target_dx12(d, rt)) {
             return false;
         }
+        // No depth target: the overlay/puppet path is depth-disabled. A dedicated
+        // offscreen depth buffer is a follow-up for depth-tested content.
         impl->cmd->OMSetRenderTargets(1, &tex->rtv, FALSE, nullptr);
         D3D12_VIEWPORT vp{};
         vp.TopLeftX = 0.0f;
