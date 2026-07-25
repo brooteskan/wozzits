@@ -62,6 +62,17 @@ namespace wz::gpu::dx12
         ID3D12DescriptorHeap* srv_heap  = nullptr;
     };
 
+    // Textured 3D mesh (S6 3D-mesh consumer): draw a textured quad transformed by a
+    // caller MVP, sampling an arbitrary texture -- the RTT texture on a world
+    // surface. Same lazy root-sig/PSO/SRV-heap shape as BlitContext, plus a 16-float
+    // MVP root constant.
+    struct TexturedQuadContext
+    {
+        ID3D12RootSignature*  root_sig  = nullptr;
+        ID3D12PipelineState*  pso       = nullptr;
+        ID3D12DescriptorHeap* srv_heap  = nullptr;
+    };
+
     struct DX12Device
     {
         //fences
@@ -103,6 +114,7 @@ namespace wz::gpu::dx12
 
         ScalarFieldDebugContext* scalar_debug_ctx = nullptr;
         BlitContext* blit_ctx = nullptr;
+        TexturedQuadContext* textured_quad_ctx = nullptr;
         MeshWireframeDebugContext* mesh_wire_debug_ctx = nullptr;
         GaussianSplatDebugContext* gaussian_splat_debug_ctx = nullptr;
 

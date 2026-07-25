@@ -54,6 +54,10 @@ namespace wz::gpu::dx12::internal
     // Draw a texture onto the currently-bound render target as a fullscreen quad
     // (S6 "2D surface" consumer). See dx12_blit.cpp.
     bool blit_texture_dx12(Device& device, GPUHandle texture);
+    // Draw a texture on a unit quad transformed by a column-major MVP
+    // (S6 "3D-mesh surface" consumer). See dx12_textured_quad.cpp.
+    bool draw_textured_quad_dx12(
+        Device& device, GPUHandle texture, const float mvp[16]);
 
     ID3D12PipelineState* create_triangle_pso(
         wz::gpu::Device& device,

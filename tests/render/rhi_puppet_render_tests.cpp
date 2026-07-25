@@ -408,6 +408,52 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
                    "fullscreen blit";
         }
         wz::gpu::present(device, /*sync_interval*/ 0);
+
+        // Third S6 consumer -- the 3D-mesh surface: display the SAME offscreen
+        // texture on a quad transformed by an MVP (a 25-degree Y-tilt, scaled to
+        // 0.8, pushed to mid-depth), then read back the backbuffer. Two things must
+        // hold: bright puppet pixels appear (the textured-quad draw sampled the RTT),
+        // and the screen corners outside the tilted quad stay at the clear colour
+        // (it is a transformed *partial* surface, not the fullscreen blit).
+        ASSERT_TRUE(wz::gpu::begin_frame(device));
+        wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+        // Column-major MVP (the engine's shader convention): Y-rotation(25 deg) *
+        // scale(0.8), with z translated to 0.5 so every corner lands in the [0,1]
+        // clip-depth range (depth test is off, but the rasteriser still clips on z).
+        const float mvp3d[16] = {
+            0.72505f, 0.0f, -0.33810f, 0.0f,   // column 0
+            0.0f,     0.8f,  0.0f,     0.0f,   // column 1
+            0.33810f, 0.0f,  0.72505f, 0.0f,   // column 2
+            0.0f,     0.0f,  0.5f,     1.0f,   // column 3
+        };
+        EXPECT_TRUE(
+            wz::gpu::dx12::internal::draw_textured_quad_dx12(device, rt, mvp3d));
+        ASSERT_TRUE(wz::gpu::end_frame(device));
+        {
+            std::vector<std::uint8_t> bb3;
+            ASSERT_TRUE(
+                wz::gpu::dx12::internal::read_backbuffer_rgba8_dx12(device, bb3));
+            std::size_t bright = 0;           // puppet content, well above the clear
+            std::size_t clear_remaining = 0;  // untouched corners outside the quad
+            for (std::size_t i = 0; i + 3 < bb3.size(); i += 4) {
+                if (bb3[i] > 80u || bb3[i + 1] > 80u || bb3[i + 2] > 80u) {
+                    ++bright;
+                }
+                const int dr = static_cast<int>(bb3[i]) - 26;
+                const int dg = static_cast<int>(bb3[i + 1]) - 26;
+                const int db = static_cast<int>(bb3[i + 2]) - 31;
+                if (!(dr > 15 || dr < -15 || dg > 15 || dg < -15
+                      || db > 15 || db < -15)) {
+                    ++clear_remaining;
+                }
+            }
+            EXPECT_GT(bright, 0u)
+                << "no bright puppet pixels appeared on the transformed 3D quad";
+            EXPECT_GT(clear_remaining, 0u)
+                << "the 3D quad covered the whole screen -- expected a transformed "
+                   "partial surface with clear-coloured corners";
+        }
+        wz::gpu::present(device, /*sync_interval*/ 0);
         wz::gpu::release_texture(device, rt);
 
         // Structural wiring proofs:

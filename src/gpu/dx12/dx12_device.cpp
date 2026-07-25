@@ -742,6 +742,19 @@ namespace wz::gpu::dx12
             delete impl->blit_ctx;
             impl->blit_ctx = nullptr;
         }
+        if (impl->textured_quad_ctx) {
+            if (impl->textured_quad_ctx->pso) {
+                impl->textured_quad_ctx->pso->Release();
+            }
+            if (impl->textured_quad_ctx->root_sig) {
+                impl->textured_quad_ctx->root_sig->Release();
+            }
+            if (impl->textured_quad_ctx->srv_heap) {
+                impl->textured_quad_ctx->srv_heap->Release();
+            }
+            delete impl->textured_quad_ctx;
+            impl->textured_quad_ctx = nullptr;
+        }
         impl->scalar_field_textures.destroy();
 
         if (impl->scalar_field_srv_heap) {
