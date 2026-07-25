@@ -322,7 +322,8 @@ namespace wz::engine::rendering
             // rebuild the moving pose, every Part's placement root constants are
             // repacked, and a Part's WriteFrequent vertex buffer is re-uploaded
             // only when its mesh actually moved (per-buffer GPU flush -- see
-            // issue #278). puppet_to_target/viewport fit the puppet on the target.
+            // issue #278). The fit-to-target placement is recomputed per render from
+            // puppet_bounds + the target size (#280), not stored here.
             const wz::engine::assets::inochi::Puppet* puppet_source = nullptr;
             wz::engine::assets::inochi::PuppetParams puppet_params;
             wz::engine::assets::inochi::PuppetPhysics puppet_physics;
@@ -333,13 +334,13 @@ namespace wz::engine::rendering
             // only deviations (physics, breathing) move it. Removes a large static
             // rest deform the raw evaluator otherwise applies.
             wz::engine::assets::inochi::PuppetDeform puppet_deform_baseline;
-            wz::engine::assets::inochi::Affine2D puppet_to_target{};
-            float puppet_viewport_w = 0.0f;
-            float puppet_viewport_h = 0.0f;
-            // Puppet-space bounds height (captured at realize), so the breathing /
-            // idle-motion amplitude scales with the puppet's size instead of a fixed
-            // pixel count (puppets can be thousands of px tall).
-            float puppet_bounds_height = 0.0f;
+            // Puppet-space rest bounds (captured at realize). Used to recompute the
+            // fit-to-target placement per render for the CURRENT target size (#280,
+            // so RTT into an arbitrary-sized texture lands), and to scale the
+            // breathing amplitude with the puppet's height (puppets are thousands of
+            // px tall, so a fixed pixel amplitude is imperceptible).
+            std::array<float, 2> puppet_bounds_min{};
+            std::array<float, 2> puppet_bounds_max{};
             struct PuppetPartRuntime
             {
                 wz::rhi::GpuResourceHandle vertices{};
@@ -410,8 +411,11 @@ namespace wz::engine::rendering
         // pendulums from a subtle breathing anchor, rebuilds the deformed pose,
         // repacks each Part's placement root constants, and re-uploads a Part's
         // WriteFrequent vertex buffer only when its mesh actually moved this frame.
-        // Called from the per-frame packing loop for an is_puppet renderable.
-        void update_puppet_pose(RealizedRenderable& realized);
+        // Called from the per-frame packing loop for an is_puppet renderable;
+        // target_w/target_h are the current render target's dimensions (backbuffer
+        // or offscreen texture) so the fit-to-target placement is recomputed for it.
+        void update_puppet_pose(
+            RealizedRenderable& realized, uint32_t target_w, uint32_t target_h);
 
         // Pack a camera-follow terrain draw-constant block (the 32-dword
         // ClipmapDrawConstants: view_projection + per-level snap / world→uv /

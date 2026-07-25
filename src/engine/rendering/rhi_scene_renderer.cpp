@@ -206,24 +206,26 @@ namespace wz::engine::rendering
 
         // Place a puppet on a render target: fit its puppet-space bounds into the
         // target viewport (keeping aspect, small margin) and center it. Returns the
-        // puppet->target 2D affine the VS applies before mapping to NDC. Screen for
-        // S2; S6/RTT passes the offscreen texture's dimensions here instead -- the
-        // viewport is a PARAMETER, not a screen assumption.
+        // puppet->target 2D affine the VS applies before mapping to NDC. The viewport
+        // is a PARAMETER, not a screen assumption -- the overlay passes the
+        // backbuffer size, an S6/RTT pass passes the offscreen texture's size (#280),
+        // recomputed per render from the target dimensions.
         wz::engine::assets::inochi::Affine2D puppet_target_placement(
-            const wz::engine::assets::inochi::ResidentPuppet& puppet,
+            const std::array<float, 2>& bounds_min,
+            const std::array<float, 2>& bounds_max,
             float viewport_w,
             float viewport_h)
         {
-            const float pw = puppet.bounds_max[0] - puppet.bounds_min[0];
-            const float ph = puppet.bounds_max[1] - puppet.bounds_min[1];
+            const float pw = bounds_max[0] - bounds_min[0];
+            const float ph = bounds_max[1] - bounds_min[1];
             float scale = 1.0f;
             if (pw > 0.0f && ph > 0.0f && viewport_w > 0.0f && viewport_h > 0.0f) {
                 const float sx = viewport_w / pw;
                 const float sy = viewport_h / ph;
                 scale = (sx < sy ? sx : sy) * 0.9f;
             }
-            const float pcx = 0.5f * (puppet.bounds_min[0] + puppet.bounds_max[0]);
-            const float pcy = 0.5f * (puppet.bounds_min[1] + puppet.bounds_max[1]);
+            const float pcx = 0.5f * (bounds_min[0] + bounds_max[0]);
+            const float pcy = 0.5f * (bounds_min[1] + bounds_max[1]);
 
             wz::engine::assets::inochi::Affine2D m;
             m.a = scale; m.b = 0.0f; m.tx = 0.5f * viewport_w - scale * pcx;
@@ -1492,16 +1494,15 @@ namespace wz::engine::rendering
             // S2). The per-Part packet build below reads only the ResidentPuppet,
             // the program/layout, the shared view SRG, this placement, and the
             // pass -- no backbuffer assumption -- so S6/RTT reuses it verbatim.
+            prealized.puppet_bounds_min = puppet.bounds_min;
+            prealized.puppet_bounds_max = puppet.bounds_max;
+            // Initial placement for the realize-time packet build; render_scene
+            // recomputes it per frame for the actual target (#280).
             const wz::engine::assets::inochi::Affine2D puppet_to_target =
                 puppet_target_placement(
-                    puppet,
+                    puppet.bounds_min, puppet.bounds_max,
                     screen_constants_.viewport[0],
                     screen_constants_.viewport[1]);
-            prealized.puppet_to_target = puppet_to_target;
-            prealized.puppet_viewport_w = screen_constants_.viewport[0];
-            prealized.puppet_viewport_h = screen_constants_.viewport[1];
-            prealized.puppet_bounds_height =
-                puppet.bounds_max[1] - puppet.bounds_min[1];
 
             // Reserve so the per-Part SRG addresses the packets capture stay valid.
             prealized.puppet_part_srgs.reserve(puppet.parts.size());
@@ -2094,7 +2095,8 @@ namespace wz::engine::rendering
         out.assign(bytes, bytes + sizeof(constants));
     }
 
-    void RhiSceneRenderer::update_puppet_pose(RealizedRenderable& realized)
+    void RhiSceneRenderer::update_puppet_pose(
+        RealizedRenderable& realized, uint32_t target_w, uint32_t target_h)
     {
         namespace ino = wz::engine::assets::inochi;
         if (!realized.puppet_source) {
@@ -2105,6 +2107,13 @@ namespace wz::engine::rendering
         if (node_count == 0) {
             return;
         }
+
+        // Fit-to-target placement recomputed for THIS render's target dimensions
+        // (#280), so the puppet lands whether the target is the backbuffer or an
+        // arbitrary-sized offscreen texture -- not the realize-time viewport.
+        const ino::Affine2D puppet_to_target = puppet_target_placement(
+            realized.puppet_bounds_min, realized.puppet_bounds_max,
+            static_cast<float>(target_w), static_cast<float>(target_h));
 
         // Time base + a subtle breathing bob (primary motion). SimplePhysics only
         // sways in response to a MOVING anchor -- a perfectly static puppet settles
@@ -2120,9 +2129,9 @@ namespace wz::engine::rendering
         // puppets of any size (they can be thousands of px tall); a fixed px was
         // sub-percent and imperceptible here.
         constexpr float kBreathHz = 0.25f;
-        const float breath_amp = realized.puppet_bounds_height > 1.0f
-            ? realized.puppet_bounds_height * 0.035f
-            : 40.0f;
+        const float bounds_h =
+            realized.puppet_bounds_max[1] - realized.puppet_bounds_min[1];
+        const float breath_amp = bounds_h > 1.0f ? bounds_h * 0.035f : 40.0f;
         const float breath = breath_amp * std::sin(t * kTwoPi * kBreathHz);
 
         // Primary deform = the breathing bob on the root (node 0), used to move the
@@ -2204,7 +2213,7 @@ namespace wz::engine::rendering
             // Placement root constants: recomputed every frame (CPU only, no GPU
             // sync), so breathing + transform-driven deform is always current.
             const ino::Affine2D m =
-                ino::compose(realized.puppet_to_target, dp.placement);
+                ino::compose(puppet_to_target, dp.placement);
             const float block[8] = {
                 m.a, m.b, m.tx, dp.opacity,
                 m.c, m.d, m.ty, 0.0f,
@@ -2533,9 +2542,9 @@ namespace wz::engine::rendering
             }
             else if (realized->is_puppet) {
                 // Advance physics + deform and repack each Part's placement /
-                // vertices for this frame (S3c/S7). Static puppets settle quickly;
-                // a moving-anchor pendulum keeps swaying.
-                update_puppet_pose(*realized);
+                // vertices for this frame (S3c/S7), fitting the puppet to the
+                // current target (backbuffer or offscreen texture, #280).
+                update_puppet_pose(*realized, target_w, target_h);
             }
             else {
                 const wz::math::Mat4& world =

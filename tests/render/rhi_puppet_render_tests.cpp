@@ -343,14 +343,14 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
         wz::gpu::present(device, /*sync_interval*/ 0);
 
         // Offscreen render-to-texture (S6): render the SAME puppet into an RGBA8
-        // render-target texture and read it back. The puppet's Parts must leave
-        // non-transparent pixels -- proving a real multi-draw (PSO + geometry)
-        // renders into a texture, not just a clear. The RT matches the render
-        // dimensions so the realized (screen-placed) puppet lands in it; RTT to an
-        // arbitrary-sized target needs per-target placement (a follow-up).
+        // render target and read it back. The puppet's Parts must leave
+        // non-transparent pixels -- a real multi-draw (PSO + geometry) into a
+        // texture, not just a clear. The RT is a 512x512 SQUARE, deliberately a
+        // different size + aspect than the backbuffer, to prove per-target placement
+        // (#280): the puppet is re-fitted to the target each render, so it lands.
         wz::gpu::TextureDesc rt_desc{};
-        rt_desc.width = wz::gpu::dx12::internal::get_width(device);
-        rt_desc.height = wz::gpu::dx12::internal::get_height(device);
+        rt_desc.width = 512;
+        rt_desc.height = 512;
         rt_desc.format = wz::gpu::TextureFormat::RGBA8Unorm;
         rt_desc.render_target = true;
         const wz::gpu::GPUHandle rt = wz::gpu::create_texture(device, rt_desc);
