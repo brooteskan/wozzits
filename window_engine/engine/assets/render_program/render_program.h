@@ -144,6 +144,12 @@ namespace wz::engine::assets
         PuppetVertices,
         PuppetIndices,
         PuppetAtlas,
+        // A mesh's albedo/base-colour material texture, sampled in the surface
+        // shader. Distinct from OverlayTexture (a 2D sprite drawn as itself):
+        // this one is a SURFACE input, and it is what the material compositor
+        // writes -- a base colour plus placed art (labels, decals, a puppet)
+        // built into one texture the lit shader samples through the mesh's UV.
+        MaterialAlbedo,
     };
 
     // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
@@ -151,7 +157,7 @@ namespace wz::engine::assets
     // it as a Tag (enum → name), and authored render-binding-layout rows name
     // their semantic as a string that resolves back to the enum (name → enum).
     // Index == enum value; a new DescriptorSemantic member extends this array.
-    inline constexpr std::array<std::string_view, 19> kDescriptorSemanticNames = {
+    inline constexpr std::array<std::string_view, 20> kDescriptorSemanticNames = {
         "unknown",
         "splat_cloud",
         "sorted_splat_indices",
@@ -171,6 +177,7 @@ namespace wz::engine::assets
         "puppet_vertices",
         "puppet_indices",
         "puppet_atlas",
+        "material_albedo",
     };
 
     [[nodiscard]] constexpr std::string_view descriptor_semantic_name(
