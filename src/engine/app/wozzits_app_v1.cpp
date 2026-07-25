@@ -2906,14 +2906,25 @@ namespace wz::app
             return true;
         }
 
-        // Gather the scene's puppet nodes (recipe carries a puppet_key). The
-        // world transforms are irrelevant to the puppet's screen-space placement
-        // -- the renderer fits it to the offscreen target -- so identities satisfy
-        // the renderer's index-aligned parallel-array contract.
+        // Gather the scene's puppet nodes (recipe carries a puppet_key) and, in
+        // lockstep, the WORLD transform of the first one -- the card is anchored to
+        // that scene-node transform (below), so the puppet lives wherever the node
+        // sits in the world. scene_world_transforms() is index-aligned with
+        // document_.nodes(); the puppet-space placement into the RTT itself is
+        // target-fit by the renderer, so the node transform only positions the card.
+        const std::vector<wz::math::Mat4> world_transforms =
+            scene_world_transforms();
         std::vector<wz::engine::assets::SceneNodeAsset> puppet_nodes;
-        for (const auto& node : document_.nodes()) {
-            if (is_puppet_node(node)) {
-                puppet_nodes.push_back(node);
+        wz::math::Mat4 card_anchor = wz::math::Mat4::identity();
+        bool have_anchor = false;
+        for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
+            if (!is_puppet_node(document_.nodes()[i])) {
+                continue;
+            }
+            puppet_nodes.push_back(document_.nodes()[i]);
+            if (!have_anchor && i < world_transforms.size()) {
+                card_anchor = world_transforms[i];
+                have_anchor = true;
             }
         }
         if (puppet_nodes.empty()) {
@@ -2946,27 +2957,26 @@ namespace wz::app
         // Advance the idle spin (a slow turn; frame-paced -- this is a showcase).
         puppet_card_angle_ += 0.02f;
 
-        // Draw the card: a Y-spin of a unit quad. Under this orthographic MVP the
-        // quad's width scales by cos(angle) -- it turns edge-on at 90 deg and back
-        // -- which reads as a card rotating in depth. x is divided by the target's
-        // aspect so the (square) puppet texture stays square on a 16:9 backbuffer;
-        // z is pinned to 0.5 so every corner stays inside the [0,1] clip range.
+        // World-anchored card: MVP = view_projection * node_world * spin * scale.
+        // The card lives at the puppet node's scene-graph world transform, spins
+        // about the node's local Y (so it reads as a surface turning in the world),
+        // and is viewed through the scene camera -- move/rotate/scale the node in
+        // the editor and the card follows. The quad is +/-1 in its local XY plane,
+        // so half_size sets its half-extent in world units. Depth is disabled (the
+        // quad draws over the scene rather than being occluded by it) -- proper
+        // occlusion against scene depth is a follow-up.
+        const float half_size = 40.0f;  // world-space half-extent of the card
         const float angle = puppet_card_angle_;
-        const float cos_a = std::cos(angle);
-        const float half = 0.55f;  // card half-height in NDC
-        const float target_w =
-            static_cast<float>(wz::gpu::dx12::internal::get_width(ctx_.device));
-        const float target_h =
-            static_cast<float>(wz::gpu::dx12::internal::get_height(ctx_.device));
-        const float aspect = target_h > 0.0f ? target_w / target_h : 1.0f;
-        const float mvp[16] = {
-            half * cos_a / aspect, 0.0f, 0.0f, 0.0f,   // column 0 (x <- px)
-            0.0f,                  half, 0.0f, 0.0f,   // column 1 (y <- py)
-            0.0f,                  0.0f, 0.0f, 0.0f,   // column 2 (z-basis, quad z=0)
-            0.0f,                  0.0f, 0.5f, 1.0f,   // column 3 (fixed depth)
-        };
+        const wz::math::Quaternion spin_q{
+            0.0f, std::sin(angle * 0.5f), 0.0f, std::cos(angle * 0.5f) };
+        const wz::math::Mat4 card_local = wz::math::mul(
+            wz::math::rotation(spin_q),
+            wz::math::scale(wz::math::Vec3{ half_size, half_size, half_size }));
+        const wz::math::Mat4 card_model = wz::math::mul(card_anchor, card_local);
+        const wz::math::Mat4 mvp_mat = wz::math::mul(
+            view_.active_view().view_projection, card_model);
         wz::gpu::dx12::internal::draw_textured_quad_dx12(
-            ctx_.device, puppet_card_rtt_, mvp);
+            ctx_.device, puppet_card_rtt_, mvp_mat.m);
         return true;
     }
 

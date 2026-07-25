@@ -558,8 +558,8 @@
       "transform": {
         "translation": [
           0,
-          0,
-          0
+          30,
+          150
         ],
         "rotation_quat": [
           0,
