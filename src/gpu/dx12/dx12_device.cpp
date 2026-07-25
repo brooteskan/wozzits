@@ -951,6 +951,72 @@ namespace wz::gpu::dx12::internal
         return impl->height;
     }
 
+    // Offscreen render-to-texture (S6). Begin: transition the render-target texture
+    // to RENDER_TARGET, bind it as the sole color target at its own dimensions
+    // (no depth -- the overlay/puppet path is depth-Disabled), and clear it. Draws
+    // recorded after this land in the texture. Must be inside a begin_frame/
+    // end_frame bracket (uses the device's open command list). `clear_color` may be
+    // null to skip the clear.
+    bool begin_offscreen_pass(Device& d, GPUHandle rt, const float clear_color[4])
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        if (!impl || !impl->cmd) {
+            return false;
+        }
+        DX12Texture* tex = impl->textures.get(rt);
+        if (!tex || !tex->valid() || !tex->is_render_target || !tex->rtv_heap) {
+            return false;
+        }
+        if (!transition_texture_to_render_target_dx12(d, rt)) {
+            return false;
+        }
+        impl->cmd->OMSetRenderTargets(1, &tex->rtv, FALSE, nullptr);
+        D3D12_VIEWPORT vp{};
+        vp.TopLeftX = 0.0f;
+        vp.TopLeftY = 0.0f;
+        vp.Width = static_cast<float>(tex->width);
+        vp.Height = static_cast<float>(tex->height);
+        vp.MinDepth = 0.0f;
+        vp.MaxDepth = 1.0f;
+        D3D12_RECT sc{ 0, 0,
+            static_cast<LONG>(tex->width), static_cast<LONG>(tex->height) };
+        impl->cmd->RSSetViewports(1, &vp);
+        impl->cmd->RSSetScissorRects(1, &sc);
+        if (clear_color) {
+            impl->cmd->ClearRenderTargetView(tex->rtv, clear_color, 0, nullptr);
+        }
+        return true;
+    }
+
+    // End an offscreen pass: transition the texture back to shader-read (so it can
+    // be sampled) and rebind the backbuffer + its viewport so any subsequent draws
+    // this frame hit the screen.
+    bool end_offscreen_pass(Device& d, GPUHandle rt)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        if (!impl || !impl->cmd) {
+            return false;
+        }
+        if (!transition_texture_to_shader_read_dx12(d, rt)) {
+            return false;
+        }
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv = get_current_rtv(d);
+        D3D12_CPU_DESCRIPTOR_HANDLE dsv = get_dsv(d);
+        impl->cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+        D3D12_VIEWPORT vp{};
+        vp.TopLeftX = 0.0f;
+        vp.TopLeftY = 0.0f;
+        vp.Width = static_cast<float>(get_width(d));
+        vp.Height = static_cast<float>(get_height(d));
+        vp.MinDepth = 0.0f;
+        vp.MaxDepth = 1.0f;
+        D3D12_RECT sc{ 0, 0,
+            static_cast<LONG>(get_width(d)), static_cast<LONG>(get_height(d)) };
+        impl->cmd->RSSetViewports(1, &vp);
+        impl->cmd->RSSetScissorRects(1, &sc);
+        return true;
+    }
+
 
     GPUHandle store_shader(
         Device& d,

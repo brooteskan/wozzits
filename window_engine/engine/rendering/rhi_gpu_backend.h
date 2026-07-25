@@ -96,6 +96,9 @@ namespace wz::engine::rendering
         out.depth = desc.depth;
         out.mip_levels = desc.mip_levels;
         out.format = format;
+        // Offscreen render-to-texture (S6): a texture the renderer draws into.
+        out.render_target =
+            (desc.usage & wz::rhi::ResourceUsage_RenderTarget) != 0u;
         return true;
     }
 

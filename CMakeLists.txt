@@ -1103,6 +1103,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(render rhi_star_field_render_tests)
     rs_add_test_group(render rhi_puppet_render_tests)
     rs_add_test_group(render rhi_puppet_authoring_render_tests)
+    rs_add_test_group(render rhi_offscreen_rt_tests)
     rs_add_test_group(render clipmap_view_tests)
     rs_add_test_group(render wozzits_app_behavior_dispatch_tests)
 

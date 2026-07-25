@@ -42,6 +42,15 @@ namespace wz::gpu::dx12::internal
     UINT get_width(Device& d);
     UINT get_height(Device& d);
 
+    // Offscreen render-to-texture (S6). See the definitions in dx12_device.cpp
+    // (begin/end pass) and dx12_texture.cpp (transitions + readback).
+    bool begin_offscreen_pass(Device& d, GPUHandle rt, const float clear_color[4]);
+    bool end_offscreen_pass(Device& d, GPUHandle rt);
+    bool transition_texture_to_render_target_dx12(Device& device, GPUHandle handle);
+    bool transition_texture_to_shader_read_dx12(Device& device, GPUHandle handle);
+    bool read_texture_rgba8_dx12(
+        Device& device, GPUHandle handle, std::vector<uint8_t>& out);
+
     ID3D12PipelineState* create_triangle_pso(
         wz::gpu::Device& device,
         ID3D12RootSignature* root_sig,
@@ -141,6 +150,13 @@ namespace wz::gpu::dx12::internal {
         uint32_t              mip_levels = 1;
         DXGI_FORMAT           format     = DXGI_FORMAT_UNKNOWN;
         D3D12_RESOURCE_STATES state      = D3D12_RESOURCE_STATE_COMMON;
+
+        // Offscreen render-to-texture (S6): when the texture was created renderable
+        // it owns a 1-descriptor RTV heap + handle so a pass can bind it as a color
+        // target; null/zero for a plain sampled texture. Released with the texture.
+        ID3D12DescriptorHeap*       rtv_heap = nullptr;
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv{};
+        bool                        is_render_target = false;
 
         bool valid() const noexcept
         {

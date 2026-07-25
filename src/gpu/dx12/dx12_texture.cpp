@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 namespace wz::gpu::dx12::internal
 {
@@ -67,7 +68,8 @@ namespace wz::gpu::dx12::internal
 
         D3D12_RESOURCE_DESC make_texture_desc(
             const DX12Texture& tex,
-            wz::gpu::TextureDimension dimension)
+            wz::gpu::TextureDimension dimension,
+            bool render_target)
         {
             D3D12_RESOURCE_DESC desc{};
             desc.Dimension = to_d3d12_dimension(dimension);
@@ -80,7 +82,9 @@ namespace wz::gpu::dx12::internal
             desc.SampleDesc.Count = 1;
             desc.SampleDesc.Quality = 0;
             desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-            desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+            desc.Flags = render_target
+                ? D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET
+                : D3D12_RESOURCE_FLAG_NONE;
             return desc;
         }
 
@@ -204,6 +208,9 @@ namespace wz::gpu::dx12::internal
         if (slot.tex.texture) {
             slot.tex.texture->Release();
         }
+        if (slot.tex.rtv_heap) {
+            slot.tex.rtv_heap->Release();
+        }
         slot.tex = DX12Texture{};
         slot.occupied = false;
         ++slot.epoch;
@@ -218,6 +225,9 @@ namespace wz::gpu::dx12::internal
         for (Slot& slot : slots_) {
             if (slot.occupied && slot.tex.texture) {
                 slot.tex.texture->Release();
+            }
+            if (slot.occupied && slot.tex.rtv_heap) {
+                slot.tex.rtv_heap->Release();
             }
             slot.tex = DX12Texture{};
             slot.occupied = false;
@@ -249,11 +259,23 @@ namespace wz::gpu::dx12::internal
         tex.depth = desc.depth;
         tex.mip_levels = desc.mip_levels;
         tex.format = format;
-        // Created ready to receive its first upload.
-        tex.state = D3D12_RESOURCE_STATE_COPY_DEST;
+        tex.is_render_target = desc.render_target;
+        // A render target rests SRV-readable (so it can be sampled) and is only
+        // transitioned to RENDER_TARGET while a pass draws into it; nothing uploads
+        // into it. A plain texture is created ready to receive its first upload.
+        tex.state = desc.render_target
+            ? kShaderReadState
+            : D3D12_RESOURCE_STATE_COPY_DEST;
 
         const D3D12_RESOURCE_DESC resource_desc =
-            make_texture_desc(tex, desc.dimension);
+            make_texture_desc(tex, desc.dimension, desc.render_target);
+
+        // A renderable resource takes an optimized clear value matching its format
+        // (transparent black); a plain texture takes none.
+        D3D12_CLEAR_VALUE clear_value{};
+        clear_value.Format = format;
+        clear_value.Color[0] = clear_value.Color[1] =
+            clear_value.Color[2] = clear_value.Color[3] = 0.0f;
 
         D3D12_HEAP_PROPERTIES default_heap{};
         default_heap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -267,10 +289,27 @@ namespace wz::gpu::dx12::internal
             D3D12_HEAP_FLAG_NONE,
             &resource_desc,
             tex.state,
-            nullptr,
+            desc.render_target ? &clear_value : nullptr,
             IID_PPV_ARGS(&tex.texture));
         if (FAILED(hr) || !tex.texture) {
             return INVALID_GPU_HANDLE;
+        }
+
+        // Render target: own a 1-descriptor RTV heap + view so an offscreen pass
+        // can bind it as a color target (OMSetRenderTargets).
+        if (desc.render_target) {
+            D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
+            rtv_heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+            rtv_heap_desc.NumDescriptors = 1;
+            rtv_heap_desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+            hr = impl->device->CreateDescriptorHeap(
+                &rtv_heap_desc, IID_PPV_ARGS(&tex.rtv_heap));
+            if (FAILED(hr) || !tex.rtv_heap) {
+                tex.texture->Release();
+                return INVALID_GPU_HANDLE;
+            }
+            tex.rtv = tex.rtv_heap->GetCPUDescriptorHandleForHeapStart();
+            impl->device->CreateRenderTargetView(tex.texture, nullptr, tex.rtv);
         }
 
         return impl->textures.add(tex);
@@ -484,5 +523,175 @@ namespace wz::gpu::dx12::internal
             return nullptr;
         }
         return impl->textures.get(handle);
+    }
+
+    // ── Offscreen render-to-texture state transitions + readback (S6) ────
+
+    namespace
+    {
+        bool record_texture_transition(
+            Device& device, GPUHandle handle, D3D12_RESOURCE_STATES to)
+        {
+            auto* impl = static_cast<DX12Device*>(device.impl);
+            if (!impl || !impl->cmd) {
+                return false;
+            }
+            DX12Texture* tex = impl->textures.get(handle);
+            if (!tex || !tex->valid()) {
+                return false;
+            }
+            if (tex->state == to) {
+                return true;
+            }
+            D3D12_RESOURCE_BARRIER barrier{};
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition.pResource = tex->texture;
+            barrier.Transition.StateBefore = tex->state;
+            barrier.Transition.StateAfter = to;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            impl->cmd->ResourceBarrier(1, &barrier);
+            tex->state = to;
+            return true;
+        }
+    }
+
+    // Record (into the device's open command list) a transition of a render-target
+    // texture to RENDER_TARGET so a pass can draw into it, or back to shader-read
+    // so it can be sampled. No-ops if already in that state.
+    bool transition_texture_to_render_target_dx12(Device& device, GPUHandle handle)
+    {
+        return record_texture_transition(
+            device, handle, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    }
+
+    bool transition_texture_to_shader_read_dx12(Device& device, GPUHandle handle)
+    {
+        return record_texture_transition(device, handle, kShaderReadState);
+    }
+
+    // Read an RGBA8 texture back to CPU (tightly-packed width*height*4 bytes).
+    // Self-contained: own command list + GPU wait, so call it after the frame that
+    // rendered the texture. Returns false for a non-RGBA8 texture or on failure.
+    bool read_texture_rgba8_dx12(
+        Device& device, GPUHandle handle, std::vector<uint8_t>& out)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !impl->device || !impl->queue || !impl->fence
+            || !impl->fence_event)
+        {
+            return false;
+        }
+        DX12Texture* tex = impl->textures.get(handle);
+        if (!tex || !tex->valid()
+            || tex->format != DXGI_FORMAT_R8G8B8A8_UNORM)
+        {
+            return false;
+        }
+        ID3D12Device* d3d = impl->device;
+
+        const D3D12_RESOURCE_DESC tex_desc = tex->texture->GetDesc();
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
+        UINT num_rows = 0;
+        UINT64 row_size = 0;
+        UINT64 total_bytes = 0;
+        d3d->GetCopyableFootprints(
+            &tex_desc, 0, 1, 0, &footprint, &num_rows, &row_size, &total_bytes);
+
+        D3D12_HEAP_PROPERTIES readback_heap{};
+        readback_heap.Type = D3D12_HEAP_TYPE_READBACK;
+        readback_heap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        readback_heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        readback_heap.CreationNodeMask = 1;
+        readback_heap.VisibleNodeMask = 1;
+
+        const D3D12_RESOURCE_DESC buf_desc = make_upload_buffer_desc(total_bytes);
+        ID3D12Resource* readback = nullptr;
+        HRESULT hr = d3d->CreateCommittedResource(
+            &readback_heap, D3D12_HEAP_FLAG_NONE, &buf_desc,
+            D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback));
+        if (FAILED(hr)) {
+            return false;
+        }
+
+        ID3D12CommandAllocator* allocator = nullptr;
+        hr = d3d->CreateCommandAllocator(
+            D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator));
+        if (FAILED(hr)) {
+            readback->Release();
+            return false;
+        }
+        ID3D12GraphicsCommandList* cmd = nullptr;
+        hr = d3d->CreateCommandList(
+            0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator, nullptr,
+            IID_PPV_ARGS(&cmd));
+        if (FAILED(hr)) {
+            allocator->Release();
+            readback->Release();
+            return false;
+        }
+
+        const D3D12_RESOURCE_STATES prev = tex->state;
+        D3D12_RESOURCE_BARRIER to_src{};
+        to_src.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        to_src.Transition.pResource = tex->texture;
+        to_src.Transition.StateBefore = prev;
+        to_src.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        to_src.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        cmd->ResourceBarrier(1, &to_src);
+
+        D3D12_TEXTURE_COPY_LOCATION dst{};
+        dst.pResource = readback;
+        dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        dst.PlacedFootprint = footprint;
+        D3D12_TEXTURE_COPY_LOCATION src{};
+        src.pResource = tex->texture;
+        src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        src.SubresourceIndex = 0;
+        cmd->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+
+        D3D12_RESOURCE_BARRIER to_prev = to_src;
+        to_prev.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        to_prev.Transition.StateAfter = prev;
+        cmd->ResourceBarrier(1, &to_prev);
+
+        hr = cmd->Close();
+        if (FAILED(hr)) {
+            cmd->Release();
+            allocator->Release();
+            readback->Release();
+            return false;
+        }
+        ID3D12CommandList* lists[] = { cmd };
+        impl->queue->ExecuteCommandLists(1, lists);
+        const bool waited = wait_for_gpu(impl);
+        cmd->Release();
+        allocator->Release();
+        if (!waited) {
+            readback->Release();
+            return false;
+        }
+
+        uint8_t* mapped = nullptr;
+        D3D12_RANGE read_range{ 0, static_cast<SIZE_T>(total_bytes) };
+        hr = readback->Map(0, &read_range, reinterpret_cast<void**>(&mapped));
+        if (FAILED(hr) || !mapped) {
+            readback->Release();
+            return false;
+        }
+
+        const uint32_t w = tex->width;
+        const uint32_t h = tex->height;
+        out.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 4u);
+        const uint64_t row_pitch = footprint.Footprint.RowPitch;
+        const uint64_t tight = static_cast<uint64_t>(w) * 4u;
+        for (uint32_t y = 0; y < h; ++y) {
+            std::memcpy(
+                out.data() + static_cast<size_t>(y) * static_cast<size_t>(tight),
+                mapped + footprint.Offset + static_cast<uint64_t>(y) * row_pitch,
+                static_cast<size_t>(tight));
+        }
+        readback->Unmap(0, nullptr);
+        readback->Release();
+        return true;
     }
 }

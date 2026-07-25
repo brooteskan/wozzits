@@ -59,6 +59,11 @@ namespace wz::gpu
         // supports only mip_levels == 1 for now (rejected otherwise).
         uint32_t         mip_levels = 1;
         TextureFormat    format = TextureFormat::R32Float;
+        // When true the texture is created renderable: D3D12 ALLOW_RENDER_TARGET +
+        // an owned RTV, so a pass can draw into it, and it rests SRV-readable so it
+        // can then be sampled. Set from rhi ResourceUsage_RenderTarget. Offscreen
+        // render-to-texture (S6). mip_levels must be 1 for a render target.
+        bool             render_target = false;
 
         bool valid() const noexcept
         {
@@ -77,6 +82,14 @@ namespace wz::gpu
                 return false;
             }
             if (mip_levels > max_mip_levels(width, height)) {
+                return false;
+            }
+            // A render target is a single full-res surface (no mip chain to draw
+            // into) and 2D only.
+            if (render_target
+                && (mip_levels != 1u
+                    || dimension != TextureDimension::Texture2D))
+            {
                 return false;
             }
             return true;
