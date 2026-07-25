@@ -9,6 +9,8 @@ cbuffer PuppetPartBlock : register(b0, space2)
 {
     float4 xform_row0;
     float4 xform_row1;
+    float4 part_tint;
+    float4 part_screen_tint;
 };
 
 struct WzPuppetVertex

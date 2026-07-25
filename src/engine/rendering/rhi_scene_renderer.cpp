@@ -1443,7 +1443,8 @@ namespace wz::engine::rendering
         // ── Puppet branch (inochi S2b) ──────────────────────────────────────
         // No pull mesh; N packets, one per Part. Each Part binds its resident
         // interleaved-vertex / index / atlas by identity into an object SRG, and
-        // its PuppetPartBlock (a 2D affine placement + opacity) as root constants.
+        // its PuppetPartBlock (a 2D affine placement + opacity + tints) as root
+        // constants.
         // All Parts share one Screen view head (the viewport). Parts are already
         // draw-ordered (back-to-front by zsort) in the ResidentPuppet.
         if (source->puppet) {
@@ -1543,15 +1544,19 @@ namespace wz::engine::rendering
                     return nullptr;
                 }
 
-                // PuppetPartBlock (8 dwords): a 2D affine (Part-local px -> screen
-                // px) row-packed + opacity. affine = puppet->target o Part
+                // PuppetPartBlock (16 dwords): a 2D affine (Part-local px ->
+                // screen px) row-packed + opacity, then the Part's multiply tint
+                // and screen tint (#276). affine = puppet->target o Part
                 // placement.
                 const wz::engine::assets::inochi::Affine2D m =
                     wz::engine::assets::inochi::compose(
                         puppet_to_target, part.placement);
-                const float block[8] = {
+                const float block[16] = {
                     m.a, m.b, m.tx, part.opacity,
                     m.c, m.d, m.ty, 0.0f,
+                    part.tint[0], part.tint[1], part.tint[2], 0.0f,
+                    part.screen_tint[0], part.screen_tint[1],
+                    part.screen_tint[2], 0.0f,
                 };
 
                 wz::rhi::GeometryView geometry;
@@ -2214,9 +2219,11 @@ namespace wz::engine::rendering
             // sync), so breathing + transform-driven deform is always current.
             const ino::Affine2D m =
                 ino::compose(puppet_to_target, dp.placement);
-            const float block[8] = {
+            const float block[16] = {
                 m.a, m.b, m.tx, dp.opacity,
                 m.c, m.d, m.ty, 0.0f,
+                dp.tint[0], dp.tint[1], dp.tint[2], 0.0f,
+                dp.screen_tint[0], dp.screen_tint[1], dp.screen_tint[2], 0.0f,
             };
             realized.puppet_packets[pi].root_constants.assign(
                 reinterpret_cast<const uint8_t*>(block),

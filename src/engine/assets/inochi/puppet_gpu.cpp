@@ -27,6 +27,27 @@ namespace wz::engine::assets::inochi
         "PuppetVertex must be 16 bytes (float2 pos + float2 uv) to match the "
         "puppet vertex-pull StructuredBuffer stride and the HLSL WzPuppetVertex");
 
+    std::vector<std::uint8_t> premultiply_rgba8(
+        const std::vector<std::uint8_t>& straight)
+    {
+        // Size is not required to be a multiple of 4; a ragged tail is copied as
+        // zero rather than read past (callers pass width*height*4).
+        std::vector<std::uint8_t> out(straight.size());
+        for (std::size_t i = 0; i + 3 < straight.size(); i += 4) {
+            const std::uint32_t a = straight[i + 3];
+            // Exact round-half-up 8-bit premultiply. a=255 is preserved
+            // bit-for-bit and a=0 collapses to 0, which is the whole point of
+            // the exercise. Runs once per page when the puppet loads, never per
+            // frame -- a 2048x2048 page is ~12M of these.
+            for (std::size_t c = 0; c < 3; ++c) {
+                out[i + c] = static_cast<std::uint8_t>(
+                    (straight[i + c] * a + 127u) / 255u);
+            }
+            out[i + 3] = straight[i + 3];
+        }
+        return out;
+    }
+
     bool publish_resident_puppet(
         const wz::asset::AssetKey& key,
         const Puppet& puppet,
@@ -72,6 +93,19 @@ namespace wz::engine::assets::inochi
                 continue;
             }
 
+            // Premultiply the page before upload (#277). Inochi's .inp textures
+            // are STRAIGHT alpha, and their fully-transparent texels are stored
+            // black. A bilinear tap that straddles a Part's border interpolates
+            // rgb and alpha independently, so the filtered rgb is dragged toward
+            // that black while the filtered alpha still says "partly visible" --
+            // the dark fringe. Premultiplying FIRST makes the interpolation
+            // correct, because a transparent texel then contributes zero colour
+            // instead of black colour. (Premultiplying in the pixel shader
+            // instead cannot fix this: it happens after the sampler has already
+            // filtered, and rgb*a with a ONE/INV_SRC_ALPHA blend is algebraically
+            // the same result straight alpha + SRC_ALPHA/INV_SRC_ALPHA gives.)
+            std::vector<std::uint8_t> premultiplied = premultiply_rgba8(tex.rgba);
+
             wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::texture_2d(
                 tex.width,
                 tex.height,
@@ -85,8 +119,8 @@ namespace wz::engine::assets::inochi
             const bool uploaded =
                 handle.valid()
                 && gpu_resources.update_mip(
-                    handle, /*mip_level*/ 0, tex.rgba.data(),
-                    static_cast<std::uint64_t>(tex.rgba.size()));
+                    handle, /*mip_level*/ 0, premultiplied.data(),
+                    static_cast<std::uint64_t>(premultiplied.size()));
             if (!uploaded) {
                 if (handle.valid()) {
                     gpu_resources.release(handle);
@@ -166,6 +200,8 @@ namespace wz::engine::assets::inochi
             rp.node_index = part.node_index;
             rp.placement = part.placement;
             rp.opacity = part.opacity;
+            rp.tint = part.tint;
+            rp.screen_tint = part.screen_tint;
             rp.blend = part.blend;
             rp.zsort = part.zsort;
             out.parts.push_back(rp);

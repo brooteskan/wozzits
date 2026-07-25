@@ -12,12 +12,20 @@
 // the draws. This structurally proves the wiring; it does NOT verify the puppet
 // looks right -- there is no view of the viewport. Skipped when no Aka.inp
 // fixture or no GPU device is available.
+//
+// The shaders + SRG come from ensure_puppet_program(), i.e. the SHIPPING puppet
+// program, staged into a temp resource root. The test used to carry its own
+// byte-compatible copies of both; that made it possible to change the shipping
+// shader and the SRG together and still watch the test pass against its own
+// stale pair. Driving the real program is what makes the root-constant block
+// size, the shader source and the PSO blend mode fail together when they drift.
 
 #include <gtest/gtest.h>
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/file_carrier_asset_module.h>
 #include <engine/assets/puppet_asset_module.h>
+#include <engine/assets/puppet_program.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/render_program/render_program_asset_module.h>
 #include <engine/assets/renderable/renderable.h>
@@ -42,7 +50,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <vector>
 
@@ -50,153 +57,6 @@ namespace
 {
     namespace ea = wz::engine::assets;
     namespace fs = std::filesystem;
-
-    // The puppet shaders, written into a self-contained temp resource root so the
-    // test never depends on the staged resources tree. Byte-compatible with
-    // resources/shaders/puppet/puppet_vs.hlsl + puppet_ps.hlsl: a Screen view head
-    // at (t0, space0); interleaved WzPuppetVertex at (t0, space2), indices t1,
-    // atlas t2, sampler s0; the PuppetPartBlock (2D affine + opacity) at (b0,
-    // space2). The space2 bindings require Shader Model 5.1.
-    constexpr const char* kPuppetVs = R"(
-struct WzScreenConstants
-{
-    float4 viewport;
-};
-StructuredBuffer<WzScreenConstants> screen_constants : register(t0, space0);
-
-cbuffer PuppetPartBlock : register(b0, space2)
-{
-    float4 xform_row0;
-    float4 xform_row1;
-};
-
-struct WzPuppetVertex
-{
-    float2 pos;
-    float2 uv;
-};
-StructuredBuffer<WzPuppetVertex> vertices : register(t0, space2);
-StructuredBuffer<uint>           indices  : register(t1, space2);
-
-struct VSOut
-{
-    float4 pos : SV_POSITION;
-    float2 uv  : TEXCOORD0;
-};
-
-VSOut main(uint vid : SV_VertexID)
-{
-    uint           idx = indices[vid];
-    WzPuppetVertex v   = vertices[idx];
-    float2 px = float2(
-        xform_row0.x * v.pos.x + xform_row0.y * v.pos.y + xform_row0.z,
-        xform_row1.x * v.pos.x + xform_row1.y * v.pos.y + xform_row1.z);
-    float2 vp  = screen_constants[0].viewport.xy;
-    float2 ndc = px * (2.0f / vp) - 1.0f;
-    VSOut o;
-    o.pos = float4(ndc.x, -ndc.y, 0.0f, 1.0f);
-    o.uv  = v.uv;
-    return o;
-}
-)";
-
-    constexpr const char* kPuppetPs = R"(
-cbuffer PuppetPartBlock : register(b0, space2)
-{
-    float4 xform_row0;
-    float4 xform_row1;
-};
-
-Texture2D<float4> atlas   : register(t2, space2);
-SamplerState      atlas_s : register(s0, space2);
-
-struct PSIn
-{
-    float4 pos : SV_POSITION;
-    float2 uv  : TEXCOORD0;
-};
-
-float4 main(PSIn input) : SV_TARGET
-{
-    float4 tex     = atlas.SampleLevel(atlas_s, input.uv, 0.0f);
-    float  opacity = xform_row0.w;
-    return float4(tex.rgb, tex.a * opacity);
-}
-)";
-
-    void write_text_file(const fs::path& path, const char* text)
-    {
-        fs::create_directories(path.parent_path());
-        std::ofstream out(path, std::ios::binary);
-        ASSERT_TRUE(out.good()) << "failed to open " << path.string();
-        out << text;
-    }
-
-    // The puppet program's SRG, authored directly (create_custom takes an explicit
-    // CustomRenderProgramDesc). MUST match puppet_vs/ps.hlsl: a "puppet_part"
-    // root-constant block (8 dwords = 2 float4) at (b0, space2), the Screen view
-    // head at (t0, space0), and the object SRG PuppetVertices t0 / PuppetIndices
-    // t1 / PuppetAtlas t2 + a LinearClamp sampler s0, all in space 2.
-    ea::CustomRenderProgramDesc puppet_program_desc(const std::string& name)
-    {
-        ea::CustomRenderProgramDesc desc{};
-        desc.name = name;
-        desc.binding_model = ea::RenderBindingModel::MeshVertexPull;
-        desc.topology = ea::RenderPrimitiveTopology::TriangleList;
-        desc.default_domain = ea::RenderDomain::Opaque;
-        desc.default_policy_flags = ea::RenderPolicy_None;
-        desc.input_layout = ea::InputLayoutKind::None;
-        desc.blend_mode = wz::rhi::BlendMode::AlphaBlend;
-        desc.depth_mode = ea::DepthMode::Disabled;
-        desc.raster_mode = ea::RasterMode::SolidCullNone;
-
-        desc.root_constants.push_back(ea::RootConstantBinding{
-            .visibility = ea::ShaderVisibility::All,
-            .shader_register = 0,
-            .register_space = 2,
-            .value_count = 8,
-            .semantic = "puppet_part",
-        });
-        desc.descriptor_bindings.push_back(ea::DescriptorBinding{
-            .kind = ea::DescriptorKind::StructuredBufferSRV,
-            .visibility = ea::ShaderVisibility::Vertex,
-            .semantic = ea::DescriptorSemantic::ScreenConstants,
-            .shader_register = 0,
-            .register_space = 0,
-            .descriptor_count = 1,
-        });
-        desc.descriptor_bindings.push_back(ea::DescriptorBinding{
-            .kind = ea::DescriptorKind::StructuredBufferSRV,
-            .visibility = ea::ShaderVisibility::Vertex,
-            .semantic = ea::DescriptorSemantic::PuppetVertices,
-            .shader_register = 0,
-            .register_space = 2,
-            .descriptor_count = 1,
-        });
-        desc.descriptor_bindings.push_back(ea::DescriptorBinding{
-            .kind = ea::DescriptorKind::StructuredBufferSRV,
-            .visibility = ea::ShaderVisibility::Vertex,
-            .semantic = ea::DescriptorSemantic::PuppetIndices,
-            .shader_register = 1,
-            .register_space = 2,
-            .descriptor_count = 1,
-        });
-        desc.descriptor_bindings.push_back(ea::DescriptorBinding{
-            .kind = ea::DescriptorKind::TextureSRV,
-            .visibility = ea::ShaderVisibility::Pixel,
-            .semantic = ea::DescriptorSemantic::PuppetAtlas,
-            .shader_register = 2,
-            .register_space = 2,
-            .descriptor_count = 1,
-        });
-        desc.static_samplers.push_back(ea::StaticSamplerBinding{
-            .kind = ea::StaticSamplerKind::LinearClamp,
-            .visibility = ea::ShaderVisibility::Pixel,
-            .shader_register = 0,
-            .register_space = 2,
-        });
-        return desc;
-    }
 }
 
 TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
@@ -235,8 +95,6 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
                          .time_since_epoch()
                          .count())));
         fs::remove_all(root);
-        write_text_file(root / "shaders" / "puppet" / "puppet_vs.hlsl", kPuppetVs);
-        write_text_file(root / "shaders" / "puppet" / "puppet_ps.hlsl", kPuppetPs);
 
         ea::EngineAssetLibrary assets(gpu, logger, root.string());
 
@@ -255,23 +113,14 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
                     .source_file = inp_file });
         ASSERT_TRUE(puppet.valid());
 
-        // 3) The puppet render program (space2 bindings require SM 5.1).
-        const ea::ShaderPairAsset shaders =
-            assets.shaders().create_shader_pair({
-                .name = "puppet/program",
-                .vertex_path = "shaders/puppet/puppet_vs.hlsl",
-                .pixel_path = "shaders/puppet/puppet_ps.hlsl",
-                .vertex_target = "vs_5_1",
-                .pixel_target = "ps_5_1",
-            });
-        ASSERT_TRUE(shaders.valid());
-
-        ea::CustomRenderProgramDesc program_desc =
-            puppet_program_desc("puppet/program");
-        program_desc.vertex_shader = shaders.vertex_shader;
-        program_desc.pixel_shader = shaders.pixel_shader;
-        const ea::RenderProgramAsset program =
-            assets.render_programs().create_custom(program_desc);
+        // 3) The SHIPPING puppet render program: stages the canonical shaders
+        // into this temp root, registers the pair (vs_5_1/ps_5_1 -- the space2
+        // bindings require SM 5.1) and builds the fixed puppet SRG.
+        const ea::RenderProgramAsset program = ea::ensure_puppet_program(
+            logger,
+            assets.files(),
+            assets.shaders(),
+            assets.render_programs());
         ASSERT_TRUE(program.valid());
 
         // 4) The puppet renderable binding the two.
@@ -369,7 +218,8 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
         ASSERT_EQ(pixels.size(),
             static_cast<std::size_t>(rt_desc.width) * rt_desc.height * 4u);
         // The target was cleared to (0,0,0,0); count texels the puppet touched (any
-        // channel non-zero -- overlay AlphaBlend leaves the visible result in RGB).
+        // channel non-zero -- the premultiplied overlay blend leaves the visible
+        // result in RGB).
         std::size_t drawn = 0;
         std::uint8_t max_channel = 0;
         for (std::size_t i = 0; i + 3 < pixels.size(); i += 4) {

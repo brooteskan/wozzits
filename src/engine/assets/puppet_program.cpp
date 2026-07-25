@@ -21,9 +21,11 @@ namespace wz::engine::assets
         //
         // VS: a Screen view head at (t0, space0) supplies the viewport; the
         // interleaved WzPuppetVertex (pos+uv) is pulled at (t0, space2) via the
-        // index buffer at t1; the PuppetPartBlock (2D affine + opacity) is the
-        // 8-dword "puppet_part" root constant at (b0, space2). PS: sample the
-        // Part's atlas at t2/space2 and modulate alpha by opacity.
+        // index buffer at t1; the PuppetPartBlock (2D affine + opacity + the two
+        // colour-modulation triples) is the 16-dword "puppet_part" root constant
+        // at (b0, space2). PS: sample the Part's atlas at t2/space2 (resident
+        // PREMULTIPLIED, #277), apply tint/screen_tint, scale by opacity, and
+        // emit premultiplied for the program's PremultipliedAlpha blend.
         constexpr const char* kPuppetVsSource = R"HLSL(
 struct WzScreenConstants
 {
@@ -35,6 +37,8 @@ cbuffer PuppetPartBlock : register(b0, space2)
 {
     float4 xform_row0;
     float4 xform_row1;
+    float4 part_tint;
+    float4 part_screen_tint;
 };
 
 struct WzPuppetVertex
@@ -72,6 +76,8 @@ cbuffer PuppetPartBlock : register(b0, space2)
 {
     float4 xform_row0;
     float4 xform_row1;
+    float4 part_tint;
+    float4 part_screen_tint;
 };
 
 Texture2D<float4> atlas   : register(t2, space2);
@@ -85,9 +91,11 @@ struct PSIn
 
 float4 main(PSIn input) : SV_TARGET
 {
-    float4 tex     = atlas.SampleLevel(atlas_s, input.uv, 0.0f);
-    float  opacity = xform_row0.w;
-    return float4(tex.rgb, tex.a * opacity);
+    float4 tex = atlas.SampleLevel(atlas_s, input.uv, 0.0f);
+    float3 rgb = tex.rgb * part_tint.rgb;
+    rgb = rgb + part_screen_tint.rgb * (tex.a - rgb);
+    float opacity = xform_row0.w;
+    return float4(rgb * opacity, tex.a * opacity);
 }
 )HLSL";
 
@@ -133,7 +141,10 @@ float4 main(PSIn input) : SV_TARGET
         desc.default_domain = RenderDomain::Opaque;
         desc.default_policy_flags = RenderPolicy_None;
         desc.input_layout = InputLayoutKind::None;
-        desc.blend_mode = wz::rhi::BlendMode::AlphaBlend;
+        // The atlas is resident premultiplied and the PS keeps it that way
+        // (#277), so the "over" blend must be the premultiplied one -- AlphaBlend
+        // would scale the already-scaled colour by alpha a second time.
+        desc.blend_mode = wz::rhi::BlendMode::PremultipliedAlpha;
         desc.depth_mode = DepthMode::Disabled;
         desc.raster_mode = RasterMode::SolidCullNone;
 
@@ -141,7 +152,10 @@ float4 main(PSIn input) : SV_TARGET
             .visibility = ShaderVisibility::All,
             .shader_register = 0,
             .register_space = 2,
-            .value_count = 8,
+            // 16 dwords = 4 float4: affine rows 0/1 (+opacity), tint, screen
+            // tint. Must match the PuppetPartBlock packers in
+            // rhi_scene_renderer.cpp (realize + per-frame).
+            .value_count = 16,
             .semantic = "puppet_part",
         });
         desc.descriptor_bindings.push_back(DescriptorBinding{

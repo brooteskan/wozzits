@@ -74,12 +74,16 @@ namespace wz::engine::assets::internal
             "Gaussian splat vertex",
         };
 
-        constexpr std::array<std::string_view, 5> kBlendModeOptions = {
+        // Index-aligned with wz::rhi::BlendMode; enum_param clamps against the
+        // option count, so a member added there MUST be added here or the dial
+        // silently falls back to the default.
+        constexpr std::array<std::string_view, 6> kBlendModeOptions = {
             "Opaque",
             "Alpha blend",
             "Additive",
             "Multiply",
             "Screen",
+            "Premultiplied alpha",
         };
 
         constexpr std::array<std::string_view, 3> kDepthModeOptions = {

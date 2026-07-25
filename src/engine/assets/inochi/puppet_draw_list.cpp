@@ -3,7 +3,7 @@
 // Flatten a loaded Puppet into a static, draw-ordered list of Parts. Pure CPU:
 // accumulate the 2D node-transform chain and zsort top-down from the root, then
 // emit each enabled drawable Part with its placement affine, interleaved pos+uv
-// vertices, indices, atlas page, opacity, and blend. See puppet_draw_list.h.
+// vertices, indices, atlas page, opacity, tint and blend. See puppet_draw_list.h.
 
 #include <engine/assets/inochi/puppet_draw_list.h>
 
@@ -160,6 +160,8 @@ namespace wz::engine::assets::inochi
             part.node_index = i;
             part.placement = world[i];
             part.opacity = node.opacity;
+            part.tint = node.tint;
+            part.screen_tint = node.screen_tint;
             part.blend = node.blend_mode;
             part.zsort = zacc[i];
             part.atlas_texture = node.textures.empty() ? 0u : node.textures[0];

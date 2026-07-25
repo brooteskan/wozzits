@@ -29,6 +29,10 @@ cbuffer PuppetPartBlock : register(b0, space2)
     //   screen_px.y = row1.x * v.x + row1.y * v.y + row1.z
     float4 xform_row0;  // a, b, tx, opacity
     float4 xform_row1;  // c, d, ty, (unused)
+    // Per-Part colour modulation, consumed by the PS only (#276). Declared here
+    // too so the VS and PS agree on the block the root signature provides.
+    float4 part_tint;        // rgb = multiply tint, w unused
+    float4 part_screen_tint; // rgb = screen tint,   w unused
 };
 
 struct WzPuppetVertex

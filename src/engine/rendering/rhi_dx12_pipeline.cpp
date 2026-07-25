@@ -455,6 +455,24 @@ namespace
             rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
             rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         }
+        else if (program.blend_mode
+                 == wz::rhi::BlendMode::PremultipliedAlpha) {
+            // src*ONE + dst*InvSrcAlpha. The "over" operator for sources whose
+            // PS already multiplied rgb by alpha, so a texel at alpha 0.5 no
+            // longer contributes only half its colour on top of a full-weight
+            // AlphaBlend fade -- which is what darkens transparent Part borders
+            // (#277). Identical to AlphaBlend in the alpha channel.
+            D3D12_RENDER_TARGET_BLEND_DESC& rt =
+                desc.BlendState.RenderTarget[0];
+            rt.BlendEnable = TRUE;
+            rt.SrcBlend = D3D12_BLEND_ONE;
+            rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOp = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+            rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
 
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
         switch (program.depth_mode) {

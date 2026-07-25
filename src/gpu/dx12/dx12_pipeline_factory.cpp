@@ -1251,6 +1251,21 @@ namespace wz::gpu::dx12::internal
             rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
             rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         }
+        else if (data.blend_mode == BM::PremultipliedAlpha)
+        {
+            // src*ONE + dst*InvSrcAlpha — "over" for a PS that already
+            // multiplied rgb by alpha (#277).
+            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
+            rt.BlendEnable           = TRUE;
+            rt.LogicOpEnable         = FALSE;
+            rt.SrcBlend              = D3D12_BLEND_ONE;
+            rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOp               = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
+            rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
 
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
         switch (data.depth_mode)
@@ -1273,7 +1288,10 @@ namespace wz::gpu::dx12::internal
         }
 
         desc.NumRenderTargets = 1;
-        desc.RTVFormats[0]    = (data.blend_mode == BM::AlphaBlend)
+        // The alpha-compositing modes draw ONTO the backbuffer, so they must
+        // take its exact format; everything else targets a plain RGBA8 surface.
+        desc.RTVFormats[0]    = (data.blend_mode == BM::AlphaBlend
+                                 || data.blend_mode == BM::PremultipliedAlpha)
             ? get_backbuffer_format()
             : DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.SampleMask       = UINT_MAX;

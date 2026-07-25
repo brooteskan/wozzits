@@ -46,7 +46,7 @@ namespace wz::engine::assets
     // (write-if-missing), registers the shader pair, and creates/dedups the
     // custom render program carrying the fixed puppet SRG (Screen view head at
     // t0/space0; PuppetVertices t0 / PuppetIndices t1 / PuppetAtlas t2 + a
-    // LinearClamp sampler s0 in space2; the 8-dword "puppet_part" root-constant
+    // LinearClamp sampler s0 in space2; the 16-dword "puppet_part" root-constant
     // block at b0/space2). Idempotent: a second call returns the same asset.
     // Returns an invalid asset on failure (caller logs/skips the renderable).
     RenderProgramAsset ensure_puppet_program(

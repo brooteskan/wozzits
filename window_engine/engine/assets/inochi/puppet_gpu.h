@@ -45,6 +45,8 @@ namespace wz::engine::assets::inochi
         std::size_t node_index = 0;          // index into Puppet::nodes (deform match)
         Affine2D placement;                  // Part-local pixels -> puppet pixels
         float opacity = 1.0f;
+        std::array<float, 3> tint{ 1.0f, 1.0f, 1.0f };        // multiply (#276)
+        std::array<float, 3> screen_tint{ 0.0f, 0.0f, 0.0f };  // screen (#276)
         BlendMode blend = BlendMode::Normal;
         float zsort = 0.0f;
     };
@@ -63,6 +65,19 @@ namespace wz::engine::assets::inochi
 
         [[nodiscard]] bool empty() const noexcept { return parts.empty(); }
     };
+
+    // Convert a straight-alpha RGBA8 buffer to PREMULTIPLIED alpha in place of a
+    // copy (rgb *= a, alpha untouched), rounding half up.
+    //
+    // Part of the puppet's residency contract (#277): atlas pages are made
+    // resident premultiplied, and puppet_ps.hlsl reads them as such. Inochi
+    // stores its textures straight-alpha with black transparent texels, so a
+    // bilinear tap across a Part's border would otherwise drag the filtered rgb
+    // toward black while the filtered alpha still reads "partly visible" -- the
+    // dark edge fringe. Premultiplying BEFORE the sampler filters is the fix;
+    // doing it in the pixel shader afterwards is algebraically a no-op.
+    [[nodiscard]] std::vector<std::uint8_t> premultiply_rgba8(
+        const std::vector<std::uint8_t>& straight);
 
     // Publish `puppet`'s residency onto `gpu_resources` under the asset `key`: one
     // Texture2D per decoded atlas page, and per drawable Part (draw order =

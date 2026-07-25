@@ -57,6 +57,11 @@ namespace wz::engine::assets::inochi
         std::uint32_t atlas_texture = 0;        // index into Puppet::textures (albedo page)
         Affine2D placement;                     // Part-local pixels -> puppet pixels
         float opacity = 1.0f;
+        // Per-Part colour modulation, carried from the node (#276). `tint`
+        // multiplies (identity {1,1,1}); `screen_tint` screens over the result
+        // (identity {0,0,0}).
+        std::array<float, 3> tint{ 1.0f, 1.0f, 1.0f };
+        std::array<float, 3> screen_tint{ 0.0f, 0.0f, 0.0f };
         BlendMode blend = BlendMode::Normal;
         float zsort = 0.0f;                     // accumulated; draw-order key
     };

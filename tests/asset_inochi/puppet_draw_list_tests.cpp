@@ -2,8 +2,8 @@
 //
 // Pure (device-free) coverage of build_puppet_draw_list: the static flatten of a
 // Puppet into draw-ordered Parts -- transform accumulation, zsort ordering,
-// pos/uv interleave, atlas/opacity/blend carry-through, disabled/empty skipping,
-// and puppet-space bounds. No GPU, no fixture: hand-built puppets only.
+// pos/uv interleave, atlas/opacity/tint/blend carry-through, disabled/empty
+// skipping, and puppet-space bounds. No GPU, no fixture: hand-built puppets only.
 
 #include <gtest/gtest.h>
 
@@ -49,6 +49,8 @@ TEST(PuppetDrawList, FlattensAndOrdersByZsort)
     ino::Node front = make_triangle_part(11, /*zsort*/ 1.0f, /*atlas*/ 2);
     front.transform.trans = { 10.0f, 0.0f, 0.0f };
     front.opacity = 0.5f;
+    front.tint = { 0.25f, 0.5f, 0.75f };
+    front.screen_tint = { 0.1f, 0.2f, 0.3f };
     front.blend_mode = ino::BlendMode::Multiply;
     puppet.nodes.push_back(front);
 
@@ -70,6 +72,15 @@ TEST(PuppetDrawList, FlattensAndOrdersByZsort)
     EXPECT_EQ(fp.atlas_texture, 2u);
     EXPECT_FLOAT_EQ(fp.opacity, 0.5f);
     EXPECT_EQ(fp.blend, ino::BlendMode::Multiply);
+    // Colour modulation carries per-Part (#276) -- this was parsed onto the node
+    // and dropped here for the whole of S2.
+    EXPECT_EQ(fp.tint, (std::array<float, 3>{ 0.25f, 0.5f, 0.75f }));
+    EXPECT_EQ(fp.screen_tint, (std::array<float, 3>{ 0.1f, 0.2f, 0.3f }));
+
+    // The -1 Part authored no tint, so it must carry the identities: a multiply
+    // of 1 and a screen of 0 leave the sampled colour untouched in the PS.
+    EXPECT_EQ(list.parts[1].tint, (std::array<float, 3>{ 1.0f, 1.0f, 1.0f }));
+    EXPECT_EQ(list.parts[1].screen_tint, (std::array<float, 3>{ 0.0f, 0.0f, 0.0f }));
 
     // Interleaved pos+uv, indices preserved.
     ASSERT_EQ(fp.vertices.size(), 3u);
