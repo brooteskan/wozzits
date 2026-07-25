@@ -1467,6 +1467,11 @@ namespace wz::engine::rendering
             prealized.puppet_physics =
                 wz::engine::assets::inochi::make_puppet_physics(
                     *prealized.puppet_source);
+            // Deform baseline at default params: the per-frame pose is taken
+            // relative to this so default params render the base (rest) mesh.
+            prealized.puppet_deform_baseline =
+                wz::engine::assets::inochi::evaluate_puppet_deform(
+                    *prealized.puppet_source, prealized.puppet_params);
 
             // The shared Screen view head (viewport), bound once and reused by
             // every Part packet.
@@ -1495,6 +1500,8 @@ namespace wz::engine::rendering
             prealized.puppet_to_target = puppet_to_target;
             prealized.puppet_viewport_w = screen_constants_.viewport[0];
             prealized.puppet_viewport_h = screen_constants_.viewport[1];
+            prealized.puppet_bounds_height =
+                puppet.bounds_max[1] - puppet.bounds_min[1];
 
             // Reserve so the per-Part SRG addresses the packets capture stay valid.
             prealized.puppet_part_srgs.reserve(puppet.parts.size());
@@ -2106,9 +2113,17 @@ namespace wz::engine::rendering
         const float t = static_cast<float>(render_scene_calls_) * (1.0f / 60.0f);
         constexpr float kDt = 1.0f / 60.0f;
         constexpr float kTwoPi = 6.2831853f;
-        constexpr float kBreathHz = 0.25f;   // slow breath
-        constexpr float kBreathAmp = 6.0f;   // px
-        const float breath = kBreathAmp * std::sin(t * kTwoPi * kBreathHz);
+        // A gentle vertical breathing bob on the root. This is the primary motion
+        // the SimplePhysics pendulums react to -- a perfectly static puppet settles
+        // to its gravity rest and stops -- and a visible sign of life on its own.
+        // The amplitude scales with the puppet's height (~3.5%) so it reads on
+        // puppets of any size (they can be thousands of px tall); a fixed px was
+        // sub-percent and imperceptible here.
+        constexpr float kBreathHz = 0.25f;
+        const float breath_amp = realized.puppet_bounds_height > 1.0f
+            ? realized.puppet_bounds_height * 0.035f
+            : 40.0f;
+        const float breath = breath_amp * std::sin(t * kTwoPi * kBreathHz);
 
         // Primary deform = the breathing bob on the root (node 0), used to move the
         // pendulum anchors and folded into the rendered pose below.
@@ -2129,9 +2144,36 @@ namespace wz::engine::rendering
         ino::step_puppet_physics(
             puppet, realized.puppet_physics, anchors, kDt, realized.puppet_params);
 
-        // Full pose = physics-driven parameter deform + the breathing root bob.
+        // Physics-driven parameter deform, taken RELATIVE to the default-param
+        // baseline (Inochi's base mesh IS the default pose), so default params map
+        // to zero deform and only deviations move the puppet.
         ino::PuppetDeform pose =
             ino::evaluate_puppet_deform(puppet, realized.puppet_params);
+        const ino::PuppetDeform& base = realized.puppet_deform_baseline;
+        for (std::size_t i = 0; i < pose.transform_deltas.size()
+                                && i < base.transform_deltas.size(); ++i) {
+            ino::TransformDelta& d = pose.transform_deltas[i];
+            const ino::TransformDelta& b = base.transform_deltas[i];
+            for (int k = 0; k < 3; ++k) {
+                d.trans[k] -= b.trans[k];
+                d.rot[k] -= b.rot[k];
+            }
+            d.scale[0] -= b.scale[0];
+            d.scale[1] -= b.scale[1];
+            d.zsort -= b.zsort;
+        }
+        for (std::size_t i = 0; i < pose.vertex_offsets.size()
+                                && i < base.vertex_offsets.size(); ++i) {
+            std::vector<std::array<float, 2>>& vo = pose.vertex_offsets[i];
+            const std::vector<std::array<float, 2>>& bo = base.vertex_offsets[i];
+            const std::size_t n = vo.size() < bo.size() ? vo.size() : bo.size();
+            for (std::size_t j = 0; j < n; ++j) {
+                vo[j][0] -= bo[j][0];
+                vo[j][1] -= bo[j][1];
+            }
+        }
+
+        // Fold in the breathing root bob (on top of the relative deform).
         if (!pose.transform_deltas.empty()) {
             pose.transform_deltas[0].trans[1] += breath;
         }

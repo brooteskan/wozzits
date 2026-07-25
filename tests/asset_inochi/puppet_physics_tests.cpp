@@ -85,9 +85,9 @@ TEST(PuppetPhysics, StaticAnchorStaysAtRest)
     }
 
     // A rigid pendulum hanging straight below a still anchor gets no swing: the
-    // output is the rest offset (0, +length) and the bob is nearly still.
-    EXPECT_NEAR(params.values[0][0], 0.0f, 0.5f);
-    EXPECT_NEAR(params.values[0][1], 50.0f, 1.0f);
+    // normalised output is (0,0) = the parameter's neutral, and the bob is still.
+    EXPECT_NEAR(params.values[0][0], 0.0f, 0.02f);
+    EXPECT_NEAR(params.values[0][1], 0.0f, 0.05f);
     EXPECT_LT(speed(phys.pendulums[0]), 1.0f);
 }
 
@@ -103,10 +103,11 @@ TEST(PuppetPhysics, AnchorMotionDrivesOutput)
     }
     const float before_x = params.values[0][0];
 
-    // Jerk the anchor sideways: the lagging bob swings, so the output x moves.
+    // Jerk the anchor sideways: the lagging bob swings, so the output x moves off
+    // its ~0 neutral (output is normalised, so the change is O(0.1), not pixels).
     anchors[1] = { 40.0f, 0.0f };
     ino::step_puppet_physics(p, phys, anchors, kDt, params);
-    EXPECT_GT(std::abs(params.values[0][0] - before_x), 5.0f);
+    EXPECT_GT(std::abs(params.values[0][0] - before_x), 0.1f);
 }
 
 TEST(PuppetPhysics, SettlesUnderDamping)
@@ -125,7 +126,7 @@ TEST(PuppetPhysics, SettlesUnderDamping)
     for (int i = 0; i < 600; ++i) {
         ino::step_puppet_physics(p, phys, anchors, kDt, params);
     }
-    EXPECT_NEAR(params.values[0][0], 0.0f, 1.0f);
-    EXPECT_NEAR(params.values[0][1], 50.0f, 2.0f);
+    EXPECT_NEAR(params.values[0][0], 0.0f, 0.05f);
+    EXPECT_NEAR(params.values[0][1], 0.0f, 0.1f);
     EXPECT_LT(speed(phys.pendulums[0]), 2.0f);
 }

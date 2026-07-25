@@ -124,16 +124,25 @@ namespace wz::engine::assets::inochi
             const std::array<float, 2> off = {
                 s.bob[0] - anchor[0], s.bob[1] - anchor[1] };
 
+            // Map the bob offset to the output parameter, NORMALISED so that a
+            // settled pendulum (bob hanging straight down at the rest length)
+            // outputs (0,0) -- the parameter's neutral. Inochi parameters are
+            // normalised (~[-1,1]); emitting the raw pixel offset (e.g. (0, 50) at
+            // rest) clamps the binding to its grid extreme -> a fixed slumped pose.
+            // A rigid pendulum keeps |off| == rest, so off/rest is a unit vector.
             std::array<float, 2> out{};
             if (sp.physics_map_mode == "AngleLength") {
-                // Angle away from straight-down, and the length deviation from rest.
-                const float angle = std::atan2(off[0], off[1]);
-                const float length_dev = length2(off) - rest;
-                out = { angle * sp.output_scale[0], length_dev * sp.output_scale[1] };
+                const float angle = std::atan2(off[0], off[1]);      // 0 at rest
+                const float len_ratio = length2(off) / rest - 1.0f;  // 0 at rest
+                out = { angle * sp.output_scale[0], len_ratio * sp.output_scale[1] };
             }
             else {
-                // XY (default): the raw pixel offset, scaled into parameter units.
-                out = { off[0] * sp.output_scale[0], off[1] * sp.output_scale[1] };
+                // XY (default): normalised offset with the straight-down rest
+                // subtracted, so rest -> (0,0).
+                out = {
+                    (off[0] / rest) * sp.output_scale[0],
+                    (off[1] / rest - 1.0f) * sp.output_scale[1],
+                };
             }
 
             set_param_uuid(puppet, params, sp.physics_param, out[0], out[1]);

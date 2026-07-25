@@ -321,9 +321,20 @@ namespace wz::engine::rendering
             const wz::engine::assets::inochi::Puppet* puppet_source = nullptr;
             wz::engine::assets::inochi::PuppetParams puppet_params;
             wz::engine::assets::inochi::PuppetPhysics puppet_physics;
+            // The deform the evaluator produces at DEFAULT params, captured at
+            // realize. Inochi's base mesh IS the default pose, so the per-frame
+            // deform is taken RELATIVE to this baseline (pose - baseline) -- at
+            // default params that is zero (the rest mesh renders unchanged), and
+            // only deviations (physics, breathing) move it. Removes a large static
+            // rest deform the raw evaluator otherwise applies.
+            wz::engine::assets::inochi::PuppetDeform puppet_deform_baseline;
             wz::engine::assets::inochi::Affine2D puppet_to_target{};
             float puppet_viewport_w = 0.0f;
             float puppet_viewport_h = 0.0f;
+            // Puppet-space bounds height (captured at realize), so the breathing /
+            // idle-motion amplitude scales with the puppet's size instead of a fixed
+            // pixel count (puppets can be thousands of px tall).
+            float puppet_bounds_height = 0.0f;
             struct PuppetPartRuntime
             {
                 wz::rhi::GpuResourceHandle vertices{};
