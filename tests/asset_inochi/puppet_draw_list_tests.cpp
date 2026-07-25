@@ -58,14 +58,15 @@ TEST(PuppetDrawList, FlattensAndOrdersByZsort)
     const ino::PuppetDrawList list = ino::build_puppet_draw_list(puppet);
 
     ASSERT_EQ(list.parts.size(), 2u);
-    // Ascending zsort => the -1 Part (node index 2) draws first (back).
-    EXPECT_EQ(list.parts[0].node_index, 2u);
-    EXPECT_EQ(list.parts[1].node_index, 1u);
-    EXPECT_FLOAT_EQ(list.parts[0].zsort, -1.0f);
-    EXPECT_FLOAT_EQ(list.parts[1].zsort, 1.0f);
+    // Descending zsort (Inochi draws higher zsort first / further back): the +1
+    // Part (node index 1) draws first, the -1 Part (node index 2) draws last.
+    EXPECT_EQ(list.parts[0].node_index, 1u);
+    EXPECT_EQ(list.parts[1].node_index, 2u);
+    EXPECT_FLOAT_EQ(list.parts[0].zsort, 1.0f);
+    EXPECT_FLOAT_EQ(list.parts[1].zsort, -1.0f);
 
-    // Carry-through on the front Part.
-    const ino::PuppetPartDraw& fp = list.parts[1];
+    // Carry-through on the +1 Part (node 1), now list.parts[0].
+    const ino::PuppetPartDraw& fp = list.parts[0];
     EXPECT_EQ(fp.atlas_texture, 2u);
     EXPECT_FLOAT_EQ(fp.opacity, 0.5f);
     EXPECT_EQ(fp.blend, ino::BlendMode::Multiply);

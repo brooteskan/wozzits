@@ -196,14 +196,15 @@ namespace wz::engine::assets::inochi
             out.parts.push_back(std::move(part));
         }
 
-        // Back-to-front: ascending accumulated zsort. Stable so equal-zsort Parts
-        // keep tree order (Inochi's tie-break). NOTE: the sign/direction of zsort
-        // is verified visually at S2c and flipped here if the puppet renders
-        // inside-out.
+        // Back-to-front by accumulated zsort. Inochi draws HIGHER zsort FIRST
+        // (further back) and lower zsort last (in front), so sort DESCENDING.
+        // (An earlier ascending sort rendered the puppet inside-out -- hair over
+        // the face, tail in front of the body; #279.) Stable so equal-zsort Parts
+        // keep tree order (Inochi's tie-break).
         std::stable_sort(
             out.parts.begin(), out.parts.end(),
             [](const PuppetPartDraw& lhs, const PuppetPartDraw& rhs) {
-                return lhs.zsort < rhs.zsort;
+                return lhs.zsort > rhs.zsort;
             });
 
         if (any_bounds) {

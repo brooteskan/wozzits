@@ -117,8 +117,9 @@ TEST(PuppetResidency, PublishesAtlasesAndPartBuffers)
             EXPECT_EQ(part.vertex_count, 3u);
         }
 
-        // Draw order is ascending zsort (Part 11 z=1 before Part 12 z=2).
-        EXPECT_LT(resident.parts[0].zsort, resident.parts[1].zsort);
+        // Draw order is DESCENDING zsort (Inochi draws higher zsort first / further
+        // back): Part 12 (z=2) before Part 11 (z=1).
+        EXPECT_GT(resident.parts[0].zsort, resident.parts[1].zsort);
 
         // The tracker got one asset-owned report of every published identity:
         // 2 atlas pages + 2 Parts * (vtx + idx) = 6.
