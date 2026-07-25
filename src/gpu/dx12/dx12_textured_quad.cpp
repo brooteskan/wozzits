@@ -130,9 +130,17 @@ namespace
         return FAILED(hr) ? nullptr : rs;
     }
 
+    // world_surface = false: the screen-space overlay -- opaque, depth disabled
+    //   (a 2D surface / fullscreen-ish quad that just paints the texture).
+    // world_surface = true: an in-scene surface -- premultiplied-alpha over the
+    //   bound colour target (the RTT is premultiplied: the puppet drew with
+    //   SRC_ALPHA/INV_SRC_ALPHA into a black-cleared texture, so ONE/INV_SRC_ALPHA
+    //   here is the fringe-free composite), and depth-TESTED but not written against
+    //   the shared D32 depth (LESS_EQUAL, the engine's convention: clear=1.0 far),
+    //   so nearer scene geometry occludes the card while the card writes no depth.
     ID3D12PipelineState* create_quad_pso(
         ID3D12Device* device, ID3D12RootSignature* rs,
-        ID3DBlob* vs, ID3DBlob* ps)
+        ID3DBlob* vs, ID3DBlob* ps, bool world_surface)
     {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
         desc.pRootSignature = rs;
@@ -145,13 +153,32 @@ namespace
         desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-        desc.DepthStencilState.DepthEnable = FALSE;
         desc.DepthStencilState.StencilEnable = FALSE;
-        desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
         desc.NumRenderTargets = 1;
         desc.RTVFormats[0] = kQuadTargetFormat;
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
+
+        if (world_surface) {
+            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
+            rt.BlendEnable = TRUE;
+            rt.SrcBlend = D3D12_BLEND_ONE;           // RTT is premultiplied-alpha
+            rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOp = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+            rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+            desc.DepthStencilState.DepthEnable = TRUE;
+            desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+            desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+            desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+        }
+        else {
+            desc.DepthStencilState.DepthEnable = FALSE;
+            desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+        }
 
         ID3D12PipelineState* pso = nullptr;
         HRESULT hr = device->CreateGraphicsPipelineState(
@@ -159,12 +186,14 @@ namespace
         return FAILED(hr) ? nullptr : pso;
     }
 
-    // Lazily build the quad root sig / PSO / 1-descriptor shader-visible SRV heap.
+    // Lazily build the quad root sig / both PSOs / 1-descriptor shader-visible SRV
+    // heap.
     bool ensure_quad_ctx(wz::gpu::dx12::DX12Device* impl)
     {
         if (impl->textured_quad_ctx) {
             return impl->textured_quad_ctx->root_sig
                 && impl->textured_quad_ctx->pso
+                && impl->textured_quad_ctx->pso_world
                 && impl->textured_quad_ctx->srv_heap;
         }
         auto* ctx = new wz::gpu::dx12::TexturedQuadContext{};
@@ -173,7 +202,10 @@ namespace
         if (vs && ps) {
             ctx->root_sig = create_quad_root_signature(impl->device);
             if (ctx->root_sig) {
-                ctx->pso = create_quad_pso(impl->device, ctx->root_sig, vs, ps);
+                ctx->pso = create_quad_pso(
+                    impl->device, ctx->root_sig, vs, ps, /*world_surface*/ false);
+                ctx->pso_world = create_quad_pso(
+                    impl->device, ctx->root_sig, vs, ps, /*world_surface*/ true);
             }
         }
         if (vs) {
@@ -189,7 +221,7 @@ namespace
         impl->device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&ctx->srv_heap));
 
         impl->textured_quad_ctx = ctx;
-        return ctx->root_sig && ctx->pso && ctx->srv_heap;
+        return ctx->root_sig && ctx->pso && ctx->pso_world && ctx->srv_heap;
     }
 }
 
@@ -198,10 +230,16 @@ namespace wz::gpu::dx12::internal
     // Draw `texture` on a unit quad transformed by `mvp` (16 floats, column-major:
     // the same layout the engine feeds view_projection to its shaders). Must be
     // inside a begin_frame/end_frame bracket with a colour target bound; the texture
-    // must rest shader-readable. Depth is disabled, so the quad draws over whatever
-    // is already in the target.
+    // must rest shader-readable.
+    //   world_surface = false: opaque, depth off -- the quad paints over whatever is
+    //     in the target (a screen-space / 2D-surface display).
+    //   world_surface = true: premultiplied-alpha composite, depth-TESTED (no write)
+    //     against the shared D32 depth -- an in-scene surface the puppet floats on,
+    //     occluded by nearer scene geometry. The caller's pass must have the depth
+    //     target bound (the main backbuffer pass does).
     bool draw_textured_quad_dx12(
-        Device& device, GPUHandle texture, const float mvp[16])
+        Device& device, GPUHandle texture, const float mvp[16],
+        bool world_surface)
     {
         auto* impl = static_cast<DX12Device*>(device.impl);
         if (!impl || !impl->cmd || !impl->device || !mvp) {
@@ -230,7 +268,8 @@ namespace wz::gpu::dx12::internal
         ID3D12DescriptorHeap* heaps[] = { ctx->srv_heap };
         impl->cmd->SetDescriptorHeaps(1, heaps);
         impl->cmd->SetGraphicsRootSignature(ctx->root_sig);
-        impl->cmd->SetPipelineState(ctx->pso);
+        impl->cmd->SetPipelineState(
+            world_surface ? ctx->pso_world : ctx->pso);
         impl->cmd->SetGraphicsRootDescriptorTable(
             0, ctx->srv_heap->GetGPUDescriptorHandleForHeapStart());
         impl->cmd->SetGraphicsRoot32BitConstants(1, 16, mvp, 0);

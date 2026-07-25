@@ -454,6 +454,47 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
                    "partial surface with clear-coloured corners";
         }
         wz::gpu::present(device, /*sync_interval*/ 0);
+
+        // World-surface mode: the same texture drawn as an in-scene surface
+        // (premultiplied-alpha composite + depth test) over a NON-black background.
+        // A full-screen quad (so every pixel is inside the card) over a green clear:
+        // where the puppet is opaque the puppet shows; where it is transparent the
+        // GREEN shows through -- proving alpha composites (an opaque card would leave
+        // black there). Depth is cleared to 1.0 (far), so the quad at z=0.5 passes.
+        ASSERT_TRUE(wz::gpu::begin_frame(device));
+        wz::gpu::clear(device, 0.1f, 0.4f, 0.1f, 1.0f);  // distinct green backdrop
+        const float mvp_fs[16] = {
+            1.0f, 0.0f, 0.0f, 0.0f,   // column 0
+            0.0f, 1.0f, 0.0f, 0.0f,   // column 1
+            0.0f, 0.0f, 0.0f, 0.0f,   // column 2 (quad z=0)
+            0.0f, 0.0f, 0.5f, 1.0f,   // column 3: fill NDC, z=0.5
+        };
+        EXPECT_TRUE(wz::gpu::dx12::internal::draw_textured_quad_dx12(
+            device, rt, mvp_fs, /*world_surface*/ true));
+        ASSERT_TRUE(wz::gpu::end_frame(device));
+        {
+            std::vector<std::uint8_t> bb4;
+            ASSERT_TRUE(
+                wz::gpu::dx12::internal::read_backbuffer_rgba8_dx12(device, bb4));
+            std::size_t bright = 0;      // opaque puppet content
+            std::size_t backdrop = 0;    // green showing through transparent texels
+            for (std::size_t i = 0; i + 3 < bb4.size(); i += 4) {
+                const int r = bb4[i], g = bb4[i + 1], b = bb4[i + 2];
+                if (r > 80 || g > 130 || b > 80) {
+                    ++bright;
+                }
+                // near the green clear (~26,102,26): green dominant, red/blue low
+                if (g > 70 && g < 140 && r < 60 && b < 60) {
+                    ++backdrop;
+                }
+            }
+            EXPECT_GT(bright, 0u)
+                << "no puppet pixels composited on the world-surface quad";
+            EXPECT_GT(backdrop, 0u)
+                << "no green backdrop showed through -- the world-surface quad did "
+                   "not alpha-composite (drew as an opaque card)";
+        }
+        wz::gpu::present(device, /*sync_interval*/ 0);
         wz::gpu::release_texture(device, rt);
 
         // Structural wiring proofs:

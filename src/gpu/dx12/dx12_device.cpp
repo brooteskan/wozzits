@@ -746,6 +746,9 @@ namespace wz::gpu::dx12
             if (impl->textured_quad_ctx->pso) {
                 impl->textured_quad_ctx->pso->Release();
             }
+            if (impl->textured_quad_ctx->pso_world) {
+                impl->textured_quad_ctx->pso_world->Release();
+            }
             if (impl->textured_quad_ctx->root_sig) {
                 impl->textured_quad_ctx->root_sig->Release();
             }

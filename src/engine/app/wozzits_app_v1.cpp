@@ -2962,9 +2962,9 @@ namespace wz::app
         // about the node's local Y (so it reads as a surface turning in the world),
         // and is viewed through the scene camera -- move/rotate/scale the node in
         // the editor and the card follows. The quad is +/-1 in its local XY plane,
-        // so half_size sets its half-extent in world units. Depth is disabled (the
-        // quad draws over the scene rather than being occluded by it) -- proper
-        // occlusion against scene depth is a follow-up.
+        // so half_size sets its half-extent in world units. Drawn as a world surface
+        // (premultiplied-alpha composite so the puppet floats without a black card;
+        // depth-tested so nearer scene geometry occludes it).
         const float half_size = 40.0f;  // world-space half-extent of the card
         const float angle = puppet_card_angle_;
         const wz::math::Quaternion spin_q{
@@ -2976,7 +2976,7 @@ namespace wz::app
         const wz::math::Mat4 mvp_mat = wz::math::mul(
             view_.active_view().view_projection, card_model);
         wz::gpu::dx12::internal::draw_textured_quad_dx12(
-            ctx_.device, puppet_card_rtt_, mvp_mat.m);
+            ctx_.device, puppet_card_rtt_, mvp_mat.m, /*world_surface*/ true);
         return true;
     }
 

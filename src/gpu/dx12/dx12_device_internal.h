@@ -64,13 +64,18 @@ namespace wz::gpu::dx12
 
     // Textured 3D mesh (S6 3D-mesh consumer): draw a textured quad transformed by a
     // caller MVP, sampling an arbitrary texture -- the RTT texture on a world
-    // surface. Same lazy root-sig/PSO/SRV-heap shape as BlitContext, plus a 16-float
-    // MVP root constant.
+    // surface. Same lazy root-sig/SRV-heap shape as BlitContext, plus a 16-float MVP
+    // root constant. Two PSOs share the root sig: `pso` is the screen-space overlay
+    // (opaque, depth disabled) used by the 2D-surface consumer; `pso_world` is the
+    // in-scene surface (premultiplied-alpha over the scene, depth-tested no-write
+    // against the shared D32 depth) so a world-anchored card composites and is
+    // occluded by scene geometry.
     struct TexturedQuadContext
     {
-        ID3D12RootSignature*  root_sig  = nullptr;
-        ID3D12PipelineState*  pso       = nullptr;
-        ID3D12DescriptorHeap* srv_heap  = nullptr;
+        ID3D12RootSignature*  root_sig   = nullptr;
+        ID3D12PipelineState*  pso        = nullptr;   // overlay: opaque, no depth
+        ID3D12PipelineState*  pso_world  = nullptr;   // in-scene: alpha + depth test
+        ID3D12DescriptorHeap* srv_heap   = nullptr;
     };
 
     struct DX12Device

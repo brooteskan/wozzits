@@ -55,9 +55,12 @@ namespace wz::gpu::dx12::internal
     // (S6 "2D surface" consumer). See dx12_blit.cpp.
     bool blit_texture_dx12(Device& device, GPUHandle texture);
     // Draw a texture on a unit quad transformed by a column-major MVP
-    // (S6 "3D-mesh surface" consumer). See dx12_textured_quad.cpp.
+    // (S6 "3D-mesh surface" consumer). world_surface=true composites with
+    // premultiplied alpha + depth-tests against the shared depth (an in-scene
+    // surface); false is an opaque, depth-off overlay. See dx12_textured_quad.cpp.
     bool draw_textured_quad_dx12(
-        Device& device, GPUHandle texture, const float mvp[16]);
+        Device& device, GPUHandle texture, const float mvp[16],
+        bool world_surface = false);
 
     ID3D12PipelineState* create_triangle_pso(
         wz::gpu::Device& device,
