@@ -409,7 +409,7 @@
       "transform": {
         "translation": [
           100,
-          41.631340026855469,
+          41.402236938476562,
           200
         ],
         "rotation_quat": [
@@ -552,6 +552,34 @@
       }
     },
     {
+      "id": "14",
+      "parent": "root",
+      "name": "Inochi test",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation_quat": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "visible": true,
+      "active": true,
+      "renderable": {
+        "asset_graph_node_id": 159
+      }
+    },
+    {
       "id": "teleport_bubble",
       "parent": "root",
       "name": "teleport bubble (seam 1)",
@@ -619,15 +647,15 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        569.54388427734375,
-        215.74891662597656,
-        297.47216796875
+        486.30892944335938,
+        115.36153411865234,
+        126.38729858398438
       ],
       "orientation": [
-        -0.040380898863077164,
-        -0.2961958646774292,
-        -0.052375055849552155,
-        0.9528348445892334
+        -0.050084218382835388,
+        0.98715972900390625,
+        -0.10568945109844208,
+        -0.10879860818386078
       ],
       "move_speed": 8,
       "look_speed": 0.00050000002374872565,
