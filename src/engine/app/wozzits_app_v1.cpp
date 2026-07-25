@@ -14,6 +14,7 @@
 #include <engine/assets/data_table_csv_export.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/renderable/render_binding_sources.h>
+#include <engine/assets/renderable/renderable.h>
 #include <engine/assets/renderable_asset_module.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/audio/scene_audio.h>
@@ -32,6 +33,8 @@
 #include <external/json/json_writer.h>
 #include <file/filesystem.h>
 #include <input/input.h>
+#include <gpu/texture.h>
+#include <gpu/dx12/dx12_internal.h>
 #include <math/math_types.h>
 #include <math/mat4.h>
 #include <math/projection.h>
@@ -2849,10 +2852,122 @@ namespace wz::app
         // asset (6c51cf5). nullptr -- no node authors one, the one that does is
         // switched off, or its key has not resolved -- means "no fog"; the camera
         // still reaches the view constants either way.
+        // S6 showcase: when routing puppets onto the spinning card, drop them from
+        // the main pass so the puppet appears only on the card (not also as a flat
+        // overlay). Filter nodes + world transforms in lockstep -- they are
+        // index-aligned. Cheap: the predicate is one recipe lookup per node and the
+        // scene has at most a handful of puppets.
+        if (puppet_card_showcase_) {
+            std::vector<wz::engine::assets::SceneNodeAsset> main_nodes;
+            std::vector<wz::math::Mat4> main_transforms;
+            main_nodes.reserve(document_.nodes().size());
+            main_transforms.reserve(world_transforms.size());
+            bool any_puppet = false;
+            for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
+                if (is_puppet_node(document_.nodes()[i])) {
+                    any_puppet = true;
+                    continue;
+                }
+                main_nodes.push_back(document_.nodes()[i]);
+                if (i < world_transforms.size()) {
+                    main_transforms.push_back(world_transforms[i]);
+                }
+            }
+            if (any_puppet) {
+                return renderer_.render_scene(
+                    main_nodes, *ctx_.assets, view_.active_view().view_projection,
+                    view_.active_view().world_position, main_transforms,
+                    resolve_frame_atmosphere());
+            }
+            // No puppet in the scene -- fall through to the unfiltered render.
+        }
+
         return renderer_.render_scene(
             document_.nodes(), *ctx_.assets, view_.active_view().view_projection,
             view_.active_view().world_position, world_transforms,
             resolve_frame_atmosphere());
+    }
+
+    bool WozzitsApp_v1::is_puppet_node(const wz::engine::assets::SceneNodeAsset& node) const
+    {
+        if (!ctx_.assets || !node.renderable_asset.has_value()) {
+            return false;
+        }
+        const wz::engine::assets::RhiRenderableRecipe* recipe =
+            ctx_.assets->renderables().get_rhi_renderable_recipe(
+                wz::engine::assets::RenderableAsset{
+                    .output = *node.renderable_asset });
+        return recipe && !(recipe->puppet_key == wz::asset::AssetKey{});
+    }
+
+    bool WozzitsApp_v1::render_puppet_showcase()
+    {
+        if (!puppet_card_showcase_ || !ctx_.assets) {
+            return true;
+        }
+
+        // Gather the scene's puppet nodes (recipe carries a puppet_key). The
+        // world transforms are irrelevant to the puppet's screen-space placement
+        // -- the renderer fits it to the offscreen target -- so identities satisfy
+        // the renderer's index-aligned parallel-array contract.
+        std::vector<wz::engine::assets::SceneNodeAsset> puppet_nodes;
+        for (const auto& node : document_.nodes()) {
+            if (is_puppet_node(node)) {
+                puppet_nodes.push_back(node);
+            }
+        }
+        if (puppet_nodes.empty()) {
+            return true;  // nothing to show
+        }
+
+        // Lazily create the persistent square offscreen target.
+        if (!puppet_card_rtt_.valid()) {
+            wz::gpu::TextureDesc desc{};
+            desc.width = 512;
+            desc.height = 512;
+            desc.format = wz::gpu::TextureFormat::RGBA8Unorm;
+            desc.render_target = true;
+            puppet_card_rtt_ = wz::gpu::create_texture(ctx_.device, desc);
+        }
+        if (!puppet_card_rtt_.valid()) {
+            return false;
+        }
+
+        // Render only the puppet(s) into the offscreen target (its own pass; the
+        // renderer restores the backbuffer afterward). This is where the puppet's
+        // per-frame deform + idle physics run, so the card animates.
+        const std::vector<wz::math::Mat4> identities(
+            puppet_nodes.size(), wz::math::Mat4::identity());
+        renderer_.render_scene(
+            puppet_nodes, *ctx_.assets, view_.active_view().view_projection,
+            view_.active_view().world_position, identities,
+            resolve_frame_atmosphere(), puppet_card_rtt_);
+
+        // Advance the idle spin (a slow turn; frame-paced -- this is a showcase).
+        puppet_card_angle_ += 0.02f;
+
+        // Draw the card: a Y-spin of a unit quad. Under this orthographic MVP the
+        // quad's width scales by cos(angle) -- it turns edge-on at 90 deg and back
+        // -- which reads as a card rotating in depth. x is divided by the target's
+        // aspect so the (square) puppet texture stays square on a 16:9 backbuffer;
+        // z is pinned to 0.5 so every corner stays inside the [0,1] clip range.
+        const float angle = puppet_card_angle_;
+        const float cos_a = std::cos(angle);
+        const float half = 0.55f;  // card half-height in NDC
+        const float target_w =
+            static_cast<float>(wz::gpu::dx12::internal::get_width(ctx_.device));
+        const float target_h =
+            static_cast<float>(wz::gpu::dx12::internal::get_height(ctx_.device));
+        const float aspect = target_h > 0.0f ? target_w / target_h : 1.0f;
+        const float mvp[16] = {
+            half * cos_a / aspect, 0.0f, 0.0f, 0.0f,   // column 0 (x <- px)
+            0.0f,                  half, 0.0f, 0.0f,   // column 1 (y <- py)
+            0.0f,                  0.0f, 0.0f, 0.0f,   // column 2 (z-basis, quad z=0)
+            0.0f,                  0.0f, 0.5f, 1.0f,   // column 3 (fixed depth)
+        };
+        wz::gpu::dx12::internal::draw_textured_quad_dx12(
+            ctx_.device, puppet_card_rtt_, mvp);
+        return true;
     }
 
     void WozzitsApp_v1::set_prefer_scene_camera(bool prefer)

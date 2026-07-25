@@ -1664,6 +1664,14 @@ namespace wz::app
                     frame_error = true;
                     break;
                 }
+                // S6 3D-mesh consumer: puppet(s) rendered to an offscreen texture
+                // and shown on a spinning card over the scene (no-op when the
+                // showcase is off or the scene has no puppet).
+                if (!app.render_puppet_showcase()) {
+                    ctx.logger.error("render_puppet_showcase failed");
+                    frame_error = true;
+                    break;
+                }
                 if (!wz::gpu::end_frame(ctx.device)) {
                     ctx.logger.error("end_frame failed");
                     frame_error = true;
