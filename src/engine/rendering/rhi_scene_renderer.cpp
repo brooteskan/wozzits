@@ -2193,7 +2193,7 @@ namespace wz::engine::rendering
         const std::size_t packet_n = realized.puppet_packets.size();
         const std::size_t count = runtime_n < packet_n ? runtime_n : packet_n;
         for (std::size_t pi = 0; pi < count; ++pi) {
-            const RealizedRenderable::PuppetPartRuntime& rt =
+            RealizedRenderable::PuppetPartRuntime& rt =
                 realized.puppet_part_runtime[pi];
             const auto it = by_node.find(rt.node_index);
             if (it == by_node.end()) {
@@ -2201,6 +2201,8 @@ namespace wz::engine::rendering
             }
             const ino::PuppetPartDraw& dp = *it->second;
 
+            // Placement root constants: recomputed every frame (CPU only, no GPU
+            // sync), so breathing + transform-driven deform is always current.
             const ino::Affine2D m =
                 ino::compose(realized.puppet_to_target, dp.placement);
             const float block[8] = {
@@ -2211,15 +2213,39 @@ namespace wz::engine::rendering
                 reinterpret_cast<const uint8_t*>(block),
                 reinterpret_cast<const uint8_t*>(block) + sizeof(block));
 
-            const bool deformed =
+            // Vertex buffer: re-upload ONLY when the mesh moved past a sub-pixel
+            // epsilon since the last upload. Each upload is a synchronous GPU flush
+            // (#278), so skipping the many Parts that sit at the baseline (or move
+            // imperceptibly) is what keeps the puppet from stalling the frame.
+            const std::vector<std::array<float, 2>>* offs =
                 rt.node_index < pose.vertex_offsets.size()
-                && !pose.vertex_offsets[rt.node_index].empty();
-            if (deformed && rt.vertices.valid() && !dp.vertices.empty()) {
+                    ? &pose.vertex_offsets[rt.node_index]
+                    : nullptr;
+            if (!offs || offs->empty() || !rt.vertices.valid()
+                || dp.vertices.empty())
+            {
+                continue;
+            }
+            constexpr float kOffsetEpsilon = 0.5f;  // px in puppet space
+            bool changed = !rt.ever_uploaded
+                || rt.last_offsets.size() != offs->size();
+            for (std::size_t vi = 0; !changed && vi < offs->size(); ++vi) {
+                if (std::abs((*offs)[vi][0] - rt.last_offsets[vi][0])
+                        > kOffsetEpsilon
+                    || std::abs((*offs)[vi][1] - rt.last_offsets[vi][1])
+                        > kOffsetEpsilon)
+                {
+                    changed = true;
+                }
+            }
+            if (changed) {
                 gpu_.resources.update(
                     rt.vertices,
                     dp.vertices.data(),
                     static_cast<std::uint64_t>(dp.vertices.size())
                         * sizeof(ino::PuppetVertex));
+                rt.last_offsets = *offs;
+                rt.ever_uploaded = true;
             }
         }
     }

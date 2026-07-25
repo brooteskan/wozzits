@@ -340,6 +340,14 @@ namespace wz::engine::rendering
                 wz::rhi::GpuResourceHandle vertices{};
                 std::size_t node_index = 0;
                 uint32_t vertex_count = 0;
+                // Last per-vertex offsets uploaded to `vertices`. Each upload is a
+                // synchronous GPU flush, so the per-frame update re-uploads only
+                // when the new offsets differ from these past a sub-pixel epsilon.
+                // Most Parts sit at the baseline (zero) and never re-upload; subtle
+                // motion re-uploads only when it crosses the threshold -- so a
+                // puppet stops stalling the frame per Part every frame (#278).
+                std::vector<std::array<float, 2>> last_offsets;
+                bool ever_uploaded = false;
             };
             std::vector<PuppetPartRuntime> puppet_part_runtime;
 
