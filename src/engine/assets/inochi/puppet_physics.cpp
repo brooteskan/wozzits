@@ -1,0 +1,142 @@
+// src/engine/assets/inochi/puppet_physics.cpp
+//
+// SimplePhysics pendulum integration for an Inochi2D puppet. Each SimplePhysics
+// node is a damped pendulum anchored at the node's world position; the bob lags
+// the anchor and its offset maps to the node's output parameter. Pure CPU; the
+// anchor positions are supplied by the caller (that is where primary motion, e.g.
+// a breathing bob, enters). See puppet_physics.h.
+//
+// The numeric constants below are tuned for stable, visible motion, not for exact
+// parity with Inochi Creator -- the oracle fidelity pass is S8.
+
+#include <engine/assets/inochi/puppet_physics.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <string>
+
+namespace wz::engine::assets::inochi
+{
+    namespace
+    {
+        constexpr float kPi = 3.14159265358979f;
+        // Gravity acceleration in puppet-pixel units at gravity == 1. Puppets are
+        // ~1000 px tall, so this gives pendulum periods around a second.
+        constexpr float kGravityAccel = 980.0f;
+        // Maps the authored [0,1] damping onto a per-second velocity decay.
+        constexpr float kDampRate = 6.0f;
+        constexpr float kMinDist = 1.0e-3f;
+
+        float length2(const std::array<float, 2>& v) noexcept
+        {
+            return std::sqrt(v[0] * v[0] + v[1] * v[1]);
+        }
+    } // namespace
+
+    PuppetPhysics make_puppet_physics(const Puppet& puppet)
+    {
+        PuppetPhysics physics;
+        for (std::size_t i = 0; i < puppet.nodes.size(); ++i) {
+            const Node& node = puppet.nodes[i];
+            if (node.kind == NodeKind::SimplePhysics && node.physics_param != 0) {
+                physics.physics_nodes.push_back(i);
+                physics.pendulums.emplace_back();
+            }
+        }
+        return physics;
+    }
+
+    void step_puppet_physics(
+        const Puppet& puppet,
+        PuppetPhysics& physics,
+        const std::vector<std::array<float, 2>>& node_anchors,
+        float dt,
+        PuppetParams& params)
+    {
+        if (dt <= 0.0f) {
+            return;
+        }
+
+        for (std::size_t pi = 0; pi < physics.physics_nodes.size(); ++pi) {
+            const std::size_t node_index = physics.physics_nodes[pi];
+            if (node_index >= puppet.nodes.size()
+                || node_index >= node_anchors.size())
+            {
+                continue;
+            }
+            const Node& sp = puppet.nodes[node_index];
+            PendulumState& s = physics.pendulums[pi];
+
+            const std::array<float, 2> anchor = node_anchors[node_index];
+            const float rest = sp.length > 0.0f ? sp.length : 1.0f;
+
+            if (!s.initialized) {
+                // Seed the bob hanging straight below the anchor (+y is down in
+                // puppet-pixel space), at rest -- a static puppet then stays put.
+                s.bob = { anchor[0], anchor[1] + rest };
+                s.velocity = { 0.0f, 0.0f };
+                s.initialized = true;
+            }
+
+            std::array<float, 2> d = { s.bob[0] - anchor[0], s.bob[1] - anchor[1] };
+            float dist = std::max(length2(d), kMinDist);
+            std::array<float, 2> dir = { d[0] / dist, d[1] / dist };
+
+            // Spring toward the rest length (stiffness from the authored frequency)
+            // plus gravity. For a rigid Pendulum we also reproject below; the spring
+            // keeps the pre-projection integration well-behaved.
+            const float omega = 2.0f * kPi * std::max(sp.frequency, 0.0f);
+            const float k = omega * omega;
+            std::array<float, 2> force = {
+                -dir[0] * (dist - rest) * k,
+                -dir[1] * (dist - rest) * k,
+            };
+            force[1] += kGravityAccel * std::max(sp.gravity, 0.0f);
+
+            s.velocity[0] += force[0] * dt;
+            s.velocity[1] += force[1] * dt;
+
+            const float damp = std::clamp(
+                1.0f - std::max(sp.angle_damping, 0.0f) * dt * kDampRate,
+                0.0f, 1.0f);
+            s.velocity[0] *= damp;
+            s.velocity[1] *= damp;
+
+            s.bob[0] += s.velocity[0] * dt;
+            s.bob[1] += s.velocity[1] * dt;
+
+            // "SpringPendulum" lets the rod stretch; anything else ("Pendulum")
+            // is rigid -- reproject the bob to the rest length and drop the radial
+            // velocity so only the swing (tangential) motion survives.
+            if (sp.physics_model != "SpringPendulum") {
+                std::array<float, 2> nd = {
+                    s.bob[0] - anchor[0], s.bob[1] - anchor[1] };
+                const float ndist = std::max(length2(nd), kMinDist);
+                const std::array<float, 2> ndir = { nd[0] / ndist, nd[1] / ndist };
+                s.bob = { anchor[0] + ndir[0] * rest, anchor[1] + ndir[1] * rest };
+                const float radial =
+                    s.velocity[0] * ndir[0] + s.velocity[1] * ndir[1];
+                s.velocity[0] -= radial * ndir[0];
+                s.velocity[1] -= radial * ndir[1];
+            }
+
+            const std::array<float, 2> off = {
+                s.bob[0] - anchor[0], s.bob[1] - anchor[1] };
+
+            std::array<float, 2> out{};
+            if (sp.physics_map_mode == "AngleLength") {
+                // Angle away from straight-down, and the length deviation from rest.
+                const float angle = std::atan2(off[0], off[1]);
+                const float length_dev = length2(off) - rest;
+                out = { angle * sp.output_scale[0], length_dev * sp.output_scale[1] };
+            }
+            else {
+                // XY (default): the raw pixel offset, scaled into parameter units.
+                out = { off[0] * sp.output_scale[0], off[1] * sp.output_scale[1] };
+            }
+
+            set_param_uuid(puppet, params, sp.physics_param, out[0], out[1]);
+        }
+    }
+}

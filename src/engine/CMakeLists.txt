@@ -180,6 +180,7 @@ target_sources(window_engine PRIVATE
     assets/inochi/inochi_load.cpp
     assets/inochi/puppet_draw_list.cpp
     assets/inochi/puppet_deform.cpp
+    assets/inochi/puppet_physics.cpp
     assets/inochi/puppet_gpu.cpp
     assets/inochi/puppet_compilers.cpp
     assets/inochi/puppet_authoring.cpp
