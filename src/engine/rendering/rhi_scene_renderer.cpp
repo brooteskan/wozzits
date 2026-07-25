@@ -2256,12 +2256,33 @@ namespace wz::engine::rendering
         const wz::math::Mat4& view_projection,
         const wz::math::Vec3& camera_world_pos,
         std::span<const wz::math::Mat4> world_transforms,
-        const ea::AtmosphereData* atmosphere)
+        const ea::AtmosphereData* atmosphere,
+        wz::gpu::GPUHandle offscreen_target)
     {
         ID3D12GraphicsCommandList* cmd =
             wz::gpu::dx12::internal::get_command_list(gpu_.device);
         if (!cmd) {
             return false;
+        }
+
+        // Offscreen render-to-texture (S6): render into a render-target texture at
+        // its own dimensions instead of the backbuffer. Resolve + validate it up
+        // front; the target size then drives the screen block + viewport.
+        const bool to_offscreen = offscreen_target.valid();
+        uint32_t target_w = wz::gpu::dx12::internal::get_width(gpu_.device);
+        uint32_t target_h = wz::gpu::dx12::internal::get_height(gpu_.device);
+        if (to_offscreen) {
+            const wz::gpu::dx12::internal::DX12Texture* rt =
+                wz::gpu::dx12::internal::get_dx12_texture(
+                    gpu_.device, offscreen_target);
+            if (!rt || !rt->valid() || !rt->is_render_target) {
+                logger_.error(
+                    "RhiSceneRenderer: render_scene offscreen_target is not a "
+                    "render-target texture");
+                return false;
+            }
+            target_w = rt->width;
+            target_h = rt->height;
         }
 
         ++render_scene_calls_;   // the renderer's only clock (star twinkle, #266)
@@ -2289,8 +2310,8 @@ namespace wz::engine::rendering
         // Same #145 door as the view block; only bound where a layout declares
         // the Screen head (2D overlays), otherwise acquired-but-idle.
         screen_constants_ = make_screen_constants(
-            static_cast<float>(wz::gpu::dx12::internal::get_width(gpu_.device)),
-            static_cast<float>(wz::gpu::dx12::internal::get_height(gpu_.device)));
+            static_cast<float>(target_w),
+            static_cast<float>(target_h));
         if (screen_constants_buffer_.valid()) {
             if (!gpu_.resources.update(
                     screen_constants_buffer_, &screen_constants_,
@@ -2310,20 +2331,30 @@ namespace wz::engine::rendering
         recorder_.set_frame_timeline(
             wz::gpu::frame_timeline_value(gpu_.device));
 
-        D3D12_CPU_DESCRIPTOR_HANDLE rtv =
-            wz::gpu::dx12::internal::get_current_rtv(gpu_.device);
-        D3D12_CPU_DESCRIPTOR_HANDLE dsv =
-            wz::gpu::dx12::internal::get_dsv(gpu_.device);
-        cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+        if (to_offscreen) {
+            // Bind the render-target texture (transitions it to RENDER_TARGET, sets
+            // its viewport, and clears it to transparent). Draws below land in it.
+            const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            if (!wz::gpu::dx12::internal::begin_offscreen_pass(
+                    gpu_.device, offscreen_target, clear)) {
+                logger_.error("RhiSceneRenderer: begin_offscreen_pass failed");
+                return false;
+            }
+        }
+        else {
+            D3D12_CPU_DESCRIPTOR_HANDLE rtv =
+                wz::gpu::dx12::internal::get_current_rtv(gpu_.device);
+            D3D12_CPU_DESCRIPTOR_HANDLE dsv =
+                wz::gpu::dx12::internal::get_dsv(gpu_.device);
+            cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
 
-        const float w =
-            static_cast<float>(wz::gpu::dx12::internal::get_width(gpu_.device));
-        const float h =
-            static_cast<float>(wz::gpu::dx12::internal::get_height(gpu_.device));
-        D3D12_VIEWPORT viewport{ 0.0f, 0.0f, w, h, 0.0f, 1.0f };
-        cmd->RSSetViewports(1, &viewport);
-        D3D12_RECT scissor{ 0, 0, static_cast<LONG>(w), static_cast<LONG>(h) };
-        cmd->RSSetScissorRects(1, &scissor);
+            const float w = static_cast<float>(target_w);
+            const float h = static_cast<float>(target_h);
+            D3D12_VIEWPORT viewport{ 0.0f, 0.0f, w, h, 0.0f, 1.0f };
+            cmd->RSSetViewports(1, &viewport);
+            D3D12_RECT scissor{ 0, 0, static_cast<LONG>(w), static_cast<LONG>(h) };
+            cmd->RSSetScissorRects(1, &scissor);
+        }
 
         uint32_t recorded = 0;
 
@@ -2538,6 +2569,13 @@ namespace wz::engine::rendering
                         + recorder_.last_reject_reason());
                 }
             }
+        }
+
+        // Offscreen render-to-texture (S6): close the pass so the target lands in a
+        // sampleable state and the backbuffer is rebound for the rest of the frame.
+        if (to_offscreen) {
+            wz::gpu::dx12::internal::end_offscreen_pass(
+                gpu_.device, offscreen_target);
         }
 
         if (recorded == 0) {

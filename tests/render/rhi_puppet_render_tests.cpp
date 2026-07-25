@@ -32,11 +32,15 @@
 
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
+#include <gpu/texture.h>
+#include <gpu/dx12/dx12_internal.h>
 #include <math/mat4.h>
 #include <math/math_types.h>
 #include <window/window2.h>
 
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -315,7 +319,73 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
         EXPECT_TRUE(recorded)
             << "puppet failed to realize or the recorder rejected the Part draws";
         ASSERT_TRUE(wz::gpu::end_frame(device));
+
+        // The puppet must render VISIBLE pixels to the backbuffer (this structural
+        // test historically only checked recording, never output). Read it back and
+        // count texels that differ from the ~(26,26,31) clear.
+        {
+            std::vector<std::uint8_t> bb;
+            ASSERT_TRUE(wz::gpu::dx12::internal::read_backbuffer_rgba8_dx12(
+                device, bb));
+            std::size_t nonclear = 0;
+            for (std::size_t i = 0; i + 3 < bb.size(); i += 4) {
+                const int dr = static_cast<int>(bb[i]) - 26;
+                const int dg = static_cast<int>(bb[i + 1]) - 26;
+                const int db = static_cast<int>(bb[i + 2]) - 31;
+                if (dr > 15 || dr < -15 || dg > 15 || dg < -15
+                    || db > 15 || db < -15) {
+                    ++nonclear;
+                }
+            }
+            EXPECT_GT(nonclear, 0u)
+                << "the puppet rendered no visible pixels to the backbuffer";
+        }
         wz::gpu::present(device, /*sync_interval*/ 0);
+
+        // Offscreen render-to-texture (S6): render the SAME puppet into an RGBA8
+        // render-target texture and read it back. The puppet's Parts must leave
+        // non-transparent pixels -- proving a real multi-draw (PSO + geometry)
+        // renders into a texture, not just a clear. The RT matches the render
+        // dimensions so the realized (screen-placed) puppet lands in it; RTT to an
+        // arbitrary-sized target needs per-target placement (a follow-up).
+        wz::gpu::TextureDesc rt_desc{};
+        rt_desc.width = wz::gpu::dx12::internal::get_width(device);
+        rt_desc.height = wz::gpu::dx12::internal::get_height(device);
+        rt_desc.format = wz::gpu::TextureFormat::RGBA8Unorm;
+        rt_desc.render_target = true;
+        const wz::gpu::GPUHandle rt = wz::gpu::create_texture(device, rt_desc);
+        ASSERT_TRUE(rt.valid());
+
+        ASSERT_TRUE(wz::gpu::begin_frame(device));
+        const bool rt_recorded = renderer.render_scene(
+            nodes, assets, view_projection, camera_world_pos, {}, nullptr, rt);
+        EXPECT_TRUE(rt_recorded)
+            << "puppet failed to render into the offscreen target";
+        ASSERT_TRUE(wz::gpu::end_frame(device));
+
+        std::vector<std::uint8_t> pixels;
+        ASSERT_TRUE(
+            wz::gpu::dx12::internal::read_texture_rgba8_dx12(device, rt, pixels));
+        ASSERT_EQ(pixels.size(),
+            static_cast<std::size_t>(rt_desc.width) * rt_desc.height * 4u);
+        // The target was cleared to (0,0,0,0); count texels the puppet touched (any
+        // channel non-zero -- overlay AlphaBlend leaves the visible result in RGB).
+        std::size_t drawn = 0;
+        std::uint8_t max_channel = 0;
+        for (std::size_t i = 0; i + 3 < pixels.size(); i += 4) {
+            std::uint8_t m = pixels[i];
+            if (pixels[i + 1] > m) m = pixels[i + 1];
+            if (pixels[i + 2] > m) m = pixels[i + 2];
+            if (pixels[i + 3] > m) m = pixels[i + 3];
+            if (m > 8u) {
+                ++drawn;
+            }
+            if (m > max_channel) max_channel = m;
+        }
+        EXPECT_GT(drawn, 0u)
+            << "the puppet left no pixels in the offscreen render target "
+               "(max channel value seen = " << static_cast<int>(max_channel) << ")";
+        wz::gpu::release_texture(device, rt);
 
         // Structural wiring proofs:
         //  - the puppet program realized from the asset compiler (no render-time

@@ -168,7 +168,12 @@ namespace wz::engine::rendering
             const wz::math::Mat4& view_projection,
             const wz::math::Vec3& camera_world_pos,
             std::span<const wz::math::Mat4> world_transforms = {},
-            const wz::engine::assets::AtmosphereData* atmosphere = nullptr);
+            const wz::engine::assets::AtmosphereData* atmosphere = nullptr,
+            // Offscreen render-to-texture (S6): when valid, the scene renders into
+            // this render-target texture (at its own dimensions), leaving it
+            // sampleable, instead of the backbuffer. The texture must have been
+            // created with ResourceUsage_RenderTarget. Default = the backbuffer.
+            wz::gpu::GPUHandle offscreen_target = {});
 
         // Invalidate every realized cache after a wholesale asset-graph swap.
         // The caches (realized programs/renderables/registered shaders) are

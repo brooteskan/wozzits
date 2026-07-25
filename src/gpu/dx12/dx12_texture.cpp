@@ -694,4 +694,107 @@ namespace wz::gpu::dx12::internal
         readback->Release();
         return true;
     }
+
+    // DIAGNOSTIC: read the current backbuffer (RGBA8) back to CPU, to check whether
+    // a render produced visible pixels. Call after end_frame, before present. Same
+    // copy/de-pitch as read_texture_rgba8_dx12, but on the swapchain buffer (which
+    // rests in PRESENT).
+    bool read_backbuffer_rgba8_dx12(Device& device, std::vector<uint8_t>& out)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !impl->device || !impl->queue || !impl->fence
+            || !impl->fence_event)
+        {
+            return false;
+        }
+        ID3D12Resource* bb = impl->backbuffers[impl->frame_index];
+        if (!bb) {
+            return false;
+        }
+        ID3D12Device* d3d = impl->device;
+
+        const D3D12_RESOURCE_DESC desc = bb->GetDesc();
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
+        UINT num_rows = 0;
+        UINT64 row_size = 0;
+        UINT64 total_bytes = 0;
+        d3d->GetCopyableFootprints(
+            &desc, 0, 1, 0, &footprint, &num_rows, &row_size, &total_bytes);
+
+        D3D12_HEAP_PROPERTIES readback_heap{};
+        readback_heap.Type = D3D12_HEAP_TYPE_READBACK;
+        const D3D12_RESOURCE_DESC buf_desc = make_upload_buffer_desc(total_bytes);
+        ID3D12Resource* readback = nullptr;
+        HRESULT hr = d3d->CreateCommittedResource(
+            &readback_heap, D3D12_HEAP_FLAG_NONE, &buf_desc,
+            D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback));
+        if (FAILED(hr)) {
+            return false;
+        }
+
+        ID3D12CommandAllocator* allocator = nullptr;
+        hr = d3d->CreateCommandAllocator(
+            D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator));
+        if (FAILED(hr)) { readback->Release(); return false; }
+        ID3D12GraphicsCommandList* cmd = nullptr;
+        hr = d3d->CreateCommandList(
+            0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator, nullptr,
+            IID_PPV_ARGS(&cmd));
+        if (FAILED(hr)) { allocator->Release(); readback->Release(); return false; }
+
+        D3D12_RESOURCE_BARRIER to_src{};
+        to_src.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        to_src.Transition.pResource = bb;
+        to_src.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+        to_src.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        to_src.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        cmd->ResourceBarrier(1, &to_src);
+
+        D3D12_TEXTURE_COPY_LOCATION dst{};
+        dst.pResource = readback;
+        dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        dst.PlacedFootprint = footprint;
+        D3D12_TEXTURE_COPY_LOCATION src{};
+        src.pResource = bb;
+        src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        src.SubresourceIndex = 0;
+        cmd->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+
+        D3D12_RESOURCE_BARRIER to_present = to_src;
+        to_present.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        to_present.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+        cmd->ResourceBarrier(1, &to_present);
+
+        hr = cmd->Close();
+        if (FAILED(hr)) {
+            cmd->Release(); allocator->Release(); readback->Release();
+            return false;
+        }
+        ID3D12CommandList* lists[] = { cmd };
+        impl->queue->ExecuteCommandLists(1, lists);
+        const bool waited = wait_for_gpu(impl);
+        cmd->Release();
+        allocator->Release();
+        if (!waited) { readback->Release(); return false; }
+
+        uint8_t* mapped = nullptr;
+        D3D12_RANGE read_range{ 0, static_cast<SIZE_T>(total_bytes) };
+        hr = readback->Map(0, &read_range, reinterpret_cast<void**>(&mapped));
+        if (FAILED(hr) || !mapped) { readback->Release(); return false; }
+
+        const uint32_t w = static_cast<uint32_t>(desc.Width);
+        const uint32_t h = desc.Height;
+        out.resize(static_cast<size_t>(w) * static_cast<size_t>(h) * 4u);
+        const uint64_t row_pitch = footprint.Footprint.RowPitch;
+        const uint64_t tight = static_cast<uint64_t>(w) * 4u;
+        for (uint32_t y = 0; y < h; ++y) {
+            std::memcpy(
+                out.data() + static_cast<size_t>(y) * static_cast<size_t>(tight),
+                mapped + footprint.Offset + static_cast<uint64_t>(y) * row_pitch,
+                static_cast<size_t>(tight));
+        }
+        readback->Unmap(0, nullptr);
+        readback->Release();
+        return true;
+    }
 }

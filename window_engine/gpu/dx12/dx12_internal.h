@@ -50,6 +50,7 @@ namespace wz::gpu::dx12::internal
     bool transition_texture_to_shader_read_dx12(Device& device, GPUHandle handle);
     bool read_texture_rgba8_dx12(
         Device& device, GPUHandle handle, std::vector<uint8_t>& out);
+    bool read_backbuffer_rgba8_dx12(Device& device, std::vector<uint8_t>& out);
 
     ID3D12PipelineState* create_triangle_pso(
         wz::gpu::Device& device,
