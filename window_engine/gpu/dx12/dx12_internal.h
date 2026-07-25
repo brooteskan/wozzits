@@ -54,13 +54,45 @@ namespace wz::gpu::dx12::internal
     // Draw a texture onto the currently-bound render target as a fullscreen quad
     // (S6 "2D surface" consumer). See dx12_blit.cpp.
     bool blit_texture_dx12(Device& device, GPUHandle texture);
-    // Draw a texture on a unit quad transformed by a column-major MVP
-    // (S6 "3D-mesh surface" consumer). world_surface=true composites with
-    // premultiplied alpha + depth-tests against the shared depth (an in-scene
-    // surface); false is an opaque, depth-off overlay. See dx12_textured_quad.cpp.
+    // How a textured quad draws. See dx12_textured_quad.cpp.
+    enum class TexturedQuadMode : std::uint8_t
+    {
+        Overlay,       // opaque, depth off -- a screen-space / 2D surface
+        WorldSurface,  // premultiplied alpha + depth test (no write) -- in-scene
+        Composite,     // premultiplied alpha, depth off -- drawing INTO a texture
+    };
+
+    // Draw a texture on a unit quad transformed by a column-major MVP, multiplied
+    // by an optional RGBA tint (nullptr = opaque white). The S6 "3D-mesh surface"
+    // consumer; also the primitive the compositor below is built from.
     bool draw_textured_quad_dx12(
         Device& device, GPUHandle texture, const float mvp[16],
-        bool world_surface = false);
+        TexturedQuadMode mode = TexturedQuadMode::Overlay,
+        const float tint_rgba[4] = nullptr);
+
+    // One layer of a texture composite: a source texture placed into the target's
+    // UV space by centre + half-extent (both in [0,1] target UV), rotated about
+    // that centre, scaled by `opacity`.
+    struct TextureCompositeLayer
+    {
+        GPUHandle texture{};
+        float     center_uv[2]    = { 0.5f, 0.5f };
+        float     half_size_uv[2] = { 0.5f, 0.5f };
+        float     rotation        = 0.0f;   // radians
+        float     opacity         = 1.0f;
+    };
+
+    // Composite `layers` into `target` (a render-target texture): clear to
+    // base_color, then draw each layer over it with premultiplied-alpha blending,
+    // in order. The general "material compositing" operation -- build a material
+    // texture from a base colour plus placed art, which a mesh then samples.
+    // Runs its own offscreen pass; must be inside a begin_frame/end_frame bracket.
+    bool composite_texture_layers_dx12(
+        Device& device,
+        GPUHandle target,
+        const float base_color[4],
+        const TextureCompositeLayer* layers,
+        std::size_t layer_count);
 
     ID3D12PipelineState* create_triangle_pso(
         wz::gpu::Device& device,

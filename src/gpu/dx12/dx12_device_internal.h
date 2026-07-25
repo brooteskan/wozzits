@@ -72,10 +72,11 @@ namespace wz::gpu::dx12
     // occluded by scene geometry.
     struct TexturedQuadContext
     {
-        ID3D12RootSignature*  root_sig   = nullptr;
-        ID3D12PipelineState*  pso        = nullptr;   // overlay: opaque, no depth
-        ID3D12PipelineState*  pso_world  = nullptr;   // in-scene: alpha + depth test
-        ID3D12DescriptorHeap* srv_heap   = nullptr;
+        ID3D12RootSignature*  root_sig      = nullptr;
+        ID3D12PipelineState*  pso           = nullptr;  // overlay: opaque, no depth
+        ID3D12PipelineState*  pso_world     = nullptr;  // in-scene: alpha + depth
+        ID3D12PipelineState*  pso_composite = nullptr;  // into a texture: alpha only
+        ID3D12DescriptorHeap* srv_heap      = nullptr;
     };
 
     struct DX12Device

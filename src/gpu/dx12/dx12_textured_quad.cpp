@@ -1,18 +1,23 @@
 // src/gpu/dx12/dx12_textured_quad.cpp
 //
-// Textured 3D quad: draw a unit quad transformed by a caller-supplied MVP,
-// sampling an arbitrary RGBA texture. The S6 "3D-mesh surface" consumer -- render
-// the puppet into an offscreen texture, then display that texture on a world-space
-// mesh face that carries its own transform (a spinning card / cube face). General
-// and reusable: any texture on any transformed quad.
+// Textured 3D quad + layered texture compositing.
 //
-// Same lazy root-sig / PSO / 1-descriptor SRV-heap shape as the fullscreen blit
-// (dx12_blit.cpp), with two differences: the vertex shader emits a real 6-vertex
-// quad (two triangles) instead of a fullscreen triangle, and a 16-float column-major
-// MVP arrives as a root 32-bit-constant block (b0) that transforms each corner.
-// Depth is disabled (a single quad never self-occludes); the quad composites over
-// whatever colour target is bound, so in the scene it reads as a card floating in
-// front. Occlusion against scene depth is a later refinement.
+// draw_textured_quad_dx12 draws a unit quad transformed by a caller-supplied
+// column-major MVP, sampling an arbitrary RGBA texture, tinted by a constant.
+// Three modes share one root signature (see TexturedQuadMode):
+//   Overlay      -- opaque, depth off        (the S6 2D-surface consumer)
+//   WorldSurface -- premult alpha + depth test, no write (an in-scene surface)
+//   Composite    -- premult alpha, depth off (drawing INTO a texture)
+//
+// composite_texture_layers_dx12 builds on that: clear a target render-target
+// texture to a base colour, then draw N textured layers into it, each placed by
+// centre/half-extent in the TARGET's UV space with an optional rotation and
+// tint. That is the general "material compositing" operation -- layer art onto a
+// material texture that a mesh then samples (decals, labels, layered materials,
+// a puppet on a sphere). Nothing here knows about inochi.
+//
+// The quad VS emits a real 6-vertex quad (two triangles) from SV_VertexID -- no
+// vertex buffer -- and transforms it by the MVP root constants.
 
 #include "dx12_device_internal.h"
 
@@ -25,6 +30,8 @@
 
 #include <d3dcompiler.h>
 
+#include <cmath>
+
 namespace
 {
     constexpr DXGI_FORMAT kQuadTargetFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -32,8 +39,13 @@ namespace
     // A unit quad in the z=0 plane (local corners at +/-1), transformed by the
     // caller MVP. UVs follow the D3D convention (v=0 at the top): local (-1,-1) is
     // the bottom-left corner and samples texel (0,1). Two triangles, 6 vertices.
+    // The sampled colour is multiplied by `tint` (premultiplied-friendly: tint the
+    // colour AND the alpha so a faded layer stays premultiplied).
     constexpr char kQuadShader[] =
-        "cbuffer QuadConstants : register(b0) { column_major float4x4 gMVP; };\n"
+        "cbuffer QuadConstants : register(b0) {\n"
+        "    column_major float4x4 gMVP;\n"
+        "    float4 gTint;\n"
+        "};\n"
         "Texture2D    gTex : register(t0);\n"
         "SamplerState gSmp : register(s0);\n"
         "struct VSOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; };\n"
@@ -50,8 +62,11 @@ namespace
         "    return o;\n"
         "}\n"
         "float4 ps_main(VSOut i) : SV_Target {\n"
-        "    return gTex.Sample(gSmp, i.uv);\n"
+        "    return gTex.Sample(gSmp, i.uv) * gTint;\n"
         "}\n";
+
+    // 16 MVP floats + 4 tint floats.
+    constexpr UINT kQuadRootConstantCount = 20;
 
     ID3DBlob* compile_quad(const char* entry, const char* target)
     {
@@ -87,12 +102,13 @@ namespace
         params[0].DescriptorTable.NumDescriptorRanges = 1;
         params[0].DescriptorTable.pDescriptorRanges = &srv_range;
         params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-        // [1] MVP root constants (b0, 16 floats), consumed in the vertex shader.
+        // [1] MVP + tint root constants (b0). Visible to both stages: the VS reads
+        // the matrix, the PS reads the tint.
         params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
         params[1].Constants.ShaderRegister = 0;  // b0
         params[1].Constants.RegisterSpace = 0;
-        params[1].Constants.Num32BitValues = 16;
-        params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+        params[1].Constants.Num32BitValues = kQuadRootConstantCount;
+        params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
         D3D12_STATIC_SAMPLER_DESC sampler{};
         sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -130,17 +146,16 @@ namespace
         return FAILED(hr) ? nullptr : rs;
     }
 
-    // world_surface = false: the screen-space overlay -- opaque, depth disabled
-    //   (a 2D surface / fullscreen-ish quad that just paints the texture).
-    // world_surface = true: an in-scene surface -- premultiplied-alpha over the
-    //   bound colour target (the RTT is premultiplied: the puppet drew with
-    //   SRC_ALPHA/INV_SRC_ALPHA into a black-cleared texture, so ONE/INV_SRC_ALPHA
-    //   here is the fringe-free composite), and depth-TESTED but not written against
-    //   the shared D32 depth (LESS_EQUAL, the engine's convention: clear=1.0 far),
-    //   so nearer scene geometry occludes the card while the card writes no depth.
+    // alpha_blend: premultiplied-alpha composite (ONE / INV_SRC_ALPHA). Every
+    // texture this path draws is premultiplied -- content rendered with
+    // SRC_ALPHA/INV_SRC_ALPHA into a black-cleared target -- so ONE is the correct
+    // (fringe-free) source factor.
+    // depth_test: LESS_EQUAL, no write, against the shared D32 depth. Matches the
+    // engine's convention (depth cleared to 1.0 = far), so nearer scene geometry
+    // occludes the quad while the quad writes no depth.
     ID3D12PipelineState* create_quad_pso(
         ID3D12Device* device, ID3D12RootSignature* rs,
-        ID3DBlob* vs, ID3DBlob* ps, bool world_surface)
+        ID3DBlob* vs, ID3DBlob* ps, bool alpha_blend, bool depth_test)
     {
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
         desc.pRootSignature = rs;
@@ -159,17 +174,19 @@ namespace
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
 
-        if (world_surface) {
+        if (alpha_blend) {
             D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
             rt.BlendEnable = TRUE;
-            rt.SrcBlend = D3D12_BLEND_ONE;           // RTT is premultiplied-alpha
+            rt.SrcBlend = D3D12_BLEND_ONE;           // premultiplied-alpha source
             rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
             rt.BlendOp = D3D12_BLEND_OP_ADD;
             rt.SrcBlendAlpha = D3D12_BLEND_ONE;
             rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
             rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
             rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
 
+        if (depth_test) {
             desc.DepthStencilState.DepthEnable = TRUE;
             desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
             desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
@@ -186,15 +203,14 @@ namespace
         return FAILED(hr) ? nullptr : pso;
     }
 
-    // Lazily build the quad root sig / both PSOs / 1-descriptor shader-visible SRV
-    // heap.
+    // Lazily build the quad root sig / the three PSOs / a 1-descriptor
+    // shader-visible SRV heap.
     bool ensure_quad_ctx(wz::gpu::dx12::DX12Device* impl)
     {
         if (impl->textured_quad_ctx) {
-            return impl->textured_quad_ctx->root_sig
-                && impl->textured_quad_ctx->pso
-                && impl->textured_quad_ctx->pso_world
-                && impl->textured_quad_ctx->srv_heap;
+            const auto* c = impl->textured_quad_ctx;
+            return c->root_sig && c->pso && c->pso_world && c->pso_composite
+                && c->srv_heap;
         }
         auto* ctx = new wz::gpu::dx12::TexturedQuadContext{};
         ID3DBlob* vs = compile_quad("vs_main", "vs_5_0");
@@ -203,9 +219,11 @@ namespace
             ctx->root_sig = create_quad_root_signature(impl->device);
             if (ctx->root_sig) {
                 ctx->pso = create_quad_pso(
-                    impl->device, ctx->root_sig, vs, ps, /*world_surface*/ false);
+                    impl->device, ctx->root_sig, vs, ps, false, false);
                 ctx->pso_world = create_quad_pso(
-                    impl->device, ctx->root_sig, vs, ps, /*world_surface*/ true);
+                    impl->device, ctx->root_sig, vs, ps, true, true);
+                ctx->pso_composite = create_quad_pso(
+                    impl->device, ctx->root_sig, vs, ps, true, false);
             }
         }
         if (vs) {
@@ -221,25 +239,16 @@ namespace
         impl->device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&ctx->srv_heap));
 
         impl->textured_quad_ctx = ctx;
-        return ctx->root_sig && ctx->pso && ctx->pso_world && ctx->srv_heap;
+        return ctx->root_sig && ctx->pso && ctx->pso_world && ctx->pso_composite
+            && ctx->srv_heap;
     }
 }
 
 namespace wz::gpu::dx12::internal
 {
-    // Draw `texture` on a unit quad transformed by `mvp` (16 floats, column-major:
-    // the same layout the engine feeds view_projection to its shaders). Must be
-    // inside a begin_frame/end_frame bracket with a colour target bound; the texture
-    // must rest shader-readable.
-    //   world_surface = false: opaque, depth off -- the quad paints over whatever is
-    //     in the target (a screen-space / 2D-surface display).
-    //   world_surface = true: premultiplied-alpha composite, depth-TESTED (no write)
-    //     against the shared D32 depth -- an in-scene surface the puppet floats on,
-    //     occluded by nearer scene geometry. The caller's pass must have the depth
-    //     target bound (the main backbuffer pass does).
     bool draw_textured_quad_dx12(
         Device& device, GPUHandle texture, const float mvp[16],
-        bool world_surface)
+        TexturedQuadMode mode, const float tint_rgba[4])
     {
         auto* impl = static_cast<DX12Device*>(device.impl);
         if (!impl || !impl->cmd || !impl->device || !mvp) {
@@ -265,16 +274,96 @@ namespace wz::gpu::dx12::internal
             tex->texture, &srv,
             ctx->srv_heap->GetCPUDescriptorHandleForHeapStart());
 
+        ID3D12PipelineState* pso = ctx->pso;
+        if (mode == TexturedQuadMode::WorldSurface) {
+            pso = ctx->pso_world;
+        }
+        else if (mode == TexturedQuadMode::Composite) {
+            pso = ctx->pso_composite;
+        }
+
+        // Root constants: 16 MVP floats then 4 tint floats (default opaque white).
+        float constants[kQuadRootConstantCount];
+        for (int i = 0; i < 16; ++i) {
+            constants[i] = mvp[i];
+        }
+        for (int i = 0; i < 4; ++i) {
+            constants[16 + i] = tint_rgba ? tint_rgba[i] : 1.0f;
+        }
+
         ID3D12DescriptorHeap* heaps[] = { ctx->srv_heap };
         impl->cmd->SetDescriptorHeaps(1, heaps);
         impl->cmd->SetGraphicsRootSignature(ctx->root_sig);
-        impl->cmd->SetPipelineState(
-            world_surface ? ctx->pso_world : ctx->pso);
+        impl->cmd->SetPipelineState(pso);
         impl->cmd->SetGraphicsRootDescriptorTable(
             0, ctx->srv_heap->GetGPUDescriptorHandleForHeapStart());
-        impl->cmd->SetGraphicsRoot32BitConstants(1, 16, mvp, 0);
+        impl->cmd->SetGraphicsRoot32BitConstants(
+            1, kQuadRootConstantCount, constants, 0);
         impl->cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         impl->cmd->DrawInstanced(6, 1, 0, 0);
         return true;
+    }
+
+    bool composite_texture_layers_dx12(
+        Device& device,
+        GPUHandle target,
+        const float base_color[4],
+        const TextureCompositeLayer* layers,
+        std::size_t layer_count)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !impl->cmd) {
+            return false;
+        }
+        if (layer_count > 0 && !layers) {
+            return false;
+        }
+
+        // Base layer = the clear. Everything else composites over it in order.
+        if (!begin_offscreen_pass(device, target, base_color)) {
+            return false;
+        }
+
+        bool ok = true;
+        for (std::size_t i = 0; i < layer_count; ++i) {
+            const TextureCompositeLayer& layer = layers[i];
+            if (!layer.texture.valid()) {
+                continue;
+            }
+
+            // Place the unit quad into the TARGET's UV space: centre + half-extent
+            // in [0,1] UV, mapped to NDC (x: 2u-1, y: 1-2v -- v runs down), with an
+            // optional rotation about the layer centre. Non-uniform half-extents
+            // are honoured (the rotation then shears, as any placement transform
+            // does).
+            const float cx = layer.center_uv[0] * 2.0f - 1.0f;
+            const float cy = 1.0f - layer.center_uv[1] * 2.0f;
+            const float sx = layer.half_size_uv[0] * 2.0f;
+            const float sy = layer.half_size_uv[1] * 2.0f;
+            const float cos_r = std::cos(layer.rotation);
+            const float sin_r = std::sin(layer.rotation);
+
+            const float mvp[16] = {
+                 sx * cos_r, sy * sin_r, 0.0f, 0.0f,   // column 0
+                -sx * sin_r, sy * cos_r, 0.0f, 0.0f,   // column 1
+                 0.0f,       0.0f,       0.0f, 0.0f,   // column 2 (quad z = 0)
+                 cx,         cy,         0.5f, 1.0f,   // column 3
+            };
+            // Premultiplied tint: scale colour AND alpha so a faded layer stays
+            // premultiplied and composites correctly.
+            const float tint[4] = {
+                layer.opacity, layer.opacity, layer.opacity, layer.opacity };
+
+            if (!draw_textured_quad_dx12(
+                    device, layer.texture, mvp,
+                    TexturedQuadMode::Composite, tint)) {
+                ok = false;
+            }
+        }
+
+        if (!end_offscreen_pass(device, target)) {
+            return false;
+        }
+        return ok;
     }
 }

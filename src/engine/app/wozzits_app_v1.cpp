@@ -2976,7 +2976,8 @@ namespace wz::app
         const wz::math::Mat4 mvp_mat = wz::math::mul(
             view_.active_view().view_projection, card_model);
         wz::gpu::dx12::internal::draw_textured_quad_dx12(
-            ctx_.device, puppet_card_rtt_, mvp_mat.m, /*world_surface*/ true);
+            ctx_.device, puppet_card_rtt_, mvp_mat.m,
+            wz::gpu::dx12::internal::TexturedQuadMode::WorldSurface);
         return true;
     }
 

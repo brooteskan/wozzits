@@ -470,7 +470,8 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
             0.0f, 0.0f, 0.5f, 1.0f,   // column 3: fill NDC, z=0.5
         };
         EXPECT_TRUE(wz::gpu::dx12::internal::draw_textured_quad_dx12(
-            device, rt, mvp_fs, /*world_surface*/ true));
+            device, rt, mvp_fs,
+            wz::gpu::dx12::internal::TexturedQuadMode::WorldSurface));
         ASSERT_TRUE(wz::gpu::end_frame(device));
         {
             std::vector<std::uint8_t> bb4;
