@@ -20,6 +20,11 @@
 
 namespace wz::engine::assets::inochi
 {
+    // The evaluated per-node transform deltas + per-Part vertex offsets a pose
+    // contributes (see puppet_deform.h). build_puppet_draw_list applies it as an
+    // optional argument; a pointer keeps the header free of the deform include.
+    struct PuppetDeform;
+
     // A 2D affine packed as two rows: x' = a*x + b*y + tx ; y' = c*x + d*y + ty.
     struct Affine2D
     {
@@ -68,11 +73,18 @@ namespace wz::engine::assets::inochi
         [[nodiscard]] bool empty() const noexcept { return parts.empty(); }
     };
 
-    // Build the static draw list: walk the node tree from the root (nodes[0]),
-    // accumulate each node's 2D transform + zsort top-down, collect every enabled
-    // drawable Part, interleave its pos+uv, and sort ascending by accumulated
-    // zsort (back to front). Pure function of the puppet; no GPU. Disabled Parts
-    // and Parts with empty meshes are skipped; Composites are flattened (their
-    // child Parts draw inline -- the offscreen composite grouping is seam 6).
-    [[nodiscard]] PuppetDrawList build_puppet_draw_list(const Puppet& puppet);
+    // Build the draw list: walk the node tree from the root (nodes[0]), accumulate
+    // each node's 2D transform + zsort top-down, collect every enabled drawable
+    // Part, interleave its pos+uv, and sort ascending by accumulated zsort (back to
+    // front). Pure function of the puppet; no GPU. Disabled Parts and Parts with
+    // empty meshes are skipped; Composites are flattened (their child Parts draw
+    // inline -- the offscreen composite grouping is seam 6).
+    //
+    // When `deform` is non-null it is applied as it builds (seam S3): each node's
+    // effective transform/zsort = base + the node's TransformDelta, and each Part
+    // vertex is offset by its per-vertex deform before placement. `deform` is
+    // indexed by node index (as evaluate_puppet_deform returns); a null pointer
+    // yields the static rest pose (the previous behaviour).
+    [[nodiscard]] PuppetDrawList build_puppet_draw_list(
+        const Puppet& puppet, const PuppetDeform* deform = nullptr);
 }

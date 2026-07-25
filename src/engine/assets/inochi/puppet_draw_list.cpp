@@ -7,8 +7,11 @@
 
 #include <engine/assets/inochi/puppet_draw_list.h>
 
+#include <engine/assets/inochi/puppet_deform.h>
+
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <utility>
 
@@ -48,9 +51,41 @@ namespace wz::engine::assets::inochi
             m.c = st * sx; m.d =  ct * sy; m.ty = t.trans[1];
             return m;
         }
+
+        // The node's rest transform plus its deform delta (added trans/rot/scale).
+        // Falls back to the rest transform when there is no deform for this node.
+        Transform effective_transform(
+            const Node& node, std::size_t i, const PuppetDeform* deform) noexcept
+        {
+            Transform t = node.transform;
+            if (deform && i < deform->transform_deltas.size()) {
+                const TransformDelta& d = deform->transform_deltas[i];
+                t.trans[0] += d.trans[0];
+                t.trans[1] += d.trans[1];
+                t.trans[2] += d.trans[2];
+                t.rot[0] += d.rot[0];
+                t.rot[1] += d.rot[1];
+                t.rot[2] += d.rot[2];
+                t.scale[0] += d.scale[0];
+                t.scale[1] += d.scale[1];
+            }
+            return t;
+        }
+
+        // The node's rest zsort plus its deform zsort delta.
+        float effective_zsort(
+            const Node& node, std::size_t i, const PuppetDeform* deform) noexcept
+        {
+            float z = node.zsort;
+            if (deform && i < deform->transform_deltas.size()) {
+                z += deform->transform_deltas[i].zsort;
+            }
+            return z;
+        }
     } // namespace
 
-    PuppetDrawList build_puppet_draw_list(const Puppet& puppet)
+    PuppetDrawList build_puppet_draw_list(
+        const Puppet& puppet, const PuppetDeform* deform)
     {
         PuppetDrawList out;
         const std::size_t n = puppet.nodes.size();
@@ -68,8 +103,8 @@ namespace wz::engine::assets::inochi
 
         std::vector<std::size_t> stack;
         stack.reserve(n);
-        world[0] = local_affine(puppet.nodes[0].transform);
-        zacc[0] = puppet.nodes[0].zsort;
+        world[0] = local_affine(effective_transform(puppet.nodes[0], 0, deform));
+        zacc[0] = effective_zsort(puppet.nodes[0], 0, deform);
         visited[0] = 1;
         stack.push_back(0);
         while (!stack.empty()) {
@@ -79,9 +114,12 @@ namespace wz::engine::assets::inochi
                 if (child >= n || visited[child]) {
                     continue;
                 }
-                world[child] =
-                    compose(world[i], local_affine(puppet.nodes[child].transform));
-                zacc[child] = zacc[i] + puppet.nodes[child].zsort;
+                world[child] = compose(
+                    world[i],
+                    local_affine(
+                        effective_transform(puppet.nodes[child], child, deform)));
+                zacc[child] =
+                    zacc[i] + effective_zsort(puppet.nodes[child], child, deform);
                 visited[child] = 1;
                 stack.push_back(child);
             }
@@ -111,11 +149,23 @@ namespace wz::engine::assets::inochi
             part.zsort = zacc[i];
             part.atlas_texture = node.textures.empty() ? 0u : node.textures[0];
 
+            // Per-Part deform offsets (S3), added to the rest verts in Part-local
+            // pixel space before placement. Empty / absent => rest positions.
+            const std::vector<std::array<float, 2>>* offsets =
+                (deform && i < deform->vertex_offsets.size()
+                 && !deform->vertex_offsets[i].empty())
+                    ? &deform->vertex_offsets[i]
+                    : nullptr;
+
             part.vertices.resize(vcount);
             for (std::size_t vi = 0; vi < vcount; ++vi) {
                 PuppetVertex& pv = part.vertices[vi];
                 pv.px = node.mesh.verts[vi * 2 + 0];
                 pv.py = node.mesh.verts[vi * 2 + 1];
+                if (offsets && vi < offsets->size()) {
+                    pv.px += (*offsets)[vi][0];
+                    pv.py += (*offsets)[vi][1];
+                }
                 if (vi * 2 + 1 < node.mesh.uvs.size()) {
                     pv.u = node.mesh.uvs[vi * 2 + 0];
                     pv.v = node.mesh.uvs[vi * 2 + 1];

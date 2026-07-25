@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/inochi/puppet_draw_list.h>
+#include <engine/assets/inochi/puppet_deform.h>
 
 #include <array>
 #include <cstdint>
@@ -148,6 +149,41 @@ TEST(PuppetDrawList, SkipsDisabledAndEmptyParts)
     const ino::PuppetDrawList list = ino::build_puppet_draw_list(puppet);
     ASSERT_EQ(list.parts.size(), 1u);
     EXPECT_EQ(list.parts[0].node_index, 3u);
+}
+
+TEST(PuppetDrawList, AppliesDeformToTransformAndVertices)
+{
+    ino::Puppet puppet;
+
+    ino::Node root;
+    root.kind = ino::NodeKind::Node;
+    root.children = { 1 };
+    puppet.nodes.push_back(root);
+
+    puppet.nodes.push_back(make_triangle_part(11, 0.0f, 0));  // verts (0,0),(10,0),(0,10)
+
+    // Deform: shift the Part +100 in x (transform delta) and push vertex 0 by (2,0).
+    ino::PuppetDeform deform;
+    deform.transform_deltas.resize(2);
+    deform.vertex_offsets.resize(2);
+    deform.transform_deltas[1].trans = { 100.0f, 0.0f, 0.0f };
+    deform.vertex_offsets[1] = { { 2.0f, 0.0f }, { 0.0f, 0.0f }, { 0.0f, 0.0f } };
+
+    const ino::PuppetDrawList list = ino::build_puppet_draw_list(puppet, &deform);
+    ASSERT_EQ(list.parts.size(), 1u);
+
+    // Vertex 0 local pos carries the (2,0) offset; placement adds the +100 shift.
+    const ino::PuppetPartDraw& p = list.parts[0];
+    EXPECT_NEAR(p.vertices[0].px, 2.0f, 1e-4f);
+    EXPECT_NEAR(p.vertices[0].py, 0.0f, 1e-4f);
+    const std::array<float, 2> w =
+        ino::apply(p.placement, p.vertices[0].px, p.vertices[0].py);
+    EXPECT_NEAR(w[0], 102.0f, 1e-4f);
+    EXPECT_NEAR(w[1], 0.0f, 1e-4f);
+
+    // A null deform reproduces the rest pose (vertex 0 at local origin).
+    const ino::PuppetDrawList rest = ino::build_puppet_draw_list(puppet);
+    EXPECT_NEAR(rest.parts[0].vertices[0].px, 0.0f, 1e-4f);
 }
 
 TEST(PuppetDrawList, ComputesBounds)
