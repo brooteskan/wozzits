@@ -12,13 +12,17 @@ namespace wz::engine::rendering
         wz::rhi::Tag variant,
         const void* data,
         uint64_t size,
-        uint32_t stride)
+        uint32_t stride,
+        wz::rhi::ResourceCpuAccess cpu_access =
+            wz::rhi::ResourceCpuAccess::WriteOnce)
     {
+        // cpu_access defaults to WriteOnce (static pull buffers); pass WriteFrequent
+        // for a buffer the renderer re-uploads each frame (e.g. puppet deform).
         wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::buffer(
             size,
             stride,
             wz::rhi::ResourceUsage_Sampled,
-            wz::rhi::ResourceCpuAccess::WriteOnce);
+            cpu_access);
         desc.identity = wz::rhi::ResourceIdentity{ asset_id, variant };
 
         const wz::rhi::GpuResourceHandle handle =

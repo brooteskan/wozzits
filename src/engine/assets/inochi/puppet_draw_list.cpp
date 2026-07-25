@@ -84,11 +84,13 @@ namespace wz::engine::assets::inochi
         }
     } // namespace
 
-    PuppetDrawList build_puppet_draw_list(
+    PuppetNodeTransforms compute_node_world_transforms(
         const Puppet& puppet, const PuppetDeform* deform)
     {
-        PuppetDrawList out;
+        PuppetNodeTransforms out;
         const std::size_t n = puppet.nodes.size();
+        out.world.assign(n, Affine2D{});
+        out.zacc.assign(n, 0.0f);
         if (n == 0) {
             return out;
         }
@@ -97,14 +99,11 @@ namespace wz::engine::assets::inochi
         // puppet.nodes; the root is nodes[0]. An iterative DFS keeps parent-before-
         // child ordering without assuming the flatten order is topological, and the
         // `visited` guard is defensive against malformed indices / cycles.
-        std::vector<Affine2D> world(n);
-        std::vector<float> zacc(n, 0.0f);
         std::vector<std::uint8_t> visited(n, 0);
-
         std::vector<std::size_t> stack;
         stack.reserve(n);
-        world[0] = local_affine(effective_transform(puppet.nodes[0], 0, deform));
-        zacc[0] = effective_zsort(puppet.nodes[0], 0, deform);
+        out.world[0] = local_affine(effective_transform(puppet.nodes[0], 0, deform));
+        out.zacc[0] = effective_zsort(puppet.nodes[0], 0, deform);
         visited[0] = 1;
         stack.push_back(0);
         while (!stack.empty()) {
@@ -114,16 +113,32 @@ namespace wz::engine::assets::inochi
                 if (child >= n || visited[child]) {
                     continue;
                 }
-                world[child] = compose(
-                    world[i],
+                out.world[child] = compose(
+                    out.world[i],
                     local_affine(
                         effective_transform(puppet.nodes[child], child, deform)));
-                zacc[child] =
-                    zacc[i] + effective_zsort(puppet.nodes[child], child, deform);
+                out.zacc[child] =
+                    out.zacc[i] + effective_zsort(puppet.nodes[child], child, deform);
                 visited[child] = 1;
                 stack.push_back(child);
             }
         }
+        return out;
+    }
+
+    PuppetDrawList build_puppet_draw_list(
+        const Puppet& puppet, const PuppetDeform* deform)
+    {
+        PuppetDrawList out;
+        const std::size_t n = puppet.nodes.size();
+        if (n == 0) {
+            return out;
+        }
+
+        const PuppetNodeTransforms xf =
+            compute_node_world_transforms(puppet, deform);
+        const std::vector<Affine2D>& world = xf.world;
+        const std::vector<float>& zacc = xf.zacc;
 
         float min_x = std::numeric_limits<float>::max();
         float min_y = std::numeric_limits<float>::max();

@@ -42,6 +42,7 @@ namespace wz::engine::assets::inochi
         std::uint32_t index_count = 0;
         std::uint32_t vertex_count = 0;
         std::uint32_t atlas = 0;             // index into ResidentPuppet::atlases
+        std::size_t node_index = 0;          // index into Puppet::nodes (deform match)
         Affine2D placement;                  // Part-local pixels -> puppet pixels
         float opacity = 1.0f;
         BlendMode blend = BlendMode::Normal;

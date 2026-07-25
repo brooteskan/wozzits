@@ -125,11 +125,15 @@ namespace wz::engine::assets::inochi
             const std::uint64_t vtx_asset_id =
                 rhi_asset_identity(key, "vtx_" + std::to_string(part.node_index));
             const wz::rhi::ResourceIdentity vtx_id{ vtx_asset_id, {} };
+            // WriteFrequent: the deform seam (S3) re-uploads these vertices each
+            // frame the Part's mesh moves. Index buffers stay WriteOnce (indices
+            // don't deform).
             const wz::rhi::GpuResourceHandle vhandle =
                 wz::engine::rendering::acquire_pull_buffer(
                     gpu_resources, vtx_asset_id, wz::rhi::Tag{},
                     part.vertices.data(), vtx_bytes,
-                    static_cast<std::uint32_t>(sizeof(PuppetVertex)));
+                    static_cast<std::uint32_t>(sizeof(PuppetVertex)),
+                    wz::rhi::ResourceCpuAccess::WriteFrequent);
             if (!vhandle.valid()) {
                 return fail("puppet Part vertex buffer residency failed");
             }
@@ -159,6 +163,7 @@ namespace wz::engine::assets::inochi
             rp.index_count = static_cast<std::uint32_t>(part.indices.size());
             rp.vertex_count = static_cast<std::uint32_t>(part.vertices.size());
             rp.atlas = part.atlas_texture;
+            rp.node_index = part.node_index;
             rp.placement = part.placement;
             rp.opacity = part.opacity;
             rp.blend = part.blend;

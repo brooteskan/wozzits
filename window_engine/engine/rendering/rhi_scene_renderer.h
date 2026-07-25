@@ -20,6 +20,9 @@
 
 // For ClipmapLandscapeRenderSettings carried on a realized clipmap renderable.
 #include <engine/assets/renderable/renderable.h>
+#include <engine/assets/inochi/puppet_deform.h>
+#include <engine/assets/inochi/puppet_physics.h>
+#include <engine/assets/inochi/puppet_draw_list.h>
 
 #include <gpu/gpu.h>
 #include <logging/logger.h>
@@ -307,6 +310,28 @@ namespace wz::engine::rendering
             std::vector<wz::rhi::DrawPacket> puppet_packets;
             std::vector<wz::rhi::ShaderResourceGroup> puppet_part_srgs;
 
+            // Deform + physics runtime (S3c / S7). Present only when is_puppet.
+            // puppet_source is borrowed from the asset's PuppetData (stable while
+            // realized). Each frame: step_puppet_physics writes puppet_params from
+            // a breathing anchor, evaluate_puppet_deform + build_puppet_draw_list
+            // rebuild the moving pose, every Part's placement root constants are
+            // repacked, and a Part's WriteFrequent vertex buffer is re-uploaded
+            // only when its mesh actually moved (per-buffer GPU flush -- see
+            // issue #278). puppet_to_target/viewport fit the puppet on the target.
+            const wz::engine::assets::inochi::Puppet* puppet_source = nullptr;
+            wz::engine::assets::inochi::PuppetParams puppet_params;
+            wz::engine::assets::inochi::PuppetPhysics puppet_physics;
+            wz::engine::assets::inochi::Affine2D puppet_to_target{};
+            float puppet_viewport_w = 0.0f;
+            float puppet_viewport_h = 0.0f;
+            struct PuppetPartRuntime
+            {
+                wz::rhi::GpuResourceHandle vertices{};
+                std::size_t node_index = 0;
+                uint32_t vertex_count = 0;
+            };
+            std::vector<PuppetPartRuntime> puppet_part_runtime;
+
             // Star-field renderables (#266) bind the resident star point
             // StructuredBuffer (StarCatalog semantic, asset-owned) and record a
             // non-indexed draw of 6 * star_count vertices. is_star_field gates the
@@ -356,6 +381,13 @@ namespace wz::engine::rendering
         // under shader_ref(key)) is registered. The renderer never compiles
         // shaders; this just gates the render-time program fallback (#193).
         bool ensure_shader_module(const wz::asset::AssetKey& shader_key);
+
+        // Per-frame puppet deform + physics (S3c/S7). Advances the SimplePhysics
+        // pendulums from a subtle breathing anchor, rebuilds the deformed pose,
+        // repacks each Part's placement root constants, and re-uploads a Part's
+        // WriteFrequent vertex buffer only when its mesh actually moved this frame.
+        // Called from the per-frame packing loop for an is_puppet renderable.
+        void update_puppet_pose(RealizedRenderable& realized);
 
         // Pack a camera-follow terrain draw-constant block (the 32-dword
         // ClipmapDrawConstants: view_projection + per-level snap / world→uv /

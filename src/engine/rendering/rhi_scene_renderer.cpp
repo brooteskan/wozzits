@@ -31,6 +31,7 @@
 #include <d3d12.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -1456,6 +1457,17 @@ namespace wz::engine::rendering
             prealized.owns_buffers = false;  // buffers are asset-owned
             prealized.is_puppet = true;
 
+            // Deform/physics runtime (S3c/S7): borrow the source puppet (stable
+            // while realized) and seed the parameter + pendulum state. render_scene
+            // drives it per frame.
+            prealized.puppet_source = &source->puppet->data->source;
+            prealized.puppet_params =
+                wz::engine::assets::inochi::make_default_params(
+                    *prealized.puppet_source);
+            prealized.puppet_physics =
+                wz::engine::assets::inochi::make_puppet_physics(
+                    *prealized.puppet_source);
+
             // The shared Screen view head (viewport), bound once and reused by
             // every Part packet.
             if (!bind_view_constants(prealized, slot0_layout)) {
@@ -1480,10 +1492,14 @@ namespace wz::engine::rendering
                     puppet,
                     screen_constants_.viewport[0],
                     screen_constants_.viewport[1]);
+            prealized.puppet_to_target = puppet_to_target;
+            prealized.puppet_viewport_w = screen_constants_.viewport[0];
+            prealized.puppet_viewport_h = screen_constants_.viewport[1];
 
             // Reserve so the per-Part SRG addresses the packets capture stay valid.
             prealized.puppet_part_srgs.reserve(puppet.parts.size());
             prealized.puppet_packets.reserve(puppet.parts.size());
+            prealized.puppet_part_runtime.reserve(puppet.parts.size());
             for (const wz::engine::assets::inochi::ResidentPuppetPart& part :
                  puppet.parts) {
                 const wz::rhi::GpuResourceHandle verts =
@@ -1557,6 +1573,11 @@ namespace wz::engine::rendering
                     return nullptr;
                 }
                 prealized.puppet_packets.push_back(builder.end());
+                // Cache the WriteFrequent vertex handle + node index for the
+                // per-frame deform update (parallel to puppet_packets).
+                prealized.puppet_part_runtime.push_back(
+                    RealizedRenderable::PuppetPartRuntime{
+                        verts, part.node_index, part.vertex_count });
             }
 
             (void)pinserted;
@@ -2066,6 +2087,101 @@ namespace wz::engine::rendering
         out.assign(bytes, bytes + sizeof(constants));
     }
 
+    void RhiSceneRenderer::update_puppet_pose(RealizedRenderable& realized)
+    {
+        namespace ino = wz::engine::assets::inochi;
+        if (!realized.puppet_source) {
+            return;
+        }
+        const ino::Puppet& puppet = *realized.puppet_source;
+        const std::size_t node_count = puppet.nodes.size();
+        if (node_count == 0) {
+            return;
+        }
+
+        // Time base + a subtle breathing bob (primary motion). SimplePhysics only
+        // sways in response to a MOVING anchor -- a perfectly static puppet settles
+        // to its gravity rest -- so a gentle vertical bob on the root feeds the
+        // pendulums. render_scene_calls_ is the renderer's only clock (60 fps).
+        const float t = static_cast<float>(render_scene_calls_) * (1.0f / 60.0f);
+        constexpr float kDt = 1.0f / 60.0f;
+        constexpr float kTwoPi = 6.2831853f;
+        constexpr float kBreathHz = 0.25f;   // slow breath
+        constexpr float kBreathAmp = 6.0f;   // px
+        const float breath = kBreathAmp * std::sin(t * kTwoPi * kBreathHz);
+
+        // Primary deform = the breathing bob on the root (node 0), used to move the
+        // pendulum anchors and folded into the rendered pose below.
+        ino::PuppetDeform primary;
+        primary.transform_deltas.assign(node_count, ino::TransformDelta{});
+        primary.vertex_offsets.assign(node_count, {});
+        primary.transform_deltas[0].trans[1] += breath;
+
+        // Anchors = node world positions under the primary motion.
+        const ino::PuppetNodeTransforms xf =
+            ino::compute_node_world_transforms(puppet, &primary);
+        std::vector<std::array<float, 2>> anchors(xf.world.size());
+        for (std::size_t i = 0; i < xf.world.size(); ++i) {
+            anchors[i] = { xf.world[i].tx, xf.world[i].ty };
+        }
+
+        // Physics writes the output parameters from the moving anchors.
+        ino::step_puppet_physics(
+            puppet, realized.puppet_physics, anchors, kDt, realized.puppet_params);
+
+        // Full pose = physics-driven parameter deform + the breathing root bob.
+        ino::PuppetDeform pose =
+            ino::evaluate_puppet_deform(puppet, realized.puppet_params);
+        if (!pose.transform_deltas.empty()) {
+            pose.transform_deltas[0].trans[1] += breath;
+        }
+
+        // Rebuild the deformed draw list (verts + placements), indexed by node.
+        const ino::PuppetDrawList list = ino::build_puppet_draw_list(puppet, &pose);
+        std::unordered_map<std::size_t, const ino::PuppetPartDraw*> by_node;
+        by_node.reserve(list.parts.size());
+        for (const ino::PuppetPartDraw& p : list.parts) {
+            by_node.emplace(p.node_index, &p);
+        }
+
+        // Per Part: repack placement root constants (free) and re-upload the vertex
+        // buffer only when the mesh actually moved (per-buffer GPU flush; #278).
+        // (Manual min: <windows.h> min/max macros are in scope via the DX12 headers.)
+        const std::size_t runtime_n = realized.puppet_part_runtime.size();
+        const std::size_t packet_n = realized.puppet_packets.size();
+        const std::size_t count = runtime_n < packet_n ? runtime_n : packet_n;
+        for (std::size_t pi = 0; pi < count; ++pi) {
+            const RealizedRenderable::PuppetPartRuntime& rt =
+                realized.puppet_part_runtime[pi];
+            const auto it = by_node.find(rt.node_index);
+            if (it == by_node.end()) {
+                continue;
+            }
+            const ino::PuppetPartDraw& dp = *it->second;
+
+            const ino::Affine2D m =
+                ino::compose(realized.puppet_to_target, dp.placement);
+            const float block[8] = {
+                m.a, m.b, m.tx, dp.opacity,
+                m.c, m.d, m.ty, 0.0f,
+            };
+            realized.puppet_packets[pi].root_constants.assign(
+                reinterpret_cast<const uint8_t*>(block),
+                reinterpret_cast<const uint8_t*>(block) + sizeof(block));
+
+            const bool deformed =
+                rt.node_index < pose.vertex_offsets.size()
+                && !pose.vertex_offsets[rt.node_index].empty();
+            if (deformed && rt.vertices.valid() && !dp.vertices.empty()) {
+                gpu_.resources.update(
+                    rt.vertices,
+                    dp.vertices.data(),
+                    static_cast<std::uint64_t>(dp.vertices.size())
+                        * sizeof(ino::PuppetVertex));
+            }
+        }
+    }
+
     bool RhiSceneRenderer::render_scene(
         std::span<const ea::SceneNodeAsset> nodes,
         ea::EngineAssetLibrary& assets,
@@ -2317,10 +2433,10 @@ namespace wz::engine::rendering
                     bytes, bytes + sizeof(constants));
             }
             else if (realized->is_puppet) {
-                // Static per-Part packets: the affine placement + opacity were
-                // packed at realize and never change (deform is a later seam), and
-                // the Screen viewport refreshes behind the shared view SRG. Nothing
-                // to repack here.
+                // Advance physics + deform and repack each Part's placement /
+                // vertices for this frame (S3c/S7). Static puppets settle quickly;
+                // a moving-anchor pendulum keeps swaying.
+                update_puppet_pose(*realized);
             }
             else {
                 const wz::math::Mat4& world =

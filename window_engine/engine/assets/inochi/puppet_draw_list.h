@@ -73,6 +73,21 @@ namespace wz::engine::assets::inochi
         [[nodiscard]] bool empty() const noexcept { return parts.empty(); }
     };
 
+    // Per-node accumulated world transform + zsort (parallel to Puppet::nodes),
+    // the shared result of the top-down transform walk.
+    struct PuppetNodeTransforms
+    {
+        std::vector<Affine2D> world;  // node-local pixels -> puppet pixels
+        std::vector<float> zacc;      // accumulated zsort
+    };
+
+    // Walk the node tree from the root (nodes[0]) and accumulate each node's 2D
+    // transform + zsort top-down, applying `deform` (rest + delta) when non-null.
+    // Pure. The physics seam reads node world positions (world[i].tx/ty) as pendulum
+    // anchors; build_puppet_draw_list uses it for Part placement.
+    [[nodiscard]] PuppetNodeTransforms compute_node_world_transforms(
+        const Puppet& puppet, const PuppetDeform* deform = nullptr);
+
     // Build the draw list: walk the node tree from the root (nodes[0]), accumulate
     // each node's 2D transform + zsort top-down, collect every enabled drawable
     // Part, interleave its pos+uv, and sort ascending by accumulated zsort (back to
