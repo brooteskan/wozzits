@@ -284,7 +284,19 @@ namespace wz::gpu::dx12
         impl->scalar_field_srv_count = 0;
 
         // ────── general SRV/CBV/UAV allocator ──────────────────────────────────────────
-        bool srv_alloc_ok = impl->srv_cbv_uav_allocator.init(device, 256);
+        // This one shader-visible heap backs EVERY cached descriptor table the
+        // renderer builds (rhi_dx12_command_recorder caches one table per unique
+        // (slot, resources) tuple and only releases them on a graph swap), so its
+        // capacity must cover the whole live scene at once, not one draw. A single
+        // Inochi puppet is the stress case: each Part carries its own vertex+index
+        // buffer, so its slot-2 table is a distinct tuple — a 76-Part puppet alone
+        // needs 76*3 = 228 descriptors, and the old 256 heap overflowed mid-puppet
+        // (create_resource_descriptor_table -> allocate() returned an invalid
+        // table, surfacing as "bind_resource_group: slot 2 failed to build a
+        // descriptor table"). 16384 (512 KB of descriptors) gives generous room
+        // for complex and multiple puppets plus the rest of the scene; a
+        // shader-visible CBV/SRV/UAV heap may hold up to 1,000,000 on Tier 1.
+        bool srv_alloc_ok = impl->srv_cbv_uav_allocator.init(device, 16384);
         assert(srv_alloc_ok);
 
         // ────── initialize fences ───────────────────────────────────────────────────────

@@ -628,12 +628,24 @@ namespace wz::engine::rendering
             const std::optional<wz::rhi::ProgramBytecode> bytecode =
                 wz::rhi::resolve_program_bytecode(*desc, *shaders_);
             if (!bytecode) {
+                if (logger_) {
+                    logger_->error(
+                        std::string("RhiDx12PipelineCache::realize: shader "
+                            "bytecode unavailable (a shader module is not "
+                            "registered) — program=") + std::string(desc->name));
+                }
                 return nullptr;
             }
 
             const std::optional<RhiDx12PipelineLayout> layout =
                 plan_dx12_pipeline_layout(*desc);
             if (!layout) {
+                if (logger_) {
+                    logger_->error(
+                        std::string("RhiDx12PipelineCache::realize: pipeline "
+                            "layout planning failed — program=")
+                        + std::string(desc->name));
+                }
                 return nullptr;
             }
 
@@ -675,6 +687,13 @@ namespace wz::engine::rendering
         const wz::rhi::ComputeProgramDesc* compute_desc =
             compute_programs_ ? compute_programs_->get(program) : nullptr;
         if (!compute_desc) {
+            if (logger_) {
+                logger_->error(
+                    "RhiDx12PipelineCache::realize: program tag not registered "
+                    "in the rhi program registry (graphics + compute miss) — a "
+                    "render program's rhi registration is missing at render "
+                    "time");
+            }
             return nullptr;
         }
 

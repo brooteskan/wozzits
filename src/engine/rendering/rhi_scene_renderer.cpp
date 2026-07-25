@@ -2332,14 +2332,27 @@ namespace wz::engine::rendering
             }
 
             if (realized->is_puppet) {
+                uint32_t part_index = 0;
                 for (const wz::rhi::DrawPacket& pkt : realized->puppet_packets) {
                     wz::rhi::record_packet(pkt, forward_, recorder_);
                     ++recorded;
+                    if (!recorder_.ready()) {
+                        logger_.error(
+                            "RhiSceneRenderer: puppet part "
+                            + std::to_string(part_index) + " rejected — "
+                            + recorder_.last_reject_reason());
+                    }
+                    ++part_index;
                 }
             }
             else {
                 wz::rhi::record_packet(realized->packet, forward_, recorder_);
                 ++recorded;
+                if (!recorder_.ready()) {
+                    logger_.error(
+                        "RhiSceneRenderer: renderable packet rejected — "
+                        + recorder_.last_reject_reason());
+                }
             }
         }
 
@@ -2347,7 +2360,9 @@ namespace wz::engine::rendering
             return true;
         }
         if (!recorder_.ready()) {
-            logger_.error("RhiSceneRenderer: recorder rejected a draw");
+            logger_.error(
+                "RhiSceneRenderer: recorder rejected a draw — "
+                + recorder_.last_reject_reason());
             return false;
         }
         return true;

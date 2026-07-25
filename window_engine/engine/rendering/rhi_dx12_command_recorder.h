@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace wz::gpu::dx12
@@ -55,6 +56,16 @@ namespace wz::engine::rendering
         void dispatch(const wz::rhi::DispatchArgs& args) override;
 
         [[nodiscard]] bool ready() const noexcept { return ready_; }
+
+        // Diagnostic: why the most-recently-recorded packet was rejected (empty
+        // when the last packet recorded cleanly). Set at every point that drops
+        // ready_ to false and cleared at the start of each set_pipeline (i.e.
+        // once per packet), so it names the exact failing record step — root
+        // constants, an SRG bind, or the draw — instead of a generic reject.
+        [[nodiscard]] const std::string& last_reject_reason() const noexcept
+        {
+            return last_reject_reason_;
+        }
 
         // Release every cached SRV descriptor table and drop the cache. The
         // cache keys tables by the engine GPUHandles of the buffers they view;
@@ -103,6 +114,8 @@ namespace wz::engine::rendering
         const EngineGpuBackend* backend_ = nullptr;
         const RhiDx12RealizedPipeline* current_ = nullptr;
         bool ready_ = true;
+        // Diagnostic reason for the last ready_ = false (see last_reject_reason).
+        std::string last_reject_reason_;
         // The value end_frame will signal for the frame being recorded; the
         // renderer sets it once per frame via set_frame_timeline. Resources
         // resolved by this recorder are touched with it (see bind_resource_group

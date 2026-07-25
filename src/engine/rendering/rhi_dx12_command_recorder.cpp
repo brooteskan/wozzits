@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 
 namespace wz::engine::rendering
 {
@@ -141,6 +142,7 @@ namespace wz::engine::rendering
             wz::gpu::dx12::internal::get_command_list(*device_);
         if (!cmd) {
             ready_ = false;
+            last_reject_reason_ = "barrier: no command list";
             return;
         }
 
@@ -153,6 +155,7 @@ namespace wz::engine::rendering
                     gpu))
             {
                 ready_ = false;
+                last_reject_reason_ = "barrier: UAV barrier failed";
             }
             return;
         }
@@ -164,20 +167,28 @@ namespace wz::engine::rendering
                 resource_state(to)))
         {
             ready_ = false;
+            last_reject_reason_ = "barrier: resource transition failed";
         }
     }
 
     void RhiDx12CommandRecorder::set_pipeline(wz::rhi::Tag program)
     {
         ready_ = false;
+        last_reject_reason_.clear();
         current_ = pipelines_ ? pipelines_->realize(program) : nullptr;
         if (!device_ || !current_ || !current_->valid()) {
+            last_reject_reason_ =
+                !device_    ? "set_pipeline: no device"
+                : !current_ ? "set_pipeline: realize returned null (see the "
+                              "RhiDx12PipelineCache::realize error above)"
+                            : "set_pipeline: pipeline realized but invalid()";
             return;
         }
 
         ID3D12GraphicsCommandList* cmd =
             wz::gpu::dx12::internal::get_command_list(*device_);
         if (!cmd) {
+            last_reject_reason_ = "set_pipeline: no command list";
             return;
         }
 
@@ -217,6 +228,11 @@ namespace wz::engine::rendering
             static_cast<uint32_t>(bytes.size() / sizeof(uint32_t));
         if (dwords != current_->layout.root_constants.dword_count) {
             ready_ = false;
+            last_reject_reason_ =
+                "set_root_constants: dword count mismatch (packet has "
+                + std::to_string(dwords) + ", root signature expects "
+                + std::to_string(current_->layout.root_constants.dword_count)
+                + ")";
             return;
         }
 
@@ -224,6 +240,7 @@ namespace wz::engine::rendering
             wz::gpu::dx12::internal::get_command_list(*device_);
         if (!cmd) {
             ready_ = false;
+            last_reject_reason_ = "set_root_constants: no command list";
             return;
         }
 
@@ -255,6 +272,14 @@ namespace wz::engine::rendering
             current_->layout.root_param_for_slot(slot);
         if (!root_param || group.binding_slot() != slot) {
             ready_ = false;
+            last_reject_reason_ =
+                !root_param
+                    ? "bind_resource_group: slot " + std::to_string(slot)
+                        + " has no root parameter in the pipeline layout"
+                    : "bind_resource_group: group binding_slot "
+                        + std::to_string(group.binding_slot())
+                        + " does not match requested slot "
+                        + std::to_string(slot);
             return;
         }
 
@@ -267,6 +292,16 @@ namespace wz::engine::rendering
             || table_layout->descriptor_kinds.size() != group.resource_count())
         {
             ready_ = false;
+            last_reject_reason_ =
+                table_layout == current_->layout.descriptor_tables.end()
+                    ? "bind_resource_group: slot " + std::to_string(slot)
+                        + " has no descriptor table in the pipeline layout"
+                    : "bind_resource_group: slot " + std::to_string(slot)
+                        + " resource count mismatch (group has "
+                        + std::to_string(group.resource_count())
+                        + ", layout expects "
+                        + std::to_string(table_layout->descriptor_kinds.size())
+                        + ")";
             return;
         }
 
@@ -285,6 +320,11 @@ namespace wz::engine::rendering
             const wz::gpu::GPUHandle gpu = gpu_handle_for(handle);
             if (!gpu.valid()) {
                 ready_ = false;
+                last_reject_reason_ =
+                    "bind_resource_group: slot " + std::to_string(slot)
+                    + " resource #" + std::to_string(resources.size())
+                    + " has no live GPU handle (buffer not resident / not "
+                      "registered at render time)";
                 return;
             }
             resources.push_back(gpu);
@@ -300,6 +340,10 @@ namespace wz::engine::rendering
                 // Unsupported descriptor kind (Sampler): no heap/root-param path
                 // yet. Fail closed rather than bind the wrong view.
                 ready_ = false;
+                last_reject_reason_ =
+                    "bind_resource_group: slot " + std::to_string(slot)
+                    + " has an unsupported descriptor kind (Sampler has no "
+                      "pixel-path binding yet)";
                 return;
             }
             kinds.push_back(*view);
@@ -312,6 +356,9 @@ namespace wz::engine::rendering
                 std::move(kinds));
         if (!table || !table->valid()) {
             ready_ = false;
+            last_reject_reason_ =
+                "bind_resource_group: slot " + std::to_string(slot)
+                + " failed to build a descriptor table";
             return;
         }
 
@@ -319,6 +366,9 @@ namespace wz::engine::rendering
             wz::gpu::dx12::internal::get_command_list(*device_);
         if (!cmd) {
             ready_ = false;
+            last_reject_reason_ =
+                "bind_resource_group: slot " + std::to_string(slot)
+                + " no command list";
             return;
         }
         if (current_->is_compute) {
@@ -345,6 +395,7 @@ namespace wz::engine::rendering
             wz::gpu::dx12::internal::get_command_list(*device_);
         if (!cmd) {
             ready_ = false;
+            last_reject_reason_ = "draw: no command list";
             return;
         }
 
@@ -352,6 +403,9 @@ namespace wz::engine::rendering
             args.indexed ? args.index_count : args.vertex_count;
         if (vertex_count == 0u) {
             ready_ = false;
+            last_reject_reason_ =
+                args.indexed ? "draw: index_count is 0"
+                             : "draw: vertex_count is 0";
             return;
         }
         cmd->DrawInstanced(
