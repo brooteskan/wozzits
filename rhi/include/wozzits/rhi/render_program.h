@@ -71,6 +71,16 @@ namespace wz::rhi
     // sources that have ALREADY multiplied colour by alpha; it is the correct
     // "over" operator whenever semi-transparent texels must not bleed toward
     // black at their edges, and is what the Inochi2D compositing model assumes.
+    // SourceAtop (Src×DstAlpha + Dst×(1−SrcAlpha)) is the Porter-Duff operator
+    // of that name: the source shows only where the destination is already
+    // covered, so it paints ONTO what is beneath without extending it. Both its
+    // colour and its alpha are scaled by the destination's alpha, which keeps
+    // the result premultiplied-consistent — an alpha that outran its colour
+    // would read as a dark fringe once composited.
+    // SliceFromDestination (Src×(1−DstAlpha) − Dst×(1−SrcAlpha), REVERSE
+    // SUBTRACT) is its cutting counterpart: where the source covers, it removes
+    // the destination. Note the operator direction — GL's FUNC_SUBTRACT is
+    // src−dst, which is D3D12's REV_SUBTRACT, not its SUBTRACT.
     // A new member must be handled by every PSO builder that consumes it — the
     // engine's DX12 pipeline factories branch on this and have no `default:`.
     enum class BlendMode : uint8_t
@@ -81,6 +91,8 @@ namespace wz::rhi
         Multiply,
         Screen,
         PremultipliedAlpha,
+        SourceAtop,
+        SliceFromDestination,
     };
     enum class DepthMode : uint8_t { Disabled, TestNoWrite, TestWrite };
     enum class RasterMode : uint8_t { SolidCullBack, SolidCullNone, WireframeCullNone };
