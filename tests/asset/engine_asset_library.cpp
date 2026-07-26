@@ -206,6 +206,11 @@ float4 main(PSIn input) : SV_TARGET
             // authored nodes materialize through the generic draft key path,
             // same standing as the mesh / splat resource recipes above.
             { kTextureFromFileSchema, kAssetTypeTexture },
+            // Render-target texture (#281): the same kAssetTypeTexture from a
+            // source-less recipe, resident Sampled | RenderTarget so a pass can
+            // draw into what a material samples. Same generic-draft-key standing
+            // as the file-backed recipe above.
+            { kRenderTargetTextureSchema, kAssetTypeTexture },
 
             { kMeshRenderStyleSchema, kAssetTypeMeshRenderStyle },
             { kRenderBindingLayoutSchema, kAssetTypeRenderBindingLayout },

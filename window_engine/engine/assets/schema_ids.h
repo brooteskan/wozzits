@@ -827,4 +827,19 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kTextureFromFileSchema{
         0xF11E'CA55'E7'001008ull
     };
+
+    // Texture the engine RENDERS INTO rather than loads (#281): authored
+    // dimensions, no source file, made resident Sampled | RenderTarget so a pass
+    // can draw into it and a material can sample it in the same frame. The same
+    // DATA LAYOUT as a file-backed texture, so it is a second RECIPE producing
+    // kAssetTypeTexture rather than a new asset type (the asset-type-vs-recipe
+    // rule) -- which is also why an authored binding can name it wherever a
+    // texture is accepted, with no new render-binding source.
+    //
+    // The general capability behind "a live render target as a material input":
+    // the composite-material sphere is its first client, and the depth-fog /
+    // post-fx work wants the same thing.
+    inline constexpr wz::asset::SchemaID kRenderTargetTextureSchema{
+        0xF11E'CA55'E7'001009ull
+    };
 }

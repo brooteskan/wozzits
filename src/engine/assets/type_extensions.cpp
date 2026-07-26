@@ -571,6 +571,8 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kSkyGaussianFromJSONSchema, "Sky gaussian from JSON");
             WZ_ADD_SCHEMA(kStarCatalogFromJSONSchema, "Star catalog from JSON");
             WZ_ADD_SCHEMA(kStarCatalogFromPLYSchema, "Star catalog from PLY");
+            WZ_ADD_SCHEMA(kTextureFromFileSchema, "Texture from file");
+            WZ_ADD_SCHEMA(kRenderTargetTextureSchema, "Render target texture");
 
 #undef WZ_ADD_SCHEMA
 

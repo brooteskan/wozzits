@@ -112,6 +112,44 @@ namespace wz::engine::assets::internal
                 rhi_resource_tracker(key, std::move(tracked));
             }
         }
+        // Residency for a render-target texture (#281): no pixels to upload, and
+        // the usage flags are what make it different -- RenderTarget so a pass
+        // can draw into it, Sampled so a material can read it back. Published
+        // under the SAME "texture" variant a file-backed texture uses, which is
+        // what lets an authored binding name it wherever a texture is accepted.
+        bool publish_resident_render_target(
+            const wz::asset::AssetKey& key,
+            std::uint32_t width,
+            std::uint32_t height,
+            wz::rhi::GpuResourceRegistry& gpu_resources,
+            const RhiResourceTracker& rhi_resource_tracker,
+            wz::Logger& logger)
+        {
+            wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::texture_2d(
+                width,
+                height,
+                wz::rhi::TextureFormat::RGBA8Unorm,
+                wz::rhi::ResourceUsage_Sampled
+                    | wz::rhi::ResourceUsage_RenderTarget);
+            desc.identity = wz::rhi::ResourceIdentity{
+                rhi_asset_identity(key, "texture"), {} };
+
+            const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
+            if (!handle.valid()) {
+                logger.warn("render target texture: RHI acquire failed");
+                return false;
+            }
+
+            logger.info(
+                "asset compile: render target texture "
+                + std::to_string(width) + "x" + std::to_string(height));
+
+            if (rhi_resource_tracker) {
+                std::vector<wz::rhi::ResourceIdentity> tracked{ desc.identity };
+                rhi_resource_tracker(key, std::move(tracked));
+            }
+            return true;
+        }
     } // anonymous namespace
 
     void register_texture_compilers(
@@ -199,6 +237,102 @@ namespace wz::engine::assets::internal
                 wz::asset::ResourceHandle handle = table.add(data);
                 if (!handle.valid()) {
                     logger.error("texture: failed to store texture metadata");
+                    return compile_failed_node(input);
+                }
+
+                wz::asset::AssetNode out = input;
+                out.stage   = wz::asset::AssetStage::Compiled;
+                out.payload = handle;
+                return out;
+            }
+        });
+
+        // Render-target texture (#281): the same kAssetTypeTexture, with no
+        // source file. Its dimensions are authored rather than decoded, and it
+        // is made resident Sampled | RenderTarget so a pass can render into it
+        // and a material can sample it. Deviceless (no registry) it still
+        // compiles to valid metadata -- residency is the only thing gated.
+        registry.register_compiler(wz::asset::AssetCompiler{
+            .input_schema = kRenderTargetTextureSchema,
+            .output_type  = kAssetTypeTexture,
+            .input_ports = {},
+            .parameters = {
+                {
+                    .name = "width",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Width",
+                    .default_num = 512,
+                },
+                {
+                    .name = "height",
+                    .type = wz::asset::ParamType::Int,
+                    .label = "Height",
+                    .default_num = 512,
+                },
+                {
+                    // A render target is written by a pass, so its texels are
+                    // whatever that pass wrote -- there is no decode step to
+                    // infer a colour space from. Authored, defaulting to the
+                    // sRGB the compositor and the backbuffer both work in.
+                    .name = "color_space",
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Color space",
+                    .default_num = 0,   // auto -> sRGB for a colour usage
+                    .options = kColorSpaceOptions,
+                },
+            },
+            .compile = [&logger, &table, gpu_resources, rhi_resource_tracker](
+                const wz::asset::AssetNode& input,
+                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+            {
+                int64_t width = 512;
+                int64_t height = 512;
+                int64_t color_space_index = 0;
+                if (const auto* pb =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta)) {
+                    width = pb->get<int64_t>("width", 512);
+                    height = pb->get<int64_t>("height", 512);
+                    color_space_index = pb->get<int64_t>("color_space", 0);
+                }
+                // A zero/negative or absurd extent is an authoring mistake, and
+                // acquiring on it would either fail opaquely or reserve a
+                // gigabyte. Reject it with a reason the inspector can show.
+                constexpr int64_t kMaxExtent = 8192;
+                if (width <= 0 || height <= 0
+                    || width > kMaxExtent || height > kMaxExtent)
+                {
+                    const std::string reason =
+                        "render target texture: dimensions must be within 1.."
+                        + std::to_string(kMaxExtent) + " (got "
+                        + std::to_string(width) + "x"
+                        + std::to_string(height) + ")";
+                    logger.error(reason);
+                    return compile_failed_node(input, reason);
+                }
+
+                TextureData data;
+                data.width       = static_cast<std::uint32_t>(width);
+                data.height      = static_cast<std::uint32_t>(height);
+                data.format      = TexturePixelFormat::RGBA8;
+                data.usage       = TextureUsage::Color;
+                data.color_space =
+                    color_space_from(color_space_index, TextureUsage::Color);
+
+                if (gpu_resources) {
+                    if (!publish_resident_render_target(
+                            input.key, data.width, data.height, *gpu_resources,
+                            rhi_resource_tracker, logger))
+                    {
+                        return compile_failed_node(
+                            input, "render target texture residency failed");
+                    }
+                }
+
+                wz::asset::ResourceHandle handle = table.add(data);
+                if (!handle.valid()) {
+                    logger.error(
+                        "render target texture: failed to store metadata");
                     return compile_failed_node(input);
                 }
 
