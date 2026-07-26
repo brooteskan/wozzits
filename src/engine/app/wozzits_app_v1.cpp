@@ -15,6 +15,7 @@
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/renderable/render_binding_sources.h>
 #include <engine/assets/renderable/renderable.h>
+#include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/renderable_asset_module.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/audio/scene_audio.h>
@@ -2900,6 +2901,55 @@ namespace wz::app
         return recipe && !(recipe->puppet_key == wz::asset::AssetKey{});
     }
 
+    // The composited material target (#281): the render-target texture a scene
+    // renderable binds at material_albedo. Found by ASKING THE RENDERABLES what
+    // they bind rather than by scanning for the schema -- the binding is the
+    // source of truth for which texture the surface actually samples, so the
+    // compositor and the shader can never disagree about the target.
+    // Returns an invalid handle when the scene has no such material.
+    wz::gpu::GPUHandle WozzitsApp_v1::material_composite_target() const
+    {
+        if (!ctx_.assets || !ctx_.gpu) {
+            return {};
+        }
+        for (const wz::engine::assets::SceneNodeAsset& node :
+             document_.nodes())
+        {
+            if (!node.renderable_asset.has_value()) {
+                continue;
+            }
+            const wz::engine::assets::RhiRenderableRecipe* recipe =
+                ctx_.assets->renderables().get_rhi_renderable_recipe(
+                    wz::engine::assets::RenderableAsset{
+                        .output = *node.renderable_asset });
+            if (!recipe) {
+                continue;
+            }
+            for (const wz::engine::assets::RhiRenderableBinding& binding :
+                 recipe->bindings)
+            {
+                if (binding.semantic != "material_albedo") {
+                    continue;
+                }
+                const wz::rhi::GpuResourceHandle resource =
+                    ctx_.gpu->resources.find(wz::rhi::ResourceIdentity{
+                        wz::engine::assets::rhi_asset_identity(
+                            binding.key, binding.variant),
+                        {} });
+                if (!resource.valid()) {
+                    continue;
+                }
+                const wz::rhi::GpuResource* res =
+                    ctx_.gpu->resources.get(resource);
+                if (!res) {
+                    continue;
+                }
+                return ctx_.gpu->backend.gpu_handle_for(res->backend);
+            }
+        }
+        return {};
+    }
+
     bool WozzitsApp_v1::render_puppet_showcase()
     {
         if (!puppet_card_showcase_ || !ctx_.assets) {
@@ -2953,6 +3003,28 @@ namespace wz::app
             puppet_nodes, *ctx_.assets, view_.active_view().view_projection,
             view_.active_view().world_position, identities,
             resolve_frame_atmosphere(), puppet_card_rtt_);
+
+        // Composite the puppet into the scene's material texture (#281): clear it
+        // to the sphere's base colour, then place the puppet RTT over it. The
+        // layer transform IS the "where the art sits on the material" control --
+        // centre_uv moves the puppet across the surface, half_size_uv scales it.
+        // The composite is a recorded pass, not a synchronous flush, so running
+        // it per frame costs a pass rather than a stall; gating it on "the
+        // puppet actually changed" is still the obvious refinement.
+        if (const wz::gpu::GPUHandle material = material_composite_target();
+            material.valid())
+        {
+            const float base_color[4] = { 0.62f, 0.62f, 0.65f, 1.0f };
+            wz::gpu::dx12::internal::TextureCompositeLayer layer{};
+            layer.texture = puppet_card_rtt_;
+            layer.center_uv[0] = 0.5f;
+            layer.center_uv[1] = 0.5f;
+            layer.half_size_uv[0] = 0.35f;
+            layer.half_size_uv[1] = 0.35f;
+            layer.opacity = 1.0f;
+            wz::gpu::dx12::internal::composite_texture_layers_dx12(
+                ctx_.device, material, base_color, &layer, 1);
+        }
 
         // Advance the idle spin (a slow turn; frame-paced -- this is a showcase).
         puppet_card_angle_ += 0.02f;

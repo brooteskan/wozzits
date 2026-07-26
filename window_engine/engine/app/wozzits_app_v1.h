@@ -683,6 +683,11 @@ namespace wz::app
         // puppet appears only on the card. Returns false only on a device failure.
         bool render_puppet_showcase();
 
+        // The render-target texture a scene renderable binds at material_albedo
+        // (#281), as a GPUHandle the compositor can render into. Invalid when the
+        // scene has no composited material.
+        [[nodiscard]] wz::gpu::GPUHandle material_composite_target() const;
+
         // The world transform every render-side consumer draws with, one matrix
         // per document_.nodes() entry (index-aligned). #221's single source of truth:
         //   - with a live behavior scene, each node's world matrix is read from
