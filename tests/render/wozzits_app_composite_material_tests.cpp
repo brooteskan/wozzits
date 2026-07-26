@@ -1,7 +1,8 @@
 // tests/render/wozzits_app_composite_material_tests.cpp
 //
-// Issue #285 end to end, through the shipping frame: an AUTHORED composite
-// material is filled by the engine and sampled by a surface.
+// Issues #285 / #288 end to end, through the shipping frame: an AUTHORED
+// composite material is filled by the engine and sampled by a surface, and the
+// composite pass is SKIPPED once nothing feeding it has changed.
 //
 // The fixture scene carries the whole chain and no C++ knows any of it:
 //   art_source  -- a render_to_texture source filling render target node 27
@@ -166,4 +167,55 @@ TEST_F(WozzitsAppCompositeMaterialFixture, AuthoredMaterialIsCompositedAndBound)
     }
     EXPECT_GT(red, 0u)
         << "the authored base colour never reached the material texture";
+}
+
+// #288: a target nothing feeds and a material nothing changed cost ZERO passes.
+// The scene is static -- a fixed camera over an unmoving cube -- so after the
+// first frame every redraw would produce the same texels.
+TEST_F(WozzitsAppCompositeMaterialFixture, StaticSceneStopsRefreshingAndCompositing)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(load_desc()));
+
+    render_one_frame(app);
+
+    // The first frame must do the work: there is no previous state to compare
+    // against, and the target starts as-acquired.
+    const std::size_t targets_after_first = app.render_target_pass_count();
+    const std::size_t composites_after_first = app.composite_pass_count();
+    EXPECT_EQ(targets_after_first, 1u)
+        << "the authored render target was not filled on the first frame";
+    EXPECT_EQ(composites_after_first, 1u)
+        << "the authored material was not composited on the first frame";
+
+    for (int i = 0; i < 5; ++i) {
+        render_one_frame(app);
+    }
+
+    EXPECT_EQ(app.render_target_pass_count(), targets_after_first)
+        << "an unchanged render-to-texture source was refreshed anyway";
+    EXPECT_EQ(app.composite_pass_count(), composites_after_first)
+        << "an unchanged composite material was rebuilt anyway (#288)";
+
+    // The skip must not be a one-way latch: MOVING the source has to bring both
+    // passes back. Otherwise a gate that never re-fires looks identical to a
+    // working one in a static test.
+    wz::engine::assets::AuthoredTransform moved{};
+    moved.translation[0] = 10.0f;
+    moved.rotation_quat[3] = 1.0f;
+    moved.scale[0] = moved.scale[1] = moved.scale[2] = 200.0f;
+    ASSERT_TRUE(app.set_node_transform("art_source", moved));
+    render_one_frame(app);
+
+    EXPECT_EQ(app.render_target_pass_count(), targets_after_first + 1u)
+        << "moving the source did not refresh its target";
+    EXPECT_EQ(app.composite_pass_count(), composites_after_first + 1u)
+        << "a refreshed layer source did not rebuild the material";
+
+    // ...and it settles again once the move is done.
+    for (int i = 0; i < 3; ++i) {
+        render_one_frame(app);
+    }
+    EXPECT_EQ(app.render_target_pass_count(), targets_after_first + 1u);
+    EXPECT_EQ(app.composite_pass_count(), composites_after_first + 1u);
 }

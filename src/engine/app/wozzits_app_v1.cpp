@@ -2867,6 +2867,35 @@ namespace wz::app
         return frame.atmosphere;
     }
 
+    namespace
+    {
+        // FNV-1a over whatever a gate needs to notice. Not a security hash: a
+        // collision means one skipped refresh, and every input mixed here is
+        // something the frame already had to compute.
+        constexpr std::uint64_t kFnvOffset = 1469598103934665603ull;
+
+        void mix_bytes(std::uint64_t& h, const void* data, std::size_t size)
+        {
+            const auto* bytes = static_cast<const std::uint8_t*>(data);
+            for (std::size_t i = 0; i < size; ++i) {
+                h ^= bytes[i];
+                h *= 1099511628211ull;
+            }
+        }
+
+        template<class T>
+        void mix(std::uint64_t& h, const T& value)
+        {
+            mix_bytes(h, &value, sizeof(T));
+        }
+
+        void mix_key(std::uint64_t& h, const wz::asset::AssetKey& key)
+        {
+            mix_bytes(h, &key, sizeof(key));
+        }
+    }
+
+
     // The GPU handle backing a resident texture asset, or an invalid handle.
     // One place for the asset-key -> rhi resource -> backend handle hop that
     // both the authored render targets (#287) and the composite target (#281)
@@ -2900,6 +2929,8 @@ namespace wz::app
         if (authored.targets.empty() || !ctx_.assets) {
             return true;
         }
+
+        targets_refreshed_this_frame_.clear();
 
         bool ok = true;
         for (const wz::engine::rendering::AuthoredRenderTarget& target :
@@ -2937,10 +2968,67 @@ namespace wz::app
                 continue;
             }
 
+            // #288: does this target need refreshing at all? Fingerprint what
+            // the offscreen render is a function of -- the destination, the
+            // view, and each drawn node's renderable + world transform +
+            // visibility. If none of that moved, redrawing it produces the same
+            // texels, and the pass is pure cost.
+            //
+            // Renderables whose content is driven by the animation CLOCK rather
+            // than by their inputs (a puppet's deform, a star field's twinkle)
+            // fold the clock in, so they refresh while time runs and stop when
+            // it does -- a paused editor viewport costs nothing.
+            std::uint64_t inputs = kFnvOffset;
+            mix(inputs, handle);
+            mix(inputs, view_.active_view().view_projection);
+            mix(inputs, view_.active_view().world_position);
+            bool clock_animated = false;
+            for (std::size_t n = 0; n < nodes.size(); ++n) {
+                if (nodes[n].renderable_asset) {
+                    mix_key(inputs, *nodes[n].renderable_asset);
+                    const auto* recipe =
+                        ctx_.assets->renderables().get_rhi_renderable_recipe(
+                            wz::engine::assets::RenderableAsset{
+                                .output = *nodes[n].renderable_asset });
+                    if (recipe
+                        && (!(recipe->puppet_key == wz::asset::AssetKey{})
+                            || !(recipe->star_catalog_key
+                                 == wz::asset::AssetKey{})))
+                    {
+                        clock_animated = true;
+                    }
+                }
+                mix(inputs, worlds[n]);
+                mix(inputs, nodes[n].visible);
+            }
+            if (clock_animated) {
+                mix(inputs, renderer_.animation_seconds());
+            }
+
+            AuthoredTargetFingerprint* state = nullptr;
+            for (AuthoredTargetFingerprint& seen : render_target_fingerprints_) {
+                if (seen.texture == target.texture) {
+                    state = &seen;
+                    break;
+                }
+            }
+            if (state && state->inputs == inputs) {
+                continue;  // nothing feeding this target changed
+            }
+            if (!state) {
+                render_target_fingerprints_.push_back(
+                    AuthoredTargetFingerprint{ target.texture, inputs });
+            }
+            else {
+                state->inputs = inputs;
+            }
+            targets_refreshed_this_frame_.push_back(target.texture);
+
             // The frame's view, exactly as the main pass sees it. A per-target
             // authored camera is the obvious next dial; screen-space looks (a
             // puppet, a HUD) ignore it entirely, and a world subtree drawn into
             // a texture reads as "what the camera sees, off-screen".
+            ++render_target_pass_count_;
             ok = renderer_.render_scene(
                      nodes, *ctx_.assets,
                      view_.active_view().view_projection,
@@ -3020,6 +3108,52 @@ namespace wz::app
                     continue;
                 }
 
+                // #288: recompositing an unchanged material redraws the same
+                // texels. It changed if the authored recipe changed, if the
+                // destination resource was recreated, or if any layer's SOURCE
+                // was refreshed this frame -- which is the signal the
+                // render-to-texture gate above just produced. A material whose
+                // layers are all static images, or whose live layer did not
+                // move, costs zero passes.
+                std::uint64_t recipe = kFnvOffset;
+                mix(recipe, target);
+                mix(recipe, material->base_colour);
+                bool source_refreshed = false;
+                for (const wz::engine::assets::CompositeMaterialLayer& authored :
+                     material->composite_layers)
+                {
+                    mix_key(recipe, authored.source);
+                    mix(recipe, authored.centre_uv);
+                    mix(recipe, authored.half_size_uv);
+                    mix(recipe, authored.rotation);
+                    mix(recipe, authored.opacity);
+                    for (const wz::asset::AssetKey& refreshed :
+                         targets_refreshed_this_frame_)
+                    {
+                        if (refreshed == authored.source) {
+                            source_refreshed = true;
+                        }
+                    }
+                }
+
+                CompositeFingerprint* state = nullptr;
+                for (CompositeFingerprint& seen : composite_fingerprints_) {
+                    if (seen.material == binding.key) {
+                        state = &seen;
+                        break;
+                    }
+                }
+                if (state && state->recipe == recipe && !source_refreshed) {
+                    continue;  // nothing feeding this material changed
+                }
+                if (!state) {
+                    composite_fingerprints_.push_back(
+                        CompositeFingerprint{ binding.key, recipe });
+                }
+                else {
+                    state->recipe = recipe;
+                }
+
                 // A layer whose source is not resident is DROPPED, not faked:
                 // the composite still runs, so the surface shows the base colour
                 // rather than last frame's content.
@@ -3046,8 +3180,9 @@ namespace wz::app
                 }
 
                 // A recorded pass, not a synchronous flush, so this costs a pass
-                // per composited material rather than a stall. Gating it on the
-                // sources actually changing is #288.
+                // per composited material rather than a stall -- and now only
+                // when something feeding it moved (#288).
+                ++composite_pass_count_;
                 ok = wz::gpu::dx12::internal::composite_texture_layers_dx12(
                          ctx_.device, target, material->base_colour,
                          layers.data(), layers.size())

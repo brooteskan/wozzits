@@ -692,6 +692,19 @@ namespace wz::app
         // or placement is named here. Returns false if a composite pass failed.
         bool composite_authored_materials();
 
+        // Monotonic counts of the offscreen passes actually RUN (#288): a
+        // render-to-texture refresh, and a composite. They are the only external
+        // evidence that a gate skipped something, since a skipped pass leaves
+        // the same texels behind as a run one.
+        [[nodiscard]] std::size_t render_target_pass_count() const noexcept
+        {
+            return render_target_pass_count_;
+        }
+        [[nodiscard]] std::size_t composite_pass_count() const noexcept
+        {
+            return composite_pass_count_;
+        }
+
         // The GPU handle backing a resident texture asset, invalid if it is not
         // resident. Shared by the authored render targets (#287) and the
         // composite materials (#285).
@@ -1200,6 +1213,29 @@ namespace wz::app
         // Source node ids already warned about a non-resident render-to-texture
         // target (#287), so the complaint is made once rather than every frame.
         std::unordered_set<std::string> warned_render_targets_;
+
+        // #288 refresh gating. A render target is redrawn only when something it
+        // is a function of changed; a composite material is rebuilt only when
+        // its authored recipe changed or one of its layer sources was refreshed
+        // this frame. Both keep a fingerprint of those inputs; the vectors hold
+        // one entry per authored target/material, so a linear scan is right.
+        struct AuthoredTargetFingerprint
+        {
+            wz::asset::AssetKey texture{};
+            std::uint64_t inputs = 0;
+        };
+        struct CompositeFingerprint
+        {
+            wz::asset::AssetKey material{};
+            std::uint64_t recipe = 0;
+        };
+        std::vector<AuthoredTargetFingerprint> render_target_fingerprints_;
+        std::vector<CompositeFingerprint>      composite_fingerprints_;
+        // Targets actually redrawn this frame -- the change signal a composite
+        // reads to decide whether its live layers moved.
+        std::vector<wz::asset::AssetKey>       targets_refreshed_this_frame_;
+        std::size_t render_target_pass_count_ = 0;
+        std::size_t composite_pass_count_ = 0;
 
         // The current graph draft (kept for the renderable_asset_node_id -> key
         // bridge) and the loaded scene's nodes (with the bridged renderable_asset).

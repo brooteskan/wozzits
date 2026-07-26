@@ -138,6 +138,15 @@ namespace wz::engine::rendering
         // render path only reads the clock this advances (#282).
         void simulation_tick(float dt_seconds);
 
+        // The animation clock this renderer draws against, in seconds (#282).
+        // Read by the refresh gates (#288): content driven by the clock rather
+        // than by its inputs -- a puppet's deform, a star field's twinkle --
+        // stops changing exactly when this stops advancing.
+        [[nodiscard]] double animation_seconds() const noexcept
+        {
+            return animation_seconds_;
+        }
+
         // Render the scene's renderables. The caller owns the device frame
         // boundaries (begin/clear/end/present); this binds the current backbuffer
         // targets and records draw packets for every visible node that carries a
