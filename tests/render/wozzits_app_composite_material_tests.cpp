@@ -274,8 +274,9 @@ TEST_F(WozzitsAppCompositeMaterialFixture, StaticSceneStopsRefreshingAndComposit
 TEST_F(WozzitsAppCompositeMaterialFixture, LitSurfaceSamplesMaterialThroughMeshUvs)
 {
     wz::app::WozzitsApp_v1 app(ctx);
-    // Draw through the scene's AUTHORED camera, not the editor free-fly one --
-    // the assertion below is about what that camera sees.
+    // Draw through the scene's authored camera rather than the editor free-fly
+    // one. Either order works now (#301 made the setter re-evaluate the source),
+    // but saying it up front reads as what it is: this app plays the scene.
     app.set_prefer_scene_camera(true);
     ASSERT_TRUE(app.load_scene(lit_uv_surface_load_desc()))
         << "the lit-UV program failed to compile or resolve";
@@ -289,12 +290,24 @@ TEST_F(WozzitsAppCompositeMaterialFixture, LitSurfaceSamplesMaterialThroughMeshU
         << "the lit-UV program was bridged at render time rather than coming "
            "from the asset compiler";
 
-    // NOT asserted here: that the surface produces visible pixels. Nothing in
-    // this fixture's world-space scenes has ever reached the backbuffer -- a
-    // constant-colour pixel shader with the back-face discard removed draws
-    // nothing either, so whatever keeps them off-screen is a property of these
-    // scenes, not of the shader under test. Asserting it would be testing that
-    // unrelated thing. The realize above is the real evidence: an unsatisfied
-    // row (pull UVs, sky, material) fails it outright, which is exactly what a
-    // missing UV channel would do.
+    // ...and it SHADES. This is the assertion #301 unblocked: until the app
+    // honoured the scene's authored camera, every world-space fixture scene
+    // rendered from the free-fly default at the origin -- geometry authored
+    // around the origin sat AT the camera (clip w <= 0) and nothing reached the
+    // backbuffer, so no fixture test could tell "drew correctly" from "drew
+    // nothing".
+    std::vector<std::uint8_t> backbuffer;
+    ASSERT_TRUE(wz::gpu::dx12::internal::read_backbuffer_rgba8_dx12(
+        ctx.device, backbuffer));
+    std::size_t shaded = 0;
+    for (std::size_t i = 0; i + 3 < backbuffer.size(); i += 4) {
+        const int dr = static_cast<int>(backbuffer[i]) - 26;
+        const int dg = static_cast<int>(backbuffer[i + 1]) - 26;
+        const int db = static_cast<int>(backbuffer[i + 2]) - 31;
+        if (dr > 15 || dr < -15 || dg > 15 || dg < -15 || db > 15 || db < -15) {
+            ++shaded;
+        }
+    }
+    EXPECT_GT(shaded, 0u)
+        << "the lit UV-mapped surface produced no shaded pixels";
 }

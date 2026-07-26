@@ -420,6 +420,12 @@ namespace wz::app
         // graph keys. Populate document_.nodes() even with graph/scene compile errors
         // so a later good rebind can render.
         document_.nodes() = scene_data->nodes;
+        // The scene's OWN authored default camera (#301). The app rebuilds its
+        // SceneAssetData from document_.nodes() alone, so this is the one point
+        // where the compiled scene's defaults are still in hand; without keeping
+        // it, a scene with no scene-setup behavior has no camera to fall back to
+        // and renders from the free-fly default at the origin.
+        authored_default_camera_ = scene_data->defaults.active_camera_node;
         // A new scene invalidates the prior scene's carried per-frame dispatch state
         // (#252 audit): clear the SELF_ACTIVATED edge-detector's previous-active
         // snapshot (else a reused authored id that was parked in the old scene and

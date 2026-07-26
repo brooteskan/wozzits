@@ -1210,6 +1210,13 @@ namespace wz::app
         bool             puppet_card_showcase_ = true;
         float            puppet_card_angle_ = 0.0f;
 
+        // The loaded scene's authored default camera (scene.json
+        // defaults.active_camera), kept because the app rebuilds its
+        // SceneAssetData from document_.nodes() alone and would otherwise lose
+        // it. Used as the fallback selection when no behavior issues a
+        // SetActiveCamera (#301).
+        std::optional<wz::scene::AuthoredEntityId> authored_default_camera_;
+
         // Source node ids already warned about a non-resident render-to-texture
         // target (#287), so the complaint is made once rather than every frame.
         std::unordered_set<std::string> warned_render_targets_;

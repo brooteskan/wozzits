@@ -529,6 +529,25 @@ namespace wz::app
             }
         }
 
+        // Nothing selected a camera, so fall back to the SCENE'S OWN authored
+        // default (#301). scene.json has carried defaults.active_camera since
+        // the format existed, and instantiate_scene already derives a
+        // default_view from it -- but the app only ever honoured a behavior's
+        // SetActiveCamera, so a scene with no scene-setup behavior rendered from
+        // the free-fly camera's default pose at the ORIGIN. Geometry authored
+        // around the origin then sits AT the camera (clip w <= 0) and nothing
+        // reaches the backbuffer, which is why no world-space test fixture had
+        // ever produced a visible pixel.
+        if (!view_.has_scene_camera()) {
+            if (authored_default_camera_) {
+                const auto entity = behavior_scene_->authored_to_runtime.find(
+                    *authored_default_camera_);
+                if (entity != behavior_scene_->authored_to_runtime.end()) {
+                    apply_scene_active_camera(entity->second);
+                }
+            }
+        }
+
         // Materialize the active view once now so the first render after a load
         // (before the first simulation_tick) draws through the selected camera.
         materialize_active_view();

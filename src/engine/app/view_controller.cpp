@@ -35,6 +35,22 @@ namespace wz::app
         return moved;
     }
 
+    void ViewController::set_prefer_scene_camera(bool prefer)
+    {
+        prefer_scene_camera_ = prefer;
+        // Re-evaluate the SOURCE, not just the preference. This used to be a
+        // bare assignment, so it only had an effect if it was already true when
+        // a camera was selected -- flipping it afterwards silently did nothing
+        // and the view stayed on the free-fly camera. An ordering trap whose
+        // only symptom is an empty frame (#301).
+        if (prefer && has_scene_camera()) {
+            source_ = CameraSource::Scene;
+        }
+        else if (!prefer) {
+            source_ = CameraSource::FreeFly;
+        }
+    }
+
     void ViewController::select_scene_camera(
         const wz::scene::AuthoredEntityId& id,
         wz::scene::RuntimeEntityId entity,

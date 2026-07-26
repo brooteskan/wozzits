@@ -68,7 +68,12 @@ namespace wz::app
         // free-fly edit camera stays active and you can navigate even when the
         // scene authors a camera (the selection anchor is still recorded, so a
         // future "look through scene camera" editor toggle is a cheap source flip).
-        void set_prefer_scene_camera(bool prefer) { prefer_scene_camera_ = prefer; }
+        // Re-evaluates the active SOURCE, not just the preference. Setting this
+        // used to only matter if it was already true when a camera was selected,
+        // so flipping it afterwards silently did nothing and the view stayed on
+        // the free-fly camera -- an ordering trap with no symptom except an
+        // empty frame (#301).
+        void set_prefer_scene_camera(bool prefer);
         bool prefer_scene_camera() const          { return prefer_scene_camera_; }
         bool scene_source_active() const   { return source_ == CameraSource::Scene; }
 
