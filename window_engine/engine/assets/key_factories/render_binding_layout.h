@@ -43,6 +43,20 @@ namespace wz::engine::assets
             h = detail::mix64(h, static_cast<uint64_t>(row.visibility));
         }
 
+        // The view-frequency block is part of the SRG, so it has to be part of
+        // the key: without this, two layouts differing ONLY in view_head derive
+        // the same key, the second create is a no-op returning the first, and a
+        // program silently compiles against the wrong SRG.
+        //
+        // Mixed only when a view head is present, so a layout that wants none
+        // of it keys byte-identically to one authored before view heads existed
+        // -- the same "None derives identically" contract RenderBindingLayoutData
+        // states for the field itself.
+        if (layout.view_head != RenderBindingViewHead::None) {
+            h = detail::mix64(h, static_cast<uint64_t>(layout.view_head));
+            h = detail::mix64(h, static_cast<uint64_t>(layout.view_visibility));
+        }
+
         return wz::asset::AssetKey{
             .content_hash = detail::hash_u64(h),
             .schema_hash = detail::hash_u64(kRenderBindingLayoutSchema.value),

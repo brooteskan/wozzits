@@ -13,6 +13,7 @@
 #include <engine/assets/schema_ids.h>
 
 #include <cstdint>
+#include <string_view>
 
 namespace wz::engine::assets
 {
@@ -30,6 +31,36 @@ namespace wz::engine::assets
             .schema_hash   = detail::hash_u64(kTextureFromFileSchema.value),
             .compiler_hash = detail::hash_u64(kTextureCompilerVersion),
             .deps_hash     = detail::key_to_dep_hash(source_file_key),
+        };
+    }
+
+    // Key for a render-target texture (#281): no source file, so no deps -- the
+    // authored extent and colour space are the whole content.
+    //
+    // The NAME folds in, unlike the file-backed key above, and that difference
+    // is deliberate. A file texture is a VALUE: two imports of the same pixels
+    // with the same dials are interchangeable and SHOULD converge on one node.
+    // A render target is a SINK: two 512x512 targets are two different places
+    // to draw, and collapsing them would silently hand two surfaces the same
+    // texture. The name is the only thing that tells them apart. Mirrors
+    // make_render_binding_layout_key, which folds a name for the same reason.
+    [[nodiscard]] inline wz::asset::AssetKey make_render_target_texture_key(
+        std::string_view name,
+        uint32_t width,
+        uint32_t height,
+        int color_space_index) noexcept
+    {
+        uint64_t h = detail::fnv1a_64(name);
+        h = detail::mix64(h, kRenderTargetTextureSchema.value);
+        h = detail::mix64(h, static_cast<uint64_t>(width));
+        h = detail::mix64(h, static_cast<uint64_t>(height));
+        h = detail::mix64(h, static_cast<uint64_t>(color_space_index));
+
+        return wz::asset::AssetKey{
+            .content_hash  = detail::hash_u64(h),
+            .schema_hash   = detail::hash_u64(kRenderTargetTextureSchema.value),
+            .compiler_hash = detail::hash_u64(kTextureCompilerVersion),
+            .deps_hash     = {},
         };
     }
 }

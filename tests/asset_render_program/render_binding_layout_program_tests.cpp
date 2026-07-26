@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/engine_asset_library.h>
+#include <engine/assets/key_factories/render_binding_layout.h>
 #include <engine/assets/key_factories/render_program.h>
 #include <engine/assets/render_binding_layout/render_binding_layout.h>
 #include <engine/assets/render_program/render_program_asset_module.h>
@@ -136,6 +137,97 @@ namespace
             },
         };
         return layout;
+    }
+
+    // The #281 lit-textured SRG, as a typed layout: the WorldViewProjCamera36
+    // head, the three mesh-pull rows, the two SG-sky rows, a material_albedo
+    // texture, and -- the part hand-authoring got wrong first time -- a
+    // pixel-visible LinearClamp sampler, without which the pixel shader's
+    // material_sampler at s0 is unbound.
+    RenderBindingLayoutData lit_textured_layout()
+    {
+        RenderBindingLayoutData layout{};
+        layout.constants_semantic = "lit";
+        layout.constants_visibility = ShaderVisibility::All;
+        layout.constants_head =
+            RenderBindingConstantsHead::WorldViewProjCamera36;
+        layout.bindings = {
+            {
+                .semantic = "pulled_mesh_positions",
+                .kind = RenderBindingKind::StructuredSrv,
+                .visibility = ShaderVisibility::Vertex,
+            },
+            {
+                .semantic = "pulled_mesh_indices",
+                .kind = RenderBindingKind::StructuredSrv,
+                .visibility = ShaderVisibility::Vertex,
+            },
+            {
+                .semantic = "pulled_mesh_normals",
+                .kind = RenderBindingKind::StructuredSrv,
+                .visibility = ShaderVisibility::Vertex,
+            },
+            {
+                .semantic = "sky_gaussian",
+                .kind = RenderBindingKind::StructuredSrv,
+                .visibility = ShaderVisibility::All,
+            },
+            {
+                .semantic = "sky_gaussian_points",
+                .kind = RenderBindingKind::StructuredSrv,
+                .visibility = ShaderVisibility::All,
+            },
+            {
+                .semantic = "material_albedo",
+                .kind = RenderBindingKind::TextureSrv,
+                .visibility = ShaderVisibility::Pixel,
+            },
+        };
+        layout.samplers = {
+            {
+                .kind = StaticSamplerKind::LinearClamp,
+                .visibility = ShaderVisibility::Pixel,
+            },
+        };
+        return layout;
+    }
+
+    // The SAME layout as the indexed scalar params a graph node carries --
+    // transcribed from the node #281 hand-wrote into test_mesh_001. Note the
+    // sampler kind is offset by one in the authored enum (0 = no sampler), so
+    // "Linear clamp" is 1 here and StaticSamplerKind::LinearClamp above.
+    wz::asset::ParamBlock lit_textured_layout_params()
+    {
+        wz::asset::ParamBlock params;
+        params.values["name"] = std::string("lit_textured_layout");
+        params.values["constants_semantic"] = std::string("lit");
+        params.values["constants_visibility"] =
+            static_cast<int64_t>(ShaderVisibility::All);
+        params.values["constants_head"] = static_cast<int64_t>(
+            RenderBindingConstantsHead::WorldViewProjCamera36);
+        params.values["constants_dwords"] = int64_t{ 0 };
+
+        const struct { const char* semantic; int64_t kind; int64_t vis; }
+        rows[] = {
+            { "pulled_mesh_positions", 1, 1 },
+            { "pulled_mesh_indices",   1, 1 },
+            { "pulled_mesh_normals",   1, 1 },
+            { "sky_gaussian",          1, 0 },
+            { "sky_gaussian_points",   1, 0 },
+            { "material_albedo",       0, 2 },
+        };
+        for (int i = 0; i < 6; ++i) {
+            const std::string n = std::to_string(i);
+            params.values["binding" + n + "_semantic"] =
+                std::string(rows[i].semantic);
+            params.values["binding" + n + "_kind"] = rows[i].kind;
+            params.values["binding" + n + "_visibility"] = rows[i].vis;
+        }
+
+        params.values["sampler0_kind"] = int64_t{ 1 };        // Linear clamp
+        params.values["sampler0_visibility"] =
+            static_cast<int64_t>(ShaderVisibility::Pixel);
+        return params;
     }
 
     void expect_same_program_data(
@@ -409,4 +501,164 @@ TEST_F(BindingLayoutProgramFixture, LayoutProgramMatchesPreset2)
             rhi_preset->shader_resource_groups[i].hash(),
             rhi_layout->shader_resource_groups[i].hash());
     }
+}
+
+// Issue #286: a LIT program -- one carrying a RenderBindingConstantsHead --
+// built entirely through the typed API, and proven equal to the same thing
+// authored as graph params. #281 wired its composite-material sphere by
+// hand-writing nodes into test_mesh_001/assets.graph.json because nothing in
+// code could construct this arrangement; this is that arrangement in code, and
+// the test #281 had no way to write.
+TEST_F(BindingLayoutProgramFixture, LitProgramBuildsTypedAndMatchesAuthoredParams)
+{
+    EngineAssetLibrary assets(device, logger, resources.wz_root());
+
+    const auto shaders = assets.shaders().create_shader_pair({
+        .name        = "stub/lit_textured",
+        .vertex_path = "shaders/stub/stub_vs.hlsl",
+        .pixel_path  = "shaders/stub/stub_ps.hlsl",
+        });
+    ASSERT_TRUE(shaders.valid());
+
+    // Layout A -- the graph form: a 0x104 node whose meta is the indexed scalar
+    // ParamBlock the editor writes.
+    const wz::asset::AssetKey authored_layout_key{
+        .content_hash  = { 0x11701, 1 },
+        .schema_hash   = { 0x11701, 2 },
+        .compiler_hash = { 0x11701, 3 },
+        .deps_hash     = { 0, 0 },
+    };
+    {
+        wz::asset::AssetNode node{};
+        node.key = authored_layout_key;
+        node.type = kAssetTypeRenderBindingLayout;
+        node.schema = kRenderBindingLayoutSchema;
+        node.stage = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta = lit_textured_layout_params();
+        ASSERT_TRUE(assets.system().register_asset(std::move(node)));
+    }
+
+    // Layout B -- the typed form.
+    const auto typed_layout =
+        assets.render_binding_layouts().create_render_binding_layout({
+            .name = "layout/lit_textured",
+            .layout = lit_textured_layout(),
+        });
+    ASSERT_TRUE(typed_layout.valid());
+
+    const auto authored_program = assets.render_programs().create_custom({
+        .name = "program/lit_textured_authored",
+        .vertex_shader = shaders.vertex_shader,
+        .pixel_shader = shaders.pixel_shader,
+        .binding_layout = authored_layout_key,
+        .binding_model = RenderBindingModel::MeshVertexPull,
+        .topology = RenderPrimitiveTopology::TriangleList,
+        .default_domain = RenderDomain::Opaque,
+        .default_policy_flags = RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
+        .input_layout = InputLayoutKind::None,
+        .blend_mode = wz::rhi::BlendMode::Opaque,
+        .depth_mode = DepthMode::TestWrite,
+        .raster_mode = RasterMode::SolidCullBack,
+        });
+    ASSERT_TRUE(authored_program.valid());
+
+    const auto typed_program = assets.render_programs().create_custom({
+        .name = "program/lit_textured_typed",
+        .vertex_shader = shaders.vertex_shader,
+        .pixel_shader = shaders.pixel_shader,
+        .binding_layout = typed_layout.output,
+        .binding_model = RenderBindingModel::MeshVertexPull,
+        .topology = RenderPrimitiveTopology::TriangleList,
+        .default_domain = RenderDomain::Opaque,
+        .default_policy_flags = RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
+        .input_layout = InputLayoutKind::None,
+        .blend_mode = wz::rhi::BlendMode::Opaque,
+        .depth_mode = DepthMode::TestWrite,
+        .raster_mode = RasterMode::SolidCullBack,
+        });
+    ASSERT_TRUE(typed_program.valid());
+
+    ASSERT_TRUE(assets.commit());
+    const auto report = assets.resolve_all();
+    if (!report.ok()) {
+        for (const auto& f : report.failures)
+            ADD_FAILURE() << "resolve failure error="
+                          << static_cast<int>(f.error) << " " << f.detail;
+    }
+    ASSERT_TRUE(report.ok());
+
+    const auto authored_handle =
+        assets.render_programs().get_render_program(authored_program);
+    ASSERT_TRUE(authored_handle.valid());
+    const RenderProgramData* authored_data =
+        assets.render_programs().get_render_program_data(authored_handle);
+    ASSERT_NE(authored_data, nullptr);
+
+    const auto typed_handle =
+        assets.render_programs().get_render_program(typed_program);
+    ASSERT_TRUE(typed_handle.valid());
+    const RenderProgramData* typed_data =
+        assets.render_programs().get_render_program_data(typed_handle);
+    ASSERT_NE(typed_data, nullptr);
+
+    expect_same_program_data(*authored_data, *typed_data);
+
+    // The absolute shape, so this locks the lit SRG and not merely A == B.
+    ASSERT_EQ(typed_data->root_constants.size(), 1u);
+    EXPECT_EQ(typed_data->root_constants[0].semantic, "lit");
+    EXPECT_EQ(typed_data->root_constants[0].value_count, 36u)
+        << "WorldViewProjCamera36 head did not reach the program";
+    EXPECT_EQ(typed_data->root_constants[0].register_space, 2u);
+
+    // The constants contract the custom-renderable compiler validates against.
+    EXPECT_TRUE(typed_data->has_authored_binding_layout);
+    EXPECT_EQ(
+        typed_data->constants_head,
+        RenderBindingConstantsHead::WorldViewProjCamera36);
+
+    // Six SRV rows in authored order; material_albedo is the texture the
+    // composite target binds to, and it must be LAST (t5) -- the rows derive
+    // their registers from order, so an inserted row moves it.
+    ASSERT_EQ(typed_data->descriptor_bindings.size(), 6u);
+    EXPECT_EQ(
+        typed_data->descriptor_bindings[5].semantic,
+        DescriptorSemantic::MaterialAlbedo);
+    EXPECT_EQ(typed_data->descriptor_bindings[5].shader_register, 5u);
+    EXPECT_EQ(
+        typed_data->descriptor_bindings[5].visibility, ShaderVisibility::Pixel);
+
+    // The sampler #281 had to discover by hand: without it the pixel shader's
+    // material_sampler at s0 is unbound and the surface samples nothing.
+    ASSERT_EQ(typed_data->static_samplers.size(), 1u);
+    EXPECT_EQ(
+        typed_data->static_samplers[0].kind, StaticSamplerKind::LinearClamp);
+    EXPECT_EQ(
+        typed_data->static_samplers[0].visibility, ShaderVisibility::Pixel);
+    EXPECT_EQ(typed_data->static_samplers[0].shader_register, 0u);
+}
+
+// The layout key must cover the VIEW-frequency block. Without this, two layouts
+// differing only in view_head derive the same key, the second create_* is a
+// no-op that returns the first, and a program compiles against an SRG its
+// shader does not match.
+TEST(RenderBindingLayoutKey, ViewHeadChangesTheKey)
+{
+    RenderBindingLayoutData layout{};
+    layout.constants_semantic = "lit";
+    layout.constants_head = RenderBindingConstantsHead::WorldViewProjCamera36;
+
+    const wz::asset::AssetKey without_view =
+        make_render_binding_layout_key("layout/lit", layout);
+
+    layout.view_head = RenderBindingViewHead::CameraFog;
+    const wz::asset::AssetKey with_view =
+        make_render_binding_layout_key("layout/lit", layout);
+
+    EXPECT_FALSE(without_view == with_view);
+
+    // A layout wanting no view block keys exactly as it did before view heads
+    // existed, so adding this did not repoint any existing typed layout.
+    layout.view_head = RenderBindingViewHead::None;
+    EXPECT_TRUE(without_view == make_render_binding_layout_key("layout/lit", layout));
 }

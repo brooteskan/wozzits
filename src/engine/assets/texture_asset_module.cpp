@@ -7,6 +7,7 @@
 #include <engine/assets/type_extensions.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace wz::engine::assets
@@ -60,6 +61,56 @@ namespace wz::engine::assets
 
         out.output = key;
         return out;
+    }
+
+    TextureAsset TextureAssetModule::create_render_target(
+        const RenderTargetTextureDesc& desc)
+    {
+        if (desc.name.empty()) {
+            // The name is what distinguishes two targets of the same size, so
+            // an unnamed one would silently alias the next unnamed one.
+            logger_.error("render target texture has empty name");
+            return {};
+        }
+        // The compiler rejects a degenerate extent with a reason the inspector
+        // can show; catching it here too means the typed caller learns at the
+        // create rather than at resolve.
+        constexpr uint32_t kMaxExtent = 8192u;
+        if (desc.width == 0u || desc.height == 0u
+            || desc.width > kMaxExtent || desc.height > kMaxExtent)
+        {
+            logger_.error(
+                "render target texture dimensions must be within 1.."
+                + std::to_string(kMaxExtent) + ": " + desc.name);
+            return {};
+        }
+
+        const int color_space_index = static_cast<int>(desc.color_space);
+
+        const wz::asset::AssetKey key = make_render_target_texture_key(
+            desc.name, desc.width, desc.height, color_space_index);
+
+        // Same ParamBlock the graph/editor path authors, so a typed create and
+        // an authored node compile through the identical compiler branch.
+        wz::asset::ParamBlock params;
+        params.values["width"] = static_cast<int64_t>(desc.width);
+        params.values["height"] = static_cast<int64_t>(desc.height);
+        params.values["color_space"] = static_cast<int64_t>(color_space_index);
+
+        wz::asset::AssetNode node{};
+        node.key     = key;
+        node.type    = kAssetTypeTexture;
+        node.schema  = kRenderTargetTextureSchema;
+        node.stage   = wz::asset::AssetStage::Source;
+        node.payload = std::vector<uint8_t>{};
+        node.meta    = params;
+
+        // A repeat create of the same named target is the same asset, so a
+        // rejected registration (key already present) is success, not failure --
+        // the same convention create_render_binding_layout uses.
+        (void)system_.register_asset(std::move(node));
+
+        return TextureAsset{ .output = key };
     }
 
     TextureHandle TextureAssetModule::get_texture(
