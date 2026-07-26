@@ -140,6 +140,42 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
         }
         ASSERT_TRUE(resolve.ok());
 
+        // #300: the TYPED provisioning path must see its own blend variants.
+        // ensure_puppet_program registers them through create_custom, i.e. under
+        // a different schema than the graph path uses -- a lookup keyed on
+        // schema found none of them and every Part silently drew Normal, which
+        // no "did it render" assertion can distinguish from working.
+        {
+            const ea::PuppetProgramVariants variants =
+                ea::puppet_program_variants(
+                    assets.system(), assets.render_programs(), program.key);
+            std::vector<wz::asset::AssetKey> seen;
+            for (std::size_t i = 0; i < ea::kPuppetProgramBlendCount; ++i) {
+                const auto blend = static_cast<ea::PuppetProgramBlend>(i);
+                const wz::asset::AssetKey& key = variants.key_for(blend);
+                EXPECT_FALSE(key == wz::asset::AssetKey{})
+                    << "variant " << i << " has no program";
+                for (const wz::asset::AssetKey& other : seen) {
+                    EXPECT_FALSE(other == key)
+                        << "variant " << i << " collapsed onto another variant "
+                           "-- the typed path's programs were not found (#300)";
+                }
+                seen.push_back(key);
+
+                // ...and the one found for a blend actually COMPILED to that
+                // blend, so the PSO a Part draws through cannot disagree with
+                // the variant it was bucketed under.
+                const auto* compiled = assets.system().find_compiled(key);
+                ASSERT_NE(compiled, nullptr);
+                const ea::RenderProgramData* data =
+                    assets.render_programs().get_render_program_data(
+                        compiled->handle);
+                ASSERT_NE(data, nullptr);
+                EXPECT_EQ(data->blend_mode, ea::rhi_blend_for(blend))
+                    << "variant " << i << " compiled to the wrong blend state";
+            }
+        }
+
         // The puppet became resident: its first atlas page (Aka.inp atlases the
         // per-part textures into a few pages).
         const wz::rhi::GpuResourceHandle atlas0 = gpu.resources.find(

@@ -4,6 +4,7 @@
 
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/schema_ids.h>
+#include <engine/assets/type_extensions.h>
 
 #include <file/filesystem.h>
 
@@ -214,6 +215,7 @@ float4 main(PSIn input) : SV_TARGET
 
     PuppetProgramVariants puppet_program_variants(
         const wz::asset::AssetSystem& system,
+        const RenderProgramAssetModule& programs,
         const wz::asset::AssetKey& base)
     {
         PuppetProgramVariants out{};
@@ -239,29 +241,37 @@ float4 main(PSIn input) : SV_TARGET
         const std::vector<wz::asset::AssetKey>& family = base_entry->dep_keys;
 
         for (const wz::asset::AssetSystem::RegistrationEntry& e : registered) {
-            if (e.node.schema.value != kPuppetProgramSchema.value
-                || e.dep_keys != family)
-            {
+            // A render program sharing the base's shader deps -- whatever SCHEMA
+            // produced it. Matching a schema instead was #300: the typed path
+            // (ensure_puppet_program -> create_custom) registers
+            // kCustomRenderProgramSchema, the graph path registers
+            // kPuppetProgramSchema, and a lookup that named one silently found
+            // no siblings for the other and drew every Part Normal.
+            if (e.node.type != kAssetTypeRenderProgram || e.dep_keys != family) {
                 continue;
             }
-            // The declared blend_mode param rides in the node's meta ParamBlock
-            // (a compiler only gets meta when it declares .parameters -- see the
-            // kPuppetProgramSchema registration). A node without it is a
-            // pre-#274 program, i.e. Normal.
-            PuppetProgramBlend blend = PuppetProgramBlend::Normal;
-            if (const auto* params =
-                    std::any_cast<wz::asset::ParamBlock>(&e.node.meta))
-            {
-                const int64_t raw = params->get<int64_t>(
-                    kPuppetProgramBlendParam,
-                    static_cast<int64_t>(PuppetProgramBlend::Normal));
-                if (raw >= 0
-                    && raw < static_cast<int64_t>(kPuppetProgramBlendCount))
-                {
-                    blend = static_cast<PuppetProgramBlend>(raw);
+            // Bucket by what the program actually COMPILED TO, not by an
+            // authored param: the blend state is what the PSO will use, so this
+            // cannot disagree with what is drawn, and it reads the same for both
+            // provisioning paths. A program that has not resolved yet has no
+            // compiled blend to trust, so it is skipped rather than guessed at.
+            const wz::asset::AssetSystem::CompiledAsset* compiled =
+                system.find_compiled(e.node.key);
+            if (!compiled) {
+                continue;
+            }
+            const RenderProgramData* data =
+                programs.get_render_program_data(compiled->handle);
+            if (!data) {
+                continue;
+            }
+            for (std::size_t i = 0; i < kPuppetProgramBlendCount; ++i) {
+                const auto blend = static_cast<PuppetProgramBlend>(i);
+                if (rhi_blend_for(blend) == data->blend_mode) {
+                    out.by_blend[i] = e.node.key;
+                    break;
                 }
             }
-            out.by_blend[static_cast<std::size_t>(blend)] = e.node.key;
         }
         return out;
     }

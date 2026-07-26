@@ -25,15 +25,16 @@
 //
 // The puppet program comes as a fixed SET of blend VARIANTS (#274) — identical
 // shaders and SRG, differing only in the PSO's blend state, one per
-// fixed-function blend mode a Part can author (Normal, Multiply, Screen). Blend
+// fixed-function blend mode a Part can author: Normal, Multiply, Screen (#274)
+// and the two lower-relative modes, ClipToLower / SliceFromLower (#299). Blend
 // state lives in the PSO and DrawRequest carries a single program tag, so
 // per-Part blend means per-Part programs; the renderer picks one per Part from
 // ResidentPuppetPart::blend. The set is ENGINE-FIXED, not authored: the variants
 // are provisioned together (typed path and graph path alike) and found by
 // puppet_program_variants(), so nothing in the scene or the editor has to wire
-// them. Masks (ClipToLower / SliceFromLower) and the destination-reading modes
-// (Overlay, SoftLight, ...) are later seams (S5 stencil, S6 composite) and fall
-// back to Normal today.
+// them. The destination-COLOUR modes (Overlay, SoftLight, ColorBurn, ...) have
+// no fixed-function form and fall back to Normal until a backdrop-sampling seam
+// lands.
 
 #include <engine/assets/inochi/inochi_puppet.h>  // inochi::BlendMode
 #include <engine/assets/render_program/render_program.h>
@@ -119,13 +120,23 @@ namespace wz::engine::assets
 
     // Find the blend-variant siblings of an already-resolved puppet program.
     // `base` is the program the puppet renderable binds (any variant); the set
-    // is every registered kPuppetProgramSchema asset sharing base's SHADER DEPS,
-    // bucketed by its declared blend_mode param. Matching on the shader deps (not
-    // just the schema) keeps two different puppet programs in one project apart.
+    // is every registered RENDER PROGRAM sharing base's SHADER DEPS, bucketed by
+    // the blend state it COMPILED TO. Matching on the shader deps is what keeps
+    // two different puppet programs in one project apart.
+    //
+    // Neither half of that is incidental (#300). Matching a SCHEMA instead found
+    // nothing for programs provisioned the typed way -- ensure_puppet_program
+    // registers kCustomRenderProgramSchema, the graph path registers
+    // kPuppetProgramSchema -- so every Part silently drew Normal. And bucketing
+    // by the COMPILED blend rather than by an authored param means this cannot
+    // disagree with the PSO that will actually draw, and reads the same however
+    // the program was authored.
+    //
     // Returns a set whose Normal slot is `base` itself when no siblings exist,
     // so the caller always has something to draw with.
     [[nodiscard]] PuppetProgramVariants puppet_program_variants(
         const wz::asset::AssetSystem& system,
+        const RenderProgramAssetModule& programs,
         const wz::asset::AssetKey& base);
 
     // Stages the embedded puppet shader sources into <project>/shaders/puppet/

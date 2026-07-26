@@ -1548,7 +1548,9 @@ namespace wz::engine::rendering
             // authored before #274) or fails to realize falls back to the bound
             // program, i.e. the pre-#274 behaviour of drawing everything Normal.
             const ea::PuppetProgramVariants puppet_variants =
-                ea::puppet_program_variants(assets.system(), source->program_key);
+                ea::puppet_program_variants(
+                    assets.system(), assets.render_programs(),
+                    source->program_key);
             std::array<wz::rhi::Tag, ea::kPuppetProgramBlendCount>
                 puppet_variant_programs{};
             for (std::size_t vi = 0; vi < puppet_variant_programs.size(); ++vi) {

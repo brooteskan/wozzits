@@ -365,18 +365,20 @@ TEST(PuppetProgramVariants, MapsPartBlendToVariant)
 TEST(PuppetProgramVariants, FallsBackToBaseWhenNoSiblings)
 {
     wz::asset::AssetSystem system{ wz::asset::CompilerRegistry{} };
+    ea::RenderProgramTable programs_table;
+    const ea::RenderProgramAssetModule programs{ system, programs_table };
     wz::asset::AssetKey base{};
     base.content_hash.lo = 0x1234;
 
     const ea::PuppetProgramVariants v =
-        ea::puppet_program_variants(system, base);
+        ea::puppet_program_variants(system, programs, base);
     for (std::size_t i = 0; i < ea::kPuppetProgramBlendCount; ++i) {
         EXPECT_EQ(v.key_for(static_cast<ea::PuppetProgramBlend>(i)), base);
     }
 
     // An empty base stays empty rather than manufacturing a key.
     const ea::PuppetProgramVariants none =
-        ea::puppet_program_variants(system, wz::asset::AssetKey{});
+        ea::puppet_program_variants(system, programs, wz::asset::AssetKey{});
     EXPECT_EQ(
         none.key_for(ea::PuppetProgramBlend::Normal), wz::asset::AssetKey{});
 }
