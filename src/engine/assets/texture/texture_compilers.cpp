@@ -258,6 +258,20 @@ namespace wz::engine::assets::internal
             .input_ports = {},
             .parameters = {
                 {
+                    // Nothing reads this at compile time -- it exists to make
+                    // two targets DISTINCT. An authored node's key is derived
+                    // from its params, and a render target is a SINK, not a
+                    // value: two 512x512 targets are two different places to
+                    // draw. Without a name they derive the same key and the
+                    // commit batch rejects the graph outright (one key = one
+                    // node), which is what happens the moment a project wants a
+                    // second target of a size it already uses. The typed
+                    // create_render_target folds a name for the same reason.
+                    .name = "name",
+                    .type = wz::asset::ParamType::String,
+                    .label = "Name",
+                },
+                {
                     .name = "width",
                     .type = wz::asset::ParamType::Int,
                     .label = "Width",

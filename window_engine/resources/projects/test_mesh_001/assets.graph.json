@@ -8402,6 +8402,40 @@
       }
     },
     {
+      "node_id": 170,
+      "type": 129,
+      "schema": "0xf11eca55e7001009",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "puppet_card"
+          },
+          {
+            "name": "width",
+            "type": "int",
+            "value": 512
+          },
+          {
+            "name": "height",
+            "type": "int",
+            "value": 512
+          },
+          {
+            "name": "color_space",
+            "type": "int",
+            "value": 0
+          }
+        ]
+      }
+    },
+    {
       "node_id": 168,
       "type": 129,
       "schema": "0xf11eca55e7001009",

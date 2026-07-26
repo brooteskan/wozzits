@@ -577,6 +577,12 @@
       "active": true,
       "renderable": {
         "asset_graph_node_id": 159
+      },
+      "render_to_texture": {
+        "target_asset_node_id": 170,
+        "include_descendants": true,
+        "also_draw_in_scene": false,
+        "enabled": true
       }
     },
     {

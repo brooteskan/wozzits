@@ -674,14 +674,14 @@ namespace wz::app
             bool drive_camera = true);
         bool render_scene();      // record scene draws (between begin/end frame)
 
-        // S6 3D-mesh consumer showcase: render the scene's puppet(s) into an
-        // offscreen texture and display that texture on a spinning quad ("card")
-        // in the frame, instead of the flat screen-space overlay. Called by the
-        // host each frame AFTER render_scene() and inside the same begin/end-frame
-        // bracket (it does its own offscreen pass, then draws the card over the
-        // backbuffer). No-op when the showcase is off or the scene has no puppet.
-        // While on, render_scene() filters puppets out of the main pass so the
-        // puppet appears only on the card. Returns false only on a device failure.
+        // S6 3D-mesh consumer showcase: display the scene's authored
+        // render-to-texture target on a spinning quad ("card") in the frame.
+        // Called by the host each frame AFTER render_scene() and inside the same
+        // begin/end-frame bracket. The offscreen pass that FILLS that texture is
+        // no longer here -- render_scene() drives it from the authoring (#287),
+        // which is also what keeps the source out of the main pass. What remains
+        // is the composite (#281, still hardcoded -- #285) and the card itself.
+        // No-op when the showcase is off or the scene authors no source.
         bool render_puppet_showcase();
 
         // The render-target texture a scene renderable binds at material_albedo
@@ -1184,25 +1184,19 @@ namespace wz::app
         // engine/app/view_controller.h.
         ViewController view_{};
 
-        // S6 3D-mesh consumer showcase state. puppet_card_showcase_ on: the
-        // scene's puppet renders onto a spinning card (render_puppet_showcase),
-        // not as a flat overlay; render_scene() drops puppets from the main pass.
-        // The RTT is a persistent square offscreen target lazily created on the
-        // first showcase frame (released at device teardown). The angle advances
-        // each showcase frame -- a slow idle spin -- alongside the puppet's own
-        // breathing/physics idle motion.
+        // S6 3D-mesh consumer showcase state. The card's TEXTURE is no longer
+        // owned here: it is an authored render-to-texture target (#287) that
+        // render_scene fills, so the showcase only composites it and draws the
+        // spinning quad. puppet_card_showcase_ gates that display; with it off
+        // (or with no authored source in the scene) the art simply is not shown
+        // on a card. The angle advances each showcase frame -- a slow idle spin
+        // -- alongside the puppet's own breathing/physics idle motion.
         bool             puppet_card_showcase_ = true;
-        wz::gpu::GPUHandle puppet_card_rtt_{};
         float            puppet_card_angle_ = 0.0f;
 
         // Source node ids already warned about a non-resident render-to-texture
         // target (#287), so the complaint is made once rather than every frame.
         std::unordered_set<std::string> warned_render_targets_;
-
-        // True if `node`'s renderable recipe is an Inochi puppet (carries a
-        // puppet_key). Used to route puppets onto the showcase card.
-        [[nodiscard]] bool is_puppet_node(
-            const wz::engine::assets::SceneNodeAsset& node) const;
 
         // The current graph draft (kept for the renderable_asset_node_id -> key
         // bridge) and the loaded scene's nodes (with the bridged renderable_asset).

@@ -2981,18 +2981,16 @@ namespace wz::app
             return false;
         }
 
-        // Which nodes the main pass SKIPS: those an authored target claims
-        // exclusively (#287), plus -- while the showcase flag is on -- puppets,
-        // which appear on the spinning card instead of as a flat overlay.
+        // Which nodes the main pass SKIPS: exactly those an authored target
+        // claims exclusively (#287). This used to also hard-code "and puppets,
+        // while the showcase flag is on", which meant a puppet in a scene with
+        // no card was invisible in BOTH passes. Now the exclusion is authored,
+        // so a puppet with no render_to_texture simply draws where it is.
         // Filter nodes + world transforms in lockstep; they are index-aligned.
-        std::vector<bool> skip = authored.excluded_from_scene;
-        skip.resize(document_.nodes().size(), false);
+        const std::vector<bool>& skip = authored.excluded_from_scene;
         bool any_skipped = false;
-        for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
-            if (puppet_card_showcase_ && is_puppet_node(document_.nodes()[i])) {
-                skip[i] = true;
-            }
-            any_skipped = any_skipped || skip[i];
+        for (const bool skipped : skip) {
+            any_skipped = any_skipped || skipped;
         }
 
         if (!any_skipped) {
@@ -3020,18 +3018,6 @@ namespace wz::app
             main_nodes, *ctx_.assets, view_.active_view().view_projection,
             view_.active_view().world_position, main_transforms,
             resolve_frame_atmosphere());
-    }
-
-    bool WozzitsApp_v1::is_puppet_node(const wz::engine::assets::SceneNodeAsset& node) const
-    {
-        if (!ctx_.assets || !node.renderable_asset.has_value()) {
-            return false;
-        }
-        const wz::engine::assets::RhiRenderableRecipe* recipe =
-            ctx_.assets->renderables().get_rhi_renderable_recipe(
-                wz::engine::assets::RenderableAsset{
-                    .output = *node.renderable_asset });
-        return recipe && !(recipe->puppet_key == wz::asset::AssetKey{});
     }
 
     // The composited material target (#281): the render-target texture a scene
@@ -3081,53 +3067,45 @@ namespace wz::app
             return true;
         }
 
-        // Gather the scene's puppet nodes (recipe carries a puppet_key) and, in
-        // lockstep, the WORLD transform of the first one -- the card is anchored to
-        // that scene-node transform (below), so the puppet lives wherever the node
-        // sits in the world. scene_world_transforms() is index-aligned with
-        // document_.nodes(); the puppet-space placement into the RTT itself is
-        // target-fit by the renderer, so the node transform only positions the card.
+        // The card's texture is an AUTHORED render-to-texture target (#287): the
+        // scene node carries a render_to_texture component, and render_scene
+        // already filled that texture this frame. This used to be a C++ scan for
+        // "nodes whose recipe carries a puppet_key" plus a private offscreen
+        // texture and a bespoke render_scene call -- none of which a user could
+        // point at different art without a rebuild.
+        //
+        // The anchor is that same node's WORLD transform: the card lives wherever
+        // the node sits in the world. scene_world_transforms() is index-aligned
+        // with document_.nodes(); the art's placement INTO the texture is
+        // target-fit by the renderer, so the node transform only positions the
+        // card.
         const std::vector<wz::math::Mat4> world_transforms =
             scene_world_transforms();
-        std::vector<wz::engine::assets::SceneNodeAsset> puppet_nodes;
+        wz::asset::AssetKey card_texture{};
         wz::math::Mat4 card_anchor = wz::math::Mat4::identity();
-        bool have_anchor = false;
         for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
-            if (!is_puppet_node(document_.nodes()[i])) {
+            const std::optional<wz::engine::assets::SceneRenderToTextureAsset>&
+                source = document_.nodes()[i].render_to_texture;
+            if (!source || !source->enabled
+                || source->target == wz::asset::AssetKey{})
+            {
                 continue;
             }
-            puppet_nodes.push_back(document_.nodes()[i]);
-            if (!have_anchor && i < world_transforms.size()) {
+            card_texture = source->target;
+            if (i < world_transforms.size()) {
                 card_anchor = world_transforms[i];
-                have_anchor = true;
             }
+            break;
         }
-        if (puppet_nodes.empty()) {
-            return true;  // nothing to show
-        }
-
-        // Lazily create the persistent square offscreen target.
-        if (!puppet_card_rtt_.valid()) {
-            wz::gpu::TextureDesc desc{};
-            desc.width = 512;
-            desc.height = 512;
-            desc.format = wz::gpu::TextureFormat::RGBA8Unorm;
-            desc.render_target = true;
-            puppet_card_rtt_ = wz::gpu::create_texture(ctx_.device, desc);
-        }
-        if (!puppet_card_rtt_.valid()) {
-            return false;
+        if (card_texture == wz::asset::AssetKey{}) {
+            return true;  // no authored source -- nothing to show on a card
         }
 
-        // Render only the puppet(s) into the offscreen target (its own pass; the
-        // renderer restores the backbuffer afterward). This is where the puppet's
-        // per-frame deform + idle physics run, so the card animates.
-        const std::vector<wz::math::Mat4> identities(
-            puppet_nodes.size(), wz::math::Mat4::identity());
-        renderer_.render_scene(
-            puppet_nodes, *ctx_.assets, view_.active_view().view_projection,
-            view_.active_view().world_position, identities,
-            resolve_frame_atmosphere(), puppet_card_rtt_);
+        const wz::gpu::GPUHandle card_rtt = texture_gpu_handle(card_texture);
+        if (!card_rtt.valid()) {
+            // render_authored_render_targets already warned once about this.
+            return true;
+        }
 
         // Composite the puppet into the scene's material texture (#281): clear it
         // to the sphere's base colour, then place the puppet RTT over it. The
@@ -3141,7 +3119,7 @@ namespace wz::app
         {
             const float base_color[4] = { 0.62f, 0.62f, 0.65f, 1.0f };
             wz::gpu::dx12::internal::TextureCompositeLayer layer{};
-            layer.texture = puppet_card_rtt_;
+            layer.texture = card_rtt;
             layer.center_uv[0] = 0.5f;
             layer.center_uv[1] = 0.5f;
             layer.half_size_uv[0] = 0.35f;
@@ -3173,7 +3151,7 @@ namespace wz::app
         const wz::math::Mat4 mvp_mat = wz::math::mul(
             view_.active_view().view_projection, card_model);
         wz::gpu::dx12::internal::draw_textured_quad_dx12(
-            ctx_.device, puppet_card_rtt_, mvp_mat.m,
+            ctx_.device, card_rtt, mvp_mat.m,
             wz::gpu::dx12::internal::TexturedQuadMode::WorldSurface);
         return true;
     }
