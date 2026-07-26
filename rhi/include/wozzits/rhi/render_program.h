@@ -63,7 +63,10 @@ namespace wz::rhi
 
     // Fixed-function blend recipes. Opaque / AlphaBlend / Additive are the
     // classic trio; Multiply (Src×Dst) and Screen (Src + Dst − Src×Dst) are the
-    // 2D-puppet / overlay compositing modes (inochi runtime).
+    // 2D-puppet / overlay compositing modes (inochi runtime). Both are
+    // COVERAGE-AWARE — they fall back to Dst where the source is transparent,
+    // so a partially-covering source composites rather than punching a hole.
+    // For an opaque source that reduces to the textbook operator.
     // PremultipliedAlpha (Src + Dst×(1−SrcAlpha)) is AlphaBlend's counterpart for
     // sources that have ALREADY multiplied colour by alpha; it is the correct
     // "over" operator whenever semi-transparent texels must not bleed toward
