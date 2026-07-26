@@ -153,6 +153,79 @@ TEST(JSONWriter, SerializesDocumentAndParsesRoundTrip)
     EXPECT_EQ(parsed.document.root->object_members[1].key, "roughness");
 }
 
+namespace
+{
+    std::string serialize_number(double value)
+    {
+        wz::json::JSONValue json{};
+        json.kind = wz::json::JSONValueKind::Number;
+        json.number_value = value;
+        return wz::json::serialize_json(json, { .pretty = false });
+    }
+}
+
+// #284: the writer used max_digits10, so 0.1 came back out as
+// 0.10000000000000001 and merely loading + saving a document rewrote every
+// float in it. Numbers must serialize as the SHORTEST text that still parses
+// back to the identical double.
+TEST(JSONWriter, WritesShortestRoundTrippingNumbers)
+{
+    EXPECT_EQ(serialize_number(0.1), "0.1");
+    EXPECT_EQ(serialize_number(947.385236966102), "947.385236966102");
+    EXPECT_EQ(serialize_number(2.0), "2");
+    EXPECT_EQ(serialize_number(-0.75), "-0.75");
+}
+
+TEST(JSONWriter, NumberSerializationIsAFixedPoint)
+{
+    // Values a project's asset graph actually carries: authored dials, a
+    // computed placement, an integral count, and both magnitude extremes.
+    const double values[] = {
+        0.1, 0.35, -0.62, 947.385236966102, 1.0, 0.0,
+        1.0e30, 1.5e-7, 3.4028234663852886e38,
+    };
+
+    for (const double value : values) {
+        const std::string once = serialize_number(value);
+
+        const auto parsed = wz::json::parse_json_string(once);
+        ASSERT_TRUE(parsed.ok) << once << ": " << parsed.error.message;
+        ASSERT_NE(parsed.document.root, nullptr) << once;
+        ASSERT_EQ(parsed.document.root->kind, wz::json::JSONValueKind::Number)
+            << once;
+
+        // Exact, not near: a lossy write would show up here first.
+        EXPECT_DOUBLE_EQ(parsed.document.root->number_value, value) << once;
+
+        // ...and writing what we just read reproduces the same text, so
+        // re-saving an unchanged document is byte-identical.
+        EXPECT_EQ(serialize_number(parsed.document.root->number_value), once);
+    }
+}
+
+// Negative zero is the ONE value the round trip normalises: the parser hands
+// back +0, so a stored -0.0 is written "-0" once and "0" from then on. Pinned
+// here so it reads as a known, one-time normalisation rather than the kind of
+// unexplained diff #284 was about.
+TEST(JSONWriter, NegativeZeroNormalisesOnTheFirstRoundTrip)
+{
+    const std::string first = serialize_number(-0.0);
+    EXPECT_EQ(first, "-0");
+
+    const auto parsed = wz::json::parse_json_string(first);
+    ASSERT_TRUE(parsed.ok) << parsed.error.message;
+    ASSERT_NE(parsed.document.root, nullptr);
+
+    const std::string second =
+        serialize_number(parsed.document.root->number_value);
+    EXPECT_EQ(second, "0");
+
+    const auto reparsed = wz::json::parse_json_string(second);
+    ASSERT_TRUE(reparsed.ok) << reparsed.error.message;
+    ASSERT_NE(reparsed.document.root, nullptr);
+    EXPECT_EQ(serialize_number(reparsed.document.root->number_value), second);
+}
+
 TEST(JSONWriter, EscapesStrings)
 {
     wz::json::JSONValue value{};

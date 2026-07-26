@@ -1,10 +1,12 @@
 #include <external/json/json_writer.h>
 
+#include <charconv>
 #include <cstddef>
 #include <cmath>
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <system_error>
 
 namespace wz::json
 {
@@ -58,6 +60,20 @@ namespace wz::json
                 return;
             }
 
+            // Shortest representation that still round-trips exactly (#284).
+            // max_digits10 printed 0.1 as 0.10000000000000001, so parse->write
+            // was not a fixed point: merely loading and re-saving a document
+            // rewrote every float and produced a large no-op diff.
+            char buffer[64]{};
+            const std::to_chars_result result =
+                std::to_chars(buffer, buffer + sizeof(buffer), value);
+            if (result.ec == std::errc{}) {
+                out.append(buffer, result.ptr);
+                return;
+            }
+
+            // Unreachable for finite doubles with this buffer size; keep the
+            // exact-but-verbose path rather than emitting a malformed number.
             std::ostringstream ss;
             ss << std::setprecision(std::numeric_limits<double>::max_digits10)
                << value;
