@@ -29,6 +29,14 @@ namespace wz::engine::assets::internal
             float position[3] = {};
         };
 
+        // Per-vertex UVs ride their own tightly-packed buffer (#290) rather
+        // than the float3 one positions and normals share -- a StructuredBuffer's
+        // stride IS its element type, and the shader declares float2.
+        struct GpuTexcoord2
+        {
+            float uv[2] = {};
+        };
+
         void copy_mesh_bounds(
             float dst_min[3],
             float dst_max[3],
@@ -125,6 +133,22 @@ namespace wz::engine::assets::internal
                 }
             }
 
+            // Per-vertex texture coordinates (#290), same optional shape as
+            // normals: a mesh without them publishes no "pull_uvs" buffer, so a
+            // program that declares the row fails to resolve rather than
+            // sampling a material with whatever float2 happened to be there.
+            const bool has_uvs = mesh.has_uv0 && !mesh.vertices.empty();
+            std::vector<GpuTexcoord2> uvs;
+            if (has_uvs) {
+                uvs.reserve(mesh.vertices.size());
+                for (const MeshVertex& vertex : mesh.vertices) {
+                    GpuTexcoord2 out{};
+                    out.uv[0] = vertex.uv[0];
+                    out.uv[1] = vertex.uv[1];
+                    uvs.push_back(out);
+                }
+            }
+
             const auto started = std::chrono::steady_clock::now();
             if (gpu_resources) {
                 wz::rhi::GpuResourceDesc positions_desc =
@@ -191,9 +215,32 @@ namespace wz::engine::assets::internal
                             normals_desc.size_bytes);
                 }
 
+                // Optional per-vertex UVs buffer (variant "pull_uvs", #290).
+                wz::rhi::GpuResourceHandle uvs_handle{};
+                bool uvs_uploaded = true;
+                if (has_uvs) {
+                    wz::rhi::GpuResourceDesc uvs_desc =
+                        wz::rhi::GpuResourceDesc::buffer(
+                            static_cast<uint64_t>(
+                                uvs.size() * sizeof(GpuTexcoord2)),
+                            sizeof(GpuTexcoord2),
+                            wz::rhi::ResourceUsage_Sampled,
+                            wz::rhi::ResourceCpuAccess::WriteOnce);
+                    uvs_desc.identity = wz::rhi::ResourceIdentity{
+                        rhi_asset_identity(sparse_mesh_key, "pull_uvs"),
+                        {},
+                    };
+                    uvs_handle = gpu_resources->acquire(uvs_desc);
+                    uvs_uploaded =
+                        uvs_handle.valid()
+                        && gpu_resources->update(
+                            uvs_handle, uvs.data(), uvs_desc.size_bytes);
+                }
+
                 if (!positions_uploaded
                     || !indices_uploaded
-                    || !normals_uploaded)
+                    || !normals_uploaded
+                    || !uvs_uploaded)
                 {
                     if (positions_handle.valid()) {
                         gpu_resources->release(positions_handle);
@@ -203,6 +250,9 @@ namespace wz::engine::assets::internal
                     }
                     if (normals_handle.valid()) {
                         gpu_resources->release(normals_handle);
+                    }
+                    if (uvs_handle.valid()) {
+                        gpu_resources->release(uvs_handle);
                     }
                     logger.warn(
                         "GPU sparse mesh RHI resident upload failed");
@@ -217,6 +267,12 @@ namespace wz::engine::assets::internal
                         tracked.push_back(wz::rhi::ResourceIdentity{
                             rhi_asset_identity(
                                 sparse_mesh_key, "pull_normals"),
+                            {},
+                        });
+                    }
+                    if (has_uvs) {
+                        tracked.push_back(wz::rhi::ResourceIdentity{
+                            rhi_asset_identity(sparse_mesh_key, "pull_uvs"),
                             {},
                         });
                     }

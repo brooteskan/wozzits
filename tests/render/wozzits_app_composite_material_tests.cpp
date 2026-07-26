@@ -59,6 +59,14 @@ namespace
             }
         }
 
+        wz::app::WozzitsAppSceneLoadDesc uv_surface_load_desc() const
+        {
+            wz::app::WozzitsAppSceneLoadDesc desc = load_desc();
+            desc.scene = wz::fs::join(
+                wz::fs::parent_path(desc.scene), "uv_surface.scene.json");
+            return desc;
+        }
+
         wz::app::WozzitsAppSceneLoadDesc load_desc() const
         {
             const auto project = wz::engine::project::load_project_manifest(
@@ -167,6 +175,31 @@ TEST_F(WozzitsAppCompositeMaterialFixture, AuthoredMaterialIsCompositedAndBound)
     }
     EXPECT_GT(red, 0u)
         << "the authored base colour never reached the material texture";
+
+}
+
+// #290: a surface that samples its material through the mesh's OWN texture
+// coordinates. The quad carries UVs and the program's layout declares the
+// pulled_mesh_uvs row, so an unbound UV channel leaves the object SRG
+// unsatisfied and the renderable never realizes.
+//
+// The scene holds that ONE drawable on purpose. In the composite scene the
+// render-to-texture source binds a descriptor table of its own, which would
+// keep the count above zero and hide exactly the failure this is checking --
+// verified by disabling the channel and watching that version still pass.
+TEST_F(WozzitsAppCompositeMaterialFixture, SurfaceSamplesThroughPulledMeshUvs)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    ASSERT_TRUE(app.load_scene(uv_surface_load_desc()));
+
+    render_one_frame(app);
+
+    EXPECT_GT(app.cached_descriptor_table_count(), 0u)
+        << "the UV-sampling renderable never realized -- its object SRG went "
+           "unsatisfied because the pulled_mesh_uvs row did not bind (#290)";
+    EXPECT_EQ(app.render_time_program_bridge_count(), 0u)
+        << "the material program was bridged at render time rather than coming "
+           "from the asset compiler";
 }
 
 // #288: a target nothing feeds and a material nothing changed cost ZERO passes.

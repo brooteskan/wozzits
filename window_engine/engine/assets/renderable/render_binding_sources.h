@@ -18,6 +18,7 @@
 //   GpuSparseMesh      → StructuredSrv, "pull_positions"        (gpu_sparse_mesh_compilers.cpp)
 //                        StructuredSrv, "pull_indices"            — variant selected by semantic
 //                        StructuredSrv, "pull_normals"            — present only when the mesh has normals
+//                        StructuredSrv, "pull_uvs"                — present only when the mesh has UVs (#290)
 //
 // The custom renderable compiler (0x70A) consults this to validate an
 // authored binding's kind against the wired program's layout row and to bake
@@ -95,6 +96,10 @@ namespace wz::engine::assets
             if (semantic == DescriptorSemantic::PulledMeshIndices) {
                 return RenderBindingSource{
                     RenderBindingKind::StructuredSrv, "pull_indices" };
+            }
+            if (semantic == DescriptorSemantic::PulledMeshUvs) {
+                return RenderBindingSource{
+                    RenderBindingKind::StructuredSrv, "pull_uvs" };
             }
             if (semantic == DescriptorSemantic::PulledMeshNormals) {
                 return RenderBindingSource{

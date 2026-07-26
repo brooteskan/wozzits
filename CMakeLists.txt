@@ -372,6 +372,15 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/composite_material.scene.json"
     COPYONLY)
 
+# Issue #290: the UV-sampling surface ALONE, so the renderer's descriptor-table
+# count is evidence about that one renderable. In the composite scene the
+# render-to-texture source binds a table too, which masks a surface that failed
+# to realize.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/uv_surface_scene.json"
+    "${WZ_REBIND_FIXTURE_DST}/uv_surface.scene.json"
+    COPYONLY)
+
 # Issue #216/#217: a scene for the test_rebind_fixture graph that drives the
 # collision-by-reference + motion terrain-stick authoring verbs (a landscape
 # node + a tank node, both authored live by the test).

@@ -406,7 +406,8 @@ namespace wz::engine::assets::internal
                 {
                     return semantic == DescriptorSemantic::PulledMeshPositions
                         || semantic == DescriptorSemantic::PulledMeshIndices
-                        || semantic == DescriptorSemantic::PulledMeshNormals;
+                        || semantic == DescriptorSemantic::PulledMeshNormals
+                        || semantic == DescriptorSemantic::PulledMeshUvs;
                 };
 
             // The RENDERER owns the view-frequency rows (register space 0):

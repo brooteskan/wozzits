@@ -156,6 +156,14 @@ namespace wz::engine::assets
         // mask_threshold. Every puppet Part declares this row -- an UNMASKED one
         // binds a 1x1 white texture -- so masking needs no second program set.
         PuppetMask,
+        // Per-vertex texture coordinates, pulled the same way as positions /
+        // indices / normals (#290). Published only when the source mesh carries
+        // them; a program that declares this row therefore REQUIRES a UV-bearing
+        // mesh, exactly as the normals row requires normals. Without it a
+        // material texture could only be mapped by deriving a UV from geometry,
+        // which is why the lit sphere derives an equirectangular one -- correct
+        // for a sphere and meaningless on anything else.
+        PulledMeshUvs,
     };
 
     // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
@@ -163,7 +171,7 @@ namespace wz::engine::assets
     // it as a Tag (enum → name), and authored render-binding-layout rows name
     // their semantic as a string that resolves back to the enum (name → enum).
     // Index == enum value; a new DescriptorSemantic member extends this array.
-    inline constexpr std::array<std::string_view, 21> kDescriptorSemanticNames = {
+    inline constexpr std::array<std::string_view, 22> kDescriptorSemanticNames = {
         "unknown",
         "splat_cloud",
         "sorted_splat_indices",
@@ -185,6 +193,7 @@ namespace wz::engine::assets
         "puppet_atlas",
         "material_albedo",
         "puppet_mask",
+        "pulled_mesh_uvs",
     };
 
     [[nodiscard]] constexpr std::string_view descriptor_semantic_name(

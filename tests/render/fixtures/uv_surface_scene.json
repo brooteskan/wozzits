@@ -1,7 +1,7 @@
 {
   "schema": "wozzits.scene.v0",
-  "name": "composite_material_scene",
-  "note": "Issues #285/#287/#288: the whole authored chain in one scene. 'art_source' renders into render-target texture node 27 (a render_to_texture source). Composite material node 28 clears to red and places node 27 over it. 'surface' binds node 28 at material_albedo through the material-layout program (node 26), so a surface samples what the compositor built. Nothing about which art, what colour, or where it sits is C++.",
+  "name": "uv_surface_scene",
+  "note": "Issue #290: the UV-sampling surface ALONE. One drawable node, so the renderer's cached descriptor-table count is evidence about THAT renderable and nothing else -- in the composite scene the render-to-texture source binds a table too, which would mask a surface that failed to realize. The quad (node 31) is the procedural mesh that carries UVs; program node 26's layout declares the pulled_mesh_uvs row, so an unbound UV channel fails the object SRG and nothing realizes at all.",
   "nodes": [
     {
       "id": "root",
@@ -27,25 +27,6 @@
         "near": 0.10000000149011612,
         "far": 1000,
         "aspect": 1.7777777910232544
-      }
-    },
-    {
-      "id": "art_source",
-      "parent": "root",
-      "name": "art_source",
-      "transform": {
-        "translation": [0, 0, 0],
-        "rotation_quat": [0, 0, 0, 1],
-        "scale": [200, 200, 200]
-      },
-      "visible": true,
-      "geometry": { "asset_graph_node_id": 9 },
-      "render_program": { "asset_graph_node_id": 10 },
-      "render_to_texture": {
-        "target_asset_node_id": 27,
-        "include_descendants": true,
-        "also_draw_in_scene": false,
-        "enabled": true
       }
     },
     {

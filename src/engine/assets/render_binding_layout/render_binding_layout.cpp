@@ -203,6 +203,10 @@ namespace wz::engine::assets
             switch (semantic) {
             case DescriptorSemantic::PulledMeshPositions:    return "float3";
             case DescriptorSemantic::PulledMeshIndices:      return "uint";
+            // #290. float2, matching the tightly-packed UV buffer the mesh
+            // residency publishes -- a StructuredBuffer's stride IS its element
+            // type, so declaring anything wider walks off the vertices.
+            case DescriptorSemantic::PulledMeshUvs:          return "float2";
             case DescriptorSemantic::SortedSplatIndices:     return "uint";
             case DescriptorSemantic::MeshFieldVisualization: return "float";
             case DescriptorSemantic::SplatCloud:             return "WzSplat";

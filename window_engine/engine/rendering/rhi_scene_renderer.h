@@ -257,6 +257,7 @@ namespace wz::engine::rendering
             wz::rhi::GpuResourceHandle  positions{};
             wz::rhi::GpuResourceHandle  indices{};
             wz::rhi::GpuResourceHandle  normals{};   // empty unless a lit layout pulls them
+            wz::rhi::GpuResourceHandle  uvs{};       // empty unless a layout pulls them (#290)
             wz::rhi::ShaderResourceGroup object_srg{};
             // The VIEW-frequency group (register space 0), pointing at the
             // renderer's single view-constants buffer. Built ONLY when this

@@ -287,9 +287,43 @@ TEST(GpuSparseMeshAssetModule, ResolvePublishesPullBuffersIntoRhiRegistry)
                 0.0f, 0.0f, 1.0f,
             });
 
+        // Per-vertex UVs ride a parallel "pull_uvs" buffer (#290). Without it a
+        // material texture can only be mapped by deriving a UV from geometry --
+        // which is why the lit sphere derives an equirectangular one, correct
+        // for a sphere and meaningless on anything else.
+        const wz::rhi::ResourceIdentity uvs_identity{
+            wz::engine::assets::rhi_asset_identity(
+                sparse_mesh.output,
+                "pull_uvs"),
+            {},
+        };
+        const wz::rhi::GpuResourceHandle uvs = gpu.resources.find(uvs_identity);
+        ASSERT_TRUE(uvs.valid());
+        const wz::rhi::GpuResource* uvs_resource = gpu.resources.get(uvs);
+        ASSERT_NE(uvs_resource, nullptr);
+        EXPECT_EQ(uvs_resource->desc.identity, uvs_identity);
+        EXPECT_EQ(uvs_resource->desc.usage, wz::rhi::ResourceUsage_Sampled);
+        // float2, NOT the float3 stride positions and normals share: a
+        // StructuredBuffer's stride IS its element type, so a wrong one here
+        // walks the shader off its own vertices instead of failing.
+        EXPECT_EQ(uvs_resource->desc.stride_bytes, 2u * sizeof(float));
+
+        const wz::gpu::GPUHandle uvs_gpu =
+            gpu.backend.gpu_handle_for(uvs_resource->backend);
+        ASSERT_TRUE(uvs_gpu.valid());
+        expect_readback_bytes_eq(
+            wz::gpu::readback_buffer(device, uvs_gpu),
+            std::array<float, 8>{
+                0.0f, 0.0f,
+                0.0f, 1.0f,
+                1.0f, 1.0f,
+                1.0f, 0.0f,
+            });
+
         gpu.resources.release(positions);
         gpu.resources.release(indices);
         gpu.resources.release(normals);
+        gpu.resources.release(uvs);
         gpu.resources.collect(UINT64_MAX);
     }
 
