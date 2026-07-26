@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <cmath>
 #include <iomanip>
 #include <limits>
@@ -58,6 +59,28 @@ namespace wz::json
             if (!std::isfinite(value)) {
                 out += "null";
                 return;
+            }
+
+            // An integral value prints as an INTEGER, not in whatever notation
+            // happens to be shortest. Shortest alone renders 200000 as "2e+05",
+            // and these documents carry authored int params -- a triangle
+            // budget, a texture extent -- that people read and edit. Bounded by
+            // 2^53, the last magnitude at which a double still names every
+            // integer exactly. (Negative zero lands here and prints "0", which
+            // is what a round trip produces anyway: the parser returns +0.)
+            constexpr double kExactIntegerLimit = 9007199254740992.0;  // 2^53
+            if (value == std::trunc(value)
+                && value >= -kExactIntegerLimit
+                && value <= kExactIntegerLimit)
+            {
+                char integral[32]{};
+                const std::to_chars_result as_int = std::to_chars(
+                    integral, integral + sizeof(integral),
+                    static_cast<std::int64_t>(value));
+                if (as_int.ec == std::errc{}) {
+                    out.append(integral, as_int.ptr);
+                    return;
+                }
             }
 
             // Shortest representation that still round-trips exactly (#284).

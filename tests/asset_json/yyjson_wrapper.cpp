@@ -174,6 +174,14 @@ TEST(JSONWriter, WritesShortestRoundTrippingNumbers)
     EXPECT_EQ(serialize_number(947.385236966102), "947.385236966102");
     EXPECT_EQ(serialize_number(2.0), "2");
     EXPECT_EQ(serialize_number(-0.75), "-0.75");
+
+    // An integral value prints as an integer even when scientific notation
+    // would be SHORTER. Shortest-only rendered these authored int params --
+    // a triangle budget, a texture extent -- as "2e+05" and "1e+06", which
+    // round-trips but is not what a person editing the file expects to read.
+    EXPECT_EQ(serialize_number(200000.0), "200000");
+    EXPECT_EQ(serialize_number(1000000.0), "1000000");
+    EXPECT_EQ(serialize_number(-512.0), "-512");
 }
 
 TEST(JSONWriter, NumberSerializationIsAFixedPoint)
@@ -203,27 +211,18 @@ TEST(JSONWriter, NumberSerializationIsAFixedPoint)
     }
 }
 
-// Negative zero is the ONE value the round trip normalises: the parser hands
-// back +0, so a stored -0.0 is written "-0" once and "0" from then on. Pinned
-// here so it reads as a known, one-time normalisation rather than the kind of
-// unexplained diff #284 was about.
-TEST(JSONWriter, NegativeZeroNormalisesOnTheFirstRoundTrip)
+// Negative zero writes as "0" -- it takes the integral path, and that is what
+// a round trip produces anyway since the parser returns +0. Pinned so the
+// normalisation is a stated property rather than a surprise, and so the round
+// trip is a fixed point from the very first write.
+TEST(JSONWriter, NegativeZeroWritesAsZero)
 {
-    const std::string first = serialize_number(-0.0);
-    EXPECT_EQ(first, "-0");
+    EXPECT_EQ(serialize_number(-0.0), "0");
 
-    const auto parsed = wz::json::parse_json_string(first);
+    const auto parsed = wz::json::parse_json_string("-0");
     ASSERT_TRUE(parsed.ok) << parsed.error.message;
     ASSERT_NE(parsed.document.root, nullptr);
-
-    const std::string second =
-        serialize_number(parsed.document.root->number_value);
-    EXPECT_EQ(second, "0");
-
-    const auto reparsed = wz::json::parse_json_string(second);
-    ASSERT_TRUE(reparsed.ok) << reparsed.error.message;
-    ASSERT_NE(reparsed.document.root, nullptr);
-    EXPECT_EQ(serialize_number(reparsed.document.root->number_value), second);
+    EXPECT_EQ(serialize_number(parsed.document.root->number_value), "0");
 }
 
 TEST(JSONWriter, EscapesStrings)
