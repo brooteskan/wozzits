@@ -1031,6 +1031,11 @@ namespace wz::engine::editor
                 node.components.push_back(SceneSnapshotComponent{
                     .kind = "motion_filter", .display_name = "Motion Filter" });
             }
+            if (source.render_to_texture) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "render_to_texture",
+                    .display_name = "Render To Texture" });
+            }
             if (source.audio_source) {
                 node.components.push_back(SceneSnapshotComponent{
                     .kind = "audio_source", .display_name = "Audio Source" });
@@ -1129,6 +1134,12 @@ namespace wz::engine::editor
                 node.components.push_back(SceneSnapshotComponent{
                     .kind = "motion_filter",
                     .display_name = "Motion Filter",
+                });
+            }
+            if (has_component_object(value, "render_to_texture")) {
+                node.components.push_back(SceneSnapshotComponent{
+                    .kind = "render_to_texture",
+                    .display_name = "Render To Texture",
                 });
             }
             if (has_component_object(value, "audio_source")) {

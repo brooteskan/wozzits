@@ -352,6 +352,15 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/custom_binding.scene.json"
     COPYONLY)
 
+# Issue #287: a scene for the test_rebind_fixture graph whose one drawable node
+# carries a render_to_texture component naming graph node 20 (a render-target
+# texture), so the engine fills that texture with no app code and drops the node
+# from the main pass.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/render_to_texture_scene.json"
+    "${WZ_REBIND_FIXTURE_DST}/render_to_texture.scene.json"
+    COPYONLY)
+
 # Issue #216/#217: a scene for the test_rebind_fixture graph that drives the
 # collision-by-reference + motion terrain-stick authoring verbs (a landscape
 # node + a tank node, both authored live by the test).
@@ -1089,6 +1098,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(render render_ir_frustum_test_1)
     rs_add_test_group(render terrain_diagnostics)
     rs_add_test_group(render scene_node_world_tests)
+    rs_add_test_group(render authored_render_targets_tests)
     rs_add_test_group(render stub_backend_test_4)
     rs_add_test_group(render storage_reuse_tests)
     rs_add_test_group(render render_frame_sectioned_test_1)
@@ -1137,6 +1147,13 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
         wozzits_app_behavior_test_plugin wz_stage_resources)
     rs_add_test_group(render wozzits_app_render_binding_tests)
     add_dependencies(render_wozzits_app_render_binding_tests wz_stage_resources)
+
+    # WozzitsApp_v1 authored render-to-texture test (issue #287). On-device:
+    # loads test_rebind_fixture's graph paired with render_to_texture.scene.json;
+    # proves an authored render_to_texture source fills its target texture with
+    # no app code, and that the source leaves the main pass.
+    rs_add_test_group(render wozzits_app_render_to_texture_tests)
+    add_dependencies(render_wozzits_app_render_to_texture_tests wz_stage_resources)
 
     # WozzitsApp_v1 runtime prefab-spawn test (prefab-system milestone #2). On-
     # device: loads the prefab_spawn_fixture and reuses the staged behavior module

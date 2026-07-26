@@ -387,6 +387,23 @@
           { "name": "generator", "type": "int", "value": 2 }
         ]
       }
+    },
+    {
+      "node_id": 20,
+      "type": 129,
+      "schema": "0xf11eca55e7001009",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          { "name": "width", "type": "int", "value": 128 },
+          { "name": "height", "type": "int", "value": 128 },
+          { "name": "color_space", "type": "int", "value": 0 }
+        ]
+      }
     }
   ],
   "layout": {
@@ -408,7 +425,8 @@
       { "node_id": 14, "x": 260, "y": 810 },
       { "node_id": 15, "x": 260, "y": 980 },
       { "node_id": 16, "x": 626, "y": 760 },
-      { "node_id": 17, "x": 626, "y": 980 }
+      { "node_id": 17, "x": 626, "y": 980 },
+      { "node_id": 20, "x": 890, "y": 560 }
     ],
     "zoom": 0.6
   }

@@ -27,6 +27,7 @@
 #include <engine/app/scene_change.h>
 #include <engine/app/scene_document.h>
 #include <engine/app/view_controller.h>
+#include <engine/rendering/authored_render_targets.h>
 #include <engine/rendering/rhi_scene_renderer.h>
 
 #include <engine/assets/scene/scene_asset_data.h>
@@ -688,6 +689,21 @@ namespace wz::app
         // scene has no composited material.
         [[nodiscard]] wz::gpu::GPUHandle material_composite_target() const;
 
+        // The GPU handle backing a resident texture asset, invalid if it is not
+        // resident. Shared by the authored render targets (#287) and the
+        // composite target above.
+        [[nodiscard]] wz::gpu::GPUHandle texture_gpu_handle(
+            const wz::asset::AssetKey& key) const;
+
+        // Render each authored render-to-texture source's nodes into its target
+        // (issue #287). Called from render_scene() BEFORE the main pass, so a
+        // surface sampling a target shows this frame's contents. Generic: there
+        // is no per-target code, and a scene with no such source pays one empty
+        // vector. Returns false only if a target's pass was rejected.
+        bool render_authored_render_targets(
+            const wz::engine::rendering::AuthoredRenderTargets& authored,
+            const std::vector<wz::math::Mat4>& world_transforms);
+
         // The world transform every render-side consumer draws with, one matrix
         // per document_.nodes() entry (index-aligned). #221's single source of truth:
         //   - with a live behavior scene, each node's world matrix is read from
@@ -1178,6 +1194,10 @@ namespace wz::app
         bool             puppet_card_showcase_ = true;
         wz::gpu::GPUHandle puppet_card_rtt_{};
         float            puppet_card_angle_ = 0.0f;
+
+        // Source node ids already warned about a non-resident render-to-texture
+        // target (#287), so the complaint is made once rather than every frame.
+        std::unordered_set<std::string> warned_render_targets_;
 
         // True if `node`'s renderable recipe is an Inochi puppet (carries a
         // puppet_key). Used to route puppets onto the showcase card.

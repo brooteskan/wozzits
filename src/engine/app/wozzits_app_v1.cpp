@@ -940,6 +940,36 @@ namespace wz::app
                 binding.asset = k;
             }
 
+            // Bridge a render-to-texture source's target anchor (issue #287),
+            // same shape as the audio-renderable bridge: clear the stale key so
+            // a deleted target stops being drawn into, resolve the stable graph
+            // anchor, and require a Texture -- anything else has no render
+            // target behind it, and rendering into it would fail per frame
+            // rather than once, here, with the node's name.
+            if (node.render_to_texture) {
+                node.render_to_texture->target = {};  // clear stale
+                if (node.render_to_texture->target_node_id) {
+                    wz::asset::AssetKey k{};
+                    wz::asset::AssetType t{};
+                    if (!resolve_graph_node(
+                            *node.render_to_texture->target_node_id, k, t)) {
+                        ctx_.logger.warn(
+                            "assemble_render_bindings: node '" + node.id
+                            + "' render_to_texture target asset-graph node not "
+                              "found (renders nowhere)");
+                    }
+                    else if (t != wz::engine::assets::kAssetTypeTexture) {
+                        ctx_.logger.warn(
+                            "assemble_render_bindings: node '" + node.id
+                            + "' render_to_texture target is not a texture "
+                              "(renders nowhere)");
+                    }
+                    else {
+                        node.render_to_texture->target = k;
+                    }
+                }
+            }
+
             if (!node.geometry_asset_node_id) {
                 continue;  // no geometry -> draws nothing via the binding
             }
@@ -2837,6 +2867,90 @@ namespace wz::app
         return frame.atmosphere;
     }
 
+    // The GPU handle backing a resident texture asset, or an invalid handle.
+    // One place for the asset-key -> rhi resource -> backend handle hop that
+    // both the authored render targets (#287) and the composite target (#281)
+    // need.
+    wz::gpu::GPUHandle WozzitsApp_v1::texture_gpu_handle(
+        const wz::asset::AssetKey& key) const
+    {
+        if (!ctx_.gpu || key == wz::asset::AssetKey{}) {
+            return {};
+        }
+        const wz::rhi::GpuResourceHandle resource =
+            ctx_.gpu->resources.find(wz::rhi::ResourceIdentity{
+                wz::engine::assets::rhi_asset_identity(key, "texture"), {} });
+        if (!resource.valid()) {
+            return {};
+        }
+        const wz::rhi::GpuResource* res = ctx_.gpu->resources.get(resource);
+        if (!res) {
+            return {};
+        }
+        return ctx_.gpu->backend.gpu_handle_for(res->backend);
+    }
+
+    // Issue #287: fill every authored render-to-texture target. This is the
+    // whole driver -- there is no per-target code, and adding a second target
+    // to a project is authoring, not a rebuild.
+    bool WozzitsApp_v1::render_authored_render_targets(
+        const wz::engine::rendering::AuthoredRenderTargets& authored,
+        const std::vector<wz::math::Mat4>& world_transforms)
+    {
+        if (authored.targets.empty() || !ctx_.assets) {
+            return true;
+        }
+
+        bool ok = true;
+        for (const wz::engine::rendering::AuthoredRenderTarget& target :
+             authored.targets)
+        {
+            const std::string& source_id =
+                document_.nodes()[target.source_index].id;
+
+            const wz::gpu::GPUHandle handle = texture_gpu_handle(target.texture);
+            if (!handle.valid()) {
+                // Once per source, not per frame: a target that never became
+                // resident is an authoring mistake worth naming, and naming it
+                // 60 times a second would bury everything else.
+                if (warned_render_targets_.insert(source_id).second) {
+                    ctx_.logger.warn(
+                        "render_to_texture: node '" + source_id
+                        + "' target texture is not resident as a render target "
+                          "(nothing is drawn into it)");
+                }
+                continue;
+            }
+
+            std::vector<wz::engine::assets::SceneNodeAsset> nodes;
+            std::vector<wz::math::Mat4> worlds;
+            nodes.reserve(target.node_indices.size());
+            worlds.reserve(target.node_indices.size());
+            for (const std::size_t i : target.node_indices) {
+                nodes.push_back(document_.nodes()[i]);
+                worlds.push_back(
+                    i < world_transforms.size()
+                        ? world_transforms[i]
+                        : wz::math::Mat4::identity());
+            }
+            if (nodes.empty()) {
+                continue;
+            }
+
+            // The frame's view, exactly as the main pass sees it. A per-target
+            // authored camera is the obvious next dial; screen-space looks (a
+            // puppet, a HUD) ignore it entirely, and a world subtree drawn into
+            // a texture reads as "what the camera sees, off-screen".
+            ok = renderer_.render_scene(
+                     nodes, *ctx_.assets,
+                     view_.active_view().view_projection,
+                     view_.active_view().world_position,
+                     worlds, resolve_frame_atmosphere(), handle)
+                && ok;
+        }
+        return ok;
+    }
+
     bool WozzitsApp_v1::render_scene()
     {
         if (!ctx_.assets) {
@@ -2857,39 +2971,54 @@ namespace wz::app
         // asset (6c51cf5). nullptr -- no node authors one, the one that does is
         // switched off, or its key has not resolved -- means "no fog"; the camera
         // still reaches the view constants either way.
-        // S6 showcase: when routing puppets onto the spinning card, drop them from
-        // the main pass so the puppet appears only on the card (not also as a flat
-        // overlay). Filter nodes + world transforms in lockstep -- they are
-        // index-aligned. Cheap: the predicate is one recipe lookup per node and the
-        // scene has at most a handful of puppets.
-        if (puppet_card_showcase_) {
-            std::vector<wz::engine::assets::SceneNodeAsset> main_nodes;
-            std::vector<wz::math::Mat4> main_transforms;
-            main_nodes.reserve(document_.nodes().size());
-            main_transforms.reserve(world_transforms.size());
-            bool any_puppet = false;
-            for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
-                if (is_puppet_node(document_.nodes()[i])) {
-                    any_puppet = true;
-                    continue;
-                }
-                main_nodes.push_back(document_.nodes()[i]);
-                if (i < world_transforms.size()) {
-                    main_transforms.push_back(world_transforms[i]);
-                }
-            }
-            if (any_puppet) {
-                return renderer_.render_scene(
-                    main_nodes, *ctx_.assets, view_.active_view().view_projection,
-                    view_.active_view().world_position, main_transforms,
-                    resolve_frame_atmosphere());
-            }
-            // No puppet in the scene -- fall through to the unfiltered render.
+        // #287: authored render-to-texture sources fill their targets BEFORE the
+        // main pass, so a surface sampling one shows this frame's contents
+        // rather than last frame's.
+        const wz::engine::rendering::AuthoredRenderTargets authored =
+            wz::engine::rendering::collect_authored_render_targets(
+                document_.nodes());
+        if (!render_authored_render_targets(authored, world_transforms)) {
+            return false;
         }
 
+        // Which nodes the main pass SKIPS: those an authored target claims
+        // exclusively (#287), plus -- while the showcase flag is on -- puppets,
+        // which appear on the spinning card instead of as a flat overlay.
+        // Filter nodes + world transforms in lockstep; they are index-aligned.
+        std::vector<bool> skip = authored.excluded_from_scene;
+        skip.resize(document_.nodes().size(), false);
+        bool any_skipped = false;
+        for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
+            if (puppet_card_showcase_ && is_puppet_node(document_.nodes()[i])) {
+                skip[i] = true;
+            }
+            any_skipped = any_skipped || skip[i];
+        }
+
+        if (!any_skipped) {
+            return renderer_.render_scene(
+                document_.nodes(), *ctx_.assets,
+                view_.active_view().view_projection,
+                view_.active_view().world_position, world_transforms,
+                resolve_frame_atmosphere());
+        }
+
+        std::vector<wz::engine::assets::SceneNodeAsset> main_nodes;
+        std::vector<wz::math::Mat4> main_transforms;
+        main_nodes.reserve(document_.nodes().size());
+        main_transforms.reserve(world_transforms.size());
+        for (std::size_t i = 0; i < document_.nodes().size(); ++i) {
+            if (skip[i]) {
+                continue;
+            }
+            main_nodes.push_back(document_.nodes()[i]);
+            if (i < world_transforms.size()) {
+                main_transforms.push_back(world_transforms[i]);
+            }
+        }
         return renderer_.render_scene(
-            document_.nodes(), *ctx_.assets, view_.active_view().view_projection,
-            view_.active_view().world_position, world_transforms,
+            main_nodes, *ctx_.assets, view_.active_view().view_projection,
+            view_.active_view().world_position, main_transforms,
             resolve_frame_atmosphere());
     }
 
@@ -2935,20 +3064,12 @@ namespace wz::app
                 if (binding.semantic != "material_albedo") {
                     continue;
                 }
-                const wz::rhi::GpuResourceHandle resource =
-                    ctx_.gpu->resources.find(wz::rhi::ResourceIdentity{
-                        wz::engine::assets::rhi_asset_identity(
-                            binding.key, binding.variant),
-                        {} });
-                if (!resource.valid()) {
-                    continue;
+                if (const wz::gpu::GPUHandle handle =
+                        texture_gpu_handle(binding.key);
+                    handle.valid())
+                {
+                    return handle;
                 }
-                const wz::rhi::GpuResource* res =
-                    ctx_.gpu->resources.get(resource);
-                if (!res) {
-                    continue;
-                }
-                return ctx_.gpu->backend.gpu_handle_for(res->backend);
             }
         }
         return {};

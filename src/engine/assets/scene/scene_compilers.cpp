@@ -1457,6 +1457,38 @@ namespace wz::engine::assets::internal
                     node.renderable_bindings.push_back(std::move(binding));
                 }
             }
+            // Render-to-texture source (issue #287): only the authored intent is
+            // persisted (the target's asset-graph anchor + the two selection
+            // dials); the resolved target key is re-bridged on every (re)bind.
+            if (const auto* rtt =
+                    find_member(node_val, "render_to_texture");
+                rtt && rtt->kind == wz::json::JSONValueKind::Object)
+            {
+                SceneRenderToTextureAsset out{};
+                const auto anchor = read_number(*rtt, "target_asset_node_id");
+                if (anchor && *anchor > 0.0) {
+                    out.target_node_id =
+                        static_cast<wz::asset::AssetGraphDraftNodeId>(*anchor);
+                }
+                else {
+                    // Without a target there is nothing to render into, and a
+                    // silently inert component is the failure #287 is about.
+                    logger.error(
+                        "render_to_texture on node '" + node.id
+                        + "' has no 'target_asset_node_id'");
+                    return std::nullopt;
+                }
+                if (const auto v = read_bool(*rtt, "include_descendants")) {
+                    out.include_descendants = *v;
+                }
+                if (const auto v = read_bool(*rtt, "also_draw_in_scene")) {
+                    out.also_draw_in_scene = *v;
+                }
+                if (const auto v = read_bool(*rtt, "enabled")) {
+                    out.enabled = *v;
+                }
+                node.render_to_texture = out;
+            }
             if (const auto* constants =
                     find_member(node_val, "renderable_constants");
                 constants

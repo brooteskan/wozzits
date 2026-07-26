@@ -158,11 +158,14 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     // procedural cube carries normals, so 3 resident pull buffers exist. Plus
     // the #229 fixture's procedural scalar field, published resident as an R32
     // texture at resolve (graph node 17, unreferenced by THIS scene), that is 4.
-    // A silent CPU-upload fallback would acquire duplicates under a different
-    // identity, inflating the count past 4.
-    EXPECT_EQ(resident_after_first, 4u)
+    // Plus the #287 fixture's render-target texture (graph node 20, also
+    // unreferenced by THIS scene), resident at resolve like any other texture,
+    // that is 5. A silent CPU-upload fallback would acquire duplicates under a
+    // different identity, inflating the count past 5.
+    EXPECT_EQ(resident_after_first, 5u)
         << "renderer should bind the 3 resident pull buffers (positions + "
-           "indices + normals) + the resident field texture, not re-upload";
+           "indices + normals) + the resident field + render-target textures, "
+           "not re-upload";
     EXPECT_GT(programs_after_first, 0u);
     // #192: the fixture's custom render program (schema 0x103) must come from the
     // asset compiler — which registers the rhi program under program_ref during
@@ -187,9 +190,10 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
 
     // Renderer-owned upload buffers were released + collected. The rebound
     // graph has already resolved its gpu_sparse_mesh asset (3 pull buffers:
-    // positions + indices + normals, #259) + the #229 field texture, so those
-    // asset-published resources remain resident before render consumes them.
-    EXPECT_EQ(app.resident_gpu_resource_count(), 4u)
+    // positions + indices + normals, #259) + the #229 field texture + the #287
+    // render-target texture, so those asset-published resources remain resident
+    // before render consumes them.
+    EXPECT_EQ(app.resident_gpu_resource_count(), 5u)
         << "rebind should retain only the resolved asset-published resources";
 
     // Render the rebound graph: it re-realizes against the new keys.

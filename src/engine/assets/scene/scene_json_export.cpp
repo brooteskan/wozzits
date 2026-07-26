@@ -2144,6 +2144,24 @@ namespace wz::engine::assets
                 }
                 add_member(*obj, "renderable_bindings", std::move(bindings));
             }
+            // Render-to-texture source (issue #287): the target's asset-graph
+            // anchor plus the selection dials. The resolved target key is a
+            // bridge product, re-derived on every (re)bind, never exported.
+            if (node.render_to_texture
+                && node.render_to_texture->target_node_id)
+            {
+                auto rtt = object_value();
+                add_member(*rtt, "target_asset_node_id",
+                    number_value(static_cast<double>(
+                        *node.render_to_texture->target_node_id)));
+                add_member(*rtt, "include_descendants",
+                    bool_value(node.render_to_texture->include_descendants));
+                add_member(*rtt, "also_draw_in_scene",
+                    bool_value(node.render_to_texture->also_draw_in_scene));
+                add_member(*rtt, "enabled",
+                    bool_value(node.render_to_texture->enabled));
+                add_member(*obj, "render_to_texture", std::move(rtt));
+            }
             if (!node.renderable_constants.empty()) {
                 auto constants = array_value();
                 for (const auto& constant : node.renderable_constants) {

@@ -1,0 +1,55 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "render_to_texture_scene",
+  "note": "Issue #287: an authored render-to-texture SOURCE. 'offscreen' draws the same geometry+program pair as render_binding_scene's 'solo' (node 9 = gpu_sparse_mesh geometry, node 10 = render program), but carries a render_to_texture component naming graph node 20 (a render-target texture). The engine fills that texture each frame with NO app code, and -- since also_draw_in_scene is off -- the node is dropped from the main pass, so the backbuffer stays at the clear colour.",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [0, 2, -8],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "offscreen",
+      "parent": "root",
+      "name": "offscreen",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [200, 200, 200]
+      },
+      "visible": true,
+      "geometry": { "asset_graph_node_id": 9 },
+      "render_program": { "asset_graph_node_id": 10 },
+      "render_to_texture": {
+        "target_asset_node_id": 20,
+        "include_descendants": true,
+        "also_draw_in_scene": false,
+        "enabled": true
+      }
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  }
+}

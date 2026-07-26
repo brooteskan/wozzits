@@ -1160,6 +1160,41 @@ namespace wz::engine::assets
         float value[4]{ 0.0f, 0.0f, 0.0f, 0.0f };
     };
 
+    // Issue #287: the authored answer to "who renders INTO this render-target
+    // texture". #281 made the target authorable -- a kAssetTypeTexture resident
+    // Sampled | RenderTarget that a material can bind -- but an authored target
+    // with no app code behind it was never written to, so a surface sampled
+    // whatever the acquire left. This component closes that loop: the node
+    // carrying it (and, by default, its descendants) is rendered into the named
+    // texture once per frame, before the main pass.
+    //
+    // The scene tree IS the selector -- no separate tagging language -- which is
+    // exactly what the puppet showcase does by hand in app C++ today: gather
+    // some nodes, render them into a texture, let a surface sample it.
+    struct SceneRenderToTextureAsset
+    {
+        // The render-target texture drawn into. target_node_id is the authored
+        // intent (an asset-graph node); target is the key resolved on every
+        // (re)bind, mirroring renderable_asset. A target that does not resolve,
+        // or is not resident as a render target, renders nothing and warns --
+        // it never falls back to drawing somewhere else.
+        std::optional<wz::asset::AssetGraphDraftNodeId> target_node_id;
+        wz::asset::AssetKey target{};
+
+        // Draw this node's descendants into the target too. Off = only the node
+        // itself, for a subtree whose children are unrelated.
+        bool include_descendants = true;
+
+        // Also draw the same nodes in the main pass. Default OFF: the motivating
+        // case is art that lives ON a surface (the puppet card), where drawing it
+        // both to the texture and to the screen shows it twice. A mirror or a
+        // security monitor -- whose source is world geometry you are already
+        // drawing -- turns this on.
+        bool also_draw_in_scene = false;
+
+        bool enabled = true;
+    };
+
     struct SceneNodeAsset
     {
         wz::scene::AuthoredEntityId id;
@@ -1231,6 +1266,10 @@ namespace wz::engine::assets
         // frame.
         std::vector<SceneRenderableSemanticBinding> renderable_bindings;
         std::vector<SceneRenderableConstantOverride> renderable_constants;
+
+        // Render-to-texture source (issue #287): this node's subtree fills the
+        // named render-target texture each frame.
+        std::optional<SceneRenderToTextureAsset> render_to_texture;
 
         // Preferred authored Scene-source component (issue #213): the host node
         // consumes the output of a "Scene from GLB" asset node as a sub-tree.
