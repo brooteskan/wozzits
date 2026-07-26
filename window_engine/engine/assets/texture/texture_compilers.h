@@ -3,6 +3,7 @@
 // engine/assets/texture/texture_compilers.h
 
 #include <asset/compiler.h>
+#include <asset/system.h>
 #include <engine/assets/texture/texture.h>
 #include <engine/assets/gpu_sparse_mesh/gpu_sparse_mesh_compilers.h>  // RhiResourceTracker
 #include <logging/logger.h>
@@ -26,5 +27,9 @@ namespace wz::engine::assets::internal
         wz::Logger& logger,
         TextureTable& table,
         wz::rhi::GpuResourceRegistry* gpu_resources = nullptr,
-        RhiResourceTracker rhi_resource_tracker = {});
+        RhiResourceTracker rhi_resource_tracker = {},
+        // Needed only by the composite-material recipe (#285), to recover its
+        // PORT-ORDERED dep keys -- optional layer ports shift dep positions, so
+        // the dep node order cannot say which texture is which layer.
+        const wz::asset::AssetSystem* asset_system = nullptr);
 }

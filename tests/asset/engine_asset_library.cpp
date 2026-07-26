@@ -212,6 +212,11 @@ float4 main(PSIn input) : SV_TARGET
             // as the file-backed recipe above.
             { kRenderTargetTextureSchema, kAssetTypeTexture },
 
+            // Composite material (#285): a third recipe for kAssetTypeTexture,
+            // whose content is a base colour plus authored layers. Same
+            // generic-draft-key standing as the two recipes above.
+            { kCompositeMaterialTextureSchema, kAssetTypeTexture },
+
             { kMeshRenderStyleSchema, kAssetTypeMeshRenderStyle },
             { kRenderBindingLayoutSchema, kAssetTypeRenderBindingLayout },
             // HLSL binding prelude (#231): outputs ShaderSource by prepending

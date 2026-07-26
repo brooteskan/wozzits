@@ -573,6 +573,8 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(kStarCatalogFromPLYSchema, "Star catalog from PLY");
             WZ_ADD_SCHEMA(kTextureFromFileSchema, "Texture from file");
             WZ_ADD_SCHEMA(kRenderTargetTextureSchema, "Render target texture");
+            WZ_ADD_SCHEMA(
+                kCompositeMaterialTextureSchema, "Composite material");
 
 #undef WZ_ADD_SCHEMA
 

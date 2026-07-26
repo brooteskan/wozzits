@@ -842,4 +842,18 @@ namespace wz::engine::assets {
     inline constexpr wz::asset::SchemaID kRenderTargetTextureSchema{
         0xF11E'CA55'E7'001009ull
     };
+
+    // Composite material (#285): a render-target texture whose CONTENT is
+    // authored -- a base colour plus placed layers, each sourcing another
+    // texture (an image, or a render target something else fills, #287). The
+    // #281 sphere proved this chain works but every decision in it -- which
+    // art, the base colour, where the art sits -- was hardcoded in app C++,
+    // which made it a demo rather than a capability.
+    //
+    // A THIRD recipe producing kAssetTypeTexture, per the asset-type-vs-recipe
+    // rule: the data layout is a texture, and being composited is how it gets
+    // filled, not what it is. So a material binds one exactly like any other.
+    inline constexpr wz::asset::SchemaID kCompositeMaterialTextureSchema{
+        0xF11E'CA55'E7'00100Aull
+    };
 }

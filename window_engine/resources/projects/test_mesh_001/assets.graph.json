@@ -8438,14 +8438,24 @@
     {
       "node_id": 168,
       "type": 129,
-      "schema": "0xf11eca55e7001009",
+      "schema": "0xf11eca55e700100a",
       "stage": 0,
       "residency": 1,
       "kind": 0,
       "demand_root": 0,
-      "deps": [],
+      "deps": [
+        {
+          "from_node_id": 170,
+          "to_input_port": 0
+        }
+      ],
       "meta": {
         "params": [
+          {
+            "name": "name",
+            "type": "string",
+            "value": "sphere_material"
+          },
           {
             "name": "width",
             "type": "int",
@@ -8460,6 +8470,50 @@
             "name": "color_space",
             "type": "int",
             "value": 0
+          },
+          {
+            "name": "base_colour",
+            "type": "float3",
+            "value": [
+              0.62,
+              0.62,
+              0.65
+            ]
+          },
+          {
+            "name": "base_alpha",
+            "type": "float",
+            "value": 1
+          },
+          {
+            "name": "layer0_centre_u",
+            "type": "float",
+            "value": 0.5
+          },
+          {
+            "name": "layer0_centre_v",
+            "type": "float",
+            "value": 0.5
+          },
+          {
+            "name": "layer0_half_width",
+            "type": "float",
+            "value": 0.35
+          },
+          {
+            "name": "layer0_half_height",
+            "type": "float",
+            "value": 0.35
+          },
+          {
+            "name": "layer0_rotation",
+            "type": "float",
+            "value": 0
+          },
+          {
+            "name": "layer0_opacity",
+            "type": "float",
+            "value": 1
           }
         ]
       }

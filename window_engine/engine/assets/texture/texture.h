@@ -52,6 +52,30 @@ namespace wz::engine::assets
     // ladder a property of ONE Texture type.
     enum class TexturePixelFormat : uint8_t { RGBA8 };
 
+    // One placed piece of art in a composite material (#285). The transform is
+    // in UV space so it is resolution-independent: centre_uv moves the art
+    // across the surface, half_size_uv scales it, and both are the authored
+    // "where does this sit on the material" control that #281 could only
+    // express by editing C++.
+    //
+    // `source` is another texture asset -- a file-backed image, or a render
+    // target that something else fills (#287), which is how a live puppet
+    // becomes a layer.
+    struct CompositeMaterialLayer
+    {
+        wz::asset::AssetKey source{};
+        float centre_uv[2]    = { 0.5f, 0.5f };
+        float half_size_uv[2] = { 0.35f, 0.35f };
+        float rotation        = 0.0f;   // radians
+        float opacity         = 1.0f;
+    };
+
+    // How many layers a composite material can place. The compositor itself
+    // takes N; this is the authoring cap (indexed params + input ports), and
+    // matches the "add a second layer" use case the arc was aiming at with room
+    // to spare.
+    inline constexpr std::size_t kMaxCompositeMaterialLayers = 4u;
+
     // Immutable CPU-side texture metadata. Pixels live in the resident rhi
     // Texture2D under rhi_asset_identity(key, "texture"); this is only what a bind
     // needs. A zero-dimension texture is invalid.
@@ -62,6 +86,18 @@ namespace wz::engine::assets
         TexturePixelFormat format      = TexturePixelFormat::RGBA8;
         TextureColorSpace  color_space = TextureColorSpace::Srgb;
         TextureUsage       usage       = TextureUsage::Color;
+
+        // Composite-material recipe (#285), present only for the composite
+        // recipe. It lives on the texture rather than in a side table because
+        // it describes THIS texture's content: the pass that fills it clears to
+        // base_colour and places `composite_layers` over it, in order.
+        //
+        // A composited texture is still an ordinary texture to everyone else --
+        // same asset type, same "texture" residency variant -- so a material
+        // binds it with no special case.
+        bool  is_composite = false;
+        float base_colour[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        std::vector<CompositeMaterialLayer> composite_layers;
 
         bool valid() const noexcept { return width > 0u && height > 0u; }
     };

@@ -2951,6 +2951,112 @@ namespace wz::app
         return ok;
     }
 
+    // Issue #285: run every authored composite material the scene's renderables
+    // actually bind. Which art, the base colour and the layer placement are all
+    // authored now -- this loop knows none of them, it only resolves handles and
+    // hands the recipe to the compositor.
+    //
+    // Found by ASKING THE RENDERABLES what they bind, not by scanning the graph
+    // for the schema (#281's rule): the binding is the source of truth for which
+    // texture a surface samples, so the compositor and the shader cannot
+    // disagree, and a composite nothing samples costs nothing.
+    bool WozzitsApp_v1::composite_authored_materials()
+    {
+        if (!ctx_.assets || !ctx_.gpu) {
+            return true;
+        }
+
+        // Quiet lookup: the typed accessor logs when a key is not a texture, and
+        // most bindings are not.
+        const auto texture_data_for =
+            [this](const wz::asset::AssetKey& key)
+                -> const wz::engine::assets::TextureData*
+            {
+                const auto* compiled = ctx_.assets->system().find_compiled(key);
+                if (!compiled) {
+                    return nullptr;
+                }
+                return ctx_.assets->textures().get_texture_data(
+                    wz::engine::assets::TextureHandle{ compiled->handle });
+            };
+
+        bool ok = true;
+        std::vector<wz::asset::AssetKey> composited;
+        for (const wz::engine::assets::SceneNodeAsset& node :
+             document_.nodes())
+        {
+            if (!node.renderable_asset.has_value()) {
+                continue;
+            }
+            const wz::engine::assets::RhiRenderableRecipe* recipe =
+                ctx_.assets->renderables().get_rhi_renderable_recipe(
+                    wz::engine::assets::RenderableAsset{
+                        .output = *node.renderable_asset });
+            if (!recipe) {
+                continue;
+            }
+            for (const wz::engine::assets::RhiRenderableBinding& binding :
+                 recipe->bindings)
+            {
+                const wz::engine::assets::TextureData* material =
+                    texture_data_for(binding.key);
+                if (!material || !material->is_composite) {
+                    continue;
+                }
+                // Two surfaces sharing one material composite it once. (An
+                // explicit predicate, not std::find: AssetKey is too wide for
+                // the standard library's vectorized find.)
+                if (std::any_of(
+                        composited.begin(), composited.end(),
+                        [&](const wz::asset::AssetKey& seen)
+                        { return seen == binding.key; }))
+                {
+                    continue;
+                }
+                composited.push_back(binding.key);
+
+                const wz::gpu::GPUHandle target = texture_gpu_handle(binding.key);
+                if (!target.valid()) {
+                    continue;
+                }
+
+                // A layer whose source is not resident is DROPPED, not faked:
+                // the composite still runs, so the surface shows the base colour
+                // rather than last frame's content.
+                std::vector<wz::gpu::dx12::internal::TextureCompositeLayer>
+                    layers;
+                layers.reserve(material->composite_layers.size());
+                for (const wz::engine::assets::CompositeMaterialLayer& authored :
+                     material->composite_layers)
+                {
+                    const wz::gpu::GPUHandle source =
+                        texture_gpu_handle(authored.source);
+                    if (!source.valid()) {
+                        continue;
+                    }
+                    wz::gpu::dx12::internal::TextureCompositeLayer layer{};
+                    layer.texture = source;
+                    layer.center_uv[0] = authored.centre_uv[0];
+                    layer.center_uv[1] = authored.centre_uv[1];
+                    layer.half_size_uv[0] = authored.half_size_uv[0];
+                    layer.half_size_uv[1] = authored.half_size_uv[1];
+                    layer.rotation = authored.rotation;
+                    layer.opacity = authored.opacity;
+                    layers.push_back(layer);
+                }
+
+                // A recorded pass, not a synchronous flush, so this costs a pass
+                // per composited material rather than a stall. Gating it on the
+                // sources actually changing is #288.
+                ok = wz::gpu::dx12::internal::composite_texture_layers_dx12(
+                         ctx_.device, target, material->base_colour,
+                         layers.data(), layers.size())
+                    && ok;
+            }
+        }
+        return ok;
+    }
+
     bool WozzitsApp_v1::render_scene()
     {
         if (!ctx_.assets) {
@@ -2978,6 +3084,14 @@ namespace wz::app
             wz::engine::rendering::collect_authored_render_targets(
                 document_.nodes());
         if (!render_authored_render_targets(authored, world_transforms)) {
+            return false;
+        }
+
+        // #285: composite the authored materials AFTER their layer sources are
+        // filled and BEFORE the main pass, so a surface samples this frame's
+        // composite rather than last frame's (which is what the hand-written
+        // version, running after render_scene, actually did).
+        if (!composite_authored_materials()) {
             return false;
         }
 
@@ -3018,47 +3132,6 @@ namespace wz::app
             main_nodes, *ctx_.assets, view_.active_view().view_projection,
             view_.active_view().world_position, main_transforms,
             resolve_frame_atmosphere());
-    }
-
-    // The composited material target (#281): the render-target texture a scene
-    // renderable binds at material_albedo. Found by ASKING THE RENDERABLES what
-    // they bind rather than by scanning for the schema -- the binding is the
-    // source of truth for which texture the surface actually samples, so the
-    // compositor and the shader can never disagree about the target.
-    // Returns an invalid handle when the scene has no such material.
-    wz::gpu::GPUHandle WozzitsApp_v1::material_composite_target() const
-    {
-        if (!ctx_.assets || !ctx_.gpu) {
-            return {};
-        }
-        for (const wz::engine::assets::SceneNodeAsset& node :
-             document_.nodes())
-        {
-            if (!node.renderable_asset.has_value()) {
-                continue;
-            }
-            const wz::engine::assets::RhiRenderableRecipe* recipe =
-                ctx_.assets->renderables().get_rhi_renderable_recipe(
-                    wz::engine::assets::RenderableAsset{
-                        .output = *node.renderable_asset });
-            if (!recipe) {
-                continue;
-            }
-            for (const wz::engine::assets::RhiRenderableBinding& binding :
-                 recipe->bindings)
-            {
-                if (binding.semantic != "material_albedo") {
-                    continue;
-                }
-                if (const wz::gpu::GPUHandle handle =
-                        texture_gpu_handle(binding.key);
-                    handle.valid())
-                {
-                    return handle;
-                }
-            }
-        }
-        return {};
     }
 
     bool WozzitsApp_v1::render_puppet_showcase()
@@ -3107,27 +3180,10 @@ namespace wz::app
             return true;
         }
 
-        // Composite the puppet into the scene's material texture (#281): clear it
-        // to the sphere's base colour, then place the puppet RTT over it. The
-        // layer transform IS the "where the art sits on the material" control --
-        // centre_uv moves the puppet across the surface, half_size_uv scales it.
-        // The composite is a recorded pass, not a synchronous flush, so running
-        // it per frame costs a pass rather than a stall; gating it on "the
-        // puppet actually changed" is still the obvious refinement.
-        if (const wz::gpu::GPUHandle material = material_composite_target();
-            material.valid())
-        {
-            const float base_color[4] = { 0.62f, 0.62f, 0.65f, 1.0f };
-            wz::gpu::dx12::internal::TextureCompositeLayer layer{};
-            layer.texture = card_rtt;
-            layer.center_uv[0] = 0.5f;
-            layer.center_uv[1] = 0.5f;
-            layer.half_size_uv[0] = 0.35f;
-            layer.half_size_uv[1] = 0.35f;
-            layer.opacity = 1.0f;
-            wz::gpu::dx12::internal::composite_texture_layers_dx12(
-                ctx_.device, material, base_color, &layer, 1);
-        }
+        // The composite that used to live here -- clear the sphere's material to
+        // a literal colour, place the puppet on it at literal UVs -- is authored
+        // now (#285) and runs in render_scene. Nothing about which art, what
+        // colour, or where it sits is C++ any more.
 
         // Advance the idle spin (a slow turn; frame-paced -- this is a showcase).
         puppet_card_angle_ += 0.02f;

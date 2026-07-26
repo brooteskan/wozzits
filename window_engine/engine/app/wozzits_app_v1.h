@@ -684,14 +684,17 @@ namespace wz::app
         // No-op when the showcase is off or the scene authors no source.
         bool render_puppet_showcase();
 
-        // The render-target texture a scene renderable binds at material_albedo
-        // (#281), as a GPUHandle the compositor can render into. Invalid when the
-        // scene has no composited material.
-        [[nodiscard]] wz::gpu::GPUHandle material_composite_target() const;
+        // Run every authored composite material the scene's renderables bind
+        // (issue #285): clear each to its authored base colour and place its
+        // authored layers over it. Called from render_scene() after the
+        // render-to-texture sources are filled and before the main pass, so a
+        // surface samples this frame's composite. Generic -- no material, colour
+        // or placement is named here. Returns false if a composite pass failed.
+        bool composite_authored_materials();
 
         // The GPU handle backing a resident texture asset, invalid if it is not
         // resident. Shared by the authored render targets (#287) and the
-        // composite target above.
+        // composite materials (#285).
         [[nodiscard]] wz::gpu::GPUHandle texture_gpu_handle(
             const wz::asset::AssetKey& key) const;
 
