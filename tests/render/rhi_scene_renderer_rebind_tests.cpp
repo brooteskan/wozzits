@@ -145,28 +145,34 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     const auto project = load_test_project();
     ASSERT_TRUE(project.ok) << project.error;
     ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)))
-        << "test_mesh_001 scene failed to load/compile";
+        << "test_rebind_fixture scene failed to load/compile";
 
     // Realize the first graph's renderables.
     render_one_frame(app);
     const std::size_t resident_after_first = app.resident_gpu_resource_count();
     const std::size_t programs_after_first = app.registered_program_count();
-    // Step 2: the renderer binds the asset-published resident pull buffers
-    // (positions + indices + normals) by identity — it does NOT re-upload CPU
-    // mesh data. The gpu_sparse_mesh compiler publishes a third pull buffer,
-    // "pull_normals", for any mesh with has_normals (#259); the fixture's
-    // procedural cube carries normals, so 3 resident pull buffers exist. Plus
-    // the #229 fixture's procedural scalar field, published resident as an R32
-    // texture at resolve (graph node 17, unreferenced by THIS scene), that is 4.
-    // Plus the #287 fixture's render-target texture (graph node 20) and the
-    // #285/#288 fixture's render target + composite material (nodes 27 and 28),
-    // none referenced by THIS scene but all resident at resolve like any other
-    // texture: that is 7. A silent CPU-upload fallback would acquire duplicates
-    // under a different identity, inflating the count past 7.
-    EXPECT_EQ(resident_after_first, 7u)
-        << "renderer should bind the 3 resident pull buffers (positions + "
-           "indices + normals) + the resident field, render-target and "
-           "composite-material textures, not re-upload";
+    // Step 2: the renderer binds the asset-published resident pull buffers by
+    // identity — it does NOT re-upload CPU mesh data. The count is EXACT on
+    // purpose: a silent CPU-upload fallback would acquire
+    // duplicates under a different identity, and only an equality catches that.
+    // It therefore tracks whatever the SHARED fixture graph publishes, and rises
+    // whenever the fixture gains a resident asset -- which is why it is spelled
+    // out rather than written as a bare number:
+    //
+    //   3  gpu_sparse_mesh pull buffers   positions + indices + normals (#259)
+    //   1  procedural scalar field        graph node 17 (#229)
+    //   1  render-target texture          graph node 20 (#287)
+    //   1  render-target texture          graph node 27 (#285)
+    //   1  composite material             graph node 28 (#285)
+    //   2  sky-gaussian buffers           graph node 35: lobes + point sources
+    //
+    // None but the pull buffers are referenced by THIS scene; they are resident
+    // because they resolved.
+    constexpr std::size_t kFixtureResidentAssets = 9u;
+    EXPECT_EQ(resident_after_first, kFixtureResidentAssets)
+        << "renderer should bind the resident pull buffers rather than "
+           "re-uploading them, and the fixture's other resident assets should "
+           "appear exactly once";
     EXPECT_GT(programs_after_first, 0u);
     // #192: the fixture's custom render program (schema 0x103) must come from the
     // asset compiler — which registers the rhi program under program_ref during
@@ -189,12 +195,10 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     EXPECT_EQ(app.resolved_renderable_node_count(), 1u)
         << "scene renderable was not re-bridged to the new graph";
 
-    // Renderer-owned upload buffers were released + collected. The rebound
-    // graph has already resolved its gpu_sparse_mesh asset (3 pull buffers:
-    // positions + indices + normals, #259) + the #229 field texture + the three
-    // #285/#287 render-target and composite-material textures, so those
-    // asset-published resources remain resident before render consumes them.
-    EXPECT_EQ(app.resident_gpu_resource_count(), 7u)
+    // Renderer-owned upload buffers were released + collected; the rebound
+    // graph has already re-resolved every asset-published resource enumerated
+    // above, so those remain resident before render consumes them.
+    EXPECT_EQ(app.resident_gpu_resource_count(), kFixtureResidentAssets)
         << "rebind should retain only the resolved asset-published resources";
 
     // Render the rebound graph: it re-realizes against the new keys.
@@ -228,7 +232,7 @@ TEST_F(WozzitsAppFixture, RebindToGraphWithoutRenderableClearsStaleKey)
     const auto project = load_test_project();
     ASSERT_TRUE(project.ok) << project.error;
     ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)))
-        << "test_mesh_001 scene failed to load/compile";
+        << "test_rebind_fixture scene failed to load/compile";
     render_one_frame(app);
     ASSERT_GT(app.resident_gpu_resource_count(), 0u);
     ASSERT_EQ(app.resolved_renderable_node_count(), 1u)

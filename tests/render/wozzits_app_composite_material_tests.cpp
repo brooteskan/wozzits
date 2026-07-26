@@ -59,6 +59,14 @@ namespace
             }
         }
 
+        wz::app::WozzitsAppSceneLoadDesc lit_uv_surface_load_desc() const
+        {
+            wz::app::WozzitsAppSceneLoadDesc desc = load_desc();
+            desc.scene = wz::fs::join(
+                wz::fs::parent_path(desc.scene), "lit_uv_surface.scene.json");
+            return desc;
+        }
+
         wz::app::WozzitsAppSceneLoadDesc uv_surface_load_desc() const
         {
             wz::app::WozzitsAppSceneLoadDesc desc = load_desc();
@@ -251,4 +259,42 @@ TEST_F(WozzitsAppCompositeMaterialFixture, StaticSceneStopsRefreshingAndComposit
     }
     EXPECT_EQ(app.render_target_pass_count(), targets_after_first + 1u);
     EXPECT_EQ(app.composite_pass_count(), composites_after_first + 1u);
+}
+
+// The UV-sampling LIT variant: a material texture on a surface, mapped by the
+// mesh's own coordinates. Until now a lit material could only be mapped by
+// DERIVING a UV from geometry (equirectangular from the object normal), which is
+// right for a sphere and meaningless on anything else -- so "a material texture
+// on a surface" meant "on a sphere" (#290).
+//
+// This drives the SHIPPING sg_lit_uv shaders, not fixture copies, and they take
+// their BRDF from sg_lighting_common on the shared_source port (#289) -- so a
+// third copy of that BRDF was not needed to gain the variant. A single drawable
+// again, so the descriptor-table count is evidence about this renderable.
+TEST_F(WozzitsAppCompositeMaterialFixture, LitSurfaceSamplesMaterialThroughMeshUvs)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+    // Draw through the scene's AUTHORED camera, not the editor free-fly one --
+    // the assertion below is about what that camera sees.
+    app.set_prefer_scene_camera(true);
+    ASSERT_TRUE(app.load_scene(lit_uv_surface_load_desc()))
+        << "the lit-UV program failed to compile or resolve";
+
+    render_one_frame(app);
+
+    EXPECT_GT(app.cached_descriptor_table_count(), 0u)
+        << "the lit UV-mapped renderable never realized -- one of its rows "
+           "(pull uvs, the sky buffers, or the material) did not bind";
+    EXPECT_EQ(app.render_time_program_bridge_count(), 0u)
+        << "the lit-UV program was bridged at render time rather than coming "
+           "from the asset compiler";
+
+    // NOT asserted here: that the surface produces visible pixels. Nothing in
+    // this fixture's world-space scenes has ever reached the backbuffer -- a
+    // constant-colour pixel shader with the back-face discard removed draws
+    // nothing either, so whatever keeps them off-screen is a property of these
+    // scenes, not of the shader under test. Asserting it would be testing that
+    // unrelated thing. The realize above is the real evidence: an unsatisfied
+    // row (pull UVs, sky, material) fails it outright, which is exactly what a
+    // missing UV channel would do.
 }

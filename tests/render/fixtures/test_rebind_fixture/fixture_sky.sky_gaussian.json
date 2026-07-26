@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "source_name": "fixture (hand-written, not a fit)",
+  "source_width": 1,
+  "source_height": 1,
+  "lobes": [
+    {
+      "direction": [0.0, 1.0, 0.0],
+      "sharpness": 4.0,
+      "amplitude": [0.9, 0.95, 1.0]
+    }
+  ],
+  "point_sources": [
+    {
+      "direction": [0.3, 0.8, 0.5],
+      "radiance": [4.0, 3.8, 3.5],
+      "solid_angle": 0.00006
+    }
+  ]
+}

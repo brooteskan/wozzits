@@ -437,6 +437,239 @@
       }
     },
     {
+      "node_id": 33,
+      "type": 65,
+      "schema": "0xf11eca55e7000003",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "source_path",
+            "type": "string",
+            "value": "@WZ_REBIND_FIXTURE_DST@/fixture_sky.sky_gaussian.json"
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 34,
+      "type": 151,
+      "schema": "0xf11eca55e7000012",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 33,
+          "to_input_port": 0
+        }
+      ]
+    },
+    {
+      "node_id": 35,
+      "type": 2287,
+      "schema": "0xf11eca55e7001003",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 34,
+          "to_input_port": 0
+        }
+      ]
+    },
+    {
+      "node_id": 36,
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "source_path",
+            "type": "string",
+            "value": "@WZ_ENGINE_SHADER_DIR@/sg_lit/sg_lit_uv_vs.hlsl"
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 37,
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "source_path",
+            "type": "string",
+            "value": "@WZ_ENGINE_SHADER_DIR@/sg_lit/sg_lit_uv_ps.hlsl"
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 38,
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "source_path",
+            "type": "string",
+            "value": "@WZ_ENGINE_SHADER_DIR@/sg_lit/sg_lighting_common.hlsl"
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 39,
+      "type": 4,
+      "schema": "0xf11eca55e7000100",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 36,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "entry", "type": "string", "value": "main" },
+          { "name": "primary_source_index", "type": "int", "value": 0 },
+          { "name": "stage", "type": "int", "value": 0 },
+          { "name": "target", "type": "string", "value": "vs_5_1" }
+        ]
+      }
+    },
+    {
+      "node_id": 40,
+      "type": 4,
+      "schema": "0xf11eca55e7000100",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 37,
+          "to_input_port": 0
+        },
+        {
+          "from_node_id": 38,
+          "to_input_port": 1
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "entry", "type": "string", "value": "main" },
+          { "name": "primary_source_index", "type": "int", "value": 0 },
+          { "name": "stage", "type": "int", "value": 1 },
+          { "name": "target", "type": "string", "value": "ps_5_1" }
+        ]
+      }
+    },
+    {
+      "node_id": 41,
+      "type": 1052,
+      "schema": "0xf11eca55e7000104",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          { "name": "name", "type": "string", "value": "lit_uv" },
+          { "name": "constants_semantic", "type": "string", "value": "lit" },
+          { "name": "constants_head", "type": "int", "value": 2 },
+          { "name": "constants_visibility", "type": "int", "value": 0 },
+          { "name": "binding0_semantic", "type": "string", "value": "pulled_mesh_positions" },
+          { "name": "binding0_kind", "type": "int", "value": 1 },
+          { "name": "binding0_visibility", "type": "int", "value": 1 },
+          { "name": "binding1_semantic", "type": "string", "value": "pulled_mesh_indices" },
+          { "name": "binding1_kind", "type": "int", "value": 1 },
+          { "name": "binding1_visibility", "type": "int", "value": 1 },
+          { "name": "binding2_semantic", "type": "string", "value": "pulled_mesh_normals" },
+          { "name": "binding2_kind", "type": "int", "value": 1 },
+          { "name": "binding2_visibility", "type": "int", "value": 1 },
+          { "name": "binding3_semantic", "type": "string", "value": "sky_gaussian" },
+          { "name": "binding3_kind", "type": "int", "value": 1 },
+          { "name": "binding3_visibility", "type": "int", "value": 0 },
+          { "name": "binding4_semantic", "type": "string", "value": "sky_gaussian_points" },
+          { "name": "binding4_kind", "type": "int", "value": 1 },
+          { "name": "binding4_visibility", "type": "int", "value": 0 },
+          { "name": "binding5_semantic", "type": "string", "value": "material_albedo" },
+          { "name": "binding5_kind", "type": "int", "value": 0 },
+          { "name": "binding5_visibility", "type": "int", "value": 2 },
+          { "name": "binding6_semantic", "type": "string", "value": "pulled_mesh_uvs" },
+          { "name": "binding6_kind", "type": "int", "value": 1 },
+          { "name": "binding6_visibility", "type": "int", "value": 1 },
+          { "name": "sampler0_kind", "type": "int", "value": 1 },
+          { "name": "sampler0_visibility", "type": "int", "value": 2 }
+        ]
+      }
+    },
+    {
+      "node_id": 42,
+      "type": 1049,
+      "schema": "0xf11eca55e7000103",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 39,
+          "to_input_port": 0
+        },
+        {
+          "from_node_id": 40,
+          "to_input_port": 1
+        },
+        {
+          "from_node_id": 41,
+          "to_input_port": 2
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "binding_model", "type": "int", "value": 3 },
+          { "name": "blend_mode", "type": "int", "value": 0 },
+          { "name": "default_domain", "type": "int", "value": 2 },
+          { "name": "default_policy_flags", "type": "int", "value": 12 },
+          { "name": "depth_mode", "type": "int", "value": 2 },
+          { "name": "input_layout", "type": "int", "value": 0 },
+          { "name": "name", "type": "string", "value": "lit_uv_program" },
+          { "name": "raster_mode", "type": "int", "value": 1 },
+          { "name": "topology", "type": "int", "value": 0 }
+        ]
+      }
+    },
+    {
       "node_id": 29,
       "type": 7,
       "schema": "0xf11eca55e7000002",
@@ -722,7 +955,10 @@
       { "node_id": 29, "x": 630, "y": 960 },
       { "node_id": 30, "x": 630, "y": 760 },
       { "node_id": 31, "x": 370, "y": 760 },
-      { "node_id": 32, "x": 370, "y": 960 }
+      { "node_id": 32, "x": 370, "y": 960 },
+      { "node_id": 35, "x": 110, "y": 1160 },
+      { "node_id": 41, "x": 890, "y": 1160 },
+      { "node_id": 42, "x": 1150, "y": 1160 }
     ],
     "zoom": 0.6
   }

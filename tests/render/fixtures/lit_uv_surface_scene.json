@@ -1,0 +1,54 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "lit_uv_surface_scene",
+  "note": "The UV-sampling LIT variant: a quad (node 31, the procedural mesh that carries UVs) shaded by the shipping sg_lit_uv program (node 42), sampling the composite material (node 28) with the mesh's OWN texture coordinates instead of an equirectangular UV derived from the object normal. Turned to FACE the camera (180 degrees about Y): the quad's authored normal is +Z and the shader drops back-facing fragments, so an unrotated quad discards every pixel. One drawable on purpose -- the renderer's descriptor-table count is then evidence about this renderable and nothing else.",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [0, 0, -4],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "lit_surface",
+      "parent": "root",
+      "name": "lit_surface",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 1, 0, 0],
+        "scale": [2, 2, 2]
+      },
+      "visible": true,
+      "geometry": { "asset_graph_node_id": 31 },
+      "render_program": { "asset_graph_node_id": 42 },
+      "renderable_bindings": [
+        { "semantic": "sky_gaussian", "asset_graph_node_id": 35 },
+        { "semantic": "sky_gaussian_points", "asset_graph_node_id": 35 },
+        { "semantic": "material_albedo", "asset_graph_node_id": 28 }
+      ]
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  }
+}

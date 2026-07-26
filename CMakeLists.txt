@@ -322,6 +322,11 @@ set(WZ_REBIND_FIXTURE_SRC
 set(WZ_REBIND_FIXTURE_DST
     "${CMAKE_BINARY_DIR}/resources/projects/test_rebind_fixture")
 set(WZ_FIXTURE_SHADER_DIR "${WZ_REBIND_FIXTURE_SRC}/shaders")
+# The SHIPPING sg_lit shaders, so the on-device lit test drives the real ones
+# rather than fixture copies that could drift from them (the same reason the
+# puppet render test drives ensure_puppet_program).
+set(WZ_ENGINE_SHADER_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/window_engine/resources/shaders")
 configure_file(
     "${WZ_REBIND_FIXTURE_SRC}/assets.graph.json.in"
     "${WZ_REBIND_FIXTURE_DST}/assets.graph.json"
@@ -333,6 +338,10 @@ configure_file(
 configure_file(
     "${WZ_REBIND_FIXTURE_SRC}/scene.json"
     "${WZ_REBIND_FIXTURE_DST}/scene.json"
+    COPYONLY)
+configure_file(
+    "${WZ_REBIND_FIXTURE_SRC}/fixture_sky.sky_gaussian.json"
+    "${WZ_REBIND_FIXTURE_DST}/fixture_sky.sky_gaussian.json"
     COPYONLY)
 # Issue #213 increment 1b: a second scene for the test_rebind_fixture graph that
 # drives renderables via geometry+program BINDINGS (reuses node 9 = geometry,
@@ -379,6 +388,14 @@ configure_file(
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/uv_surface_scene.json"
     "${WZ_REBIND_FIXTURE_DST}/uv_surface.scene.json"
+    COPYONLY)
+
+# The UV-sampling LIT variant: the same quad shaded by the shipping sg_lit_uv
+# program, so a material texture maps by the mesh's own coordinates on a lit
+# surface (#290's shader half, unblocked by #289's shared BRDF).
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/lit_uv_surface_scene.json"
+    "${WZ_REBIND_FIXTURE_DST}/lit_uv_surface.scene.json"
     COPYONLY)
 
 # Issue #216/#217: a scene for the test_rebind_fixture graph that drives the
