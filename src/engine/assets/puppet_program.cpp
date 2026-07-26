@@ -118,6 +118,22 @@ float4 main(PSIn input) : SV_TARGET
 }
 )HLSL";
 
+        // Stages the engine's copy of a puppet shader into the project,
+        // OVERWRITING a staged copy whose content differs (#283).
+        //
+        // This file's embedded sources are the single source of truth for the
+        // puppet shaders, and the engine's SRG + packet builders are written
+        // against them. Write-if-missing broke that contract silently: a
+        // smaller shader cbuffer against a larger root signature is legal in
+        // D3D12, so a project staged before a shader change kept rendering
+        // with the OLD shader and nothing errored. It bit #274 (16->20 dwords),
+        // #275 (the mask row) and #276/#277 (premultiplied + tint), each time
+        // needing a hand-regenerated staged copy.
+        //
+        // The cost of the policy is that a hand-edit of a staged shader is
+        // reverted on the next run; iterate in resources/shaders/puppet (or
+        // here) instead. An unchanged file is left completely alone -- no
+        // write, so no mtime churn and no needless shader recompile.
         bool stage_shader_source(
             wz::Logger& logger,
             const std::function<wz::fs::Path(const wz::fs::Path&)>& resolve_path,
@@ -126,6 +142,23 @@ float4 main(PSIn input) : SV_TARGET
         {
             const wz::fs::Path full = resolve_path(project_relative_path);
             if (wz::fs::exists(full)) {
+                const wz::fs::FileResult<std::string> staged =
+                    wz::fs::read_file_text(full);
+                if (staged && staged.value == source) {
+                    return true;
+                }
+                // Unreadable counts as drift: re-stage rather than run on a
+                // staged copy we cannot vouch for.
+                logger.info(
+                    "puppet program: re-staging stale shader source: " + full);
+                if (wz::fs::write_file_text(full, source)
+                    != wz::fs::FileError::None)
+                {
+                    logger.error(
+                        "puppet program: failed to re-stage shader source: "
+                        + full);
+                    return false;
+                }
                 return true;
             }
 

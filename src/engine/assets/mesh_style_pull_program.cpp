@@ -118,6 +118,13 @@ float4 main(PSInput input) : SV_TARGET
 }
 )HLSL";
 
+        // Stages the engine's copy of a mesh-style shader into the project,
+        // OVERWRITING a staged copy whose content differs (#283) -- the same
+        // policy as the puppet stager, and for the same reason: the embedded
+        // source here is the source of truth the program's binding layout is
+        // written against, and a stale staged copy fails silently rather than
+        // loudly. A hand-edit of a staged shader is reverted on the next run.
+        // An unchanged file is not rewritten, so no mtime churn.
         bool stage_shader_source(
             wz::Logger& logger,
             FileCarrierAssetModule& files,
@@ -126,6 +133,22 @@ float4 main(PSInput input) : SV_TARGET
         {
             const wz::fs::Path full = files.resolve_path(project_relative_path);
             if (wz::fs::exists(full)) {
+                const wz::fs::FileResult<std::string> staged =
+                    wz::fs::read_file_text(full);
+                if (staged && staged.value == source) {
+                    return true;
+                }
+                logger.info(
+                    "mesh style program: re-staging stale shader source: "
+                    + full);
+                if (wz::fs::write_file_text(full, source)
+                    != wz::fs::FileError::None)
+                {
+                    logger.error(
+                        "mesh style program: failed to re-stage shader source: "
+                        + full);
+                    return false;
+                }
                 return true;
             }
 

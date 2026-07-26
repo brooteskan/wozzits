@@ -11,7 +11,9 @@
 // This mirrors ensure_mesh_style_pull_program: the file carrier resolves shader
 // paths against the PROJECT root (no engine-resource fallback), so the canonical
 // HLSL source is embedded here and staged into <project>/shaders/puppet/ on
-// demand (write-if-missing). There is deliberately NO copy under the engine's
+// demand, OVERWRITING a staged copy whose content differs (#283 -- a stale
+// staged shader used to render silently wrong). There is deliberately NO copy
+// under the engine's
 // resources/shaders/ — this file is the single source of truth for the puppet
 // shaders + their SRG (the SRG here MUST match the shaders, and both match the
 // per-Part packet build in rhi_scene_renderer.cpp).
@@ -118,7 +120,7 @@ namespace wz::engine::assets
         const wz::asset::AssetKey& base);
 
     // Stages the embedded puppet shader sources into <project>/shaders/puppet/
-    // (write-if-missing), registers the shader pair, and creates/dedups the
+    // (overwriting a stale copy, #283), registers the shader pair, and creates/dedups the
     // custom render programs carrying the fixed puppet SRG (Screen view head at
     // t0/space0; PuppetVertices t0 / PuppetIndices t1 / PuppetAtlas t2 + a
     // LinearClamp sampler s0 in space2; the 16-dword "puppet_part" root-constant
@@ -149,8 +151,12 @@ namespace wz::engine::assets
     inline constexpr const char* kPuppetPixelShaderProjectPath =
         "shaders/puppet/puppet_ps.hlsl";
 
-    // Stage the embedded puppet shader sources into <project>/shaders/puppet/
-    // (write-if-missing), resolving the project-relative paths via resolve_path.
+    // Stage the embedded puppet shader sources into <project>/shaders/puppet/,
+    // resolving the project-relative paths via resolve_path. A staged file whose
+    // content differs from the embedded source is OVERWRITTEN (#283); one that
+    // matches is left untouched, so an unchanged project sees no write at all.
+    // A hand-edit of a staged shader therefore does NOT survive the next run --
+    // iterate on the embedded source instead.
     // Returns false on an IO failure (directory create / write). Shared by the
     // typed ensure_puppet_program() path (FileCarrierAssetModule::resolve_path)
     // and the graph-authoring routine (GraphAuthoringContext::resolve_file), so

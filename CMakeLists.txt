@@ -900,6 +900,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_inochi puppet_deform_tests)
     rs_add_test_group(asset_inochi puppet_physics_tests)
     rs_add_test_group(asset_inochi puppet_residency_tests)
+    rs_add_test_group(asset_inochi puppet_shader_staging_tests)
 
     rs_add_test_group(asset_json yyjson_wrapper)
     rs_add_test_group(asset_json json_polytree)
