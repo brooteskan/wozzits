@@ -137,10 +137,14 @@ TEST(PuppetResidency, PublishesAtlasesAndPartBuffers)
             (std::array<float, 3>{ 0.1f, 0.2f, 0.3f }));
         EXPECT_EQ(resident.parts[0].tint, (std::array<float, 3>{ 1.0f, 1.0f, 1.0f }));
 
+        // The unmasked-Part fallback texture is resident and asset-owned (#275).
+        EXPECT_TRUE(gpu.resources.find(resident.no_mask).valid())
+            << "the 1x1 no-mask texture did not become resident";
+
         // The tracker got one asset-owned report of every published identity:
-        // 2 atlas pages + 2 Parts * (vtx + idx) = 6.
+        // 2 atlas pages + the no-mask texture + 2 Parts * (vtx + idx) = 7.
         EXPECT_EQ(tracker_calls, 1);
-        EXPECT_EQ(tracked_identities, 6u);
+        EXPECT_EQ(tracked_identities, 7u);
     }
 
     wz::gpu::destroy_device(device);

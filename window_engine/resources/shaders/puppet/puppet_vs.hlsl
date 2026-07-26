@@ -33,6 +33,7 @@ cbuffer PuppetPartBlock : register(b0, space2)
     // too so the VS and PS agree on the block the root signature provides.
     float4 part_tint;        // rgb = multiply tint, w unused
     float4 part_screen_tint; // rgb = screen tint,   w unused
+    float4 part_mask;        // x = mask threshold, y = invert, zw unused
 };
 
 struct WzPuppetVertex
@@ -47,6 +48,11 @@ struct VSOut
 {
     float4 pos : SV_POSITION;
     float2 uv  : TEXCOORD0;
+    // Target-space [0,1] position, for sampling the Part's coverage mask (#275).
+    // The mask texture is rendered at the TARGET's dimensions, so this is just
+    // the screen-pixel position normalised -- computed here because the pixel
+    // shader has no view of the viewport (the Screen head is Vertex-visible).
+    float2 mask_uv : TEXCOORD1;
 };
 
 VSOut main(uint vid : SV_VertexID)
@@ -64,7 +70,8 @@ VSOut main(uint vid : SV_VertexID)
     float2 ndc = px * (2.0f / vp) - 1.0f;
 
     VSOut o;
-    o.pos = float4(ndc.x, -ndc.y, 0.0f, 1.0f);
-    o.uv  = v.uv;
+    o.pos     = float4(ndc.x, -ndc.y, 0.0f, 1.0f);
+    o.uv      = v.uv;
+    o.mask_uv = px / vp;
     return o;
 }

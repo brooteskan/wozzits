@@ -64,6 +64,22 @@ namespace wz::engine::assets::inochi
         std::array<float, 3> screen_tint{ 0.0f, 0.0f, 0.0f };
         BlendMode blend = BlendMode::Normal;
         float zsort = 0.0f;                     // accumulated; draw-order key
+
+        // Mask compositing (#275). `mask_source` is the RESOLVED node index of
+        // the Part whose coverage clips this one (masks[0].source_uuid looked up
+        // in the puppet), or kNoMaskSource when this Part is unmasked. The
+        // renderer renders that source's coverage into a mask texture and the
+        // pixel shader tests the sampled coverage against mask_threshold --
+        // Mask keeps the covered texels, DodgeMask keeps the uncovered ones.
+        //
+        // Only the FIRST binding is resolved: Inochi allows a list, but every
+        // masked Part in the reference puppets carries exactly one, and honouring
+        // several needs the masks composited together first (a follow-up).
+        static constexpr std::size_t kNoMaskSource =
+            static_cast<std::size_t>(-1);
+        std::size_t mask_source = kNoMaskSource;
+        float mask_threshold = 0.5f;
+        bool mask_inverted = false;             // DodgeMask
     };
 
     // The flattened, draw-ordered Part list for a static puppet pose, plus the

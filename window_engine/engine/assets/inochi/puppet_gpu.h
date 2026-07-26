@@ -49,6 +49,14 @@ namespace wz::engine::assets::inochi
         std::array<float, 3> screen_tint{ 0.0f, 0.0f, 0.0f };  // screen (#276)
         BlendMode blend = BlendMode::Normal;
         float zsort = 0.0f;
+
+        // Mask compositing (#275), carried from the draw list. `mask_source` is
+        // a node index into Puppet::nodes (kNoMaskSource when unmasked); the
+        // renderer renders that Part's coverage into a mask texture and binds it
+        // for this Part's draw.
+        std::size_t mask_source = PuppetPartDraw::kNoMaskSource;
+        float mask_threshold = 0.5f;
+        bool mask_inverted = false;
     };
 
     // The resident form of a puppet: the atlas-page identities (one per
@@ -62,6 +70,12 @@ namespace wz::engine::assets::inochi
         std::vector<ResidentPuppetPart> parts;           // draw order (back -> front)
         std::array<float, 2> bounds_min{ 0.0f, 0.0f };
         std::array<float, 2> bounds_max{ 0.0f, 0.0f };
+
+        // A 1x1 opaque-white Texture2D (#275). The puppet SRG always declares a
+        // mask slot, so an UNMASKED Part binds this and its pixel shader samples
+        // full coverage -- which keeps one program set covering both cases
+        // instead of doubling the blend variants into masked/unmasked pairs.
+        wz::rhi::ResourceIdentity no_mask;
 
         [[nodiscard]] bool empty() const noexcept { return parts.empty(); }
     };

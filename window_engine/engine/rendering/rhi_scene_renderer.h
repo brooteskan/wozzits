@@ -357,6 +357,33 @@ namespace wz::engine::rendering
             };
             std::vector<PuppetPartRuntime> puppet_part_runtime;
 
+            // Mask compositing (#275). One render-target texture per DISTINCT
+            // mask-source node: a prepass draws that source alone into it, and
+            // every Part masked by it samples the result's alpha as coverage.
+            //
+            // Sized to the RENDER TARGET, because the masked Part samples with
+            // its own target-space position -- the mask must be rasterised
+            // through the same puppet->target placement, and that placement is
+            // recomputed per target (#280). So a target-size change invalidates
+            // them: puppet_mask_size records what they were built for, and they
+            // are rebuilt (and the Part SRGs rebound) when it no longer matches.
+            struct PuppetMaskTarget
+            {
+                std::size_t source_node = 0;      // index into Puppet::nodes
+                std::size_t source_packet = 0;    // its packet, for the prepass
+                wz::rhi::ResourceIdentity identity{};
+                wz::rhi::GpuResourceHandle resource{};  // SRG binding
+                wz::gpu::GPUHandle render_target{};     // begin_offscreen_pass
+            };
+            std::vector<PuppetMaskTarget> puppet_mask_targets;
+            std::array<uint32_t, 2> puppet_mask_size{ 0u, 0u };
+            // Parallel to puppet_packets: which mask target each Part samples,
+            // or kNoMaskTarget for an unmasked Part (which binds the puppet's
+            // 1x1 white texture instead).
+            static constexpr std::size_t kNoMaskTarget =
+                static_cast<std::size_t>(-1);
+            std::vector<std::size_t> puppet_part_mask_target;
+
             // Star-field renderables (#266) bind the resident star point
             // StructuredBuffer (StarCatalog semantic, asset-owned) and record a
             // non-indexed draw of 6 * star_count vertices. is_star_field gates the
@@ -406,6 +433,18 @@ namespace wz::engine::rendering
         // under shader_ref(key)) is registered. The renderer never compiles
         // shaders; this just gates the render-time program fallback (#193).
         bool ensure_shader_module(const wz::asset::AssetKey& shader_key);
+
+        // Mask compositing prepass (#275). Ensures `realized`'s mask targets
+        // exist at target_w/target_h (rebuilding them, and rebinding the Part
+        // SRGs that sample them, whenever the target size changed), then renders
+        // each distinct mask source alone into its target.
+        //
+        // MUST run BEFORE the frame's main pass is begun: each mask is its own
+        // offscreen pass, and passes do not nest. Returns false if a mask target
+        // could not be acquired -- the Parts then sample the 1x1 white texture
+        // and draw unmasked, which is the pre-#275 behaviour.
+        bool render_puppet_masks(
+            RealizedRenderable& realized, uint32_t target_w, uint32_t target_h);
 
         // Per-frame puppet deform + physics (S3c/S7). Advances the SimplePhysics
         // pendulums from a subtle breathing anchor, rebuilds the deformed pose,

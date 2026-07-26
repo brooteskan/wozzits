@@ -12,7 +12,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <unordered_map>
 #include <utility>
 
 namespace wz::engine::assets::inochi
@@ -140,6 +142,14 @@ namespace wz::engine::assets::inochi
         const std::vector<Affine2D>& world = xf.world;
         const std::vector<float>& zacc = xf.zacc;
 
+        // uuid -> node index, for resolving mask bindings (#275). Built once;
+        // a puppet's masked Parts reference their source by uuid.
+        std::unordered_map<std::uint32_t, std::size_t> index_by_uuid;
+        index_by_uuid.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            index_by_uuid.emplace(puppet.nodes[i].uuid, i);
+        }
+
         float min_x = std::numeric_limits<float>::max();
         float min_y = std::numeric_limits<float>::max();
         float max_x = std::numeric_limits<float>::lowest();
@@ -165,6 +175,21 @@ namespace wz::engine::assets::inochi
             part.blend = node.blend_mode;
             part.zsort = zacc[i];
             part.atlas_texture = node.textures.empty() ? 0u : node.textures[0];
+
+            // Resolve the mask binding's source uuid to a node index (#275) so
+            // nothing downstream has to carry the uuid table. An unresolvable
+            // source leaves the Part UNMASKED rather than dropping it -- a
+            // missing mask should not make art disappear.
+            if (!node.masks.empty()) {
+                const MaskBinding& binding = node.masks.front();
+                if (const auto it = index_by_uuid.find(binding.source_uuid);
+                    it != index_by_uuid.end() && it->second != i)
+                {
+                    part.mask_source = it->second;
+                    part.mask_threshold = node.mask_threshold;
+                    part.mask_inverted = binding.mode == MaskMode::DodgeMask;
+                }
+            }
 
             // Per-Part deform offsets (S3), added to the rest verts in Part-local
             // pixel space before placement. Empty / absent => rest positions.

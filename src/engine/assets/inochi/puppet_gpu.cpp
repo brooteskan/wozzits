@@ -16,6 +16,7 @@
 #include <wozzits/rhi/gpu_resource.h>
 #include <wozzits/rhi/gpu_resource_registry.h>
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -134,6 +135,36 @@ namespace wz::engine::assets::inochi
             atlas_ok[ti] = 1u;
         }
 
+        // 1b) The 1x1 opaque-white "no mask" texture every unmasked Part binds
+        // (#275). Published per puppet so it is released with the puppet's other
+        // resources by the same tracker report.
+        {
+            const std::array<std::uint8_t, 4> white{ 255u, 255u, 255u, 255u };
+            wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::texture_2d(
+                1u, 1u,
+                wz::rhi::TextureFormat::RGBA8Unorm,
+                wz::rhi::ResourceUsage_Sampled);
+            desc.cpu_access = wz::rhi::ResourceCpuAccess::WriteOnce;
+            desc.identity = wz::rhi::ResourceIdentity{
+                rhi_asset_identity(key, "no_mask"), {} };
+
+            const wz::rhi::GpuResourceHandle handle = gpu_resources.acquire(desc);
+            const bool uploaded =
+                handle.valid()
+                && gpu_resources.update_mip(
+                    handle, /*mip_level*/ 0, white.data(),
+                    static_cast<std::uint64_t>(white.size()));
+            if (!uploaded) {
+                if (handle.valid()) {
+                    gpu_resources.release(handle);
+                }
+                return fail("puppet no-mask texture residency failed");
+            }
+            acquired.push_back(handle);
+            identities.push_back(desc.identity);
+            out.no_mask = desc.identity;
+        }
+
         // 2) Per-Part interleaved vertex + index StructuredBuffers, in draw order.
         out.parts.reserve(list.parts.size());
         for (const PuppetPartDraw& part : list.parts) {
@@ -202,6 +233,9 @@ namespace wz::engine::assets::inochi
             rp.opacity = part.opacity;
             rp.tint = part.tint;
             rp.screen_tint = part.screen_tint;
+            rp.mask_source = part.mask_source;
+            rp.mask_threshold = part.mask_threshold;
+            rp.mask_inverted = part.mask_inverted;
             rp.blend = part.blend;
             rp.zsort = part.zsort;
             out.parts.push_back(rp);

@@ -150,6 +150,12 @@ namespace wz::engine::assets
         // writes -- a base colour plus placed art (labels, decals, a puppet)
         // built into one texture the lit shader samples through the mesh's UV.
         MaterialAlbedo,
+        // The coverage mask clipping an Inochi2D puppet Part (#275): the mask
+        // SOURCE Part rendered alone into a target-sized texture, whose ALPHA is
+        // the coverage the masked Part's pixel shader tests against its
+        // mask_threshold. Every puppet Part declares this row -- an UNMASKED one
+        // binds a 1x1 white texture -- so masking needs no second program set.
+        PuppetMask,
     };
 
     // Canonical open-vocabulary names for DescriptorSemantic. ONE table serves
@@ -157,7 +163,7 @@ namespace wz::engine::assets
     // it as a Tag (enum → name), and authored render-binding-layout rows name
     // their semantic as a string that resolves back to the enum (name → enum).
     // Index == enum value; a new DescriptorSemantic member extends this array.
-    inline constexpr std::array<std::string_view, 20> kDescriptorSemanticNames = {
+    inline constexpr std::array<std::string_view, 21> kDescriptorSemanticNames = {
         "unknown",
         "splat_cloud",
         "sorted_splat_indices",
@@ -178,6 +184,7 @@ namespace wz::engine::assets
         "puppet_indices",
         "puppet_atlas",
         "material_albedo",
+        "puppet_mask",
     };
 
     [[nodiscard]] constexpr std::string_view descriptor_semantic_name(

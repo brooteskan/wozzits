@@ -10,18 +10,23 @@
 // straight alpha with SRC_ALPHA/INV_SRC_ALPHA.
 //
 // On top of that it applies the Part's colour modulation (tint then screen tint,
-// #276) and its opacity.
+// #276), its coverage MASK (#275) and its opacity.
 //
-// S2 renders EVERY Part through one program; the Part's authored blend mode is
-// carried on ResidentPuppetPart but not yet consumed at draw -- per-Part
-// Multiply/Screen program variants are a deferred follow-up (#274). Destination-
-// reading blends (Overlay, SoftLight, ...) and stencil masks (ClipToLower/
-// SliceFromLower) are later seams (S5 masks, S6 composite).
+// Masking: the mask source Part is rendered alone into a target-sized texture in
+// a prepass, and its ALPHA is the coverage tested here. Every Part samples the
+// mask -- an unmasked one binds a 1x1 white texture with threshold 0, so the
+// test passes everywhere and one program set covers both cases. The mask is in
+// TARGET space, so the VS hands down the target-space UV rather than this shader
+// reconstructing it from SV_POSITION (which would need the viewport pixel-side).
+//
+// The per-Part blend mode selects among program VARIANTS (#274) rather than
+// anything here. Destination-reading blends (Overlay, SoftLight, ...) are a
+// later seam and currently draw as Normal.
 //
 // The atlas is bound at t2 of space 2 (after the two mesh-pull SRVs, matching the
-// overlay layout); the sampler is the layout's static clamp sampler at s0. The
-// atlas texture is display-referred (sRGB), sampled and output as-is here --
-// Inochi composites in that space, so we match it rather than linearising.
+// overlay layout) and the mask at t3; the sampler is the layout's static clamp
+// sampler at s0. The atlas texture is display-referred (sRGB), sampled and output
+// as-is here -- Inochi composites in that space, so we match it.
 
 cbuffer PuppetPartBlock : register(b0, space2)
 {
@@ -29,15 +34,18 @@ cbuffer PuppetPartBlock : register(b0, space2)
     float4 xform_row1;
     float4 part_tint;        // rgb = multiply tint  (identity 1,1,1)
     float4 part_screen_tint; // rgb = screen tint    (identity 0,0,0)
+    float4 part_mask;        // x = threshold, y = invert (DodgeMask), zw unused
 };
 
 Texture2D<float4> atlas   : register(t2, space2);
+Texture2D<float4> mask    : register(t3, space2);
 SamplerState      atlas_s : register(s0, space2);
 
 struct PSIn
 {
-    float4 pos : SV_POSITION;
-    float2 uv  : TEXCOORD0;
+    float4 pos      : SV_POSITION;
+    float2 uv       : TEXCOORD0;
+    float2 mask_uv  : TEXCOORD1;   // target-space [0,1]
 };
 
 float4 main(PSIn input) : SV_TARGET
@@ -54,7 +62,15 @@ float4 main(PSIn input) : SV_TARGET
     // without ever dividing by a (and leaves fully transparent texels at zero).
     rgb = rgb + part_screen_tint.rgb * (tex.a - rgb);
 
-    // Opacity scales colour and coverage together, preserving premultiplication.
-    float opacity = xform_row0.w;
-    return float4(rgb * opacity, tex.a * opacity);
+    // Coverage mask. The source's alpha is its coverage; Mask keeps the texels
+    // the source covers, DodgeMask keeps the ones it does not. A hard test
+    // rather than a multiply, because mask_threshold is Inochi's cutoff.
+    float coverage = mask.SampleLevel(atlas_s, input.mask_uv, 0.0f).a;
+    float covered  = step(part_mask.x, coverage);
+    float keep     = lerp(covered, 1.0f - covered, part_mask.y);
+
+    // Opacity scales colour and coverage together, preserving premultiplication;
+    // so does the mask, which is why it can be folded into the same factor.
+    float scale = xform_row0.w * keep;
+    return float4(rgb * scale, tex.a * scale);
 }

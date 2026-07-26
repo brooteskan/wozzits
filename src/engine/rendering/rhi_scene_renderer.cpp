@@ -1491,6 +1491,28 @@ namespace wz::engine::rendering
                 gpu_.descriptor_semantics.find("puppet_indices");
             const wz::rhi::Tag atlas_semantic =
                 gpu_.descriptor_semantics.find("puppet_atlas");
+            const wz::rhi::Tag mask_semantic =
+                gpu_.descriptor_semantics.find("puppet_mask");
+
+            // Mask compositing (#275). Every Part declares the mask row, so an
+            // unmasked one binds the puppet's 1x1 white texture and its shader
+            // test passes everywhere. The real mask TARGETS are target-sized and
+            // built in the prepass; realize records which Parts want one and
+            // seeds them all with white, so a puppet is drawable (unmasked)
+            // before the first prepass and stays drawable if one ever fails.
+            const wz::rhi::GpuResourceHandle no_mask =
+                gpu_.resources.find(puppet.no_mask);
+            if (!no_mask.valid()) {
+                realized_renderables_.erase(pit);
+                logger_.error(
+                    "RhiSceneRenderer: puppet no-mask texture not resident");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+            prealized.puppet_mask_targets.clear();
+            prealized.puppet_mask_size = { 0u, 0u };
+            prealized.puppet_part_mask_target.clear();
+            prealized.puppet_part_mask_target.reserve(puppet.parts.size());
 
             // Per-Part blend (#274). Blend state lives in the PSO and a
             // DrawRequest carries ONE program tag, so a Part's authored blend
@@ -1559,6 +1581,7 @@ namespace wz::engine::rendering
                     part_srg.set(verts_semantic, verts).has_value()
                     && part_srg.set(idx_semantic, indices).has_value()
                     && part_srg.set(atlas_semantic, atlas).has_value()
+                    && part_srg.set(mask_semantic, no_mask).has_value()
                     && part_srg.satisfies(*slot2_layout);
                 if (!srg_ok) {
                     realized_renderables_.erase(pit);
@@ -1568,19 +1591,28 @@ namespace wz::engine::rendering
                     return nullptr;
                 }
 
-                // PuppetPartBlock (16 dwords): a 2D affine (Part-local px ->
-                // screen px) row-packed + opacity, then the Part's multiply tint
-                // and screen tint (#276). affine = puppet->target o Part
-                // placement.
+                // PuppetPartBlock (20 dwords): a 2D affine (Part-local px ->
+                // screen px) row-packed + opacity, the Part's multiply tint and
+                // screen tint (#276), then its mask params (#275). affine =
+                // puppet->target o Part placement.
+                //
+                // An UNMASKED Part gets threshold 0: bound against the 1x1 white
+                // texture, step(0, 1) passes everywhere, so the mask folds out.
                 const wz::engine::assets::inochi::Affine2D m =
                     wz::engine::assets::inochi::compose(
                         puppet_to_target, part.placement);
-                const float block[16] = {
+                const bool part_masked =
+                    part.mask_source
+                    != wz::engine::assets::inochi::PuppetPartDraw::kNoMaskSource;
+                const float block[20] = {
                     m.a, m.b, m.tx, part.opacity,
                     m.c, m.d, m.ty, 0.0f,
                     part.tint[0], part.tint[1], part.tint[2], 0.0f,
                     part.screen_tint[0], part.screen_tint[1],
                     part.screen_tint[2], 0.0f,
+                    part_masked ? part.mask_threshold : 0.0f,
+                    (part_masked && part.mask_inverted) ? 1.0f : 0.0f,
+                    0.0f, 0.0f,
                 };
 
                 wz::rhi::GeometryView geometry;
@@ -1619,6 +1651,42 @@ namespace wz::engine::rendering
                 prealized.puppet_part_runtime.push_back(
                     RealizedRenderable::PuppetPartRuntime{
                         verts, part.node_index, part.vertex_count });
+            }
+
+            // Resolve the mask wiring now that every Part has a packet (#275).
+            // parts and puppet_packets are 1:1 -- a Part that could not be built
+            // fails the whole realize above -- so a Part's index is its packet's.
+            {
+                using PartDraw = wz::engine::assets::inochi::PuppetPartDraw;
+                std::unordered_map<std::size_t, std::size_t> packet_by_node;
+                packet_by_node.reserve(puppet.parts.size());
+                for (std::size_t i = 0; i < puppet.parts.size(); ++i) {
+                    packet_by_node.emplace(puppet.parts[i].node_index, i);
+                }
+                std::unordered_map<std::size_t, std::size_t> target_by_node;
+                for (const auto& part : puppet.parts) {
+                    std::size_t target = RealizedRenderable::kNoMaskTarget;
+                    if (part.mask_source != PartDraw::kNoMaskSource) {
+                        // A mask source that is not itself a drawn Part has no
+                        // geometry to rasterise, so the Part stays unmasked
+                        // rather than being clipped to nothing.
+                        if (const auto pit2 =
+                                packet_by_node.find(part.mask_source);
+                            pit2 != packet_by_node.end())
+                        {
+                            const auto [it, inserted] = target_by_node.emplace(
+                                part.mask_source,
+                                prealized.puppet_mask_targets.size());
+                            if (inserted) {
+                                prealized.puppet_mask_targets.push_back(
+                                    RealizedRenderable::PuppetMaskTarget{
+                                        part.mask_source, pit2->second });
+                            }
+                            target = it->second;
+                        }
+                    }
+                    prealized.puppet_part_mask_target.push_back(target);
+                }
             }
 
             (void)pinserted;
@@ -2128,6 +2196,123 @@ namespace wz::engine::rendering
         out.assign(bytes, bytes + sizeof(constants));
     }
 
+    bool RhiSceneRenderer::render_puppet_masks(
+        RealizedRenderable& realized, uint32_t target_w, uint32_t target_h)
+    {
+        if (realized.puppet_mask_targets.empty()
+            || target_w == 0u || target_h == 0u)
+        {
+            return true;
+        }
+
+        // (Re)build the mask targets when the render target's size changed. The
+        // masked Part samples with its own target-space position, so a mask
+        // rasterised for a different size would be read at the wrong scale.
+        if (realized.puppet_mask_size[0] != target_w
+            || realized.puppet_mask_size[1] != target_h)
+        {
+            const wz::rhi::Tag mask_semantic =
+                gpu_.descriptor_semantics.find("puppet_mask");
+            std::size_t index = 0;
+            for (RealizedRenderable::PuppetMaskTarget& mask :
+                 realized.puppet_mask_targets)
+            {
+                if (mask.resource.valid()) {
+                    gpu_.resources.release(mask.resource);
+                    mask.resource = {};
+                    mask.render_target = {};
+                }
+
+                wz::rhi::GpuResourceDesc desc =
+                    wz::rhi::GpuResourceDesc::texture_2d(
+                        target_w, target_h,
+                        wz::rhi::TextureFormat::RGBA8Unorm,
+                        wz::rhi::ResourceUsage_Sampled
+                            | wz::rhi::ResourceUsage_RenderTarget);
+                // Identity is per renderable + source node, so two puppets (or
+                // two sources) never collide in the registry.
+                desc.identity = wz::rhi::ResourceIdentity{
+                    ea::rhi_asset_identity(
+                        realized.renderable_key,
+                        "puppet_mask_" + std::to_string(mask.source_node)),
+                    {} };
+
+                mask.resource = gpu_.resources.acquire(desc);
+                if (!mask.resource.valid()) {
+                    logger_.error(
+                        "RhiSceneRenderer: puppet mask target acquire failed");
+                    realized.puppet_mask_size = { 0u, 0u };
+                    return false;
+                }
+                const wz::rhi::GpuResource* res =
+                    gpu_.resources.get(mask.resource);
+                mask.render_target =
+                    res ? gpu_.backend.gpu_handle_for(res->backend)
+                        : wz::gpu::GPUHandle{};
+                mask.identity = desc.identity;
+                if (!mask.render_target.valid()) {
+                    logger_.error(
+                        "RhiSceneRenderer: puppet mask target has no GPU handle");
+                    realized.puppet_mask_size = { 0u, 0u };
+                    return false;
+                }
+
+                // Rebind every Part that samples this target. The packets hold
+                // raw SRG pointers, so mutating the SRG in place is what makes
+                // the already-built packets pick the new texture up.
+                for (std::size_t pi = 0;
+                     pi < realized.puppet_part_mask_target.size()
+                     && pi < realized.puppet_part_srgs.size();
+                     ++pi)
+                {
+                    if (realized.puppet_part_mask_target[pi] == index) {
+                        (void)realized.puppet_part_srgs[pi].set(
+                            mask_semantic, mask.resource);
+                    }
+                }
+                ++index;
+            }
+            realized.puppet_mask_size = { target_w, target_h };
+        }
+
+        // Render each source alone into its target. One offscreen pass each --
+        // passes do not nest, which is why this runs before the main pass opens.
+        // The source draws with its OWN packet (and so its own blend variant):
+        // only the alpha channel is read back as coverage, and every puppet
+        // blend variant accumulates alpha the same "over" way, so the variant
+        // does not change the mask.
+        bool ok = true;
+        for (const RealizedRenderable::PuppetMaskTarget& mask :
+             realized.puppet_mask_targets)
+        {
+            if (!mask.render_target.valid()
+                || mask.source_packet >= realized.puppet_packets.size())
+            {
+                continue;
+            }
+            const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            if (!wz::gpu::dx12::internal::begin_offscreen_pass(
+                    gpu_.device, mask.render_target, clear))
+            {
+                logger_.error(
+                    "RhiSceneRenderer: puppet mask pass begin failed");
+                ok = false;
+                continue;
+            }
+            wz::rhi::record_packet(
+                realized.puppet_packets[mask.source_packet], forward_, recorder_);
+            if (!recorder_.ready()) {
+                logger_.error(
+                    "RhiSceneRenderer: puppet mask draw rejected — "
+                    + recorder_.last_reject_reason());
+                ok = false;
+            }
+            wz::gpu::dx12::internal::end_offscreen_pass(
+                gpu_.device, mask.render_target);
+        }
+        return ok;
+    }
+
     void RhiSceneRenderer::update_puppet_pose(
         RealizedRenderable& realized, uint32_t target_w, uint32_t target_h)
     {
@@ -2247,11 +2432,19 @@ namespace wz::engine::rendering
             // sync), so breathing + transform-driven deform is always current.
             const ino::Affine2D m =
                 ino::compose(puppet_to_target, dp.placement);
-            const float block[16] = {
+            const bool dp_masked =
+                dp.mask_source != ino::PuppetPartDraw::kNoMaskSource
+                && pi < realized.puppet_part_mask_target.size()
+                && realized.puppet_part_mask_target[pi]
+                       != RealizedRenderable::kNoMaskTarget;
+            const float block[20] = {
                 m.a, m.b, m.tx, dp.opacity,
                 m.c, m.d, m.ty, 0.0f,
                 dp.tint[0], dp.tint[1], dp.tint[2], 0.0f,
                 dp.screen_tint[0], dp.screen_tint[1], dp.screen_tint[2], 0.0f,
+                dp_masked ? dp.mask_threshold : 0.0f,
+                (dp_masked && dp.mask_inverted) ? 1.0f : 0.0f,
+                0.0f, 0.0f,
             };
             realized.puppet_packets[pi].root_constants.assign(
                 reinterpret_cast<const uint8_t*>(block),
@@ -2375,31 +2568,6 @@ namespace wz::engine::rendering
         recorder_.set_frame_timeline(
             wz::gpu::frame_timeline_value(gpu_.device));
 
-        if (to_offscreen) {
-            // Bind the render-target texture (transitions it to RENDER_TARGET, sets
-            // its viewport, and clears it to transparent). Draws below land in it.
-            const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-            if (!wz::gpu::dx12::internal::begin_offscreen_pass(
-                    gpu_.device, offscreen_target, clear)) {
-                logger_.error("RhiSceneRenderer: begin_offscreen_pass failed");
-                return false;
-            }
-        }
-        else {
-            D3D12_CPU_DESCRIPTOR_HANDLE rtv =
-                wz::gpu::dx12::internal::get_current_rtv(gpu_.device);
-            D3D12_CPU_DESCRIPTOR_HANDLE dsv =
-                wz::gpu::dx12::internal::get_dsv(gpu_.device);
-            cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
-
-            const float w = static_cast<float>(target_w);
-            const float h = static_cast<float>(target_h);
-            D3D12_VIEWPORT viewport{ 0.0f, 0.0f, w, h, 0.0f, 1.0f };
-            cmd->RSSetViewports(1, &viewport);
-            D3D12_RECT scissor{ 0, 0, static_cast<LONG>(w), static_cast<LONG>(h) };
-            cmd->RSSetScissorRects(1, &scissor);
-        }
-
         uint32_t recorded = 0;
 
         // Hierarchical world transforms: each node's local TRS composed with its
@@ -2448,6 +2616,52 @@ namespace wz::engine::rendering
                     draw_order.push_back(i);
                 }
             }
+        }
+
+        // ── Puppet prepass (S3c/S7 pose + #275 masks) ───────────────────────
+        // Both must happen BEFORE the frame's pass opens. The pose repack feeds
+        // the mask draws (a mask is the source Part rasterised through the same
+        // placement), and each mask is its OWN offscreen pass -- passes do not
+        // nest. update_puppet_pose also re-uploads moved vertex buffers, and
+        // those uploads are synchronous GPU flushes, which is another thing not
+        // to do with a render pass open.
+        for (const std::size_t node_index : draw_order) {
+            if (!nodes[node_index].renderable_asset) {
+                continue;
+            }
+            RealizedRenderable* realized =
+                ensure_renderable(assets, *nodes[node_index].renderable_asset);
+            if (!realized || !realized->is_puppet) {
+                continue;
+            }
+            update_puppet_pose(*realized, target_w, target_h);
+            (void)render_puppet_masks(*realized, target_w, target_h);
+        }
+
+        // The frame's pass. Opened here, after every prepass has closed its own.
+        if (to_offscreen) {
+            // Bind the render-target texture (transitions it to RENDER_TARGET, sets
+            // its viewport, and clears it to transparent). Draws below land in it.
+            const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            if (!wz::gpu::dx12::internal::begin_offscreen_pass(
+                    gpu_.device, offscreen_target, clear)) {
+                logger_.error("RhiSceneRenderer: begin_offscreen_pass failed");
+                return false;
+            }
+        }
+        else {
+            D3D12_CPU_DESCRIPTOR_HANDLE rtv =
+                wz::gpu::dx12::internal::get_current_rtv(gpu_.device);
+            D3D12_CPU_DESCRIPTOR_HANDLE dsv =
+                wz::gpu::dx12::internal::get_dsv(gpu_.device);
+            cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+
+            const float w = static_cast<float>(target_w);
+            const float h = static_cast<float>(target_h);
+            D3D12_VIEWPORT viewport{ 0.0f, 0.0f, w, h, 0.0f, 1.0f };
+            cmd->RSSetViewports(1, &viewport);
+            D3D12_RECT scissor{ 0, 0, static_cast<LONG>(w), static_cast<LONG>(h) };
+            cmd->RSSetScissorRects(1, &scissor);
         }
 
         for (const std::size_t node_index : draw_order) {
@@ -2576,10 +2790,8 @@ namespace wz::engine::rendering
                     bytes, bytes + sizeof(constants));
             }
             else if (realized->is_puppet) {
-                // Advance physics + deform and repack each Part's placement /
-                // vertices for this frame (S3c/S7), fitting the puppet to the
-                // current target (backbuffer or offscreen texture, #280).
-                update_puppet_pose(*realized, target_w, target_h);
+                // Pose + masks already ran in the prepass above (they cannot run
+                // with a pass open); nothing to repack here.
             }
             else {
                 const wz::math::Mat4& world =

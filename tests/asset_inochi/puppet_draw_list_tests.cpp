@@ -216,3 +216,84 @@ TEST(PuppetDrawList, ComputesBounds)
     EXPECT_NEAR(list.bounds_max[0], 110.0f, 1e-4f);
     EXPECT_NEAR(list.bounds_max[1], 210.0f, 1e-4f);
 }
+
+// Mask bindings resolve from a source UUID to a node INDEX (#275), so nothing
+// downstream has to carry the uuid table. The failure modes matter more than
+// the happy path: an unresolvable or self-referential mask must leave the Part
+// UNMASKED rather than clipping it to nothing or dropping it.
+TEST(PuppetDrawList, ResolvesMaskBindingsToNodeIndices)
+{
+    ino::Puppet puppet;
+
+    ino::Node root;
+    root.kind = ino::NodeKind::Node;
+    root.children = { 1, 2, 3, 4 };
+    puppet.nodes.push_back(root);
+
+    // 1: the mask SOURCE.
+    puppet.nodes.push_back(make_triangle_part(/*uuid*/ 500, 0.0f, 0));
+
+    // 2: masked by node 1.
+    ino::Node masked = make_triangle_part(/*uuid*/ 501, -1.0f, 0);
+    masked.mask_threshold = 0.25f;
+    masked.masks.push_back(ino::MaskBinding{ 500, ino::MaskMode::Mask });
+    puppet.nodes.push_back(masked);
+
+    // 3: DodgeMask (inverted) by node 1.
+    ino::Node dodged = make_triangle_part(/*uuid*/ 502, -2.0f, 0);
+    dodged.masks.push_back(ino::MaskBinding{ 500, ino::MaskMode::DodgeMask });
+    puppet.nodes.push_back(dodged);
+
+    // 4: masked by a uuid that does not exist.
+    ino::Node dangling = make_triangle_part(/*uuid*/ 503, -3.0f, 0);
+    dangling.masks.push_back(ino::MaskBinding{ 999999, ino::MaskMode::Mask });
+    puppet.nodes.push_back(dangling);
+
+    const ino::PuppetDrawList list = ino::build_puppet_draw_list(puppet);
+    ASSERT_EQ(list.parts.size(), 4u);
+
+    // Draw order is descending zsort, so the parts come out 1, 2, 3, 4.
+    const auto part_for_node = [&](std::size_t node) -> const ino::PuppetPartDraw& {
+        for (const ino::PuppetPartDraw& p : list.parts) {
+            if (p.node_index == node) return p;
+        }
+        ADD_FAILURE() << "no part for node " << node;
+        return list.parts[0];
+    };
+
+    // The source is itself unmasked.
+    EXPECT_EQ(
+        part_for_node(1).mask_source, ino::PuppetPartDraw::kNoMaskSource);
+
+    const ino::PuppetPartDraw& m = part_for_node(2);
+    EXPECT_EQ(m.mask_source, 1u);
+    EXPECT_FLOAT_EQ(m.mask_threshold, 0.25f);
+    EXPECT_FALSE(m.mask_inverted);
+
+    EXPECT_EQ(part_for_node(3).mask_source, 1u);
+    EXPECT_TRUE(part_for_node(3).mask_inverted);
+
+    // Dangling source -> UNMASKED, not dropped and not clipped away.
+    EXPECT_EQ(
+        part_for_node(4).mask_source, ino::PuppetPartDraw::kNoMaskSource);
+    EXPECT_EQ(list.parts.size(), 4u);
+}
+
+// A Part masking itself would render it against its own coverage, which is a
+// degenerate no-op at best; resolution must reject it and leave the Part plain.
+TEST(PuppetDrawList, IgnoresSelfReferentialMask)
+{
+    ino::Puppet puppet;
+    ino::Node root;
+    root.kind = ino::NodeKind::Node;
+    root.children = { 1 };
+    puppet.nodes.push_back(root);
+
+    ino::Node self = make_triangle_part(/*uuid*/ 700, 0.0f, 0);
+    self.masks.push_back(ino::MaskBinding{ 700, ino::MaskMode::Mask });
+    puppet.nodes.push_back(self);
+
+    const ino::PuppetDrawList list = ino::build_puppet_draw_list(puppet);
+    ASSERT_EQ(list.parts.size(), 1u);
+    EXPECT_EQ(list.parts[0].mask_source, ino::PuppetPartDraw::kNoMaskSource);
+}

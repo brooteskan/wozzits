@@ -47,6 +47,7 @@ cbuffer PuppetPartBlock : register(b0, space2)
     float4 xform_row1;
     float4 part_tint;
     float4 part_screen_tint;
+    float4 part_mask;
 };
 
 struct WzPuppetVertex
@@ -61,6 +62,7 @@ struct VSOut
 {
     float4 pos : SV_POSITION;
     float2 uv  : TEXCOORD0;
+    float2 mask_uv : TEXCOORD1;
 };
 
 VSOut main(uint vid : SV_VertexID)
@@ -73,8 +75,9 @@ VSOut main(uint vid : SV_VertexID)
     float2 vp  = screen_constants[0].viewport.xy;
     float2 ndc = px * (2.0f / vp) - 1.0f;
     VSOut o;
-    o.pos = float4(ndc.x, -ndc.y, 0.0f, 1.0f);
-    o.uv  = v.uv;
+    o.pos     = float4(ndc.x, -ndc.y, 0.0f, 1.0f);
+    o.uv      = v.uv;
+    o.mask_uv = px / vp;
     return o;
 }
 )HLSL";
@@ -86,15 +89,18 @@ cbuffer PuppetPartBlock : register(b0, space2)
     float4 xform_row1;
     float4 part_tint;
     float4 part_screen_tint;
+    float4 part_mask;
 };
 
 Texture2D<float4> atlas   : register(t2, space2);
+Texture2D<float4> mask    : register(t3, space2);
 SamplerState      atlas_s : register(s0, space2);
 
 struct PSIn
 {
-    float4 pos : SV_POSITION;
-    float2 uv  : TEXCOORD0;
+    float4 pos      : SV_POSITION;
+    float2 uv       : TEXCOORD0;
+    float2 mask_uv  : TEXCOORD1;
 };
 
 float4 main(PSIn input) : SV_TARGET
@@ -102,8 +108,11 @@ float4 main(PSIn input) : SV_TARGET
     float4 tex = atlas.SampleLevel(atlas_s, input.uv, 0.0f);
     float3 rgb = tex.rgb * part_tint.rgb;
     rgb = rgb + part_screen_tint.rgb * (tex.a - rgb);
-    float opacity = xform_row0.w;
-    return float4(rgb * opacity, tex.a * opacity);
+    float coverage = mask.SampleLevel(atlas_s, input.mask_uv, 0.0f).a;
+    float covered  = step(part_mask.x, coverage);
+    float keep     = lerp(covered, 1.0f - covered, part_mask.y);
+    float scale = xform_row0.w * keep;
+    return float4(rgb * scale, tex.a * scale);
 }
 )HLSL";
 
@@ -241,10 +250,10 @@ float4 main(PSIn input) : SV_TARGET
             .visibility = ShaderVisibility::All,
             .shader_register = 0,
             .register_space = 2,
-            // 16 dwords = 4 float4: affine rows 0/1 (+opacity), tint, screen
-            // tint. Must match the PuppetPartBlock packers in
+            // 20 dwords = 5 float4: affine rows 0/1 (+opacity), tint, screen
+            // tint, mask params. Must match the PuppetPartBlock packers in
             // rhi_scene_renderer.cpp (realize + per-frame).
-            .value_count = 16,
+            .value_count = 20,
             .semantic = "puppet_part",
         });
         desc.descriptor_bindings.push_back(DescriptorBinding{
@@ -276,6 +285,17 @@ float4 main(PSIn input) : SV_TARGET
             .visibility = ShaderVisibility::Pixel,
             .semantic = DescriptorSemantic::PuppetAtlas,
             .shader_register = 2,
+            .register_space = 2,
+            .descriptor_count = 1,
+        });
+        // The Part's coverage mask (#275). Declared on EVERY variant, so an
+        // unmasked Part binds the puppet's 1x1 white texture rather than needing
+        // a second program set without this row.
+        desc.descriptor_bindings.push_back(DescriptorBinding{
+            .kind = DescriptorKind::TextureSRV,
+            .visibility = ShaderVisibility::Pixel,
+            .semantic = DescriptorSemantic::PuppetMask,
+            .shader_register = 3,
             .register_space = 2,
             .descriptor_count = 1,
         });
