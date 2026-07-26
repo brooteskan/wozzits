@@ -143,7 +143,22 @@ namespace wz::engine::assets::internal
             .input_schema = kHLSLShaderSchema,
             .output_type = wz::asset::AssetType::Shader,
             .input_ports = {
+                // The entry body. Port 0 so every shader node authored before
+                // shared sources existed keeps working unchanged.
                 { "source_file", wz::asset::AssetType::ShaderSource },
+                // Shared HLSL concatenated BEFORE the entry (#289): a common
+                // BRDF, a struct both stages must agree on. Its own port rather
+                // than more edges on port 0, because the order is the contract
+                // and a port index is the one ordering an author actually
+                // controls -- within a Many port the projection order is fixed
+                // by the graph layer (and must survive a reconnect), so it
+                // cannot express "this one comes first".
+                {
+                    "shared_source",
+                    wz::asset::AssetType::ShaderSource,
+                    wz::asset::InputPortRequirement::Optional,
+                    wz::asset::InputPortArity::Many,
+                },
             },
             .parameters = {
                 {
@@ -200,18 +215,34 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
 
+                // SHARED sources first, entry body last (#289). dep_keys are
+                // port-ordered -- [source_file, shared_source...] -- so this
+                // reverses that one step to produce the concatenation the
+                // shaders are written against: declarations before use.
+                const auto source_bytes =
+                    [&](const wz::asset::AssetNode& dep)
+                        -> const std::vector<uint8_t>*
+                    {
+                        return std::get_if<std::vector<uint8_t>>(&dep.payload);
+                    };
+
                 std::vector<std::span<const uint8_t>> sources;
                 sources.reserve(dep_nodes.size());
-
-                for (const wz::asset::AssetNode& dep : dep_nodes) {
-                    const auto* bytes =
-                        std::get_if<std::vector<uint8_t>>(&dep.payload);
-
+                for (std::size_t i = 1; i < dep_nodes.size(); ++i) {
+                    const auto* bytes = source_bytes(dep_nodes[i]);
+                    if (!bytes) {
+                        // An unwired optional shared port projects as an empty
+                        // dep; skip it rather than failing the whole shader.
+                        continue;
+                    }
+                    sources.push_back({ bytes->data(), bytes->size() });
+                }
+                {
+                    const auto* bytes = source_bytes(dep_nodes[0]);
                     if (!bytes) {
                         logger.error("file dep node has no byte payload");
                         return compile_failed_node(input);
                     }
-
                     sources.push_back({ bytes->data(), bytes->size() });
                 }
 

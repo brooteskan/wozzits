@@ -35,31 +35,6 @@ namespace wz::engine::assets
                 || schema == kCSVFileSchema;
         }
 
-        std::optional<wz::asset::AssetKey> dep_at(
-            const wz::asset::CompilerRegistry& registry,
-            const wz::asset::AssetNode& node,
-            std::span<const wz::asset::AssetKey> deps,
-            std::string_view port_name)
-        {
-            const wz::asset::AssetCompiler* compiler =
-                registry.find(node.schema, node.type);
-            if (!compiler) {
-                return std::nullopt;
-            }
-
-            for (uint32_t i = 0;
-                 i < static_cast<uint32_t>(compiler->input_ports.size());
-                 ++i)
-            {
-                if (compiler->input_ports[i].name == port_name) {
-                    if (i >= deps.size()) {
-                        return std::nullopt;
-                    }
-                    return deps[i];
-                }
-            }
-            return std::nullopt;
-        }
 
         std::optional<wz::asset::AssetKey> file_carrier_key(
             const wz::asset::AssetNode& node)
@@ -137,9 +112,12 @@ namespace wz::engine::assets
                 return std::nullopt;
             }
 
-            const std::optional<wz::asset::AssetKey> source_key =
-                dep_at(registry, node, deps, "source_file");
-            if (!source_key || *source_key == wz::asset::AssetKey{}) {
+            // EVERY source, in order. A shader may declare several (#289: the
+            // shared BRDF wired ahead of the entry body), and the port is Many,
+            // so its deps ARE the source list. Taking only the first would give
+            // two variants sharing a common source -- and agreeing on
+            // stage/entry/target -- the same key.
+            if (deps.empty() || deps[0] == wz::asset::AssetKey{}) {
                 return std::nullopt;
             }
 
@@ -150,7 +128,7 @@ namespace wz::engine::assets
             }
 
             return make_hlsl_shader_key(
-                *source_key,
+                deps,
                 static_cast<uint8_t>(desc->stage),
                 desc->entry,
                 desc->target);

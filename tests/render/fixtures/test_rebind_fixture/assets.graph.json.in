@@ -418,6 +418,25 @@
       "deps": []
     },
     {
+      "node_id": 32,
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "source_path",
+            "type": "string",
+            "value": "@WZ_FIXTURE_SHADER_DIR@/material_shared.hlsl"
+          }
+        ]
+      }
+    },
+    {
       "node_id": 29,
       "type": 7,
       "schema": "0xf11eca55e7000002",
@@ -530,6 +549,10 @@
         {
           "from_node_id": 22,
           "to_input_port": 0
+        },
+        {
+          "from_node_id": 32,
+          "to_input_port": 1
         }
       ],
       "meta": {
@@ -553,6 +576,10 @@
         {
           "from_node_id": 23,
           "to_input_port": 0
+        },
+        {
+          "from_node_id": 32,
+          "to_input_port": 1
         }
       ],
       "meta": {
@@ -694,7 +721,8 @@
       { "node_id": 28, "x": 1150, "y": 960 },
       { "node_id": 29, "x": 630, "y": 960 },
       { "node_id": 30, "x": 630, "y": 760 },
-      { "node_id": 31, "x": 370, "y": 760 }
+      { "node_id": 31, "x": 370, "y": 760 },
+      { "node_id": 32, "x": 370, "y": 960 }
     ],
     "zoom": 0.6
   }

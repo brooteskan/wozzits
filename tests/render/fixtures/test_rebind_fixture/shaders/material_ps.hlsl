@@ -5,15 +5,11 @@
 // compiled with, not against a register number.
 //
 // Declarations (material_albedo, sampler0, the "tint" tail constant) come from
-// the prelude node generated off layout node 21.
+// the prelude node generated off layout node 21; MaterialVertex comes from
+// material_shared.hlsl on the shared_source port (#289), so the VS and PS agree
+// on the interpolants by construction.
 
-struct PSIn
-{
-    float4 pos : SV_POSITION;
-    float2 uv  : TEXCOORD0;
-};
-
-float4 main(PSIn input) : SV_TARGET
+float4 main(MaterialVertex input) : SV_TARGET
 {
     float4 albedo = material_albedo.SampleLevel(sampler0, input.uv, 0.0f);
     return float4(albedo.rgb * tint.rgb, tint.a);
