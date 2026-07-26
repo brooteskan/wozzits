@@ -2510,3 +2510,114 @@ TEST(SceneAssetModule, GlbSceneSourceDescriptorRoundTripsThroughSceneJSON)
         wz::json::serialize_json(export_scene_to_json_document(*data));
     EXPECT_EQ(reparsed_export, exported);
 }
+
+// Issue #287: the render-to-texture source must survive a save. A component the
+// engine reads but does not WRITE is the "my component disappeared" failure --
+// the editor rewrites scene.json through this exporter on every save, so a
+// missing export branch silently deletes hand-authored intent.
+TEST(SceneAssetModule, RenderToTextureComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_render_to_texture_component_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "render_to_texture_component_scene",
+  "nodes": [
+    {
+      "id": "card_art",
+      "render_to_texture": {
+        "target_asset_node_id": 42,
+        "include_descendants": false,
+        "also_draw_in_scene": true,
+        "enabled": false
+      }
+    },
+    {
+      "id": "defaults_only",
+      "render_to_texture": { "target_asset_node_id": 7 }
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "render_to_texture_component.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "render_to_texture_component",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 2u);
+
+    // Every authored dial survives, including the two that are non-default --
+    // a reader that dropped them would still "work" and quietly change what is
+    // drawn where.
+    const auto& authored = scene_data->nodes[0];
+    ASSERT_TRUE(authored.render_to_texture.has_value());
+    ASSERT_TRUE(authored.render_to_texture->target_node_id.has_value());
+    EXPECT_EQ(*authored.render_to_texture->target_node_id, 42u);
+    EXPECT_FALSE(authored.render_to_texture->include_descendants);
+    EXPECT_TRUE(authored.render_to_texture->also_draw_in_scene);
+    EXPECT_FALSE(authored.render_to_texture->enabled);
+    // The resolved target key is a bridge product, never read from the scene.
+    EXPECT_TRUE(authored.render_to_texture->target == wz::asset::AssetKey{});
+
+    const auto& defaults = scene_data->nodes[1];
+    ASSERT_TRUE(defaults.render_to_texture.has_value());
+    ASSERT_TRUE(defaults.render_to_texture->target_node_id.has_value());
+    EXPECT_EQ(*defaults.render_to_texture->target_node_id, 7u);
+    EXPECT_TRUE(defaults.render_to_texture->include_descendants);
+    EXPECT_FALSE(defaults.render_to_texture->also_draw_in_scene);
+    EXPECT_TRUE(defaults.render_to_texture->enabled);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"render_to_texture\""), std::string::npos);
+    EXPECT_NE(exported.find("\"target_asset_node_id\""), std::string::npos);
+
+    // Re-reading the export must produce the identical scene -- the round trip
+    // an editor save/reload cycle actually performs.
+    auto rel_path2 = write_scene_json(
+        root, "render_to_texture_component_reexport.scene.json", exported);
+    const auto reparsed =
+        assets.scenes().create_scene_from_json({
+            .name = "render_to_texture_component_reexport",
+            .path = rel_path2,
+        });
+    ASSERT_TRUE(reparsed.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+    const auto* data2 = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(reparsed));
+    ASSERT_NE(data2, nullptr);
+    ASSERT_EQ(data2->nodes.size(), 2u);
+    ASSERT_TRUE(data2->nodes[0].render_to_texture.has_value());
+    EXPECT_EQ(*data2->nodes[0].render_to_texture->target_node_id, 42u);
+    EXPECT_FALSE(data2->nodes[0].render_to_texture->include_descendants);
+    EXPECT_TRUE(data2->nodes[0].render_to_texture->also_draw_in_scene);
+    EXPECT_FALSE(data2->nodes[0].render_to_texture->enabled);
+
+    const std::string reparsed_export =
+        wz::json::serialize_json(export_scene_to_json_document(*data2));
+    EXPECT_EQ(reparsed_export, exported);
+}
