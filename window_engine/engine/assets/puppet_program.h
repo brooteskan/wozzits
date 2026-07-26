@@ -64,8 +64,17 @@ namespace wz::engine::assets
                        // Part mode without a variant (masks, Overlay, ...)
         Multiply = 1,
         Screen = 2,
+        // Inochi's two LOWER-relative modes (#299). They clip against what has
+        // already been drawn rather than against a named mask source, which
+        // reads like it needs a backdrop sample -- but both are destination
+        // ALPHA operations, and those a PSO expresses directly: ClipToLower is
+        // Porter-Duff source-atop, SliceFromLower is its cutting counterpart.
+        // Only the modes that need destination COLOUR (Overlay, SoftLight,
+        // ColorBurn, ...) are genuinely shader-emulated work.
+        ClipToLower = 3,
+        SliceFromLower = 4,
     };
-    inline constexpr std::size_t kPuppetProgramBlendCount = 3;
+    inline constexpr std::size_t kPuppetProgramBlendCount = 5;
 
     // The kPuppetProgramSchema parameter carrying PuppetProgramBlend. The
     // compiler MUST declare it in .parameters or authored nodes never get a
@@ -80,14 +89,14 @@ namespace wz::engine::assets
 
     // The rhi blend state a variant compiles to. Normal is PremultipliedAlpha
     // because the puppet's atlas + pixel shader work in premultiplied space
-    // (#277); Multiply/Screen are the coverage-aware rhi recipes.
+    // (#277); Multiply/Screen are the coverage-aware rhi recipes; ClipToLower /
+    // SliceFromLower are SourceAtop / SliceFromDestination (#299).
     [[nodiscard]] wz::rhi::BlendMode rhi_blend_for(PuppetProgramBlend blend);
 
-    // The variant a Part's authored Inochi blend mode draws through. Anything
-    // without a fixed-function variant — masks (ClipToLower / SliceFromLower,
-    // seam S5) and the destination-reading modes (Overlay, SoftLight, ...,
-    // seam S6) — maps to Normal, which is how they render until those seams
-    // land.
+    // The variant a Part's authored Inochi blend mode draws through. What is
+    // left without one is the modes that read destination COLOUR (Overlay,
+    // SoftLight, ColorBurn, Difference, ...); those map to Normal until a
+    // backdrop-sampling seam lands, which is how they render today.
     [[nodiscard]] PuppetProgramBlend puppet_program_blend_for_part(
         inochi::BlendMode part_blend);
 

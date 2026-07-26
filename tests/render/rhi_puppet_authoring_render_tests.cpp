@@ -163,7 +163,7 @@ TEST(RhiPuppetAuthoring, SharedProgramSubgraphCommitsAndResolves)
                 ea::kPuppetProgramBlendParam, -1));
         }
         std::ranges::sort(blends);
-        EXPECT_EQ(blends, (std::vector<int64_t>{ 0, 1, 2 }));
+        EXPECT_EQ(blends, (std::vector<int64_t>{ 0, 1, 2, 3, 4 }));
     }
 
     const auto commit = assets.commit_asset_graph_draft(draft);
@@ -310,12 +310,24 @@ TEST(PuppetProgramVariants, MapsPartBlendToVariant)
         ea::puppet_program_blend_for_part(ino::BlendMode::Normal),
         PuppetProgramBlend::Normal);
 
-    // Masks (S5) and destination-reading modes (S6) fall back to Normal.
+    // The two LOWER-relative modes (#299). They clip against what has already
+    // been drawn, which reads like a backdrop sample -- but both are
+    // destination-ALPHA operations, so they are ordinary PSO variants.
+    EXPECT_EQ(
+        ea::puppet_program_blend_for_part(ino::BlendMode::ClipToLower),
+        PuppetProgramBlend::ClipToLower);
+    EXPECT_EQ(
+        ea::puppet_program_blend_for_part(ino::BlendMode::SliceFromLower),
+        PuppetProgramBlend::SliceFromLower);
+
+    // What is genuinely left needs destination COLOUR, which no fixed-function
+    // blend can express; those still fall back to Normal rather than to
+    // whatever the enum happens to sit next to.
     for (const ino::BlendMode unsupported : {
-             ino::BlendMode::ClipToLower,
-             ino::BlendMode::SliceFromLower,
              ino::BlendMode::Overlay,
              ino::BlendMode::SoftLight,
+             ino::BlendMode::ColorBurn,
+             ino::BlendMode::Difference,
              ino::BlendMode::Unknown })
     {
         EXPECT_EQ(
@@ -336,6 +348,15 @@ TEST(PuppetProgramVariants, MapsPartBlendToVariant)
     EXPECT_EQ(
         ea::rhi_blend_for(PuppetProgramBlend::Screen),
         wz::rhi::BlendMode::Screen);
+    // ClipToLower is Porter-Duff source-atop; SliceFromLower is its cutting
+    // counterpart. Named for the general operation in rhi, since the engine
+    // consumes them as general capability rather than as Inochi modes.
+    EXPECT_EQ(
+        ea::rhi_blend_for(PuppetProgramBlend::ClipToLower),
+        wz::rhi::BlendMode::SourceAtop);
+    EXPECT_EQ(
+        ea::rhi_blend_for(PuppetProgramBlend::SliceFromLower),
+        wz::rhi::BlendMode::SliceFromDestination);
 }
 
 // puppet_program_variants on an EMPTY system: no siblings to find, so the base

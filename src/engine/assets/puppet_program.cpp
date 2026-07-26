@@ -185,6 +185,10 @@ float4 main(PSIn input) : SV_TARGET
         switch (blend) {
         case PuppetProgramBlend::Multiply: return wz::rhi::BlendMode::Multiply;
         case PuppetProgramBlend::Screen:   return wz::rhi::BlendMode::Screen;
+        case PuppetProgramBlend::ClipToLower:
+            return wz::rhi::BlendMode::SourceAtop;
+        case PuppetProgramBlend::SliceFromLower:
+            return wz::rhi::BlendMode::SliceFromDestination;
         case PuppetProgramBlend::Normal:   break;
         }
         return wz::rhi::BlendMode::PremultipliedAlpha;
@@ -195,10 +199,16 @@ float4 main(PSIn input) : SV_TARGET
         switch (part_blend) {
         case inochi::BlendMode::Multiply: return PuppetProgramBlend::Multiply;
         case inochi::BlendMode::Screen:   return PuppetProgramBlend::Screen;
+        case inochi::BlendMode::ClipToLower:
+            return PuppetProgramBlend::ClipToLower;
+        case inochi::BlendMode::SliceFromLower:
+            return PuppetProgramBlend::SliceFromLower;
         default: break;
         }
-        // Normal, the masks (S5) and every destination-reading mode (S6) draw
-        // through the plain premultiplied "over" until their seams land.
+        // What is left needs the destination COLOUR (Overlay, SoftLight,
+        // ColorBurn, Difference, ...), which no fixed-function blend can
+        // express; those draw through the plain premultiplied "over" until a
+        // backdrop-sampling seam lands.
         return PuppetProgramBlend::Normal;
     }
 
@@ -365,6 +375,10 @@ float4 main(PSIn input) : SV_TARGET
         switch (blend) {
         case PuppetProgramBlend::Multiply: return "puppet/program/multiply";
         case PuppetProgramBlend::Screen:   return "puppet/program/screen";
+        case PuppetProgramBlend::ClipToLower:
+            return "puppet/program/clip_to_lower";
+        case PuppetProgramBlend::SliceFromLower:
+            return "puppet/program/slice_from_lower";
         case PuppetProgramBlend::Normal:   break;
         }
         return "puppet/program";

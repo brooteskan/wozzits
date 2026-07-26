@@ -164,6 +164,37 @@ TEST(InochiLoad, ParsesRealAkaPuppet)
     EXPECT_EQ(p.parameters.size(), 34u);
     EXPECT_EQ(p.textures.size(), 3u);  // .inp atlases the per-part textures into 3 pages
 
+    // Blend-mode census (#299). Aka is the reference art this track is measured
+    // against, so what it actually AUTHORS decides which modes are worth
+    // implementing: 4 Parts are ClipToLower -- they drew unclipped until #299 --
+    // and nothing in it uses a mode that needs the destination COLOUR, which is
+    // why those remain deferred rather than blocking.
+    std::size_t clip_to_lower = 0, slice_from_lower = 0, needs_dest_colour = 0;
+    for (const auto& n : p.nodes) {
+        if (n.kind != ic::NodeKind::Part) {
+            continue;
+        }
+        switch (n.blend_mode) {
+        case ic::BlendMode::ClipToLower:    ++clip_to_lower; break;
+        case ic::BlendMode::SliceFromLower: ++slice_from_lower; break;
+        case ic::BlendMode::Overlay:
+        case ic::BlendMode::SoftLight:
+        case ic::BlendMode::HardLight:
+        case ic::BlendMode::ColorDodge:
+        case ic::BlendMode::ColorBurn:
+        case ic::BlendMode::Difference:
+        case ic::BlendMode::Exclusion:
+        case ic::BlendMode::Inverse:        ++needs_dest_colour; break;
+        default: break;
+        }
+    }
+    EXPECT_EQ(clip_to_lower, 4u);
+    EXPECT_EQ(slice_from_lower, 0u);
+    EXPECT_EQ(needs_dest_colour, 0u)
+        << "Aka now authors a destination-COLOUR blend mode, which no "
+           "fixed-function variant can express -- it needs the backdrop-sampling "
+           "seam, not another PSO";
+
     // A Part carries a real decoded mesh; a deform binding carries per-vertex offsets.
     bool any_mesh = false, any_deform = false;
     for (const auto& n : p.nodes)

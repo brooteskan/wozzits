@@ -479,6 +479,49 @@ namespace
             rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
             rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         }
+        else if (program.blend_mode == wz::rhi::BlendMode::SourceAtop) {
+            // src*DstAlpha + dst*InvSrcAlpha. Porter-Duff "source atop": the
+            // source shows only where the destination is already covered, so it
+            // paints ONTO what is beneath without extending it. Inochi's
+            // ClipToLower (#299), whose GL reference is this exact pair.
+            //
+            // Unlike Multiply/Screen, alpha uses the SAME factors as colour
+            // rather than accumulating coverage: both are scaled by DstAlpha, so
+            // the result stays premultiplied-consistent. Letting alpha grow
+            // where colour was clipped to zero would leave alpha>0 with rgb=0 --
+            // a dark fringe the moment the target is composited.
+            D3D12_RENDER_TARGET_BLEND_DESC& rt =
+                desc.BlendState.RenderTarget[0];
+            rt.BlendEnable = TRUE;
+            rt.SrcBlend = D3D12_BLEND_DEST_ALPHA;
+            rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOp = D3D12_BLEND_OP_ADD;
+            rt.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
+            rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
+        else if (program.blend_mode
+                 == wz::rhi::BlendMode::SliceFromDestination) {
+            // src*InvDstAlpha − dst*InvSrcAlpha. The cutting counterpart of
+            // SourceAtop: where the source covers, the destination is removed.
+            // Inochi's SliceFromLower (#299).
+            //
+            // OPERATOR DIRECTION IS THE TRAP HERE. The GL reference uses
+            // FUNC_SUBTRACT, which is src−dst. D3D12's _SUBTRACT is dst−src;
+            // src−dst is _REV_SUBTRACT. Getting this backwards inverts the
+            // operator into something that still renders, just wrongly.
+            D3D12_RENDER_TARGET_BLEND_DESC& rt =
+                desc.BlendState.RenderTarget[0];
+            rt.BlendEnable = TRUE;
+            rt.SrcBlend = D3D12_BLEND_INV_DEST_ALPHA;
+            rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOp = D3D12_BLEND_OP_REV_SUBTRACT;
+            rt.SrcBlendAlpha = D3D12_BLEND_INV_DEST_ALPHA;
+            rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+            rt.BlendOpAlpha = D3D12_BLEND_OP_REV_SUBTRACT;
+            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+        }
 
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
         switch (program.depth_mode) {

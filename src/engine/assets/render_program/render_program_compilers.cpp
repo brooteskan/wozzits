@@ -77,13 +77,15 @@ namespace wz::engine::assets::internal
         // Index-aligned with wz::rhi::BlendMode; enum_param clamps against the
         // option count, so a member added there MUST be added here or the dial
         // silently falls back to the default.
-        constexpr std::array<std::string_view, 6> kBlendModeOptions = {
+        constexpr std::array<std::string_view, 8> kBlendModeOptions = {
             "Opaque",
             "Alpha blend",
             "Additive",
             "Multiply",
             "Screen",
             "Premultiplied alpha",
+            "Source atop",
+            "Slice from destination",
         };
 
         // Index-aligned with PuppetProgramBlend (#274). The puppet program set
@@ -94,6 +96,8 @@ namespace wz::engine::assets::internal
                 "Normal",
                 "Multiply",
                 "Screen",
+                "Clip to lower",
+                "Slice from lower",
             };
 
         constexpr std::array<std::string_view, 3> kDepthModeOptions = {
