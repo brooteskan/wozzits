@@ -86,6 +86,16 @@ namespace wz::engine::assets::internal
             "Premultiplied alpha",
         };
 
+        // Index-aligned with PuppetProgramBlend (#274). The puppet program set
+        // is engine-fixed, so these are not really user dials -- but the param
+        // must be DECLARED for authored variant nodes to carry it at all.
+        constexpr std::array<std::string_view, kPuppetProgramBlendCount>
+            kPuppetProgramBlendOptions = {
+                "Normal",
+                "Multiply",
+                "Screen",
+            };
+
         constexpr std::array<std::string_view, 3> kDepthModeOptions = {
             "Disabled",
             "Test no write",
@@ -1180,16 +1190,33 @@ namespace wz::engine::assets::internal
         // Inochi puppet render program (inochi S2c). A dedicated recipe rather
         // than kCustomRenderProgramSchema: the puppet SRG (Screen head + Puppet
         // vertices/indices/atlas + the puppet_part root constants) is FIXED and
-        // not param-expressible, so the compiler reads NO params and bakes the
-        // SRG from puppet_program_srg_desc() -- the single source shared with
-        // the typed ensure_puppet_program() path. Graph-authored (generic draft
-        // key), so it carries no typed key factory and is governance-allowlisted.
+        // not param-expressible, so the compiler bakes the SRG from
+        // puppet_program_srg_desc() -- the single source shared with the typed
+        // ensure_puppet_program() path. Graph-authored (generic draft key), so it
+        // carries no typed key factory and is governance-allowlisted.
+        //
+        // Its ONE param is blend_mode (#274): the puppet program comes as a set
+        // of blend variants, and the param is what makes each variant node a
+        // distinct content-addressed asset. It is declared here rather than left
+        // implicit because a compiler with an EMPTY .parameters never receives a
+        // meta ParamBlock at all (see make_source_asset_node), which would
+        // silently collapse every variant back to Normal.
         registry.register_compiler(wz::asset::AssetCompiler{
             .input_schema = kPuppetProgramSchema,
             .output_type = kAssetTypeRenderProgram,
             .input_ports = {
                 { "vertex_shader", wz::asset::AssetType::Shader },
                 { "pixel_shader", wz::asset::AssetType::Shader },
+            },
+            .parameters = {
+                {
+                    .name = kPuppetProgramBlendParam,
+                    .type = wz::asset::ParamType::Enum,
+                    .label = "Blend mode",
+                    .default_num =
+                        static_cast<double>(PuppetProgramBlend::Normal),
+                    .options = kPuppetProgramBlendOptions,
+                },
             },
             .compile = [&logger, &table, programs,
                         descriptor_semantics, constant_semantics](
@@ -1218,10 +1245,27 @@ namespace wz::engine::assets::internal
                         "puppet shader dependencies did not resolve");
                 }
 
+                // Which blend variant this node is (#274). The declared
+                // blend_mode param rides in meta as a ParamBlock; a node
+                // authored before #274 has none and is the Normal variant.
+                PuppetProgramBlend blend = PuppetProgramBlend::Normal;
+                if (const auto* params =
+                        std::any_cast<wz::asset::ParamBlock>(&input.meta))
+                {
+                    const int64_t raw = params->get<int64_t>(
+                        kPuppetProgramBlendParam,
+                        static_cast<int64_t>(PuppetProgramBlend::Normal));
+                    if (raw >= 0
+                        && raw < static_cast<int64_t>(kPuppetProgramBlendCount))
+                    {
+                        blend = static_cast<PuppetProgramBlend>(raw);
+                    }
+                }
+
                 // The fixed puppet SRG; shaders are assigned from the resolved
                 // deps below (the desc leaves them unset).
                 CustomRenderProgramDesc desc =
-                    puppet_program_srg_desc("puppet/program");
+                    puppet_program_srg_desc(puppet_program_name(blend), blend);
 
                 // Produce the rhi program when the shared registries are
                 // present (mirrors the custom-program path); the renderer's

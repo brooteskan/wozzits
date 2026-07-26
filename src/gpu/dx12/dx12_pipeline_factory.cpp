@@ -1225,15 +1225,17 @@ namespace wz::gpu::dx12::internal
         }
         else if (data.blend_mode == BM::Multiply)
         {
-            // src*DstColor + dst*ZERO = Src×Dst — 2D-puppet / overlay multiply.
+            // src*DstColor + dst*InvSrcAlpha — 2D-puppet / overlay multiply,
+            // coverage-aware (= Src×Dst for an opaque source; leaves the
+            // destination alone where the source is transparent).
             D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
             rt.BlendEnable           = TRUE;
             rt.LogicOpEnable         = FALSE;
             rt.SrcBlend              = D3D12_BLEND_DEST_COLOR;
-            rt.DestBlend             = D3D12_BLEND_ZERO;
+            rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
             rt.BlendOp               = D3D12_BLEND_OP_ADD;
-            rt.SrcBlendAlpha         = D3D12_BLEND_DEST_ALPHA;
-            rt.DestBlendAlpha        = D3D12_BLEND_ZERO;
+            rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
+            rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
             rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
             rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         }

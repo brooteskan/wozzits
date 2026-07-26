@@ -21,46 +21,125 @@
 // renderable, matching the app model (and the mesh_style / mesh_vertex_pull
 // device gates).
 //
-// Unlike the mesh-style program there is exactly ONE puppet program (fixed
-// pipeline state: MeshVertexPull + AlphaBlend + depth Disabled + SolidCullNone,
-// drawn in the Overlay layer), so it dedups to a single asset via create_custom's
-// deterministic key. Per-Part Multiply/Screen blend variants + masks are later
-// seams (S3/S5/S6); when they land they add MORE engine-owned puppet programs
-// selected from puppet data — still never user-authored.
+// The puppet program comes as a fixed SET of blend VARIANTS (#274) — identical
+// shaders and SRG, differing only in the PSO's blend state, one per
+// fixed-function blend mode a Part can author (Normal, Multiply, Screen). Blend
+// state lives in the PSO and DrawRequest carries a single program tag, so
+// per-Part blend means per-Part programs; the renderer picks one per Part from
+// ResidentPuppetPart::blend. The set is ENGINE-FIXED, not authored: the variants
+// are provisioned together (typed path and graph path alike) and found by
+// puppet_program_variants(), so nothing in the scene or the editor has to wire
+// them. Masks (ClipToLower / SliceFromLower) and the destination-reading modes
+// (Overlay, SoftLight, ...) are later seams (S5 stencil, S6 composite) and fall
+// back to Normal today.
 
+#include <engine/assets/inochi/inochi_puppet.h>  // inochi::BlendMode
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/render_program/render_program_asset_module.h>
 #include <engine/assets/shader_asset_module.h>
 #include <engine/assets/file_carrier_asset_module.h>
 
+#include <asset/system.h>
 #include <logging/logger.h>
 
 #include <file/filesystem.h>
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 
 namespace wz::engine::assets
 {
+    // The blend variants of the puppet program (#274). Values are STABLE: they
+    // are the kPuppetProgramSchema "blend_mode" enum param, so they participate
+    // in each variant node's content-addressed key — reordering them would
+    // repoint existing graphs at the wrong program.
+    enum class PuppetProgramBlend : std::uint8_t
+    {
+        Normal = 0,    // premultiplied "over" — also the fallback for any
+                       // Part mode without a variant (masks, Overlay, ...)
+        Multiply = 1,
+        Screen = 2,
+    };
+    inline constexpr std::size_t kPuppetProgramBlendCount = 3;
+
+    // The kPuppetProgramSchema parameter carrying PuppetProgramBlend. The
+    // compiler MUST declare it in .parameters or authored nodes never get a
+    // meta ParamBlock at all and every variant would collapse to Normal.
+    inline constexpr const char* kPuppetProgramBlendParam = "blend_mode";
+
+    // Distinct asset names per variant. The blend mode is already mixed into
+    // create_custom's key, so this is for legibility (it becomes the rhi
+    // program label) rather than uniqueness. Normal keeps the original name so
+    // its key is unaffected by the variant set arriving.
+    [[nodiscard]] const char* puppet_program_name(PuppetProgramBlend blend);
+
+    // The rhi blend state a variant compiles to. Normal is PremultipliedAlpha
+    // because the puppet's atlas + pixel shader work in premultiplied space
+    // (#277); Multiply/Screen are the coverage-aware rhi recipes.
+    [[nodiscard]] wz::rhi::BlendMode rhi_blend_for(PuppetProgramBlend blend);
+
+    // The variant a Part's authored Inochi blend mode draws through. Anything
+    // without a fixed-function variant — masks (ClipToLower / SliceFromLower,
+    // seam S5) and the destination-reading modes (Overlay, SoftLight, ...,
+    // seam S6) — maps to Normal, which is how they render until those seams
+    // land.
+    [[nodiscard]] PuppetProgramBlend puppet_program_blend_for_part(
+        inochi::BlendMode part_blend);
+
+    // The engine-provisioned puppet programs, indexed by PuppetProgramBlend.
+    // An entry is empty when that variant is absent (a graph authored before
+    // #274 carries only Normal); callers fall back to Normal.
+    struct PuppetProgramVariants
+    {
+        std::array<wz::asset::AssetKey, kPuppetProgramBlendCount> by_blend{};
+
+        [[nodiscard]] const wz::asset::AssetKey& key_for(
+            PuppetProgramBlend blend) const noexcept
+        {
+            const std::size_t i = static_cast<std::size_t>(blend);
+            const wz::asset::AssetKey& k =
+                i < by_blend.size() ? by_blend[i] : by_blend[0];
+            return k == wz::asset::AssetKey{} ? by_blend[0] : k;
+        }
+    };
+
+    // Find the blend-variant siblings of an already-resolved puppet program.
+    // `base` is the program the puppet renderable binds (any variant); the set
+    // is every registered kPuppetProgramSchema asset sharing base's SHADER DEPS,
+    // bucketed by its declared blend_mode param. Matching on the shader deps (not
+    // just the schema) keeps two different puppet programs in one project apart.
+    // Returns a set whose Normal slot is `base` itself when no siblings exist,
+    // so the caller always has something to draw with.
+    [[nodiscard]] PuppetProgramVariants puppet_program_variants(
+        const wz::asset::AssetSystem& system,
+        const wz::asset::AssetKey& base);
+
     // Stages the embedded puppet shader sources into <project>/shaders/puppet/
     // (write-if-missing), registers the shader pair, and creates/dedups the
-    // custom render program carrying the fixed puppet SRG (Screen view head at
+    // custom render programs carrying the fixed puppet SRG (Screen view head at
     // t0/space0; PuppetVertices t0 / PuppetIndices t1 / PuppetAtlas t2 + a
     // LinearClamp sampler s0 in space2; the 16-dword "puppet_part" root-constant
-    // block at b0/space2). Idempotent: a second call returns the same asset.
-    // Returns an invalid asset on failure (caller logs/skips the renderable).
+    // block at b0/space2) — ONE PER BLEND VARIANT. Idempotent: a second call
+    // returns the same assets. `out_variants` receives every variant's key.
+    // Returns the Normal variant, or an invalid asset on failure (caller
+    // logs/skips the renderable).
     RenderProgramAsset ensure_puppet_program(
         wz::Logger& logger,
         FileCarrierAssetModule& files,
         ShaderAssetModule& shaders,
-        RenderProgramAssetModule& render_programs);
+        RenderProgramAssetModule& render_programs,
+        PuppetProgramVariants* out_variants = nullptr);
 
-    // The fixed puppet SRG as a CustomRenderProgramDesc (name set; shaders
-    // UNSET — the caller assigns vertex_shader/pixel_shader). Shared by
-    // ensure_puppet_program (typed path) and the kPuppetProgramSchema compiler
-    // (graph path), so the SRG lives in exactly one place.
+    // The fixed puppet SRG as a CustomRenderProgramDesc for one blend variant
+    // (name set; shaders UNSET — the caller assigns vertex_shader/pixel_shader).
+    // Shared by ensure_puppet_program (typed path) and the kPuppetProgramSchema
+    // compiler (graph path), so the SRG lives in exactly one place.
     [[nodiscard]] CustomRenderProgramDesc puppet_program_srg_desc(
-        const std::string& name);
+        const std::string& name,
+        PuppetProgramBlend blend = PuppetProgramBlend::Normal);
 
     // Project-root-relative paths of the canonical puppet shaders. Single source
     // of truth for both the typed ensure_puppet_program() path and the graph-

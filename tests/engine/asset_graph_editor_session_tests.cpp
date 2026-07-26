@@ -3,6 +3,7 @@
 #include <engine/editor/asset_graph_editor_session.h>
 
 #include <asset/draft.h>
+#include <engine/assets/puppet_program.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/editor/asset_graph_snapshot.h>
@@ -681,9 +682,12 @@ TEST(AssetGraphEditorSession, AddInochiSharedAssetsAuthorsSubgraphAndStagesShade
         session->add_inochi_shared_assets();
     ASSERT_NE(program, wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE);
 
-    // 5 nodes (VS source/shader, PS source/shader, program) + 4 edges.
-    EXPECT_EQ(session->draft().nodes.size(), nodes_before + 5u);
-    EXPECT_EQ(session->draft().edges.size(), edges_before + 4u);
+    // 4 shader nodes (VS source/shader, PS source/shader) + one program per
+    // blend variant (#274), sharing that pair: 2 source->shader edges + 2
+    // shader->program edges per variant.
+    const size_t variants = wz::engine::assets::kPuppetProgramBlendCount;
+    EXPECT_EQ(session->draft().nodes.size(), nodes_before + 4u + variants);
+    EXPECT_EQ(session->draft().edges.size(), edges_before + 2u + 2u * variants);
 
     // The embedded puppet shaders were staged into <project>/shaders/puppet/.
     EXPECT_TRUE(fs::exists(temp.root / "shaders" / "puppet" / "puppet_vs.hlsl"));
@@ -693,6 +697,6 @@ TEST(AssetGraphEditorSession, AddInochiSharedAssetsAuthorsSubgraphAndStagesShade
     const wz::asset::AssetGraphDraftNodeId program_again =
         session->add_inochi_shared_assets();
     EXPECT_EQ(program_again, program);
-    EXPECT_EQ(session->draft().nodes.size(), nodes_before + 5u);
-    EXPECT_EQ(session->draft().edges.size(), edges_before + 4u);
+    EXPECT_EQ(session->draft().nodes.size(), nodes_before + 4u + variants);
+    EXPECT_EQ(session->draft().edges.size(), edges_before + 2u + 2u * variants);
 }

@@ -3,10 +3,18 @@
 #include <engine/assets/puppet_program.h>
 
 #include <engine/assets/render_program/render_program.h>
+#include <engine/assets/schema_ids.h>
 
 #include <file/filesystem.h>
 
+#include <algorithm>
+#include <any>
+#include <cstddef>
+#include <cstdint>
+#include <ranges>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace wz::engine::assets
 {
@@ -128,7 +136,85 @@ float4 main(PSIn input) : SV_TARGET
         }
     }
 
-    CustomRenderProgramDesc puppet_program_srg_desc(const std::string& name)
+    wz::rhi::BlendMode rhi_blend_for(PuppetProgramBlend blend)
+    {
+        switch (blend) {
+        case PuppetProgramBlend::Multiply: return wz::rhi::BlendMode::Multiply;
+        case PuppetProgramBlend::Screen:   return wz::rhi::BlendMode::Screen;
+        case PuppetProgramBlend::Normal:   break;
+        }
+        return wz::rhi::BlendMode::PremultipliedAlpha;
+    }
+
+    PuppetProgramBlend puppet_program_blend_for_part(inochi::BlendMode part_blend)
+    {
+        switch (part_blend) {
+        case inochi::BlendMode::Multiply: return PuppetProgramBlend::Multiply;
+        case inochi::BlendMode::Screen:   return PuppetProgramBlend::Screen;
+        default: break;
+        }
+        // Normal, the masks (S5) and every destination-reading mode (S6) draw
+        // through the plain premultiplied "over" until their seams land.
+        return PuppetProgramBlend::Normal;
+    }
+
+    PuppetProgramVariants puppet_program_variants(
+        const wz::asset::AssetSystem& system,
+        const wz::asset::AssetKey& base)
+    {
+        PuppetProgramVariants out{};
+        if (base == wz::asset::AssetKey{}) {
+            return out;
+        }
+        // Whatever else happens, the caller can always draw with `base`.
+        out.by_blend[static_cast<std::size_t>(PuppetProgramBlend::Normal)] = base;
+
+        const std::span<const wz::asset::AssetSystem::RegistrationEntry>
+            registered = system.registered_assets();
+
+        // The base's shader deps identify the variant FAMILY: two puppets in one
+        // project that somehow resolved different shaders must not share a set.
+        const auto base_entry = std::ranges::find_if(
+            registered,
+            [&base](const wz::asset::AssetSystem::RegistrationEntry& e) {
+                return e.node.key == base;
+            });
+        if (base_entry == registered.end()) {
+            return out;
+        }
+        const std::vector<wz::asset::AssetKey>& family = base_entry->dep_keys;
+
+        for (const wz::asset::AssetSystem::RegistrationEntry& e : registered) {
+            if (e.node.schema.value != kPuppetProgramSchema.value
+                || e.dep_keys != family)
+            {
+                continue;
+            }
+            // The declared blend_mode param rides in the node's meta ParamBlock
+            // (a compiler only gets meta when it declares .parameters -- see the
+            // kPuppetProgramSchema registration). A node without it is a
+            // pre-#274 program, i.e. Normal.
+            PuppetProgramBlend blend = PuppetProgramBlend::Normal;
+            if (const auto* params =
+                    std::any_cast<wz::asset::ParamBlock>(&e.node.meta))
+            {
+                const int64_t raw = params->get<int64_t>(
+                    kPuppetProgramBlendParam,
+                    static_cast<int64_t>(PuppetProgramBlend::Normal));
+                if (raw >= 0
+                    && raw < static_cast<int64_t>(kPuppetProgramBlendCount))
+                {
+                    blend = static_cast<PuppetProgramBlend>(raw);
+                }
+            }
+            out.by_blend[static_cast<std::size_t>(blend)] = e.node.key;
+        }
+        return out;
+    }
+
+    CustomRenderProgramDesc puppet_program_srg_desc(
+        const std::string& name,
+        PuppetProgramBlend blend)
     {
         // The fixed puppet SRG. Built imperatively (matching the on-device render
         // test) so the field order can't drift from the desc's declaration.
@@ -141,10 +227,13 @@ float4 main(PSIn input) : SV_TARGET
         desc.default_domain = RenderDomain::Opaque;
         desc.default_policy_flags = RenderPolicy_None;
         desc.input_layout = InputLayoutKind::None;
-        // The atlas is resident premultiplied and the PS keeps it that way
-        // (#277), so the "over" blend must be the premultiplied one -- AlphaBlend
-        // would scale the already-scaled colour by alpha a second time.
-        desc.blend_mode = wz::rhi::BlendMode::PremultipliedAlpha;
+        // The only thing that varies across the puppet program set (#274). The
+        // atlas is resident premultiplied and the PS keeps it that way (#277),
+        // so Normal is the PREMULTIPLIED "over" -- AlphaBlend would scale the
+        // already-scaled colour by alpha a second time -- and Multiply/Screen
+        // are the coverage-aware rhi recipes, which the premultiplied source is
+        // likewise a precondition for.
+        desc.blend_mode = rhi_blend_for(blend);
         desc.depth_mode = DepthMode::Disabled;
         desc.raster_mode = RasterMode::SolidCullNone;
 
@@ -215,12 +304,26 @@ float4 main(PSIn input) : SV_TARGET
                    kPuppetPsSource);
     }
 
+    const char* puppet_program_name(PuppetProgramBlend blend)
+    {
+        switch (blend) {
+        case PuppetProgramBlend::Multiply: return "puppet/program/multiply";
+        case PuppetProgramBlend::Screen:   return "puppet/program/screen";
+        case PuppetProgramBlend::Normal:   break;
+        }
+        return "puppet/program";
+    }
+
     RenderProgramAsset ensure_puppet_program(
         wz::Logger& logger,
         FileCarrierAssetModule& files,
         ShaderAssetModule& shaders,
-        RenderProgramAssetModule& render_programs)
+        RenderProgramAssetModule& render_programs,
+        PuppetProgramVariants* out_variants)
     {
+        if (out_variants) {
+            *out_variants = PuppetProgramVariants{};
+        }
         if (!stage_puppet_shaders(
                 logger,
                 [&files](const wz::fs::Path& p) {
@@ -230,12 +333,11 @@ float4 main(PSIn input) : SV_TARGET
             return {};
         }
 
-        // One fixed program (no per-style variation), so a fixed name dedups it
-        // to a single asset via create_custom's deterministic key.
-        const std::string name = "puppet/program";
-
+        // ONE shader pair shared by every variant -- they differ only in the
+        // PSO's blend state, so re-registering the shaders per variant would
+        // just duplicate compiles.
         const ShaderPairAsset shader_pair = shaders.create_shader_pair({
-            .name = name,
+            .name = puppet_program_name(PuppetProgramBlend::Normal),
             .vertex_path = kPuppetVertexShaderProjectPath,
             .pixel_path = kPuppetPixelShaderProjectPath,
             .vertex_entry = "main",
@@ -248,9 +350,30 @@ float4 main(PSIn input) : SV_TARGET
             return {};
         }
 
-        CustomRenderProgramDesc desc = puppet_program_srg_desc(name);
-        desc.vertex_shader = shader_pair.vertex_shader;
-        desc.pixel_shader = shader_pair.pixel_shader;
-        return render_programs.create_custom(desc);
+        // One program per blend variant (#274); create_custom mixes blend_mode
+        // into its key, so each is a distinct, deduped asset.
+        RenderProgramAsset normal{};
+        for (std::size_t i = 0; i < kPuppetProgramBlendCount; ++i) {
+            const auto blend = static_cast<PuppetProgramBlend>(i);
+            CustomRenderProgramDesc desc =
+                puppet_program_srg_desc(puppet_program_name(blend), blend);
+            desc.vertex_shader = shader_pair.vertex_shader;
+            desc.pixel_shader = shader_pair.pixel_shader;
+
+            const RenderProgramAsset program = render_programs.create_custom(desc);
+            if (!program.valid()) {
+                logger.error(
+                    std::string("puppet program: variant creation failed: ")
+                    + puppet_program_name(blend));
+                return {};
+            }
+            if (out_variants) {
+                out_variants->by_blend[i] = program.key;
+            }
+            if (blend == PuppetProgramBlend::Normal) {
+                normal = program;
+            }
+        }
+        return normal;
     }
 }

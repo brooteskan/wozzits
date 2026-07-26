@@ -427,17 +427,23 @@ namespace
             rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         }
         else if (program.blend_mode == wz::rhi::BlendMode::Multiply) {
-            // src*DstColor + dst*ZERO = Src×Dst. The 2D-puppet / overlay
-            // multiply blend (inochi runtime); darkens the destination by the
-            // source, the classic ink/shadow compositing operator.
+            // src*DstColor + dst*InvSrcAlpha. The 2D-puppet / overlay multiply
+            // blend (inochi runtime); darkens the destination by the source, the
+            // classic ink/shadow operator -- for an OPAQUE source this is exactly
+            // Src×Dst. The InvSrcAlpha dest factor is what makes it usable on a
+            // partially-covering source: a transparent premultiplied texel has
+            // rgb 0, so a ZERO dest factor would multiply the destination to
+            // BLACK there instead of leaving it alone. The alpha channel
+            // accumulates coverage as a normal "over" so a puppet rendered into
+            // an RTT still ends with alpha = coverage whatever its Parts' modes.
             D3D12_RENDER_TARGET_BLEND_DESC& rt =
                 desc.BlendState.RenderTarget[0];
             rt.BlendEnable = TRUE;
             rt.SrcBlend = D3D12_BLEND_DEST_COLOR;
-            rt.DestBlend = D3D12_BLEND_ZERO;
+            rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
             rt.BlendOp = D3D12_BLEND_OP_ADD;
-            rt.SrcBlendAlpha = D3D12_BLEND_DEST_ALPHA;
-            rt.DestBlendAlpha = D3D12_BLEND_ZERO;
+            rt.SrcBlendAlpha = D3D12_BLEND_ONE;
+            rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
             rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
             rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         }

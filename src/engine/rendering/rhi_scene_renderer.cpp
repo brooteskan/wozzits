@@ -9,6 +9,7 @@
 #include <engine/assets/atmosphere/atmosphere.h>
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/mesh/mesh.h>
+#include <engine/assets/puppet_program.h>
 #include <engine/assets/rhi_asset_identity.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/renderable/renderable.h>
@@ -1491,6 +1492,29 @@ namespace wz::engine::rendering
             const wz::rhi::Tag atlas_semantic =
                 gpu_.descriptor_semantics.find("puppet_atlas");
 
+            // Per-Part blend (#274). Blend state lives in the PSO and a
+            // DrawRequest carries ONE program tag, so a Part's authored blend
+            // mode selects among the engine-provisioned puppet program VARIANTS
+            // (identical shaders + SRG, different blend state). Resolve each
+            // variant's tag once here; a variant that is absent (a graph
+            // authored before #274) or fails to realize falls back to the bound
+            // program, i.e. the pre-#274 behaviour of drawing everything Normal.
+            const ea::PuppetProgramVariants puppet_variants =
+                ea::puppet_program_variants(assets.system(), source->program_key);
+            std::array<wz::rhi::Tag, ea::kPuppetProgramBlendCount>
+                puppet_variant_programs{};
+            for (std::size_t vi = 0; vi < puppet_variant_programs.size(); ++vi) {
+                const wz::asset::AssetKey& vkey =
+                    puppet_variants.key_for(
+                        static_cast<ea::PuppetProgramBlend>(vi));
+                const RealizedProgram* vprogram =
+                    vkey == source->program_key
+                        ? program
+                        : realize_program(assets, vkey);
+                puppet_variant_programs[vi] =
+                    vprogram ? vprogram->program : program->program;
+            }
+
             // Fit + center the puppet in the current viewport (screen-space for
             // S2). The per-Part packet build below reads only the ResidentPuppet,
             // the program/layout, the shared view SRG, this placement, and the
@@ -1574,8 +1598,12 @@ namespace wz::engine::rendering
                 if (prealized.has_view_srg) {
                     builder.add_shader_resource_group(prealized.view_srg);
                 }
+                // The Part draws through its blend variant's program (#274).
+                const wz::rhi::Tag part_program = puppet_variant_programs[
+                    static_cast<std::size_t>(
+                        ea::puppet_program_blend_for_part(part.blend))];
                 if (!builder.add_draw_item(wz::rhi::DrawRequest{
-                        forward_, prealized.program, nullptr,
+                        forward_, part_program, nullptr,
                         wz::rhi::StreamBufferIndices{}, 0,
                         wz::rhi::DrawListMask::from(forward_) }))
                 {
