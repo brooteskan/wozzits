@@ -1,0 +1,74 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "composite_material_scene",
+  "note": "Issues #285/#287/#288: the whole authored chain in one scene. 'art_source' renders into render-target texture node 27 (a render_to_texture source). Composite material node 28 clears to red and places node 27 over it. 'surface' binds node 28 at material_albedo through the material-layout program (node 26), so a surface samples what the compositor built. Nothing about which art, what colour, or where it sits is C++.",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [0, 2, -8],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "art_source",
+      "parent": "root",
+      "name": "art_source",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [200, 200, 200]
+      },
+      "visible": true,
+      "geometry": { "asset_graph_node_id": 9 },
+      "render_program": { "asset_graph_node_id": 10 },
+      "render_to_texture": {
+        "target_asset_node_id": 27,
+        "include_descendants": true,
+        "also_draw_in_scene": false,
+        "enabled": true
+      }
+    },
+    {
+      "id": "surface",
+      "parent": "root",
+      "name": "surface",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [200, 200, 200]
+      },
+      "visible": true,
+      "geometry": { "asset_graph_node_id": 1 },
+      "render_program": { "asset_graph_node_id": 26 },
+      "renderable_bindings": [
+        { "semantic": "material_albedo", "asset_graph_node_id": 28 }
+      ],
+      "renderable_constants": [
+        { "name": "tint", "value": [1.0, 1.0, 1.0, 1.0] }
+      ]
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  }
+}

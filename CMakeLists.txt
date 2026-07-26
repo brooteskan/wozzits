@@ -361,6 +361,17 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/render_to_texture.scene.json"
     COPYONLY)
 
+# Issues #285/#287/#288: a scene for the test_rebind_fixture graph carrying the
+# whole authored chain -- a render-to-texture source filling node 27, a
+# composite material (node 28) placing it over a base colour, and a surface
+# binding that material at material_albedo through the material-layout program
+# (node 26). This is the fixture the composite driver needs: a program layout
+# with a texture row for a material to bind.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/composite_material_scene.json"
+    "${WZ_REBIND_FIXTURE_DST}/composite_material.scene.json"
+    COPYONLY)
+
 # Issue #216/#217: a scene for the test_rebind_fixture graph that drives the
 # collision-by-reference + motion terrain-stick authoring verbs (a landscape
 # node + a tank node, both authored live by the test).
@@ -1155,6 +1166,14 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     # no app code, and that the source leaves the main pass.
     rs_add_test_group(render wozzits_app_render_to_texture_tests)
     add_dependencies(render_wozzits_app_render_to_texture_tests wz_stage_resources)
+
+    # WozzitsApp_v1 authored composite-material test (issues #285/#288). On-
+    # device: loads test_rebind_fixture's graph paired with
+    # composite_material.scene.json; proves an authored composite material is
+    # filled and bound, and that the composite pass is skipped once nothing
+    # feeding it changes.
+    rs_add_test_group(render wozzits_app_composite_material_tests)
+    add_dependencies(render_wozzits_app_composite_material_tests wz_stage_resources)
 
     # WozzitsApp_v1 runtime prefab-spawn test (prefab-system milestone #2). On-
     # device: loads the prefab_spawn_fixture and reuses the staged behavior module

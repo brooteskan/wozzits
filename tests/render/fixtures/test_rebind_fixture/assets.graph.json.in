@@ -389,6 +389,235 @@
       }
     },
     {
+      "node_id": 29,
+      "type": 7,
+      "schema": "0xf11eca55e7000002",
+      "stage": 0,
+      "residency": 2,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          {
+            "name": "source_path",
+            "type": "string",
+            "value": "@WZ_FIXTURE_SHADER_DIR@/material_ps.hlsl"
+          }
+        ]
+      }
+    },
+    {
+      "node_id": 21,
+      "type": 1052,
+      "schema": "0xf11eca55e7000104",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          { "name": "name", "type": "string", "value": "material" },
+          { "name": "constants_semantic", "type": "string", "value": "custom_block" },
+          { "name": "constants_head", "type": "int", "value": 1 },
+          { "name": "constants_visibility", "type": "int", "value": 0 },
+          { "name": "const0_name", "type": "string", "value": "tint" },
+          { "name": "const0_type", "type": "int", "value": 3 },
+          { "name": "binding0_semantic", "type": "string", "value": "pulled_mesh_positions" },
+          { "name": "binding0_kind", "type": "int", "value": 1 },
+          { "name": "binding0_visibility", "type": "int", "value": 1 },
+          { "name": "binding1_semantic", "type": "string", "value": "pulled_mesh_indices" },
+          { "name": "binding1_kind", "type": "int", "value": 1 },
+          { "name": "binding1_visibility", "type": "int", "value": 1 },
+          { "name": "binding2_semantic", "type": "string", "value": "material_albedo" },
+          { "name": "binding2_kind", "type": "int", "value": 0 },
+          { "name": "binding2_visibility", "type": "int", "value": 2 },
+          { "name": "sampler0_kind", "type": "int", "value": 1 },
+          { "name": "sampler0_visibility", "type": "int", "value": 2 }
+        ]
+      }
+    },
+    {
+      "node_id": 22,
+      "type": 7,
+      "schema": "0xf11eca55e7000105",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 11,
+          "to_input_port": 0
+        },
+        {
+          "from_node_id": 21,
+          "to_input_port": 1
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "name", "type": "string", "value": "material_vs" }
+        ]
+      }
+    },
+    {
+      "node_id": 23,
+      "type": 7,
+      "schema": "0xf11eca55e7000105",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 29,
+          "to_input_port": 0
+        },
+        {
+          "from_node_id": 21,
+          "to_input_port": 1
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "name", "type": "string", "value": "material_ps" }
+        ]
+      }
+    },
+    {
+      "node_id": 24,
+      "type": 4,
+      "schema": "0xf11eca55e7000100",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 22,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "entry", "type": "string", "value": "main" },
+          { "name": "primary_source_index", "type": "int", "value": 0 },
+          { "name": "stage", "type": "int", "value": 0 },
+          { "name": "target", "type": "string", "value": "vs_5_1" }
+        ]
+      }
+    },
+    {
+      "node_id": 25,
+      "type": 4,
+      "schema": "0xf11eca55e7000100",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 23,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "entry", "type": "string", "value": "main" },
+          { "name": "primary_source_index", "type": "int", "value": 0 },
+          { "name": "stage", "type": "int", "value": 1 },
+          { "name": "target", "type": "string", "value": "ps_5_1" }
+        ]
+      }
+    },
+    {
+      "node_id": 26,
+      "type": 1049,
+      "schema": "0xf11eca55e7000103",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 24,
+          "to_input_port": 0
+        },
+        {
+          "from_node_id": 25,
+          "to_input_port": 1
+        },
+        {
+          "from_node_id": 21,
+          "to_input_port": 2
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "binding_model", "type": "int", "value": 3 },
+          { "name": "blend_mode", "type": "int", "value": 0 },
+          { "name": "default_domain", "type": "int", "value": 2 },
+          { "name": "default_policy_flags", "type": "int", "value": 12 },
+          { "name": "depth_mode", "type": "int", "value": 2 },
+          { "name": "input_layout", "type": "int", "value": 0 },
+          { "name": "name", "type": "string", "value": "material_program" },
+          { "name": "raster_mode", "type": "int", "value": 2 },
+          { "name": "topology", "type": "int", "value": 0 }
+        ]
+      }
+    },
+    {
+      "node_id": 27,
+      "type": 129,
+      "schema": "0xf11eca55e7001009",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [],
+      "meta": {
+        "params": [
+          { "name": "name", "type": "string", "value": "art" },
+          { "name": "width", "type": "int", "value": 64 },
+          { "name": "height", "type": "int", "value": 64 },
+          { "name": "color_space", "type": "int", "value": 0 }
+        ]
+      }
+    },
+    {
+      "node_id": 28,
+      "type": 129,
+      "schema": "0xf11eca55e700100a",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        {
+          "from_node_id": 27,
+          "to_input_port": 0
+        }
+      ],
+      "meta": {
+        "params": [
+          { "name": "name", "type": "string", "value": "surface_material" },
+          { "name": "width", "type": "int", "value": 128 },
+          { "name": "height", "type": "int", "value": 128 },
+          { "name": "color_space", "type": "int", "value": 0 },
+          { "name": "base_colour", "type": "float3", "value": [1, 0, 0] },
+          { "name": "base_alpha", "type": "float", "value": 1 },
+          { "name": "layer0_centre_u", "type": "float", "value": 0.5 },
+          { "name": "layer0_centre_v", "type": "float", "value": 0.5 },
+          { "name": "layer0_half_width", "type": "float", "value": 0.25 },
+          { "name": "layer0_half_height", "type": "float", "value": 0.25 },
+          { "name": "layer0_rotation", "type": "float", "value": 0 },
+          { "name": "layer0_opacity", "type": "float", "value": 1 }
+        ]
+      }
+    },
+    {
       "node_id": 20,
       "type": 129,
       "schema": "0xf11eca55e7001009",
@@ -426,7 +655,12 @@
       { "node_id": 15, "x": 260, "y": 980 },
       { "node_id": 16, "x": 626, "y": 760 },
       { "node_id": 17, "x": 626, "y": 980 },
-      { "node_id": 20, "x": 890, "y": 560 }
+      { "node_id": 20, "x": 890, "y": 560 },
+      { "node_id": 21, "x": 890, "y": 760 },
+      { "node_id": 26, "x": 1150, "y": 760 },
+      { "node_id": 27, "x": 890, "y": 960 },
+      { "node_id": 28, "x": 1150, "y": 960 },
+      { "node_id": 29, "x": 630, "y": 760 }
     ],
     "zoom": 0.6
   }
