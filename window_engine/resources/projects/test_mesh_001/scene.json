@@ -240,8 +240,8 @@
             "goal": 0,
             "gamma_start": 2,
             "anneal_seconds": 2,
-            "confidence": 0.7,
-            "decoherence": 0.3,
+            "confidence": 0.69999999999999996,
+            "decoherence": 0.29999999999999999,
             "think_interval": 0.25,
             "memory": 1
           }
@@ -409,7 +409,7 @@
       "transform": {
         "translation": [
           100,
-          41.17654800415039,
+          42.066944122314453,
           200
         ],
         "rotation_quat": [
@@ -439,7 +439,7 @@
         {
           "name": "base_color",
           "value": [
-            0.8999999761581421,
+            0.89999997615814209,
             0.5,
             0.5,
             0
@@ -459,7 +459,7 @@
         ],
         "space": "world",
         "terrain_constrained": true,
-        "terrain_ride_height": 0.800000011920929,
+        "terrain_ride_height": 0.80000001192092896,
         "terrain_footprint_radius": 0,
         "terrain_align_to_surface": false,
         "terrain_alignment_strength": 0,
@@ -647,18 +647,18 @@
     "note": "Editor-only metadata; not part of the authored game scene.",
     "camera": {
       "position": [
-        196.53553771972656,
-        238.2237091064453,
-        295.2002868652344
+        1010.1832275390625,
+        563.85333251953125,
+        314.05752563476562
       ],
       "orientation": [
-        0.12495128810405731,
-        -0.8873953223228455,
-        0.3775046765804291,
-        0.23325352370738983
+        0.14555855095386505,
+        0.50194692611694336,
+        0.11348208785057068,
+        -0.84497570991516113
       ],
       "move_speed": 8,
-      "look_speed": 0.0005000000237487257,
+      "look_speed": 0.00050000002374872565,
       "boost_multiplier": 4,
       "roll_speed": 1.5
     }
