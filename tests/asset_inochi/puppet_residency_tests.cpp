@@ -114,15 +114,28 @@ TEST(PuppetResidency, PublishesAtlasesAndPartBuffers)
             EXPECT_TRUE(gpu.resources.find(atlas).valid())
                 << "atlas page not resident";
         }
+        // ONE shared vertex + index buffer for the whole puppet (#278), not a
+        // pair per Part.
+        EXPECT_TRUE(gpu.resources.find(resident.vertices).valid())
+            << "shared puppet vertex buffer not resident";
+        EXPECT_TRUE(gpu.resources.find(resident.indices).valid())
+            << "shared puppet index buffer not resident";
+        EXPECT_EQ(resident.vertex_count, 6u);   // 2 Parts * 3 verts
+        EXPECT_EQ(resident.index_count, 6u);
+
         for (const ino::ResidentPuppetPart& part : resident.parts) {
-            EXPECT_TRUE(gpu.resources.find(part.vertices).valid())
-                << "Part vertex buffer not resident";
-            EXPECT_TRUE(gpu.resources.find(part.indices).valid())
-                << "Part index buffer not resident";
             EXPECT_LT(part.atlas, resident.atlases.size());
             EXPECT_EQ(part.index_count, 3u);
             EXPECT_EQ(part.vertex_count, 3u);
         }
+
+        // Each Part's slice is contiguous, in draw order, and covers the buffer
+        // exactly -- a wrong base silently draws another Part's geometry, which
+        // no "did it render" assertion would catch.
+        EXPECT_EQ(resident.parts[0].vertex_base, 0u);
+        EXPECT_EQ(resident.parts[0].index_base, 0u);
+        EXPECT_EQ(resident.parts[1].vertex_base, 3u);
+        EXPECT_EQ(resident.parts[1].index_base, 3u);
 
         // Draw order is DESCENDING zsort (Inochi draws higher zsort first / further
         // back): Part 12 (z=2) before Part 11 (z=1).
@@ -142,9 +155,11 @@ TEST(PuppetResidency, PublishesAtlasesAndPartBuffers)
             << "the 1x1 no-mask texture did not become resident";
 
         // The tracker got one asset-owned report of every published identity:
-        // 2 atlas pages + the no-mask texture + 2 Parts * (vtx + idx) = 7.
+        // 2 atlas pages + the no-mask texture + the shared vtx + idx = 5. It was
+        // 2 + 1 + 2 PER PART before the buffers were consolidated (#278), so
+        // this count no longer grows with the Part count.
         EXPECT_EQ(tracker_calls, 1);
-        EXPECT_EQ(tracked_identities, 7u);
+        EXPECT_EQ(tracked_identities, 5u);
     }
 
     wz::gpu::destroy_device(device);

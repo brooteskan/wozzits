@@ -165,7 +165,18 @@ namespace wz::engine::assets::inochi
             out.no_mask = desc.identity;
         }
 
-        // 2) Per-Part interleaved vertex + index StructuredBuffers, in draw order.
+        // 2) ONE shared interleaved-vertex buffer + ONE shared index buffer for
+        // the whole puppet (#278), every drawable Part's geometry concatenated in
+        // draw order. Each Part records where its slice starts; its indices stay
+        // Part-local and the vertex shader adds the base.
+        //
+        // The pair used to be per Part. Two costs made that untenable once the
+        // deform seam landed: GpuResourceRegistry::update() is a synchronous GPU
+        // flush, so a deforming puppet stalled the frame once per moving Part;
+        // and per-Part pull buffers gave every Part its own slot-2 descriptor
+        // table. One buffer means one flush per deform and shared tables.
+        std::vector<PuppetVertex> all_vertices;
+        std::vector<std::uint32_t> all_indices;
         out.parts.reserve(list.parts.size());
         for (const PuppetPartDraw& part : list.parts) {
             if (part.atlas_texture >= atlas_ok.size()
@@ -177,54 +188,9 @@ namespace wz::engine::assets::inochi
                 continue;
             }
 
-            // Per-Part interleaved-vertex + index StructuredBuffers via the
-            // shared pull-buffer helper (acquire + update under the identity).
-            // The discriminator is baked into the id with an empty variant Tag,
-            // matching the atlas convention, so the renderer finds each buffer by
-            // the ResidentPuppetPart identity. (acquire_pull_buffer's update is
-            // best-effort like the mesh-pull path; an acquire failure surfaces as
-            // an invalid handle.)
-            const std::uint64_t vtx_bytes =
-                static_cast<std::uint64_t>(part.vertices.size())
-                * sizeof(PuppetVertex);
-            const std::uint64_t vtx_asset_id =
-                rhi_asset_identity(key, "vtx_" + std::to_string(part.node_index));
-            const wz::rhi::ResourceIdentity vtx_id{ vtx_asset_id, {} };
-            // WriteFrequent: the deform seam (S3) re-uploads these vertices each
-            // frame the Part's mesh moves. Index buffers stay WriteOnce (indices
-            // don't deform).
-            const wz::rhi::GpuResourceHandle vhandle =
-                wz::engine::rendering::acquire_pull_buffer(
-                    gpu_resources, vtx_asset_id, wz::rhi::Tag{},
-                    part.vertices.data(), vtx_bytes,
-                    static_cast<std::uint32_t>(sizeof(PuppetVertex)),
-                    wz::rhi::ResourceCpuAccess::WriteFrequent);
-            if (!vhandle.valid()) {
-                return fail("puppet Part vertex buffer residency failed");
-            }
-            acquired.push_back(vhandle);
-            identities.push_back(vtx_id);
-
-            const std::uint64_t idx_bytes =
-                static_cast<std::uint64_t>(part.indices.size())
-                * sizeof(std::uint32_t);
-            const std::uint64_t idx_asset_id =
-                rhi_asset_identity(key, "idx_" + std::to_string(part.node_index));
-            const wz::rhi::ResourceIdentity idx_id{ idx_asset_id, {} };
-            const wz::rhi::GpuResourceHandle ihandle =
-                wz::engine::rendering::acquire_pull_buffer(
-                    gpu_resources, idx_asset_id, wz::rhi::Tag{},
-                    part.indices.data(), idx_bytes,
-                    static_cast<std::uint32_t>(sizeof(std::uint32_t)));
-            if (!ihandle.valid()) {
-                return fail("puppet Part index buffer residency failed");
-            }
-            acquired.push_back(ihandle);
-            identities.push_back(idx_id);
-
             ResidentPuppetPart rp;
-            rp.vertices = vtx_id;
-            rp.indices = idx_id;
+            rp.vertex_base = static_cast<std::uint32_t>(all_vertices.size());
+            rp.index_base = static_cast<std::uint32_t>(all_indices.size());
             rp.index_count = static_cast<std::uint32_t>(part.indices.size());
             rp.vertex_count = static_cast<std::uint32_t>(part.vertices.size());
             rp.atlas = part.atlas_texture;
@@ -239,6 +205,53 @@ namespace wz::engine::assets::inochi
             rp.blend = part.blend;
             rp.zsort = part.zsort;
             out.parts.push_back(rp);
+
+            all_vertices.insert(
+                all_vertices.end(), part.vertices.begin(), part.vertices.end());
+            all_indices.insert(
+                all_indices.end(), part.indices.begin(), part.indices.end());
+        }
+
+        if (out.parts.empty() || all_vertices.empty() || all_indices.empty()) {
+            return fail("puppet has no Part with resident geometry");
+        }
+        out.vertex_count = static_cast<std::uint32_t>(all_vertices.size());
+        out.index_count = static_cast<std::uint32_t>(all_indices.size());
+
+        {
+            // WriteFrequent: the deform seam (S3) re-uploads the vertices each
+            // frame any Part's mesh moves. Indices stay WriteOnce -- they are
+            // Part-local and deform never renumbers them.
+            const std::uint64_t vtx_asset_id = rhi_asset_identity(key, "vtx");
+            out.vertices = wz::rhi::ResourceIdentity{ vtx_asset_id, {} };
+            const wz::rhi::GpuResourceHandle vhandle =
+                wz::engine::rendering::acquire_pull_buffer(
+                    gpu_resources, vtx_asset_id, wz::rhi::Tag{},
+                    all_vertices.data(),
+                    static_cast<std::uint64_t>(all_vertices.size())
+                        * sizeof(PuppetVertex),
+                    static_cast<std::uint32_t>(sizeof(PuppetVertex)),
+                    wz::rhi::ResourceCpuAccess::WriteFrequent);
+            if (!vhandle.valid()) {
+                return fail("puppet shared vertex buffer residency failed");
+            }
+            acquired.push_back(vhandle);
+            identities.push_back(out.vertices);
+
+            const std::uint64_t idx_asset_id = rhi_asset_identity(key, "idx");
+            out.indices = wz::rhi::ResourceIdentity{ idx_asset_id, {} };
+            const wz::rhi::GpuResourceHandle ihandle =
+                wz::engine::rendering::acquire_pull_buffer(
+                    gpu_resources, idx_asset_id, wz::rhi::Tag{},
+                    all_indices.data(),
+                    static_cast<std::uint64_t>(all_indices.size())
+                        * sizeof(std::uint32_t),
+                    static_cast<std::uint32_t>(sizeof(std::uint32_t)));
+            if (!ihandle.valid()) {
+                return fail("puppet shared index buffer residency failed");
+            }
+            acquired.push_back(ihandle);
+            identities.push_back(out.indices);
         }
 
         if (out.parts.empty()) {

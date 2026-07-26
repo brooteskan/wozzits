@@ -37,8 +37,14 @@ namespace wz::engine::assets::inochi
     // opacity / blend / zsort carried from the draw list.
     struct ResidentPuppetPart
     {
-        wz::rhi::ResourceIdentity vertices;
-        wz::rhi::ResourceIdentity indices;
+        // Where this Part's geometry sits in the puppet's SHARED buffers (#278):
+        // vertex_base indexes ResidentPuppet::vertices, index_base indexes
+        // ResidentPuppet::indices, and the stored indices stay Part-LOCAL -- the
+        // vertex shader pulls vertices[vertex_base + indices[index_base + vid]].
+        // Keeping them local means a Part's slice can move without rewriting its
+        // indices.
+        std::uint32_t vertex_base = 0;
+        std::uint32_t index_base = 0;
         std::uint32_t index_count = 0;
         std::uint32_t vertex_count = 0;
         std::uint32_t atlas = 0;             // index into ResidentPuppet::atlases
@@ -67,6 +73,20 @@ namespace wz::engine::assets::inochi
     struct ResidentPuppet
     {
         std::vector<wz::rhi::ResourceIdentity> atlases;  // per Puppet::textures
+
+        // ONE interleaved-vertex and ONE index StructuredBuffer for the WHOLE
+        // puppet, every Part's geometry concatenated (#278). Was a buffer pair
+        // PER PART, which cost two things the deform seam made expensive: each
+        // GpuResourceRegistry::update() is a synchronous GPU flush, so a
+        // deforming puppet stalled the frame once per moving Part; and each
+        // Part's distinct pull buffers forced it its own slot-2 descriptor
+        // table. Now a deform is ONE upload, and Parts differ only by their
+        // atlas + mask, so they share tables.
+        wz::rhi::ResourceIdentity vertices;
+        wz::rhi::ResourceIdentity indices;
+        std::uint32_t vertex_count = 0;   // total across all Parts
+        std::uint32_t index_count = 0;
+
         std::vector<ResidentPuppetPart> parts;           // draw order (back -> front)
         std::array<float, 2> bounds_min{ 0.0f, 0.0f };
         std::array<float, 2> bounds_max{ 0.0f, 0.0f };

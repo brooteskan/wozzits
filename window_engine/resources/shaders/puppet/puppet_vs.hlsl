@@ -34,6 +34,11 @@ cbuffer PuppetPartBlock : register(b0, space2)
     float4 part_tint;        // rgb = multiply tint, w unused
     float4 part_screen_tint; // rgb = screen tint,   w unused
     float4 part_mask;        // x = mask threshold, y = invert, zw unused
+    // Where this Part's geometry sits in the puppet's SHARED pull buffers
+    // (#278): x = first vertex, y = first index. The whole puppet is one
+    // vertex + one index buffer, so a deform is one upload and Parts share
+    // descriptor tables instead of each owning a pair.
+    uint4 part_pull;
 };
 
 struct WzPuppetVertex
@@ -57,8 +62,8 @@ struct VSOut
 
 VSOut main(uint vid : SV_VertexID)
 {
-    uint           idx = indices[vid];
-    WzPuppetVertex v   = vertices[idx];
+    uint           idx = indices[part_pull.y + vid];
+    WzPuppetVertex v   = vertices[part_pull.x + idx];
 
     // Part-local pixel -> screen pixel via the affine placement.
     float2 px = float2(

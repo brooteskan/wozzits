@@ -48,6 +48,7 @@ cbuffer PuppetPartBlock : register(b0, space2)
     float4 part_tint;
     float4 part_screen_tint;
     float4 part_mask;
+    uint4  part_pull;
 };
 
 struct WzPuppetVertex
@@ -67,8 +68,8 @@ struct VSOut
 
 VSOut main(uint vid : SV_VertexID)
 {
-    uint           idx = indices[vid];
-    WzPuppetVertex v   = vertices[idx];
+    uint           idx = indices[part_pull.y + vid];
+    WzPuppetVertex v   = vertices[part_pull.x + idx];
     float2 px = float2(
         xform_row0.x * v.pos.x + xform_row0.y * v.pos.y + xform_row0.z,
         xform_row1.x * v.pos.x + xform_row1.y * v.pos.y + xform_row1.z);
@@ -90,6 +91,7 @@ cbuffer PuppetPartBlock : register(b0, space2)
     float4 part_tint;
     float4 part_screen_tint;
     float4 part_mask;
+    uint4  part_pull;
 };
 
 Texture2D<float4> atlas   : register(t2, space2);
@@ -250,10 +252,11 @@ float4 main(PSIn input) : SV_TARGET
             .visibility = ShaderVisibility::All,
             .shader_register = 0,
             .register_space = 2,
-            // 20 dwords = 5 float4: affine rows 0/1 (+opacity), tint, screen
-            // tint, mask params. Must match the PuppetPartBlock packers in
-            // rhi_scene_renderer.cpp (realize + per-frame).
-            .value_count = 20,
+            // 24 dwords = 6 rows: affine rows 0/1 (+opacity), tint, screen
+            // tint, mask params, shared-buffer pull bases. Must match the
+            // PuppetPartBlock packers in rhi_scene_renderer.cpp (realize +
+            // per-frame).
+            .value_count = 24,
             .semantic = "puppet_part",
         });
         desc.descriptor_bindings.push_back(DescriptorBinding{

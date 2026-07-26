@@ -1509,6 +1509,23 @@ namespace wz::engine::rendering
                 failed_renderables_.insert(renderable_key);
                 return nullptr;
             }
+            // The puppet's ONE shared vertex/index pair (#278): found once and
+            // bound into every Part's SRG, so the Parts differ only by atlas and
+            // mask and can share descriptor tables.
+            const wz::rhi::GpuResourceHandle verts =
+                gpu_.resources.find(puppet.vertices);
+            const wz::rhi::GpuResourceHandle indices =
+                gpu_.resources.find(puppet.indices);
+            if (!verts.valid() || !indices.valid()) {
+                realized_renderables_.erase(pit);
+                logger_.error(
+                    "RhiSceneRenderer: puppet shared pull buffers not resident");
+                failed_renderables_.insert(renderable_key);
+                return nullptr;
+            }
+            prealized.puppet_vertices = verts;
+            prealized.puppet_vertex_scratch.assign(puppet.vertex_count, {});
+
             prealized.puppet_mask_targets.clear();
             prealized.puppet_mask_size = { 0u, 0u };
             prealized.puppet_part_mask_target.clear();
@@ -1557,18 +1574,14 @@ namespace wz::engine::rendering
             prealized.puppet_part_runtime.reserve(puppet.parts.size());
             for (const wz::engine::assets::inochi::ResidentPuppetPart& part :
                  puppet.parts) {
-                const wz::rhi::GpuResourceHandle verts =
-                    gpu_.resources.find(part.vertices);
-                const wz::rhi::GpuResourceHandle indices =
-                    gpu_.resources.find(part.indices);
                 const wz::rhi::GpuResourceHandle atlas =
                     part.atlas < puppet.atlases.size()
                         ? gpu_.resources.find(puppet.atlases[part.atlas])
                         : wz::rhi::GpuResourceHandle{};
-                if (!verts.valid() || !indices.valid() || !atlas.valid()) {
+                if (!atlas.valid()) {
                     realized_renderables_.erase(pit);
                     logger_.error(
-                        "RhiSceneRenderer: puppet Part resource not resident");
+                        "RhiSceneRenderer: puppet Part atlas not resident");
                     failed_renderables_.insert(renderable_key);
                     return nullptr;
                 }
@@ -1604,7 +1617,8 @@ namespace wz::engine::rendering
                 const bool part_masked =
                     part.mask_source
                     != wz::engine::assets::inochi::PuppetPartDraw::kNoMaskSource;
-                const float block[20] = {
+                std::array<std::uint32_t, 24> block{};
+                const float head[20] = {
                     m.a, m.b, m.tx, part.opacity,
                     m.c, m.d, m.ty, 0.0f,
                     part.tint[0], part.tint[1], part.tint[2], 0.0f,
@@ -1614,6 +1628,10 @@ namespace wz::engine::rendering
                     (part_masked && part.mask_inverted) ? 1.0f : 0.0f,
                     0.0f, 0.0f,
                 };
+                std::memcpy(block.data(), head, sizeof(head));
+                // Row 5 is UINTs, not floats: the shared-buffer pull bases.
+                block[20] = part.vertex_base;
+                block[21] = part.index_base;
 
                 wz::rhi::GeometryView geometry;
                 geometry.vertex_count = part.index_count;  // VS pulls indices[vid]
@@ -1624,8 +1642,8 @@ namespace wz::engine::rendering
                 builder
                     .set_geometry(geometry)
                     .set_root_constants(std::span<const uint8_t>{
-                        reinterpret_cast<const uint8_t*>(block),
-                        sizeof(block) })
+                        reinterpret_cast<const uint8_t*>(block.data()),
+                        block.size() * sizeof(std::uint32_t) })
                     .add_shader_resource_group(part_srg);
                 if (prealized.has_view_srg) {
                     builder.add_shader_resource_group(prealized.view_srg);
@@ -1650,7 +1668,8 @@ namespace wz::engine::rendering
                 // per-frame deform update (parallel to puppet_packets).
                 prealized.puppet_part_runtime.push_back(
                     RealizedRenderable::PuppetPartRuntime{
-                        verts, part.node_index, part.vertex_count });
+                        part.node_index, part.vertex_base, part.index_base,
+                        part.vertex_count });
             }
 
             // Resolve the mask wiring now that every Part has a packet (#275).
@@ -2413,12 +2432,17 @@ namespace wz::engine::rendering
             by_node.emplace(p.node_index, &p);
         }
 
-        // Per Part: repack placement root constants (free) and re-upload the vertex
-        // buffer only when the mesh actually moved (per-buffer GPU flush; #278).
+        // Per Part: repack placement root constants (free) and refresh this Part's
+        // slice of the puppet's SHARED vertex array. The array is uploaded ONCE
+        // after the loop (#278) -- each GpuResourceRegistry::update is a
+        // synchronous GPU flush, so the old per-Part buffers cost one stall per
+        // moving Part. The per-Part change check survives because it decides
+        // whether the single upload is needed at all.
         // (Manual min: <windows.h> min/max macros are in scope via the DX12 headers.)
         const std::size_t runtime_n = realized.puppet_part_runtime.size();
         const std::size_t packet_n = realized.puppet_packets.size();
         const std::size_t count = runtime_n < packet_n ? runtime_n : packet_n;
+        bool any_moved = false;
         for (std::size_t pi = 0; pi < count; ++pi) {
             RealizedRenderable::PuppetPartRuntime& rt =
                 realized.puppet_part_runtime[pi];
@@ -2437,7 +2461,8 @@ namespace wz::engine::rendering
                 && pi < realized.puppet_part_mask_target.size()
                 && realized.puppet_part_mask_target[pi]
                        != RealizedRenderable::kNoMaskTarget;
-            const float block[20] = {
+            std::array<std::uint32_t, 24> block{};
+            const float head[20] = {
                 m.a, m.b, m.tx, dp.opacity,
                 m.c, m.d, m.ty, 0.0f,
                 dp.tint[0], dp.tint[1], dp.tint[2], 0.0f,
@@ -2446,21 +2471,36 @@ namespace wz::engine::rendering
                 (dp_masked && dp.mask_inverted) ? 1.0f : 0.0f,
                 0.0f, 0.0f,
             };
+            std::memcpy(block.data(), head, sizeof(head));
+            block[20] = rt.vertex_base;
+            block[21] = rt.index_base;
             realized.puppet_packets[pi].root_constants.assign(
-                reinterpret_cast<const uint8_t*>(block),
-                reinterpret_cast<const uint8_t*>(block) + sizeof(block));
+                reinterpret_cast<const uint8_t*>(block.data()),
+                reinterpret_cast<const uint8_t*>(block.data())
+                    + block.size() * sizeof(std::uint32_t));
 
             // Vertex buffer: re-upload ONLY when the mesh moved past a sub-pixel
             // epsilon since the last upload. Each upload is a synchronous GPU flush
             // (#278), so skipping the many Parts that sit at the baseline (or move
             // imperceptibly) is what keeps the puppet from stalling the frame.
+            // This Part's slice of the shared array, always kept current so the
+            // single upload below carries every Part's latest geometry.
+            if (!dp.vertices.empty()
+                && rt.vertex_base + dp.vertices.size()
+                       <= realized.puppet_vertex_scratch.size())
+            {
+                std::copy(
+                    dp.vertices.begin(), dp.vertices.end(),
+                    realized.puppet_vertex_scratch.begin() + rt.vertex_base);
+            }
+
+            // Does this Part's mesh actually differ from what was last uploaded?
+            // Only that decides whether the one upload happens.
             const std::vector<std::array<float, 2>>* offs =
                 rt.node_index < pose.vertex_offsets.size()
                     ? &pose.vertex_offsets[rt.node_index]
                     : nullptr;
-            if (!offs || offs->empty() || !rt.vertices.valid()
-                || dp.vertices.empty())
-            {
+            if (!offs || offs->empty() || dp.vertices.empty()) {
                 continue;
             }
             constexpr float kOffsetEpsilon = 0.5f;  // px in puppet space
@@ -2476,14 +2516,24 @@ namespace wz::engine::rendering
                 }
             }
             if (changed) {
-                gpu_.resources.update(
-                    rt.vertices,
-                    dp.vertices.data(),
-                    static_cast<std::uint64_t>(dp.vertices.size())
-                        * sizeof(ino::PuppetVertex));
                 rt.last_offsets = *offs;
                 rt.ever_uploaded = true;
+                any_moved = true;
             }
+        }
+
+        // ONE upload for the whole puppet, and only when something moved. This
+        // is the #278 payoff: a deforming Aka went from one synchronous GPU
+        // flush per moving Part to exactly one per frame.
+        if (any_moved && realized.puppet_vertices.valid()
+            && !realized.puppet_vertex_scratch.empty())
+        {
+            gpu_.resources.update(
+                realized.puppet_vertices,
+                realized.puppet_vertex_scratch.data(),
+                static_cast<std::uint64_t>(
+                    realized.puppet_vertex_scratch.size())
+                    * sizeof(ino::PuppetVertex));
         }
     }
 

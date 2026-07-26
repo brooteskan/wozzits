@@ -343,8 +343,11 @@ namespace wz::engine::rendering
             std::array<float, 2> puppet_bounds_max{};
             struct PuppetPartRuntime
             {
-                wz::rhi::GpuResourceHandle vertices{};
                 std::size_t node_index = 0;
+                // This Part's slice of the puppet's SHARED buffers (#278); both
+                // ride the per-Part root constants so the VS can offset its pull.
+                uint32_t vertex_base = 0;
+                uint32_t index_base = 0;
                 uint32_t vertex_count = 0;
                 // Last per-vertex offsets uploaded to `vertices`. Each upload is a
                 // synchronous GPU flush, so the per-frame update re-uploads only
@@ -356,6 +359,12 @@ namespace wz::engine::rendering
                 bool ever_uploaded = false;
             };
             std::vector<PuppetPartRuntime> puppet_part_runtime;
+            // The puppet's ONE shared vertex buffer (#278). A deform rebuilds the
+            // whole concatenated array and uploads it once, instead of one
+            // synchronous GPU flush per moving Part.
+            wz::rhi::GpuResourceHandle puppet_vertices{};
+            std::vector<wz::engine::assets::inochi::PuppetVertex>
+                puppet_vertex_scratch;
 
             // Mask compositing (#275). One render-target texture per DISTINCT
             // mask-source node: a prepass draws that source alone into it, and

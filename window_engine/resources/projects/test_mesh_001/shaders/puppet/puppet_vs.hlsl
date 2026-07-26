@@ -12,6 +12,7 @@ cbuffer PuppetPartBlock : register(b0, space2)
     float4 part_tint;
     float4 part_screen_tint;
     float4 part_mask;
+    uint4  part_pull;
 };
 
 struct WzPuppetVertex
@@ -31,8 +32,8 @@ struct VSOut
 
 VSOut main(uint vid : SV_VertexID)
 {
-    uint           idx = indices[vid];
-    WzPuppetVertex v   = vertices[idx];
+    uint           idx = indices[part_pull.y + vid];
+    WzPuppetVertex v   = vertices[part_pull.x + idx];
     float2 px = float2(
         xform_row0.x * v.pos.x + xform_row0.y * v.pos.y + xform_row0.z,
         xform_row1.x * v.pos.x + xform_row1.y * v.pos.y + xform_row1.z);

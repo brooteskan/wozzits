@@ -35,6 +35,7 @@ cbuffer PuppetPartBlock : register(b0, space2)
     float4 part_tint;        // rgb = multiply tint  (identity 1,1,1)
     float4 part_screen_tint; // rgb = screen tint    (identity 0,0,0)
     float4 part_mask;        // x = threshold, y = invert (DodgeMask), zw unused
+    uint4  part_pull;        // shared-buffer bases, VS only (#278)
 };
 
 Texture2D<float4> atlas   : register(t2, space2);

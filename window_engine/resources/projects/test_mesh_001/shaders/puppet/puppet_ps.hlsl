@@ -6,6 +6,7 @@ cbuffer PuppetPartBlock : register(b0, space2)
     float4 part_tint;
     float4 part_screen_tint;
     float4 part_mask;
+    uint4  part_pull;
 };
 
 Texture2D<float4> atlas   : register(t2, space2);
