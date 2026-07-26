@@ -133,7 +133,10 @@ namespace wz::engine::rendering
         RhiSceneRenderer(RhiSceneRenderer&&)                 = delete;
         RhiSceneRenderer& operator=(RhiSceneRenderer&&)      = delete;
 
-        void simulation_tick();
+        // Advance the renderer's per-frame state by the real frame delta. Called
+        // once per simulation tick, BEFORE any render_scene for that frame; the
+        // render path only reads the clock this advances (#282).
+        void simulation_tick(float dt_seconds);
 
         // Render the scene's renderables. The caller owns the device frame
         // boundaries (begin/clear/end/present); this binds the current backbuffer
@@ -334,6 +337,19 @@ namespace wz::engine::rendering
             // only deviations (physics, breathing) move it. Removes a large static
             // rest deform the raw evaluator otherwise applies.
             wz::engine::assets::inochi::PuppetDeform puppet_deform_baseline;
+            // Animation-clock bookkeeping (#282). The pose is rebuilt on EVERY
+            // render (the placement depends on the target size), but the
+            // physics may only integrate time that has actually passed: a
+            // second render of the same puppet in the same frame -- the RTT
+            // pass in the puppet showcase -- must observe the same instant, not
+            // step the pendulums again. puppet_clock_seconds is the instant the
+            // physics has been stepped to; puppet_physics_debt is the
+            // not-yet-consumed remainder of a fixed-step accumulator, which
+            // keeps the integrator's step size (and so its stability) identical
+            // to the old hardcoded 1/60 on any refresh rate.
+            double puppet_clock_seconds = 0.0;
+            bool puppet_clock_started = false;
+            float puppet_physics_debt = 0.0f;
             // Puppet-space rest bounds (captured at realize). Used to recompute the
             // fit-to-target placement per render for the CURRENT target size (#280,
             // so RTT into an arbitrary-sized texture lands), and to scale the
@@ -531,9 +547,15 @@ namespace wz::engine::rendering
         // See render_time_program_bridge_count().
         std::size_t render_time_program_bridges_ = 0;
 
-        // Monotonic render-call counter -- the only "clock" the renderer has.
-        // Drives the star-field twinkle phase (#266) at a nominal 60 fps.
-        uint64_t render_scene_calls_ = 0;
+        // The renderer's animation clock, in seconds. Advanced ONCE per
+        // simulation tick by the real frame delta (simulation_tick) and only
+        // READ by render_scene -- it is deliberately not a render-call counter
+        // (#282). Every offscreen invocation in a frame therefore observes the
+        // same instant as the main one, and the rate no longer depends on how
+        // many passes the app happens to make or on the display refresh rate.
+        // Drives the star-field twinkle phase (#266) and the puppet's breathing
+        // bob + physics.
+        double animation_seconds_ = 0.0;
 
         // This frame's view constants, packed at the top of render_scene. Held
         // as state (rather than passed down) because ensure_renderable may

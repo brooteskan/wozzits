@@ -677,7 +677,11 @@ namespace wz::app
         // binding assembly). No-op without a live behavior scene.
         dispatch_scene_behaviors(input, dt);
 
-        renderer_.simulation_tick();
+        // Advances the renderer's animation clock by the real frame delta. The
+        // render path only READS it, so the showcase's extra offscreen
+        // render_scene no longer doubles the rate of every animated thing
+        // (#282).
+        renderer_.simulation_tick(dt);
 
         // Both camera sources are now current (free-fly updated from input above;
         // behaviors moved the scene-camera node in dispatch_scene_behaviors).

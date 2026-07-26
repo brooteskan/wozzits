@@ -236,6 +236,60 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
             << "the puppet left no pixels in the offscreen render target "
                "(max channel value seen = " << static_cast<int>(max_channel) << ")";
 
+        // #282: the animation clock belongs to the SIMULATION, not to
+        // render_scene. An app that renders the same puppet more than once in a
+        // frame (the showcase draws it to the backbuffer AND into an RTT) must
+        // see the same instant every time -- so with no simulation_tick in
+        // between, a second render into an identical target must reproduce the
+        // pose byte for byte. Before the fix each render advanced the clock and
+        // stepped the pendulums again, so this second image differed.
+        const auto render_puppet_to_new_target =
+            [&](std::vector<std::uint8_t>& out) -> bool
+        {
+            const wz::gpu::GPUHandle target =
+                wz::gpu::create_texture(device, rt_desc);
+            if (!target.valid() || !wz::gpu::begin_frame(device)) {
+                return false;
+            }
+            const bool ok = renderer.render_scene(
+                nodes, assets, view_projection, camera_world_pos, {}, nullptr,
+                target);
+            return ok && wz::gpu::end_frame(device)
+                && wz::gpu::dx12::internal::read_texture_rgba8_dx12(
+                    device, target, out);
+        };
+        const auto count_differing_texels =
+            [](const std::vector<std::uint8_t>& a,
+               const std::vector<std::uint8_t>& b) -> std::size_t
+        {
+            std::size_t differing = 0;
+            const std::size_t n = a.size() < b.size() ? a.size() : b.size();
+            for (std::size_t i = 0; i + 3 < n; i += 4) {
+                if (a[i] != b[i] || a[i + 1] != b[i + 1]
+                    || a[i + 2] != b[i + 2] || a[i + 3] != b[i + 3]) {
+                    ++differing;
+                }
+            }
+            return differing;
+        };
+
+        std::vector<std::uint8_t> same_instant;
+        ASSERT_TRUE(render_puppet_to_new_target(same_instant));
+        EXPECT_EQ(count_differing_texels(pixels, same_instant), 0u)
+            << "re-rendering the puppet without a simulation_tick changed its "
+               "pose -- render_scene is advancing the animation clock (#282)";
+
+        // ...and once the simulation DOES advance, the puppet moves. ONE frame
+        // of simulation is enough to change the image, which is what makes the
+        // assertion above meaningful: before the fix the extra render advanced
+        // the clock by exactly this much, so the two images differed.
+        renderer.simulation_tick(1.0f / 60.0f);
+        std::vector<std::uint8_t> later_instant;
+        ASSERT_TRUE(render_puppet_to_new_target(later_instant));
+        EXPECT_GT(count_differing_texels(pixels, later_instant), 0u)
+            << "the puppet did not move after a frame of simulation -- the "
+               "animation clock is not advancing at all";
+
         // First S6 consumer -- the 2D surface: display that offscreen texture on a
         // screen-space quad via the fullscreen blit, then read back the backbuffer.
         // The puppet must appear -- proving RTT -> sample-on-a-surface -> screen end

@@ -960,8 +960,17 @@ namespace wz::engine::rendering
         forward_ = ctx_.passes.acquire("forward");
     }
 
-    void RhiSceneRenderer::simulation_tick()
+    void RhiSceneRenderer::simulation_tick(float dt_seconds)
     {
+        // The app owns the frame boundary and already measures a real delta, so
+        // the renderer's animation clock rides it (#282). Guard against a
+        // negative or absurd delta (a debugger stop, a load hitch): animation
+        // should resume, not teleport.
+        constexpr float kMaxTickSeconds = 0.25f;
+        if (dt_seconds > 0.0f) {
+            animation_seconds_ += static_cast<double>(
+                dt_seconds < kMaxTickSeconds ? dt_seconds : kMaxTickSeconds);
+        }
     }
 
     void RhiSceneRenderer::on_graph_changed()
@@ -2355,10 +2364,26 @@ namespace wz::engine::rendering
         // Time base + a subtle breathing bob (primary motion). SimplePhysics only
         // sways in response to a MOVING anchor -- a perfectly static puppet settles
         // to its gravity rest -- so a gentle vertical bob on the root feeds the
-        // pendulums. render_scene_calls_ is the renderer's only clock (60 fps).
-        const float t = static_cast<float>(render_scene_calls_) * (1.0f / 60.0f);
-        constexpr float kDt = 1.0f / 60.0f;
+        // pendulums. The clock is animation_seconds_, advanced once per
+        // simulation tick (#282); this function may run SEVERAL times per frame
+        // (once per render target), and every run must read the same instant.
+        const float t = static_cast<float>(animation_seconds_);
         constexpr float kTwoPi = 6.2831853f;
+
+        // How much time this pose update owes the physics. Zero on the second
+        // and later renders of a frame -- they rebuild the pose for their own
+        // target but must not step the pendulums again. Also zero on the very
+        // first render of a puppet, which has no elapsed time behind it.
+        float physics_seconds = 0.0f;
+        if (realized.puppet_clock_started) {
+            const double elapsed =
+                animation_seconds_ - realized.puppet_clock_seconds;
+            if (elapsed > 0.0) {
+                physics_seconds = static_cast<float>(elapsed);
+            }
+        }
+        realized.puppet_clock_started = true;
+        realized.puppet_clock_seconds = animation_seconds_;
         // A gentle vertical breathing bob on the root. This is the primary motion
         // the SimplePhysics pendulums react to -- a perfectly static puppet settles
         // to its gravity rest and stops -- and a visible sign of life on its own.
@@ -2386,9 +2411,24 @@ namespace wz::engine::rendering
             anchors[i] = { xf.world[i].tx, xf.world[i].ty };
         }
 
-        // Physics writes the output parameters from the moving anchors.
-        ino::step_puppet_physics(
-            puppet, realized.puppet_physics, anchors, kDt, realized.puppet_params);
+        // Physics writes the output parameters from the moving anchors. Stepped
+        // at a FIXED 1/60 (what the integrator was tuned against), consuming the
+        // elapsed time from an accumulator so the sway runs in real seconds on
+        // any refresh rate (#282). The substep cap bounds the catch-up after a
+        // hitch; leftover debt beyond it is dropped rather than spiralled.
+        constexpr float kDt = 1.0f / 60.0f;
+        constexpr int kMaxPhysicsSubsteps = 4;
+        realized.puppet_physics_debt += physics_seconds;
+        for (int step = 0; step < kMaxPhysicsSubsteps
+                           && realized.puppet_physics_debt >= kDt; ++step) {
+            ino::step_puppet_physics(
+                puppet, realized.puppet_physics, anchors, kDt,
+                realized.puppet_params);
+            realized.puppet_physics_debt -= kDt;
+        }
+        if (realized.puppet_physics_debt > kDt) {
+            realized.puppet_physics_debt = kDt;
+        }
 
         // Physics-driven parameter deform, taken RELATIVE to the default-param
         // baseline (Inochi's base mesh IS the default pose), so default params map
@@ -2572,8 +2612,6 @@ namespace wz::engine::rendering
             target_h = rt->height;
         }
 
-        ++render_scene_calls_;   // the renderer's only clock (star twinkle, #266)
-
         // The frame's VIEW-frequency state: one pack, one upload, read by every
         // program that declared a view block. Packed unconditionally (it is
         // three float4s) so a mid-frame realize can seed a freshly acquired
@@ -2752,11 +2790,13 @@ namespace wz::engine::rendering
                 // authored dials, not shader constants.
                 const wz::math::Mat4& world =
                     node_worlds[static_cast<std::size_t>(&node - nodes.data())];
-                // No wall clock reaches the renderer, so drive twinkle from the
-                // render-call counter at a nominal 60 fps. twinkle_speed absorbs
-                // any framerate difference; a still frame (tests) sees time ~0.
+                // The animation clock, advanced once per simulation tick by the
+                // real frame delta (#282) -- so twinkle runs at the same rate
+                // whatever the refresh rate is, and a second (offscreen) render
+                // of this frame sees the same instant rather than advancing it.
+                // A scene that is only rendered, never ticked (tests), sees 0.
                 const float time_seconds =
-                    static_cast<float>(render_scene_calls_) * (1.0f / 60.0f);
+                    static_cast<float>(animation_seconds_);
                 const StarFieldDrawConstants constants =
                     make_star_field_draw_constants(
                         world, view_projection, camera_world_pos,
