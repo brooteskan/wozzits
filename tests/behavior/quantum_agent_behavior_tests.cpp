@@ -2,6 +2,11 @@
 
 #include <engine/behavior/quantum_agent_behaviors.h>
 
+#include <algorithm>
+#include <cmath>
+#include <string>
+#include <vector>
+
 // End-to-end for the built-in quantum_agent decider module: config -> AgentSpec ->
 // engine-side store -> self-paced think -> committed decision cached in the
 // binding's instance state. Driven through the real lifecycle seams: on_init
@@ -41,6 +46,14 @@ namespace
             .config = {
                 cfg("goal", goal),
                 cfg("gamma_start", 3.0),
+                // Pinned to the CLASSICAL limit. The shipping default leaves a
+                // residual transverse field, under which a goal-biased agent
+                // settles at <sigma_z> = h/sqrt(h^2 + gamma_end^2) rather than
+                // at full polarization -- these tests assert the fully-decided
+                // end state, so they say so instead of riding the default.
+                // ResidualGammaEndLeavesTheAgentShortOfCertainty covers the
+                // default.
+                cfg("gamma_end", 0.0),
                 cfg("anneal_seconds", 4.0),
                 cfg("relax_rate", 1.0),
                 cfg("confidence", confidence),
@@ -102,6 +115,7 @@ namespace
                 cfg("posture_goal", posture_goal),
                 cfg("coupling", coupling),
                 cfg("gamma_start", 3.0),
+                cfg("gamma_end", 0.0),   // classical limit -- see instantiate_npc
                 cfg("anneal_seconds", 4.0),
                 cfg("relax_rate", 1.0),
                 cfg("confidence", 0.9),
@@ -171,8 +185,10 @@ TEST(QuantumAgentBehavior, StarCouplingEntanglesGroupMembersToTheHub)
             cfg("goal", 0.8),             // bias the hub toward |0>
             cfg("star_coupling", 1.5),    // hub bonded to every member
             cfg("gamma_start", 3.0),
+            cfg("gamma_end", 0.0),        // classical limit -- see instantiate_npc
             cfg("anneal_seconds", 4.0),
             cfg("confidence", 0.9),
+            cfg("decoherence", 0.0),      // commit on confidence alone
             cfg("think_interval", 0.25),
         },
     };
@@ -250,6 +266,113 @@ TEST(QuantumAgentBehavior, DecoherenceForcesACommit)
     QuantumAgentState* s = brain(scene);
     ASSERT_NE(s, nullptr);
     EXPECT_NE(s->committed[0], -1);   // collapsed under pressure
+}
+
+// The SHIPPING default leaves a residual transverse field at the end of the
+// sweep, so a goal-biased agent lands short of certainty instead of collapsing
+// to a definite classical configuration: <sigma_z> settles at
+// h/sqrt(h^2 + gamma_end^2), not at 1. That margin is what "still deciding"
+// means, and it is the only reason a coupled partner stays correlated at commit
+// time -- at gamma_end = 0 the Hamiltonian is purely diagonal and there is no
+// quantum structure left to read.
+TEST(QuantumAgentBehavior, ResidualGammaEndLeavesTheAgentShortOfCertainty)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_quantum_agent_behaviors));
+
+    // No gamma_end key -> the default. Confidence is unreachable and decoherence
+    // is off, so nothing collapses the state and we read the anneal's end point.
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "quantum_agent_residual";
+    wz::engine::assets::SceneNodeAsset npc{};
+    npc.id = "npc";
+    npc.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "npc_brain",
+        .module = kQuantumAgentModule,
+        .config = {
+            cfg("goal", 0.6),
+            cfg("gamma_start", 3.0),
+            cfg("anneal_seconds", 4.0),
+            cfg("relax_rate", 1.0),
+            cfg("confidence", 1.1),      // unreachable: never commits
+            cfg("decoherence", 0.0),     // and nothing forces it
+            cfg("think_interval", 0.25),
+        },
+    };
+    asset.nodes.push_back(std::move(npc));
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+
+    initialize_behaviors(scene, registry);
+    run_self_start(scene, registry);
+    for (int i = 1; i <= 40; ++i) {
+        run_tick(scene, registry, 0.25 * i);
+    }
+
+    QuantumAgentState* s = brain(scene);
+    ASSERT_NE(s, nullptr);
+    EXPECT_EQ(s->committed[0], -1);   // still deliberating, by construction
+
+    // h / sqrt(h^2 + gamma_end^2) for h = 0.6, gamma_end = the default.
+    const double h = 0.6;
+    const double g = wz::engine::behavior::kQuantumAgentDefaultGammaEnd;
+    const double expected = h / std::sqrt(h * h + g * g);
+    EXPECT_NEAR(s->marginal[0], static_cast<float>(expected), 0.05f);
+    EXPECT_LT(s->marginal[0], 0.9f);   // decidedly short of the classical limit
+    EXPECT_GT(s->marginal[0], 0.3f);   // but it did lean toward the goal
+}
+
+// Agents created in the SAME frame must not think in lockstep. The tick handler
+// reschedules with a fixed delay, so the phase an agent starts on is the phase it
+// keeps for the life of the scene -- a squad spawn would otherwise put its whole
+// cost on one frame every think_interval, which is the spike the self-paced
+// scheduler exists to avoid.
+TEST(QuantumAgentBehavior, AgentsStartedTogetherGetDistinctWakePhases)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_quantum_agent_behaviors));
+
+    constexpr double kThinkInterval = 0.25;
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "quantum_agent_squad";
+    for (int i = 0; i < 4; ++i) {
+        wz::engine::assets::SceneNodeAsset npc{};
+        npc.id = "npc" + std::to_string(i);
+        npc.behavior = wz::engine::assets::SceneBehaviorAsset{
+            .id = "brain" + std::to_string(i),
+            .module = kQuantumAgentModule,
+            .config = {
+                cfg("goal", 0.6),
+                cfg("think_interval", kThinkInterval),
+            },
+        };
+        asset.nodes.push_back(std::move(npc));
+    }
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+
+    initialize_behaviors(scene, registry);
+    run_self_start(scene, registry);
+
+    std::vector<double> wakes;
+    for (int i = 0; i < 4; ++i) {
+        const double wake = scene.behavior_state.next_wake_or(
+            "brain" + std::to_string(i), -1.0);
+        // Every agent is scheduled, and within one interval of the start -- the
+        // phase offset delays the first think, it does not skip one.
+        EXPECT_GE(wake, 0.0);
+        EXPECT_LT(wake, kThinkInterval);
+        wakes.push_back(wake);
+    }
+    std::sort(wakes.begin(), wakes.end());
+    EXPECT_EQ(std::adjacent_find(wakes.begin(), wakes.end()), wakes.end())
+        << "identically-configured agents landed on the same wake phase";
 }
 
 // cognition.tick is gated on self.start: an agent that was never started does no

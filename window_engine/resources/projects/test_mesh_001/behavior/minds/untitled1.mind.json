@@ -5,7 +5,7 @@
   "chi": 0,
   "clock": {
     "gamma_start": 2,
-    "gamma_end": 0,
+    "gamma_end": 0.5,
     "anneal_seconds": 4,
     "relax_rate": 1
   },

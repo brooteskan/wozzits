@@ -1807,13 +1807,30 @@ namespace wz::engine::behavior
                 return 0;
             }
             *out_bit = *bit ? 1 : 0;
-            // Mirror the store's latch into the module's FRAME-PATH CACHE so a
-            // Committed read on this slot reflects the measured outcome immediately
-            // (as rearm/reshape refresh the cache after a store mutation), instead of
-            // reporting the stale pre-measurement value until the next cognition tick.
+            // Mirror the store into the module's FRAME-PATH CACHE so reads reflect
+            // the measurement immediately (as rearm/reshape refresh the cache after
+            // a store mutation) instead of reporting stale pre-measurement values
+            // until the next cognition tick.
+            //
+            // EVERY slot, not just the measured one: the measurement's back-action
+            // conditions the coupled partners too, so a "measure the leader, then
+            // read the follower" protocol reading only the measured slot gets the
+            // partner's pre-measurement value (verified: a cat pair's unmeasured
+            // partner cached +0.0000 when its conditioned value was -1.0). The
+            // store has already refreshed its own cache, so this just copies it.
             auto* cache = const_cast<QuantumAgentState*>(state);
-            cache->committed[agent_index] = *bit ? 1 : 0;
-            cache->marginal[agent_index] = *bit ? -1.0f : 1.0f;
+            const uint32_t slots =
+                cache->agent_count < kQuantumAgentMaxDecisions
+                    ? cache->agent_count : kQuantumAgentMaxDecisions;
+            for (uint32_t i = 0; i < slots; ++i) {
+                const std::optional<bool> decided =
+                    quantum_agent_store().committed(state->handle, i);
+                cache->committed[i] = decided.has_value()
+                    ? static_cast<int8_t>(*decided ? 1 : 0)
+                    : static_cast<int8_t>(-1);
+                cache->marginal[i] = static_cast<float>(
+                    quantum_agent_store().marginal(state->handle, i));
+            }
             return 1u;
         }
 

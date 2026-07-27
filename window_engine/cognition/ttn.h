@@ -32,6 +32,13 @@ namespace wz::engine::cognition
         std::vector<double> coupling;     // size n-1: j between agent i and i+1
         std::vector<double> goal_field;   // size n: per-agent longitudinal goal
         uint32_t chi = 4;                 // bond-dimension cap
+        // Held collapses: -1 free, 0 pinned to |0>, 1 pinned to |1>. collapse()
+        // records here and relax_step() re-applies every entry each step, so a
+        // committed decision stays a CONSTRAINT the still-deliberating agents
+        // relax against instead of being mixed back out by the next step. Same
+        // convention as ExactGroup::clamp and LoopyBpGroup::clamped. Cleared only
+        // by rebuilding the chain.
+        std::vector<int8_t> clamp;
         // Sum of the per-bond relative truncation errors from the most recent
         // relax_step (0 for a full-chi/untruncated sweep). Telemetry only; not
         // part of the state.
@@ -57,7 +64,9 @@ namespace wz::engine::cognition
     // Collapse agent `agent`'s site onto `bit`: zero the opposite physical
     // component of the MPS site. No renormalize -- tree_bp_sigma_z normalizes by
     // trace -- so subsequent reads reflect the committed value and the rest of the
-    // chain is conditioned through the bonds.
+    // chain is conditioned through the bonds. Also HELD: the clamp is recorded and
+    // re-applied by every later relax_step, so the committed decision stays a
+    // constraint rather than decaying. Clears only on a rebuild.
     void collapse(TtnChain& g, uint32_t agent, bool bit);
 
     // Measure agent `agent` along axis theta (x-z plane), with back-action, up to

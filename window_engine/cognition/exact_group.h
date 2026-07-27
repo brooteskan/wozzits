@@ -53,6 +53,13 @@ namespace wz::engine::cognition
         wz::engine::cognition::qstate::Register joint;     // over `agent_count` qubits
         std::vector<ExactBond> bonds;
         std::vector<double> goal_field;  // per-agent longitudinal goal bias
+        // Held collapses: -1 free, 0 pinned to |0>, 1 pinned to |1>. collapse()
+        // records here and relax_step() re-projects every entry each step, so a
+        // committed decision stays a CONSTRAINT the still-deliberating agents
+        // relax against, rather than a one-shot projection that the very next
+        // relaxation mixes back out. Mirrors LoopyBpGroup::clamped, which has
+        // always worked this way. Cleared only by rebuilding the group.
+        std::vector<int8_t> clamp;
     };
 
     // Joint register starts in equal superposition over all agents; goal_field
@@ -66,7 +73,8 @@ namespace wz::engine::cognition
 
     // One imaginary-time Trotter step toward the group's entangled ground state:
     // a transverse-field (gamma) relaxation on every agent qubit, then an
-    // imaginary-time ZZ on every bond.
+    // imaginary-time ZZ on every bond, then a re-projection of every held clamp
+    // (see ExactGroup::clamp) so committed decisions stay pinned across the step.
     void relax_step(ExactGroup& g, double gamma, double dtau);
     void relax(ExactGroup& g, double gamma, double dtau, uint32_t iterations);
 
@@ -79,8 +87,10 @@ namespace wz::engine::cognition
     std::vector<double> decisions(const ExactGroup& g);
 
     // Collapse agent `agent`'s qubit onto `bit` (project + renormalize the joint
-    // register). The other agents stay coherent but are now CONDITIONED on this
-    // outcome -- a coupled decision read after this respects the committed one.
+    // register) and HOLD it there: the clamp is recorded and re-applied by every
+    // subsequent relax_step, so the other agents keep deliberating conditioned on
+    // the committed outcome instead of watching it drift back off the latch.
+    // Clears only on a rebuild (the store's rearm / reshape).
     void collapse(ExactGroup& g, uint32_t agent, bool bit);
 
     // Connected correlation <sz_a sz_b> - <sz_a><sz_b> -- the entanglement

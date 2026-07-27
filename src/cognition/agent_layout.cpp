@@ -21,6 +21,11 @@ namespace wz::engine::cognition
     uint32_t qubit_of(
         const AgentLayout& layout, uint32_t agent, uint32_t disposition)
     {
+        if (agent >= layout.offset.size()
+            || disposition >= layout.dispositions[agent])
+        {
+            return kInvalidQubit;
+        }
         return layout.offset[agent] + disposition;
     }
 

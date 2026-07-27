@@ -4,7 +4,11 @@
 
 #include <scene/scene_graph.h>
 
+#include <algorithm>
+#include <chrono>
 #include <limits>
+#include <string>
+#include <vector>
 
 namespace wz::engine::behavior
 {
@@ -851,6 +855,18 @@ namespace wz::engine::behavior
         constexpr double kAsleep = std::numeric_limits<double>::infinity();
         const double now = context.sim_time;
         auto& state = scene.behavior_state;
+
+        // Collect first, fire second. Two reasons: the budget below needs to run
+        // the most-overdue agents FIRST so none starves, which a single pass in
+        // scene order cannot do; and a binding left unfired must keep its wake
+        // untouched, which is easier to guarantee when firing is its own loop.
+        struct DueBinding
+        {
+            const wz::engine::assets::BehaviorComponent* component;
+            wz::scene::RuntimeEntityId node;
+            double wake;
+        };
+        std::vector<DueBinding> due;
         for (const auto& record : scene.behaviors) {
             const auto& component = record.component;
             if (component.binding_id.empty()) {
@@ -869,19 +885,76 @@ namespace wz::engine::behavior
             if (!scene.entity_is_active(record.node)) {
                 continue;
             }
-            if (now < state.next_wake_or(component.binding_id, kDueNow)) {
+            const double wake = state.next_wake_or(component.binding_id, kDueNow);
+            if (now < wake) {
                 continue;  // not due yet
+            }
+            due.push_back(DueBinding{ &component, record.node, wake });
+        }
+        if (due.empty()) {
+            return;
+        }
+
+        // Oldest overdue first. An agent that missed a frame is ahead of one that
+        // came due this frame, so a persistently over-budget scene rotates through
+        // its agents instead of always serving the same prefix of scene order.
+        // Stable so equal wakes keep scene order and the pass stays deterministic.
+        std::stable_sort(
+            due.begin(), due.end(),
+            [](const DueBinding& a, const DueBinding& b) { return a.wake < b.wake; });
+
+        const double budget_ms = context.cognition_tick_budget_ms;
+        const bool budgeted = budget_ms > 0.0;
+        const auto started = std::chrono::steady_clock::now();
+        std::size_t fired = 0;
+        for (const DueBinding& entry : due) {
+            // Check BEFORE firing, but always fire at least one: a single agent
+            // that costs more than the whole budget must still make progress, or
+            // it would be deferred every frame forever and never think at all.
+            if (budgeted && fired > 0) {
+                const double spent =
+                    std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - started).count();
+                if (spent >= budget_ms) {
+                    break;  // the rest keep their wakes -- still due next frame
+                }
             }
 
             // Park before firing: the handler reschedules via wz_set_next_wake.
-            state.set_next_wake(component.binding_id, kAsleep);
+            state.set_next_wake(entry.component->binding_id, kAsleep);
             const BehaviorEvent event{
                 .kind = WZ_EVENT_COGNITION_TICK,
-                .entity = record.node,
+                .entity = entry.node,
                 .other = wz::scene::INVALID_RUNTIME_ENTITY,
                 .self_is_trigger = false,
             };
-            dispatch_module_event(registry, context, component, event);
+            dispatch_module_event(registry, context, *entry.component, event);
+            ++fired;
+        }
+
+        if (fired < due.size() && context.logger) {
+            // Visible, not a mystery hitch. Deferral is correct behavior, but a
+            // scene that hits this every frame is over its cognition budget and the
+            // author needs to know -- lower think_interval counts, shrink groups,
+            // or raise cognition_tick_budget_ms deliberately.
+            //
+            // Throttled to once a second: the case worth reporting is exactly the
+            // one that repeats every frame, so an unthrottled warn would bury the
+            // log in the situation it exists to describe. Static because dispatch
+            // is single-threaded on the sim thread and this is a log rate limiter,
+            // not state anything reads.
+            static auto last_warned = std::chrono::steady_clock::time_point{};
+            const auto warn_at = std::chrono::steady_clock::now();
+            if (warn_at - last_warned >= std::chrono::seconds(1)) {
+                last_warned = warn_at;
+                context.logger->warn(
+                    "cognition.tick budget of "
+                    + std::to_string(budget_ms) + " ms spent after "
+                    + std::to_string(fired) + " of "
+                    + std::to_string(due.size())
+                    + " due agents; the rest are deferred to a later frame "
+                      "(throttled to 1/s)");
+            }
         }
     }
 }

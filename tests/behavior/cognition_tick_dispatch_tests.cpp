@@ -6,12 +6,21 @@
 // binding that does not reschedule is parked (does not busy-fire). The probe module
 // records its tick count + the sim-time it saw, and reschedules on demand.
 
+#include <algorithm>
+#include <chrono>
+#include <string>
+#include <vector>
+
 namespace
 {
     int g_tick_count = 0;
     double g_last_sim_time = -1.0;
     double g_reschedule_delay = 1.0;
     bool g_reschedule = true;
+    // Wall-clock the probe burns per tick, so a budget can actually be spent, plus
+    // the order entities were served in (for the oldest-overdue-first check).
+    double g_burn_ms = 0.0;
+    std::vector<uint32_t> g_fired;
 
     void reset_probe(double delay, bool reschedule)
     {
@@ -19,6 +28,8 @@ namespace
         g_last_sim_time = -1.0;
         g_reschedule_delay = delay;
         g_reschedule = reschedule;
+        g_burn_ms = 0.0;
+        g_fired.clear();
     }
 
     void cognition_probe_on_event(
@@ -31,6 +42,14 @@ namespace
         }
         ++g_tick_count;
         g_last_sim_time = wz_sim_time(facts);
+        g_fired.push_back(static_cast<uint32_t>(wz_self(event)));
+        if (g_burn_ms > 0.0) {
+            const auto until = std::chrono::steady_clock::now()
+                + std::chrono::duration<double, std::milli>(g_burn_ms);
+            while (std::chrono::steady_clock::now() < until) {
+                // spin -- a real think() is CPU-bound on the sim thread too
+            }
+        }
         if (g_reschedule) {
             wz_set_next_wake(facts, g_reschedule_delay);
         }
@@ -78,11 +97,44 @@ namespace
         return scene;
     }
 
-    // Run one cognition.tick pass at the given sim-time.
+    // An N-node scene, each node carrying a cognition_probe with its own stable
+    // binding id -- the shape a squad spawn produces.
+    SceneInstance scene_with_probes(uint32_t count)
+    {
+        SceneInstance scene{};
+        for (uint32_t i = 0; i < count; ++i) {
+            const std::string name = "actor" + std::to_string(i);
+            scene.runtime_names.push_back(name);
+            scene.runtime_to_authored.push_back(name);
+            BehaviorComponent component{
+                .binding_id = name + "/behavior/0",
+                .module = "cognition_probe",
+                .name = "cognition_probe",
+                .enabled = true,
+                .events = { "cognition.tick" },
+                .channel_mask = wz::engine::behavior::channel_mask_for_token(
+                    "cognition.tick"),
+            };
+            scene.behaviors.push_back(SceneComponentRecord<BehaviorComponent>{
+                .node = RuntimeEntityId{ i },
+                .component = std::move(component),
+            });
+        }
+        return scene;
+    }
+
+    std::string binding_of(uint32_t i)
+    {
+        return "actor" + std::to_string(i) + "/behavior/0";
+    }
+
+    // Run one cognition.tick pass at the given sim-time. A budget <= 0 fires
+    // everything due (the pre-budget behavior).
     void run_tick(
         SceneInstance& scene,
         BehaviorRegistry& registry,
-        double sim_time)
+        double sim_time,
+        double budget_ms = 0.0)
     {
         wz::engine::FrameStorage frame_storage{};
         BehaviorFrameContext context{
@@ -90,6 +142,7 @@ namespace
             .behavior_state = &scene.behavior_state,
             .commands = &frame_storage.behavior_commands,
             .sim_time = sim_time,
+            .cognition_tick_budget_ms = budget_ms,
         };
         wz::engine::behavior::dispatch_cognition_tick(
             scene, registry, context);
@@ -157,6 +210,106 @@ TEST(CognitionTickDispatch, UnsubscribedNeverFires)
     run_tick(scene, registry, 0.0);
     run_tick(scene, registry, 5.0);
     EXPECT_EQ(g_tick_count, 0);
+}
+
+// The per-frame budget caps how much wall-clock one tick pass spends. Bindings
+// past the cap keep their wakes (still DUE), so they run on a later pass rather
+// than being skipped -- the spike is spread, not dropped. Each probe burns far
+// more than the budget, so exactly one fires per pass.
+TEST(CognitionTickDispatch, BudgetDefersTheRestToALaterFrame)
+{
+    reset_probe(/*delay=*/1.0, /*reschedule=*/true);
+    g_burn_ms = 5.0;
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_cognition_probe));
+    SceneInstance scene = scene_with_probes(3);
+
+    // All three are due at t = 0 (no wake entry). The first fires, then the pass
+    // is already over budget.
+    run_tick(scene, registry, 0.0, /*budget_ms=*/1.0);
+    EXPECT_EQ(g_tick_count, 1);
+
+    // Same sim-time: the one that fired rescheduled to 1.0 so it is NOT due, and
+    // the two deferred ones still are. Nothing starves -- each later pass serves
+    // one more.
+    run_tick(scene, registry, 0.0, 1.0);
+    EXPECT_EQ(g_tick_count, 2);
+    run_tick(scene, registry, 0.0, 1.0);
+    EXPECT_EQ(g_tick_count, 3);
+
+    // Every agent was served exactly once, none twice.
+    std::vector<uint32_t> served = g_fired;
+    std::sort(served.begin(), served.end());
+    EXPECT_EQ(served, (std::vector<uint32_t>{ 0u, 1u, 2u }));
+
+    // And now they are all parked on their own cadence, so a fourth pass at the
+    // same sim-time does nothing.
+    run_tick(scene, registry, 0.0, 1.0);
+    EXPECT_EQ(g_tick_count, 3);
+}
+
+// A budget of 0 (or less) means no ceiling -- the pre-budget behavior, and what
+// every non-cognition caller of run_tick above relies on.
+TEST(CognitionTickDispatch, NonPositiveBudgetFiresEverythingDue)
+{
+    reset_probe(/*delay=*/1.0, /*reschedule=*/true);
+    g_burn_ms = 2.0;
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_cognition_probe));
+    SceneInstance scene = scene_with_probes(4);
+
+    run_tick(scene, registry, 0.0, /*budget_ms=*/0.0);
+    EXPECT_EQ(g_tick_count, 4);
+}
+
+// One agent that costs more than the WHOLE budget must still make progress. If
+// the budget were checked before the first dispatch it would be deferred every
+// frame forever and never think at all -- a worse failure than the hitch.
+TEST(CognitionTickDispatch, AlwaysFiresAtLeastOneEvenIfOverBudget)
+{
+    reset_probe(/*delay=*/1.0, /*reschedule=*/true);
+    g_burn_ms = 5.0;
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_cognition_probe));
+    SceneInstance scene = scene_with_probes(1);
+
+    run_tick(scene, registry, 0.0, /*budget_ms=*/0.001);
+    EXPECT_EQ(g_tick_count, 1);
+    run_tick(scene, registry, 1.0, 0.001);
+    EXPECT_EQ(g_tick_count, 2);   // and it keeps its cadence
+}
+
+// Oldest-overdue first. A scene that is persistently over budget must rotate
+// through its agents rather than always serving the same prefix of scene order,
+// or the tail never thinks. Wakes are seeded so scene order and overdue order
+// disagree.
+TEST(CognitionTickDispatch, ServesTheMostOverdueFirst)
+{
+    reset_probe(/*delay=*/1.0, /*reschedule=*/true);
+    g_burn_ms = 5.0;
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_cognition_probe));
+    SceneInstance scene = scene_with_probes(3);
+
+    // All due at t = 10, but entity 2 has been waiting longest and entity 0 the
+    // least -- the reverse of scene order.
+    scene.behavior_state.set_next_wake(binding_of(0), 9.0);
+    scene.behavior_state.set_next_wake(binding_of(1), 5.0);
+    scene.behavior_state.set_next_wake(binding_of(2), 1.0);
+
+    run_tick(scene, registry, 10.0, /*budget_ms=*/1.0);
+    run_tick(scene, registry, 10.0, 1.0);
+    run_tick(scene, registry, 10.0, 1.0);
+
+    EXPECT_EQ(g_fired, (std::vector<uint32_t>{ 2u, 1u, 0u }));
 }
 
 // A parked (inactive) node's cognition does not tick -- and, crucially, is NOT

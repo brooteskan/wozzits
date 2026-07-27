@@ -27,6 +27,10 @@ namespace wz::engine::cognition
         // Build the exact joint-state backend (chi = 0): arbitrary pairwise bonds
         // + summed per-agent goals. Refuses a count whose 2^n state vector would
         // overflow the shift (n >= 64) or exhaust memory -- callers get nullopt, not UB.
+        //
+        // NOTE this is the MEMORY guard only. The TIME guard is
+        // kMaxExactQubitsRuntime in the header, applied by build_coordination --
+        // 24 qubits is roughly ten past the point where a think() fits in a frame.
         std::optional<Coordination> build_exact(const AgentSpec& spec)
         {
             if (spec.agent_count > kMaxExactQubits) {
@@ -81,7 +85,16 @@ namespace wz::engine::cognition
         // The bonds an Agent stores are RAW (as authored); this is the single choke
         // point that re-canonicalizes them on every build, so whichever backend we
         // dispatch to always receives clean girth >= 3 input.
-        std::optional<Coordination> build_coordination(const AgentSpec& spec)
+        //
+        // It is also where chi = 0 is PROMOTED off the exact backend when the group
+        // has outgrown the frame budget (see kMaxExactQubitsRuntime). Promotion is
+        // recomputed here on every build rather than baked into the agent, so it is
+        // a pure function of (authored chi, agent_count, topology) -- a reshape that
+        // grows past the budget degrades in fidelity, and one that shrinks back
+        // under it recovers the exact backend the author actually asked for.
+        // `chi_used` reports the backend that was built.
+        std::optional<Coordination> build_coordination(
+            const AgentSpec& spec, uint32_t& chi_used)
         {
             // Canonicalize to girth>=3 (drop self-bonds/zeros, sum parallels) so every
             // backend gets clean input; the loopy-tier BP math will require it, and it
@@ -89,7 +102,26 @@ namespace wz::engine::cognition
             CanonicalBonds canon_bonds = canonicalize_bonds(spec.agent_count, spec.bonds);
             AgentSpec canon = spec;
             canon.bonds = std::move(canon_bonds.bonds);
-            if (canon.chi == 0) return build_exact(canon);
+
+            chi_used = canon.chi;
+            if (canon.chi == 0) {
+                if (canon.agent_count <= kMaxExactQubitsRuntime) {
+                    return build_exact(canon);
+                }
+                // Over the time budget. Degrade in FIDELITY, not in frame time --
+                // and never by silently refusing to build, which shows up as an NPC
+                // that simply never decides. A nearest-neighbour chain keeps some
+                // entanglement on the TTN; anything else (star, ring, arbitrary
+                // graph) goes to loopy BP, which handles any topology.
+                canon.chi = kPromotedChainChi;
+                if (std::optional<Coordination> ttn = build_ttn(canon)) {
+                    chi_used = kPromotedChainChi;
+                    return ttn;
+                }
+                canon.chi = 1u;
+                chi_used = 1u;
+                return build_loopy(canon);
+            }
             if (canon.chi == 1) return build_loopy(canon);
             return build_ttn(canon);  // chi >= 2 (chi is uint32_t, so 0/1/>=2 total)
         }
@@ -107,7 +139,9 @@ namespace wz::engine::cognition
             return kInvalidAgent;
         }
 
-        std::optional<Coordination> coordination = build_coordination(spec);
+        uint32_t chi_used = spec.chi;
+        std::optional<Coordination> coordination =
+            build_coordination(spec, chi_used);
         if (!coordination) {
             return kInvalidAgent;
         }
@@ -115,6 +149,7 @@ namespace wz::engine::cognition
         const AgentHandle h = next_++;
         Agent agent;
         agent.coordination = std::move(*coordination);
+        agent.effective_chi = chi_used;
         agent.clock = spec.clock;
         agent.commit = spec.commit;
         // Structure kept so rearm can rebuild a fresh register (goals come from
@@ -189,21 +224,17 @@ namespace wz::engine::cognition
         const double dtau = tick(a->coordination, a->clock, now);
         const double dt = was_started ? std::max(0.0, now - prev) : 0.0;
 
-        // A committed decision is a COLLAPSED branch, but relaxation re-mixes it
-        // each step -- re-project every latched qubit so the still-undecided
-        // decisions keep deliberating CONDITIONED on the ones already made (a
-        // coupled decision respects the bond instead of drifting free).
-        for (uint32_t i = 0; i < a->agent_count; ++i) {
-            if (a->latched[i].has_value()) {
-                collapse(a->coordination, i, *a->latched[i]);
-            }
-        }
+        // NOTE there is no re-projection pass here any more. A committed decision
+        // is CLAMPED in the backend by collapse(), and every relaxation step
+        // re-applies the clamp itself -- so the latch is held for the whole of
+        // tick() above, and the still-undecided decisions relax against it
+        // throughout rather than only after the fact. Re-projecting here would be
+        // a no-op that also hid which layer owns the constraint.
 
-        // One bulk BP read -> cache (frame-path readers are O(1)); re-read after
-        // any NEW commit so a later decision this tick sees the conditioned state.
+        // One bulk BP read; re-read after any NEW commit so a later decision this
+        // tick sees the conditioned state.
         std::vector<double> z = decisions(a->coordination);
         for (uint32_t i = 0; i < a->agent_count && i < z.size(); ++i) {
-            a->marginal_cache[i] = z[i];
             if (a->latched[i].has_value()) {
                 continue;
             }
@@ -216,6 +247,17 @@ namespace wz::engine::cognition
                 collapse(a->coordination, i, *bit);
                 z = decisions(a->coordination);
             }
+        }
+
+        // Cache AFTER the commit pass, from the final state -- so every slot is
+        // conditioned on the same thing. Writing each slot inside the loop meant
+        // slot i reflected conditioning on commits 0..i-1 only: every entry
+        // conditioned on a different set, and the whole cache dependent on agent
+        // ordering, which is not what marginal() claims to return. `z` was already
+        // refreshed after the last commit, so this costs nothing extra -- it is
+        // strictly cheaper than the per-slot write it replaces.
+        for (uint32_t i = 0; i < a->agent_count && i < z.size(); ++i) {
+            a->marginal_cache[i] = z[i];
         }
         return dtau;
     }
@@ -317,11 +359,19 @@ namespace wz::engine::cognition
         // overload during unqualified lookup.
         const bool bit = wz::engine::cognition::measure_in_basis(
             a->coordination, agent, theta, a->rng);
-        // Latch as the committed outcome so committed() / get_agent_decision read
-        // it, and keep the marginal cache consistent (|1> -> <sigma_z> = -1).
+        // Latch as the committed outcome so committed() / get_agent_decision read it.
         a->latched[agent] = bit;
-        if (agent < a->marginal_cache.size()) {
-            a->marginal_cache[agent] = bit ? -1.0 : +1.0;
+        // Refresh EVERY slot, not just the measured one. The measurement's
+        // back-action conditions the partners in the coordination immediately, but
+        // their cached marginals would keep the pre-measurement value until the
+        // next think() -- up to a whole think_interval. Verified on a cat pair:
+        // measuring agent 0 to |1> left agent 1's cache at +0.0000 when its true
+        // conditioned value was -1.0. Any "measure the leader, then read the
+        // follower" protocol silently read the wrong thing; the shipped CHSH
+        // witness only escaped it by measuring both qubits.
+        const std::vector<double> z = decisions(a->coordination);
+        for (uint32_t i = 0; i < a->agent_count && i < z.size(); ++i) {
+            a->marginal_cache[i] = z[i];
         }
         return bit;
     }
@@ -346,11 +396,14 @@ namespace wz::engine::cognition
         for (uint32_t i = 0; i < a->agent_count; ++i) {
             spec.goals.push_back(Goal{ .agent = i, .field = a->goal_fields[i] });
         }
-        std::optional<Coordination> coordination = build_coordination(spec);
+        uint32_t chi_used = spec.chi;
+        std::optional<Coordination> coordination =
+            build_coordination(spec, chi_used);
         if (!coordination) {
             return false;
         }
         a->coordination = std::move(*coordination);
+        a->effective_chi = chi_used;
 
         std::fill(a->latched.begin(), a->latched.end(), std::nullopt);
         // Reset the marginal cache too (as reshape does): rearm re-opens every decision
@@ -395,7 +448,9 @@ namespace wz::engine::cognition
                 i < a->goal_fields.size() ? a->goal_fields[i] : 0.0;
             spec.goals.push_back(Goal{ .agent = i, .field = field });
         }
-        std::optional<Coordination> coordination = build_coordination(spec);
+        uint32_t chi_used = spec.chi;
+        std::optional<Coordination> coordination =
+            build_coordination(spec, chi_used);
         if (!coordination) {
             return false;   // agent left untouched
         }
@@ -407,6 +462,7 @@ namespace wz::engine::cognition
         a->latched.assign(agent_count, std::nullopt);
         a->marginal_cache.assign(agent_count, 0.0);
         a->coordination = std::move(*coordination);
+        a->effective_chi = chi_used;
         a->agent_count = agent_count;
         wz::engine::cognition::start(a->clock, now);
         return true;
@@ -434,6 +490,15 @@ namespace wz::engine::cognition
     bool AgentCognitionStore::alive(AgentHandle h) const
     {
         return find(h) != nullptr;
+    }
+
+    std::optional<uint32_t> AgentCognitionStore::backend_chi(AgentHandle h) const
+    {
+        const Agent* a = find(h);
+        if (!a) {
+            return std::nullopt;
+        }
+        return a->effective_chi;
     }
 
     uint32_t AgentCognitionStore::agent_count(AgentHandle h) const

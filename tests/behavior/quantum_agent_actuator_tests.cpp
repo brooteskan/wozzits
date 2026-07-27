@@ -2,6 +2,8 @@
 
 #include <engine/behavior/quantum_agent_behaviors.h>
 
+#include <cmath>
+
 // The decider/actuator split end-to-end: a quantum_agent decides, and a SEPARATE
 // actuator behavior on the same node reads that decision via wz_self_agent_decision
 // and acts on it (here: drives a velocity). This is the worked example for the read
@@ -163,6 +165,12 @@ namespace
                 .config = {
                     cfg("goal", 0.6),
                     cfg("gamma_start", 3.0),
+                    // These tests exercise the ACTUATOR seam -- they need a
+                    // definitely-decided agent to read, so they pin the classical
+                    // limit rather than riding the default residual field (under
+                    // which a goal of 0.6 tops out at P = 0.88 and never clears
+                    // the 0.9 confidence threshold, by design).
+                    cfg("gamma_end", 0.0),
                     cfg("anneal_seconds", 4.0),
                     cfg("relax_rate", 1.0),
                     cfg("confidence", 0.9),
@@ -198,6 +206,7 @@ namespace
                 cfg("posture_goal", posture_goal),
                 cfg("coupling", coupling),
                 cfg("gamma_start", 3.0),
+                cfg("gamma_end", 0.0),   // classical limit -- see above
                 cfg("anneal_seconds", 4.0),
                 cfg("relax_rate", 1.0),
                 cfg("confidence", 0.9),
@@ -355,6 +364,7 @@ TEST(QuantumAgentActuator, RearmThroughWriteSeamFlipsTheDecision)
         .config = {
             cfg("goal", 0.8),
             cfg("gamma_start", 3.0),
+            cfg("gamma_end", 0.0),   // classical limit -- see above
             cfg("anneal_seconds", 4.0),
             cfg("relax_rate", 1.0),
             cfg("confidence", 0.9),
@@ -471,4 +481,148 @@ TEST(QuantumAgentActuator, NoAgentReadsFalse)
     EXPECT_TRUE(frame_storage.behavior_commands.commands.empty());
 
     g_actuator_probe = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// "Measure the leader, then read the follower" -- through the real ABI seam.
+
+namespace
+{
+    struct MeasureProbe
+    {
+        uint8_t measure_ok = 0;
+        int8_t measured_bit = -2;
+        uint8_t partner_read_ok = 0;
+        float partner_marginal = -99.0f;
+        bool done = false;
+    };
+
+    MeasureProbe* g_measure_probe = nullptr;
+
+    // Measures decision 0 with back-action, then -- in the SAME frame, without
+    // waiting for a cognition tick -- reads decision 1 through the cached frame
+    // path. The measurement conditions decision 1 through the shared wavefunction,
+    // so the read must see the conditioned value.
+    void measure_then_read_on_event(
+        const WzBehaviorFrameFacts* facts,
+        const WzBehaviorEvent* event,
+        void*)
+    {
+        if (!facts || !event || event->kind != WZ_EVENT_FRAME_UPDATE) {
+            return;
+        }
+        if (!g_measure_probe || g_measure_probe->done) {
+            return;
+        }
+        g_measure_probe->done = true;
+
+        int8_t bit = -1;
+        g_measure_probe->measure_ok = wz_measure_agent_in_basis(
+            facts, event->entity, nullptr, 0u, /*theta=*/0.0f, &bit);
+        g_measure_probe->measured_bit = bit;
+
+        WzAgentDecision partner{};
+        g_measure_probe->partner_read_ok =
+            wz_self_agent_decision_at(facts, event, 1u, &partner);
+        g_measure_probe->partner_marginal = partner.marginal;
+    }
+
+    uint8_t register_measure_then_read(WzBehaviorPluginApi* api)
+    {
+        if (!api || api->version != WZ_BEHAVIOR_ABI_VERSION
+            || !api->register_module_desc)
+        {
+            return 0;
+        }
+        static const char* channels[] = { "frame.update" };
+        const WzBehaviorModuleDesc desc{
+            .size = sizeof(WzBehaviorModuleDesc),
+            .module = "measure_then_read",
+            .on_event = measure_then_read_on_event,
+            .event_channels = channels,
+            .event_channel_count = 1u,
+            .module_user_data = nullptr,
+        };
+        return api->register_module_desc(api->user, &desc);
+    }
+}
+
+// A measurement's back-action conditions the coupled partners immediately, and the
+// ABI's frame-path cache must reflect that for EVERY slot -- not just the measured
+// one. It used to mirror only the measured index, so a follower read in the same
+// frame reported its pre-measurement value (a cat pair's partner read +0.0000 when
+// its conditioned value was ~-1) until the next cognition tick, up to a whole
+// think_interval later. The shipped CHSH witness only dodged this by measuring both
+// qubits itself.
+TEST(QuantumAgentActuator, MeasuringOneDecisionRefreshesThePartnersCachedRead)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_quantum_agent_behaviors));
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_measure_then_read));
+
+    MeasureProbe probe{};
+    g_measure_probe = &probe;
+
+    // A cat pair: two strongly ferromagnetic decisions, NO goals (so both
+    // marginals sit at ~0 by symmetry), and a commit policy that never fires --
+    // the measurement must be the only collapse.
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "quantum_agent_cat_pair";
+    wz::engine::assets::SceneNodeAsset npc{};
+    npc.id = "npc";
+    npc.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+        .id = "npc_brain",
+        .module = kQuantumAgentModule,
+        .config = {
+            cfg("decisions", 2.0),
+            cfg("coupling", 1.5),
+            cfg("gamma_start", 3.0),
+            cfg("anneal_seconds", 4.0),
+            cfg("confidence", 2.0),     // unreachable
+            cfg("decoherence", 0.0),    // nothing forces a commit
+            cfg("think_interval", 0.25),
+        },
+    });
+    npc.behaviors.push_back(wz::engine::assets::SceneBehaviorAsset{
+        .id = "npc_measure", .module = "measure_then_read" });
+    asset.nodes.push_back(std::move(npc));
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+
+    initialize_behaviors(scene, registry);
+    self_start(scene, registry);
+    for (int i = 1; i <= 40; ++i) {
+        cognition_tick(scene, registry, 0.25 * i);
+    }
+
+    wz::engine::FrameStorage frame_storage{};
+    BehaviorFrameContext context{
+        .frame_storage = &frame_storage,
+        .scene = &scene,
+        .behavior_state = &scene.behavior_state,
+        .commands = &frame_storage.behavior_commands,
+    };
+    dispatch_behaviors(scene, registry, context);
+
+    ASSERT_EQ(probe.measure_ok, 1u);
+    ASSERT_NE(probe.measured_bit, -1);
+    ASSERT_EQ(probe.partner_read_ok, 1u);
+
+    // Conditioned, not stale. Short of +/-1 because gamma_end leaves a residual
+    // field, but nowhere near the ~0 it read before the measurement.
+    EXPECT_GT(std::abs(probe.partner_marginal), 0.5f)
+        << "partner still reporting its pre-measurement marginal";
+    // Ferromagnetic: the partner is conditioned to AGREE with the outcome
+    // (bit 1 == |1> == negative z).
+    if (probe.measured_bit == 1) {
+        EXPECT_LT(probe.partner_marginal, 0.0f);
+    } else {
+        EXPECT_GT(probe.partner_marginal, 0.0f);
+    }
+
+    g_measure_probe = nullptr;
 }

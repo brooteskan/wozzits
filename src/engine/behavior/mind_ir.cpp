@@ -1,5 +1,6 @@
 #include <engine/behavior/mind_ir.h>
 
+#include <engine/behavior/quantum_agent_behaviors.h>
 #include <external/json/json_document.h>
 #include <external/json/json_parser.h>
 #include <external/json/json_read_helpers.h>
@@ -105,9 +106,12 @@ namespace wz::engine::behavior
         const long memory = index_of(root, "memory");
         spec.memory_qubits = memory < 0 ? 0u : static_cast<uint32_t>(memory);
 
-        // Anneal clock -- sensible defaults where a field is absent.
+        // Anneal clock -- sensible defaults where a field is absent. gamma_end takes
+        // the shared quantum_agent authoring default so the two front ends (scalar
+        // config / mind IR) cannot drift; see the note on kQuantumAgentDefaultGammaEnd
+        // for why the residual field is non-zero and how it interacts with confidence.
         spec.clock.gamma_start = 2.0;
-        spec.clock.gamma_end = 0.0;
+        spec.clock.gamma_end = kQuantumAgentDefaultGammaEnd;
         spec.clock.anneal_seconds = 4.0;
         spec.clock.relax_rate = 1.0;
         if (const JSONValue* clock = object_of(root, "clock")) {

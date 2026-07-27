@@ -130,3 +130,51 @@ TEST(Coordination, MeanFieldBackendThroughTheContract)
                   std::abs(decision_z(c, 1))),
         0.5);  // committed
 }
+
+// A collapsed decision is a HELD CONSTRAINT on every backend, not a one-shot
+// projection. This is the contract #298 was filed against: loopy_bp clamped and
+// held, while exact and TTN projected once and let the very next relaxation mix
+// the latch back out -- so the same authored mind treated a committed order as a
+// hard constraint on one backend and an ~8%-per-tick nudge on another. Measured
+// before the fix, one think's worth of relaxation (5 substeps, dtau 0.05) after
+// collapsing agent 0 to |1>:
+//
+//     exact:  -1.0000 -> -0.9224   (drifted off the latch)
+//     loopy:  -1.0000 -> -1.0000   (clamped, held)
+//
+// Every backend must now read like the loopy row -- and hold it over a LONG
+// relaxation, not just one tick, because the drift compounds.
+TEST(Coordination, ACollapsedDecisionIsHeldThroughRelaxationOnEveryBackend)
+{
+    // A ferromagnetic pair with a goal pulling agent 0 the OTHER way, so both the
+    // coupling and the field actively fight the latch.
+    const auto check = [](const char* name, Coordination c) {
+        collapse(c, 0, /*bit=*/true);            // |1> -> z = -1
+        ASSERT_LT(decision_z(c, 0), -0.99) << name << ": collapse did not take";
+
+        relax(c, /*gamma=*/1.0, /*dtau=*/0.05, /*iterations=*/5);   // one think
+        EXPECT_LT(decision_z(c, 0), -0.99) << name << ": drifted off after one think";
+
+        relax(c, 1.0, 0.05, 200);                // many ticks' worth
+        EXPECT_LT(decision_z(c, 0), -0.99) << name << ": drifted off over time";
+        // And the partner is genuinely conditioned by the held decision, not just
+        // following its own goal.
+        EXPECT_LT(decision_z(c, 1), 0.0) << name << ": partner not conditioned";
+    };
+
+    {
+        ExactGroup g = make_exact_group(2, { ExactBond{ 0, 1, 1.0 } });
+        set_goals(g, { Goal{ .agent = 0, .field = 0.8 } });   // fights the latch
+        check("exact", Coordination{ std::move(g) });
+    }
+    {
+        TtnChain t = make_ttn_chain(2, { 1.0 }, /*chi=*/2);
+        t.goal_field[0] = 0.8;
+        check("ttn", Coordination{ std::move(t) });
+    }
+    {
+        LoopyBpGroup g = make_loopy_bp_group(2, { ExactBond{ 0, 1, 1.0 } });
+        set_goals(g, { Goal{ .agent = 0, .field = 0.8 } });
+        check("loopy", Coordination{ std::move(g) });
+    }
+}

@@ -19,10 +19,17 @@
 //     "bonds":  [ {"a": 0, "b": 1, "j": -0.8}, ... ], // couplings (+ ferro, - anti)
 //     "chi":    0,                                    // backend: 0 exact/1 loopy/>=2 TTN
 //     "memory": 0,                                    // learning-register qubits
-//     "clock":  { "gamma_start": 2.0, "gamma_end": 0.0,
+//     "clock":  { "gamma_start": 2.0, "gamma_end": 0.5,
 //                 "anneal_seconds": 4.0, "relax_rate": 1.0 },
 //     "commit": { "confidence": 0.8, "decoherence": 0.0 }
 //   }
+//
+// gamma_end defaults to the shared quantum_agent authoring value
+// (kQuantumAgentDefaultGammaEnd). It is the RESIDUAL transverse field: 0 leaves
+// the Hamiltonian purely diagonal at commit, i.e. no superposition or
+// entanglement survives the sweep. Set "gamma_end": 0.0 explicitly for a mind
+// that should land fully classical -- and see the note in
+// quantum_agent_behaviors.h for how a live field caps `confidence`.
 
 #include <cognition/agent_cognition.h>
 

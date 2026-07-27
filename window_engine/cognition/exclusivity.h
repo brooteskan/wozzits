@@ -27,6 +27,12 @@ namespace wz::engine::cognition
     // Append the soft one-hot terms for `agent`'s dispositions to the group.
     // Additive: call after make_exact_group / set_goals (it pushes bonds and adds
     // to goal_field). `strength` is the penalty weight A.
+    //
+    // Terms naming a qubit the group does not have are DROPPED (an unknown
+    // agent, or a layout wider than the group). These bonds land after
+    // make_exact_group's endpoint guard has already run, so this is the only
+    // thing standing between a mismatched layout and an unchecked ZZ on a
+    // nonexistent qubit.
     void add_one_hot(
         ExactGroup& g,
         const AgentLayout& layout,

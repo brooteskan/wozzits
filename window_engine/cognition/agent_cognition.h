@@ -36,6 +36,44 @@ namespace wz::engine::cognition
     using AgentHandle = uint64_t;
     inline constexpr AgentHandle kInvalidAgent = 0;
 
+    // The exact backend's TIME budget, in qubits. Distinct from the 2^n memory
+    // guard inside build_exact (24 qubits ~ 256 MB): memory is not what breaks
+    // first -- the memory cap sits about ten qubits past the point where an agent
+    // can still run in a game loop. A group over THIS cap is promoted off the exact
+    // backend rather than refused (see build_coordination); backend_chi() reports
+    // what was actually built.
+    //
+    // It is BUILD-DEPENDENT because it is a time budget and time depends on the
+    // optimization level -- and the difference is ~48x, far too large for one
+    // number to serve both. Each tier is set where one think() (5 substeps at the
+    // default 0.25 s cadence) costs roughly 3 ms. Measured 2026-07-26 on a chain:
+    //
+    //   optimized (/O2)          debug (clang-debug, what the engine ships)
+    //      8q    0.073 ms            8q     2.9 ms   <- cap
+    //     12q    1.573 ms            9q     6.6 ms
+    //     13q   ~3     ms   <- cap  10q    14.8 ms
+    //     16q   47.6   ms           12q    66.0 ms
+    //     18q    256   ms           13q   142.6 ms
+    //     20q   1703   ms           14q   334.1 ms
+    //
+    // Consequence worth knowing: a group between the two caps runs exact in a
+    // release build and promoted in a debug one, so its fidelity differs by build.
+    // That is deliberate -- the alternative is the editor stalling 143 ms per think
+    // to preserve a fidelity the frame cannot pay for -- and the quantum_agent
+    // module logs the promotion either way. Re-measure before changing these; they
+    // are budgets, not sizeofs.
+#if defined(NDEBUG)
+    inline constexpr uint32_t kMaxExactQubitsRuntime = 13;
+#else
+    inline constexpr uint32_t kMaxExactQubitsRuntime = 8;
+#endif
+
+    // The chi a promoted nearest-neighbour chain lands on. 2 is the cheapest
+    // setting that carries real entanglement (a chain of 32 at chi=2 is 0.55 ms
+    // vs 2.47 ms at chi=4), and on a chain there are no frustrated loops for
+    // Vidal simple update to over-polarize.
+    inline constexpr uint32_t kPromotedChainChi = 2;
+
     // Declarative description of one coordinated group the store will deliberate.
     // chi selects the coordination backend:
     //   chi == 0  -- exact joint state (genuine entanglement, small groups);
@@ -68,6 +106,10 @@ namespace wz::engine::cognition
         // Build the agent's backend + clock from the spec. Returns a fresh handle,
         // or kInvalidAgent if the spec is unbuildable (bad agent_count, or chi >= 2
         // TTN bonds that are not a nearest-neighbour chain).
+        //
+        // A chi == 0 spec whose agent_count exceeds kMaxExactQubitsRuntime is
+        // PROMOTED to a linear-scaling backend rather than refused; compare
+        // spec.chi against backend_chi(handle) to detect it and tell the author.
         AgentHandle create(const AgentSpec& spec);
 
         // Forget an agent (it left the scene). Returns false if unknown.
@@ -182,6 +224,13 @@ namespace wz::engine::cognition
         uint32_t agent_count(AgentHandle h) const;
         std::size_t size() const { return agents_.size(); }
 
+        // The chi of the backend actually BUILT, which differs from the authored
+        // chi when a chi == 0 group was too big for the exact backend's time
+        // budget and got promoted. Nullopt for an unknown handle. Recomputed on
+        // every rebuild, so a reshape that shrinks back under the budget reports
+        // 0 again.
+        std::optional<uint32_t> backend_chi(AgentHandle h) const;
+
     private:
         struct Agent
         {
@@ -196,7 +245,8 @@ namespace wz::engine::cognition
             // goals come from goal_fields, so the spec's goals are NOT stored --
             // that avoids a stale-goals footgun after set_goal runs).
             std::vector<ExactBond> bonds;
-            uint32_t chi = 0;
+            uint32_t chi = 0;            // AUTHORED chi -- what rebuilds start from
+            uint32_t effective_chi = 0;  // what build_coordination actually built
             uint64_t seed = 0;
             uint32_t agent_count = 0;
             // Learning memory (outside the coordination; never measured).

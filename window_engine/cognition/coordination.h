@@ -44,11 +44,23 @@ namespace wz::engine::cognition
     // the TTN backend does a single BP sweep instead of one per agent).
     std::vector<double> decisions(Coordination& c);
 
-    // Collapse agent `agent`'s decision onto `bit` -- project + renormalize so the
-    // OTHER agents are conditioned on the committed outcome (a coupled decision now
-    // respects the bond instead of being sampled independently). Called when a
-    // decision latches; re-applied each think while it stays latched (relaxation
-    // re-mixes a projected qubit).
+    // Collapse agent `agent`'s decision onto `bit` -- project so the OTHER agents
+    // are conditioned on the committed outcome (a coupled decision now respects
+    // the bond instead of being sampled independently).
+    //
+    // CONTRACT, uniform across every backend: a collapsed decision is a HELD
+    // CONSTRAINT, not a one-shot projection. The backend records the clamp and
+    // re-applies it inside every subsequent relaxation step, so the decision stays
+    // pinned and its coupled partners deliberate against it for the whole tick.
+    // The hold clears only when the coordination is REBUILT (the store's rearm /
+    // reshape) -- there is no unclamp.
+    //
+    // This used to differ per backend, which made the same authored mind behave
+    // differently depending on chi: loopy_bp held its clamp, while exact and TTN
+    // projected once and let the next relaxation mix it back out (measured: a
+    // latched decision drifted -1.0 -> -0.92 in one think). For a squad
+    // conditioning on its leader's committed order that is a behavioral
+    // difference, not a numerical one.
     void collapse(Coordination& c, uint32_t agent, bool bit);
 
     // Replace the per-agent longitudinal goal fields live (dispatches to the held
@@ -62,6 +74,11 @@ namespace wz::engine::cognition
     // capable backend (exact, or TTN with chi capturing the state) it yields
     // non-classical correlations; the product-state (chi = 1) backends report the
     // classical floor. Returns the outcome bit.
+    //
+    // The measured agent is CLAMPED by the same contract as collapse() -- the
+    // rotation leaves it in a definite z state, and that state is then held. Note
+    // the partners are conditioned in the COORDINATION immediately, but any cached
+    // marginals the caller keeps are stale until it re-reads decisions().
     bool measure_in_basis(
         Coordination& c, uint32_t agent, double theta, qstate::Rng& rng);
 }

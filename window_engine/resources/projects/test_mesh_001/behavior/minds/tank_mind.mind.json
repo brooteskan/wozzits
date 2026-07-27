@@ -23,7 +23,7 @@
   "memory": 2,
   "clock": {
     "gamma_start": 3,
-    "gamma_end": 0,
+    "gamma_end": 0.5,
     "anneal_seconds": 3,
     "relax_rate": 1
   },

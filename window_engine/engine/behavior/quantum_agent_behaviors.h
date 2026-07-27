@@ -44,6 +44,9 @@ namespace wz::engine::behavior
     //                     the goal's importance. Default 0 (undecided).
     //   gamma_start     - exploratory transverse field at the start of the anneal.
     //                     Default 2.0.
+    //   gamma_end       - RESIDUAL transverse field at the end of the anneal: how
+    //                     much the agent never quite makes up its mind. See the
+    //                     note below -- default 0.5.
     //   anneal_seconds  - sim-seconds the exploration->commit Gamma sweep spans.
     //                     Default 4.0.
     //   relax_rate      - imaginary-time relaxed per sim-second. Default 1.0.
@@ -54,11 +57,55 @@ namespace wz::engine::behavior
     //   think_interval  - sim-seconds between self-paced wakes. Default 0.25.
     inline constexpr const char* kQuantumAgentGoalKey = "goal";
     inline constexpr const char* kQuantumAgentGammaStartKey = "gamma_start";
+    inline constexpr const char* kQuantumAgentGammaEndKey = "gamma_end";
     inline constexpr const char* kQuantumAgentAnnealSecondsKey = "anneal_seconds";
     inline constexpr const char* kQuantumAgentRelaxRateKey = "relax_rate";
     inline constexpr const char* kQuantumAgentConfidenceKey = "confidence";
     inline constexpr const char* kQuantumAgentDecoherenceKey = "decoherence";
     inline constexpr const char* kQuantumAgentThinkIntervalKey = "think_interval";
+
+    // The authoring default for the one knob that decides whether an agent has any
+    // quantum structure LEFT at commit time. Shared by both front ends -- the
+    // scalar config above and the mind IR (mind_ir.cpp) -- so the two cannot
+    // drift. Deliberately NOT the CognitionClock struct default, which stays at 0
+    // so the cognition library's own tests keep their exact, undriven baseline.
+    //
+    // Gamma_END is the residual transverse field the sweep lands on:
+    //   * 0   -> the Hamiltonian is purely DIAGONAL at commit. Every off-diagonal
+    //            term is gamma, so at gamma = 0 there is no superposition, no
+    //            entanglement, and no wavering left: the agent converges to a
+    //            definite classical configuration and coupled partners decorrelate.
+    //            Measured on a 4-agent ferromagnetic chain with any goal set, the
+    //            bipartite entanglement entropy falls to 0.158 by the end of the
+    //            sweep, and a literal product state (chi=1) reproduces the exact
+    //            backend's marginals to 2.1e-4 -- i.e. the entangled backends cost
+    //            exponential time to compute something a product state gets right.
+    //   * > 0 -> the agent keeps a soft margin: a marginal near zero means "still
+    //            undecided" rather than "already decided", coupled partners stay
+    //            correlated, and a frustrated group visibly wavers. 0.25-0.5 is the
+    //            regime where the coupled backends are both meaningful and
+    //            well-conditioned.
+    // An authored mind that explicitly sets gamma_end: 0.0 keeps the old behavior.
+    //
+    // TUNING NOTE -- a live field interacts with `confidence`. The residual doubt
+    // caps how sure an agent can ever get: a lone qubit under goal h settles at
+    // <sigma_z> = h / sqrt(h^2 + gamma_end^2), i.e. a leading-outcome probability
+    // of (1 + that) / 2. At the 0.5 default a goal of 0.6 tops out at P = 0.88 and
+    // will NEVER clear the default confidence of 0.9. That is the intended
+    // meaning -- a moderate goal against real doubt is not a confident decision --
+    // but it means an agent that must decide needs a goal strong relative to
+    // gamma_end, a lower confidence, or an explicit gamma_end of 0.
+    //
+    // The degenerate case: a PERFECTLY symmetric coupled group with no goals sits
+    // at marginal 0 forever, so confidence never fires and it deliberates without
+    // end (verified: an unbiased ferromagnetic pair holds z0 = z1 = 0.0000 out to
+    // t = 6 s). Any goal breaks the symmetry. `decoherence` is the escape hatch if
+    // an authored mind really does need to commit out of a symmetric state, but it
+    // stays OFF by default: try_commit checks confidence first and then rolls
+    // against the decoherence rate, so a non-zero default would mostly fire
+    // MID-ANNEAL while Gamma is still high and the state is unpolarized -- turning
+    // considered decisions into coin flips, which is the opposite of the point.
+    inline constexpr double kQuantumAgentDefaultGammaEnd = 0.5;
 
     // Second coupled decision (qubit 1): a SECOND longitudinal goal + a bond that
     // couples it to qubit 0, so the two dispositions entangle and resolve together.

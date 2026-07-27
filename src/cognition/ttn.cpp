@@ -101,6 +101,7 @@ namespace wz::engine::cognition
         g.mps = std::move(*build(std::move(b)));
         g.coupling = std::move(coupling);
         g.goal_field.assign(n, 0.0);
+        g.clamp.assign(n, -1);
         g.chi = chi;
         return g;
     }
@@ -135,6 +136,17 @@ namespace wz::engine::cognition
             apply_one_site_gate(
                 node_data(g.mps, i), site_gate(gamma, g.goal_field[i], dtau * 0.5));
         }
+        // Re-apply every held collapse. Both the single-site gates and the coupling
+        // gates mix a projected site back off its latch, so without this a
+        // "committed" decision is a soft nudge that decays each step -- and its
+        // coupled partners spend the tick deliberating against an agent that has
+        // already decided. Before the rescale: zeroing a component only shrinks
+        // the site, which renormalize_sites then puts back in range.
+        for (uint32_t i = 0; i < n && i < g.clamp.size(); ++i) {
+            if (g.clamp[i] >= 0) {
+                collapse(g, i, g.clamp[i] != 0);
+            }
+        }
         // The gates above are non-unitary, so rescale the sites back into range or the
         // MPS 2-norm compounds each step and eventually overflows to inf/NaN (see
         // renormalize_sites). Pure gauge -- the trace-normalized marginals are unchanged.
@@ -160,6 +172,12 @@ namespace wz::engine::cognition
 
     void collapse(TtnChain& g, uint32_t agent, bool bit)
     {
+        if (agent >= node_count(g.mps)) {
+            return;
+        }
+        if (agent < g.clamp.size()) {
+            g.clamp[agent] = bit ? 1 : 0;   // held across every later relax_step
+        }
         // Zero the OPPOSITE physical component of the site (layout A[(s*L+l)*R+r]).
         MpsSite& A = node_data(g.mps, static_cast<NodeHandle>(agent));
         const uint32_t s_zero = bit ? 0u : 1u;

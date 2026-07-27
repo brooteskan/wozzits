@@ -6,7 +6,7 @@
   "memory": 1,
   "clock": {
     "gamma_start": 2,
-    "gamma_end": 0,
+    "gamma_end": 0.5,
     "anneal_seconds": 0.3,
     "relax_rate": 10
   },

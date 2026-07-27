@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <optional>
 #include <vector>
 
@@ -604,22 +605,26 @@ TEST(AgentCognition, RearmResetsStaleMarginal)
     EXPECT_NEAR(store.marginal(h, 0), 0.0, 1e-9);     // reset, NOT the stale ~1
 }
 
-// create()/reshape() must REFUSE a qubit count that would blow up the exact
-// backend's 2^n qstate -- uint64_t{1} << n is UB at n >= 64, and counts in the 30s
-// OOM into hundreds of GB. The count is refused, never attempted.
-TEST(AgentCognition, RejectsInsaneQubitCounts)
+// A qubit count that would blow up the exact backend's 2^n qstate must never be
+// ATTEMPTED -- uint64_t{1} << n is UB at n >= 64, and counts in the 30s OOM into
+// hundreds of GB. The exact backend is not entered at those sizes; the group is
+// promoted onto a linear-scaling one instead (see PromotesOversizedExactGroups).
+TEST(AgentCognition, NeverBuildsAnOversizedExactBackend)
 {
     AgentCognitionStore store;
 
-    // chi = 0 exact: 64 would shift-UB, 40 would allocate terabytes, 25 is just over
-    // the 24-qubit cap. All refused rather than attempted.
+    // chi = 0 exact: 64 would shift-UB, 40 would allocate terabytes, 25 is just
+    // over the 24-qubit memory cap. None of them may reach ExactGroup.
     for (uint32_t n : { 25u, 40u, 64u }) {
         AgentSpec spec;
         spec.agent_count = n;
         spec.clock = anneal_clock();
-        EXPECT_EQ(store.create(spec), kInvalidAgent) << "agent_count=" << n;
+        const AgentHandle h = store.create(spec);
+        ASSERT_NE(h, kInvalidAgent) << "agent_count=" << n;
+        EXPECT_NE(store.backend_chi(h), 0u) << "agent_count=" << n;
     }
-    // The learning-memory register is the same 2^n qstate -- also bounded.
+    // The learning-memory register is the same 2^n qstate, and has NO linear
+    // fallback to be promoted onto -- so it stays a hard refusal.
     {
         AgentSpec spec;
         spec.agent_count = 2;
@@ -638,6 +643,122 @@ TEST(AgentCognition, RejectsInsaneQubitCounts)
         EXPECT_FALSE(store.reshape(h, 1u << 20, {}, 0.0));
         EXPECT_EQ(store.agent_count(h), 4u);
     }
+}
+
+// kMaxExactQubitsRuntime is a TIME budget, and a group over it is promoted to a
+// linear-scaling backend rather than refused. Refusing is the worse failure: the
+// caller gets kInvalidAgent, the NPC never decides, and nothing says why. The
+// topology picks the target -- a nearest-neighbour chain keeps bounded
+// entanglement on the TTN, anything else falls to loopy BP.
+TEST(AgentCognition, PromotesOversizedExactGroupsByTopology)
+{
+    AgentCognitionStore store;
+    const uint32_t n = kMaxExactQubitsRuntime + 3u;
+
+    // A chain -> TTN at kPromotedChainChi.
+    {
+        AgentSpec spec;
+        spec.agent_count = n;
+        spec.chi = 0;
+        spec.clock = anneal_clock();
+        for (uint32_t i = 0; i + 1 < n; ++i) {
+            spec.bonds.push_back(ExactBond{ i, i + 1u, 0.5 });
+        }
+        const AgentHandle h = store.create(spec);
+        ASSERT_NE(h, kInvalidAgent);
+        EXPECT_EQ(store.backend_chi(h), kPromotedChainChi);
+        EXPECT_EQ(store.agent_count(h), n);
+    }
+    // A star is not a chain, so the TTN rejects it -> loopy BP, which takes any
+    // topology.
+    {
+        AgentSpec spec;
+        spec.agent_count = n;
+        spec.chi = 0;
+        spec.clock = anneal_clock();
+        for (uint32_t i = 1; i < n; ++i) {
+            spec.bonds.push_back(ExactBond{ 0u, i, 0.5 });
+        }
+        const AgentHandle h = store.create(spec);
+        ASSERT_NE(h, kInvalidAgent);
+        EXPECT_EQ(store.backend_chi(h), 1u);
+    }
+    // At or under the budget nothing is promoted -- the author's chi = 0 stands.
+    {
+        AgentSpec spec;
+        spec.agent_count = kMaxExactQubitsRuntime;
+        spec.chi = 0;
+        spec.clock = anneal_clock();
+        const AgentHandle h = store.create(spec);
+        ASSERT_NE(h, kInvalidAgent);
+        EXPECT_EQ(store.backend_chi(h), 0u);
+    }
+}
+
+// Promotion is recomputed on every build, not baked into the agent: a commander
+// growing its squad past the budget degrades in FIDELITY instead of frame time,
+// and shrinking back recovers the exact backend that was actually authored. The
+// old behavior was reshape() silently returning false and the group never
+// changing -- which tank_commander_plugin.cpp ignores.
+TEST(AgentCognition, ReshapePromotesAndDemotesWithGroupSize)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 4;
+    spec.chi = 0;
+    spec.clock = anneal_clock();
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    EXPECT_EQ(store.backend_chi(h), 0u);
+
+    // Grow past the budget as a star -- the shape reshape_group_request builds.
+    const uint32_t big = kMaxExactQubitsRuntime + 5u;
+    std::vector<ExactBond> star;
+    for (uint32_t i = 1; i < big; ++i) {
+        star.push_back(ExactBond{ 0u, i, 0.5 });
+    }
+    ASSERT_TRUE(store.reshape(h, big, star, 1.0));
+    EXPECT_EQ(store.agent_count(h), big);
+    EXPECT_EQ(store.backend_chi(h), 1u);   // promoted
+
+    // Shrink back under it: the authored chi = 0 comes back.
+    ASSERT_TRUE(store.reshape(h, 3u, { ExactBond{ 0u, 1u, 0.5 } }, 2.0));
+    EXPECT_EQ(store.backend_chi(h), 0u);
+
+    // And rearm keeps whatever the current size implies.
+    ASSERT_TRUE(store.rearm(h, 3.0));
+    EXPECT_EQ(store.backend_chi(h), 0u);
+}
+
+// A promoted group must actually WORK, not just build: the whole point is that an
+// oversized squad still deliberates instead of going dark.
+TEST(AgentCognition, PromotedGroupStillDeliberates)
+{
+    AgentCognitionStore store;
+    const uint32_t n = kMaxExactQubitsRuntime + 3u;
+    AgentSpec spec;
+    spec.agent_count = n;
+    spec.chi = 0;
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.9, .decoherence_rate = 0.0 };
+    for (uint32_t i = 0; i + 1 < n; ++i) {
+        spec.bonds.push_back(ExactBond{ i, i + 1u, 1.0 });
+    }
+    spec.goals.push_back(Goal{ .agent = 0, .field = 1.0 });
+
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    store.start(h, 0.0);
+    for (int i = 1; i <= 40; ++i) {
+        store.think(h, 0.25 * i);
+    }
+
+    // The goal drove qubit 0 to |0>, and the ferromagnetic chain dragged the far
+    // end along -- entanglement the promoted TTN still carries and a refusal
+    // would have delivered as nothing at all.
+    EXPECT_EQ(store.committed(h, 0), std::optional<bool>(false));
+    EXPECT_GT(store.marginal(h, 0), 0.8);
+    EXPECT_GT(store.marginal(h, n - 1u), 0.0);
 }
 
 // A reward with an absurd strength must NOT NaN-poison the memory. exp(strength) is
@@ -668,4 +789,80 @@ TEST(AgentCognition, RewardOverflowDoesNotPoisonMemory)
         EXPECT_TRUE(store.reward(h, 0, /*toward=*/false, 30.0));
     }
     EXPECT_LT(store.memory_preference(h, 0), 0.5);   // moved back -> not poisoned
+}
+
+// Every slot of the marginal cache must be conditioned on the SAME state. The
+// cache used to be written per-slot INSIDE the commit loop, before that slot's
+// own collapse -- so a decision that committed this tick reported a marginal from
+// before it committed, and slot i was conditioned on commits 0..i-1 only. The
+// visible symptom: committed() says "decided |1>" while marginal() says ~0.
+TEST(AgentCognition, MarginalCacheAgreesWithTheLatchesItReportsAlongside)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 2;
+    spec.bonds = { ExactBond{ 0, 1, 1.5 } };   // strong ferro: a cat pair
+    spec.clock = anneal_clock();
+    // No goals, so both marginals sit at ~0 by symmetry and `confidence` can never
+    // fire -- ONLY decoherence commits, and it commits out of an unpolarized state.
+    // That is exactly the case the old per-slot write got wrong.
+    spec.commit = CommitPolicy{ .confidence = 1.1, .decoherence_rate = 5.0 };
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    run_anneal(store, h);
+
+    for (uint32_t i = 0; i < 2; ++i) {
+        const std::optional<bool> bit = store.committed(h, i);
+        ASSERT_TRUE(bit.has_value()) << "agent " << i << " never committed";
+        const double z = store.marginal(h, i);
+        // A committed decision reads as fully polarized, in the direction it
+        // committed: |1> -> z = -1, |0> -> z = +1.
+        EXPECT_NEAR(z, *bit ? -1.0 : +1.0, 1e-9)
+            << "agent " << i << " marginal disagrees with its own latch";
+    }
+    // And the pair agreed -- the ferromagnetic bond conditioned the second
+    // decision on the first, rather than the two being sampled independently.
+    EXPECT_EQ(store.committed(h, 0), store.committed(h, 1));
+}
+
+// measure_in_basis conditions the PARTNERS through the shared wavefunction, so
+// their cached marginals must be refreshed too. Only the measured slot used to be
+// updated, leaving every partner reporting its pre-measurement value until the
+// next think() -- up to a whole think_interval. Any "measure the leader, then read
+// the follower" protocol silently read stale values; the shipped CHSH witness only
+// escaped it by measuring both qubits.
+TEST(AgentCognition, MeasureInBasisRefreshesThePartnersCachedMarginals)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 2;
+    spec.bonds = { ExactBond{ 0, 1, 1.5 } };   // cat pair
+    spec.clock = anneal_clock();
+    spec.clock.gamma_end = 0.5;                // keep the state entangled
+    // Nothing self-commits: we want the measurement to be the only collapse.
+    spec.commit = CommitPolicy{ .confidence = 2.0, .decoherence_rate = 0.0 };
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    run_anneal(store, h);
+
+    // Unbiased and entangled: both marginals sit near zero, correlated but
+    // individually undecided -- the cat.
+    ASSERT_NEAR(store.marginal(h, 0), 0.0, 0.1);
+    ASSERT_NEAR(store.marginal(h, 1), 0.0, 0.1);
+
+    // Measure ONLY agent 0, in the z basis.
+    const std::optional<bool> bit = store.measure_in_basis(h, 0, /*theta=*/0.0);
+    ASSERT_TRUE(bit.has_value());
+
+    // The partner is now conditioned -- and its CACHE says so immediately, without
+    // waiting for a think(). Before the fix this still read +0.0000.
+    EXPECT_NEAR(store.marginal(h, 0), *bit ? -1.0 : +1.0, 1e-9);
+    // Strongly conditioned -- and nowhere near the ~0 it read before. NOT +/-1:
+    // gamma_end is 0.5 here, so the residual transverse field leaves the partner
+    // short of certainty even when fully conditioned (measured ~0.83). That is the
+    // point of a live field, not a failure of the refresh.
+    EXPECT_GT(std::abs(store.marginal(h, 1)), 0.5)
+        << "partner's cached marginal is stale after the measurement";
+    // Ferromagnetic, so the partner is conditioned to AGREE.
+    EXPECT_GT(store.marginal(h, 0) * store.marginal(h, 1), 0.0);
 }

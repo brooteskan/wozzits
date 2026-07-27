@@ -84,6 +84,13 @@ namespace wz::engine::behavior
     // the one-shot lifecycle passes this APPENDS to the command buffer (it shares
     // the frame buffer) and does not clear it. Run once per frame, after
     // dispatch_behaviors, before applying the command buffer.
+    //
+    // BUDGETED: due bindings fire oldest-overdue first until
+    // context.cognition_tick_budget_ms of wall-clock is spent, then the remainder
+    // are left DUE (wake untouched) and run on a later frame. At least one always
+    // fires, so a single agent costing more than the whole budget still makes
+    // progress instead of being deferred forever. Deferral is logged as a warning
+    // when a logger is wired. Set the budget <= 0 to fire everything due.
     void dispatch_cognition_tick(
         wz::engine::assets::SceneInstance& scene,
         const BehaviorRegistry& registry,

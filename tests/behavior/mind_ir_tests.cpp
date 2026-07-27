@@ -6,6 +6,7 @@
 // wave function through the AgentCognitionStore.
 
 #include <engine/behavior/mind_ir.h>
+#include <engine/behavior/quantum_agent_behaviors.h>
 #include <cognition/agent_cognition.h>
 
 #include <gtest/gtest.h>
@@ -70,6 +71,29 @@ TEST(MindIr, DefaultsApplyWhenOptionalBlocksAreAbsent)
     EXPECT_DOUBLE_EQ(spec.clock.gamma_start, 2.0);
     EXPECT_DOUBLE_EQ(spec.clock.anneal_seconds, 4.0);
     EXPECT_DOUBLE_EQ(spec.commit.confidence, 0.8);
+
+    // gamma_end -- the knob that decides whether the mind has any quantum
+    // structure left at commit time -- defaults to the shared quantum_agent
+    // authoring value, NOT to the CognitionClock struct zero: an absent gamma_end
+    // leaves a RESIDUAL transverse field, so coupled qubits stay correlated and a
+    // marginal near zero still means "undecided" rather than "already decided".
+    EXPECT_DOUBLE_EQ(
+        spec.clock.gamma_end,
+        wz::engine::behavior::kQuantumAgentDefaultGammaEnd);
+    // Decoherence stays off: it fires mid-anneal against an unpolarized state, so
+    // on by default would turn considered decisions into coin flips.
+    EXPECT_DOUBLE_EQ(spec.commit.decoherence_rate, 0.0);
+}
+
+// A mind that wants to land fully classical says so, and the explicit zero is
+// honoured rather than being overwritten by the non-zero default.
+TEST(MindIr, ExplicitZeroGammaEndIsHonoured)
+{
+    cog::AgentSpec spec;
+    std::string err;
+    ASSERT_TRUE(parse_mind(
+        R"({"qubits":1,"clock":{"gamma_end":0.0}})", spec, err)) << err;
+    EXPECT_DOUBLE_EQ(spec.clock.gamma_end, 0.0);
 }
 
 TEST(MindIr, RejectsMalformedGraphs)

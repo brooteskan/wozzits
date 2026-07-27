@@ -18,6 +18,12 @@ TEST(AgentLayout, AddressesDispositionsToQubits)
     EXPECT_EQ(qubit_of(layout, 1, 0), 2u);  // agent 1 starts after agent 0's two
     EXPECT_EQ(qubit_of(layout, 1, 2), 4u);
     EXPECT_EQ(qubit_of(layout, 2, 0), 5u);
+
+    // Out of range is kInvalidQubit, not a silent neighbour's qubit or an
+    // out-of-bounds read: a layout can be wider than the group addressing it.
+    EXPECT_EQ(qubit_of(layout, 0, 2), kInvalidQubit);   // agent 0 has only 2
+    EXPECT_EQ(qubit_of(layout, 2, 1), kInvalidQubit);   // agent 2 has only 1
+    EXPECT_EQ(qubit_of(layout, 3, 0), kInvalidQubit);   // no agent 3
 }
 
 // One agent, two independent dispositions (e.g. flee?, alert?), each biased by

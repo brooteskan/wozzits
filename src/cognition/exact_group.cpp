@@ -24,6 +24,7 @@ namespace wz::engine::cognition
             .joint = qstate::uniform(agent_count),
             .bonds = std::move(bonds),
             .goal_field = std::vector<double>(agent_count, 0.0),
+            .clamp = std::vector<int8_t>(agent_count, -1),
         };
     }
 
@@ -61,6 +62,18 @@ namespace wz::engine::cognition
             const double h = q < g.goal_field.size() ? g.goal_field[q] : 0.0;
             qstate::apply_imag_time_field(g.joint, q, gamma, h, dtau * 0.5);
         }
+
+        // Re-apply every held collapse. The transverse field and the bonds above
+        // both mix a projected qubit straight back off its latch (measured: a
+        // committed decision drifts from -1.0 to -0.92 in ONE think's worth of
+        // relaxation), so without this a "committed" decision is really an ~8%-
+        // per-tick nudge -- and its coupled partners spend the whole tick
+        // deliberating against an agent that has already decided.
+        for (uint32_t q = 0; q < n && q < g.clamp.size(); ++q) {
+            if (g.clamp[q] >= 0) {
+                qstate::project(g.joint, q, g.clamp[q] != 0);
+            }
+        }
     }
 
     void relax(ExactGroup& g, double gamma, double dtau, uint32_t iterations)
@@ -86,7 +99,13 @@ namespace wz::engine::cognition
 
     void collapse(ExactGroup& g, uint32_t agent, bool bit)
     {
+        if (agent >= g.joint.qubits) {
+            return;
+        }
         qstate::project(g.joint, agent, bit);
+        if (agent < g.clamp.size()) {
+            g.clamp[agent] = bit ? 1 : 0;   // held across every later relax_step
+        }
     }
 
     double connected_correlation(const ExactGroup& g, uint32_t a, uint32_t b)
@@ -102,6 +121,13 @@ namespace wz::engine::cognition
         // Straight through to the joint register: measure() there projects the
         // whole 2^N state, so a coupled partner is conditioned by the outcome --
         // genuine entanglement, the source of the Bell violation.
-        return qstate::measure_in_basis(g.joint, agent, theta, rng);
+        const bool bit = qstate::measure_in_basis(g.joint, agent, theta, rng);
+        // A measured decision is held exactly like a committed one: the rotation
+        // leaves the qubit in a definite z state, so the same clamp applies and
+        // the partners keep relaxing against the outcome.
+        if (agent < g.clamp.size()) {
+            g.clamp[agent] = bit ? 1 : 0;
+        }
+        return bit;
     }
 }

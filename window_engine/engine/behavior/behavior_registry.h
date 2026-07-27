@@ -93,6 +93,18 @@ namespace wz::engine::behavior
         // compares scheduled wakes against, and the value surfaced to modules as
         // facts.sim_time. The host accumulates it per frame.
         double sim_time = 0.0;
+        // Wall-clock ceiling (MILLISECONDS) on one frame's cognition.tick pass.
+        // dispatch_cognition_tick fires due bindings oldest-overdue first until
+        // this is spent, then leaves the rest DUE so they run next frame -- an
+        // agent is delayed, never skipped or starved. <= 0 means no ceiling.
+        //
+        // Wall-clock, not sim-time, because what it protects is the frame: the
+        // cost being bounded is a synchronous think() on the sim thread, and
+        // think() itself is priced in sim-time so a deferred agent relaxes by
+        // exactly as much when it does run. The default is deliberately generous
+        // -- it is a backstop against a spike (50 agents at 12 qubits is 78 ms in
+        // one frame), not a scheduler.
+        double cognition_tick_budget_ms = 4.0;
         // The registry backing this dispatch, so facts can resolve behavior-
         // registered actuators by name (facts.actuator_lookup -- the open actuator
         // vocabulary). The dispatcher sets it next to `scene`; null in contexts that

@@ -139,7 +139,9 @@ namespace wz::engine::behavior
             }
             spec.clock.gamma_start =
                 config_float(facts, kQuantumAgentGammaStartKey, 2.0f);
-            spec.clock.gamma_end = 0.0;
+            spec.clock.gamma_end = config_float(
+                facts, kQuantumAgentGammaEndKey,
+                static_cast<float>(kQuantumAgentDefaultGammaEnd));
             spec.clock.anneal_seconds =
                 config_float(facts, kQuantumAgentAnnealSecondsKey, 4.0f);
             spec.clock.relax_rate =
@@ -213,9 +215,10 @@ namespace wz::engine::behavior
                 seed ^= seed >> 31;
                 spec.seed = seed ? seed : 0x9e3779b97f4a7c15ull;
 
-                const char* const backend = spec.chi == 0u
-                    ? "exact"
-                    : (spec.chi == 1u ? "loopy" : "ttn");
+                const auto backend_name = [](uint32_t chi) {
+                    return chi == 0u ? "exact" : (chi == 1u ? "loopy" : "ttn");
+                };
+                const char* const backend = backend_name(spec.chi);
                 const wz::engine::cognition::AgentHandle handle =
                     quantum_agent_store().create(spec);
                 if (handle == wz::engine::cognition::kInvalidAgent) {
@@ -231,10 +234,29 @@ namespace wz::engine::behavior
                         static_cast<unsigned>(spec.bonds.size()));
                     return;
                 }
+                // The store PROMOTES a chi=0 group that has outgrown the exact
+                // backend's frame budget onto a linear-scaling one. Say so loudly:
+                // the agent still works, but its fidelity is not what was authored,
+                // and a silent swap is the kind of thing that gets rediscovered
+                // months later as "why doesn't the squad entangle any more".
+                const std::optional<uint32_t> built =
+                    quantum_agent_store().backend_chi(handle);
+                if (built.has_value() && *built != spec.chi) {
+                    wz_log_infof(
+                        facts,
+                        "[quantum_agent] chi=%u with %u agents exceeds the exact "
+                        "backend's budget of %u qubits; PROMOTED to chi=%u (%s). "
+                        "Fidelity is reduced -- author chi explicitly to choose.",
+                        spec.chi, spec.agent_count,
+                        wz::engine::cognition::kMaxExactQubitsRuntime, *built,
+                        *built == 1u ? "loopy BP, no entanglement"
+                                     : "TTN chain, bounded entanglement");
+                }
                 wz_log_infof(
                     facts,
                     "[quantum_agent] built chi=%u backend=%s agents=%u bonds=%u",
-                    spec.chi, backend, spec.agent_count,
+                    built.value_or(spec.chi), backend_name(built.value_or(spec.chi)),
+                    spec.agent_count,
                     static_cast<unsigned>(spec.bonds.size()));
                 quantum_agent_store().start(handle, wz_sim_time(facts));
 
@@ -254,9 +276,21 @@ namespace wz::engine::behavior
                 // binding's wake at +inf before firing -- so a tick that fires BEFORE
                 // this self.start early-returns (below) without rescheduling and strands
                 // the wake asleep forever, and nothing else would ever wake it. Setting
-                // the wake here starts the loop regardless of dispatch order; 0 = due
-                // now, matching the "no entry -> due now" first-think timing.
-                wz_set_next_wake(facts, 0.0f);
+                // the wake here starts the loop regardless of dispatch order.
+                //
+                // PHASE-OFFSET the first wake within [0, think_interval). The tick
+                // handler reschedules with a FIXED delay, so whatever phase an agent
+                // starts on it keeps forever: agents created in the same frame (a pool
+                // prewarm, a squad spawn, a scene load) would otherwise all think on the
+                // same frame, every think_interval, for the life of the scene. That is
+                // the same cost spike the self-paced scheduler exists to avoid, just
+                // rarer and lumpier -- 50 agents at 12 qubits is 78 ms in one frame from
+                // work that averages 6.3 ms/s each. Derived from the same per-instance
+                // splitmix64 mix as spec.seed, so it is deterministic per entity and
+                // stable across rebuilds; the top 53 bits scaled into [0, 1).
+                const float phase = static_cast<float>(
+                    static_cast<double>(seed >> 11) * (1.0 / 9007199254740992.0));
+                wz_set_next_wake(facts, phase * state->think_interval);
                 return;
             }
 
@@ -316,6 +350,8 @@ namespace wz::engine::behavior
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
             { kQuantumAgentGammaStartKey, "Exploration (gamma start)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 2.0, nullptr },
+            { kQuantumAgentGammaEndKey, "Residual doubt (gamma end)",
+                WZ_BEHAVIOR_PARAM_FLOAT, kQuantumAgentDefaultGammaEnd, nullptr },
             { kQuantumAgentAnnealSecondsKey, "Deliberation seconds",
                 WZ_BEHAVIOR_PARAM_FLOAT, 4.0, nullptr },
             { kQuantumAgentRelaxRateKey, "Relax rate",
