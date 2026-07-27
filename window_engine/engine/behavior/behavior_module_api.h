@@ -1892,19 +1892,21 @@ static inline uint8_t wz_self_reshape_group(
 static inline uint8_t wz_agent_reward(
     const WzBehaviorFrameFacts* facts,
     WzBehaviorEntityId entity,
-    uint32_t memory_qubit,
-    uint8_t toward,
+    uint32_t memory_bit,
+    uint8_t value,
     float strength)
 {
     if (!facts || !facts->reward_agent) {
         return 0;
     }
     return facts->reward_agent(
-        facts->cognition_reader_user, entity, memory_qubit, toward, strength);
+        facts->cognition_reader_user, entity, memory_bit, value, strength);
 }
 
-// Read what a quantum_agent's memory learned about `memory_qubit`: <sigma_z> in
-// [-1, 1] (+1 leans toward the `toward == true` branch). 0 if no memory.
+// Read what a quantum_agent's memory learned about `memory_bit`: <sigma_z> in
+// [-1, 1], where +1 means it leans to the 0 branch and -1 to the 1 branch. 0 if
+// no memory. (v38: this reading is unchanged, but wz_agent_reward's flag flipped
+// -- see behavior_plugin_abi.h.)
 static inline float wz_agent_memory(
     const WzBehaviorFrameFacts* facts,
     WzBehaviorEntityId entity,
@@ -1921,15 +1923,15 @@ static inline float wz_agent_memory(
 static inline uint8_t wz_self_agent_reward(
     const WzBehaviorFrameFacts* facts,
     const WzBehaviorEvent* event,
-    uint32_t memory_qubit,
-    uint8_t toward,
+    uint32_t memory_bit,
+    uint8_t value,
     float strength)
 {
     return wz_agent_reward(
         facts,
         event ? event->entity : (WzBehaviorEntityId)WZ_INVALID_BEHAVIOR_ENTITY,
-        memory_qubit,
-        toward,
+        memory_bit,
+        value,
         strength);
 }
 

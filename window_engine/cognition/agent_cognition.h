@@ -25,6 +25,7 @@
 #include <cognition/coordination.h>
 #include <cognition/cognition_clock.h>
 #include <cognition/exact_group.h>  // ExactBond, Goal
+#include <cognition/learning.h>      // LearnedTable
 #include <cognition/qstate/qstate.h>          // Rng
 
 #include <cstdint>
@@ -99,11 +100,12 @@ namespace wz::engine::cognition
         CommitPolicy commit;           // when a disposition collapses
         uint32_t chi = 0;              // backend selector (see above)
         uint64_t seed = 0x9e3779b97f4a7c15ull;  // rng for decoherence collapse
-        // Optional LEARNING: a memory register of this many qubits, held OUTSIDE
-        // the coordination -- never measured, so it accumulates across commits /
-        // rearms / reshapes. reward() concentrates it; memory_preference() reads
-        // it back (feed as a goal to bias decisions). 0 = no memory.
-        uint32_t memory_qubits = 0;
+        // Optional LEARNING: a table of this many remembered binary FACTS, held
+        // outside the coordination, so it accumulates across commits / rearms /
+        // reshapes. reward() concentrates it; memory_preference() reads it back
+        // (feed as a goal to bias decisions). 0 = no memory, capped at
+        // kMaxMemoryBits. It is a classical weight table -- see learning.h.
+        uint32_t memory_bits = 0;
 
         // MULTI-DISPOSITION AGENTS. Empty (the default) means one qubit per agent:
         // one binary yes/no choice each, and every existing mind is unchanged.
@@ -193,41 +195,52 @@ namespace wz::engine::cognition
         std::optional<bool> measure_in_basis(
             AgentHandle h, uint32_t agent, double theta);
 
-        // LEARNING. Reinforce the agent's memory register. `toward` picks which branch
-        // of `memory_qubit` to boost: toward == true boosts the |0> branch (raising the
-        // qubit's memory_preference toward +1); toward == false boosts |1> (toward -1).
-        // `strength` > 0 rewards, < 0 punishes (monotonic + saturating). NB: this is the
-        // INVERSE of reward_pair's convention below, where ctx_value/dec_value == true
-        // selects the |1> branch -- follow each function's own mapping, not a shared one.
-        // Untouched by rearm/reshape/commit -- the learned bias accumulates. False if the
-        // agent has no memory / bad qubit.
+        // LEARNING. Reinforce one branch of remembered fact `memory_bit`.
+        //
+        // VALUE SEMANTICS, throughout this API: `value` names the branch being
+        // reinforced -- value == true is the 1 branch (driving memory_preference
+        // toward -1), value == false is the 0 branch (toward +1). reward_pair and
+        // conditional_preference below use the same mapping.
+        //
+        // This USED TO BE INVERTED relative to reward_pair: the parameter was
+        // called `toward` and toward == true selected the 0 branch, so the two
+        // halves of one learning API meant opposite things by the same bool. The
+        // header documented the trap rather than fixing it. If you are porting
+        // caller code, flip every reward() bool; the behavior ABI version was
+        // bumped so a stale plugin fails to load rather than silently learning
+        // backwards.
+        //
+        // `strength` > 0 rewards, < 0 punishes; monotonic and saturating, with no
+        // magnitude at which it misbehaves. Untouched by rearm/reshape/commit --
+        // the learned bias accumulates. False if the agent has no memory / bad bit.
         bool reward(
-            AgentHandle h, uint32_t memory_qubit, bool toward, double strength);
+            AgentHandle h, uint32_t memory_bit, bool value, double strength);
 
-        // Read what the memory learned about `memory_qubit`: <sigma_z> in [-1, 1]
-        // (+1 = leans toward |0>). Feed it, scaled, as a decision goal. 0 if no
-        // memory / bad qubit.
-        double memory_preference(AgentHandle h, uint32_t memory_qubit) const;
+        // Read what the table learned about `memory_bit`: <sigma_z> in [-1, 1]
+        // (+1 = leans to the 0 branch, -1 = to the 1 branch). Feed it, scaled, as
+        // a decision goal. 0 if no memory / bad bit.
+        double memory_preference(AgentHandle h, uint32_t memory_bit) const;
 
-        // CONTEXTUAL LEARNING. Reinforce the JOINT branch (ctx_qubit == ctx_value
-        // AND dec_qubit == dec_value) in the memory register -- learning the
-        // "diagonal" (reward (ctx0,act0) + (ctx1,act1)) drives an ENTANGLED
-        // conditional policy (the action depends on the context), which a product
-        // memory cannot represent. False if the agent has no memory / bad qubit.
+        // CONTEXTUAL LEARNING. Reinforce the JOINT branch (ctx_bit == ctx_value AND
+        // dec_bit == dec_value). Learning the "diagonal" -- reward (ctx0, act0) and
+        // (ctx1, act1) -- produces a table whose action is undecided marginally but
+        // definite GIVEN the context, which an independent (product) table cannot
+        // represent. False if the agent has no memory / bad bit.
         bool reward_pair(
             AgentHandle h,
-            uint32_t ctx_qubit, bool ctx_value,
-            uint32_t dec_qubit, bool dec_value,
+            uint32_t ctx_bit, bool ctx_value,
+            uint32_t dec_bit, bool dec_value,
             double strength);
 
-        // Read the learned action for a context WITHOUT measuring: <sigma_z> of
-        // dec_qubit GIVEN ctx_qubit == ctx_value, in [-1, 1] (+1 => |0>). Feed it,
-        // scaled, as the decision's goal so the agent acts on the policy for the
-        // CURRENT context. 0 if no memory / bad qubit / that context ~never occurs.
+        // Read the learned action for a context: <sigma_z> of dec_bit GIVEN
+        // ctx_bit == ctx_value, in [-1, 1] (+1 => the 0 branch). Feed it, scaled,
+        // as the decision's goal so the agent acts on the policy for the CURRENT
+        // context. Reads without disturbing the table, and is O(1) between rewards.
+        // 0 if no memory / bad bit / that context ~never occurs.
         double conditional_preference(
             AgentHandle h,
-            uint32_t ctx_qubit, bool ctx_value,
-            uint32_t dec_qubit) const;
+            uint32_t ctx_bit, bool ctx_value,
+            uint32_t dec_bit) const;
 
         // Change an agent's SIZE + bond structure live (dynamic group membership:
         // members join/leave a command's group). Rebuilds a fresh coordination of
@@ -307,9 +320,9 @@ namespace wz::engine::cognition
             uint32_t effective_chi = 0;  // what build_coordination actually built
             uint64_t seed = 0;
             uint32_t agent_count = 0;
-            // Learning memory (outside the coordination; never measured).
-            wz::engine::cognition::qstate::Register memory;
-            uint32_t memory_qubits = 0;
+            // Learning memory: a classical log-weight table held outside the
+            // coordination, so it survives every rebuild (see learning.h).
+            LearnedTable learned;
         };
 
         const Agent* find(AgentHandle h) const;

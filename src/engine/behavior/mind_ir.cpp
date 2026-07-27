@@ -173,7 +173,7 @@ namespace wz::engine::behavior
         const long chi = index_of(root, "chi");
         spec.chi = chi < 0 ? 0u : static_cast<uint32_t>(chi);
         const long memory = index_of(root, "memory");
-        spec.memory_qubits = memory < 0 ? 0u : static_cast<uint32_t>(memory);
+        spec.memory_bits = memory < 0 ? 0u : static_cast<uint32_t>(memory);
 
         // Anneal clock -- sensible defaults where a field is absent. gamma_end takes
         // the shared quantum_agent authoring default so the two front ends (scalar

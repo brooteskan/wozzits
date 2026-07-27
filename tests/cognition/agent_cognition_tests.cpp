@@ -436,17 +436,19 @@ TEST(AgentCognition, MemoryLearnsAndSurvivesRearm)
     spec.agent_count = 1;
     spec.clock = anneal_clock();
     spec.commit = CommitPolicy{ .confidence = 0.8, .decoherence_rate = 0.0 };
-    spec.memory_qubits = 1;
+    spec.memory_bits = 1;
     const AgentHandle h = store.create(spec);
     ASSERT_NE(h, kInvalidAgent);
 
     // Fresh memory is unbiased.
     EXPECT_NEAR(store.memory_preference(h, 0), 0.0, 1e-9);
 
-    // Reward toward |0> repeatedly -> preference climbs toward +1 (monotonic).
+    // Reward the 0 branch repeatedly -> preference climbs toward +1 (monotonic).
+    // VALUE semantics: the flag names the branch, so `false` is the 0 branch and
+    // memory_preference reads +1 for it. This used to read `toward = true`.
     double prev = store.memory_preference(h, 0);
     for (int i = 0; i < 8; ++i) {
-        EXPECT_TRUE(store.reward(h, 0, /*toward=*/true, 0.5));
+        EXPECT_TRUE(store.reward(h, 0, /*value=*/false, 0.5));
         const double now = store.memory_preference(h, 0);
         EXPECT_GT(now, prev - 1e-9);
         prev = now;
@@ -458,9 +460,9 @@ TEST(AgentCognition, MemoryLearnsAndSurvivesRearm)
     ASSERT_TRUE(store.rearm(h, 10.0));
     EXPECT_NEAR(store.memory_preference(h, 0), learned, 1e-9);
 
-    // Punishing (reward toward |1>) pulls it back -- relearning.
+    // Rewarding the OTHER branch pulls it back -- relearning.
     for (int i = 0; i < 12; ++i) {
-        store.reward(h, 0, /*toward=*/false, 0.5);
+        store.reward(h, 0, /*value=*/true, 0.5);
     }
     EXPECT_LT(store.memory_preference(h, 0), learned);
 }
@@ -475,7 +477,7 @@ TEST(AgentCognition, ContextualPolicyLearnsAndConditions)
     AgentSpec spec;
     spec.agent_count = 1;
     spec.clock = anneal_clock();
-    spec.memory_qubits = 2;   // qubit 0 = context, qubit 1 = action
+    spec.memory_bits = 2;   // qubit 0 = context, qubit 1 = action
     const AgentHandle h = store.create(spec);
     ASSERT_NE(h, kInvalidAgent);
 
@@ -511,12 +513,12 @@ TEST(AgentCognition, MemorySurvivesReshape)
     AgentSpec spec;
     spec.agent_count = 1;   // a lone hub to start
     spec.clock = anneal_clock();
-    spec.memory_qubits = 1;
+    spec.memory_bits = 1;
     const AgentHandle h = store.create(spec);
     ASSERT_NE(h, kInvalidAgent);
 
     for (int i = 0; i < 8; ++i) {
-        store.reward(h, 0, /*toward=*/true, 0.5);
+        store.reward(h, 0, /*value=*/false, 0.5);   // the 0 branch -> preference +1
     }
     const double learned = store.memory_preference(h, 0);
     EXPECT_GT(learned, 0.5);
@@ -645,7 +647,7 @@ TEST(AgentCognition, NeverBuildsAnOversizedExactBackend)
     {
         AgentSpec spec;
         spec.agent_count = 2;
-        spec.memory_qubits = 64;
+        spec.memory_bits = 64;
         spec.clock = anneal_clock();
         EXPECT_EQ(store.create(spec), kInvalidAgent);
     }
@@ -789,21 +791,25 @@ TEST(AgentCognition, RewardOverflowDoesNotPoisonMemory)
     AgentSpec spec;
     spec.agent_count = 2;
     spec.clock = anneal_clock();
-    spec.memory_qubits = 1;
+    spec.memory_bits = 1;
     const AgentHandle h = store.create(spec);
     ASSERT_NE(h, kInvalidAgent);
 
-    // Unclamped, this strength overflows exp() to inf; normalize then writes NaN into
-    // the memory amplitudes and every later reward keeps it NaN -- the register is dead.
-    // (marginal()'s `total > 0` guard hides the NaN as a constant readout, so the
-    // SYMPTOM is a FROZEN memory, not a NaN value.) Clamped, the memory saturates but
-    // stays alive.
-    EXPECT_TRUE(store.reward(h, 0, /*toward=*/true, 1e6));
+    // In the old amplitude form this strength overflowed exp() to inf, normalize()
+    // then wrote NaN into the memory, and every later reward kept it NaN -- the
+    // register was dead. (memory_preference's `total > 0` guard hid the NaN as a
+    // constant readout, so the SYMPTOM was a FROZEN memory, not a NaN value.) A
+    // clamp to +/-50 was needed to avoid it. Log-weights remove the failure mode
+    // by construction: adding cannot overflow, and the reader's max-subtraction
+    // makes an enormous weight saturate P -> 1 smoothly.
+    EXPECT_TRUE(store.reward(h, 0, /*value=*/false, 1e6));
 
-    // The tell: a live memory can still be pulled the OTHER way (its preference drops);
-    // a NaN-poisoned one is frozen wherever the guard pins it (~ +1) and never moves.
+    // The tell: a live memory can still be pulled the OTHER way (its preference
+    // drops); a poisoned one is frozen wherever the guard pins it (~ +1) and never
+    // moves. 4 x 30 is nowhere near enough to undo a 1e6 reward on its own -- what
+    // this proves is that the table did not saturate into a dead state.
     for (int i = 0; i < 4; ++i) {
-        EXPECT_TRUE(store.reward(h, 0, /*toward=*/false, 30.0));
+        EXPECT_TRUE(store.reward(h, 0, /*value=*/true, 1e6));
     }
     EXPECT_LT(store.memory_preference(h, 0), 0.5);   // moved back -> not poisoned
 }
@@ -1103,5 +1109,61 @@ TEST(AgentCognition, ChiTwoGroupCanBeReshapedIntoAStar)
     // The hub's goal drags every member through the star.
     for (uint32_t i = 0; i < 4; ++i) {
         EXPECT_GT(store.marginal(h, i), 0.5) << "member " << i;
+    }
+}
+
+// reward() and reward_pair() now mean the same thing by the same bool: VALUE
+// semantics, where true names the 1 branch. They used to be INVERSES of each
+// other -- reward's `toward == true` selected the 0 branch while reward_pair's
+// values selected 1 -- and the header documented the trap instead of fixing it.
+// This pins that the two halves of the learning API agree.
+TEST(AgentCognition, RewardAndRewardPairShareTheValueConvention)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 1;
+    spec.clock = anneal_clock();
+    spec.memory_bits = 2;
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    // Reinforce bit 0's 1-branch through reward(), and bit 1's 1-branch through
+    // reward_pair() (paired with bit 0 = 1, so both routes push the same way).
+    for (int i = 0; i < 20; ++i) {
+        ASSERT_TRUE(store.reward(h, 0, /*value=*/true, 0.5));
+        ASSERT_TRUE(store.reward_pair(
+            h, /*ctx_bit=*/0, /*ctx_value=*/true,
+            /*dec_bit=*/1, /*dec_value=*/true, 0.5));
+    }
+
+    // Both read as the 1 branch: memory_preference is NEGATIVE for value == true.
+    EXPECT_LT(store.memory_preference(h, 0), -0.5);
+    EXPECT_LT(store.memory_preference(h, 1), -0.5);
+    // ...and the conditional read agrees: given context 1, the action is 1.
+    EXPECT_LT(store.conditional_preference(h, 0, /*ctx_value=*/true, 1), -0.5);
+}
+
+// The learning table has its own, much tighter cap than the coordination. It used
+// to borrow the exact backend's 24-qubit guard, i.e. a 256 MB "memory" per agent,
+// when real memories in the project are 2-6 bits.
+TEST(AgentCognition, RejectsAnAbsurdlyLargeMemoryTable)
+{
+    AgentCognitionStore store;
+    {
+        AgentSpec spec;
+        spec.agent_count = 1;
+        spec.clock = anneal_clock();
+        spec.memory_bits = kMaxMemoryBits + 1u;
+        EXPECT_EQ(store.create(spec), kInvalidAgent);
+    }
+    {
+        AgentSpec spec;
+        spec.agent_count = 1;
+        spec.clock = anneal_clock();
+        spec.memory_bits = 6;   // a realistic size still builds
+        const AgentHandle h = store.create(spec);
+        EXPECT_NE(h, kInvalidAgent);
+        EXPECT_TRUE(store.reward(h, 5, /*value=*/true, 1.0));
+        EXPECT_FALSE(store.reward(h, 6, /*value=*/true, 1.0));   // out of range
     }
 }

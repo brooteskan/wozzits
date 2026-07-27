@@ -45,12 +45,17 @@ extern "C" {
 //      (basis-rotated) projective measurement of a named agent's decision, WITH
 //      back-action; the rotated-basis readout an entangled mind needs to exhibit
 //      correlations no classical/finite-state model reproduces (Bell/contextuality).
+// v38: reward_agent's third argument flipped to VALUE semantics -- it now names
+//      the branch being reinforced (1 = the 1 branch), matching reward_agent_pair
+//      instead of inverting it. NOT a layout change, so nothing would crash: a
+//      stale plugin would keep loading and silently learn BACKWARDS, which is far
+//      worse. The bump makes it fail closed instead.
 // v37: appended entity_scalar_user / set_entity_scalar / get_entity_scalar on
 //      WzBehaviorFrameFacts -- a behavior PUBLISHES a named scalar on an entity and a
 //      statechart on it READS the number as a `read_state` pure-op (the pull twin of
 //      v34 events: events push a discrete signal, this exposes a continuous quantity a
 //      guard can compare, e.g. a tank's accumulated damage).
-#define WZ_BEHAVIOR_ABI_VERSION 37u
+#define WZ_BEHAVIOR_ABI_VERSION 38u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -670,33 +675,41 @@ typedef uint8_t (*WzReshapeGroupFn)(
     float star_coupling);
 
 /*
- * Cognition LEARNING surface. A quantum_agent authored with a memory register
- * carries an unmeasured MEMORY the actuator reinforces from outcomes:
- *   reward_agent(entity, memory_qubit, toward, strength) -- concentrate the memory
- *     toward (memory_qubit == `toward` branch) by `strength` (> 0 reward, < 0
- *     punish); monotonic + saturating, and untouched by rearm/reshape/commit so
- *     the learned bias accumulates across episodes.
- *   agent_memory(entity, memory_qubit) -- read what it learned: <sigma_z> in
- *     [-1, 1] (+1 leans toward the `toward == true` branch). Feed it, scaled, as a
- *     decision goal to bias behavior toward what paid off.
- * reward_agent returns 0 if the node has no quantum_agent / no memory / bad qubit.
+ * Cognition LEARNING surface. A quantum_agent authored with `memory` carries a
+ * learned TABLE of remembered facts the actuator reinforces from outcomes. It is
+ * a classical weight table held outside the coordination, so it survives every
+ * commit / rearm / reshape:
+ *   reward_agent(entity, memory_bit, value, strength) -- reinforce the branch
+ *     where memory_bit == `value` by `strength` (> 0 reward, < 0 punish);
+ *     monotonic + saturating at any magnitude.
+ *   agent_memory(entity, memory_bit) -- read what it learned: <sigma_z> in
+ *     [-1, 1], where +1 means the bit leans to 0 and -1 means it leans to 1. Feed
+ *     it, scaled, as a decision goal to bias behavior toward what paid off.
+ * reward_agent returns 0 if the node has no quantum_agent / no memory / bad bit.
+ *
+ * v38 CHANGED THE MEANING of the third argument. It used to be `toward`, where
+ * toward == 1 selected the ZERO branch -- the inverse of reward_agent_pair's
+ * ctx_value/dec_value, so the two halves of one learning API meant opposite
+ * things by the same flag. It is now VALUE semantics throughout: 1 selects the
+ * 1 branch. Porting a caller means flipping every reward_agent flag; the ABI
+ * version bump is what stops a stale plugin from silently learning backwards.
  */
 typedef uint8_t (*WzAgentRewardFn)(
     void* user,
     WzBehaviorEntityId entity,
-    uint32_t memory_qubit,
-    uint8_t toward,
+    uint32_t memory_bit,
+    uint8_t value,
     float strength);
 
 typedef float (*WzAgentMemoryFn)(
     void* user,
     WzBehaviorEntityId entity,
-    uint32_t memory_qubit);
+    uint32_t memory_bit);
 
 /*
  * Cognition CONTEXTUAL-LEARNING surface. Where reward_agent concentrates ONE
- * memory qubit, these learn a context-DEPENDENT policy as entanglement between a
- * context memory qubit and an action memory qubit (needs memory >= 2):
+ * remembered fact, these learn a context-DEPENDENT policy as a CORRELATION
+ * between a context bit and an action bit in the same table (needs memory >= 2):
  *   reward_agent_pair(entity, ctx_qubit, ctx_value, dec_qubit, dec_value, strength)
  *     -- reinforce the joint (context, action) branch; rewarding the diagonal
  *     ((ctx0,act0)+(ctx1,act1)) learns "different action per context".

@@ -83,9 +83,13 @@ namespace
             state->prev_fire_taken = roster->fire_taken;
             const int net = d_landed - d_taken;
             if (net != 0) {
+                // v38 VALUE semantics: the flag names the branch being
+                // reinforced, so winning exchanges (net > 0) reinforces the 0
+                // branch and losing them reinforces 1. This used to read the
+                // other way round for the same meaning.
                 wz_self_agent_reward(
                     facts, event, kDoctrineMemoryQubit,
-                    /*toward=*/ net > 0 ? 1u : 0u, kDoctrineReward);
+                    /*value=*/ net > 0 ? 0u : 1u, kDoctrineReward);
             }
         }
         const float doctrine =

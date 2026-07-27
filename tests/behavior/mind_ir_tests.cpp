@@ -51,7 +51,7 @@ TEST(MindIr, ParsesTheGraphIntoAnAgentSpec)
     EXPECT_DOUBLE_EQ(spec.bonds[1].j, 0.5);
 
     EXPECT_EQ(spec.chi, 1u);
-    EXPECT_EQ(spec.memory_qubits, 2u);
+    EXPECT_EQ(spec.memory_bits, 2u);
     EXPECT_DOUBLE_EQ(spec.clock.gamma_start, 3.0);
     EXPECT_DOUBLE_EQ(spec.clock.anneal_seconds, 6.0);
     EXPECT_DOUBLE_EQ(spec.clock.relax_rate, 1.5);
@@ -68,7 +68,7 @@ TEST(MindIr, DefaultsApplyWhenOptionalBlocksAreAbsent)
     EXPECT_TRUE(spec.goals.empty());
     EXPECT_TRUE(spec.bonds.empty());
     EXPECT_EQ(spec.chi, 0u);
-    EXPECT_EQ(spec.memory_qubits, 0u);
+    EXPECT_EQ(spec.memory_bits, 0u);
     EXPECT_DOUBLE_EQ(spec.clock.gamma_start, 2.0);
     EXPECT_DOUBLE_EQ(spec.clock.anneal_seconds, 4.0);
     EXPECT_DOUBLE_EQ(spec.commit.confidence, 0.8);

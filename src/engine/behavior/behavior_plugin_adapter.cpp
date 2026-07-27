@@ -1895,7 +1895,7 @@ namespace wz::engine::behavior
             void* user,
             WzBehaviorEntityId entity,
             uint32_t memory_qubit,
-            uint8_t toward,
+            uint8_t value,
             float strength)
         {
             const QuantumAgentState* state = find_quantum_agent_state(
@@ -1904,7 +1904,7 @@ namespace wz::engine::behavior
                 return 0;
             }
             return quantum_agent_store().reward(
-                       state->handle, memory_qubit, toward != 0,
+                       state->handle, memory_qubit, value != 0,
                        static_cast<double>(strength))
                 ? 1u
                 : 0u;

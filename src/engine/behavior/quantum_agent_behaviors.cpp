@@ -156,7 +156,7 @@ namespace wz::engine::behavior
 
             float memory_f = 0.0f;
             (void)wz_config_float(facts, kQuantumAgentMemoryKey, &memory_f);
-            spec.memory_qubits =
+            spec.memory_bits =
                 memory_f < 1.0f ? 0u : static_cast<uint32_t>(memory_f);
 
             // Soft one-hot: reinterpret this agent's `decisions` qubits as ONE

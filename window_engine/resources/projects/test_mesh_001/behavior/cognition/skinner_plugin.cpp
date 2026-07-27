@@ -72,15 +72,17 @@ namespace
             s->cycle++;
             const bool left = (d.committed == 0);
             if (left) {
-                // LEFT paid -> reinforce the |0> branch.
+                // LEFT paid -> reinforce the 0 branch. (v38 VALUE semantics: the
+                // flag names the branch, so 0 means the 0 branch. This used to
+                // read `toward = 1` for the same thing.)
                 wz_self_agent_reward(
-                    facts, event, memq, /*toward=|0>*/ 1u,
+                    facts, event, memq, /*value=*/ 0u,
                     static_cast<float>(reward));
             }
             else {
-                // RIGHT did not pay -> punish the |1> branch (leans memory to |0>).
+                // RIGHT did not pay -> punish the 1 branch (leans memory to 0).
                 wz_self_agent_reward(
-                    facts, event, memq, /*toward=|1>*/ 0u,
+                    facts, event, memq, /*value=*/ 1u,
                     -static_cast<float>(punish));
             }
             const float mem = wz_self_agent_memory(facts, event, memq);

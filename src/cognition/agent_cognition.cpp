@@ -16,12 +16,13 @@ namespace wz::engine::cognition
 {
     namespace
     {
-        // Sane upper bounds on qubit counts. The exact backend (chi = 0) and the
-        // learning-memory register both allocate a 2^n qstate vector, so n must stay
-        // WELL under 64 (uint64_t{1} << n is UB at n >= 64, qstate.cpp) and small enough
-        // not to OOM (2^30 ~ 16 GB, and it only gets worse). The linear backends
-        // (chi = 1 loopy, chi >= 2 TTN) scale linearly, so they get a far higher ceiling
-        // that just guards against an absurd count rather than the exponential blow-up.
+        // Sane upper bound on the exact backend's qubit count: it allocates a 2^n
+        // state vector, so n must stay WELL under 64 (uint64_t{1} << n is UB at
+        // n >= 64, qstate.cpp) and small enough not to OOM (2^30 ~ 16 GB, and it
+        // only gets worse). The linear backends (chi = 1 loopy, chi >= 2 tensor
+        // networks) scale linearly, so they get a far higher ceiling that just
+        // guards against an absurd count rather than the exponential blow-up. The
+        // learning table has its own, much tighter cap (kMaxMemoryBits).
         constexpr uint32_t kMaxExactQubits = 24;   // 2^24 complex ~ 256 MB -- the hard cap
         constexpr uint32_t kMaxAgentCount = 4096;  // linear-backend sanity ceiling
 
@@ -184,7 +185,7 @@ namespace wz::engine::cognition
         // build_exact, so only chi = 0 is bounded that low.
         if (spec.agent_count == 0
             || spec.agent_count > kMaxAgentCount
-            || spec.memory_qubits > kMaxExactQubits) {
+            || spec.memory_bits > kMaxMemoryBits) {
             return kInvalidAgent;
         }
 
@@ -236,13 +237,10 @@ namespace wz::engine::cognition
             }
         }
         agent.agent_count = spec.agent_count;
-        // Optional LEARNING memory: a separate register in equal superposition,
-        // held OUTSIDE the coordination so it is never measured and its learned
-        // bias accumulates across commits / rearms / reshapes.
-        if (spec.memory_qubits > 0) {
-            agent.memory = qstate::uniform(spec.memory_qubits);
-            agent.memory_qubits = spec.memory_qubits;
-        }
+        // Optional LEARNING memory: a classical weight table, uniform to start,
+        // held OUTSIDE the coordination so its learned bias accumulates across
+        // commits / rearms / reshapes.
+        agent.learned = make_learned_table(spec.memory_bits);
         agents_.emplace(h, std::move(agent));
         return h;
     }
@@ -359,59 +357,59 @@ namespace wz::engine::cognition
     }
 
     bool AgentCognitionStore::reward(
-        AgentHandle h, uint32_t memory_qubit, bool toward, double strength)
+        AgentHandle h, uint32_t memory_bit, bool value, double strength)
     {
         Agent* a = find(h);
-        if (!a || memory_qubit >= a->memory_qubits) {
+        if (!a || memory_bit >= a->learned.bits) {
             return false;
         }
-        // Amplify the branch of this memory qubit selected by `toward`: mask picks
-        // the qubit, match sets which basis value (|0> toward == true, |1>
-        // otherwise) gets the e^{strength} boost. Monotonic + saturating, so
-        // repeated rewards converge toward that branch (a learning curve).
-        const uint64_t mask = 1ull << memory_qubit;
-        const uint64_t match = toward ? 0ull : mask;
-        wz::engine::cognition::reward(a->memory, mask, match, strength);
+        // Reinforce the branch of this fact named by `value`: mask picks the bit,
+        // match sets which branch (VALUE semantics -- true selects the 1 branch,
+        // matching reward_pair and committed()). Monotonic + saturating, so
+        // repeated rewards converge that branch toward P = 1 (a learning curve).
+        const uint64_t mask = 1ull << memory_bit;
+        const uint64_t match = value ? mask : 0ull;
+        wz::engine::cognition::reward(a->learned, mask, match, strength);
         return true;
     }
 
     double AgentCognitionStore::memory_preference(
-        AgentHandle h, uint32_t memory_qubit) const
+        AgentHandle h, uint32_t memory_bit) const
     {
         const Agent* a = find(h);
-        if (!a || memory_qubit >= a->memory_qubits) {
+        if (!a || memory_bit >= a->learned.bits) {
             return 0.0;
         }
-        return wz::engine::cognition::memory_preference(a->memory, memory_qubit);
+        return wz::engine::cognition::memory_preference(a->learned, memory_bit);
     }
 
     bool AgentCognitionStore::reward_pair(
         AgentHandle h,
-        uint32_t ctx_qubit, bool ctx_value,
-        uint32_t dec_qubit, bool dec_value,
+        uint32_t ctx_bit, bool ctx_value,
+        uint32_t dec_bit, bool dec_value,
         double strength)
     {
         Agent* a = find(h);
-        if (!a || ctx_qubit >= a->memory_qubits || dec_qubit >= a->memory_qubits) {
+        if (!a || ctx_bit >= a->learned.bits || dec_bit >= a->learned.bits) {
             return false;
         }
         wz::engine::cognition::reward_pair(
-            a->memory, ctx_qubit, ctx_value ? 1u : 0u,
-            dec_qubit, dec_value ? 1u : 0u, strength);
+            a->learned, ctx_bit, ctx_value ? 1u : 0u,
+            dec_bit, dec_value ? 1u : 0u, strength);
         return true;
     }
 
     double AgentCognitionStore::conditional_preference(
         AgentHandle h,
-        uint32_t ctx_qubit, bool ctx_value,
-        uint32_t dec_qubit) const
+        uint32_t ctx_bit, bool ctx_value,
+        uint32_t dec_bit) const
     {
         const Agent* a = find(h);
-        if (!a || ctx_qubit >= a->memory_qubits || dec_qubit >= a->memory_qubits) {
+        if (!a || ctx_bit >= a->learned.bits || dec_bit >= a->learned.bits) {
             return 0.0;
         }
         return wz::engine::cognition::conditional_preference(
-            a->memory, ctx_qubit, ctx_value ? 1u : 0u, dec_qubit);
+            a->learned, ctx_bit, ctx_value ? 1u : 0u, dec_bit);
     }
 
     bool AgentCognitionStore::set_decoherence(AgentHandle h, double rate)
