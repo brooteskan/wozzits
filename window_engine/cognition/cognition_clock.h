@@ -42,6 +42,20 @@ namespace wz::engine::cognition
         bool started = false;         // has the origin been stamped yet?
     };
 
+    // THE Gamma ramp -- the anneal schedule's only actual math, in one place.
+    // `phase` is 0 at the start of the sweep and 1 at its end; outside [0, 1] it
+    // clamps, so before the sweep you read gamma_start and after it gamma_end.
+    //
+    // Two drivers ramp the same schedule and both come here, which is the point:
+    //   * gamma_at_time (below) -- the SIM-TIME driver the engine runs, phase
+    //     derived from elapsed sim-seconds over anneal_seconds;
+    //   * gamma_at (anneal.h) -- the STEP-COUNT driver tests and offline tools
+    //     want, phase derived from a step index over a step count.
+    // They differ only in how they compute phase. Previously each carried its own
+    // copy of the interpolation (and a third lived in loopy_bp_tests), so the
+    // schedule could drift three ways.
+    double gamma_at_phase(double gamma_start, double gamma_end, double phase);
+
     // How many substeps a tick spanning `dtau_total` imaginary-time takes: ceil(
     // dtau_total / max_substep) so no step exceeds max_substep, clamped to max_substeps
     // so the WORK stays bounded on a pathologically long sleep. max_substep <= 0 (no

@@ -27,16 +27,22 @@ namespace wz::engine::cognition
         clock.started = true;
     }
 
+    double gamma_at_phase(double gamma_start, double gamma_end, double phase)
+    {
+        const double clamped = std::clamp(phase, 0.0, 1.0);
+        return gamma_start + (gamma_end - gamma_start) * clamped;
+    }
+
     double gamma_at_time(const CognitionClock& clock, double now)
     {
         if (clock.anneal_seconds <= 0.0) {
-            return clock.gamma_end;
+            return clock.gamma_end;   // no sweep: hold the committed field
         }
-        const double phase =
-            (now - clock.started_at) / clock.anneal_seconds;
-        const double clamped = std::clamp(phase, 0.0, 1.0);
-        return clock.gamma_start +
-            (clock.gamma_end - clock.gamma_start) * clamped;
+        // The sim-time driver's only job is turning elapsed sim-seconds into a
+        // phase; the ramp itself is shared with the step-count driver.
+        return gamma_at_phase(
+            clock.gamma_start, clock.gamma_end,
+            (now - clock.started_at) / clock.anneal_seconds);
     }
 
     double tick(Coordination& c, CognitionClock& clock, double now)

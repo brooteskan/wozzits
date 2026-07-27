@@ -17,6 +17,7 @@
 
 #include <cognition/loopy_bp.h>
 
+#include <cognition/anneal.h>
 #include <cognition/exact_group.h>
 
 #include <gtest/gtest.h>
@@ -29,8 +30,10 @@ using namespace wz::engine::cognition;
 
 namespace
 {
-    // A linear gamma ramp from gamma_start down to gamma_end over `steps` relax
-    // steps -- the anneal schedule, mirroring the village oracle's 2 -> 0 sweep.
+    // The shared step-count anneal driver (cognition/anneal.h), which now takes
+    // any backend -- this file used to carry its own copy of the gamma ramp
+    // because the library's anneal() had hand-written overloads for exactly two
+    // backends and LoopyBpGroup was not one of them.
     void anneal(
         LoopyBpGroup& g,
         double gamma_start,
@@ -38,13 +41,8 @@ namespace
         double dtau,
         uint32_t steps)
     {
-        for (uint32_t i = 0; i < steps; ++i) {
-            const double t = steps > 1
-                ? static_cast<double>(i) / static_cast<double>(steps - 1)
-                : 1.0;
-            const double gamma = gamma_start + (gamma_end - gamma_start) * t;
-            relax_step(g, gamma, dtau);
-        }
+        anneal(g, AnnealSchedule{ .gamma_start = gamma_start,
+            .gamma_end = gamma_end, .dtau = dtau, .steps = steps });
     }
 
     // Max per-agent |z change| across one relax_step -- the fixed-point residual
