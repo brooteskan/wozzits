@@ -64,4 +64,45 @@ namespace wz::engine::cognition
         }
         W.swap(out);
     }
+
+    // The DIAGONAL case of absorb_leg, done in place: W'[.., i, ..] *= w[i].
+    //
+    // Worth its own kernel because the Vidal simple update's environment absorb
+    // and divide-back are both diagonal (a bond's lambda vector), and routing them
+    // through absorb_leg means materializing a d x d matrix that is (d-1)/d zeros,
+    // allocating a whole second copy of the tensor, and paying O(size(W) * d) to
+    // apply what is really O(size(W)) of work -- a stride-walk multiply. On a
+    // degree-3 node that is four such calls per edge gate, twice over.
+    //
+    // `w` must have dims[mode] entries.
+    inline void scale_leg(
+        std::vector<wz::engine::cognition::qstate::Complex>& W,
+        const std::vector<uint32_t>& dims,
+        std::size_t mode,
+        const std::vector<double>& w)
+    {
+        const std::size_t d = dims[mode];
+        std::size_t inner = 1;
+        for (std::size_t i = mode + 1; i < dims.size(); ++i) {
+            inner *= dims[i];
+        }
+        std::size_t outer = 1;
+        for (std::size_t i = 0; i < mode; ++i) {
+            outer *= dims[i];
+        }
+        const std::size_t block = d * inner;
+        for (std::size_t o = 0; o < outer; ++o) {
+            const std::size_t base = o * block;
+            for (std::size_t i = 0; i < d && i < w.size(); ++i) {
+                const double wi = w[i];
+                if (wi == 1.0) {
+                    continue;
+                }
+                const std::size_t slab = base + i * inner;
+                for (std::size_t j = 0; j < inner; ++j) {
+                    W[slab + j] *= wi;
+                }
+            }
+        }
+    }
 }

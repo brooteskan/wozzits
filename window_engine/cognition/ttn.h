@@ -43,6 +43,10 @@ namespace wz::engine::cognition
         // relax_step (0 for a full-chi/untruncated sweep). Telemetry only; not
         // part of the state.
         double last_truncation_error = 0;
+        // Working buffers for the per-bond two-site gates, carried on the chain so
+        // a relax sweep allocates nothing. Not state: copying or omitting it
+        // changes only speed, never results.
+        TwoSiteScratch scratch;
     };
 
     // A chain of `n` single-qubit agents in the product |+> state with the given

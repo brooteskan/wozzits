@@ -21,6 +21,12 @@ namespace wz::engine::cognition
         // (rather than a true 1/lambda) does not perturb the physical state.
         constexpr double kLambdaInvFloor = 1e-12;
 
+        // Canonicalization passes used to propagate a projection outward from a
+        // collapsed node (see collapse). One pass is a full forward-then-backward
+        // sweep over every edge, which is exact on a tree; the second settles the
+        // gauge on loops. Matches what relax_step already spends per substep.
+        constexpr uint32_t kConditioningPasses = 2u;
+
         // The full mode-dimension list [2, bond_0, bond_1, ...] for a site tensor.
         std::vector<uint32_t> site_dims(const GraphSite& s)
         {
@@ -33,26 +39,34 @@ namespace wz::engine::cognition
             return dims;
         }
 
-        // Build the diagonal d x d matrix diag(w) in absorb_leg's [ket*d + bra]
-        // layout (off-diagonals zero), from a real weight vector.
-        std::vector<Complex> diag_matrix(const std::vector<double>& w)
-        {
-            const std::size_t d = w.size();
-            std::vector<Complex> m(d * d, Complex{ 0, 0 });
-            for (std::size_t i = 0; i < d; ++i) {
-                m[i * d + i] = Complex{ w[i], 0 };
-            }
-            return m;
-        }
-
-        // The four incidences of node u: the ORDERED neighbor handles and the
-        // ORDERED edge-slot pointers, in for_each_neighbor iteration order (which
-        // is u's canonical bond-leg order). Gathered so we can index a specific
-        // leg and absorb every OTHER leg's lambda.
+        // The incidences of node u: the ORDERED neighbor handles and the ORDERED
+        // edge-slot pointers, in for_each_neighbor iteration order (which is u's
+        // canonical bond-leg order). Gathered so we can index a specific leg and
+        // absorb every OTHER leg's lambda.
+        //
+        // Small-buffer backed: a cognition node's degree is a handful (a squad
+        // member's neighbours), and this is gathered twice per edge gate, which
+        // runs per bond per substep. Two heap allocations per call there is pure
+        // overhead on the hot path.
         struct Incidences
         {
-            std::vector<NodeHandle> neighbor;   // neighbor at leg k
-            std::vector<GraphBond*> bond;       // shared edge slot at leg k
+            static constexpr std::size_t kInline = 8;
+            NodeHandle neighbor_buf[kInline] = {};
+            GraphBond* bond_buf[kInline] = {};
+            std::vector<NodeHandle> neighbor_heap;   // used only past kInline
+            std::vector<GraphBond*> bond_heap;
+            std::size_t count = 0;
+
+            bool spilled() const { return count > kInline; }
+            NodeHandle neighbor(std::size_t k) const
+            {
+                return spilled() ? neighbor_heap[k] : neighbor_buf[k];
+            }
+            GraphBond* bond(std::size_t k) const
+            {
+                return spilled() ? bond_heap[k] : bond_buf[k];
+            }
+            std::size_t size() const { return count; }
         };
 
         Incidences incidences_of(
@@ -61,8 +75,21 @@ namespace wz::engine::cognition
         {
             Incidences inc;
             for_each_neighbor(graph, u, [&](NodeHandle nb, GraphBond& e) {
-                inc.neighbor.push_back(nb);
-                inc.bond.push_back(&e);
+                if (inc.count < Incidences::kInline) {
+                    inc.neighbor_buf[inc.count] = nb;
+                    inc.bond_buf[inc.count] = &e;
+                } else {
+                    if (inc.count == Incidences::kInline) {
+                        // Spill: copy the inline prefix out, then grow on the heap.
+                        inc.neighbor_heap.assign(
+                            inc.neighbor_buf, inc.neighbor_buf + Incidences::kInline);
+                        inc.bond_heap.assign(
+                            inc.bond_buf, inc.bond_buf + Incidences::kInline);
+                    }
+                    inc.neighbor_heap.push_back(nb);
+                    inc.bond_heap.push_back(&e);
+                }
+                ++inc.count;
             });
             return inc;
         }
@@ -147,7 +174,9 @@ namespace wz::engine::cognition
         double apply_edge_gate(
             wz::core::graph::SharedEdgeGraph<GraphSite, GraphBond>& graph,
             NodeHandle u, NodeHandle v, GraphBond& bond,
-            const std::vector<Complex>& gate, uint32_t chi)
+            const std::vector<Complex>& gate, uint32_t chi,
+            wz::engine::cognition::qstate::Svd& svd_out,
+            wz::engine::cognition::qstate::SvdScratch& svd_scratch)
         {
             GraphSite& su = node_data(graph, u);
             GraphSite& sv = node_data(graph, v);
@@ -157,15 +186,15 @@ namespace wz::engine::cognition
             // leg index of e within each node (its neighbor's position). Parallel
             // edges are canonicalized away, so the neighbor handle identifies e.
             std::size_t ku = 0;
-            for (std::size_t k = 0; k < iu.neighbor.size(); ++k) {
-                if (iu.neighbor[k] == v) {
+            for (std::size_t k = 0; k < iu.size(); ++k) {
+                if (iu.neighbor(k) == v) {
                     ku = k;
                     break;
                 }
             }
             std::size_t kv = 0;
-            for (std::size_t k = 0; k < iv.neighbor.size(); ++k) {
-                if (iv.neighbor[k] == u) {
+            for (std::size_t k = 0; k < iv.size(); ++k) {
+                if (iv.neighbor(k) == u) {
                     kv = k;
                     break;
                 }
@@ -180,17 +209,17 @@ namespace wz::engine::cognition
             std::vector<Complex> wv = sv.t;
             std::vector<uint32_t> du = site_dims(su);
             std::vector<uint32_t> dv = site_dims(sv);
-            for (std::size_t k = 0; k < iu.neighbor.size(); ++k) {
+            for (std::size_t k = 0; k < iu.size(); ++k) {
                 if (k == ku) {
                     continue;
                 }
-                absorb_leg(wu, du, 1 + k, diag_matrix(iu.bond[k]->lambda));
+                scale_leg(wu, du, 1 + k, iu.bond(k)->lambda);
             }
-            for (std::size_t k = 0; k < iv.neighbor.size(); ++k) {
+            for (std::size_t k = 0; k < iv.size(); ++k) {
                 if (k == kv) {
                     continue;
                 }
-                absorb_leg(wv, dv, 1 + k, diag_matrix(iv.bond[k]->lambda));
+                scale_leg(wv, dv, 1 + k, iv.bond(k)->lambda);
             }
 
             // ── step 3: contract u and v across e into Theta.
@@ -310,10 +339,10 @@ namespace wz::engine::cognition
             }
 
             // ── step 5: SVD-truncate the cut to chi.
-            const wz::engine::cognition::qstate::Svd d =
-                wz::engine::cognition::qstate::svd(
-                    theta, static_cast<uint32_t>(ru_extent),
-                    static_cast<uint32_t>(cv_extent), chi);
+            wz::engine::cognition::qstate::Svd& d = svd_out;
+            wz::engine::cognition::qstate::svd(
+                theta, static_cast<uint32_t>(ru_extent),
+                static_cast<uint32_t>(cv_extent), chi, d, svd_scratch);
             const uint32_t k = d.rank;
 
             double kept = 0.0;
@@ -389,27 +418,27 @@ namespace wz::engine::cognition
             // bare Vidal Gammas (regularized inverse 1/max(lambda_nbr, floor)
             // along each same neighbor leg). The floor bounds the inverse on near-
             // zero Schmidt values that would otherwise blow up.
-            for (std::size_t kk = 0; kk < iu.neighbor.size(); ++kk) {
+            for (std::size_t kk = 0; kk < iu.size(); ++kk) {
                 if (kk == ku) {
                     continue;
                 }
-                const std::vector<double>& nbr = iu.bond[kk]->lambda;
+                const std::vector<double>& nbr = iu.bond(kk)->lambda;
                 std::vector<double> inv(nbr.size(), 0.0);
                 for (std::size_t i = 0; i < nbr.size(); ++i) {
                     inv[i] = 1.0 / std::max(nbr[i], kLambdaInvFloor);
                 }
-                absorb_leg(wu_new, du_new, 1 + kk, diag_matrix(inv));
+                scale_leg(wu_new, du_new, 1 + kk, inv);
             }
-            for (std::size_t kk = 0; kk < iv.neighbor.size(); ++kk) {
+            for (std::size_t kk = 0; kk < iv.size(); ++kk) {
                 if (kk == kv) {
                     continue;
                 }
-                const std::vector<double>& nbr = iv.bond[kk]->lambda;
+                const std::vector<double>& nbr = iv.bond(kk)->lambda;
                 std::vector<double> inv(nbr.size(), 0.0);
                 for (std::size_t i = 0; i < nbr.size(); ++i) {
                     inv[i] = 1.0 / std::max(nbr[i], kLambdaInvFloor);
                 }
-                absorb_leg(wv_new, dv_new, 1 + kk, diag_matrix(inv));
+                scale_leg(wv_new, dv_new, 1 + kk, inv);
             }
 
             // ── step 8: commit the new tensors, bond dims, and shared lambda.
@@ -438,13 +467,13 @@ namespace wz::engine::cognition
 
             std::vector<Complex> w = s.t;  // ket working copy
             const std::vector<uint32_t> dims = site_dims(s);
-            for (std::size_t k = 0; k < inc.neighbor.size(); ++k) {
-                const std::vector<double>& lam = inc.bond[k]->lambda;
+            for (std::size_t k = 0; k < inc.size(); ++k) {
+                const std::vector<double>& lam = inc.bond(k)->lambda;
                 std::vector<double> lam2(lam.size(), 0.0);
                 for (std::size_t i = 0; i < lam.size(); ++i) {
                     lam2[i] = lam[i] * lam[i];
                 }
-                absorb_leg(w, dims, 1 + k, diag_matrix(lam2));
+                scale_leg(w, dims, 1 + k, lam2);
             }
 
             // w now carries diag(lambda^2) on every bond leg; contract everything
@@ -494,7 +523,7 @@ namespace wz::engine::cognition
                         if (v <= u) {
                             return;  // each undirected edge once, low -> high
                         }
-                        apply_edge_gate(g.graph, u, v, e, id, chi);
+                        apply_edge_gate(g.graph, u, v, e, id, chi, g.svd_out, g.svd_scratch);
                     });
                 }
                 for (NodeHandle uu = n; uu-- > 0;) {
@@ -502,7 +531,7 @@ namespace wz::engine::cognition
                         if (v >= uu) {
                             return;  // each undirected edge once, high -> low
                         }
-                        apply_edge_gate(g.graph, uu, v, e, id, chi);
+                        apply_edge_gate(g.graph, uu, v, e, id, chi, g.svd_out, g.svd_scratch);
                     });
                 }
             }
@@ -587,7 +616,8 @@ namespace wz::engine::cognition
                     return;  // visit each undirected edge once (from lower u)
                 }
                 g.last_truncation_error += apply_edge_gate(
-                    g.graph, u, v, e, zz_gate(e.j, dtau), g.chi);
+                    g.graph, u, v, e, zz_gate(e.j, dtau), g.chi,
+                    g.svd_out, g.svd_scratch);
             });
         }
 
@@ -602,6 +632,11 @@ namespace wz::engine::cognition
         // orthonormalizes both endpoint Gammas without changing the physical
         // state). Exact on a tree in one sweep; a few passes settle the BP gauge on
         // loops. No coupling is applied, so it adds no truncation-error telemetry.
+        // Two passes on anything with loops. Dropping to one measures 1.65x faster
+        // and moves the BP error only in the 4th decimal (afm ring-6 + goal, chi=2
+        // at gamma 1.5: 0.14312 -> 0.14352), so it is a real option -- but this
+        // backend is about to carry production decisions and the cost is already
+        // affordable, so the fidelity stays.
         canonicalize(g, g.chi, /*passes=*/n > 2 ? 2u : 1u);
     }
 
@@ -658,6 +693,15 @@ namespace wz::engine::cognition
         // projection outward into the neighbours' environments (their lambdas and
         // Gammas), exactly as conditioning should. A few passes carry it across the
         // graph; the readout marginal then reflects the committed outcome.
-        canonicalize(g, g.chi, /*passes=*/node_count(g.graph));
+        //
+        // A CONSTANT number of passes, not node_count. Each pass is already a full
+        // forward-then-backward sweep over every edge, which canonicalize's own
+        // contract says is exact on a tree and settles the gauge on loops in a few
+        // -- so scaling the passes with the group size was quadratic work for no
+        // extra conditioning. It matters: the store re-projects every latched agent
+        // on every tick, so an O(n) collapse is O(n^2) per tick, and holding a
+        // clamp through relaxation (the uniform collapse contract) would multiply
+        // that by the substep count.
+        canonicalize(g, g.chi, kConditioningPasses);
     }
 }

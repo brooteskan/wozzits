@@ -68,6 +68,12 @@ namespace wz::engine::cognition
         // relax_step (telemetry only; 0 when chi >= every full bond). Reset at the
         // top of each relax_step.
         double last_truncation_error = 0.0;
+        // Working buffers for the per-edge SVD. Carried on the network so a relax
+        // sweep -- which runs one edge gate per bond plus a full canonicalization
+        // sweep per substep -- allocates nothing. Not state: copying or omitting it
+        // changes only speed, never results.
+        wz::engine::cognition::qstate::Svd svd_out;
+        wz::engine::cognition::qstate::SvdScratch svd_scratch;
     };
 
     // Build a fresh graph-TN over `agent_count` agents from a raw bond list.

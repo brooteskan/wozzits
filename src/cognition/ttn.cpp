@@ -129,7 +129,8 @@ namespace wz::engine::cognition
                 node_data(g.mps, i),
                 node_data(g.mps, i + 1),
                 coupling_gate(g.coupling[i], dtau),
-                g.chi);
+                g.chi,
+                g.scratch);
         }
         // Single-site fields, second half-step.
         for (uint32_t i = 0; i < n; ++i) {

@@ -177,58 +177,88 @@ namespace wz::engine::cognition
         const std::vector<Complex>& gate,
         uint32_t chi)
     {
+        TwoSiteScratch scratch;
+        return apply_two_site_gate(A, B, gate, chi, scratch);
+    }
+
+    double apply_two_site_gate(
+        MpsSite& A,
+        MpsSite& B,
+        const std::vector<Complex>& gate,
+        uint32_t chi,
+        TwoSiteScratch& scratch)
+    {
         const uint32_t L = A.left;
         const uint32_t M = A.right;  // shared bond, == B.left
         const uint32_t R = B.right;
 
         // Theta[l][s0][s1][r] = sum_m A[s0][l][m] B[s1][m][r].
         // Flat index ((l*2 + s0)*2 + s1)*R + r.
-        std::vector<Complex> theta(
-            static_cast<std::size_t>(L) * 2 * 2 * R, Complex{ 0, 0 });
+        //
+        // Loop order is chosen for LOCALITY, not for reading like the formula: with
+        // r innermost and m outside it, A's element is loop-invariant while B and
+        // theta are both walked with stride 1. The formula order (r outermost, m
+        // innermost) walks B with stride R, which is a cache miss per term on the
+        // O(chi^3) contraction that dominates this gate.
+        std::vector<Complex>& theta = scratch.theta;
+        theta.assign(static_cast<std::size_t>(L) * 4 * R, Complex{ 0, 0 });
         for (uint32_t l = 0; l < L; ++l) {
             for (uint32_t s0 = 0; s0 < 2; ++s0) {
+                const std::size_t a_row =
+                    (static_cast<std::size_t>(s0) * L + l) * M;
                 for (uint32_t s1 = 0; s1 < 2; ++s1) {
-                    for (uint32_t r = 0; r < R; ++r) {
-                        Complex acc{ 0, 0 };
-                        for (uint32_t m = 0; m < M; ++m) {
-                            acc += A.a[(static_cast<std::size_t>(s0) * L + l) * M + m]
-                                * B.a[(static_cast<std::size_t>(s1) * M + m) * R + r];
+                    Complex* const th = theta.data()
+                        + ((static_cast<std::size_t>(l) * 2 + s0) * 2 + s1) * R;
+                    for (uint32_t m = 0; m < M; ++m) {
+                        const Complex av = A.a[a_row + m];
+                        if (av == Complex{ 0, 0 }) {
+                            continue;
                         }
-                        theta[((static_cast<std::size_t>(l) * 2 + s0) * 2 + s1) * R + r]
-                            = acc;
+                        const Complex* const bv = B.a.data()
+                            + (static_cast<std::size_t>(s1) * M + m) * R;
+                        for (uint32_t r = 0; r < R; ++r) {
+                            th[r] += av * bv[r];
+                        }
                     }
                 }
             }
         }
 
         // Apply the gate and reshape into Mmat[(l*2 + s0')][(s1'*R + r)],
-        // dims (L*2) x (2*R).
+        // dims (L*2) x (2*R). Same trick: the 4x4 gate entry is hoisted out and
+        // both theta and mmat are walked with stride 1 in r.
         const uint32_t rows = L * 2;
         const uint32_t cols = 2 * R;
-        std::vector<Complex> mmat(
-            static_cast<std::size_t>(rows) * cols, Complex{ 0, 0 });
+        std::vector<Complex>& mmat = scratch.mmat;
+        mmat.assign(static_cast<std::size_t>(rows) * cols, Complex{ 0, 0 });
         for (uint32_t l = 0; l < L; ++l) {
             for (uint32_t s0p = 0; s0p < 2; ++s0p) {
                 for (uint32_t s1p = 0; s1p < 2; ++s1p) {
-                    for (uint32_t r = 0; r < R; ++r) {
-                        Complex acc{ 0, 0 };
-                        for (uint32_t s0 = 0; s0 < 2; ++s0) {
-                            for (uint32_t s1 = 0; s1 < 2; ++s1) {
-                                acc += gate[(s0p * 2 + s1p) * 4 + (s0 * 2 + s1)]
-                                    * theta[((static_cast<std::size_t>(l) * 2 + s0) * 2
-                                                + s1)
-                                            * R
-                                        + r];
+                    Complex* const mm = mmat.data()
+                        + (static_cast<std::size_t>(l) * 2 + s0p) * cols
+                        + static_cast<std::size_t>(s1p) * R;
+                    for (uint32_t s0 = 0; s0 < 2; ++s0) {
+                        for (uint32_t s1 = 0; s1 < 2; ++s1) {
+                            const Complex g =
+                                gate[(s0p * 2 + s1p) * 4 + (s0 * 2 + s1)];
+                            if (g == Complex{ 0, 0 }) {
+                                continue;
+                            }
+                            const Complex* const th = theta.data()
+                                + ((static_cast<std::size_t>(l) * 2 + s0) * 2 + s1)
+                                    * R;
+                            for (uint32_t r = 0; r < R; ++r) {
+                                mm[r] += g * th[r];
                             }
                         }
-                        mmat[(static_cast<std::size_t>(l) * 2 + s0p) * cols
-                            + (static_cast<std::size_t>(s1p) * R + r)] = acc;
                     }
                 }
             }
         }
 
-        const wz::engine::cognition::qstate::Svd d = wz::engine::cognition::qstate::svd(mmat, rows, cols, chi);
+        wz::engine::cognition::qstate::Svd& d = scratch.svd;
+        wz::engine::cognition::qstate::svd(
+            mmat, rows, cols, chi, d, scratch.svd_scratch);
         const uint32_t k = d.rank;
 
         // Relative gate truncation error = discarded / (kept + discarded) =
@@ -243,14 +273,20 @@ namespace wz::engine::cognition
             (kept + discarded) > 0.0 ? discarded / (kept + discarded) : 0.0;
 
         // New left site: A'[s0'][l][m'] = U[(l*2 + s0')][m'].  left bond L, right k.
+        // resize, not assign: every element below is written, so assign's fill pass
+        // is pure waste -- and when the bond dimension is unchanged (the steady
+        // state, once the bonds sit at the chi cap) it reuses the buffer outright.
         A.left = L;
         A.right = k;
-        A.a.assign(static_cast<std::size_t>(2) * L * k, Complex{ 0, 0 });
+        A.a.resize(static_cast<std::size_t>(2) * L * k);
         for (uint32_t s0p = 0; s0p < 2; ++s0p) {
             for (uint32_t l = 0; l < L; ++l) {
+                Complex* const dst =
+                    A.a.data() + (static_cast<std::size_t>(s0p) * L + l) * k;
+                const Complex* const src =
+                    d.u.data() + (static_cast<std::size_t>(l) * 2 + s0p) * k;
                 for (uint32_t mp = 0; mp < k; ++mp) {
-                    A.a[(static_cast<std::size_t>(s0p) * L + l) * k + mp] =
-                        d.u[(static_cast<std::size_t>(l) * 2 + s0p) * k + mp];
+                    dst[mp] = src[mp];
                 }
             }
         }
@@ -258,14 +294,17 @@ namespace wz::engine::cognition
         // New right site: B'[s1'][m'][r] = s[m'] * Vh[m'][(s1'*R + r)]. left k, right R.
         B.left = k;
         B.right = R;
-        B.a.assign(static_cast<std::size_t>(2) * k * R, Complex{ 0, 0 });
+        B.a.resize(static_cast<std::size_t>(2) * k * R);
         for (uint32_t s1p = 0; s1p < 2; ++s1p) {
             for (uint32_t mp = 0; mp < k; ++mp) {
+                Complex* const dst =
+                    B.a.data() + (static_cast<std::size_t>(s1p) * k + mp) * R;
+                const Complex* const src = d.vh.data()
+                    + static_cast<std::size_t>(mp) * cols
+                    + static_cast<std::size_t>(s1p) * R;
+                const Complex sv{ d.s[mp], 0 };
                 for (uint32_t r = 0; r < R; ++r) {
-                    B.a[(static_cast<std::size_t>(s1p) * k + mp) * R + r] =
-                        d.s[mp]
-                        * d.vh[static_cast<std::size_t>(mp) * cols
-                            + (static_cast<std::size_t>(s1p) * R + r)];
+                    dst[r] = sv * src[r];
                 }
             }
         }

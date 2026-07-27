@@ -428,3 +428,91 @@ TEST(QState, MeasureAllCollapsesToABasisState)
         }
     }
 }
+
+// The Jacobi sweep now converges on the RELATIVE off-diagonal weight instead of
+// sweeping until every single pair is orthogonal to within machine epsilon, which
+// bought precision far below what a chi-truncated bond can carry. Pin the thing
+// that actually matters: A must still reconstruct from U diag(s) Vh, at the
+// matrix sizes the tensor-network hot path uses (rows/cols = 2*chi).
+TEST(QState, SvdReconstructsAtTensorNetworkSizes)
+{
+    using wz::engine::cognition::qstate::Complex;
+    for (uint32_t chi : { 2u, 4u, 8u, 16u }) {
+        const uint32_t rows = 2 * chi;
+        const uint32_t cols = 2 * chi;
+        // Deterministic pseudo-random with a decaying spectrum -- what a relaxed
+        // MPS bond looks like, and the case where a loose threshold would show.
+        std::vector<Complex> a(static_cast<std::size_t>(rows) * cols);
+        uint64_t s = 0x9e3779b97f4a7c15ull + chi;
+        const auto next = [&]() {
+            s ^= s << 13; s ^= s >> 7; s ^= s << 17;
+            return static_cast<double>(s >> 11) * (1.0 / 9007199254740992.0) - 0.5;
+        };
+        for (uint32_t i = 0; i < rows; ++i) {
+            for (uint32_t j = 0; j < cols; ++j) {
+                const double decay = 1.0 / (1.0 + static_cast<double>(i + j));
+                a[static_cast<std::size_t>(i) * cols + j] =
+                    Complex{ next() * decay, next() * decay };
+            }
+        }
+
+        const auto d = wz::engine::cognition::qstate::svd(a, rows, cols);
+        ASSERT_EQ(d.rank, cols);
+
+        double worst = 0.0;
+        for (uint32_t i = 0; i < rows; ++i) {
+            for (uint32_t j = 0; j < cols; ++j) {
+                Complex acc{ 0, 0 };
+                for (uint32_t r = 0; r < d.rank; ++r) {
+                    acc += d.u[static_cast<std::size_t>(i) * d.rank + r]
+                        * Complex{ d.s[r], 0 }
+                        * d.vh[static_cast<std::size_t>(r) * cols + j];
+                }
+                worst = std::max(worst,
+                    std::abs(acc - a[static_cast<std::size_t>(i) * cols + j]));
+            }
+        }
+        EXPECT_LT(worst, 1e-12) << "chi = " << chi;
+    }
+}
+
+// The buffer-reusing overload is the one the hot path calls; it must agree with
+// the allocating one exactly, including across repeated calls into the SAME
+// scratch and result (where stale contents from a bigger previous matrix could
+// leak through if a buffer were resized but not fully written).
+TEST(QState, SvdScratchOverloadMatchesTheAllocatingOne)
+{
+    using wz::engine::cognition::qstate::Complex;
+    wz::engine::cognition::qstate::Svd out;
+    wz::engine::cognition::qstate::SvdScratch scratch;
+
+    // Deliberately descending sizes, so each call reuses buffers grown larger.
+    for (uint32_t n : { 8u, 4u, 6u, 2u, 8u }) {
+        std::vector<Complex> a(static_cast<std::size_t>(n) * n);
+        for (uint32_t i = 0; i < n; ++i) {
+            for (uint32_t j = 0; j < n; ++j) {
+                a[static_cast<std::size_t>(i) * n + j] = Complex{
+                    0.5 + 0.25 * static_cast<double>((i * 7 + j * 3) % 5),
+                    0.1 * static_cast<double>((i + 2 * j) % 4) };
+            }
+        }
+        const auto expected = wz::engine::cognition::qstate::svd(a, n, n, 3u);
+        wz::engine::cognition::qstate::svd(a, n, n, 3u, out, scratch);
+
+        ASSERT_EQ(out.rank, expected.rank) << "n = " << n;
+        EXPECT_EQ(out.rows, expected.rows);
+        EXPECT_EQ(out.cols, expected.cols);
+        EXPECT_EQ(out.u.size(), expected.u.size());
+        EXPECT_EQ(out.vh.size(), expected.vh.size());
+        EXPECT_NEAR(out.discarded_weight, expected.discarded_weight, 1e-15);
+        for (uint32_t r = 0; r < out.rank; ++r) {
+            EXPECT_NEAR(out.s[r], expected.s[r], 1e-15);
+        }
+        for (std::size_t i = 0; i < out.u.size(); ++i) {
+            EXPECT_LT(std::abs(out.u[i] - expected.u[i]), 1e-15);
+        }
+        for (std::size_t i = 0; i < out.vh.size(); ++i) {
+            EXPECT_LT(std::abs(out.vh[i] - expected.vh[i]), 1e-15);
+        }
+    }
+}

@@ -1,6 +1,7 @@
 #include <cognition/graph_tn.h>
 
 #include <cognition/exact_group.h>
+#include <cognition/tensor_leg.h>
 
 #include <gtest/gtest.h>
 
@@ -295,5 +296,50 @@ TEST(GraphTn, CollapseConditions)
         collapse(g, /*agent=*/0, /*bit=*/true);
         EXPECT_LT(decision_z(g, 0), -0.99) << "collapse to |1> should pin -1";
         EXPECT_LT(decision_z(g, 1), -0.5) << "ferro neighbour drags toward -1";
+    }
+}
+
+// scale_leg is the diagonal specialization the Vidal environment absorb and
+// divide-back now use instead of routing a diag(w) matrix through absorb_leg.
+// It must agree with the general kernel exactly -- it is applied four times per
+// edge gate, twice over, so a discrepancy would show up as slow physical drift
+// rather than an obvious failure.
+TEST(GraphTn, ScaleLegMatchesTheGeneralAbsorb)
+{
+    using wz::engine::cognition::qstate::Complex;
+
+    // A rank-3 tensor with distinct dims, so a stride bug on any mode shows.
+    const std::vector<uint32_t> dims = { 2u, 3u, 4u };
+    std::size_t total = 1;
+    for (uint32_t d : dims) { total *= d; }
+
+    for (std::size_t mode = 0; mode < dims.size(); ++mode) {
+        std::vector<Complex> t(total);
+        for (std::size_t i = 0; i < total; ++i) {
+            t[i] = Complex{ 0.5 + 0.125 * static_cast<double>(i % 7),
+                -0.25 + 0.0625 * static_cast<double>(i % 5) };
+        }
+        std::vector<double> w(dims[mode]);
+        for (std::size_t i = 0; i < w.size(); ++i) {
+            w[i] = 0.3 + 0.4 * static_cast<double>(i);
+        }
+
+        // Reference: the general kernel with an explicit diagonal matrix.
+        std::vector<Complex> reference = t;
+        const std::size_t d = dims[mode];
+        std::vector<Complex> m(d * d, Complex{ 0, 0 });
+        for (std::size_t i = 0; i < d; ++i) {
+            m[i * d + i] = Complex{ w[i], 0 };
+        }
+        absorb_leg(reference, dims, mode, m);
+
+        std::vector<Complex> scaled = t;
+        scale_leg(scaled, dims, mode, w);
+
+        ASSERT_EQ(scaled.size(), reference.size());
+        for (std::size_t i = 0; i < scaled.size(); ++i) {
+            EXPECT_LT(std::abs(scaled[i] - reference[i]), 1e-15)
+                << "mode " << mode << " entry " << i;
+        }
     }
 }

@@ -209,14 +209,19 @@ namespace wz::engine::cognition::qstate
         return total > 0 ? corr / total : 0;
     }
 
-    Svd svd(
-        const std::vector<Complex>& a, uint32_t m, uint32_t n, uint32_t max_rank)
+    void svd(
+        const std::vector<Complex>& a, uint32_t m, uint32_t n, uint32_t max_rank,
+        Svd& out, SvdScratch& scratch)
     {
-        Svd out;
+        out.rows = m;
+        out.cols = n;
+        out.rank = 0;
+        out.discarded_weight = 0;
+        out.u.clear();
+        out.s.clear();
+        out.vh.clear();
         if (m == 0 || n == 0) {
-            out.rows = m;
-            out.cols = n;
-            return out;
+            return;
         }
 
         // Orthogonalize the columns of the taller orientation (rows >= cols): work
@@ -225,9 +230,10 @@ namespace wz::engine::cognition::qstate
         const uint32_t rows = tr ? n : m;
         const uint32_t cols = tr ? m : n;
 
-        std::vector<Complex> B(static_cast<std::size_t>(rows) * cols);
+        std::vector<Complex>& B = scratch.b;
+        B.resize(static_cast<std::size_t>(rows) * cols);
         if (!tr) {
-            B = a;  // m x n
+            std::copy(a.begin(), a.end(), B.begin());  // m x n
         } else {
             for (uint32_t i = 0; i < m; ++i) {
                 for (uint32_t j = 0; j < n; ++j) {
@@ -238,32 +244,57 @@ namespace wz::engine::cognition::qstate
         }
 
         // V accumulates the right rotations (cols x cols, identity to start).
-        std::vector<Complex> V(static_cast<std::size_t>(cols) * cols,
-            Complex{ 0, 0 });
+        std::vector<Complex>& V = scratch.v;
+        V.assign(static_cast<std::size_t>(cols) * cols, Complex{ 0, 0 });
         for (uint32_t k = 0; k < cols; ++k) {
             V[static_cast<std::size_t>(k) * cols + k] = Complex{ 1, 0 };
         }
 
+        // SQUARED column norms, maintained incrementally. The Jacobi rotation is
+        // norm-preserving on the pair, so after rotating (p, q) the two new norms
+        // follow in closed form from the old ones -- which removes two of the three
+        // O(rows) accumulations the pair scan used to do. Only gamma, the column
+        // inner product, still needs the full pass.
+        std::vector<Real>& norms = scratch.norms;
+        norms.assign(cols, 0);
+        for (uint32_t k = 0; k < cols; ++k) {
+            Real nrm = 0;
+            for (uint32_t i = 0; i < rows; ++i) {
+                nrm += std::norm(B[static_cast<std::size_t>(i) * cols + k]);
+            }
+            norms[k] = nrm;
+        }
+
+        // Converge on the RELATIVE off-diagonal weight rather than a per-pair
+        // machine-epsilon test. The old form kept sweeping while any single pair
+        // was not orthogonal to within DBL_EPSILON, which buys precision far below
+        // what a chi-truncated bond can carry -- the tail singular values are about
+        // to be discarded outright. kTol is still ~1e-13 relative, i.e. well inside
+        // the truncation error; svd_tests pins the result against the exact
+        // reconstruction so a bad threshold shows up as a failure, not as drift.
+        constexpr Real kTol = 1e-13;
+        constexpr uint32_t kMaxSweeps = 60u;
         const Real eps = std::numeric_limits<Real>::epsilon();
-        for (uint32_t sweep = 0; sweep < 100u; ++sweep) {
-            bool rotated = false;
+        for (uint32_t sweep = 0; sweep < kMaxSweeps; ++sweep) {
+            Real off = 0;      // summed |gamma|^2 over the pairs this sweep
+            Real diag = 0;     // summed alpha*beta, the scale to compare it against
             for (uint32_t p = 0; p < cols; ++p) {
                 for (uint32_t q = p + 1; q < cols; ++q) {
-                    Real alpha = 0;
-                    Real beta = 0;
+                    const Real alpha = norms[p];
+                    const Real beta = norms[q];
                     Complex gamma{ 0, 0 };
                     for (uint32_t i = 0; i < rows; ++i) {
-                        const Complex bp = B[static_cast<std::size_t>(i) * cols + p];
-                        const Complex bq = B[static_cast<std::size_t>(i) * cols + q];
-                        alpha += std::norm(bp);
-                        beta += std::norm(bq);
-                        gamma += std::conj(bp) * bq;
+                        const std::size_t base =
+                            static_cast<std::size_t>(i) * cols;
+                        gamma += std::conj(B[base + p]) * B[base + q];
                     }
                     const Real absg = std::abs(gamma);
-                    if (absg <= eps * std::sqrt(alpha * beta) || absg == 0) {
+                    const Real scale = alpha * beta;
+                    off += absg * absg;
+                    diag += scale;
+                    if (absg == 0 || absg <= eps * std::sqrt(scale)) {
                         continue;  // columns p, q already orthogonal
                     }
-                    rotated = true;
 
                     // Real Jacobi angle + complex phase that diagonalize the 2x2
                     // Hermitian Gram matrix [[alpha, conj(gamma)], [gamma, beta]].
@@ -277,34 +308,41 @@ namespace wz::engine::cognition::qstate
                     const Complex xcs = std::conj(xi) * s;
 
                     for (uint32_t i = 0; i < rows; ++i) {
-                        const Complex bp = B[static_cast<std::size_t>(i) * cols + p];
-                        const Complex bq = B[static_cast<std::size_t>(i) * cols + q];
-                        B[static_cast<std::size_t>(i) * cols + p] = c * bp - xcs * bq;
-                        B[static_cast<std::size_t>(i) * cols + q] = xs * bp + c * bq;
+                        const std::size_t base =
+                            static_cast<std::size_t>(i) * cols;
+                        const Complex bp = B[base + p];
+                        const Complex bq = B[base + q];
+                        B[base + p] = c * bp - xcs * bq;
+                        B[base + q] = xs * bp + c * bq;
                     }
                     for (uint32_t i = 0; i < cols; ++i) {
-                        const Complex vp = V[static_cast<std::size_t>(i) * cols + p];
-                        const Complex vq = V[static_cast<std::size_t>(i) * cols + q];
-                        V[static_cast<std::size_t>(i) * cols + p] = c * vp - xcs * vq;
-                        V[static_cast<std::size_t>(i) * cols + q] = xs * vp + c * vq;
+                        const std::size_t base =
+                            static_cast<std::size_t>(i) * cols;
+                        const Complex vp = V[base + p];
+                        const Complex vq = V[base + q];
+                        V[base + p] = c * vp - xcs * vq;
+                        V[base + q] = xs * vp + c * vq;
                     }
+                    // The rotation diagonalizes the pair's 2x2 Gram matrix, so the
+                    // new squared norms are its eigenvalues.
+                    const Real shift = t * absg;
+                    norms[p] = alpha - shift;
+                    norms[q] = beta + shift;
                 }
             }
-            if (!rotated) {
+            if (off <= kTol * kTol * diag) {
                 break;
             }
         }
 
-        // Singular values = column norms of B; sort the columns descending.
-        std::vector<Real> sigma(cols);
+        // Singular values = column norms of B (maintained above), sorted descending.
+        std::vector<Real>& sigma = scratch.sigma;
+        sigma.resize(cols);
         for (uint32_t k = 0; k < cols; ++k) {
-            Real nrm = 0;
-            for (uint32_t i = 0; i < rows; ++i) {
-                nrm += std::norm(B[static_cast<std::size_t>(i) * cols + k]);
-            }
-            sigma[k] = std::sqrt(nrm);
+            sigma[k] = std::sqrt(norms[k] > 0 ? norms[k] : 0);
         }
-        std::vector<uint32_t> idx(cols);
+        std::vector<uint32_t>& idx = scratch.idx;
+        idx.resize(cols);
         for (uint32_t k = 0; k < cols; ++k) {
             idx[k] = k;
         }
@@ -324,12 +362,14 @@ namespace wz::engine::cognition::qstate
 
         // U_B = normalized selected columns of B (rows x rank);
         // V_B = selected columns of the accumulated V (cols x rank).
-        std::vector<Complex> ub(static_cast<std::size_t>(rows) * rank);
-        std::vector<Complex> vb(static_cast<std::size_t>(cols) * rank);
-        std::vector<Real> s_out(rank);
+        std::vector<Complex>& ub = scratch.ub;
+        std::vector<Complex>& vb = scratch.vb;
+        ub.resize(static_cast<std::size_t>(rows) * rank);
+        vb.resize(static_cast<std::size_t>(cols) * rank);
+        out.s.resize(rank);
         for (uint32_t r = 0; r < rank; ++r) {
             const uint32_t col = idx[r];
-            s_out[r] = sigma[col];
+            out.s[r] = sigma[col];
             const Real inv = sigma[col] > 0 ? 1.0 / sigma[col] : 0.0;
             for (uint32_t i = 0; i < rows; ++i) {
                 ub[static_cast<std::size_t>(i) * rank + r] =
@@ -341,30 +381,33 @@ namespace wz::engine::cognition::qstate
             }
         }
 
-        out.rows = m;
-        out.cols = n;
         out.rank = rank;
-        out.s = std::move(s_out);
         out.vh.assign(static_cast<std::size_t>(rank) * n, Complex{ 0, 0 });
-        if (!tr) {
-            // A = U_B diag(s) V_B^dagger.
-            out.u = std::move(ub);  // m x rank
-            for (uint32_t r = 0; r < rank; ++r) {
-                for (uint32_t j = 0; j < n; ++j) {  // n == cols
-                    out.vh[static_cast<std::size_t>(r) * n + j] =
-                        std::conj(vb[static_cast<std::size_t>(j) * rank + r]);
-                }
-            }
-        } else {
-            // B = A^dagger = U_B diag(s) V_B^dagger  =>  A = V_B diag(s) U_B^dagger.
-            out.u = std::move(vb);  // m x rank (cols == m)
-            for (uint32_t r = 0; r < rank; ++r) {
-                for (uint32_t j = 0; j < n; ++j) {  // n == rows
-                    out.vh[static_cast<std::size_t>(r) * n + j] =
-                        std::conj(ub[static_cast<std::size_t>(j) * rank + r]);
-                }
+        // u is `rows x rank` in the untransposed case and `cols x rank` in the
+        // transposed one -- both equal m x rank, since m is whichever of the two
+        // the orientation put first.
+        out.u.resize(static_cast<std::size_t>(m) * rank);
+        const std::vector<Complex>& u_src = tr ? vb : ub;
+        const std::vector<Complex>& vh_src = tr ? ub : vb;
+        std::copy(
+            u_src.begin(),
+            u_src.begin() + static_cast<std::ptrdiff_t>(
+                static_cast<std::size_t>(m) * rank),
+            out.u.begin());
+        for (uint32_t r = 0; r < rank; ++r) {
+            for (uint32_t j = 0; j < n; ++j) {
+                out.vh[static_cast<std::size_t>(r) * n + j] =
+                    std::conj(vh_src[static_cast<std::size_t>(j) * rank + r]);
             }
         }
+    }
+
+    Svd svd(
+        const std::vector<Complex>& a, uint32_t m, uint32_t n, uint32_t max_rank)
+    {
+        Svd out;
+        SvdScratch scratch;
+        svd(a, m, n, max_rank, out, scratch);
         return out;
     }
 

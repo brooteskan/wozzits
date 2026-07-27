@@ -142,6 +142,33 @@ namespace wz::engine::cognition::qstate
         uint32_t cols,
         uint32_t max_rank = 0);
 
+    // Reusable working buffers for svd(). The tensor-network hot path calls svd
+    // once per bond per substep -- hundreds of times per think -- and the
+    // allocating form above heap-allocates eight vectors on every call. Hold one
+    // of these next to the network and the buffers are allocated once and grown
+    // to their high-water mark.
+    struct SvdScratch
+    {
+        std::vector<Complex> b;      // the working (orthogonalized) matrix
+        std::vector<Complex> v;      // accumulated right rotations
+        std::vector<Complex> ub;     // normalized selected columns of b
+        std::vector<Complex> vb;     // selected columns of v
+        std::vector<Real> sigma;     // column norms
+        std::vector<Real> norms;     // squared column norms, maintained across rotations
+        std::vector<uint32_t> idx;   // descending-sigma permutation
+    };
+
+    // As above, but writes into `out` (reusing its vectors' capacity) and works in
+    // `scratch`. Identical results to the allocating overload -- svd_tests pins
+    // that. Prefer this on any path that runs per frame.
+    void svd(
+        const std::vector<Complex>& a,
+        uint32_t rows,
+        uint32_t cols,
+        uint32_t max_rank,
+        Svd& out,
+        SvdScratch& scratch);
+
     // ---- measurement (PARTIAL; Born rule; collapses + renormalizes) ----
     // Measures only qubit q: samples its value by the Born rule, projects the
     // state onto that outcome, and renormalizes. Other qubits stay coherent --

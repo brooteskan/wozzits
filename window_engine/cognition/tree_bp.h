@@ -91,6 +91,26 @@ namespace wz::engine::cognition
         const std::vector<wz::engine::cognition::qstate::Complex>& gate,
         uint32_t chi);
 
+    // Reusable working buffers for apply_two_site_gate. The overload above
+    // allocates four vectors plus the SVD's own on every call, and the hot path
+    // calls it once per bond per substep -- hundreds of times per think. Hold one
+    // of these next to the network (TtnChain does) and pass it in; the buffers
+    // grow to their high-water mark and are then reused. Results are identical.
+    struct TwoSiteScratch
+    {
+        std::vector<wz::engine::cognition::qstate::Complex> theta;
+        std::vector<wz::engine::cognition::qstate::Complex> mmat;
+        wz::engine::cognition::qstate::Svd svd;
+        wz::engine::cognition::qstate::SvdScratch svd_scratch;
+    };
+
+    double apply_two_site_gate(
+        MpsSite& left,
+        MpsSite& right,
+        const std::vector<wz::engine::cognition::qstate::Complex>& gate,
+        uint32_t chi,
+        TwoSiteScratch& scratch);
+
     // Apply a single-qubit gate to a site's physical leg (no bond change, no
     // truncation): A'[s'][l][r] = sum_s gate[s'*2 + s] A[s][l][r]. `gate` is the
     // 2x2 matrix row-major [out*2 + in].
