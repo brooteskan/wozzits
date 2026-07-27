@@ -573,6 +573,7 @@ namespace wz::engine::cognition
             .graph = build(std::move(b)),
             .goal_field = std::vector<double>(agent_count, 0.0),
             .chi = chi,
+            .clamp = std::vector<int8_t>(agent_count, -1),
             .last_truncation_error = 0.0,
         };
     }
@@ -622,6 +623,31 @@ namespace wz::engine::cognition
         }
 
         half_fields();
+
+        // Re-apply every held collapse BEFORE the canonicalization below, not
+        // after. Both the field gates and the coupling gates mix a projected
+        // physical leg back off its latch, so the clamp has to be restored each
+        // step -- and the sweep that follows is exactly what propagates the
+        // projection outward into the neighbours' environments. Folding the
+        // re-projection into a sweep that was going to run anyway is what makes
+        // holding a clamp on this backend affordable at all; doing it as a
+        // separate collapse() per substep would re-canonicalize the whole graph
+        // once per clamped agent per substep.
+        for (uint32_t u = 0; u < n && u < g.clamp.size(); ++u) {
+            if (g.clamp[u] < 0) {
+                continue;
+            }
+            GraphSite& s = node_data(g.graph, u);
+            std::size_t tail = 1;
+            for (uint32_t d : s.bond_dim) {
+                tail *= d;
+            }
+            const std::size_t zero_phys = g.clamp[u] != 0 ? 0u : 1u;
+            const std::size_t base = zero_phys * tail;
+            for (std::size_t j = 0; j < tail; ++j) {
+                s.t[base + j] = Complex{ 0, 0 };
+            }
+        }
 
         // The trailing single-site field gates are non-unitary rotations on the
         // physical legs; they perturb each node's tensor OUT of Vidal canonical
@@ -674,6 +700,9 @@ namespace wz::engine::cognition
         if (agent >= node_count(g.graph)) {
             return;
         }
+        if (agent < g.clamp.size()) {
+            g.clamp[agent] = bit ? 1 : 0;   // held across every later relax_step
+        }
         GraphSite& s = node_data(g.graph, agent);
         std::size_t tail = 1;
         for (uint32_t d : s.bond_dim) {
@@ -703,5 +732,39 @@ namespace wz::engine::cognition
         // clamp through relaxation (the uniform collapse contract) would multiply
         // that by the substep count.
         canonicalize(g, g.chi, kConditioningPasses);
+    }
+
+    bool measure_in_basis(
+        GraphTn& g, uint32_t agent, double theta, qstate::Rng& rng)
+    {
+        if (agent >= node_count(g.graph)) {
+            return false;
+        }
+        // Rotate the measurement axis onto z with a single-site R_y(-theta) on the
+        // physical leg (unitary -> no bond growth, no truncation), matching the
+        // exact and TTN backends exactly.
+        const double c = std::cos(theta * 0.5);
+        const double s = std::sin(theta * 0.5);
+        // absorb_leg contracts as t'[s'] = sum_s m[s*2 + s'] t[s], i.e. the matrix
+        // is indexed [in*2 + out] -- the TRANSPOSE of the [out*2 + in] convention
+        // qstate::apply_1q uses. R_y(-theta) is {c, s; -s, c} in [out*2 + in], so
+        // it goes in here as {c, -s; s, c}.
+        const std::vector<Complex> ry = {
+            Complex{ c, 0 }, Complex{ -s, 0 },
+            Complex{ s, 0 }, Complex{ c, 0 },
+        };
+        apply_physical(node_data(g.graph, agent), ry);
+        // The rotation perturbs the lambda gauge the marginal readout assumes, so
+        // restore it before sampling -- otherwise the Born probability is read off
+        // a state that is not in canonical form.
+        canonicalize(g, g.chi, kConditioningPasses);
+
+        // Born-sample from the lambda-gauge marginal, which is already conditioned
+        // on any previously collapsed agents. P(|1>) = (1 - <sigma_z>) / 2.
+        const double z = marginal_z(g.graph, agent);
+        const double p1 = 0.5 * (1.0 - z);
+        const bool bit = rng.next_unit() < p1;
+        collapse(g, agent, bit);   // projects, clamps, and conditions the graph
+        return bit;
     }
 }

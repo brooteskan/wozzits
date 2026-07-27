@@ -68,6 +68,17 @@ namespace wz::engine::cognition
             return Coordination{ std::move(t) };
         }
 
+        // chi >= 2 on an ARBITRARY graph: finite-chi Vidal simple update. Bounded
+        // entanglement on rings, stars and villages -- the topologies build_ttn
+        // rejects outright. Always buildable, so it is the general chi >= 2 answer
+        // and TtnChain is a chain-shaped fast path in front of it.
+        std::optional<Coordination> build_graph_tn(const AgentSpec& spec)
+        {
+            GraphTn g = make_graph_tn(spec.agent_count, spec.bonds, spec.chi);
+            set_goals(g, spec.goals);
+            return Coordination{ std::move(g) };
+        }
+
         // chi == 1: the LoopyBpNetwork backend (self-consistent mean field with
         // damping), works for ANY topology -- trees and cyclic villages -- and
         // scales linearly, so it is the large-group / cyclic-village path. Uses the
@@ -138,12 +149,30 @@ namespace wz::engine::cognition
                     chi_used = kPromotedChainChi;
                     return ttn;
                 }
+                // Deliberately loopy, not the general graph TN, even though that
+                // is now buildable for a non-chain topology. Promotion happens
+                // because the group is ALREADY over the frame budget, so the right
+                // instinct there is the cheapest linear backend -- graph_tn is
+                // ~40x loopy. An author who wants bounded entanglement on a big
+                // ring asks for chi >= 2 explicitly, which now works.
                 canon.chi = 1u;
                 chi_used = 1u;
                 return build_loopy(canon);
             }
             if (canon.chi == 1) return build_loopy(canon);
-            return build_ttn(canon);  // chi >= 2 (chi is uint32_t, so 0/1/>=2 total)
+            // chi >= 2: the TTN chain when the topology IS a nearest-neighbour
+            // chain (the cheap specialization -- measured ~8x the general
+            // backend on the same shape), the general graph TN otherwise. Before
+            // this, a chi >= 2 spec whose bonds were not a chain simply failed to
+            // build, so a ring or a star could get NO entanglement at any cost:
+            // chi = 1 handled any topology but as a product state, and chi >= 2
+            // carried entanglement but only along a chain. That hole in the middle
+            // of the chi dial is what this closes -- and it is why a chi >= 2 agent
+            // could never be reshaped, since reshape_group_request builds a star.
+            if (std::optional<Coordination> ttn = build_ttn(canon)) {
+                return ttn;
+            }
+            return build_graph_tn(canon);
         }
     }
 

@@ -52,8 +52,8 @@ namespace wz::engine::behavior
     // the mind IR JSON. Leaves `out.seed` untouched -- the quantum_agent behavior
     // derives a per-instance seed. Returns false + sets `error` on malformed JSON, a
     // missing/zero `qubits`, or a goal/bond naming an out-of-range qubit. Backend
-    // <-> topology validity (a chi>=2 TTN needs a nearest-neighbour chain) is left to
-    // AgentCognitionStore::create, which fails closed on an unbuildable spec.
+    // selection is left to AgentCognitionStore::create, which fails closed on an
+    // unbuildable spec.
     bool parse_mind(
         const std::string& json_text,
         cognition::AgentSpec& out,

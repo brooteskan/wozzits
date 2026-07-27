@@ -234,14 +234,16 @@ namespace wz::engine::behavior
                 const wz::engine::cognition::AgentHandle handle =
                     quantum_agent_store().create(spec);
                 if (handle == wz::engine::cognition::kInvalidAgent) {
-                    // Loud, not silent: a chi>=2 TTN with a ring/star (non-chain)
-                    // bond set, a zero/over-cap agent_count, etc. -- the demo shows
-                    // dark bodies and this line names why.
+                    // Loud, not silent: a zero or over-cap agent_count, an
+                    // over-sized learning register, a disposition layout that
+                    // disagrees with the qubit count -- the demo shows dark bodies
+                    // and this line names why. Topology is no longer a reason: a
+                    // chi>=2 ring or star now builds on the general graph backend.
                     wz_log_infof(
                         facts,
                         "[quantum_agent] build FAILED chi=%u backend=%s agents=%u "
-                        "bonds=%u (unbuildable spec -- chi>=2 TTN needs a nearest-"
-                        "neighbour chain, not a ring/star)",
+                        "bonds=%u (unbuildable spec -- check agent_count, memory "
+                        "size and any disposition layout)",
                         spec.chi, backend, spec.agent_count,
                         static_cast<unsigned>(spec.bonds.size()));
                     return;

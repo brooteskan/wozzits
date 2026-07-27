@@ -134,21 +134,22 @@ namespace wz::engine::behavior
     // Coordination BACKEND selector (chi). 0 = exact joint state (genuine
     // entanglement, small groups; the default, and what every current NPC uses);
     // 1 = loopy BP (any topology incl. CYCLIC villages, scales linearly, but a
-    // product-state approximation with NO entanglement); >= 2 = chi-truncated TTN
-    // chain (larger entangled groups; bonds MUST form the nearest-neighbour chain,
-    // so pair it with chain_coupling, not ring/star). Default 0. An out-of-topology
-    // spec (e.g. chi>=2 with a ring) fails to build -- create() returns invalid and
-    // the module logs it.
+    // product-state approximation with NO entanglement); >= 2 = bounded
+    // entanglement on ANY topology -- a nearest-neighbour chain takes the cheap TTN
+    // chain specialization, a ring/star/arbitrary graph takes the general graph TN.
+    // Default 0. Topology is no longer a build constraint: a chi>=2 ring or star
+    // builds, which is also what makes a chi>=2 group reshapable (reshape builds a
+    // star).
     inline constexpr const char* kQuantumAgentChiKey = "chi";
 
     // Nearest-neighbour topology for the linear-scaling backends -- use ONE of these
     // INSTEAD of coupling/star for a many-membered group:
-    //   chain_coupling - bond (i, i+1) into an OPEN chain (the shape a chi>=2 TTN
-    //                    requires). Default 0.
+    //   chain_coupling - bond (i, i+1) into an OPEN chain (the shape that takes
+    //                    the cheap chi>=2 TTN specialization). Default 0.
     //   ring_coupling  - the chain PLUS the closing bond (n-1, 0): a CYCLE. An odd
     //                    anti-ferromagnetic ring is FRUSTRATED (no 2-coloring) -- the
-    //                    thing a tree cannot show; run it on chi=1 (a chi>=2 TTN needs
-    //                    an open chain, so a ring fails to build). The closing bond is
+    //                    thing a tree cannot show. Runs on chi=1 (a product state)
+    //                    or chi>=2 (the general graph TN). The closing bond is
     //                    skipped below 3 qubits (a 2-ring would double the lone bond).
     //                    Default 0.
     inline constexpr const char* kQuantumAgentChainCouplingKey = "chain_coupling";
@@ -188,7 +189,7 @@ namespace wz::engine::behavior
 
     // Cap on coupled decisions a single agent exposes (bounds the fixed-size, trivially-
     // copyable POD cache below). 32 supports large minds on the LINEAR-scaling backends:
-    // chi=1 loopy BP is O(N), and a chi>=2 TTN on a nearest-neighbour chain is
+    // chi=1 loopy BP is O(N), and a chi>=2 tensor network is
     // ~O(N * poly(chi)). NOT the exact backend (chi=0), whose joint state is O(2^N) -- keep
     // exact minds to a handful of qubits. The mind_ir loader rejects a graph over this cap.
     inline constexpr uint32_t kQuantumAgentMaxDecisions = 32;

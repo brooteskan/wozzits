@@ -343,3 +343,58 @@ TEST(GraphTn, ScaleLegMatchesTheGeneralAbsorb)
         }
     }
 }
+
+// measure_in_basis had to be written for this backend -- it was the one piece of
+// the coordination contract GraphTn did not implement, and so the one thing
+// blocking it from being a Coordination alternative. Measuring in the z basis
+// (theta = 0) must yield a definite outcome, hold it, and condition the coupled
+// neighbours through the bonds.
+TEST(GraphTn, MeasureInBasisCollapsesAndConditionsTheRing)
+{
+    std::vector<ExactBond> bonds;
+    for (uint32_t i = 0; i < 4; ++i) {
+        bonds.push_back(ExactBond{ i, (i + 1u) % 4u, 1.5 });   // ferro ring
+    }
+    GraphTn g = make_graph_tn(4, bonds, /*chi=*/2);
+    // No goals: by symmetry every marginal sits at ~0, so the measurement is the
+    // only thing that can decide anything.
+    relax(g, /*gamma=*/0.4, /*dtau=*/0.05, /*iterations=*/200);
+    for (uint32_t i = 0; i < 4; ++i) {
+        ASSERT_NEAR(decision_z(g, i), 0.0, 0.2) << "agent " << i;
+    }
+
+    qstate::Rng rng{ 0xC0FFEEu };
+    const bool bit = measure_in_basis(g, 0, /*theta=*/0.0, rng);
+
+    // Definite on the measured agent...
+    const double z0 = decision_z(g, 0);
+    EXPECT_NEAR(z0, bit ? -1.0 : +1.0, 1e-6);
+    // ...and the ferromagnetic neighbours are conditioned to agree with it.
+    for (uint32_t i = 1; i < 4; ++i) {
+        EXPECT_GT(decision_z(g, i) * z0, 0.0) << "agent " << i << " not conditioned";
+    }
+
+    // And it is HELD: relaxing on does not mix the outcome back out.
+    relax(g, 0.4, 0.05, 100);
+    EXPECT_NEAR(decision_z(g, 0), bit ? -1.0 : +1.0, 1e-6);
+}
+
+// The measurement must be a genuine Born sample, not a fixed outcome: over many
+// shots from the same unbiased state both branches come up.
+TEST(GraphTn, MeasureInBasisSamplesBothBranches)
+{
+    std::vector<ExactBond> bonds = { ExactBond{ 0, 1, 1.0 }, ExactBond{ 1, 2, 1.0 },
+        ExactBond{ 2, 0, 1.0 } };
+    GraphTn prepared = make_graph_tn(3, bonds, /*chi=*/2);
+    relax(prepared, 0.4, 0.05, 200);
+
+    qstate::Rng rng{ 0x5EEDu };
+    int ones = 0;
+    const int shots = 60;
+    for (int i = 0; i < shots; ++i) {
+        GraphTn g = prepared;   // fresh copy per shot
+        ones += measure_in_basis(g, 0, 0.0, rng) ? 1 : 0;
+    }
+    EXPECT_GT(ones, shots / 5);
+    EXPECT_LT(ones, shots - shots / 5);
+}

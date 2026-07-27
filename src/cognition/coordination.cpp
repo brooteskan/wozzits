@@ -22,21 +22,11 @@ namespace wz::engine::cognition
     }
 
     // Per-backend set_goals so the std::visit below resolves for every variant
-    // alternative. ExactGroup already has one (exact_group.h); the TTN chain
-    // mirrors it; mean-field goals are not wired yet so it is a no-op.
+    // alternative. ExactGroup already has one (exact_group.h), as does GraphTn
+    // (graph_tn.cpp); the TTN chain mirrors them.
     void set_goals(TtnChain& t, const std::vector<Goal>& goals)
     {
         assign_goal_field(t.goal_field, goals);
-    }
-
-    void set_goals(MeanFieldNetwork&, const std::vector<Goal>&)
-    {
-        // NOT a silent success behind the seam: mean-field has no goal-field
-        // storage (its coordination is a bare node/bond polytree), so per-node
-        // goals are a deferred follow-up. This is unreachable for a LIVE agent --
-        // AgentCognitionStore::create() rejects chi == 1, so no Coordination ever
-        // holds a MeanFieldNetwork; this overload exists only so std::visit
-        // resolves over the whole variant.
     }
 
     void relax(Coordination& c, double gamma, double dtau, uint32_t iterations)
@@ -53,12 +43,15 @@ namespace wz::engine::cognition
 
     double truncation_error(const Coordination& c)
     {
-        // Only the chi-capped TTN backend truncates; mean-field (chi=1) and the
-        // exact joint state (chi=inf) never drop weight, so both report 0.
+        // Only the chi-capped backends truncate; loopy BP (chi=1, a product state
+        // with nothing to truncate) and the exact joint state (chi=inf) never drop
+        // weight, so both report 0.
         return std::visit(
             [](const auto& backend) -> double {
                 using B = std::decay_t<decltype(backend)>;
-                if constexpr (std::is_same_v<B, TtnChain>) {
+                if constexpr (std::is_same_v<B, TtnChain>
+                    || std::is_same_v<B, GraphTn>)
+                {
                     return backend.last_truncation_error;
                 } else {
                     return 0.0;

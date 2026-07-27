@@ -14,8 +14,8 @@
 // swapped in without touching the decider).
 
 #include <cognition/exact_group.h>
+#include <cognition/graph_tn.h>
 #include <cognition/loopy_bp.h>
-#include <cognition/mean_field.h>
 #include <cognition/ttn.h>
 
 #include <cstdint>
@@ -24,8 +24,21 @@
 
 namespace wz::engine::cognition
 {
+    // The backends behind the seam, by what they can represent:
+    //   ExactGroup   chi = infinity -- the whole joint state, any topology, cost
+    //                exponential in group size.
+    //   TtnChain     chi >= 2 on a nearest-neighbour CHAIN -- the fast path when
+    //                the topology happens to be a chain.
+    //   GraphTn      chi >= 2 on ANY graph -- rings, stars, villages. Slower than
+    //                the chain specialization, which is the only reason both exist.
+    //   LoopyBpGroup chi = 1 -- any topology, linear, but a product state with no
+    //                entanglement across a bond.
+    //
+    // MeanFieldNetwork is deliberately NOT here. It was in the variant but
+    // unbuildable (chi == 1 routes to loopy), so every std::visit carried a branch
+    // that could not run; the type still exists for direct use and its own tests.
     using Coordination =
-        std::variant<MeanFieldNetwork, ExactGroup, TtnChain, LoopyBpGroup>;
+        std::variant<ExactGroup, TtnChain, GraphTn, LoopyBpGroup>;
 
     // Advance the coordination one relaxation (dispatches to the held backend).
     void relax(

@@ -344,11 +344,18 @@ TEST(AgentCognition, RejectsUnbuildableSpecs)
     empty.agent_count = 0;
     EXPECT_EQ(store.create(empty), kInvalidAgent);
 
+    // A NON-CHAIN chi >= 2 spec is no longer unbuildable: the TTN chain rejects
+    // it, and the general graph TN takes it. That used to be a hole in the middle
+    // of the chi dial -- chi = 1 handled any topology but as a product state, and
+    // chi >= 2 carried entanglement but only along a chain, so a ring or a star
+    // got no entanglement at any cost.
     AgentSpec non_chain;
     non_chain.agent_count = 3;
-    non_chain.chi = 4;  // TTN requires a nearest-neighbour chain
+    non_chain.chi = 4;
     non_chain.bonds = { ExactBond{ 0, 2, 1.0 } };  // (0,2) is not a chain edge
-    EXPECT_EQ(store.create(non_chain), kInvalidAgent);
+    const AgentHandle h = store.create(non_chain);
+    EXPECT_NE(h, kInvalidAgent);
+    EXPECT_EQ(store.backend_chi(h), 4u);   // built at the authored chi
 }
 
 // chi == 1 now BUILDS on the loopy-BP backend (formerly rejected). A ferro pair
@@ -563,12 +570,22 @@ TEST(AgentCognition, RejectedReshapeLeavesAgentIntact)
     }
     ASSERT_GT(store.marginal(h, 0), 0.8);   // committed to its + goal before the reshape
 
-    // Reshape to 3 qubits with a STAR (non-chain) bond 0-2 -- build_ttn rejects it.
-    // Shrinking 4 -> 3 is the heap-corruption case if the vectors are resized first.
-    const bool ok = store.reshape(
-        h, 3u, { ExactBond{ 0, 1, 1.0 }, ExactBond{ 0, 2, 1.0 } }, 8.1);
+    // A rejected reshape must leave the agent EXACTLY as it was. Shrinking is the
+    // dangerous direction: if the bookkeeping were resized before the new shape
+    // was validated, a rejected shrink would leave agent_count longer than the
+    // shortened vectors and the next think() would write past them.
+    //
+    // The trigger used to be a chi >= 2 STAR, which build_ttn rejected. That no
+    // longer fails -- the general graph TN takes any topology, so no spec that
+    // clears reshape's early checks is unbuildable any more, and the
+    // build-then-reject ordering has no live trigger left. It stays because the
+    // guard is cheap and build_coordination still returns an optional; the
+    // property under test is the one that matters and still holds.
+    const bool ok = store.reshape(h, 0u, {}, 8.1);   // zero qubits: refused
     EXPECT_FALSE(ok);                      // rejected
     EXPECT_EQ(store.agent_count(h), 4u);   // shape left intact
+    EXPECT_FALSE(store.reshape(h, kInvalidAgent, {}, 8.1));   // absurd count too
+    EXPECT_EQ(store.agent_count(h), 4u);
 
     // Still fully usable: think() must not read past any vector (under ASan the old
     // code would heap-overflow here), and it stays a healthy 4-qubit agent.
@@ -1019,4 +1036,72 @@ TEST(AgentCognition, ReshapeRefusesALaidOutMind)
     EXPECT_FALSE(store.reshape(h, 5u, {}, 1.0));
     EXPECT_EQ(store.agent_count(h), 3u);            // untouched
     EXPECT_EQ(store.disposition_count(h, 0), 3u);
+}
+
+// The hole in the middle of the chi dial, closed. chi = 1 handles any topology
+// but is a product state with NO entanglement; chi >= 2 carried entanglement but
+// only along a nearest-neighbour chain, so a ring or a star -- a village, a
+// squad-star -- got no entanglement at any cost. The general graph TN now takes
+// chi >= 2 on an arbitrary topology.
+TEST(AgentCognition, ChiTwoBuildsOnACyclicTopology)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 5;
+    spec.chi = 2;
+    for (uint32_t i = 0; i < 5; ++i) {
+        spec.bonds.push_back(ExactBond{ i, (i + 1u) % 5u, 1.0 });  // ferro ring
+    }
+    spec.goals = { Goal{ .agent = 0, .field = 0.8 } };
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.9, .decoherence_rate = 0.0 };
+
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent) << "a cyclic chi>=2 group must build";
+    EXPECT_EQ(store.backend_chi(h), 2u);
+    run_anneal(store, h);
+
+    // The goal propagates the whole way round the ring through the couplings --
+    // every member commits with the hub.
+    for (uint32_t i = 0; i < 5; ++i) {
+        const std::optional<bool> decided = store.committed(h, i);
+        ASSERT_TRUE(decided.has_value()) << "agent " << i << " never committed";
+        EXPECT_FALSE(*decided) << "agent " << i;      // |0>, the goal's disposition
+        EXPECT_GT(store.marginal(h, i), 0.5) << "agent " << i;
+    }
+}
+
+// A chi >= 2 agent can finally be RESHAPED. reshape_group_request builds a STAR
+// and reshape() preserves chi, so before the general graph backend a chi >= 2
+// agent could never be reshaped at all: build_ttn rejected the star bonds and
+// reshape() silently returned false (which tank_commander_plugin.cpp ignores, so
+// the squad simply never grew).
+TEST(AgentCognition, ChiTwoGroupCanBeReshapedIntoAStar)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 2;
+    spec.chi = 2;
+    spec.bonds = { ExactBond{ 0, 1, 1.0 } };           // a chain, so TTN builds it
+    spec.goals = { Goal{ .agent = 0, .field = 0.8 } };
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.9, .decoherence_rate = 0.0 };
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    // Grow into a 4-member star around the hub -- the shape the commander builds.
+    std::vector<ExactBond> star;
+    for (uint32_t i = 1; i < 4; ++i) {
+        star.push_back(ExactBond{ 0u, i, 1.0 });
+    }
+    ASSERT_TRUE(store.reshape(h, 4u, star, 0.0))
+        << "a chi>=2 group must be reshapable into a star";
+    EXPECT_EQ(store.agent_count(h), 4u);
+    EXPECT_EQ(store.backend_chi(h), 2u);   // still the authored chi
+
+    run_anneal(store, h);
+    // The hub's goal drags every member through the star.
+    for (uint32_t i = 0; i < 4; ++i) {
+        EXPECT_GT(store.marginal(h, i), 0.5) << "member " << i;
+    }
 }

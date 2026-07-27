@@ -65,14 +65,15 @@ namespace wz::engine::cognition
     // Pin node `node`'s qubit to `bit` (project its product-state register). NB:
     // mean-field has no goal storage, so a subsequent relax_step re-relaxes it --
     // holding a commit needs a re-pin each step (the store does this). Mean-field
-    // is not a LIVE coordination backend anyway (create() rejects chi == 1).
+    // is not a LIVE coordination backend anyway (chi == 1 routes to loopy BP,
+    // and MeanFieldNetwork is no longer a Coordination alternative at all).
     void collapse(
         MeanFieldNetwork& net, wz::core::graph::NodeHandle node, bool bit);
 
     // Measure node `node` along axis theta -- a local rotated measurement of the
     // node's own single-qubit register (a product-state backend carries no
     // entanglement). Present for coordination-seam parity; mean-field is not a
-    // live backend (create() rejects chi == 1). Returns the outcome bit.
+    // live backend -- chi == 1 routes to loopy BP. Returns the outcome bit.
     bool measure_in_basis(
         MeanFieldNetwork& net, wz::core::graph::NodeHandle node, double theta,
         wz::engine::cognition::qstate::Rng& rng);

@@ -64,6 +64,13 @@ namespace wz::engine::cognition
         wz::core::graph::SharedEdgeGraph<GraphSite, GraphBond> graph;
         std::vector<double> goal_field;   // per-agent longitudinal field h
         uint32_t chi = 4;                 // bond-dimension cap
+        // Held collapses: -1 free, 0 pinned to |0>, 1 pinned to |1>. Same
+        // convention and same contract as ExactGroup::clamp / TtnChain::clamp --
+        // a collapsed decision stays a constraint the still-deliberating agents
+        // relax against. Re-applied by relax_step, which folds the re-projection
+        // into the canonicalization sweep it already runs, so holding a clamp
+        // costs nothing beyond the projection itself.
+        std::vector<int8_t> clamp;
         // Sum of the per-edge RELATIVE truncation errors from the most recent
         // relax_step (telemetry only; 0 when chi >= every full bond). Reset at the
         // top of each relax_step.
@@ -109,5 +116,19 @@ namespace wz::engine::cognition
     // Collapse agent `agent`'s physical leg onto `bit` (project its tensor onto
     // that outcome, zeroing the opposite physical component). The lambda-gauge
     // marginal renormalizes by trace, so no explicit renormalization is needed.
+    // HELD: the clamp is recorded and re-applied by every later relax_step, so a
+    // committed decision stays a constraint rather than being mixed back out --
+    // the uniform collapse contract (see coordination.h). Clears only on a rebuild.
     void collapse(GraphTn& g, uint32_t agent, bool bit);
+
+    // Measure agent `agent` along axis theta (x-z plane), with back-action, up to
+    // the bond dimension chi. Rotates the physical leg by R_y, Born-samples from
+    // the lambda-gauge marginal (already CONDITIONED on any collapsed neighbours),
+    // then collapses -- so the projection conditions the rest of the graph through
+    // the bonds. chi >= 2 captures a rank-<= chi entangled state, so on a graph
+    // whose entanglement fits the cap this is a genuine non-classical readout.
+    // Returns the outcome bit.
+    bool measure_in_basis(
+        GraphTn& g, uint32_t agent, double theta,
+        wz::engine::cognition::qstate::Rng& rng);
 }

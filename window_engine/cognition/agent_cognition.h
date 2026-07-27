@@ -81,8 +81,12 @@ namespace wz::engine::cognition
     //   chi == 1  -- LoopyBpNetwork (chi = 1 damped loopy BP): any topology incl.
     //                cyclic villages, scales linearly, but a product-state
     //                approximation with NO entanglement;
-    //   chi >= 2  -- chi-truncated TTN chain (bonds MUST form the nearest-neighbour
-    //                chain (i, i+1); larger entangled groups).
+    //   chi >= 2  -- bounded entanglement on ANY topology. A nearest-neighbour
+    //                chain takes the TTN chain specialization (measured ~8x
+    //                cheaper on that shape); a ring, star or arbitrary graph takes
+    //                the general graph TN. Both are chi-truncated, so the dial
+    //                reads continuously: 0 = full fidelity, 1 = none, >= 2 = as
+    //                much as chi buys, whatever the topology.
     struct AgentSpec
     {
         // QUBIT count. With no layout below, agent i IS qubit i (one binary
