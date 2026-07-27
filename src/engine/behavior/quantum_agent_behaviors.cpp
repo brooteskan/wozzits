@@ -158,6 +158,18 @@ namespace wz::engine::behavior
             (void)wz_config_float(facts, kQuantumAgentMemoryKey, &memory_f);
             spec.memory_qubits =
                 memory_f < 1.0f ? 0u : static_cast<uint32_t>(memory_f);
+
+            // Soft one-hot: reinterpret this agent's `decisions` qubits as ONE
+            // agent holding that many MUTUALLY EXCLUSIVE dispositions, rather than
+            // that many independent binary choices. This is the scalar-config route
+            // to the canonical NPC decision ("flee | fight | hide -- pick one");
+            // the mind IR can lay out several multi-disposition agents at once.
+            const float one_hot =
+                config_float(facts, kQuantumAgentOneHotKey, 0.0f);
+            if (one_hot != 0.0f) {
+                spec.dispositions_per_agent = { spec.agent_count };
+                spec.one_hot_strength = { static_cast<double>(one_hot) };
+            }
         }
 
         void quantum_agent_on_event(
@@ -363,6 +375,8 @@ namespace wz::engine::behavior
             { kQuantumAgentThinkIntervalKey, "Think interval (s)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.25, nullptr },
             { kQuantumAgentMemoryKey, "Memory qubits (learning)",
+                WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
+            { kQuantumAgentOneHotKey, "Exclusive choice (one-hot strength)",
                 WZ_BEHAVIOR_PARAM_FLOAT, 0.0, nullptr },
         };
 

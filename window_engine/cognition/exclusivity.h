@@ -21,9 +21,27 @@
 #include <cognition/exact_group.h>
 
 #include <cstdint>
+#include <vector>
 
 namespace wz::engine::cognition
 {
+    // Expand `agent`'s soft one-hot into SPEC-level terms: antiferro bonds among
+    // its dispositions appended to `bonds`, and the inactive bias appended to
+    // `goals`. This is the form the AgentCognitionStore uses, because it feeds the
+    // terms through canonicalize_bonds along with the authored ones -- so the
+    // one-hot works on every backend, not just the exact one, and its bonds get
+    // the same girth/self-bond hygiene as everything else.
+    //
+    // Terms naming a qubit at or past `qubit_count` are DROPPED, as are unknown
+    // agents. Appends nothing when `strength` is 0.
+    void add_one_hot(
+        std::vector<ExactBond>& bonds,
+        std::vector<Goal>& goals,
+        const AgentLayout& layout,
+        uint32_t agent,
+        double strength,
+        uint32_t qubit_count);
+
     // Append the soft one-hot terms for `agent`'s dispositions to the group.
     // Additive: call after make_exact_group / set_goals (it pushes bonds and adds
     // to goal_field). `strength` is the penalty weight A.

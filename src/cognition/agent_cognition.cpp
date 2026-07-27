@@ -1,6 +1,7 @@
 #include <cognition/agent_cognition.h>
 
 #include <cognition/conditional_policy.h>
+#include <cognition/exclusivity.h>
 #include <cognition/group_topology.h>
 #include <cognition/learning.h>
 #include <cognition/loopy_bp.h>
@@ -93,14 +94,33 @@ namespace wz::engine::cognition
         // grows past the budget degrades in fidelity, and one that shrinks back
         // under it recovers the exact backend the author actually asked for.
         // `chi_used` reports the backend that was built.
-        std::optional<Coordination> build_coordination(
-            const AgentSpec& spec, uint32_t& chi_used)
+        // Every agent's soft one-hot expanded into bonds + goals, appended to the
+        // authored ones. Derived on each build rather than stored, so a live
+        // set_goal() (which OVERWRITES a goal slot) cannot wipe the exclusivity
+        // bias, and so a rebuild always reproduces exactly the same terms.
+        void append_one_hot_terms(AgentSpec& spec, const AgentLayout& layout)
         {
+            for (uint32_t i = 0; i < spec.one_hot_strength.size(); ++i) {
+                add_one_hot(
+                    spec.bonds, spec.goals, layout, i, spec.one_hot_strength[i],
+                    spec.agent_count);
+            }
+        }
+
+        std::optional<Coordination> build_coordination(
+            const AgentSpec& spec, const AgentLayout& layout, uint32_t& chi_used)
+        {
+            AgentSpec canon = spec;
+            // One-hot FIRST, so its antiferro bonds go through the canonicalization
+            // below with the authored ones -- same self-bond/parallel-edge hygiene,
+            // same girth guarantee the loopy-tier BP math needs. Appending them
+            // afterwards is the bug the #297 safety fix was about.
+            append_one_hot_terms(canon, layout);
             // Canonicalize to girth>=3 (drop self-bonds/zeros, sum parallels) so every
             // backend gets clean input; the loopy-tier BP math will require it, and it
             // is a no-op for already-clean specs. Idempotent, so rearm/reshape are safe.
-            CanonicalBonds canon_bonds = canonicalize_bonds(spec.agent_count, spec.bonds);
-            AgentSpec canon = spec;
+            CanonicalBonds canon_bonds =
+                canonicalize_bonds(canon.agent_count, canon.bonds);
             canon.bonds = std::move(canon_bonds.bonds);
 
             chi_used = canon.chi;
@@ -139,9 +159,23 @@ namespace wz::engine::cognition
             return kInvalidAgent;
         }
 
+        // Multi-disposition layout, if the mind declares one. Fail CLOSED on a
+        // layout that disagrees with agent_count rather than picking a winner: the
+        // two would silently address different qubits, and a layout wider than the
+        // group is exactly the case that produces out-of-range bonds.
+        const AgentLayout layout =
+            make_agent_layout(spec.dispositions_per_agent);
+        if (!spec.dispositions_per_agent.empty()
+            && layout.total_qubits != spec.agent_count) {
+            return kInvalidAgent;
+        }
+        if (spec.one_hot_strength.size() > spec.dispositions_per_agent.size()) {
+            return kInvalidAgent;   // exclusivity for an agent that is not laid out
+        }
+
         uint32_t chi_used = spec.chi;
         std::optional<Coordination> coordination =
-            build_coordination(spec, chi_used);
+            build_coordination(spec, layout, chi_used);
         if (!coordination) {
             return kInvalidAgent;
         }
@@ -155,6 +189,10 @@ namespace wz::engine::cognition
         // Structure kept so rearm can rebuild a fresh register (goals come from
         // goal_fields, so we deliberately do NOT store spec.goals).
         agent.bonds = spec.bonds;
+        // Only the AUTHORED bonds/goals are stored -- the one-hot terms are
+        // re-derived on every build from the layout below.
+        agent.layout = layout;
+        agent.one_hot_strength = spec.one_hot_strength;
         agent.chi = spec.chi;
         agent.seed = spec.seed;
         agent.rng = qstate::Rng{ spec.seed };
@@ -272,11 +310,20 @@ namespace wz::engine::cognition
         a->goal_fields[agent] = field;
 
         // Re-apply the FULL goal set to the backend (set_goals resets the field
-        // vector, so a per-index push must carry the others).
+        // vector, so a per-index push must carry the others) -- INCLUDING the
+        // derived one-hot bias, which lives nowhere else. Without it, the first
+        // live re-bias of any qubit would quietly dissolve the exclusivity on
+        // every one-hot agent in the mind.
         std::vector<Goal> goals;
         goals.reserve(a->agent_count);
         for (uint32_t i = 0; i < a->agent_count; ++i) {
             goals.push_back(Goal{ .agent = i, .field = a->goal_fields[i] });
+        }
+        std::vector<ExactBond> ignored_bonds;   // bonds are already in the backend
+        for (uint32_t i = 0; i < a->one_hot_strength.size(); ++i) {
+            add_one_hot(
+                ignored_bonds, goals, a->layout, i, a->one_hot_strength[i],
+                a->agent_count);
         }
         wz::engine::cognition::set_goals(a->coordination, goals);
         return true;
@@ -392,13 +439,14 @@ namespace wz::engine::cognition
         spec.bonds = a->bonds;
         spec.chi = a->chi;
         spec.seed = a->seed;
+        spec.one_hot_strength = a->one_hot_strength;
         spec.goals.reserve(a->agent_count);
         for (uint32_t i = 0; i < a->agent_count; ++i) {
             spec.goals.push_back(Goal{ .agent = i, .field = a->goal_fields[i] });
         }
         uint32_t chi_used = spec.chi;
         std::optional<Coordination> coordination =
-            build_coordination(spec, chi_used);
+            build_coordination(spec, a->layout, chi_used);
         if (!coordination) {
             return false;
         }
@@ -427,6 +475,15 @@ namespace wz::engine::cognition
         if (!a || agent_count == 0 || agent_count > kMaxAgentCount) {
             return false;
         }
+        // reshape() is expressed in FLAT qubits -- a count and a bond list -- so it
+        // has no way to say what the new disposition layout should be. Silently
+        // keeping the old layout would leave it describing a different number of
+        // qubits than the group has (the out-of-range-bond case), and silently
+        // dropping it would dissolve every one-hot the mind declared. Refuse, and
+        // let a laid-out mind be rebuilt rather than reshaped.
+        if (!a->layout.dispositions.empty()) {
+            return false;
+        }
 
         // Build + VALIDATE the new shape WITHOUT mutating the agent yet: read the
         // surviving goal fields straight from the (still-unchanged) vector -- existing
@@ -450,7 +507,7 @@ namespace wz::engine::cognition
         }
         uint32_t chi_used = spec.chi;
         std::optional<Coordination> coordination =
-            build_coordination(spec, chi_used);
+            build_coordination(spec, a->layout, chi_used);
         if (!coordination) {
             return false;   // agent left untouched
         }
@@ -485,6 +542,60 @@ namespace wz::engine::cognition
             return std::nullopt;
         }
         return a->latched[agent];
+    }
+
+    std::optional<uint32_t> AgentCognitionStore::qubit_index(
+        AgentHandle h, uint32_t agent, uint32_t disposition) const
+    {
+        const Agent* a = find(h);
+        if (!a) {
+            return std::nullopt;
+        }
+        // No layout: one qubit per agent, so the only valid disposition is 0 and
+        // the agent index IS the qubit. Saying so here means callers can address
+        // by (agent, disposition) uniformly whether or not the mind is laid out.
+        if (a->layout.dispositions.empty()) {
+            if (disposition != 0 || agent >= a->agent_count) {
+                return std::nullopt;
+            }
+            return agent;
+        }
+        const uint32_t q = qubit_of(a->layout, agent, disposition);
+        if (q >= a->agent_count) {
+            return std::nullopt;   // includes kInvalidQubit
+        }
+        return q;
+    }
+
+    std::optional<uint32_t> AgentCognitionStore::disposition_count(
+        AgentHandle h, uint32_t agent) const
+    {
+        const Agent* a = find(h);
+        if (!a) {
+            return std::nullopt;
+        }
+        if (a->layout.dispositions.empty()) {
+            return agent < a->agent_count ? std::optional<uint32_t>(1u)
+                                          : std::nullopt;
+        }
+        if (agent >= a->layout.dispositions.size()) {
+            return std::nullopt;
+        }
+        return a->layout.dispositions[agent];
+    }
+
+    double AgentCognitionStore::marginal(
+        AgentHandle h, uint32_t agent, uint32_t disposition) const
+    {
+        const std::optional<uint32_t> q = qubit_index(h, agent, disposition);
+        return q ? marginal(h, *q) : 0.0;
+    }
+
+    std::optional<bool> AgentCognitionStore::committed(
+        AgentHandle h, uint32_t agent, uint32_t disposition) const
+    {
+        const std::optional<uint32_t> q = qubit_index(h, agent, disposition);
+        return q ? committed(h, *q) : std::nullopt;
     }
 
     bool AgentCognitionStore::alive(AgentHandle h) const

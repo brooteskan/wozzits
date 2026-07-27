@@ -17,6 +17,17 @@
 //     "qubits": 3,                                    // decision qubits (>= 1)
 //     "goals":  [ {"q": 0, "field": 0.4}, ... ],      // per-qubit bias (+ |0>, - |1>)
 //     "bonds":  [ {"a": 0, "b": 1, "j": -0.8}, ... ], // couplings (+ ferro, - anti)
+//
+//     // MULTI-DISPOSITION agents (additive; absent = one qubit per agent):
+//     "dispositions": [3, 1],                         // agent 0 owns 3, agent 1 owns 1
+//     "one_hot":      [2.0, 0],                       // agent 0's 3 are EXCLUSIVE
+//     // With a layout, goals and bonds may address (agent, disposition) instead
+//     // of a flat qubit -- the two forms may be mixed freely:
+//     //   {"agent": 0, "disposition": 1, "field": -0.4}
+//     //   {"a_agent": 0, "a_disposition": 2, "b_agent": 1, "b_disposition": 0,
+//     //    "j": 0.5}
+//     // `qubits` may be omitted with a layout; if given it must equal the sum.
+
 //     "chi":    0,                                    // backend: 0 exact/1 loopy/>=2 TTN
 //     "memory": 0,                                    // learning-register qubits
 //     "clock":  { "gamma_start": 2.0, "gamma_end": 0.5,

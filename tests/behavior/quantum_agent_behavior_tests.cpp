@@ -398,3 +398,103 @@ TEST(QuantumAgentBehavior, ThinkingIsGatedOnSelfStart)
     EXPECT_EQ(s->handle, 0u);
     EXPECT_EQ(s->committed[0], -1);   // never deliberated
 }
+
+// The canonical NPC decision straight from the inspector: `decisions` + `one_hot`
+// turn an agent's qubits from that many independent yes/no dispositions into ONE
+// mutually-exclusive choice -- flee | fight | hide, pick one. Disposition d is
+// qubit d, and `committed(d) == true` (|1>) means d is the chosen one.
+TEST(QuantumAgentBehavior, OneHotMakesTheDecisionsMutuallyExclusive)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_quantum_agent_behaviors));
+
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "quantum_agent_one_hot";
+    wz::engine::assets::SceneNodeAsset npc{};
+    npc.id = "npc";
+    npc.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "npc_brain",
+        .module = kQuantumAgentModule,
+        .config = {
+            cfg("decisions", 3.0),        // flee | fight | hide
+            cfg("one_hot", 2.0),          // pick exactly one
+            // Argue for disposition 1 (fight). |1> is the ACTIVE branch, so an
+            // active-favouring goal is negative.
+            cfg("posture_goal", -1.0),    // posture_goal biases qubit 1
+            cfg("gamma_start", 3.0),
+            cfg("gamma_end", 0.0),
+            cfg("anneal_seconds", 4.0),
+            cfg("confidence", 0.8),
+            cfg("decoherence", 0.0),
+            cfg("think_interval", 0.25),
+        },
+    };
+    asset.nodes.push_back(std::move(npc));
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+
+    initialize_behaviors(scene, registry);
+    run_self_start(scene, registry);
+    QuantumAgentState* s = brain(scene);
+    ASSERT_NE(s, nullptr);
+    ASSERT_EQ(s->agent_count, 3u);   // three dispositions of ONE agent
+
+    for (int i = 1; i <= 40; ++i) {
+        run_tick(scene, registry, 0.25 * i);
+    }
+
+    // Exactly one active, and it is the one the tiebreaker argued for. The frame
+    // cache stays flat-indexed, so disposition d reads as slot d.
+    EXPECT_EQ(s->committed[0], 0);   // flee: not chosen
+    EXPECT_EQ(s->committed[1], 1);   // fight: chosen (|1> == active)
+    EXPECT_EQ(s->committed[2], 0);   // hide: not chosen
+}
+
+// Without one_hot the same three decisions stay INDEPENDENT -- the pre-existing
+// model, and proof the exclusivity is what does the work rather than the goal.
+TEST(QuantumAgentBehavior, WithoutOneHotTheDecisionsStayIndependent)
+{
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    ASSERT_TRUE(plugins.register_static_pack(
+        registry, register_quantum_agent_behaviors));
+
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "quantum_agent_independent";
+    wz::engine::assets::SceneNodeAsset npc{};
+    npc.id = "npc";
+    npc.behavior = wz::engine::assets::SceneBehaviorAsset{
+        .id = "npc_brain",
+        .module = kQuantumAgentModule,
+        .config = {
+            cfg("decisions", 3.0),
+            cfg("posture_goal", -1.0),
+            cfg("goal", -1.0),            // qubit 0 also argued active
+            cfg("gamma_start", 3.0),
+            cfg("gamma_end", 0.0),
+            cfg("anneal_seconds", 4.0),
+            cfg("confidence", 0.8),
+            cfg("decoherence", 0.0),
+            cfg("think_interval", 0.25),
+        },
+    };
+    asset.nodes.push_back(std::move(npc));
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    SceneInstance scene = std::move(result.instance);
+
+    initialize_behaviors(scene, registry);
+    run_self_start(scene, registry);
+    for (int i = 1; i <= 40; ++i) {
+        run_tick(scene, registry, 0.25 * i);
+    }
+
+    QuantumAgentState* s = brain(scene);
+    ASSERT_NE(s, nullptr);
+    // BOTH argued-for decisions go active -- no exclusivity to stop them.
+    EXPECT_EQ(s->committed[0], 1);
+    EXPECT_EQ(s->committed[1], 1);
+}

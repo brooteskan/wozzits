@@ -20,6 +20,7 @@
 // groups (chi == 0), the chi = 1 loopy-BP backend for cyclic villages / large
 // linear-scaling groups, and the chi-truncated TTN chain for larger entangled ones.
 
+#include <cognition/agent_layout.h>
 #include <cognition/commit.h>
 #include <cognition/coordination.h>
 #include <cognition/cognition_clock.h>
@@ -84,9 +85,12 @@ namespace wz::engine::cognition
     //                chain (i, i+1); larger entangled groups).
     struct AgentSpec
     {
+        // QUBIT count. With no layout below, agent i IS qubit i (one binary
+        // disposition each) -- the model every existing mind uses. With a layout,
+        // this must equal its total_qubits or create() refuses the spec.
         uint32_t agent_count = 1;
-        std::vector<ExactBond> bonds;  // pairwise couplings (a, b, j)
-        std::vector<Goal> goals;       // per-agent longitudinal goal biases
+        std::vector<ExactBond> bonds;  // pairwise couplings (a, b, j) -- QUBIT indices
+        std::vector<Goal> goals;       // per-QUBIT longitudinal goal biases
         CognitionClock clock;          // anneal sweep + relaxation pacing
         CommitPolicy commit;           // when a disposition collapses
         uint32_t chi = 0;              // backend selector (see above)
@@ -96,6 +100,27 @@ namespace wz::engine::cognition
         // rearms / reshapes. reward() concentrates it; memory_preference() reads
         // it back (feed as a goal to bias decisions). 0 = no memory.
         uint32_t memory_qubits = 0;
+
+        // MULTI-DISPOSITION AGENTS. Empty (the default) means one qubit per agent:
+        // one binary yes/no choice each, and every existing mind is unchanged.
+        // Non-empty means agent i owns dispositions_per_agent[i] contiguous qubits
+        // -- so an agent can hold a real >2-way choice (flee | fight | hide) rather
+        // than a bit. Bonds and goals stay QUBIT-indexed; qubit_index() maps
+        // (agent, disposition) to the flat index, and the read surface takes
+        // either form. agent_count must equal the sum.
+        std::vector<uint32_t> dispositions_per_agent;
+
+        // Per-agent soft one-hot strength (parallel to dispositions_per_agent;
+        // empty or 0 = none). Non-zero makes that agent's dispositions MUTUALLY
+        // EXCLUSIVE: exactly one active, chosen by whichever goals break the tie,
+        // and a symmetric superposition of the k one-hot options without one. It
+        // encodes the penalty A * (N_active - 1)^2 as pairwise antiferro bonds plus
+        // an inactive bias (see exclusivity.h), expanded at BUILD time so the terms
+        // pass through canonicalize_bonds with the authored ones and work on every
+        // backend. Derived every build, never persisted -- set_goal() overwrites a
+        // goal slot outright, so a stored bias would be silently wiped by a live
+        // re-bias.
+        std::vector<double> one_hot_strength;
     };
 
     // Owns agents' cognition state. Handles are opaque, non-reused while alive, and
@@ -212,13 +237,37 @@ namespace wz::engine::cognition
             double now);
 
         // ---- read surface (marginal-oriented; uniform across backends) ----
+        //
+        // The two-argument forms are QUBIT-indexed (unchanged: with no layout,
+        // qubit == agent). The three-argument forms address one DISPOSITION of one
+        // agent and are the ones to use on a laid-out mind.
 
         // Agent's live decision marginal <sigma_z> in [-1, 1] (0 if unknown).
         double marginal(AgentHandle h, uint32_t agent) const;
+        double marginal(
+            AgentHandle h, uint32_t agent, uint32_t disposition) const;
 
         // The agent's latched committed decision, or nullopt while still
         // deliberating / unknown. true = |1> (z < 0), false = |0> (z > 0).
+        //
+        // On a one-hot agent, `true` on disposition d means d is the ACTIVE
+        // choice: |1> is the active branch that the exclusivity penalty allows
+        // exactly one of.
         std::optional<bool> committed(AgentHandle h, uint32_t agent) const;
+        std::optional<bool> committed(
+            AgentHandle h, uint32_t agent, uint32_t disposition) const;
+
+        // Flat qubit index of (agent, disposition), or nullopt for an unknown
+        // handle / out-of-range address. Lets a caller that only has the flat read
+        // path -- the behavior ABI, which stays qubit-indexed -- resolve a
+        // disposition once and then read it cheaply.
+        std::optional<uint32_t> qubit_index(
+            AgentHandle h, uint32_t agent, uint32_t disposition) const;
+
+        // How many dispositions agent `agent` owns (1 when the mind has no
+        // layout). Nullopt for an unknown handle / unknown agent.
+        std::optional<uint32_t> disposition_count(
+            AgentHandle h, uint32_t agent) const;
 
         bool alive(AgentHandle h) const;
         uint32_t agent_count(AgentHandle h) const;
@@ -245,6 +294,11 @@ namespace wz::engine::cognition
             // goals come from goal_fields, so the spec's goals are NOT stored --
             // that avoids a stale-goals footgun after set_goal runs).
             std::vector<ExactBond> bonds;
+            // The disposition layout + its exclusivity strengths, kept so every
+            // rebuild re-derives the same one-hot terms. Empty layout = one qubit
+            // per agent.
+            AgentLayout layout;
+            std::vector<double> one_hot_strength;
             uint32_t chi = 0;            // AUTHORED chi -- what rebuilds start from
             uint32_t effective_chi = 0;  // what build_coordination actually built
             uint64_t seed = 0;

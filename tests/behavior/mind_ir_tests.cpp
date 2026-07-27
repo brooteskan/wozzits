@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -123,4 +124,80 @@ TEST(MindIr, ParsedSpecBuildsAWaveFunction)
     cog::AgentCognitionStore store;
     const cog::AgentHandle h = store.create(spec);
     EXPECT_NE(h, cog::kInvalidAgent);
+}
+
+// A mind can lay its agents out over several dispositions each, declare which of
+// those are mutually exclusive, and address goals/bonds by (agent, disposition)
+// instead of a flat qubit. This is the authoring surface for the canonical NPC
+// decision -- until now agent_count WAS the qubit count, so every live agent was
+// exactly one binary choice.
+TEST(MindIr, ParsesADispositionLayoutWithExclusivity)
+{
+    cog::AgentSpec spec;
+    std::string err;
+    ASSERT_TRUE(parse_mind(
+        R"({"schema":"wozzits.mind.ir.v0",)"
+        R"("dispositions":[3,2],)"
+        R"("one_hot":[2.0,0],)"
+        R"("goals":[{"agent":0,"disposition":1,"field":-0.4}],)"
+        R"("bonds":[{"a_agent":0,"a_disposition":2,)"
+        R"("b_agent":1,"b_disposition":0,"j":0.5}]})",
+        spec, err)) << err;
+
+    // qubits derived from the layout: 3 + 2.
+    EXPECT_EQ(spec.agent_count, 5u);
+    EXPECT_EQ(spec.dispositions_per_agent, (std::vector<uint32_t>{ 3u, 2u }));
+    EXPECT_EQ(spec.one_hot_strength, (std::vector<double>{ 2.0, 0.0 }));
+
+    // (agent 0, disposition 1) -> qubit 1; (agent 1, disposition 0) -> qubit 3.
+    ASSERT_EQ(spec.goals.size(), 1u);
+    EXPECT_EQ(spec.goals[0].agent, 1u);
+    EXPECT_DOUBLE_EQ(spec.goals[0].field, -0.4);
+    ASSERT_EQ(spec.bonds.size(), 1u);
+    EXPECT_EQ(spec.bonds[0].a, 2u);
+    EXPECT_EQ(spec.bonds[0].b, 3u);
+
+    // And it builds.
+    cog::AgentCognitionStore store;
+    const cog::AgentHandle h = store.create(spec);
+    ASSERT_NE(h, cog::kInvalidAgent);
+    EXPECT_EQ(store.disposition_count(h, 1), 2u);
+}
+
+// The v0 shape is untouched: no layout means one qubit per agent, flat `q`/`a`/`b`
+// addressing, and no exclusivity.
+TEST(MindIr, NoLayoutKeepsTheOneQubitPerAgentModel)
+{
+    cog::AgentSpec spec;
+    std::string err;
+    ASSERT_TRUE(parse_mind(
+        R"({"qubits":2,"goals":[{"q":1,"field":0.3}]})", spec, err)) << err;
+    EXPECT_EQ(spec.agent_count, 2u);
+    EXPECT_TRUE(spec.dispositions_per_agent.empty());
+    EXPECT_TRUE(spec.one_hot_strength.empty());
+    EXPECT_EQ(spec.goals[0].agent, 1u);
+}
+
+TEST(MindIr, RejectsInconsistentLayouts)
+{
+    cog::AgentSpec spec;
+    std::string err;
+    // `qubits` must agree with the sum of `dispositions` when both are given --
+    // the two would otherwise address different qubits.
+    EXPECT_FALSE(parse_mind(
+        R"({"qubits":4,"dispositions":[3]})", spec, err));
+    // A disposition block must hold at least one qubit.
+    EXPECT_FALSE(parse_mind(R"({"dispositions":[2,0]})", spec, err));
+    EXPECT_FALSE(parse_mind(R"({"dispositions":[]})", spec, err));
+    // Exclusivity needs a layout to be exclusive over.
+    EXPECT_FALSE(parse_mind(R"({"qubits":3,"one_hot":[2.0]})", spec, err));
+    EXPECT_FALSE(parse_mind(
+        R"({"dispositions":[3],"one_hot":[2.0,1.0]})", spec, err));
+    // (agent, disposition) addressing needs a layout too, and must be in range.
+    EXPECT_FALSE(parse_mind(
+        R"({"qubits":3,"goals":[{"agent":0,"disposition":1,"field":1}]})",
+        spec, err));
+    EXPECT_FALSE(parse_mind(
+        R"({"dispositions":[2],"goals":[{"agent":0,"disposition":9,"field":1}]})",
+        spec, err));
 }

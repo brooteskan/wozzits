@@ -866,3 +866,157 @@ TEST(AgentCognition, MeasureInBasisRefreshesThePartnersCachedMarginals)
     // Ferromagnetic, so the partner is conditioned to AGREE.
     EXPECT_GT(store.marginal(h, 0) * store.marginal(h, 1), 0.0);
 }
+
+// THE canonical NPC decision, finally authorable: one agent holding a real
+// three-way exclusive choice -- flee | fight | hide, pick one -- instead of
+// three independent yes/no bits. agent_layout and exclusivity were written and
+// tested but unreachable from a spec, because agent_count WAS the qubit count and
+// agent i WAS qubit i.
+TEST(AgentCognition, OneAgentPicksExactlyOneOfThreeDispositions)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 3;                       // one agent, three dispositions
+    spec.dispositions_per_agent = { 3 };
+    spec.one_hot_strength = { 2.0 };
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.8, .decoherence_rate = 0.0 };
+    // Tiebreaker: argue FOR disposition 1 (fight). |1> is the active branch, so
+    // an active-favouring goal is negative.
+    spec.goals = { Goal{ .agent = 1, .field = -1.0 } };
+
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    EXPECT_EQ(store.disposition_count(h, 0), 3u);
+    EXPECT_EQ(store.qubit_index(h, 0, 2), 2u);
+    run_anneal(store, h);
+
+    // Exactly one active, and it is the one the goal argued for.
+    EXPECT_EQ(store.committed(h, /*agent=*/0, /*disposition=*/0),
+        std::optional<bool>(false));
+    EXPECT_EQ(store.committed(h, 0, 1), std::optional<bool>(true));   // chosen
+    EXPECT_EQ(store.committed(h, 0, 2), std::optional<bool>(false));
+}
+
+// Several multi-disposition agents in one mind, coupled ACROSS agents on specific
+// dispositions -- the composition the layered design points at: dispositions
+// couple within an agent (one-hot) and between agents (coordination).
+TEST(AgentCognition, DispositionsCoupleWithinAndBetweenAgents)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.dispositions_per_agent = { 3, 3 };   // two agents, three choices each
+    spec.agent_count = 6;
+    spec.one_hot_strength = { 2.0, 2.0 };
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 0.8, .decoherence_rate = 0.0 };
+
+    const AgentLayout layout = make_agent_layout({ 3, 3 });
+    // Agent 0 is pushed toward disposition 2, and a ferromagnetic bond between the
+    // two agents' disposition-2 qubits should drag agent 1 to the same choice --
+    // squad cohesion expressed on ONE disposition rather than a whole bit.
+    spec.goals = { Goal{ .agent = qubit_of(layout, 0, 2), .field = -1.0 } };
+    spec.bonds = { ExactBond{ qubit_of(layout, 0, 2), qubit_of(layout, 1, 2),
+        1.5 } };
+
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    run_anneal(store, h);
+
+    EXPECT_EQ(store.committed(h, 0, 2), std::optional<bool>(true));
+    EXPECT_EQ(store.committed(h, 1, 2), std::optional<bool>(true))
+        << "the cross-agent bond did not drag the partner to the same choice";
+    // And each agent still picked only ONE.
+    EXPECT_EQ(store.committed(h, 0, 0), std::optional<bool>(false));
+    EXPECT_EQ(store.committed(h, 0, 1), std::optional<bool>(false));
+    EXPECT_EQ(store.committed(h, 1, 0), std::optional<bool>(false));
+    EXPECT_EQ(store.committed(h, 1, 1), std::optional<bool>(false));
+}
+
+// The exclusivity bias is DERIVED on every build, never stored in goal_fields.
+// set_goal() overwrites a goal slot outright, so a persisted bias would be wiped
+// by the first live re-bias and the agent would quietly stop being exclusive --
+// the sort of thing that shows up as an NPC doing two things at once.
+TEST(AgentCognition, LiveGoalRebiasDoesNotDissolveTheExclusivity)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 3;
+    spec.dispositions_per_agent = { 3 };
+    spec.one_hot_strength = { 2.0 };
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 1.1, .decoherence_rate = 0.0 };
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    // Re-bias EVERY disposition through the live seam, then re-anneal.
+    ASSERT_TRUE(store.set_goal(h, 0, 0.0));
+    ASSERT_TRUE(store.set_goal(h, 1, -1.0));   // argue for disposition 1
+    ASSERT_TRUE(store.set_goal(h, 2, 0.0));
+    ASSERT_TRUE(store.rearm(h, 0.0));
+    run_anneal(store, h);
+
+    // Still exactly one active: sum of activity ~1, concentrated on disposition 1.
+    const auto active = [&](uint32_t d) {
+        return 0.5 * (1.0 - store.marginal(h, 0, d));
+    };
+    EXPECT_NEAR(active(0) + active(1) + active(2), 1.0, 0.25);
+    EXPECT_GT(active(1), 0.7);
+    EXPECT_LT(active(0), 0.2);
+    EXPECT_LT(active(2), 0.2);
+}
+
+// A layout that disagrees with agent_count is refused rather than resolved: the
+// two would address different qubits, and a layout wider than the group is exactly
+// what produces out-of-range bonds. Likewise exclusivity for an agent the layout
+// does not describe.
+TEST(AgentCognition, RejectsALayoutThatDisagreesWithTheQubitCount)
+{
+    AgentCognitionStore store;
+    {
+        AgentSpec spec;
+        spec.agent_count = 4;                     // but the layout says 3
+        spec.dispositions_per_agent = { 3 };
+        spec.clock = anneal_clock();
+        EXPECT_EQ(store.create(spec), kInvalidAgent);
+    }
+    {
+        AgentSpec spec;
+        spec.agent_count = 3;
+        spec.dispositions_per_agent = { 3 };
+        spec.one_hot_strength = { 2.0, 1.0 };     // two agents, one laid out
+        spec.clock = anneal_clock();
+        EXPECT_EQ(store.create(spec), kInvalidAgent);
+    }
+    // No layout at all is the old model and still builds.
+    {
+        AgentSpec spec;
+        spec.agent_count = 3;
+        spec.clock = anneal_clock();
+        const AgentHandle h = store.create(spec);
+        EXPECT_NE(h, kInvalidAgent);
+        EXPECT_EQ(store.disposition_count(h, 0), 1u);   // one qubit per agent
+        EXPECT_EQ(store.qubit_index(h, 2, 0), 2u);
+        EXPECT_FALSE(store.qubit_index(h, 2, 1).has_value());
+    }
+}
+
+// reshape() speaks in flat qubits -- a count and a bond list -- so it cannot say
+// what the new layout should be. Keeping the old one would leave it describing a
+// different number of qubits than the group has; dropping it would dissolve every
+// declared one-hot. Refuse, and leave the agent untouched.
+TEST(AgentCognition, ReshapeRefusesALaidOutMind)
+{
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 3;
+    spec.dispositions_per_agent = { 3 };
+    spec.one_hot_strength = { 2.0 };
+    spec.clock = anneal_clock();
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+
+    EXPECT_FALSE(store.reshape(h, 5u, {}, 1.0));
+    EXPECT_EQ(store.agent_count(h), 3u);            // untouched
+    EXPECT_EQ(store.disposition_count(h, 0), 3u);
+}

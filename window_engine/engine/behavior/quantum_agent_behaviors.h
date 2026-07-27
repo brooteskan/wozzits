@@ -154,6 +154,24 @@ namespace wz::engine::behavior
     inline constexpr const char* kQuantumAgentChainCouplingKey = "chain_coupling";
     inline constexpr const char* kQuantumAgentRingCouplingKey = "ring_coupling";
 
+    // EXCLUSIVITY: make this agent's `decisions` qubits a single MUTUALLY-EXCLUSIVE
+    // choice -- flee | fight | hide, pick one -- instead of that many independent
+    // yes/no dispositions. Non-zero is the penalty weight A on having anything
+    // other than exactly one active; 0 (the default) leaves the decisions
+    // independent, so every existing agent is unchanged.
+    //
+    // With it set, all `decisions` qubits become ONE agent's dispositions:
+    // disposition d is qubit d, `committed(d) == true` means d is the CHOSEN one,
+    // and a goal on qubit d is the tiebreaker that argues for it (negative favors
+    // active -- |1> is the active branch). Without a tiebreaker the agent holds a
+    // symmetric superposition of the k one-hot options, each ~1/k.
+    //
+    // Use INSTEAD of the coupling/star/chain/ring families, which wire the qubits
+    // as separate coupled agents rather than one agent's alternatives. A is a
+    // strength like any bond: ~2x the largest goal you expect is a reasonable
+    // start, and too small lets two dispositions be active at once.
+    inline constexpr const char* kQuantumAgentOneHotKey = "one_hot";
+
     // LEARNING: number of MEMORY qubits held outside the coordination (never
     // measured, so their learned bias accumulates across commits / rearms /
     // reshapes). 0 = no memory. An actuator reinforces them via wz_agent_reward
