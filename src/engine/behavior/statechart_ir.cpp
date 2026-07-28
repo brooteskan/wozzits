@@ -201,7 +201,23 @@ namespace wz::engine::behavior::statechart
                     e.kind = EffectKind::Reward;
                     if (!agent(e)) return fail("reward");
                     e.slot = static_cast<uint16_t>(num(o, "q"));
-                    const JSONValue* tw = find_member(o, "toward");
+                    // VALUE semantics (behavior ABI v38): `value` names the branch
+                    // being reinforced -- true is the 1 branch, driving that fact's
+                    // memory_preference toward -1. Matches reward_pair and
+                    // committed().
+                    //
+                    // The key used to be `toward`, and it meant the OPPOSITE:
+                    // toward == true selected the 0 branch. A chart carrying the old
+                    // key would still parse and would learn BACKWARDS, silently, so
+                    // this refuses it rather than guessing. Porting a chart is
+                    // mechanical: rename the key and flip the boolean.
+                    if (find_member(o, "toward")) {
+                        return fail(
+                            "reward: 'toward' was replaced by 'value' with the "
+                            "OPPOSITE meaning (ABI v38) -- true now names the 1 "
+                            "branch. Rename the key and flip the boolean.");
+                    }
+                    const JSONValue* tw = find_member(o, "value");
                     e.flag = (tw && tw->kind == JSONValueKind::Bool && tw->bool_value)
                         ? 1u : 0u;
                     const JSONValue* st = find_member(o, "strength");

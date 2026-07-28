@@ -41,10 +41,10 @@
       ],
       "transitions": [
         { "trigger": {"kind":"commit","agent":"sig","slot":0,"outcome":0},
-          "actions": [ {"kind":"reward","agent":"sig","q":0,"toward":true,"strength":{"const":0.5}} ],
+          "actions": [ {"kind":"reward","agent":"sig","q":0,"value":false,"strength":{"const":0.5}} ],
           "target": "HOLD" },
         { "trigger": {"kind":"commit","agent":"sig","slot":0,"outcome":1},
-          "actions": [ {"kind":"reward","agent":"sig","q":0,"toward":false,"strength":{"const":-0.3}} ],
+          "actions": [ {"kind":"reward","agent":"sig","q":0,"value":true,"strength":{"const":-0.3}} ],
           "target": "HOLD" }
       ]
     },

@@ -433,7 +433,7 @@
           "kind": "reward",
           "agent": "doc",
           "q": 0,
-          "toward": true,
+          "value": false,
           "strength": {
             "const": 0.4
           }
@@ -458,7 +458,7 @@
           "kind": "reward",
           "agent": "doc",
           "q": 0,
-          "toward": false,
+          "value": true,
           "strength": {
             "const": 0.4
           }
@@ -492,7 +492,7 @@
           "kind": "reward",
           "agent": "doc",
           "q": 0,
-          "toward": false,
+          "value": true,
           "strength": {
             "const": 1
           }
@@ -545,7 +545,7 @@
           "kind": "reward",
           "agent": "doc",
           "q": 1,
-          "toward": true,
+          "value": false,
           "strength": {
             "op": "progress"
           }
@@ -554,7 +554,7 @@
           "kind": "reward",
           "agent": "doc",
           "q": 1,
-          "toward": false,
+          "value": true,
           "strength": {
             "op": "cutfine"
           }
