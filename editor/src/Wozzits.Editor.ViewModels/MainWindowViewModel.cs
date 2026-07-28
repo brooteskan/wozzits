@@ -495,94 +495,47 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     }
 
     // A suggested unused name to pre-fill the New Scenelet prompt (untitled1, untitled2, …).
+    // Sourced from the engine-published catalog rather than by probing the filesystem: the
+    // editor does not know where scenelets live. This is only a suggestion -- the engine is
+    // the authority on collisions and rejects a duplicate name outright.
     public string NextSceneletName()
-    {
-        if (string.IsNullOrWhiteSpace(_projectDirectory))
-        {
-            return "untitled1";
-        }
-        return FreshSceneletName(Path.Combine(_projectDirectory, "scenelets"));
-    }
-
-    // Create a fresh, minimal scenelet (one empty root node) named `name` in the project's
-    // scenelets folder and open it for editing -- the Scenelets menu is the one place
-    // scenelets are created/opened (the view prompts for the name). Opening re-scans the
-    // scenelets dir, so the new file registers as a spawnable prefab AND joins the catalog
-    // immediately; you then build it up in the viewport (add the body, attach behaviors).
-    public void CreateScenelet(string name)
-    {
-        if (_editorSession is null || string.IsNullOrWhiteSpace(_projectDirectory))
-        {
-            return;
-        }
-        name = name.Trim();
-        if (name.Length == 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-        {
-            AppendEditorLog($"[editor] Invalid scenelet name '{name}'.");
-            return;
-        }
-
-        var dir = Path.Combine(_projectDirectory, "scenelets");
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, name + ".scene.json");
-        if (File.Exists(path))
-        {
-            AppendEditorLog($"[editor] Scenelet '{name}' already exists.");
-            return;
-        }
-
-        try
-        {
-            File.WriteAllText(path, MinimalSceneletJson(name));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            AppendEditorLog($"[editor] Could not create scenelet '{name}': {ex.Message}");
-            return;
-        }
-
-        // Open by resource-relative path: load_scene re-scans scenelets/, so the fresh
-        // file registers + appears in the catalog, which RefreshScenelets then republishes.
-        OpenScenelet(new SceneletInfo(name, $"scenelets/{name}.scene.json"));
-        RefreshScenelets();
-        AppendEditorLog($"[editor] Created scenelet '{name}'");
-    }
-
-    private static string FreshSceneletName(string dir)
     {
         for (int i = 1; ; i++)
         {
             var name = "untitled" + i;
-            if (!File.Exists(Path.Combine(dir, name + ".scene.json")))
+            if (!Scenelets.Any(
+                    s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)))
             {
                 return name;
             }
         }
     }
 
-    // A valid, empty scenelet: one root node named after the scenelet, no renderable or
-    // behaviors -- the starting point you flesh out in the viewport.
-    private static string MinimalSceneletJson(string name) => $$"""
+    // Create a fresh, minimal scenelet (one empty root node) named `name` and open it for
+    // editing -- the Scenelets menu is the one place scenelets are created/opened (the view
+    // prompts for the name). The ENGINE mints the document and decides where it goes,
+    // returning the resource-relative path (issue #271); opening re-scans the scenelets dir,
+    // so the new file registers as a spawnable prefab AND joins the catalog immediately.
+    public void CreateScenelet(string name)
+    {
+        if (_editorSession is null)
         {
-          "schema": "wozzits.scene.v0",
-          "name": "{{name}}",
-          "nodes": [
-            {
-              "id": "root",
-              "parent": null,
-              "name": "{{name}}",
-              "transform": {
-                "translation": [0, 0, 0],
-                "rotation_quat": [0, 0, 0, 1],
-                "scale": [1, 1, 1]
-              },
-              "visible": true,
-              "active": true
-            }
-          ],
-          "defaults": {}
+            return;
         }
-        """;
+
+        // Name validation (empty, path separators, reserved characters) lives with the
+        // engine verb, so the rules cannot drift from what it will actually accept.
+        var created = _editorSession.CreateScenelet(name.Trim());
+        if (!created.Ok)
+        {
+            AppendEditorLog($"[editor] Could not create scenelet: {created.Error}");
+            return;
+        }
+
+        OpenScenelet(new SceneletInfo(name.Trim(), created.Path));
+        RefreshScenelets();
+        AppendEditorLog($"[editor] Created scenelet '{name.Trim()}'");
+    }
 
     private void BackToScene()
     {

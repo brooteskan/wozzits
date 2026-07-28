@@ -172,6 +172,68 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    // Ask the engine to mint a new scenelet and tell us where it put it. The
+    // editor supplies only a name: the scene document and the scenelets-folder
+    // convention are the engine's to own (issue #271).
+    internal EngineCreateSceneletResponse CreateScenelet(
+        string projectDirectory,
+        string name)
+    {
+        if (string.IsNullOrWhiteSpace(projectDirectory))
+        {
+            return new EngineCreateSceneletResponse
+            {
+                Ok = false,
+                Error = "Project directory is empty.",
+            };
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorCreateScenelet(
+                projectDirectory,
+                resourceRootUtf8: null,
+                nameUtf8: name ?? string.Empty,
+                out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return new EngineCreateSceneletResponse
+                {
+                    Ok = false,
+                    Error = result.Message,
+                };
+            }
+
+            var path = buffer.Data != IntPtr.Zero && buffer.Size != 0
+                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
+                    buffer.Data,
+                    checked((int)buffer.Size)) ?? string.Empty
+                : string.Empty;
+            return new EngineCreateSceneletResponse { Ok = true, Path = path };
+        }
+        catch (Exception ex) when (ex is DllNotFoundException
+            or EntryPointNotFoundException
+            or BadImageFormatException
+            or InvalidOperationException)
+        {
+            return new EngineCreateSceneletResponse
+            {
+                Ok = false,
+                Error = ex.Message,
+            };
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     internal EngineMutationResponse SetSceneNodeProperties(
         string projectDirectory,
         string nodeId,

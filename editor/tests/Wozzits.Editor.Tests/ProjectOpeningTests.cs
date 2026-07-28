@@ -4593,6 +4593,20 @@ public sealed partial class ProjectOpeningTests
             return OpenSceneResponse;
         }
 
+        // Scenelet names the editor asked the engine to mint, and the canned
+        // reply. The engine owns the path, so the fake hands one back rather
+        // than the test constructing one.
+        public List<string> CreatedScenelets { get; } = [];
+
+        public EngineCreateSceneletResponse CreateSceneletResponse { get; set; } =
+            new EngineCreateSceneletResponse { Ok = true, Path = "scenelets/new.scene.json" };
+
+        public EngineCreateSceneletResponse CreateScenelet(string name)
+        {
+            CreatedScenelets.Add(name);
+            return CreateSceneletResponse;
+        }
+
         public EngineMutationResponse SetSceneNodeCamera(
             string nodeId,
             EngineSceneCameraEdit edit)

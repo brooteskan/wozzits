@@ -159,6 +159,12 @@ public interface IWozzitsEngineEditorSession
     // via LoadRuntimeSceneSnapshot afterward. Errors when no viewport is running.
     EngineMutationResponse OpenScene(string scenePath);
 
+    // Create a new, minimal scenelet named `name` and return its resource-
+    // relative path -- the form OpenScene accepts. Device-free (no running
+    // viewport needed): the engine owns where scenelets live and what a fresh
+    // one contains, so the editor supplies only the name (issue #271).
+    EngineCreateSceneletResponse CreateScenelet(string name);
+
     // Add a child node under parentId (empty => top level) in the running scene
     // and return the engine-minted id. Errors if no viewport is running.
     EngineAddSceneNodeResponse AddChildNode(string parentId);

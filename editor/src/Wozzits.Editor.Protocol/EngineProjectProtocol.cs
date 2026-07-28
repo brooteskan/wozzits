@@ -181,6 +181,19 @@ public sealed record EngineAddSceneNodeResponse
     public string NodeId { get; init; } = string.Empty;
 }
 
+public sealed record EngineCreateSceneletResponse
+{
+    public bool Ok { get; init; }
+
+    public string Error { get; init; } = string.Empty;
+
+    // Resource-relative path of the scenelet the engine minted, in the form the
+    // scenelet catalog reports and OpenScene accepts. The engine decides where
+    // scenelets live and what a fresh one contains, so the editor neither builds
+    // this path nor authors the document (issue #271).
+    public string Path { get; init; } = string.Empty;
+}
+
 public sealed record EngineAssetCatalogResponse
 {
     public bool Ok { get; init; }

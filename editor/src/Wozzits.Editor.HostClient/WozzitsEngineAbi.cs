@@ -196,6 +196,18 @@ internal static partial class WozzitsEngineAbi
         string? nameUtf8,
         out WzBuffer outJson);
 
+    // Mint a minimal scenelet engine-side and get back its resource-relative
+    // path. Device-free and runtime-free, like CreateProject.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_create_scenelet",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorCreateScenelet(
+        string projectRootUtf8,
+        string? resourceRootUtf8,
+        string nameUtf8,
+        out WzBuffer outPath);
+
     [LibraryImport(
         LibraryName,
         EntryPoint = "wz_host_scene_set_node_properties",

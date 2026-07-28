@@ -52,6 +52,14 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.LoadAssetCatalog();
     }
 
+    public EngineCreateSceneletResponse CreateScenelet(string name)
+    {
+        // Device-free but PROJECT-aware, like LoadActuatorCatalog: no live
+        // native session or running viewport is required, so a scenelet can be
+        // created before the runtime is up.
+        return _client.CreateScenelet(_projectDirectory, name);
+    }
+
     public EngineActuatorCatalogResponse LoadActuatorCatalog()
     {
         // Device-free (no live session needed), but PROJECT-aware: pass the project
