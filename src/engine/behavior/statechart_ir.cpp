@@ -201,10 +201,16 @@ namespace wz::engine::behavior::statechart
                     e.kind = EffectKind::Reward;
                     if (!agent(e)) return fail("reward");
                     e.slot = static_cast<uint16_t>(num(o, "q"));
-                    // VALUE semantics (behavior ABI v38): `value` names the branch
-                    // being reinforced -- true is the 1 branch, driving that fact's
-                    // memory_preference toward -1. Matches reward_pair and
-                    // committed().
+                    // `branch` names the branch being reinforced -- true is the 1
+                    // branch, driving that fact's memory_preference toward -1. That
+                    // is the VALUE convention the whole learning API uses (behavior
+                    // ABI v38), matching reward_pair and committed().
+                    //
+                    // NOT spelled `value`: every other effect here uses `value` for
+                    // its AMOUNT (see the `value` helper above -- set_goal,
+                    // set_scale, set_visible). One key meaning two things in one
+                    // schema is the footgun this convention change existed to
+                    // remove; `reward` keeps `strength` for its amount.
                     //
                     // The key used to be `toward`, and it meant the OPPOSITE:
                     // toward == true selected the 0 branch. A chart carrying the old
@@ -213,11 +219,11 @@ namespace wz::engine::behavior::statechart
                     // mechanical: rename the key and flip the boolean.
                     if (find_member(o, "toward")) {
                         return fail(
-                            "reward: 'toward' was replaced by 'value' with the "
+                            "reward: 'toward' was replaced by 'branch' with the "
                             "OPPOSITE meaning (ABI v38) -- true now names the 1 "
                             "branch. Rename the key and flip the boolean.");
                     }
-                    const JSONValue* tw = find_member(o, "value");
+                    const JSONValue* tw = find_member(o, "branch");
                     e.flag = (tw && tw->kind == JSONValueKind::Bool && tw->bool_value)
                         ? 1u : 0u;
                     const JSONValue* st = find_member(o, "strength");
