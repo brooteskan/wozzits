@@ -144,19 +144,51 @@ public sealed class StatechartCompilerTests
     }
 
     [Fact]
-    public void Reward_Strength_And_Toward_RoundTrip()
+    public void Reward_Strength_And_Branch_RoundTrip()
     {
         var c = MinimalValid();
         var t = new Transition { Target = "S", Trigger = new Trigger { Kind = TriggerKind.Commit, Agent = "sig", Slot = 0, Outcome = 0 } };
-        t.Actions.Add(new Effect { Kind = EffectKind.Reward, Agent = "sig", Slot = 0, Toward = true, Value = ValueRef.Number(0.5) });
+        t.Actions.Add(new Effect { Kind = EffectKind.Reward, Agent = "sig", Slot = 0, Branch = true, Value = ValueRef.Number(0.5) });
         c.States[0].Transitions.Add(t);
 
         var back = StatechartJson.Load(StatechartJson.Emit(c, indented: false));
         var reward = back.States[0].Transitions[0].Actions[0];
         Assert.Equal(EffectKind.Reward, reward.Kind);
-        Assert.True(reward.Toward);
+        Assert.True(reward.Branch);
         Assert.Equal(0, reward.Slot);
         Assert.Equal(0.5, reward.Value!.Const);
+    }
+
+    // The emitted key must be `branch`, and must NOT be the old `toward` -- the engine
+    // parser refuses `toward` outright, so an editor that emitted it produced charts that
+    // would not load at all.
+    [Fact]
+    public void Reward_Emits_Branch_Not_Toward()
+    {
+        var c = MinimalValid();
+        var t = new Transition { Target = "S", Trigger = new Trigger { Kind = TriggerKind.Commit, Agent = "sig", Slot = 0, Outcome = 0 } };
+        t.Actions.Add(new Effect { Kind = EffectKind.Reward, Agent = "sig", Slot = 0, Branch = true, Value = ValueRef.Number(0.5) });
+        c.States[0].Transitions.Add(t);
+
+        var json = StatechartJson.Emit(c, indented: false);
+
+        Assert.Contains("\"branch\"", json);
+        Assert.DoesNotContain("\"toward\"", json);
+    }
+
+    // A chart still carrying the pre-v38 key is REFUSED, not silently reinterpreted:
+    // `toward` meant the opposite branch, so guessing would train backwards.
+    [Fact]
+    public void Reward_With_Legacy_Toward_Key_Is_Refused()
+    {
+        var c = MinimalValid();
+        var t = new Transition { Target = "S", Trigger = new Trigger { Kind = TriggerKind.Commit, Agent = "sig", Slot = 0, Outcome = 0 } };
+        t.Actions.Add(new Effect { Kind = EffectKind.Reward, Agent = "sig", Slot = 0, Branch = true, Value = ValueRef.Number(0.5) });
+        c.States[0].Transitions.Add(t);
+        var legacy = StatechartJson.Emit(c, indented: false).Replace("\"branch\"", "\"toward\"");
+
+        var ex = Assert.Throws<StatechartFormatException>(() => StatechartJson.Load(legacy));
+        Assert.Contains("branch", ex.Message);
     }
 
     [Fact]

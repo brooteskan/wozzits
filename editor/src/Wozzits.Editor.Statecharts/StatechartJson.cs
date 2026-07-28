@@ -234,7 +234,16 @@ public static class StatechartJson
             case EffectKind.Reward:
                 ef.Agent = Str(e, "agent");
                 ef.Slot = (int)Num(e, "q");
-                ef.Toward = Bool(e, "toward");
+                // `toward` was replaced by `branch` with the OPPOSITE meaning (ABI
+                // v38). A chart carrying the old key would load here and learn
+                // BACKWARDS, silently, so refuse it exactly as the engine parser
+                // does rather than guessing which convention the author meant.
+                if (e is JsonObject tw && tw.ContainsKey("toward"))
+                    throw new StatechartFormatException(
+                        "reward: 'toward' was replaced by 'branch' with the OPPOSITE "
+                        + "meaning (ABI v38) -- true now names the 1 branch. Rename "
+                        + "the key and flip the boolean.");
+                ef.Branch = Bool(e, "branch");
                 if (e is JsonObject o && o.ContainsKey("strength"))
                     ef.Value = LoadRef(Member(e, "strength"));
                 break;
@@ -429,7 +438,7 @@ public static class StatechartJson
             case EffectKind.Reward:
                 o["agent"] = e.Agent;
                 o["q"] = e.Slot;
-                o["toward"] = e.Toward;
+                o["branch"] = e.Branch;
                 if (e.Value != null) o["strength"] = EmitRef(e.Value);
                 break;
             case EffectKind.SetScale:

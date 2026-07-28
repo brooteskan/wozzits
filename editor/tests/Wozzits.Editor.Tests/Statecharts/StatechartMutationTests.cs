@@ -1102,12 +1102,12 @@ public sealed class StatechartMutationTests
 
         row.SelectedEffectAgent = refId;
         row.QubitEditor!.Value = "2";
-        row.SelectedRewardPole = "toward |0>";     // Toward == true
+        row.SelectedRewardPole = "branch |1>";     // Branch == true (VALUE semantics)
 
         var reward = chart.States.First(s => s.Id == state.Model.Id).Entry[0];
         Assert.Equal(refId, reward.Agent);
         Assert.Equal(2, reward.Slot);
-        Assert.True(reward.Toward);
+        Assert.True(reward.Branch);
     }
 
     // A reward's strength must survive being set and then re-inspected (click off, click

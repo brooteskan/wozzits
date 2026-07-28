@@ -141,7 +141,13 @@ public sealed class Effect
     public string TargetBind { get; set; } = "";  // actuator target -> a Binding.Port
     public int Slot { get; set; }                 // set_goal slot / reward qubit
     public ValueRef? Value { get; set; }          // set_goal/set_decoherence/set_scale/set_visible value; reward strength
-    public bool Toward { get; set; }              // reward: bias toward |0>
+    // reward: WHICH BRANCH of the fact is being reinforced -- true names the 1
+    // branch (driving that fact's memory_preference toward -1), false the 0 branch.
+    // VALUE semantics, matching committed() and the rest of the learning API
+    // (behavior ABI v38). Emitted as `branch`; reward's amount is `strength`.
+    // This replaced a `Toward`/`toward` pair that meant the OPPOSITE -- see
+    // StatechartJson, which refuses the old key rather than guessing.
+    public bool Branch { get; set; }
     public string Fn { get; set; } = "";          // call: registered actuator name
     public List<CallArg> Args { get; } = new();   // call: resolved args, in order
 }

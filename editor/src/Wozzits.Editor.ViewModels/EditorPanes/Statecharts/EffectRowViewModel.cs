@@ -1,4 +1,4 @@
-namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
+﻿namespace Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 using System.Globalization;
 using System.Linq;
@@ -79,7 +79,7 @@ public sealed class EffectRowViewModel : ViewModelBase
     public const string ConstSentinel = "(constant)";
 
     // The read-only prefix: kind plus its agent/target, without the "= value" tail.
-    // Computed (not cached) so editing the agent / qubit / toward refreshes it.
+    // Computed (not cached) so editing the agent / qubit / branch refreshes it.
     public string Label => Describe(_effect);
 
     // The full formatted line (used by the state's derived string list / tests).
@@ -118,23 +118,25 @@ public sealed class EffectRowViewModel : ViewModelBase
     // Editable memory/decision qubit for set_goal/measure_at/reward; null otherwise.
     public EditableFieldViewModel? QubitEditor { get; }
 
-    // The two poles a reward can reinforce, for the toward picker. Order matters: index
-    // 0 is |0>, which maps to Toward == true (see Describe).
-    public IReadOnlyList<string> RewardPoles { get; } = new[] { "toward |0>", "toward |1>" };
+    // The two branches a reward can reinforce, for the branch picker. VALUE semantics:
+    // Branch == true names the |1> branch (see Describe). The labels deliberately say
+    // "branch", not the old "toward" -- that word named the OPPOSITE pole, and a chart
+    // author reading a stale label would train the wrong way round.
+    public IReadOnlyList<string> RewardPoles { get; } = new[] { "branch |0>", "branch |1>" };
 
     public string SelectedRewardPole
     {
-        get => _effect.Toward ? "toward |0>" : "toward |1>";
+        get => _effect.Branch ? "branch |1>" : "branch |0>";
         set
         {
             if (value is null)
             {
                 return;
             }
-            var toward = value == "toward |0>";
-            if (toward != _effect.Toward)
+            var branch = value == "branch |1>";
+            if (branch != _effect.Branch)
             {
-                _effect.Toward = toward;
+                _effect.Branch = branch;
                 RaiseLabel();
                 _edited?.Invoke();
             }
@@ -350,7 +352,7 @@ public sealed class EffectRowViewModel : ViewModelBase
         EffectKind.MeasureAt => $"measure_at {e.Agent}[{e.Slot}]",
         EffectKind.SetDecoherence => $"set_decoherence {e.Agent}",
         EffectKind.Rearm => $"rearm {e.Agent}",
-        EffectKind.Reward => $"reward {e.Agent} q{e.Slot} {(e.Toward ? "toward |0>" : "toward |1>")}",
+        EffectKind.Reward => $"reward {e.Agent} q{e.Slot} {(e.Branch ? "branch |1>" : "branch |0>")}",
         // Actuators show their target as an editable picker (SelectedTargetBind), not in the label.
         EffectKind.SetScale => "set_scale",
         EffectKind.SetVisible => "set_visible",
@@ -366,7 +368,7 @@ public sealed class EffectRowViewModel : ViewModelBase
         EffectKind.MeasureAt => $"measure_at {e.Agent}[{e.Slot}] axis={FormatValue(e.Value)}",
         EffectKind.SetDecoherence => $"set_decoherence {e.Agent} = {FormatValue(e.Value)}",
         EffectKind.Rearm => $"rearm {e.Agent}",
-        EffectKind.Reward => $"reward {e.Agent} q{e.Slot} {(e.Toward ? "toward |0>" : "toward |1>")} {FormatValue(e.Value)}",
+        EffectKind.Reward => $"reward {e.Agent} q{e.Slot} {(e.Branch ? "branch |1>" : "branch |0>")} {FormatValue(e.Value)}",
         EffectKind.SetScale => $"set_scale {e.TargetBind} = {FormatValue(e.Value)}",
         EffectKind.SetVisible => $"set_visible {e.TargetBind} = {FormatValue(e.Value)}",
         EffectKind.PlaySound => $"play_sound {e.TargetBind}",
