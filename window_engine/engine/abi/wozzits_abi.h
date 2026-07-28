@@ -1104,6 +1104,40 @@ WZ_ABI_API WzResult wz_host_create_scenelet(
     const char* name_utf8,
     WzBuffer* out_path);
 
+// Set one config entry on every behaviour binding in the scene FILE at
+// `scene_rel_path_utf8` (resource-relative, the form the scenelet catalog
+// reports) that matches `module_utf8` AND whose config `match_key_utf8` equals
+// `match_value_utf8`; report how many bindings changed in out_updated_count.
+//
+// This is the FILE-target twin of wz_host_runtime_set_node_behavior_config,
+// which only reaches the RUNNING scene. The editor needs both: re-embedding a
+// freshly compiled chart_ir/mind_ir has to reach behaviours in scenelets that
+// are not the open document (spawned actors read those, so that is the copy
+// gameplay actually runs). Without this verb the editor parsed and rewrote the
+// scene document in C#, giving the scene format a second author (issue #303).
+//
+// Device-free and runtime-free: it edits the document on disk, so it neither
+// needs nor disturbs the working scene. The edit is SURGICAL (the document is
+// upserted in place, not re-emitted), so node data outside the touched config
+// entry is preserved verbatim. It is also IDEMPOTENT: a binding already
+// carrying the value is left alone and the file is not rewritten at all when
+// nothing changed, so calling it for a scenelet that happens to be the open
+// scene is a genuine no-op rather than a redundant write.
+//
+// WZ_RESULT_INVALID_ARGUMENT for a null out_updated_count, an unreadable
+// project, an empty scene path/module/keys, or a scene file that is missing or
+// not valid JSON; WZ_RESULT_INTERNAL_ERROR if the rewrite could not be written.
+WZ_ABI_API WzResult wz_host_set_scene_file_behavior_config(
+    const char* project_root_utf8,
+    const char* resource_root_utf8,
+    const char* scene_rel_path_utf8,
+    const char* module_utf8,
+    const char* match_key_utf8,
+    const char* match_value_utf8,
+    const char* config_key_utf8,
+    const char* value_utf8,
+    uint32_t* out_updated_count);
+
 WZ_ABI_API WzResult wz_host_scene_set_node_properties(
     const char* project_root_utf8,
     const char* resource_root_utf8,

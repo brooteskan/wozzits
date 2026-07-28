@@ -2533,6 +2533,153 @@ namespace wz::engine::assets
         });
     }
 
+    namespace
+    {
+        // The object member `key` if it is a string, else nullptr.
+        const JSONValue* string_member(const JSONValue& obj, std::string_view key)
+        {
+            for (const JSONMember& member : obj.object_members) {
+                if (member.key == key
+                    && member.value
+                    && member.value->kind == JSONValueKind::String)
+                {
+                    return member.value.get();
+                }
+            }
+            return nullptr;
+        }
+
+        JSONValue* mutable_object_member(JSONValue& obj, std::string_view key)
+        {
+            for (JSONMember& member : obj.object_members) {
+                if (member.key == key
+                    && member.value
+                    && member.value->kind == JSONValueKind::Object)
+                {
+                    return member.value.get();
+                }
+            }
+            return nullptr;
+        }
+
+        // Upsert config[key] = value. Returns false when it was already `value`,
+        // so the caller can leave an up-to-date file untouched.
+        bool upsert_string_member(
+            JSONValue& config, std::string_view key, std::string_view value)
+        {
+            for (JSONMember& member : config.object_members) {
+                if (member.key != key) {
+                    continue;
+                }
+                if (member.value
+                    && member.value->kind == JSONValueKind::String
+                    && member.value->string_value == value)
+                {
+                    return false;  // already current
+                }
+                member.value = string_value(std::string(value));
+                return true;
+            }
+            config.object_members.push_back(JSONMember{
+                .key = std::string(key),
+                .value = string_value(std::string(value)),
+            });
+            return true;
+        }
+
+        // Apply to ONE behaviour object; returns true if it changed.
+        bool apply_behavior_config(
+            JSONValue& behavior,
+            std::string_view module,
+            std::string_view match_key,
+            std::string_view match_value,
+            std::string_view config_key,
+            std::string_view value)
+        {
+            if (behavior.kind != JSONValueKind::Object) {
+                return false;
+            }
+            const JSONValue* module_v = string_member(behavior, "module");
+            if (!module_v || module_v->string_value != module) {
+                return false;
+            }
+            JSONValue* config = mutable_object_member(behavior, "config");
+            if (!config) {
+                return false;
+            }
+            const JSONValue* match = string_member(*config, match_key);
+            if (!match || match->string_value != match_value) {
+                return false;
+            }
+            return upsert_string_member(*config, config_key, value);
+        }
+    }
+
+    uint32_t set_scene_document_behavior_config(
+        wz::json::JSONDocument& document,
+        std::string_view module,
+        std::string_view match_key,
+        std::string_view match_value,
+        std::string_view config_key,
+        std::string_view value)
+    {
+        if (!document.root || document.root->kind != JSONValueKind::Object) {
+            return 0u;
+        }
+
+        JSONValue* nodes = nullptr;
+        for (JSONMember& member : document.root->object_members) {
+            if (member.key == "nodes"
+                && member.value
+                && member.value->kind == JSONValueKind::Array)
+            {
+                nodes = member.value.get();
+                break;
+            }
+        }
+        if (!nodes) {
+            return 0u;
+        }
+
+        uint32_t changed = 0u;
+        for (JSONValuePtr& node : nodes->array_values) {
+            if (!node || node->kind != JSONValueKind::Object) {
+                continue;
+            }
+
+            // A node carries its behaviours as a "behaviors" array and, on older
+            // files, a single "behavior" object. Both shapes are visited.
+            for (JSONMember& member : node->object_members) {
+                if (member.key == "behaviors"
+                    && member.value
+                    && member.value->kind == JSONValueKind::Array)
+                {
+                    for (JSONValuePtr& behavior : member.value->array_values) {
+                        if (behavior
+                            && apply_behavior_config(
+                                *behavior, module, match_key, match_value,
+                                config_key, value))
+                        {
+                            ++changed;
+                        }
+                    }
+                }
+                else if (member.key == "behavior"
+                    && member.value
+                    && member.value->kind == JSONValueKind::Object)
+                {
+                    if (apply_behavior_config(
+                            *member.value, module, match_key, match_value,
+                            config_key, value))
+                    {
+                        ++changed;
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
     void set_scene_document_editor_camera(
         wz::json::JSONDocument& document,
         const SceneEditorCameraMetadata& camera)

@@ -13,6 +13,7 @@
 #include <engine/editor/scene_snapshot.h>
 #include <engine/project/project_runtime_launch.h>
 
+#include <external/json/json_parser.h>
 #include <external/json/json_writer.h>
 
 #include <file/filesystem.h>
@@ -698,6 +699,113 @@ extern "C"
         catch (...) {
             return result(
                 WZ_RESULT_INTERNAL_ERROR, "scenelet creation failed");
+        }
+    }
+
+    WzResult wz_host_set_scene_file_behavior_config(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        const char* scene_rel_path_utf8,
+        const char* module_utf8,
+        const char* match_key_utf8,
+        const char* match_value_utf8,
+        const char* config_key_utf8,
+        const char* value_utf8,
+        uint32_t* out_updated_count)
+    {
+        if (!out_updated_count) {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "out_updated_count must not be null");
+        }
+        *out_updated_count = 0u;
+
+        if (const WzResult target = validate_project_root(project_root_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        const auto non_empty = [](const char* s) {
+            return s && s[0] != '\0';
+        };
+        if (!non_empty(scene_rel_path_utf8)
+            || !non_empty(module_utf8)
+            || !non_empty(match_key_utf8)
+            || !non_empty(config_key_utf8))
+        {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "scene path, module, match key and config key must not be empty");
+        }
+
+        try {
+            const auto resolved =
+                wz::engine::project::load_project_runtime_launch(
+                    wz::engine::project::ProjectRuntimeLaunchDesc{
+                        .project_root = project_root_utf8,
+                        .resource_root = resource_root_utf8
+                            ? resource_root_utf8
+                            : "",
+                    });
+            if (!resolved.ok) {
+                return dynamic_error(
+                    WZ_RESULT_INVALID_ARGUMENT, resolved.error);
+            }
+
+            const wz::fs::Path path = wz::fs::join(
+                resolved.launch.resource_root, scene_rel_path_utf8);
+            const wz::fs::FileResult<std::string> text =
+                wz::fs::read_file_text(path);
+            if (!text) {
+                return dynamic_error(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "could not read scene '" + path + "'");
+            }
+
+            wz::json::JSONParseResult parsed =
+                wz::json::parse_json_string(text.value);
+            if (!parsed.ok) {
+                return dynamic_error(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "scene '" + path + "' is not valid JSON: "
+                        + parsed.error.message);
+            }
+
+            const uint32_t changed =
+                wz::engine::assets::set_scene_document_behavior_config(
+                    parsed.document,
+                    module_utf8,
+                    match_key_utf8,
+                    match_value_utf8 ? match_value_utf8 : "",
+                    config_key_utf8,
+                    value_utf8 ? value_utf8 : "");
+
+            // Nothing matched, or every match already carried the value: leave
+            // the file's bytes exactly as they were.
+            if (changed == 0u) {
+                return result(WZ_RESULT_OK, "");
+            }
+
+            if (const wz::fs::FileError err = wz::fs::write_file_text(
+                    path, wz::json::serialize_json(parsed.document));
+                err != wz::fs::FileError::None)
+            {
+                return dynamic_error(
+                    WZ_RESULT_INTERNAL_ERROR,
+                    "could not write scene '" + path + "'");
+            }
+
+            *out_updated_count = changed;
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR,
+                "scene file behavior config update failed");
         }
     }
 

@@ -4,7 +4,9 @@
 
 #include <external/json/json_document.h>
 
+#include <cstdint>
 #include <optional>
+#include <string_view>
 
 namespace wz::engine::assets
 {
@@ -21,6 +23,30 @@ namespace wz::engine::assets
     void set_scene_document_nodes(
         wz::json::JSONDocument& document,
         const std::vector<SceneNodeAsset>& nodes);
+
+    // Set one config entry on every behaviour binding in `document` that matches
+    // `module` AND whose config `match_key` equals `match_value` — the shape the
+    // editor needs to re-embed a freshly compiled statechart/mind IR into the
+    // behaviours of a scenelet that is NOT the open scene (issue #303). Returns
+    // how many bindings actually changed.
+    //
+    // A surgical upsert like set_scene_document_editor_camera, NOT a nodes-array
+    // replacement: the document is edited in place, so node data this exporter
+    // does not model survives untouched. A binding already carrying `value` is
+    // left alone, so a call that changes nothing reports 0 and the caller can
+    // skip rewriting the file entirely (which is what keeps a scenelet that is
+    // also the open scene from being written twice).
+    //
+    // Understands both node behaviour shapes — the "behaviors" array and the
+    // legacy singular "behavior" object — so that compatibility rule has one
+    // owner, on this side of the ABI. No-op if the root isn't an object.
+    uint32_t set_scene_document_behavior_config(
+        wz::json::JSONDocument& document,
+        std::string_view module,
+        std::string_view match_key,
+        std::string_view match_value,
+        std::string_view config_key,
+        std::string_view value);
 
     // Editor-only viewport camera state, persisted in the scene file's top-level
     // "scene_editor_metadata" block (schema "wozzits.scene_editor_metadata.v1").
