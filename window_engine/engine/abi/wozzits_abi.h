@@ -1079,6 +1079,31 @@ WZ_ABI_API WzResult wz_host_create_project(
     const char* name_utf8,
     WzBuffer* out_project);
 
+// Create a new, minimal scenelet (prefab) named `name_utf8` -- one empty root
+// node -- in the project's scenelets folder, and return its RESOURCE-RELATIVE
+// path in out_path (UTF-8, free with wz_free_buffer). That returned path is the
+// same form wz_host_runtime_scenelet_catalog reports and
+// wz_host_runtime_open_scene accepts, so the caller never constructs a scene
+// path (or a scene DOCUMENT) itself -- the editor used to hand-author
+// "wozzits.scene.v0" in C#, which gave the scene schema a second author the
+// engine did not know about (issue #271).
+//
+// Device-free and runtime-free (like wz_host_create_project): it resolves the
+// project manifest, mints the document through the one scene exporter, and
+// writes it. The engine picks the root node id. Requires no open runtime, so
+// the editor may call it before or while a project is running; the new file is
+// registered as a spawnable prefab on the next scene load/reload.
+//
+// WZ_RESULT_INVALID_ARGUMENT for a null out_path, an unreadable project, a name
+// that is empty/blank or carries a path separator, drive colon, ".." or a
+// reserved character, or a scenelet of that name that already exists;
+// WZ_RESULT_INTERNAL_ERROR if the folder or file could not be written.
+WZ_ABI_API WzResult wz_host_create_scenelet(
+    const char* project_root_utf8,
+    const char* resource_root_utf8,
+    const char* name_utf8,
+    WzBuffer* out_path);
+
 WZ_ABI_API WzResult wz_host_scene_set_node_properties(
     const char* project_root_utf8,
     const char* resource_root_utf8,

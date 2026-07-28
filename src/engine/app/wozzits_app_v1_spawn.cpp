@@ -19,6 +19,7 @@
 #include <engine/assets/scene/scene_json_export.h>
 #include <engine/assets/scene/prefab_instantiate.h>
 #include <engine/assets/scene/scene_subtree_export.h>
+#include <engine/assets/scene/scenelet_authoring.h>
 #include <engine/assets/scene_asset_module.h>
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/renderable/render_binding_sources.h>
@@ -89,16 +90,15 @@ namespace wz::app
         }
 
         // Scenelets live in a "scenelets" folder next to the scene file (the
-        // project root), so derive the folder from the scene's directory and
-        // resolve it through the asset file system the way load_behavior_modules
-        // resolves the module folder (resolve_path joins a relative path onto the
-        // absolute resource root). A missing/empty folder is a silent no-op —
-        // projects without scenelets register nothing.
-        const wz::fs::Path project_dir = wz::fs::parent_path(scene_source_path_);
+        // project root). scenelets_folder_for_scene owns that convention (it is
+        // also what wz_host_create_scenelet writes through, so the catalog and
+        // the minting verb cannot disagree); resolve it through the asset file
+        // system the way load_behavior_modules resolves the module folder
+        // (resolve_path joins a relative path onto the absolute resource root).
+        // A missing/empty folder is a silent no-op — projects without scenelets
+        // register nothing.
         const wz::fs::Path scenelets_rel =
-            project_dir.empty()
-                ? wz::fs::Path{ "scenelets" }
-                : wz::fs::join(project_dir, "scenelets");
+            wz::engine::assets::scenelets_folder_for_scene(scene_source_path_);
         const wz::fs::Path scenelets_dir =
             ctx_.assets->files().resolve_path(scenelets_rel);
 

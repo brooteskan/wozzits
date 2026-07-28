@@ -3,6 +3,8 @@
 #include <engine/app/editor_runtime.h>
 #include <engine/assets/file_carrier_asset_module.h>
 #include <engine/assets/gltf/gltf_importer.h>
+#include <engine/assets/scene/scene_json_export.h>
+#include <engine/assets/scene/scenelet_authoring.h>
 #include <engine/editor/asset_graph_editor_session.h>
 #include <engine/editor/asset_graph_layout.h>
 #include <engine/editor/asset_graph_schema_registry.h>
@@ -10,6 +12,8 @@
 #include <engine/editor/project_snapshot.h>
 #include <engine/editor/scene_snapshot.h>
 #include <engine/project/project_runtime_launch.h>
+
+#include <external/json/json_writer.h>
 
 #include <file/filesystem.h>
 #include <math/quaternion.h>
@@ -601,6 +605,99 @@ extern "C"
             return result(
                 WZ_RESULT_INTERNAL_ERROR,
                 "project creation failed");
+        }
+    }
+
+    WzResult wz_host_create_scenelet(
+        const char* project_root_utf8,
+        const char* resource_root_utf8,
+        const char* name_utf8,
+        WzBuffer* out_path)
+    {
+        if (const WzResult target = prepare_output_buffer(out_path, "out_path");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+        if (const WzResult target = validate_project_root(project_root_utf8);
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+
+        const std::string name = name_utf8 ? name_utf8 : "";
+        if (!wz::engine::assets::is_valid_scenelet_name(name)) {
+            return dynamic_error(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "'" + name + "' is not a valid scenelet name");
+        }
+
+        try {
+            // Resolve the project the same way the launcher does, so the
+            // scenelets folder is derived from the manifest's scene path rather
+            // than guessed from the project root.
+            const auto resolved =
+                wz::engine::project::load_project_runtime_launch(
+                    wz::engine::project::ProjectRuntimeLaunchDesc{
+                        .project_root = project_root_utf8,
+                        .resource_root = resource_root_utf8
+                            ? resource_root_utf8
+                            : "",
+                    });
+            if (!resolved.ok) {
+                return dynamic_error(
+                    WZ_RESULT_INVALID_ARGUMENT, resolved.error);
+            }
+
+            const wz::fs::Path relative =
+                wz::engine::assets::scenelet_relative_path(
+                    resolved.launch.scene_path, name);
+            const wz::fs::Path absolute =
+                wz::fs::join(resolved.launch.resource_root, relative);
+
+            // Refuse to clobber. The editor surfaces this as "already exists";
+            // overwriting would silently destroy an authored prefab.
+            if (wz::fs::exists(absolute)) {
+                return dynamic_error(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "scenelet '" + name + "' already exists");
+            }
+
+            const wz::fs::Path folder = wz::fs::join(
+                resolved.launch.resource_root,
+                wz::engine::assets::scenelets_folder_for_scene(
+                    resolved.launch.scene_path));
+            if (const wz::fs::FileError err = wz::fs::create_directories(folder);
+                err != wz::fs::FileError::None)
+            {
+                return dynamic_error(
+                    WZ_RESULT_INTERNAL_ERROR,
+                    "could not create scenelets folder '" + folder + "'");
+            }
+
+            // The ONE scene author: build the document as data, then hand it to
+            // the same exporter save_scene and export_subtree_as_scene use.
+            const wz::json::JSONDocument document =
+                wz::engine::assets::export_scene_to_json_document(
+                    wz::engine::assets::make_minimal_scenelet(name));
+            if (const wz::fs::FileError err = wz::fs::write_file_text(
+                    absolute, wz::json::serialize_json(document));
+                err != wz::fs::FileError::None)
+            {
+                return dynamic_error(
+                    WZ_RESULT_INTERNAL_ERROR,
+                    "could not write scenelet '" + absolute + "'");
+            }
+
+            const std::vector<uint8_t> bytes(relative.begin(), relative.end());
+            return copy_bytes_to_buffer(bytes, out_path);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR, "scenelet creation failed");
         }
     }
 
