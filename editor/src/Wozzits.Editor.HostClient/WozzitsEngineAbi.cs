@@ -208,6 +208,24 @@ internal static partial class WozzitsEngineAbi
         string nameUtf8,
         out WzBuffer outPath);
 
+    // Set one config entry on matching behaviour bindings in a scene FILE -- the
+    // file-target twin of SetNodeBehaviorConfig, which only reaches the running
+    // scene. Device-free; idempotent (0 updates => the file was not rewritten).
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_set_scene_file_behavior_config",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorSetSceneFileBehaviorConfig(
+        string projectRootUtf8,
+        string? resourceRootUtf8,
+        string sceneRelPathUtf8,
+        string moduleUtf8,
+        string matchKeyUtf8,
+        string matchValueUtf8,
+        string configKeyUtf8,
+        string valueUtf8,
+        out uint outUpdatedCount);
+
     [LibraryImport(
         LibraryName,
         EntryPoint = "wz_host_scene_set_node_properties",

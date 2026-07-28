@@ -165,6 +165,20 @@ public interface IWozzitsEngineEditorSession
     // one contains, so the editor supplies only the name (issue #271).
     EngineCreateSceneletResponse CreateScenelet(string name);
 
+    // Set one config entry on every behaviour binding in the scene FILE at
+    // `sceneRelativePath` matching `module` and `matchKey` == `matchValue`.
+    // The file-target twin of SetNodeBehaviorConfig, which only reaches the
+    // RUNNING scene: this is how a freshly compiled chart/mind IR reaches
+    // scenelets that are not the open document (issue #303). Idempotent --
+    // UpdatedCount 0 means the file already matched and was not rewritten.
+    EngineSceneFileConfigResponse SetSceneFileBehaviorConfig(
+        string sceneRelativePath,
+        string module,
+        string matchKey,
+        string matchValue,
+        string configKey,
+        string value);
+
     // Add a child node under parentId (empty => top level) in the running scene
     // and return the engine-minted id. Errors if no viewport is running.
     EngineAddSceneNodeResponse AddChildNode(string parentId);

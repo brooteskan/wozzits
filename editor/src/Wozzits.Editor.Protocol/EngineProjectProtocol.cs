@@ -181,6 +181,18 @@ public sealed record EngineAddSceneNodeResponse
     public string NodeId { get; init; } = string.Empty;
 }
 
+public sealed record EngineSceneFileConfigResponse
+{
+    public bool Ok { get; init; }
+
+    public string Error { get; init; } = string.Empty;
+
+    // How many behaviour bindings the engine actually changed. Zero means the
+    // file already carried the value and was NOT rewritten -- the caller can
+    // stay quiet rather than reporting a refresh that did not happen.
+    public uint UpdatedCount { get; init; }
+}
+
 public sealed record EngineCreateSceneletResponse
 {
     public bool Ok { get; init; }

@@ -60,6 +60,26 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.CreateScenelet(_projectDirectory, name);
     }
 
+    public EngineSceneFileConfigResponse SetSceneFileBehaviorConfig(
+        string sceneRelativePath,
+        string module,
+        string matchKey,
+        string matchValue,
+        string configKey,
+        string value)
+    {
+        // Device-free and runtime-free: it edits the document on disk, so it
+        // neither needs a live viewport nor disturbs the working scene.
+        return _client.SetSceneFileBehaviorConfig(
+            _projectDirectory,
+            sceneRelativePath,
+            module,
+            matchKey,
+            matchValue,
+            configKey,
+            value);
+    }
+
     public EngineActuatorCatalogResponse LoadActuatorCatalog()
     {
         // Device-free (no live session needed), but PROJECT-aware: pass the project

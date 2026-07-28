@@ -234,6 +234,66 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    // Push one config entry into matching behaviour bindings of a scene FILE.
+    // The engine owns the scene format and the walk; the editor names what to
+    // match and what to set (issue #303).
+    internal EngineSceneFileConfigResponse SetSceneFileBehaviorConfig(
+        string projectDirectory,
+        string sceneRelativePath,
+        string module,
+        string matchKey,
+        string matchValue,
+        string configKey,
+        string value)
+    {
+        if (string.IsNullOrWhiteSpace(projectDirectory))
+        {
+            return new EngineSceneFileConfigResponse
+            {
+                Ok = false,
+                Error = "Project directory is empty.",
+            };
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorSetSceneFileBehaviorConfig(
+                projectDirectory,
+                resourceRootUtf8: null,
+                sceneRelPathUtf8: sceneRelativePath,
+                moduleUtf8: module,
+                matchKeyUtf8: matchKey,
+                matchValueUtf8: matchValue,
+                configKeyUtf8: configKey,
+                valueUtf8: value,
+                out var updated);
+            return result.Code != WzResultCode.Ok
+                ? new EngineSceneFileConfigResponse
+                {
+                    Ok = false,
+                    Error = result.Message,
+                }
+                : new EngineSceneFileConfigResponse
+                {
+                    Ok = true,
+                    UpdatedCount = updated,
+                };
+        }
+        catch (Exception ex) when (ex is DllNotFoundException
+            or EntryPointNotFoundException
+            or BadImageFormatException
+            or InvalidOperationException)
+        {
+            return new EngineSceneFileConfigResponse
+            {
+                Ok = false,
+                Error = ex.Message,
+            };
+        }
+    }
+
     internal EngineMutationResponse SetSceneNodeProperties(
         string projectDirectory,
         string nodeId,

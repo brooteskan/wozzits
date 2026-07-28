@@ -395,35 +395,35 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         string module, string nameKey, string irKey,
         IReadOnlyDictionary<string, string> savedByName)
     {
-        if (savedByName.Count == 0 || string.IsNullOrWhiteSpace(_projectDirectory))
+        if (_editorSession is null || savedByName.Count == 0)
         {
             return;
         }
 
-        var dir = Path.Combine(_projectDirectory, "scenelets");
-        if (!Directory.Exists(dir))
+        // Enumerate through the engine's own catalog rather than walking a
+        // scenelets/ folder: where scenelets live is the engine's to know, and
+        // the catalog already reports the resource-relative paths the verb takes.
+        foreach (var scenelet in _editorSession.GetSceneletCatalog())
         {
-            return;
-        }
-
-        foreach (var path in Directory.EnumerateFiles(dir, "*.scene.json"))
-        {
-            try
+            foreach (var (name, ir) in savedByName)
             {
-                if (SceneletRunnerRefresh.TryRefresh(
-                        File.ReadAllText(path), module, nameKey, irKey, savedByName,
-                        out var updated, out var count))
+                var applied = _editorSession.SetSceneFileBehaviorConfig(
+                    scenelet.Path, module, nameKey, name, irKey, ir);
+                if (!applied.Ok)
                 {
-                    File.WriteAllText(path, updated);
                     AppendEditorLog(
-                        $"[editor] Refreshed {count} {module} in scenelet '{Path.GetFileName(path)}'");
+                        $"[editor] Scenelet refresh failed for '{scenelet.Name}': {applied.Error}");
+                    continue;
                 }
-            }
-            catch (Exception ex)
-                when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
-            {
-                AppendEditorLog(
-                    $"[editor] Scenelet refresh failed for '{Path.GetFileName(path)}': {ex.Message}");
+
+                // 0 => the file already carried this IR and was not rewritten
+                // (e.g. a scenelet that is also the open scene, already
+                // refreshed in place). Stay quiet about a no-op.
+                if (applied.UpdatedCount > 0)
+                {
+                    AppendEditorLog(
+                        $"[editor] Refreshed {applied.UpdatedCount} {module} in scenelet '{scenelet.Name}'");
+                }
             }
         }
     }

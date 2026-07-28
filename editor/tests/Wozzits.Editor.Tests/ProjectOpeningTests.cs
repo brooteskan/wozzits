@@ -4607,6 +4607,35 @@ public sealed partial class ProjectOpeningTests
             return CreateSceneletResponse;
         }
 
+        // Scene-FILE behaviour config writes (issue #303): the editor no longer
+        // parses scenelet documents itself, so what a test can observe is which
+        // (scene, module, match, key, value) tuples it asked the engine to apply.
+        public sealed record SceneFileConfigEdit(
+            string ScenePath,
+            string Module,
+            string MatchKey,
+            string MatchValue,
+            string ConfigKey,
+            string Value);
+
+        public List<SceneFileConfigEdit> SceneFileConfigEdits { get; } = [];
+
+        public EngineSceneFileConfigResponse SceneFileConfigResponse { get; set; } =
+            new EngineSceneFileConfigResponse { Ok = true, UpdatedCount = 1 };
+
+        public EngineSceneFileConfigResponse SetSceneFileBehaviorConfig(
+            string sceneRelativePath,
+            string module,
+            string matchKey,
+            string matchValue,
+            string configKey,
+            string value)
+        {
+            SceneFileConfigEdits.Add(new SceneFileConfigEdit(
+                sceneRelativePath, module, matchKey, matchValue, configKey, value));
+            return SceneFileConfigResponse;
+        }
+
         public EngineMutationResponse SetSceneNodeCamera(
             string nodeId,
             EngineSceneCameraEdit edit)
