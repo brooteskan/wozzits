@@ -98,8 +98,10 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
     private bool AlreadyBonded(MindNodeViewModel a, MindNodeViewModel b) =>
         Bonds.Any(x => (x.A == a && x.B == b) || (x.A == b && x.B == a));
 
-    // Advisory (empty when fine): does the drawn graph fit the chosen backend? chi>=2 TTN
-    // needs a nearest-neighbour chain; chi=0 exact grows exponentially past a handful.
+    // Advisory (empty when fine): does the drawn graph fit the chosen backend? chi>=2 on a
+    // nearest-neighbour chain gets the cheap chain specialization, any other shape gets the
+    // general graph backend (it BUILDS -- this is a cost note, not an error); chi=0 exact
+    // grows exponentially past a handful.
     public string ValidationWarning
     {
         get
@@ -115,7 +117,9 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
                 {
                     if (Math.Abs(_mind.IndexOfQubit(b.A) - _mind.IndexOfQubit(b.B)) != 1)
                     {
-                        return "TTN (chi ≥ 2) needs a nearest-neighbour chain — some bonds skip qubits.";
+                        return "some bonds skip qubits, so chi ≥ 2 uses the general graph "
+                            + "backend — still entangled, but the nearest-neighbour chain "
+                            + "specialization is ~8× cheaper.";
                     }
                 }
             }

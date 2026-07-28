@@ -23,7 +23,11 @@ public enum MindBackend
 {
     Exact,    // chi 0: genuine entanglement, small groups, ANY topology
     LoopyBp,  // chi 1: any topology incl. cycles, scales linearly, NO entanglement
-    Ttn,      // chi >= 2: larger entangled groups; bonds MUST form a nearest-neighbour chain
+    // chi >= 2: larger entangled groups, ANY topology. A nearest-neighbour chain routes to
+    // the cheap chain specialization (engine TtnChain); every other shape routes to the
+    // general graph tensor network (engine GraphTn, ~8x the chain's cost) -- so the name is
+    // the chi TIER, not a chain requirement. See build_coordination (agent_cognition.cpp).
+    Ttn,
 }
 
 /// <summary>One decision qubit (a node). <see cref="Goal"/> is a longitudinal bias:

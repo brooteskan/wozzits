@@ -57,7 +57,7 @@ public sealed class MindDocumentViewModel : ViewModelBase
     {
         MindBackend.Exact => "exact — entangled, small groups, any graph",
         MindBackend.LoopyBp => "loopy BP — any graph, no entanglement",
-        _ => "TTN — needs a nearest-neighbour chain",
+        _ => "TTN — entangled, any graph; a chain is cheapest",
     };
 
     private EditableFieldViewModel IntField(Func<int> get, Action<int> set) =>

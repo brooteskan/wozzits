@@ -193,8 +193,11 @@ public sealed class MindPaneTests
         Assert.Single(mind.Bonds);
     }
 
+    // A non-chain chi >= 2 mind BUILDS (the engine routes it to the general graph tensor
+    // network), so the advisory is about COST, not validity -- it must not tell the author
+    // the mind needs a chain.
     [Fact]
-    public void Validation_Flags_A_Non_Chain_Ttn()
+    public void Validation_Notes_The_Cost_Of_A_Non_Chain_Ttn()
     {
         var mind = new Mind { Chi = 2 };
         mind.Qubits.Add(new MindQubit { Id = "q0" });
@@ -205,6 +208,25 @@ public sealed class MindPaneTests
         pane.Project(mind);
 
         Assert.True(pane.HasValidationWarning);
-        Assert.Contains("chain", pane.ValidationWarning);
+        Assert.Contains("cheaper", pane.ValidationWarning);
+        Assert.DoesNotContain("needs", pane.ValidationWarning);
+    }
+
+    // A ring at chi >= 2 is a legitimate authored mind (bounded entanglement on any
+    // topology) -- the pane may note its cost but must not present it as broken.
+    [Fact]
+    public void Validation_Does_Not_Reject_A_Ring_Ttn()
+    {
+        var mind = new Mind { Chi = 2 };
+        mind.Qubits.Add(new MindQubit { Id = "q0" });
+        mind.Qubits.Add(new MindQubit { Id = "q1" });
+        mind.Qubits.Add(new MindQubit { Id = "q2" });
+        mind.Bonds.Add(new MindBond { A = "q0", B = "q1", J = 1 });
+        mind.Bonds.Add(new MindBond { A = "q1", B = "q2", J = 1 });
+        mind.Bonds.Add(new MindBond { A = "q2", B = "q0", J = 1 }); // closes the ring
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        Assert.DoesNotContain("needs", pane.ValidationWarning);
     }
 }
