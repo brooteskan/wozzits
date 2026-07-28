@@ -2317,6 +2317,26 @@ namespace wz::engine::behavior
             logger->info(message);
         }
 
+        // facts.log_warn / facts.log_error (v39): the same binding logger as log_info,
+        // at the severities a behavior needs to say it has failed and gone inert (#306).
+        void log_warn(void* user, const char* message)
+        {
+            auto* logger = static_cast<wz::Logger*>(user);
+            if (!logger || !message) {
+                return;
+            }
+            logger->warn(message);
+        }
+
+        void log_error(void* user, const char* message)
+        {
+            auto* logger = static_cast<wz::Logger*>(user);
+            if (!logger || !message) {
+                return;
+            }
+            logger->error(message);
+        }
+
         void dispatch_abi_behavior(
             BehaviorFrameContext& context,
             wz::scene::RuntimeEntityId entity,
@@ -2430,6 +2450,8 @@ namespace wz::engine::behavior
                 .entity_scalar_user = &context,
                 .set_entity_scalar = set_entity_scalar,
                 .get_entity_scalar = get_entity_scalar,
+                .log_warn = log_warn,
+                .log_error = log_error,
             };
 
             binding->function(&facts, entity, binding->user_data);
@@ -2541,6 +2563,8 @@ namespace wz::engine::behavior
                 .entity_scalar_user = &context,
                 .set_entity_scalar = set_entity_scalar,
                 .get_entity_scalar = get_entity_scalar,
+                .log_warn = log_warn,
+                .log_error = log_error,
             };
         }
 
@@ -2571,6 +2595,8 @@ namespace wz::engine::behavior
                 .alloc_instance_state_desc = alloc_instance_state_desc,
                 .create_shared_state_desc = create_shared_state_desc,
                 .find_descendant_by_name = find_descendant_by_name,
+                .log_warn = log_warn,
+                .log_error = log_error,
             };
         }
 

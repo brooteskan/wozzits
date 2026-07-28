@@ -453,7 +453,12 @@ namespace wz::engine::behavior
                 const sc::Chart* chart =
                     statechart_runner_store().load(name, ir);
                 if (!chart) {
-                    wz_log_infof(
+                    // ERROR, not info (v39): this runner is now inert for the whole
+                    // session while the scene around it keeps running and the process
+                    // exits 0. At INFO this was indistinguishable from the "loaded"
+                    // line below, and a broken chart rode through two verification
+                    // passes on the strength of a clean exit code.
+                    wz_log_errorf(
                         facts, "[statechart] '%s' failed to load (bad IR)",
                         name.c_str());
                     return;

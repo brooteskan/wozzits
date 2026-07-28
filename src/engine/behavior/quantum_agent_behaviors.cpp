@@ -199,13 +199,13 @@ namespace wz::engine::behavior
                 if (!mind_ir.empty()) {
                     std::string mind_err;
                     if (!parse_mind(mind_ir, spec, mind_err)) {
-                        wz_log_infof(
+                        wz_log_errorf(
                             facts, "[quantum_agent] mind_ir parse FAILED: %s",
                             mind_err.c_str());
                         return;   // authored a mind but it is broken -- fail loudly
                     }
                     if (spec.agent_count > kQuantumAgentMaxDecisions) {
-                        wz_log_infof(
+                        wz_log_errorf(
                             facts,
                             "[quantum_agent] mind_ir has %u qubits, over the cap of %u",
                             spec.agent_count, kQuantumAgentMaxDecisions);
@@ -239,7 +239,7 @@ namespace wz::engine::behavior
                     // disagrees with the qubit count -- the demo shows dark bodies
                     // and this line names why. Topology is no longer a reason: a
                     // chi>=2 ring or star now builds on the general graph backend.
-                    wz_log_infof(
+                    wz_log_errorf(
                         facts,
                         "[quantum_agent] build FAILED chi=%u backend=%s agents=%u "
                         "bonds=%u (unbuildable spec -- check agent_count, memory "

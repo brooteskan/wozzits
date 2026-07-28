@@ -38,6 +38,56 @@ TEST(BehaviorModuleApi, LogInfofFormatsThroughLogCallback)
     EXPECT_EQ(message, "unchanged");
 }
 
+// v39: warn/error are SEPARATE sinks, not a prefix on the info one. A behavior that
+// has failed and gone inert must be able to say so above the routine chatter (#306).
+TEST(BehaviorModuleApi, WarnAndErrorRouteToTheirOwnSinks)
+{
+    struct Sinks
+    {
+        std::string info;
+        std::string warn;
+        std::string error;
+    } sinks;
+
+    // The log_user is shared across all three, so each lambda picks its own field.
+    WzBehaviorFrameFacts facts{
+        .log_user = &sinks,
+        .log_info = [](void* user, const char* text)
+        { static_cast<Sinks*>(user)->info = text; },
+        .log_warn = [](void* user, const char* text)
+        { static_cast<Sinks*>(user)->warn = text; },
+        .log_error = [](void* user, const char* text)
+        { static_cast<Sinks*>(user)->error = text; },
+    };
+
+    wz_log_info(&facts, "routine");
+    wz_log_warnf(&facts, "retrying after %d failure(s)", 3);
+    wz_log_errorf(&facts, "'%s' failed to load (bad IR)", "hunt_or_refuel");
+
+    EXPECT_EQ(sinks.info, "routine");
+    EXPECT_EQ(sinks.warn, "retrying after 3 failure(s)");
+    EXPECT_EQ(sinks.error, "'hunt_or_refuel' failed to load (bad IR)");
+
+    // The init facts carry the same three -- on_init is where a behavior most often
+    // discovers it cannot do its job at all.
+    WzBehaviorInitFacts init{
+        .log_user = &sinks,
+        .log_error = [](void* user, const char* text)
+        { static_cast<Sinks*>(user)->error = text; },
+    };
+    wz_log_error(&init, "mind_ir parse FAILED");
+    EXPECT_EQ(sinks.error, "mind_ir parse FAILED");
+
+    // A host that wires only log_info leaves warn/error null: silent, never a jump
+    // through a null pointer.
+    WzBehaviorFrameFacts unwired{.log_user = &sinks};
+    wz_log_warn(&unwired, "dropped");
+    wz_log_errorf(&unwired, "dropped %d", 1);
+    wz_log_warn(nullptr, "dropped");
+    wz_log_errorf(nullptr, "dropped");
+    EXPECT_EQ(sinks.error, "mind_ir parse FAILED");
+}
+
 TEST(BehaviorModuleApi, GpuJobHelpersBuildNamedPortDispatch)
 {
     struct Probe

@@ -196,7 +196,9 @@ namespace
                     facts, event, kReinforceGroupMembers, kSquadStarCoupling)) {
                 if (state->squad_size != kReshapeFailed) {
                     state->squad_size = kReshapeFailed;
-                    wz_log_infof(
+                    // WARN, not error: this one retries every frame, so it is a
+                    // "not yet" that only matters if it never clears.
+                    wz_log_warn(
                         facts,
                         "[commander] group reshape FAILED (agent not ready?) -- retrying");
                 }

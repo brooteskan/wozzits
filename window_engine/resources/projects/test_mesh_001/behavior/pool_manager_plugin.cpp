@@ -157,11 +157,9 @@ namespace
             // The lazy prewarm counts it as submitted and moves on -- it is NOT retried,
             // so this log is the only signal. Loud so a permanently-bad prefab (all
             // spawns failing -> no enemy ever deploys) is obvious rather than silent.
-            // No error-level log seam exists (behavior logging is info-only), so mark
-            // the message ERROR so it stands out in the log.
-            wz_log_infof(
+            wz_log_errorf(
                 facts,
-                "[pool] ERROR: prewarm spawn FAILED (tag %llu) -- reserve slot lost, "
+                "[pool] prewarm spawn FAILED (tag %llu) -- reserve slot lost, "
                 "squad may run under strength",
                 static_cast<unsigned long long>(wz_spawn_event_request_tag(facts)));
             return;

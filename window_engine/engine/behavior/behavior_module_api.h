@@ -2038,73 +2038,138 @@ static inline uint8_t wz_self_set_agent_decoherence(
         rate);
 }
 
-static inline void wz_log_info(
-    const WzBehaviorFrameFacts* facts,
+/*
+ * Behavior logging, at three levels (warn/error are v39).
+ *
+ * Reach past INFO only when the behavior has FAILED and is now doing nothing: a chart
+ * that will not parse, a mind whose spec is unbuildable, a reserve slot lost for good.
+ * Those are invisible otherwise -- the scene keeps running, the process exits 0, and
+ * this behavior silently contributes nothing. Per-frame progress stays INFO.
+ */
+static inline void wz_log__emit(
+    WzBehaviorLogFn fn,
+    void* user,
     const char* message)
 {
-    if (facts && facts->log_info && message) {
-        facts->log_info(facts->log_user, message);
+    if (fn && message) {
+        fn(user, message);
     }
 }
 
-static inline void wz_log_infof(
-    const WzBehaviorFrameFacts* facts,
+/* Shared tail of the ...f helpers: format into a fixed buffer, then emit. */
+static inline void wz_log__emitv(
+    WzBehaviorLogFn fn,
+    void* user,
     const char* format,
-    ...)
+    va_list args)
 {
-    if (!facts || !facts->log_info || !format) {
+    if (!fn || !format) {
         return;
     }
 
     char message[512];
-    va_list args;
-    va_start(args, format);
     const int written = vsnprintf(message, sizeof(message), format, args);
-    va_end(args);
-
     if (written < 0) {
         return;
     }
     message[sizeof(message) - 1u] = '\0';
-    wz_log_info(facts, message);
+    fn(user, message);
 }
 
-static inline void wz_log_info(
-    const WzBehaviorInitFacts* facts,
-    const char* message)
-{
-    if (facts && facts->log_info && message) {
-        facts->log_info(facts->log_user, message);
+#define WZ_DEFINE_LOG_HELPERS(FactsType)                                       \
+    static inline void wz_log_info(                                            \
+        const FactsType* facts, const char* message)                           \
+    {                                                                          \
+        if (facts) {                                                           \
+            wz_log__emit(facts->log_info, facts->log_user, message);           \
+        }                                                                      \
+    }                                                                          \
+                                                                               \
+    static inline void wz_log_warn(                                            \
+        const FactsType* facts, const char* message)                           \
+    {                                                                          \
+        if (facts) {                                                           \
+            wz_log__emit(facts->log_warn, facts->log_user, message);           \
+        }                                                                      \
+    }                                                                          \
+                                                                               \
+    static inline void wz_log_error(                                           \
+        const FactsType* facts, const char* message)                           \
+    {                                                                          \
+        if (facts) {                                                           \
+            wz_log__emit(facts->log_error, facts->log_user, message);          \
+        }                                                                      \
+    }                                                                          \
+                                                                               \
+    static inline void wz_log_infof(                                           \
+        const FactsType* facts, const char* format, ...)                       \
+    {                                                                          \
+        if (!facts) {                                                          \
+            return;                                                            \
+        }                                                                      \
+        va_list args;                                                          \
+        va_start(args, format);                                                \
+        wz_log__emitv(facts->log_info, facts->log_user, format, args);         \
+        va_end(args);                                                          \
+    }                                                                          \
+                                                                               \
+    static inline void wz_log_warnf(                                           \
+        const FactsType* facts, const char* format, ...)                       \
+    {                                                                          \
+        if (!facts) {                                                          \
+            return;                                                            \
+        }                                                                      \
+        va_list args;                                                          \
+        va_start(args, format);                                                \
+        wz_log__emitv(facts->log_warn, facts->log_user, format, args);         \
+        va_end(args);                                                          \
+    }                                                                          \
+                                                                               \
+    static inline void wz_log_errorf(                                          \
+        const FactsType* facts, const char* format, ...)                       \
+    {                                                                          \
+        if (!facts) {                                                          \
+            return;                                                            \
+        }                                                                      \
+        va_list args;                                                          \
+        va_start(args, format);                                                \
+        wz_log__emitv(facts->log_error, facts->log_user, format, args);        \
+        va_end(args);                                                          \
     }
-}
 
-static inline void wz_log_infof(
-    const WzBehaviorInitFacts* facts,
-    const char* format,
-    ...)
-{
-    if (!facts || !facts->log_info || !format) {
-        return;
-    }
+/*
+ * So the grep that brought you here finds the names: this defines
+ *   wz_log_info  / wz_log_warn  / wz_log_error   (const char* message)
+ *   wz_log_infof / wz_log_warnf / wz_log_errorf  (printf-style, 511 chars max)
+ * overloaded on both facts structs.
+ */
+WZ_DEFINE_LOG_HELPERS(WzBehaviorFrameFacts)
+WZ_DEFINE_LOG_HELPERS(WzBehaviorInitFacts)
 
-    char message[512];
-    va_list args;
-    va_start(args, format);
-    const int written = vsnprintf(message, sizeof(message), format, args);
-    va_end(args);
+#undef WZ_DEFINE_LOG_HELPERS
 
-    if (written < 0) {
-        return;
-    }
-    message[sizeof(message) - 1u] = '\0';
-    wz_log_info(facts, message);
-}
-
+/* Null-facts overloads, so a call site need not branch on having facts at all. */
 static inline void wz_log_info(decltype(nullptr), const char*)
 {
 }
 
+static inline void wz_log_warn(decltype(nullptr), const char*)
+{
+}
+
+static inline void wz_log_error(decltype(nullptr), const char*)
+{
+}
+
 static inline void wz_log_infof(decltype(nullptr), const char*, ...)
+{
+}
+
+static inline void wz_log_warnf(decltype(nullptr), const char*, ...)
+{
+}
+
+static inline void wz_log_errorf(decltype(nullptr), const char*, ...)
 {
 }
 

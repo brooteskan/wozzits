@@ -55,7 +55,13 @@ extern "C" {
 //      statechart on it READS the number as a `read_state` pure-op (the pull twin of
 //      v34 events: events push a discrete signal, this exposes a continuous quantity a
 //      guard can compare, e.g. a tank's accumulated damage).
-#define WZ_BEHAVIOR_ABI_VERSION 38u
+// v39: appended log_warn / log_error to BOTH facts structs (#306) -- a behavior could
+//      previously only speak at INFO, so "I failed to initialise and will now do
+//      nothing, forever" was indistinguishable from routine chatter. A statechart whose
+//      chart fails to parse is inert while the process exits 0 and every health signal
+//      reads green; that shipped a broken chart through two verification runs. The host
+//      always had wz::Logger::warn/error -- this closes the asymmetry on the plugin side.
+#define WZ_BEHAVIOR_ABI_VERSION 39u
 #define WZ_BEHAVIOR_PLUGIN_REGISTER_SYMBOL "wz_register_behaviors"
 
 #define WZ_MAX_CONTROLLERS 4u
@@ -1320,7 +1326,7 @@ typedef struct WzBehaviorFrameFacts
     WzWriteBehaviorCommandFn write_command;
 
     void* log_user;
-    WzBehaviorLogFn log_info;
+    WzBehaviorLogFn log_info;  /* see log_warn / log_error at the tail (v39) */
 
     void* collision_query_user;
     WzQueryBehaviorCollisionSurfaceRayFn query_collision_surface_ray;
@@ -1513,6 +1519,17 @@ typedef struct WzBehaviorFrameFacts
     void* entity_scalar_user;
     WzSetEntityScalarFn set_entity_scalar;
     WzGetEntityScalarFn get_entity_scalar;
+
+    /*
+     * Severity above INFO (v39; APPEND-ONLY; share log_user with log_info, so a host
+     * that wires one wires all three). Reserve these for the case a behavior cannot
+     * report any other way: it has FAILED and is now doing nothing. A parse failure, an
+     * unbuildable spec, a lost pool slot -- the states where the scene keeps running and
+     * looks healthy while this behavior contributes nothing. Routine chatter stays INFO.
+     * Null when the host wires no logger.
+     */
+    WzBehaviorLogFn log_warn;
+    WzBehaviorLogFn log_error;
 } WzBehaviorFrameFacts;
 
 typedef struct WzBehaviorInitFacts
@@ -1524,7 +1541,7 @@ typedef struct WzBehaviorInitFacts
     WzGetBehaviorPositionFn get_world_position;
 
     void* log_user;
-    WzBehaviorLogFn log_info;
+    WzBehaviorLogFn log_info;  /* see log_warn / log_error at the tail (v39) */
 
     void* scene_query_user;
     WzFindBehaviorEntityByNameFn find_entity_by_name;
@@ -1550,6 +1567,14 @@ typedef struct WzBehaviorInitFacts
      * turret) in on_init. Null when unwired.
      */
     WzFindBehaviorDescendantByNameFn find_descendant_by_name;
+
+    /*
+     * Severity above INFO (v39; APPEND-ONLY; share log_user). The init-facts twin of the
+     * frame-facts fields -- and the more important half, since on_init is exactly where
+     * a behavior discovers it cannot do its job at all. Null when unwired.
+     */
+    WzBehaviorLogFn log_warn;
+    WzBehaviorLogFn log_error;
 } WzBehaviorInitFacts;
 
 typedef void (*WzBehaviorFn)(
