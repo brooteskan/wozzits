@@ -8439,6 +8439,16 @@
       "meta": {
         "params": [
           {
+            "name": "color_space",
+            "type": "int",
+            "value": 0
+          },
+          {
+            "name": "height",
+            "type": "int",
+            "value": 512
+          },
+          {
             "name": "name",
             "type": "string",
             "value": "puppet_card"
@@ -8447,16 +8457,6 @@
             "name": "width",
             "type": "int",
             "value": 512
-          },
-          {
-            "name": "height",
-            "type": "int",
-            "value": 512
-          },
-          {
-            "name": "color_space",
-            "type": "int",
-            "value": 0
           }
         ]
       }
@@ -8478,19 +8478,18 @@
       "meta": {
         "params": [
           {
-            "name": "name",
-            "type": "string",
-            "value": "sphere_material"
+            "name": "base_alpha",
+            "type": "float",
+            "value": 1
           },
           {
-            "name": "width",
-            "type": "int",
-            "value": 512
-          },
-          {
-            "name": "height",
-            "type": "int",
-            "value": 512
+            "name": "base_colour",
+            "type": "float3",
+            "value": [
+              0.6200000047683716,
+              0.6200000047683716,
+              0.6499999761581421
+            ]
           },
           {
             "name": "color_space",
@@ -8498,18 +8497,9 @@
             "value": 0
           },
           {
-            "name": "base_colour",
-            "type": "float3",
-            "value": [
-              0.62,
-              0.62,
-              0.65
-            ]
-          },
-          {
-            "name": "base_alpha",
-            "type": "float",
-            "value": 1
+            "name": "height",
+            "type": "int",
+            "value": 512
           },
           {
             "name": "layer0_centre_u",
@@ -8522,14 +8512,19 @@
             "value": 0.5
           },
           {
+            "name": "layer0_half_height",
+            "type": "float",
+            "value": 0.35
+          },
+          {
             "name": "layer0_half_width",
             "type": "float",
             "value": 0.35
           },
           {
-            "name": "layer0_half_height",
+            "name": "layer0_opacity",
             "type": "float",
-            "value": 0.35
+            "value": 1
           },
           {
             "name": "layer0_rotation",
@@ -8537,9 +8532,14 @@
             "value": 0
           },
           {
-            "name": "layer0_opacity",
-            "type": "float",
-            "value": 1
+            "name": "name",
+            "type": "string",
+            "value": "sphere_material"
+          },
+          {
+            "name": "width",
+            "type": "int",
+            "value": 512
           }
         ]
       }
@@ -9584,8 +9584,58 @@
         "node_id": 161,
         "x": 1220.5529456760112,
         "y": 1702.7884455961446
+      },
+      {
+        "node_id": 162,
+        "x": 1214.0110670357685,
+        "y": 2159.095680930397
+      },
+      {
+        "node_id": 163,
+        "x": 1545.0314336098904,
+        "y": 2144.035616283574
+      },
+      {
+        "node_id": 164,
+        "x": 850.0225394440258,
+        "y": 2367.389522573594
+      },
+      {
+        "node_id": 165,
+        "x": 1432.4431391298394,
+        "y": 2300.218564305718
+      },
+      {
+        "node_id": 166,
+        "x": 1477.9222730687788,
+        "y": 2485.834300935729
+      },
+      {
+        "node_id": 167,
+        "x": 1942.8706720525556,
+        "y": 2251.2982107115195
+      },
+      {
+        "node_id": 171,
+        "x": 0,
+        "y": 2009.09090909091
+      },
+      {
+        "node_id": 170,
+        "x": 1715.7024793388423,
+        "y": 2598.760330578515
+      },
+      {
+        "node_id": 168,
+        "x": 2051.7355371900817,
+        "y": 2526.033057851243
+      },
+      {
+        "node_id": 169,
+        "x": 2421.8859217620084,
+        "y": 1916.8836074703022
       }
     ],
-    "zoom": 0.5358972025000003
+    "zoom": 0.25
   }
 }

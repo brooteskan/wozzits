@@ -170,8 +170,8 @@
     {
       "id": "73de47edfb1744c692a296b96253b4a0",
       "name": "Lit Sky",
-      "proxyX": 658.0283061886626,
-      "proxyY": 102.97553872753633,
+      "proxyX": 1001.2620479247935,
+      "proxyY": 1988.202129362705,
       "memberNodeIds": [
         70,
         71,
@@ -189,8 +189,8 @@
     {
       "id": "2a8fad58dbef482dbda0826da884f11d",
       "name": "Haze Sphere Renderable",
-      "proxyX": 1212.553825309612,
-      "proxyY": 107.59526987818106,
+      "proxyX": 2351.151254356651,
+      "proxyY": 1715.2522458445742,
       "memberNodeIds": [
         133,
         134,
