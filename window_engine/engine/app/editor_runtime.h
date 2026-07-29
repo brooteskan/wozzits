@@ -757,6 +757,11 @@ namespace wz::app
         // distinctly from the scene-edit queues + handshakes below.
         bool has_asset_graph_request_ = false;
         bool has_asset_graph_result_ = false;
+        // True while the draft lives ONLY in service_pending_asset_graph_bind's
+        // local: claimed out of pending_ but not yet published to result_. A
+        // stopping engine must not release the bind_asset_graph wait in that
+        // window, or the caller returns holding a moved-from draft.
+        bool asset_graph_draft_in_flight_ = false;
         bool finished_ = false;
         wz::asset::AssetGraphDraft pending_asset_graph_draft_;
         wz::asset::AssetGraphDraft result_asset_graph_draft_;

@@ -8,9 +8,14 @@
 
 #include <gtest/gtest.h>
 
+#include <asset/draft.h>
 #include <engine/app/editor_runtime.h>
 
+#include <atomic>
+#include <functional>
+#include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -26,6 +31,41 @@ namespace
         edit.id = std::move(id);
         edit.transform.translation[0] = tx;
         return edit;
+    }
+
+    using wz::app::AssetGraphCompileResult;
+
+    // A draft that is recognisably non-empty, so "the caller's authoring state
+    // survived" is checkable rather than vacuous.
+    wz::asset::AssetGraphDraft make_draft(size_t node_count)
+    {
+        wz::asset::AssetGraphDraft draft;
+        draft.nodes.resize(node_count);
+        draft.next_node_id =
+            static_cast<wz::asset::AssetGraphDraftNodeId>(node_count + 1);
+        return draft;
+    }
+
+    // Engine-thread side: keep servicing until the binder actually runs, so the
+    // test exercises the claimed-the-draft window rather than racing past it.
+    // `binder` may throw; the throw propagates out of service_* exactly as a
+    // failing compile would, and is swallowed here the way the engine loop's
+    // own catch does.
+    void service_until_bound(
+        EditorRuntimeControl& control,
+        const std::function<
+            AssetGraphCompileResult(wz::asset::AssetGraphDraft&)>& binder,
+        const std::atomic_bool& bound)
+    {
+        while (!bound.load(std::memory_order_acquire)) {
+            try {
+                control.service_pending_asset_graph_bind(binder);
+            }
+            catch (const std::runtime_error&) {
+                break;  // the binder threw — that IS the case under test
+            }
+            std::this_thread::yield();
+        }
     }
 
     // Drain the queue on the engine-thread side, recording what the applier saw.
@@ -284,4 +324,84 @@ TEST(EditorRuntimeControl, RenderableParamEditsCarryValueAndClear)
             again.push_back(edit);
         });
     EXPECT_TRUE(again.empty());
+}
+
+// --- bind_asset_graph teardown windows -------------------------------------
+//
+// bind_asset_graph MOVES the caller's draft across to the engine thread, so a
+// runtime that stops mid-handshake must hand it back. If it does not, the
+// caller is left holding a moved-from draft and the next session save
+// serializes that empty draft over the project's asset graph — the whole
+// authored graph, gone with an OK return. These pin the invariant at each of
+// the three teardown windows: before the claim, after the claim, and on the
+// normal path.
+
+TEST(EditorRuntimeControl, BindReturnsDraftWhenEngineStopsBeforeClaimingIt)
+{
+    EditorRuntimeControl control;
+
+    wz::asset::AssetGraphDraft draft = make_draft(2);
+    AssetGraphCompileResult result;
+    std::thread caller([&] { result = control.bind_asset_graph(draft); });
+
+    // The engine never services the request — it stops with the draft still
+    // parked in the request slot.
+    control.mark_finished();
+    caller.join();
+
+    EXPECT_FALSE(result.ok);
+    EXPECT_EQ(draft.nodes.size(), 2u);
+}
+
+TEST(EditorRuntimeControl, BindReturnsDraftWhenBinderThrows)
+{
+    EditorRuntimeControl control;
+
+    wz::asset::AssetGraphDraft draft = make_draft(3);
+    AssetGraphCompileResult result;
+    std::thread caller([&] { result = control.bind_asset_graph(draft); });
+
+    // The engine claims the draft and then the compile blows up, destroying the
+    // binder's frame — the draft exists nowhere else at that instant.
+    std::atomic_bool bound{ false };
+    service_until_bound(
+        control,
+        [&bound](wz::asset::AssetGraphDraft&) -> AssetGraphCompileResult {
+            bound.store(true, std::memory_order_release);
+            throw std::runtime_error("compile threw");
+        },
+        bound);
+    control.mark_finished();
+    caller.join();
+
+    EXPECT_FALSE(result.ok);
+    EXPECT_EQ(draft.nodes.size(), 3u)
+        << "a torn bind must not consume the caller's authored graph";
+}
+
+TEST(EditorRuntimeControl, BindReturnsBoundDraftOnSuccess)
+{
+    EditorRuntimeControl control;
+
+    wz::asset::AssetGraphDraft draft = make_draft(1);
+    AssetGraphCompileResult result;
+    std::thread caller([&] { result = control.bind_asset_graph(draft); });
+
+    // The binder mutates the draft in place the way a real compile does; the
+    // caller must get THAT draft back, not the one it handed over.
+    std::atomic_bool bound{ false };
+    service_until_bound(
+        control,
+        [&bound](wz::asset::AssetGraphDraft& claimed) {
+            claimed.nodes.resize(4);
+            bound.store(true, std::memory_order_release);
+            AssetGraphCompileResult ok;
+            ok.ok = true;
+            return ok;
+        },
+        bound);
+    caller.join();
+
+    EXPECT_TRUE(result.ok);
+    EXPECT_EQ(draft.nodes.size(), 4u);
 }
