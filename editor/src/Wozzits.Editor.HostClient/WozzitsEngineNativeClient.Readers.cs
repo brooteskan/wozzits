@@ -414,6 +414,10 @@ public sealed partial class WozzitsEngineNativeClient
                 HasFlag(node.Flags, WzEditorSceneNodeFlags.HasEnvironment)
                     ? ReadSceneEnvironment(node.Environment)
                     : null,
+            RenderToTexture =
+                HasFlag(node.Flags, WzEditorSceneNodeFlags.HasRenderToTexture)
+                    ? ReadSceneRenderToTexture(node.RenderToTexture)
+                    : null,
             // Authored render-binding refs (issue #213): the node id or null, so the
             // inspector reveals + pre-selects these sections from persisted state.
             SceneSourceNodeId =
@@ -525,6 +529,20 @@ public sealed partial class WozzitsEngineNativeClient
                 ? environment.EnvironmentAssetNodeId
                 : null,
             Enabled = environment.Enabled != 0,
+        };
+    }
+
+    private static EngineSceneNodeRenderToTexture ReadSceneRenderToTexture(
+        WzEditorSceneRenderToTextureAbi renderToTexture)
+    {
+        return new EngineSceneNodeRenderToTexture
+        {
+            TargetAssetNodeId = renderToTexture.HasTargetRef != 0
+                ? renderToTexture.TargetAssetNodeId
+                : null,
+            IncludeDescendants = renderToTexture.IncludeDescendants != 0,
+            AlsoDrawInScene = renderToTexture.AlsoDrawInScene != 0,
+            Enabled = renderToTexture.Enabled != 0,
         };
     }
 

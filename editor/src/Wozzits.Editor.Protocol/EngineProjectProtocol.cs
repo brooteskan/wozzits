@@ -457,6 +457,11 @@ public sealed record EngineSceneNode
     // reference + enabled on select + after reload.
     public EngineSceneNodeEnvironment? Environment { get; init; }
 
+    // The node's RenderToTexture component (which Texture asset receives its
+    // draws + the composition switches), or null when the node has none. The
+    // inspector restores these on select + after reload.
+    public EngineSceneNodeRenderToTexture? RenderToTexture { get; init; }
+
     // Custom-renderable ingredients (issue #229/#230), empty when the node has
     // none: the authored semantic bindings + per-instance constant overrides.
     // The inspector pre-fills its binding rows + constant editors from these.
@@ -577,6 +582,20 @@ public sealed record EngineSceneNodeAtmosphere
 public sealed record EngineSceneNodeEnvironment
 {
     public ulong? EnvironmentAssetNodeId { get; init; }
+
+    public bool Enabled { get; init; } = true;
+}
+
+// A node's authored RenderToTexture component (issue #287): which Texture asset
+// receives the node's draws, plus the composition switches. Per-node, so any
+// number of nodes may each drive their own target.
+public sealed record EngineSceneNodeRenderToTexture
+{
+    public ulong? TargetAssetNodeId { get; init; }
+
+    public bool IncludeDescendants { get; init; }
+
+    public bool AlsoDrawInScene { get; init; }
 
     public bool Enabled { get; init; } = true;
 }

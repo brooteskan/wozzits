@@ -8,7 +8,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 33;
+    internal const uint AbiVersion = 34;
 
     private static int _resolverRegistered;
 
@@ -1313,6 +1313,23 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneEnvironmentAbi.Enabled),
             9);
 
+        AssertSize<WzEditorSceneRenderToTextureAbi>(16);
+        AssertOffset<WzEditorSceneRenderToTextureAbi>(
+            nameof(WzEditorSceneRenderToTextureAbi.TargetAssetNodeId),
+            0);
+        AssertOffset<WzEditorSceneRenderToTextureAbi>(
+            nameof(WzEditorSceneRenderToTextureAbi.HasTargetRef),
+            8);
+        AssertOffset<WzEditorSceneRenderToTextureAbi>(
+            nameof(WzEditorSceneRenderToTextureAbi.IncludeDescendants),
+            9);
+        AssertOffset<WzEditorSceneRenderToTextureAbi>(
+            nameof(WzEditorSceneRenderToTextureAbi.AlsoDrawInScene),
+            10);
+        AssertOffset<WzEditorSceneRenderToTextureAbi>(
+            nameof(WzEditorSceneRenderToTextureAbi.Enabled),
+            11);
+
         AssertSize<WzEditorSceneAudioSourceAbi>(16);
         AssertOffset<WzEditorSceneAudioSourceAbi>(
             nameof(WzEditorSceneAudioSourceAbi.AudioRenderableNodeId),
@@ -1346,7 +1363,7 @@ internal static class WozzitsEngineAbiLayout
             nameof(WzEditorSceneRenderableConstantAbi.Value0),
             16);
 
-        AssertSize<WzEditorSceneNodeAbi>(768);
+        AssertSize<WzEditorSceneNodeAbi>(784);
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Id),
             0);
@@ -1422,6 +1439,9 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorSceneNodeAbi>(
             nameof(WzEditorSceneNodeAbi.Environment),
             752);
+        AssertOffset<WzEditorSceneNodeAbi>(
+            nameof(WzEditorSceneNodeAbi.RenderToTexture),
+            768);
 
         AssertSize<WzEditorSceneSnapshotAbi>(72);
         AssertOffset<WzEditorSceneSnapshotAbi>(
@@ -1897,6 +1917,10 @@ internal readonly struct WzEditorSceneNodeAbi
     // FrameEnvironment component field values, valid iff HasEnvironment. Appended
     // last to mirror the native struct (the added struct is the ABI v33 bump).
     public readonly WzEditorSceneEnvironmentAbi Environment;
+    // RenderToTexture component field values, valid iff HasRenderToTexture.
+    // Appended last to mirror the native struct (the added struct is the ABI v34
+    // bump). Omitting it short-strides every node read past the first.
+    public readonly WzEditorSceneRenderToTextureAbi RenderToTexture;
 }
 
 // One authored semantic resource binding of a node's custom-renderable
@@ -1960,6 +1984,21 @@ internal readonly struct WzEditorSceneEnvironmentAbi
     public readonly byte Reserved0;
     public readonly byte Reserved1;
     public readonly uint Reserved2;
+}
+
+// Authored RenderToTexture-component field values surfaced read-back (issue
+// #287). Mirrors WzEditorSceneRenderToTexture. Present iff HasRenderToTexture;
+// TargetAssetNodeId is valid iff HasTargetRef. Unlike Atmosphere/Environment
+// this is per-node — any number of nodes may each drive their own target.
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct WzEditorSceneRenderToTextureAbi
+{
+    public readonly ulong TargetAssetNodeId;
+    public readonly byte HasTargetRef;
+    public readonly byte IncludeDescendants;
+    public readonly byte AlsoDrawInScene;
+    public readonly byte Enabled;
+    public readonly uint Reserved0;
 }
 
 // Authored Collision-component field values surfaced read-back (read-back gap
@@ -2235,6 +2274,10 @@ internal static class WzEditorSceneNodeFlags
     // FrameEnvironment component present: the node's Environment struct carries the
     // authored asset-graph ref + enabled (read-back).
     public const uint HasEnvironment = 1u << 16;
+    // RenderToTexture component present (issue #287): the node's RenderToTexture
+    // struct carries the authored Texture ref + composition switches + enabled
+    // (read-back).
+    public const uint HasRenderToTexture = 1u << 17;
 }
 
 internal static class WzEditorSceneCameraFlags
