@@ -94,6 +94,29 @@ namespace wz::engine::assets
         bool enabled = true;
     };
 
+    // The frame's global environment, as the runtime sees it -- the successor
+    // to AtmosphereComponent and the same shape for the same reason: only the
+    // resolved key + the switch, because the EnvironmentData lives in the asset
+    // library's table and is looked up each frame, so editing the asset takes
+    // effect without rebuilding the scene.
+    struct FrameEnvironmentComponent
+    {
+        wz::asset::AssetKey environment_asset{};
+        bool enabled = true;
+    };
+
+    // A node whose draws go into a render-target texture instead of (or, opt-in,
+    // as well as) the main pass (#287). Carries the resolved target key and the
+    // authored switches; a target that does not resolve draws nothing and warns,
+    // it never falls back to drawing somewhere else.
+    struct RenderToTextureComponent
+    {
+        wz::asset::AssetKey target{};
+        bool include_descendants = true;
+        bool also_draw_in_scene = false;
+        bool enabled = true;
+    };
+
     struct AudioListenerComponent
     {
         bool active = true;
@@ -469,6 +492,15 @@ namespace wz::engine::assets
         // blend; kept as a table anyway (not a scalar) so the duplicate is
         // VISIBLE to whoever reports it instead of being silently dropped here.
         std::vector<SceneComponentRecord<AtmosphereComponent>> atmospheres;
+        // Frame-global like atmospheres, and a table for the same reason: the
+        // frame uses the FIRST enabled one, so a second is an authoring error
+        // that stays VISIBLE here instead of being silently dropped.
+        std::vector<SceneComponentRecord<FrameEnvironmentComponent>>
+            frame_environments;
+        // Render-to-texture sources. Not frame-global -- any number of nodes may
+        // each drive their own target -- so this is a plain per-node table.
+        std::vector<SceneComponentRecord<RenderToTextureComponent>>
+            render_to_texture_sources;
         std::vector<SceneComponentRecord<AudioListenerComponent>> audio_listeners;
         std::vector<SceneComponentRecord<AudioSourceComponent>> audio_sources;
         std::vector<SceneComponentRecord<EventListenerComponent>> event_listeners;

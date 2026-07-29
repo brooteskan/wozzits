@@ -82,6 +82,9 @@ TEST(SceneECSBoundary, EmptySceneSummaryIsZeroed)
     EXPECT_EQ(summary.renderables, 0u);
     EXPECT_EQ(summary.cameras, 0u);
     EXPECT_EQ(summary.lights, 0u);
+    EXPECT_EQ(summary.atmospheres, 0u);
+    EXPECT_EQ(summary.frame_environments, 0u);
+    EXPECT_EQ(summary.render_to_texture_sources, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
@@ -109,7 +112,10 @@ TEST(SceneECSBoundary, EmptyRuntimeSummaryIsZeroed)
     EXPECT_EQ(summary.lights, 0u);
     EXPECT_EQ(summary.ambient_lighting, 0u);
     EXPECT_EQ(summary.hdri_environments, 0u);
+    EXPECT_EQ(summary.atmospheres, 0u);
+    EXPECT_EQ(summary.frame_environments, 0u);
     EXPECT_EQ(summary.sky_draws, 0u);
+    EXPECT_EQ(summary.render_to_texture_sources, 0u);
     EXPECT_EQ(summary.input_receivers, 0u);
     EXPECT_EQ(summary.flying_camera_controllers, 0u);
     EXPECT_EQ(summary.actor_movement_controllers, 0u);
@@ -1514,3 +1520,173 @@ TEST(SceneECSBoundary, FingerprintIgnoresRuntimeOwnerIdentity)
     EXPECT_EQ(before, after);
 }
 
+
+// The FrameEnvironment component crosses all five lockstep boundary structures:
+// the Kind vocabulary, the domain classification, the authored summary, the
+// runtime-relevance predicate, and the runtime instance table + summary. It is
+// atmosphere's successor, so a node carrying ONLY one must read exactly as
+// completely as a node carrying only an atmosphere.
+TEST(SceneECSBoundary, FrameEnvironmentOnlyNodeCrossesTheBoundary)
+{
+    using namespace wz::engine::assets;
+    using Kind = wz::scene::SceneAuthoredComponentKind;
+
+    SceneAssetData scene{};
+    scene.name = "frame_environment_only";
+
+    const wz::asset::AssetKey environment_key{
+        .content_hash = { 0xF00DULL, 0xCAFEULL },
+    };
+
+    SceneNodeAsset node = make_scene_node("weather");
+    node.environment = SceneEnvironmentAsset{
+        .environment_asset = environment_key,
+        .environment_asset_node_id = 31u,
+        .enabled = true,
+    };
+
+    EXPECT_TRUE(has_runtime_relevant_components(node));
+
+    const auto kinds = authored_components_for_node(node);
+    EXPECT_EQ(std::count(kinds.begin(), kinds.end(), Kind::FrameEnvironment), 1);
+    // The successor does not masquerade as the component it replaces.
+    EXPECT_EQ(std::count(kinds.begin(), kinds.end(), Kind::Atmosphere), 0);
+    EXPECT_TRUE(wz::scene::is_exportable_component(Kind::FrameEnvironment));
+    EXPECT_TRUE(
+        wz::scene::is_runtime_relevant_component(Kind::FrameEnvironment));
+
+    scene.nodes.push_back(std::move(node));
+
+    const auto authored = summarize_authored_scene_components(scene);
+    EXPECT_EQ(authored.frame_environments, 1u);
+    EXPECT_EQ(authored.atmospheres, 0u);
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    ASSERT_EQ(result.instance.frame_environments.size(), 1u);
+    const auto& record = result.instance.frame_environments[0];
+    EXPECT_EQ(
+        record.node,
+        result.instance.authored_to_runtime.at("weather"));
+    EXPECT_TRUE(record.component.environment_asset == environment_key);
+    EXPECT_TRUE(record.component.enabled);
+
+    const auto runtime = summarize_scene_instance_components(result.instance);
+    EXPECT_EQ(runtime.frame_environments, 1u);
+    EXPECT_EQ(runtime.atmospheres, 0u);
+}
+
+// A second frame environment is an authoring error, not a blend. The table
+// exists so the duplicate stays VISIBLE to whoever reports it rather than being
+// silently dropped at instantiate -- same contract as atmospheres.
+TEST(SceneECSBoundary, DuplicateFrameEnvironmentsStayVisibleInTheInstance)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "frame_environment_duplicate";
+
+    for (const char* id : { "first", "second" }) {
+        SceneNodeAsset node = make_scene_node(id);
+        node.environment = SceneEnvironmentAsset{ .enabled = true };
+        scene.nodes.push_back(std::move(node));
+    }
+
+    EXPECT_EQ(
+        summarize_authored_scene_components(scene).frame_environments, 2u);
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    EXPECT_EQ(result.instance.frame_environments.size(), 2u);
+    EXPECT_EQ(
+        summarize_scene_instance_components(result.instance).frame_environments,
+        2u);
+}
+
+// Render-to-texture is draw-producing (Exportable), and unlike the frame
+// environment it is per-node: any number of nodes may each drive their own
+// target, so the instance table is a plain per-node table.
+TEST(SceneECSBoundary, RenderToTextureOnlyNodeCrossesTheBoundary)
+{
+    using namespace wz::engine::assets;
+    using Kind = wz::scene::SceneAuthoredComponentKind;
+
+    SceneAssetData scene{};
+    scene.name = "render_to_texture_only";
+
+    const wz::asset::AssetKey target_key{
+        .content_hash = { 0x77ULL, 0x88ULL },
+    };
+
+    SceneNodeAsset node = make_scene_node("card_art");
+    node.render_to_texture = SceneRenderToTextureAsset{
+        .target_node_id = 42u,
+        .target = target_key,
+        .include_descendants = false,
+        .also_draw_in_scene = true,
+        .enabled = true,
+    };
+
+    EXPECT_TRUE(has_runtime_relevant_components(node));
+
+    const auto kinds = authored_components_for_node(node);
+    EXPECT_EQ(std::count(kinds.begin(), kinds.end(), Kind::RenderToTexture), 1);
+    // Redirecting a node's draws is not the same as authoring a renderable.
+    EXPECT_EQ(std::count(kinds.begin(), kinds.end(), Kind::Renderable), 0);
+    EXPECT_TRUE(wz::scene::is_exportable_component(Kind::RenderToTexture));
+    EXPECT_TRUE(
+        wz::scene::is_runtime_relevant_component(Kind::RenderToTexture));
+
+    scene.nodes.push_back(std::move(node));
+
+    EXPECT_EQ(
+        summarize_authored_scene_components(scene).render_to_texture_sources,
+        1u);
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+
+    ASSERT_EQ(result.instance.render_to_texture_sources.size(), 1u);
+    const auto& record = result.instance.render_to_texture_sources[0];
+    EXPECT_EQ(
+        record.node,
+        result.instance.authored_to_runtime.at("card_art"));
+    EXPECT_TRUE(record.component.target == target_key);
+    EXPECT_FALSE(record.component.include_descendants);
+    EXPECT_TRUE(record.component.also_draw_in_scene);
+    EXPECT_TRUE(record.component.enabled);
+
+    EXPECT_EQ(
+        summarize_scene_instance_components(result.instance)
+            .render_to_texture_sources,
+        1u);
+}
+
+// A DISABLED component is still authored, so it still crosses the boundary --
+// the switch is the runtime's business, not the vocabulary's. Mirrors how
+// atmosphere's enabled flag is carried into the instance rather than filtering
+// the record out.
+TEST(SceneECSBoundary, DisabledFrameComponentsStillReportAndInstantiate)
+{
+    using namespace wz::engine::assets;
+
+    SceneAssetData scene{};
+    scene.name = "disabled_frame_components";
+
+    SceneNodeAsset node = make_scene_node("parked");
+    node.environment = SceneEnvironmentAsset{ .enabled = false };
+    node.render_to_texture = SceneRenderToTextureAsset{ .enabled = false };
+    scene.nodes.push_back(std::move(node));
+
+    const auto authored = summarize_authored_scene_components(scene);
+    EXPECT_EQ(authored.frame_environments, 1u);
+    EXPECT_EQ(authored.render_to_texture_sources, 1u);
+
+    auto result = instantiate_scene(scene);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    ASSERT_EQ(result.instance.frame_environments.size(), 1u);
+    ASSERT_EQ(result.instance.render_to_texture_sources.size(), 1u);
+    EXPECT_FALSE(result.instance.frame_environments[0].component.enabled);
+    EXPECT_FALSE(result.instance.render_to_texture_sources[0].component.enabled);
+}

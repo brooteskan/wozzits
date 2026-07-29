@@ -69,6 +69,12 @@ namespace wz::scene
         // per-node: its runtime projection is the single view-frequency
         // constant block, not anything the node itself draws.
         Atmosphere,
+        // The frame's global environment: the single CONNECTED producer of
+        // atmosphere/ambient/HDRI/directional light, and the successor to the
+        // standalone Atmosphere above. Frame-global for the same reason and in
+        // the same way — a second node carrying one is an authoring error, not
+        // a blend — so it is classified alongside it.
+        FrameEnvironment,
         SkyVisual,
         SkySurface,
         InputReceiver,
@@ -103,6 +109,11 @@ namespace wz::scene
         // projection is the grafted child entities (folded into runtime_entities,
         // like SkyVisual → sky_draws), so it needs no dedicated runtime field.
         SceneSource,
+        // A node whose draws are redirected into a render-target texture
+        // (#287): the subtree renders into the target instead of (or, opt-in,
+        // as well as) the main pass. Draw-producing like Renderable/SkyVisual,
+        // so Exportable rather than RuntimeRelevant.
+        RenderToTexture,
     };
 
     constexpr SceneComponentDomain scene_component_domain(
@@ -121,8 +132,10 @@ namespace wz::scene
         case SceneAuthoredComponentKind::AmbientLighting:
         case SceneAuthoredComponentKind::HDRIEnvironment:
         case SceneAuthoredComponentKind::Atmosphere:
+        case SceneAuthoredComponentKind::FrameEnvironment:
         case SceneAuthoredComponentKind::SkyVisual:
         case SceneAuthoredComponentKind::SkySurface:
+        case SceneAuthoredComponentKind::RenderToTexture:
         case SceneAuthoredComponentKind::AuxiliaryVisual:
         case SceneAuthoredComponentKind::ComputeKernel:
         case SceneAuthoredComponentKind::RenderShader:
@@ -242,8 +255,10 @@ namespace wz::scene
         uint32_t ambient_lighting = 0;
         uint32_t hdri_environments = 0;
         uint32_t atmospheres = 0;
+        uint32_t frame_environments = 0;
         uint32_t sky_visuals = 0;
         uint32_t sky_surfaces = 0;
+        uint32_t render_to_texture_sources = 0;
         uint32_t input_receivers = 0;
         uint32_t flying_camera_controllers = 0;
         uint32_t actor_movement_controllers = 0;
@@ -277,7 +292,9 @@ namespace wz::scene
         uint32_t ambient_lighting = 0;
         uint32_t hdri_environments = 0;
         uint32_t atmospheres = 0;
+        uint32_t frame_environments = 0;
         uint32_t sky_draws = 0;
+        uint32_t render_to_texture_sources = 0;
         uint32_t input_receivers = 0;
         uint32_t flying_camera_controllers = 0;
         uint32_t actor_movement_controllers = 0;

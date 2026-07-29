@@ -2031,11 +2031,19 @@ namespace wz::engine::assets
         if (node.atmosphere) {
             out.push_back(Kind::Atmosphere);
         }
+        // The frame environment is atmosphere's successor, not a variant of it:
+        // a node may carry either, and each reports its own kind.
+        if (node.environment) {
+            out.push_back(Kind::FrameEnvironment);
+        }
         if (node.sky_visual) {
             out.push_back(Kind::SkyVisual);
         }
         if (node.sky_surface) {
             out.push_back(Kind::SkySurface);
+        }
+        if (node.render_to_texture) {
+            out.push_back(Kind::RenderToTexture);
         }
         if (node.input_receiver) {
             out.push_back(Kind::InputReceiver);
@@ -3277,8 +3285,10 @@ namespace wz::engine::assets
             || node.ambient_lighting.has_value()
             || node.hdri_environment.has_value()
             || node.atmosphere.has_value()
+            || node.environment.has_value()
             || node.sky_visual.has_value()
             || node.sky_surface.has_value()
+            || node.render_to_texture.has_value()
             || node.input_receiver.has_value()
             || node.flying_camera_controller.has_value()
             || node.actor_movement_controller.has_value()
@@ -3467,11 +3477,17 @@ namespace wz::engine::assets
             if (node.atmosphere) {
                 ++out.atmospheres;
             }
+            if (node.environment) {
+                ++out.frame_environments;
+            }
             if (node.sky_visual) {
                 ++out.sky_visuals;
             }
             if (node.sky_surface) {
                 ++out.sky_surfaces;
+            }
+            if (node.render_to_texture) {
+                ++out.render_to_texture_sources;
             }
             if (node.input_receiver) {
                 ++out.input_receivers;

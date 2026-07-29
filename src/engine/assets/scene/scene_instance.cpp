@@ -436,7 +436,11 @@ namespace wz::engine::assets
             .hdri_environments = instance.hdri_environments,
             .atmospheres = static_cast<uint32_t>(
                 instance.atmospheres.size()),
+            .frame_environments = static_cast<uint32_t>(
+                instance.frame_environments.size()),
             .sky_draws = static_cast<uint32_t>(instance.sky_draws.size()),
+            .render_to_texture_sources = static_cast<uint32_t>(
+                instance.render_to_texture_sources.size()),
             .input_receivers = static_cast<uint32_t>(
                 instance.input_receivers.size()),
             .flying_camera_controllers = static_cast<uint32_t>(
@@ -800,6 +804,30 @@ namespace wz::engine::assets
                     .component = AtmosphereComponent{
                         .atmosphere_asset = atmosphere.atmosphere_asset,
                         .enabled = atmosphere.enabled,
+                    },
+                });
+            }
+
+            if (node.environment) {
+                const auto& environment = *node.environment;
+                inst.frame_environments.push_back({
+                    .node = h,
+                    .component = FrameEnvironmentComponent{
+                        .environment_asset = environment.environment_asset,
+                        .enabled = environment.enabled,
+                    },
+                });
+            }
+
+            if (node.render_to_texture) {
+                const auto& rtt = *node.render_to_texture;
+                inst.render_to_texture_sources.push_back({
+                    .node = h,
+                    .component = RenderToTextureComponent{
+                        .target = rtt.target,
+                        .include_descendants = rtt.include_descendants,
+                        .also_draw_in_scene = rtt.also_draw_in_scene,
+                        .enabled = rtt.enabled,
                     },
                 });
             }
