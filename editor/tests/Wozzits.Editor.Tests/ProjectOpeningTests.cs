@@ -4539,10 +4539,19 @@ public sealed partial class ProjectOpeningTests
 
         public int SaveSceneCount { get; private set; }
 
+        // Mirrors the real session's contract: the scene lives in the engine, so
+        // with no viewport there is nothing to persist and the save FAILS rather
+        // than reporting a phantom success.
         public EngineMutationResponse SaveScene()
         {
             SaveSceneCount++;
-            return new EngineMutationResponse { Ok = true };
+            return RuntimeRunning
+                ? new EngineMutationResponse { Ok = true }
+                : new EngineMutationResponse
+                {
+                    Ok = false,
+                    Error = "No engine viewport is running - scene changes were not saved.",
+                };
         }
 
         public List<(string RootNodeId, string OutPath)> SubtreeExports { get; } = [];

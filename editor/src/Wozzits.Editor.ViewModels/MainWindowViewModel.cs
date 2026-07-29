@@ -272,7 +272,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void SaveAll()
     {
         _editorSession?.SaveAssetGraph();
-        _editorSession?.SaveScene();
+        // Save All is an explicit user action, so a scene that did not persist
+        // has to say so — silence here reads as "saved" (typically: the viewport
+        // was closed, so the engine holds no scene to write).
+        if (_editorSession?.SaveScene() is { Ok: false } sceneSave)
+        {
+            AppendEditorLog($"[editor] Scene NOT saved: {sceneSave.Error}");
+        }
         SaveSubGraphSidecar();
         SaveOpenStatecharts();
         SaveOpenMinds();

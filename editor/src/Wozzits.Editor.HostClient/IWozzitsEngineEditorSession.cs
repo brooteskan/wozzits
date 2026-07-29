@@ -123,8 +123,10 @@ public interface IWozzitsEngineEditorSession
     // viewport is running.
     EngineMutationResponse RemoveNode(string nodeId);
 
-    // Persist the running scene to its source file (no-op when no viewport is
-    // running). Also happens automatically when the runtime exits.
+    // Persist the running scene to its source file. FAILS (Ok = false) when no
+    // viewport is running: the scene lives in the engine, so there is nothing to
+    // persist and callers must not report it as saved. Also happens
+    // automatically when the runtime exits.
     EngineMutationResponse SaveScene();
 
     // Carve the scene node `rootNodeId` (its authored string id) + its descendants

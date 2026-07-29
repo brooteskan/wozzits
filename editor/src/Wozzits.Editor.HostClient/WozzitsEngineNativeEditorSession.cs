@@ -333,7 +333,15 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)
         {
-            return new EngineMutationResponse { Ok = true };
+            // The scene lives in the running engine, so with no viewport there is
+            // nothing to serialize and the caller's scene edits are NOT on disk.
+            // Reporting success here reads to the UI as "saved" and loses the
+            // session's scene work with no signal at all.
+            return new EngineMutationResponse
+            {
+                Ok = false,
+                Error = "No engine viewport is running - scene changes were not saved.",
+            };
         }
         return _client.SaveScene(runtime.Handle);
     }
