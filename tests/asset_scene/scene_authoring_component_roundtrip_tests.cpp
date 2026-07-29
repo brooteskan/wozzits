@@ -2621,3 +2621,114 @@ TEST(SceneAssetModule, RenderToTextureComponentRoundTripsThroughSceneJSON)
         wz::json::serialize_json(export_scene_to_json_document(*data2));
     EXPECT_EQ(reparsed_export, exported);
 }
+
+// EventTrigger was the last authored component with no dedicated roundtrip test
+// -- it had parse, export, summary and materialize coverage, but was only ever
+// exercised indirectly, so nothing would have caught the export branch going
+// missing. That is the "my component disappeared" failure: the editor rewrites
+// scene.json through this exporter on every save, so an unexported component is
+// silently deleted from hand-authored intent on the next save.
+//
+// Its one field carries a DEFAULT ("gpu.compute.request"), which is the trap
+// worth pinning: a reader that dropped the authored string would still produce a
+// valid-looking trigger pointed at the wrong event. So the authored node uses a
+// non-default channel and the second node relies on the default, and both must
+// come back exactly.
+TEST(SceneAssetModule, EventTriggerComponentRoundTripsThroughSceneJSON)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_event_trigger_component_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "event_trigger_component_scene",
+  "nodes": [
+    {
+      "id": "authored_channel",
+      "event_trigger": { "event": "sim.tick.request" }
+    },
+    {
+      "id": "defaults_only",
+      "event_trigger": {}
+    }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "event_trigger_component.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "event_trigger_component",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 2u);
+
+    const auto& authored = scene_data->nodes[0];
+    ASSERT_TRUE(authored.event_trigger.has_value());
+    EXPECT_EQ(authored.event_trigger->event, "sim.tick.request");
+
+    // An empty object still MAKES the component, at the declared default -- the
+    // presence of the block is the authoring intent, not the field inside it.
+    const auto& defaults = scene_data->nodes[1];
+    ASSERT_TRUE(defaults.event_trigger.has_value());
+    EXPECT_EQ(defaults.event_trigger->event, "gpu.compute.request");
+
+    // It reaches the boundary vocabulary as an EditorAuthoring component.
+    const auto kinds = authored_components_for_node(authored);
+    EXPECT_EQ(std::count(
+        kinds.begin(),
+        kinds.end(),
+        wz::scene::SceneAuthoredComponentKind::EventTrigger), 1);
+    EXPECT_EQ(
+        summarize_authored_scene_components(*scene_data).event_triggers, 2u);
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(*scene_data));
+    EXPECT_NE(exported.find("\"event_trigger\""), std::string::npos);
+    EXPECT_NE(exported.find("sim.tick.request"), std::string::npos);
+
+    // Re-reading the export must produce the identical scene -- the round trip
+    // an editor save/reload cycle actually performs.
+    auto rel_path2 = write_scene_json(
+        root, "event_trigger_component_reexport.scene.json", exported);
+    const auto reparsed =
+        assets.scenes().create_scene_from_json({
+            .name = "event_trigger_component_reexport",
+            .path = rel_path2,
+        });
+    ASSERT_TRUE(reparsed.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+    const auto* data2 = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(reparsed));
+    ASSERT_NE(data2, nullptr);
+    ASSERT_EQ(data2->nodes.size(), 2u);
+    ASSERT_TRUE(data2->nodes[0].event_trigger.has_value());
+    EXPECT_EQ(data2->nodes[0].event_trigger->event, "sim.tick.request");
+    ASSERT_TRUE(data2->nodes[1].event_trigger.has_value());
+    EXPECT_EQ(data2->nodes[1].event_trigger->event, "gpu.compute.request");
+
+    const std::string reparsed_export =
+        wz::json::serialize_json(export_scene_to_json_document(*data2));
+    EXPECT_EQ(reparsed_export, exported);
+}
