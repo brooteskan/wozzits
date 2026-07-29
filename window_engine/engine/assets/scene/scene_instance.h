@@ -471,6 +471,22 @@ namespace wz::engine::assets
         // is the first compiler from authored scene language into this shape;
         // scene-render then compiles the graph, renderables, and lights into
         // render-oriented storage.
+        //
+        // A SNAPSHOT, NOT THE RENDER PATH'S SOURCE OF TRUTH. Component records
+        // here carry the resolved asset keys as they stood at instantiate time,
+        // and several document-level passes re-derive those keys WITHOUT
+        // rebuilding the instance -- bridge_scene_*_keys and
+        // assemble_render_bindings both run on a graph (re)bind that does not
+        // re-materialize. The renderer therefore reads the authored document
+        // fresh each frame BY DESIGN; it is not an oversight to be tidied up
+        // into a read from these tables, and doing so draws stale after a graph
+        // commit. What these tables are for is the runtime systems that tick
+        // against the instance's entity ids (motion, collision, audio,
+        // behaviors), plus boundary accounting via
+        // summarize_scene_instance_components. Where a live record must track a
+        // document edit without a full rebuild, the established pattern is an
+        // explicit in-place patch at the edit site -- see the Motion terrain
+        // fields (#221) -- not a general assumption that the two agree.
         wz::scene::SceneStorage storage{};
 
         std::vector<wz::scene::RenderableDescriptor> renderables;

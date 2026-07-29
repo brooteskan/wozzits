@@ -5409,23 +5409,51 @@ namespace wz::engine::assets
         return bridged;
     }
 
+    namespace
+    {
+        // The frame-global source rule, shared by the atmosphere and its
+        // successor the frame environment: the FIRST enabled node wins, and a
+        // second is REPORTED as a duplicate rather than blended -- an authoring
+        // error the caller names, not something resolved silently here. Both
+        // components are frame-global in the same way, so this is one rule with
+        // two spellings; it was copy-pasted per component before.
+        //
+        // The same contract is why SceneInstance keeps these as tables rather
+        // than scalars: the duplicate stays visible on both sides.
+        template <class EnabledFn>
+        void select_frame_global_source(
+            std::span<const SceneNodeAsset> nodes,
+            EnabledFn enabled,
+            const SceneNodeAsset*& source,
+            const SceneNodeAsset*& duplicate)
+        {
+            for (const SceneNodeAsset& node : nodes) {
+                if (!enabled(node)) {
+                    continue;
+                }
+                if (!source) {
+                    source = &node;
+                    continue;
+                }
+                duplicate = &node;
+                break;
+            }
+        }
+    }
+
     SceneFrameAtmosphere resolve_scene_frame_atmosphere(
         std::span<const SceneNodeAsset> nodes,
         const EngineAssetLibrary& assets)
     {
         SceneFrameAtmosphere out{};
 
-        for (const SceneNodeAsset& node : nodes) {
-            if (!node.atmosphere || !node.atmosphere->enabled) {
-                continue;
-            }
-            if (!out.source) {
-                out.source = &node;
-                continue;
-            }
-            out.duplicate = &node;
-            break;
-        }
+        select_frame_global_source(
+            nodes,
+            [](const SceneNodeAsset& node) {
+                return node.atmosphere && node.atmosphere->enabled;
+            },
+            out.source,
+            out.duplicate);
 
         if (!out.source) {
             return out;
@@ -5450,17 +5478,13 @@ namespace wz::engine::assets
     {
         SceneFrameEnvironment out{};
 
-        for (const SceneNodeAsset& node : nodes) {
-            if (!node.environment || !node.environment->enabled) {
-                continue;
-            }
-            if (!out.source) {
-                out.source = &node;
-                continue;
-            }
-            out.duplicate = &node;
-            break;
-        }
+        select_frame_global_source(
+            nodes,
+            [](const SceneNodeAsset& node) {
+                return node.environment && node.environment->enabled;
+            },
+            out.source,
+            out.duplicate);
 
         if (!out.source) {
             return out;
