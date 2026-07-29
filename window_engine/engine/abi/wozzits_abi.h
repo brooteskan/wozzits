@@ -905,11 +905,16 @@ static_assert(offsetof(WzEditorSceneAtmosphere, has_atmosphere_ref) == 8);
 static_assert(offsetof(WzEditorSceneAtmosphere, enabled) == 9);
 
 static_assert(sizeof(WzEditorSceneEnvironment) == 16);
-
-static_assert(sizeof(WzEditorSceneRenderToTexture) == 16);
 static_assert(offsetof(WzEditorSceneEnvironment, environment_asset_node_id) == 0);
 static_assert(offsetof(WzEditorSceneEnvironment, has_environment_ref) == 8);
 static_assert(offsetof(WzEditorSceneEnvironment, enabled) == 9);
+
+static_assert(sizeof(WzEditorSceneRenderToTexture) == 16);
+static_assert(offsetof(WzEditorSceneRenderToTexture, target_asset_node_id) == 0);
+static_assert(offsetof(WzEditorSceneRenderToTexture, has_target_ref) == 8);
+static_assert(offsetof(WzEditorSceneRenderToTexture, include_descendants) == 9);
+static_assert(offsetof(WzEditorSceneRenderToTexture, also_draw_in_scene) == 10);
+static_assert(offsetof(WzEditorSceneRenderToTexture, enabled) == 11);
 
 static_assert(sizeof(WzEditorSceneComponent) == 32);
 static_assert(offsetof(WzEditorSceneComponent, kind) == 0);
