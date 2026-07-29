@@ -1690,3 +1690,144 @@ TEST(SceneECSBoundary, DisabledFrameComponentsStillReportAndInstantiate)
     EXPECT_FALSE(result.instance.frame_environments[0].component.enabled);
     EXPECT_FALSE(result.instance.render_to_texture_sources[0].component.enabled);
 }
+
+// ─── Boundary completeness tripwire ──────────────────────────────────────────
+// kAuthoredComponentBindings static_asserts that every SceneAuthoredComponentKind
+// is bound, which closes the enum -> table direction. This closes the other one:
+// FIELD -> table. C++20 cannot enumerate members, so instead we pin the aggregate
+// arity of SceneNodeAsset. Adding a field breaks this assert, and the message
+// sends you to the table.
+//
+// It lives in the tests rather than the header on purpose: the probe is template
+// recursion proportional to the field count, and scene_asset_data.h is included
+// very widely. Governance builds the tests, so the guard still fires in CI.
+namespace {
+    struct AnyFieldInit
+    {
+        // Declared, never defined -- only ever used unevaluated.
+        template <class T>
+        constexpr operator T() const;
+    };
+
+    template <class T, class... Probes>
+    consteval std::size_t aggregate_field_count()
+    {
+        if constexpr (requires { T{ Probes{}..., AnyFieldInit{} }; }) {
+            return aggregate_field_count<T, Probes..., AnyFieldInit>();
+        } else {
+            return sizeof...(Probes);
+        }
+    }
+}
+
+// If this fires you added (or removed) a field on SceneNodeAsset. Decide which
+// it is, then update the count:
+//
+//   * a new COMPONENT -> give it a SceneAuthoredComponentKind, a domain case, a
+//     summary counter and an entry in kAuthoredComponentBindings. The five
+//     boundary structures are derived from that entry, so that is all it takes.
+//   * a new non-component field (a resolved-key cache, a lookup key, import
+//     provenance) -> it belongs to no kind. Add it to the accepted list below so
+//     the next reader knows it was a decision, not an oversight.
+//
+// Accepted non-component fields, as of the 2026-07-29 audit: the ingredient and
+// resolved-key fields that fold into Kind::Renderable (geometry_glb_node_id,
+// render_program_node_id, render_program_asset), mesh_index (a lookup key into
+// SceneAssetData::glb_meshes, not a component), imported_node (GLB import
+// provenance) and mesh_processing (carried as an authoring recipe instead).
+static_assert(
+    aggregate_field_count<wz::engine::assets::SceneNodeAsset>() == 71,
+    "SceneNodeAsset gained or lost a field. If it is a component, add it to "
+    "kAuthoredComponentBindings in scene_asset_data.h; if it is not, record it "
+    "in the accepted-exceptions comment above. Then update this count.");
+
+// The editor's add/remove token vocabulary and the ECS boundary vocabulary are
+// now the same table, so a token can no longer exist without a Kind (as
+// "environment" did) nor a Kind without a token being a silent omission (as
+// render_to_texture still is -- deliberately, it has no editor verb yet).
+TEST(SceneECSBoundary, EditorTokensAreBoundToKinds)
+{
+    using namespace wz::engine::assets;
+
+    for (const AuthoredComponentBinding& binding : kAuthoredComponentBindings) {
+        if (binding.editor_token == nullptr) {
+            continue;
+        }
+        EXPECT_TRUE(is_optional_component_kind(binding.editor_token))
+            << binding.editor_token;
+        const AuthoredComponentBinding* found =
+            find_authored_component_binding(binding.editor_token);
+        ASSERT_NE(found, nullptr) << binding.editor_token;
+        EXPECT_EQ(found->kind, binding.kind) << binding.editor_token;
+    }
+
+    EXPECT_FALSE(is_optional_component_kind("renderable"));
+    EXPECT_FALSE(is_optional_component_kind("not_a_component"));
+}
+
+// Round-trip every editor-authorable component through add -> observe -> remove,
+// driven by the table rather than a hand-written list, so a component that gains
+// a token is covered the moment it is added.
+TEST(SceneECSBoundary, EveryEditorTokenAddsAndRemovesItsComponent)
+{
+    using namespace wz::engine::assets;
+
+    std::size_t tokens = 0;
+    for (const AuthoredComponentBinding& binding : kAuthoredComponentBindings) {
+        if (binding.editor_token == nullptr) {
+            continue;
+        }
+        ++tokens;
+
+        std::vector<SceneNodeAsset> nodes;
+        nodes.push_back(make_scene_node("node"));
+
+        EXPECT_FALSE(node_has_optional_component(nodes, "node", binding.editor_token))
+            << binding.editor_token;
+        EXPECT_FALSE(has_runtime_relevant_components(nodes[0]))
+            << binding.editor_token;
+
+        ASSERT_TRUE(add_node_optional_component(nodes, "node", binding.editor_token))
+            << binding.editor_token;
+        EXPECT_TRUE(node_has_optional_component(nodes, "node", binding.editor_token))
+            << binding.editor_token;
+
+        // Every editor-authorable component is runtime-relevant, and the kind it
+        // reports is the one the table binds it to.
+        EXPECT_TRUE(has_runtime_relevant_components(nodes[0]))
+            << binding.editor_token;
+        const auto kinds = authored_components_for_node(nodes[0]);
+        EXPECT_EQ(std::count(kinds.begin(), kinds.end(), binding.kind), 1)
+            << binding.editor_token;
+
+        ASSERT_TRUE(remove_node_optional_component(nodes, "node", binding.editor_token))
+            << binding.editor_token;
+        EXPECT_FALSE(node_has_optional_component(nodes, "node", binding.editor_token))
+            << binding.editor_token;
+        EXPECT_FALSE(has_runtime_relevant_components(nodes[0]))
+            << binding.editor_token;
+    }
+
+    // The nine the editor authors today. A bare loop would pass vacuously if the
+    // table lost every token.
+    EXPECT_EQ(tokens, 9u);
+}
+
+// Unknown tokens and missing nodes fail closed, unchanged by the table rewrite.
+TEST(SceneECSBoundary, OptionalComponentVerbsFailClosed)
+{
+    using namespace wz::engine::assets;
+
+    std::vector<SceneNodeAsset> nodes;
+    nodes.push_back(make_scene_node("node"));
+
+    EXPECT_FALSE(add_node_optional_component(nodes, "node", "not_a_component"));
+    EXPECT_FALSE(remove_node_optional_component(nodes, "node", "not_a_component"));
+    EXPECT_FALSE(add_node_optional_component(nodes, "missing", "camera"));
+    EXPECT_FALSE(remove_node_optional_component(nodes, "missing", "camera"));
+    EXPECT_FALSE(node_has_optional_component(nodes, "missing", "camera"));
+
+    // Removing an absent component still succeeds: the requested post-state is
+    // reached, so the verb stays idempotent.
+    EXPECT_TRUE(remove_node_optional_component(nodes, "node", "camera"));
+}

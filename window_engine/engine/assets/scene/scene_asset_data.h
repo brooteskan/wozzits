@@ -18,7 +18,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -1976,181 +1978,6 @@ namespace wz::engine::assets
         node.terrain_render_style = style;
     }
 
-    inline std::vector<wz::scene::SceneAuthoredComponentKind>
-    authored_components_for_node(const SceneNodeAsset& node)
-    {
-        using Kind = wz::scene::SceneAuthoredComponentKind;
-
-        std::vector<Kind> out{
-            Kind::Transform,
-            Kind::Visibility,
-            Kind::MotionType,
-        };
-
-        if (node.parent_id) {
-            out.push_back(Kind::ParentLink);
-        }
-        // Renderable includes the by-ingredients binding (geometry + inherited
-        // program, issue #213): a node authored purely by ingredients assembles a
-        // Renderable at load, so it reports Kind::Renderable like the legacy /
-        // asset-graph-node renderables. Mirrors has_authored_renderable_component
-        // (which is defined below; inlined here to keep the field list in step).
-        if (node.renderable
-            || node.renderable_asset_node_id
-            || node.renderable_asset
-            || node.geometry_asset_node_id
-            || node.geometry_asset) {
-            out.push_back(Kind::Renderable);
-        }
-        if (node.asset_reference) {
-            out.push_back(Kind::AssetReference);
-        }
-        if (node.scene_import_source) {
-            out.push_back(Kind::SceneImportSource);
-        }
-        // Scene-source: grafts a sub-scene as this node's children (issue #213) —
-        // any of the asset-graph node ref, the resolved key, or the inline GLB
-        // descriptor.
-        if (node.scene_source_node_id
-            || node.scene_source
-            || node.glb_scene_source) {
-            out.push_back(Kind::SceneSource);
-        }
-        if (node.camera) {
-            out.push_back(Kind::Camera);
-        }
-        if (node.direct_light_source) {
-            out.push_back(Kind::Light);
-        }
-        if (node.ambient_lighting) {
-            out.push_back(Kind::AmbientLighting);
-        }
-        if (node.hdri_environment) {
-            out.push_back(Kind::HDRIEnvironment);
-        }
-        if (node.atmosphere) {
-            out.push_back(Kind::Atmosphere);
-        }
-        // The frame environment is atmosphere's successor, not a variant of it:
-        // a node may carry either, and each reports its own kind.
-        if (node.environment) {
-            out.push_back(Kind::FrameEnvironment);
-        }
-        if (node.sky_visual) {
-            out.push_back(Kind::SkyVisual);
-        }
-        if (node.sky_surface) {
-            out.push_back(Kind::SkySurface);
-        }
-        if (node.render_to_texture) {
-            out.push_back(Kind::RenderToTexture);
-        }
-        if (node.input_receiver) {
-            out.push_back(Kind::InputReceiver);
-        }
-        if (node.flying_camera_controller) {
-            out.push_back(Kind::FlyingCameraController);
-        }
-        if (node.actor_movement_controller) {
-            out.push_back(Kind::ActorMovementController);
-        }
-        if (node.ground_boundary) {
-            out.push_back(Kind::GroundBoundary);
-        }
-        if (node.mesh_source) {
-            out.push_back(Kind::MeshSource);
-        }
-        if (node.mesh_derived_field_source) {
-            out.push_back(Kind::MeshDerivedFieldSource);
-        }
-        if (node.mesh_sparse_operator_source) {
-            out.push_back(Kind::MeshSparseOperatorSource);
-        }
-        if (node.mesh_sparse_apply_field) {
-            out.push_back(Kind::MeshSparseApplyField);
-        }
-        if (node.mesh_sparse_diffusion_bands) {
-            out.push_back(Kind::MeshSparseDiffusionBands);
-        }
-        if (node.mesh_level_mask_source) {
-            out.push_back(Kind::MeshLevelMaskSource);
-        }
-        if (node.mesh_wavelet_analysis) {
-            out.push_back(Kind::MeshWaveletAnalysis);
-        }
-        if (node.mesh_compute_field) {
-            out.push_back(Kind::MeshComputeField);
-        }
-        if (node.mesh_render_style) {
-            out.push_back(Kind::MeshRenderStyle);
-        }
-        if (node.mesh_mask_render_style) {
-            out.push_back(Kind::MeshMaskRenderStyle);
-        }
-        if (node.mesh_region_set) {
-            out.push_back(Kind::MeshRegionSet);
-        }
-        if (node.scalar_field_source) {
-            out.push_back(Kind::ScalarFieldSource);
-        }
-        if (node.vector_field_source) {
-            out.push_back(Kind::VectorFieldSource);
-        }
-        if (node.collision) {
-            out.push_back(Kind::Collision);
-        }
-        if (node.terrain) {
-            out.push_back(Kind::Terrain);
-        }
-        if (node.terrain_render_style) {
-            out.push_back(Kind::TerrainRenderStyle);
-        }
-        if (node.terrain_mesh_source) {
-            out.push_back(Kind::TerrainMeshSource);
-        }
-        if (node.terrain_height_field_source) {
-            out.push_back(Kind::TerrainHeightFieldSource);
-        }
-        if (node.audio_listener) {
-            out.push_back(Kind::AudioListener);
-        }
-        if (node.audio_source) {
-            out.push_back(Kind::AudioSource);
-        }
-        if (node.event_listener) {
-            out.push_back(Kind::EventListener);
-        }
-        if (node.event_trigger) {
-            out.push_back(Kind::EventTrigger);
-        }
-        if (node.proximity) {
-            out.push_back(Kind::Proximity);
-        }
-        if (node.motion) {
-            out.push_back(Kind::Motion);
-        }
-        if (node.motion_filter) {
-            out.push_back(Kind::MotionFilter);
-        }
-        if (node.behavior || !node.behaviors.empty()) {
-            out.push_back(Kind::Behavior);
-        }
-        if (node.compute_kernel) {
-            out.push_back(Kind::ComputeKernel);
-        }
-        if (node.render_shader) {
-            out.push_back(Kind::RenderShader);
-        }
-        if (node.debug_visual) {
-            out.push_back(Kind::AuxiliaryVisual);
-        }
-        if (node.editor_handle) {
-            out.push_back(Kind::EditorHandle);
-        }
-
-        return out;
-    }
-
     inline bool has_authored_renderable_component(
         const SceneNodeAsset& node) noexcept
     {
@@ -2168,6 +1995,394 @@ namespace wz::engine::assets
         const SceneNodeAsset& node) noexcept
     {
         return node.camera.has_value();
+    }
+
+    // Scene-source: grafts a sub-scene as this node's children (issue #213) --
+    // any of the asset-graph node ref, the resolved key, or the inline GLB
+    // descriptor.
+    inline bool has_authored_scene_source_component(
+        const SceneNodeAsset& node) noexcept
+    {
+        return node.scene_source_node_id.has_value()
+            || node.scene_source.has_value()
+            || node.glb_scene_source.has_value();
+    }
+
+    // ─── The authored-component binding table ────────────────────────────────
+    // ONE list that authored_components_for_node(),
+    // summarize_authored_scene_components(), has_runtime_relevant_components()
+    // and the editor's add/remove verbs are all DERIVED from, so they cannot
+    // disagree about which field carries which component.
+    //
+    // Before this table those were five hand-maintained parallel structures, and
+    // four components shipped into the tree missing one or more of them --
+    // SceneSource, MotionFilter (f4afe8c8), FrameEnvironment and RenderToTexture
+    // (f810c5b6), each caught only by the scheduled audit in issue #80. The
+    // recurring failure was never a hard question; it was five places to
+    // remember. Now there is one.
+    //
+    // The three CoreNode kinds (Transform/Visibility/MotionType) are absent by
+    // design: they are unconditional properties of every node, not something
+    // detected on one. The static_assert below accounts for them.
+    //
+    // WHAT THIS DOES NOT DO: force a NEW SceneNodeAsset field to appear here.
+    // C++20 cannot enumerate members, so completeness in that direction is
+    // guarded by the field-count tripwire in
+    // tests/asset_scene/scene_ecs_boundary_tests.cpp -- adding a field breaks
+    // that static_assert, which points back at this table.
+    struct AuthoredComponentBinding
+    {
+        wz::scene::SceneAuthoredComponentKind kind;
+
+        // Does this node carry the component?
+        bool (*present)(const SceneNodeAsset&);
+
+        // Which SceneAuthoredComponentSummary counter it feeds.
+        uint32_t wz::scene::SceneAuthoredComponentSummary::* counter;
+
+        // How much this node adds to that counter. nullptr means the usual "1 if
+        // present". Behavior overrides it because its counter counts behavior
+        // INSTANCES (node.behaviors is a vector), not nodes carrying the kind.
+        uint32_t (*count)(const SceneNodeAsset&) = nullptr;
+
+        // Token for the editor's generic add/remove component verbs, or nullptr
+        // for components the editor does not author that way. A token REQUIRES
+        // add/remove below. Renderable deliberately has none: the legacy
+        // embedded slot is compat-only and the preferred asset-graph binding is
+        // authored by set_node_renderable_asset().
+        const char* editor_token = nullptr;
+        void (*add)(SceneNodeAsset&) = nullptr;
+        void (*remove)(SceneNodeAsset&) = nullptr;
+    };
+
+    // Short aliases for the table below, which would be unreadable with the
+    // fully qualified names repeated 48 times.
+    using SceneComponentKind = wz::scene::SceneAuthoredComponentKind;
+    using SceneComponentCounts = wz::scene::SceneAuthoredComponentSummary;
+
+    inline constexpr AuthoredComponentBinding kAuthoredComponentBindings[] = {
+        { SceneComponentKind::ParentLink,
+          [](const SceneNodeAsset& n) { return n.parent_id.has_value(); },
+          &SceneComponentCounts::parent_links },
+        // Renderable includes the by-ingredients binding (geometry + inherited
+        // program, issue #213): a node authored purely by ingredients assembles
+        // a Renderable at load, so it reports Kind::Renderable like the legacy
+        // and asset-graph-node forms.
+        { SceneComponentKind::Renderable,
+          &has_authored_renderable_component,
+          &SceneComponentCounts::renderables },
+        { SceneComponentKind::AssetReference,
+          [](const SceneNodeAsset& n) { return n.asset_reference.has_value(); },
+          &SceneComponentCounts::asset_references },
+        { SceneComponentKind::SceneImportSource,
+          [](const SceneNodeAsset& n) {
+              return n.scene_import_source.has_value();
+          },
+          &SceneComponentCounts::scene_import_sources },
+        { SceneComponentKind::SceneSource,
+          &has_authored_scene_source_component,
+          &SceneComponentCounts::scene_sources },
+        { SceneComponentKind::Camera,
+          &has_authored_camera_component,
+          &SceneComponentCounts::cameras,
+          nullptr,
+          "camera",
+          [](SceneNodeAsset& n) { n.camera = SceneCameraAsset{}; },
+          [](SceneNodeAsset& n) { n.camera.reset(); } },
+        { SceneComponentKind::Light,
+          [](const SceneNodeAsset& n) {
+              return n.direct_light_source.has_value();
+          },
+          &SceneComponentCounts::lights },
+        { SceneComponentKind::AmbientLighting,
+          [](const SceneNodeAsset& n) { return n.ambient_lighting.has_value(); },
+          &SceneComponentCounts::ambient_lighting },
+        { SceneComponentKind::HDRIEnvironment,
+          [](const SceneNodeAsset& n) {
+              return n.hdri_environment.has_value();
+          },
+          &SceneComponentCounts::hdri_environments },
+        { SceneComponentKind::Atmosphere,
+          [](const SceneNodeAsset& n) { return n.atmosphere.has_value(); },
+          &SceneComponentCounts::atmospheres,
+          nullptr,
+          "atmosphere",
+          [](SceneNodeAsset& n) { n.atmosphere = SceneAtmosphereAsset{}; },
+          [](SceneNodeAsset& n) { n.atmosphere.reset(); } },
+        // The frame environment is atmosphere's successor, not a variant of it:
+        // a node may carry either, and each reports its own kind.
+        { SceneComponentKind::FrameEnvironment,
+          [](const SceneNodeAsset& n) { return n.environment.has_value(); },
+          &SceneComponentCounts::frame_environments,
+          nullptr,
+          "environment",
+          [](SceneNodeAsset& n) { n.environment = SceneEnvironmentAsset{}; },
+          [](SceneNodeAsset& n) { n.environment.reset(); } },
+        { SceneComponentKind::SkyVisual,
+          [](const SceneNodeAsset& n) { return n.sky_visual.has_value(); },
+          &SceneComponentCounts::sky_visuals },
+        { SceneComponentKind::SkySurface,
+          [](const SceneNodeAsset& n) { return n.sky_surface.has_value(); },
+          &SceneComponentCounts::sky_surfaces },
+        { SceneComponentKind::RenderToTexture,
+          [](const SceneNodeAsset& n) {
+              return n.render_to_texture.has_value();
+          },
+          &SceneComponentCounts::render_to_texture_sources },
+        { SceneComponentKind::InputReceiver,
+          [](const SceneNodeAsset& n) { return n.input_receiver.has_value(); },
+          &SceneComponentCounts::input_receivers },
+        { SceneComponentKind::FlyingCameraController,
+          [](const SceneNodeAsset& n) {
+              return n.flying_camera_controller.has_value();
+          },
+          &SceneComponentCounts::flying_camera_controllers },
+        { SceneComponentKind::ActorMovementController,
+          [](const SceneNodeAsset& n) {
+              return n.actor_movement_controller.has_value();
+          },
+          &SceneComponentCounts::actor_movement_controllers },
+        { SceneComponentKind::GroundBoundary,
+          [](const SceneNodeAsset& n) { return n.ground_boundary.has_value(); },
+          &SceneComponentCounts::ground_boundaries },
+        { SceneComponentKind::MeshSource,
+          [](const SceneNodeAsset& n) { return n.mesh_source.has_value(); },
+          &SceneComponentCounts::mesh_sources },
+        { SceneComponentKind::MeshDerivedFieldSource,
+          [](const SceneNodeAsset& n) {
+              return n.mesh_derived_field_source.has_value();
+          },
+          &SceneComponentCounts::mesh_derived_field_sources },
+        { SceneComponentKind::MeshSparseOperatorSource,
+          [](const SceneNodeAsset& n) {
+              return n.mesh_sparse_operator_source.has_value();
+          },
+          &SceneComponentCounts::mesh_sparse_operator_sources },
+        { SceneComponentKind::MeshSparseApplyField,
+          [](const SceneNodeAsset& n) {
+              return n.mesh_sparse_apply_field.has_value();
+          },
+          &SceneComponentCounts::mesh_sparse_apply_fields },
+        { SceneComponentKind::MeshSparseDiffusionBands,
+          [](const SceneNodeAsset& n) {
+              return n.mesh_sparse_diffusion_bands.has_value();
+          },
+          &SceneComponentCounts::mesh_sparse_diffusion_bands },
+        { SceneComponentKind::MeshLevelMaskSource,
+          [](const SceneNodeAsset& n) {
+              return n.mesh_level_mask_source.has_value();
+          },
+          &SceneComponentCounts::mesh_level_mask_sources },
+        { SceneComponentKind::MeshWaveletAnalysis,
+          [](const SceneNodeAsset& n) {
+              return n.mesh_wavelet_analysis.has_value();
+          },
+          &SceneComponentCounts::mesh_wavelet_analyses },
+        { SceneComponentKind::MeshComputeField,
+          [](const SceneNodeAsset& n) {
+              return n.mesh_compute_field.has_value();
+          },
+          &SceneComponentCounts::mesh_compute_fields },
+        { SceneComponentKind::MeshRenderStyle,
+          [](const SceneNodeAsset& n) {
+              return n.mesh_render_style.has_value();
+          },
+          &SceneComponentCounts::mesh_render_styles },
+        { SceneComponentKind::MeshMaskRenderStyle,
+          [](const SceneNodeAsset& n) {
+              return n.mesh_mask_render_style.has_value();
+          },
+          &SceneComponentCounts::mesh_mask_render_styles },
+        { SceneComponentKind::MeshRegionSet,
+          [](const SceneNodeAsset& n) { return n.mesh_region_set.has_value(); },
+          &SceneComponentCounts::mesh_region_sets },
+        { SceneComponentKind::ScalarFieldSource,
+          [](const SceneNodeAsset& n) {
+              return n.scalar_field_source.has_value();
+          },
+          &SceneComponentCounts::scalar_field_sources },
+        { SceneComponentKind::VectorFieldSource,
+          [](const SceneNodeAsset& n) {
+              return n.vector_field_source.has_value();
+          },
+          &SceneComponentCounts::vector_field_sources },
+        { SceneComponentKind::Collision,
+          [](const SceneNodeAsset& n) { return n.collision.has_value(); },
+          &SceneComponentCounts::collisions,
+          nullptr,
+          "collision",
+          [](SceneNodeAsset& n) { n.collision = SceneCollisionAsset{}; },
+          [](SceneNodeAsset& n) { n.collision.reset(); } },
+        { SceneComponentKind::Terrain,
+          [](const SceneNodeAsset& n) { return n.terrain.has_value(); },
+          &SceneComponentCounts::terrains },
+        { SceneComponentKind::TerrainRenderStyle,
+          [](const SceneNodeAsset& n) {
+              return n.terrain_render_style.has_value();
+          },
+          &SceneComponentCounts::terrain_render_styles },
+        { SceneComponentKind::TerrainMeshSource,
+          [](const SceneNodeAsset& n) {
+              return n.terrain_mesh_source.has_value();
+          },
+          &SceneComponentCounts::terrain_mesh_sources },
+        { SceneComponentKind::TerrainHeightFieldSource,
+          [](const SceneNodeAsset& n) {
+              return n.terrain_height_field_source.has_value();
+          },
+          &SceneComponentCounts::terrain_height_field_sources },
+        { SceneComponentKind::AudioListener,
+          [](const SceneNodeAsset& n) { return n.audio_listener.has_value(); },
+          &SceneComponentCounts::audio_listeners,
+          nullptr,
+          "audio_listener",
+          [](SceneNodeAsset& n) {
+              n.audio_listener = SceneAudioListenerAsset{};
+          },
+          [](SceneNodeAsset& n) { n.audio_listener.reset(); } },
+        { SceneComponentKind::AudioSource,
+          [](const SceneNodeAsset& n) { return n.audio_source.has_value(); },
+          &SceneComponentCounts::audio_sources,
+          nullptr,
+          "audio_source",
+          [](SceneNodeAsset& n) { n.audio_source = SceneAudioSourceAsset{}; },
+          [](SceneNodeAsset& n) { n.audio_source.reset(); } },
+        { SceneComponentKind::EventListener,
+          [](const SceneNodeAsset& n) { return n.event_listener.has_value(); },
+          &SceneComponentCounts::event_listeners },
+        { SceneComponentKind::EventTrigger,
+          [](const SceneNodeAsset& n) { return n.event_trigger.has_value(); },
+          &SceneComponentCounts::event_triggers },
+        { SceneComponentKind::Proximity,
+          [](const SceneNodeAsset& n) { return n.proximity.has_value(); },
+          &SceneComponentCounts::proximities,
+          nullptr,
+          "proximity",
+          [](SceneNodeAsset& n) { n.proximity = SceneProximityAsset{}; },
+          [](SceneNodeAsset& n) { n.proximity.reset(); } },
+        { SceneComponentKind::Motion,
+          [](const SceneNodeAsset& n) { return n.motion.has_value(); },
+          &SceneComponentCounts::motions,
+          nullptr,
+          "motion",
+          [](SceneNodeAsset& n) { n.motion = SceneMotionAsset{}; },
+          [](SceneNodeAsset& n) { n.motion.reset(); } },
+        { SceneComponentKind::MotionFilter,
+          [](const SceneNodeAsset& n) { return n.motion_filter.has_value(); },
+          &SceneComponentCounts::motion_filters,
+          nullptr,
+          "motion_filter",
+          [](SceneNodeAsset& n) { n.motion_filter = SceneMotionFilterAsset{}; },
+          [](SceneNodeAsset& n) { n.motion_filter.reset(); } },
+        // One kind, two authored spellings: the single legacy slot and the
+        // behaviors vector. The counter counts INSTANCES, hence the override.
+        { SceneComponentKind::Behavior,
+          [](const SceneNodeAsset& n) {
+              return n.behavior.has_value() || !n.behaviors.empty();
+          },
+          &SceneComponentCounts::behaviors,
+          [](const SceneNodeAsset& n) {
+              return static_cast<uint32_t>(
+                  (n.behavior ? 1u : 0u) + n.behaviors.size());
+          } },
+        { SceneComponentKind::ComputeKernel,
+          [](const SceneNodeAsset& n) { return n.compute_kernel.has_value(); },
+          &SceneComponentCounts::compute_kernels },
+        { SceneComponentKind::RenderShader,
+          [](const SceneNodeAsset& n) { return n.render_shader.has_value(); },
+          &SceneComponentCounts::render_shaders },
+        // The authored field is debug_visual; the boundary kind is the broader
+        // AuxiliaryVisual.
+        { SceneComponentKind::AuxiliaryVisual,
+          [](const SceneNodeAsset& n) { return n.debug_visual.has_value(); },
+          &SceneComponentCounts::auxiliary_visuals },
+        { SceneComponentKind::EditorHandle,
+          [](const SceneNodeAsset& n) { return n.editor_handle.has_value(); },
+          &SceneComponentCounts::editor_handles },
+    };
+
+    // Every kind except the three unconditional CoreNode ones is bound exactly
+    // once. Adding a SceneAuthoredComponentKind without a binding fails here, as
+    // does binding one twice.
+    consteval bool authored_component_bindings_cover_every_kind()
+    {
+        for (std::size_t raw = 0;
+             raw < wz::scene::kSceneAuthoredComponentKindCount;
+             ++raw) {
+            const auto kind = static_cast<SceneComponentKind>(raw);
+            if (kind == SceneComponentKind::Transform
+                || kind == SceneComponentKind::Visibility
+                || kind == SceneComponentKind::MotionType) {
+                continue;
+            }
+            std::size_t bound = 0;
+            for (const AuthoredComponentBinding& b : kAuthoredComponentBindings) {
+                if (b.kind == kind) {
+                    ++bound;
+                }
+            }
+            if (bound != 1) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // A table entry either has all three editor fields or none of them: a token
+    // the verbs cannot act on, or verbs no token can reach, is a dead entry.
+    consteval bool authored_component_editor_verbs_are_complete()
+    {
+        for (const AuthoredComponentBinding& b : kAuthoredComponentBindings) {
+            const bool has_token = b.editor_token != nullptr;
+            if (has_token != (b.add != nullptr)
+                || has_token != (b.remove != nullptr)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static_assert(
+        std::size(kAuthoredComponentBindings) + 3
+            == wz::scene::kSceneAuthoredComponentKindCount,
+        "Every SceneAuthoredComponentKind except the three unconditional "
+        "CoreNode kinds needs exactly one entry in kAuthoredComponentBindings.");
+    static_assert(authored_component_bindings_cover_every_kind());
+    static_assert(authored_component_editor_verbs_are_complete());
+
+    // Find the binding for an editor add/remove token, or nullptr.
+    inline constexpr const AuthoredComponentBinding*
+    find_authored_component_binding(std::string_view editor_token) noexcept
+    {
+        for (const AuthoredComponentBinding& b : kAuthoredComponentBindings) {
+            if (b.editor_token != nullptr && editor_token == b.editor_token) {
+                return &b;
+            }
+        }
+        return nullptr;
+    }
+
+    inline std::vector<wz::scene::SceneAuthoredComponentKind>
+    authored_components_for_node(const SceneNodeAsset& node)
+    {
+        using Kind = wz::scene::SceneAuthoredComponentKind;
+
+        // The three CoreNode kinds are unconditional: every node has a
+        // transform, a visibility and a motion type.
+        std::vector<Kind> out{
+            Kind::Transform,
+            Kind::Visibility,
+            Kind::MotionType,
+        };
+
+        for (const AuthoredComponentBinding& binding :
+             kAuthoredComponentBindings) {
+            if (binding.present(node)) {
+                out.push_back(binding.kind);
+            }
+        }
+
+        return out;
     }
 
     inline bool has_authored_editor_only_components(
@@ -2751,18 +2966,17 @@ namespace wz::engine::assets
     // backed renderable (renderable_asset_node_id) is authored by the dedicated
     // set_node_renderable_asset() helper below, not these generic verbs.
 
+    // All four verbs below are DERIVED from kAuthoredComponentBindings, so the
+    // editor's token vocabulary cannot drift from the ECS boundary vocabulary
+    // the way it used to: `environment` was an editor token with no
+    // SceneAuthoredComponentKind, and `render_to_texture` was a Kind with no
+    // token. A component is editor-authorable exactly when its table entry
+    // carries an editor_token.
+
     // True if `kind` names one of the editor-managed optional components.
     inline bool is_optional_component_kind(std::string_view kind) noexcept
     {
-        return kind == "camera"
-            || kind == "proximity"
-            || kind == "collision"
-            || kind == "motion"
-            || kind == "motion_filter"
-            || kind == "audio_source"
-            || kind == "audio_listener"
-            || kind == "atmosphere"
-            || kind == "environment";
+        return find_authored_component_binding(kind) != nullptr;
     }
 
     // True if node `node_id` currently carries the optional component `kind`.
@@ -2777,41 +2991,16 @@ namespace wz::engine::assets
         if (!node) {
             return false;
         }
-        if (kind == "camera") {
-            return node->camera.has_value();
-        }
-        if (kind == "proximity") {
-            return node->proximity.has_value();
-        }
-        if (kind == "collision") {
-            return node->collision.has_value();
-        }
-        if (kind == "motion") {
-            return node->motion.has_value();
-        }
-        if (kind == "motion_filter") {
-            return node->motion_filter.has_value();
-        }
-        if (kind == "audio_source") {
-            return node->audio_source.has_value();
-        }
-        if (kind == "audio_listener") {
-            return node->audio_listener.has_value();
-        }
-        if (kind == "atmosphere") {
-            return node->atmosphere.has_value();
-        }
-        if (kind == "environment") {
-            return node->environment.has_value();
-        }
-        return false;
+        const AuthoredComponentBinding* binding =
+            find_authored_component_binding(kind);
+        return binding != nullptr && binding->present(*node);
     }
 
     // Add the optional component `kind` to node `node_id`, default-constructing
     // its slot (sensible defaults from the struct's member initializers). Adding
     // a component the node already has overwrites it with a fresh default, which
     // is harmless and keeps the verb idempotent. Returns false if the node is
-    // missing or `kind` is not one of the four managed kinds (fail closed).
+    // missing or `kind` is not an editor-managed kind (fail closed).
     inline bool add_node_optional_component(
         std::vector<SceneNodeAsset>& nodes,
         const wz::scene::AuthoredEntityId& node_id,
@@ -2821,49 +3010,19 @@ namespace wz::engine::assets
         if (!node) {
             return false;
         }
-        if (kind == "camera") {
-            node->camera = SceneCameraAsset{};
-            return true;
+        const AuthoredComponentBinding* binding =
+            find_authored_component_binding(kind);
+        if (!binding) {
+            return false;
         }
-        if (kind == "proximity") {
-            node->proximity = SceneProximityAsset{};
-            return true;
-        }
-        if (kind == "collision") {
-            node->collision = SceneCollisionAsset{};
-            return true;
-        }
-        if (kind == "motion") {
-            node->motion = SceneMotionAsset{};
-            return true;
-        }
-        if (kind == "motion_filter") {
-            node->motion_filter = SceneMotionFilterAsset{};
-            return true;
-        }
-        if (kind == "audio_source") {
-            node->audio_source = SceneAudioSourceAsset{};
-            return true;
-        }
-        if (kind == "audio_listener") {
-            node->audio_listener = SceneAudioListenerAsset{};
-            return true;
-        }
-        if (kind == "atmosphere") {
-            node->atmosphere = SceneAtmosphereAsset{};
-            return true;
-        }
-        if (kind == "environment") {
-            node->environment = SceneEnvironmentAsset{};
-            return true;
-        }
-        return false;
+        binding->add(*node);
+        return true;
     }
 
     // Remove the optional component `kind` from node `node_id` (reset its slot to
     // nullopt). Returns false if the node is missing or `kind` is not managed.
     // Resetting an absent component still returns true (the post-state is the
-    // requested one — the component is gone), keeping the verb idempotent.
+    // requested one -- the component is gone), keeping the verb idempotent.
     inline bool remove_node_optional_component(
         std::vector<SceneNodeAsset>& nodes,
         const wz::scene::AuthoredEntityId& node_id,
@@ -2873,43 +3032,13 @@ namespace wz::engine::assets
         if (!node) {
             return false;
         }
-        if (kind == "camera") {
-            node->camera.reset();
-            return true;
+        const AuthoredComponentBinding* binding =
+            find_authored_component_binding(kind);
+        if (!binding) {
+            return false;
         }
-        if (kind == "proximity") {
-            node->proximity.reset();
-            return true;
-        }
-        if (kind == "collision") {
-            node->collision.reset();
-            return true;
-        }
-        if (kind == "motion") {
-            node->motion.reset();
-            return true;
-        }
-        if (kind == "motion_filter") {
-            node->motion_filter.reset();
-            return true;
-        }
-        if (kind == "audio_source") {
-            node->audio_source.reset();
-            return true;
-        }
-        if (kind == "audio_listener") {
-            node->audio_listener.reset();
-            return true;
-        }
-        if (kind == "atmosphere") {
-            node->atmosphere.reset();
-            return true;
-        }
-        if (kind == "environment") {
-            node->environment.reset();
-            return true;
-        }
-        return false;
+        binding->remove(*node);
+        return true;
     }
 
     // Author the PREFERRED asset-graph-backed Renderable component on node
@@ -3276,41 +3405,21 @@ namespace wz::engine::assets
             || node.render_shader.has_value();
     }
 
+    // Derived from the binding table and the DOMAIN classification rather than a
+    // hand-listed field set: a component is runtime-relevant because of how its
+    // kind is classified, not because someone remembered to add it here. Adding
+    // a RuntimeRelevant or Exportable kind to the table is enough.
     inline bool has_runtime_relevant_components(
         const SceneNodeAsset& node) noexcept
     {
-        return has_authored_renderable_component(node)
-            || has_authored_camera_component(node)
-            || node.direct_light_source.has_value()
-            || node.ambient_lighting.has_value()
-            || node.hdri_environment.has_value()
-            || node.atmosphere.has_value()
-            || node.environment.has_value()
-            || node.sky_visual.has_value()
-            || node.sky_surface.has_value()
-            || node.render_to_texture.has_value()
-            || node.input_receiver.has_value()
-            || node.flying_camera_controller.has_value()
-            || node.actor_movement_controller.has_value()
-            || node.ground_boundary.has_value()
-            || node.collision.has_value()
-            || node.terrain.has_value()
-            || node.audio_listener.has_value()
-            || node.audio_source.has_value()
-            || node.event_listener.has_value()
-            || node.proximity.has_value()
-            || node.motion.has_value()
-            || node.motion_filter.has_value()
-            || node.behavior.has_value()
-            || !node.behaviors.empty()
-            || node.compute_kernel.has_value()
-            || node.render_shader.has_value()
-            || node.debug_visual.has_value()
-            // Scene-source grafts children live at runtime (instance mode), so a
-            // pure graft-host node is runtime-relevant (issue #213).
-            || node.scene_source_node_id.has_value()
-            || node.scene_source.has_value()
-            || node.glb_scene_source.has_value();
+        for (const AuthoredComponentBinding& binding :
+             kAuthoredComponentBindings) {
+            if (wz::scene::is_runtime_relevant_component(binding.kind)
+                && binding.present(node)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     inline SceneAssetAuthoringRecipeSummary
@@ -3438,159 +3547,23 @@ namespace wz::engine::assets
         const SceneAssetData& scene)
     {
         wz::scene::SceneAuthoredComponentSummary out{};
+        // The three CoreNode kinds hold for every node unconditionally, so they
+        // are node counts rather than detections.
         out.nodes = static_cast<uint32_t>(scene.nodes.size());
         out.transforms = out.nodes;
         out.visibility = out.nodes;
         out.motion_types = out.nodes;
+        // Scene-level lights are counted before the per-node pass adds each
+        // node's own direct light source to the same counter.
         out.lights = static_cast<uint32_t>(scene.lights.size());
 
         for (const auto& node : scene.nodes) {
-            if (node.parent_id) {
-                ++out.parent_links;
-            }
-            if (has_authored_renderable_component(node)) {
-                ++out.renderables;
-            }
-            if (node.asset_reference) {
-                ++out.asset_references;
-            }
-            if (node.scene_import_source) {
-                ++out.scene_import_sources;
-            }
-            if (node.scene_source_node_id
-                || node.scene_source
-                || node.glb_scene_source) {
-                ++out.scene_sources;
-            }
-            if (has_authored_camera_component(node)) {
-                ++out.cameras;
-            }
-            if (node.direct_light_source) {
-                ++out.lights;
-            }
-            if (node.ambient_lighting) {
-                ++out.ambient_lighting;
-            }
-            if (node.hdri_environment) {
-                ++out.hdri_environments;
-            }
-            if (node.atmosphere) {
-                ++out.atmospheres;
-            }
-            if (node.environment) {
-                ++out.frame_environments;
-            }
-            if (node.sky_visual) {
-                ++out.sky_visuals;
-            }
-            if (node.sky_surface) {
-                ++out.sky_surfaces;
-            }
-            if (node.render_to_texture) {
-                ++out.render_to_texture_sources;
-            }
-            if (node.input_receiver) {
-                ++out.input_receivers;
-            }
-            if (node.flying_camera_controller) {
-                ++out.flying_camera_controllers;
-            }
-            if (node.actor_movement_controller) {
-                ++out.actor_movement_controllers;
-            }
-            if (node.ground_boundary) {
-                ++out.ground_boundaries;
-            }
-            if (node.mesh_source) {
-                ++out.mesh_sources;
-            }
-            if (node.mesh_derived_field_source) {
-                ++out.mesh_derived_field_sources;
-            }
-            if (node.mesh_sparse_operator_source) {
-                ++out.mesh_sparse_operator_sources;
-            }
-            if (node.mesh_sparse_apply_field) {
-                ++out.mesh_sparse_apply_fields;
-            }
-            if (node.mesh_sparse_diffusion_bands) {
-                ++out.mesh_sparse_diffusion_bands;
-            }
-            if (node.mesh_level_mask_source) {
-                ++out.mesh_level_mask_sources;
-            }
-            if (node.mesh_wavelet_analysis) {
-                ++out.mesh_wavelet_analyses;
-            }
-            if (node.mesh_compute_field) {
-                ++out.mesh_compute_fields;
-            }
-            if (node.mesh_render_style) {
-                ++out.mesh_render_styles;
-            }
-            if (node.mesh_mask_render_style) {
-                ++out.mesh_mask_render_styles;
-            }
-            if (node.mesh_region_set) {
-                ++out.mesh_region_sets;
-            }
-            if (node.scalar_field_source) {
-                ++out.scalar_field_sources;
-            }
-            if (node.vector_field_source) {
-                ++out.vector_field_sources;
-            }
-            if (node.collision) {
-                ++out.collisions;
-            }
-            if (node.terrain) {
-                ++out.terrains;
-            }
-            if (node.terrain_render_style) {
-                ++out.terrain_render_styles;
-            }
-            if (node.terrain_mesh_source) {
-                ++out.terrain_mesh_sources;
-            }
-            if (node.terrain_height_field_source) {
-                ++out.terrain_height_field_sources;
-            }
-            if (node.audio_listener) {
-                ++out.audio_listeners;
-            }
-            if (node.audio_source) {
-                ++out.audio_sources;
-            }
-            if (node.event_listener) {
-                ++out.event_listeners;
-            }
-            if (node.event_trigger) {
-                ++out.event_triggers;
-            }
-            if (node.proximity) {
-                ++out.proximities;
-            }
-            if (node.motion) {
-                ++out.motions;
-            }
-            if (node.motion_filter) {
-                ++out.motion_filters;
-            }
-            if (node.behavior) {
-                ++out.behaviors;
-            }
-            out.behaviors += static_cast<uint32_t>(node.behaviors.size());
-            if (node.compute_kernel) {
-                ++out.compute_kernels;
-            }
-            if (node.render_shader) {
-                ++out.render_shaders;
-            }
-            if (node.debug_visual) {
-                ++out.auxiliary_visuals;
-            }
-            if (node.editor_handle) {
-                ++out.editor_handles;
+            for (const AuthoredComponentBinding& binding :
+                 kAuthoredComponentBindings) {
+                const uint32_t added = binding.count
+                    ? binding.count(node)
+                    : (binding.present(node) ? 1u : 0u);
+                out.*(binding.counter) += added;
             }
         }
 

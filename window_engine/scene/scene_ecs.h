@@ -14,6 +14,7 @@
 
 #include <graph/static_polytree.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -115,6 +116,16 @@ namespace wz::scene
         // so Exportable rather than RuntimeRelevant.
         RenderToTexture,
     };
+
+    // Number of values above. Hand-maintained because C++20 cannot count enum
+    // values, and deliberately NOT a `Count` sentinel in the enum itself -- that
+    // would leak into scene_component_domain()'s exhaustive switch as an
+    // unhandled case.
+    //
+    // BUMP THIS when adding a kind. The authored-component binding table in
+    // scene_asset_data.h static_asserts that it covers exactly this many kinds,
+    // so a stale count fails the build and points at the table.
+    inline constexpr std::size_t kSceneAuthoredComponentKindCount = 51;
 
     constexpr SceneComponentDomain scene_component_domain(
         SceneAuthoredComponentKind kind) noexcept
