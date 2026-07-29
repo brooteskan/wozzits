@@ -447,6 +447,23 @@ namespace wz::engine::editor
                     node.environment->enabled ? 1u : 0u;
             }
 
+            if (node.render_to_texture) {
+                out.flags |= WZ_EDITOR_SCENE_NODE_HAS_RENDER_TO_TEXTURE;
+                out.render_to_texture.has_target_ref =
+                    node.render_to_texture->target_node_id ? 1u : 0u;
+                out.render_to_texture.target_asset_node_id =
+                    node.render_to_texture->target_node_id
+                        ? static_cast<uint64_t>(
+                              *node.render_to_texture->target_node_id)
+                        : 0ull;
+                out.render_to_texture.include_descendants =
+                    node.render_to_texture->include_descendants ? 1u : 0u;
+                out.render_to_texture.also_draw_in_scene =
+                    node.render_to_texture->also_draw_in_scene ? 1u : 0u;
+                out.render_to_texture.enabled =
+                    node.render_to_texture->enabled ? 1u : 0u;
+            }
+
             // Custom-renderable ingredients (issue #229/#230): always-valid
             // tables, possibly empty — presence is the count, no HAS_* flag.
             std::vector<WzEditorSceneRenderableBinding> renderable_bindings;

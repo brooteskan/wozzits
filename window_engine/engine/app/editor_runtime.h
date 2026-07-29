@@ -353,6 +353,20 @@ namespace wz::app
         wz::engine::assets::SceneEnvironmentAsset environment;
     };
 
+    // A live edit to a node's RenderToTexture component (issue #287): which
+    // Texture asset-graph node the subtree draws into (target_node_id) plus the
+    // composition switches. Coalesced by id like the Environment edit; applied via
+    // WozzitsApp_v1::set_node_render_to_texture, which re-assembles the render
+    // bindings so the target key re-resolves. The resolved target key re-bridges
+    // on (re)bind, so only the authored node id + switches travel here. This is
+    // the value edit, distinct from the presence-only "render_to_texture"
+    // component token.
+    struct SceneNodeRenderToTextureEdit
+    {
+        wz::scene::AuthoredEntityId node_id;
+        wz::engine::assets::SceneRenderToTextureAsset render_to_texture;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -623,6 +637,16 @@ namespace wz::app
             const std::function<
                 void(const SceneNodeEnvironmentEdit&)>& applier);
 
+        // Owner thread: queue a set of a node's RenderToTexture component values
+        // (non-blocking; coalesced by id, like the Environment edit). Applied on
+        // the engine thread's next frame.
+        void post_scene_node_render_to_texture(
+            SceneNodeRenderToTextureEdit edit);
+
+        void service_pending_scene_node_render_to_textures(
+            const std::function<
+                void(const SceneNodeRenderToTextureEdit&)>& applier);
+
         // Owner thread: queue a set/clear of a node's preferred Scene source
         // (non-blocking; appended in order — NOT coalesced). Applied on the
         // engine thread's next frame, like the renderable edits (issue #213).
@@ -762,6 +786,8 @@ namespace wz::app
         std::vector<SceneNodeCameraEdit> pending_camera_edits_;
         std::vector<SceneNodeAtmosphereEdit> pending_atmosphere_edits_;
         std::vector<SceneNodeEnvironmentEdit> pending_environment_edits_;
+        std::vector<SceneNodeRenderToTextureEdit>
+            pending_render_to_texture_edits_;
         std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
         std::vector<SceneNodeGlbSceneSourceEdit> pending_glb_scene_source_edits_;
         std::vector<SceneNodeGlbStyleEdit> pending_glb_style_edits_;

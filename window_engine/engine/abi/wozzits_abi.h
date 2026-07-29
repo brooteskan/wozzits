@@ -24,7 +24,13 @@ extern "C" {
 // component's asset-graph node ref + enabled, surfaced read-back so the inspector
 // restores them on select + reload), plus the live-edit verb
 // wz_host_runtime_set_node_environment — a struct layout change, readers must match.
-#define WZ_ABI_VERSION 33u
+// 33 -> 34: WzEditorSceneNode grew a render_to_texture struct (the RenderToTexture
+// component's target asset-graph node ref + the two composition switches +
+// enabled, surfaced read-back so the inspector restores them on select + reload),
+// plus the live-edit verb wz_host_runtime_set_node_render_to_texture and the
+// generic "render_to_texture" add/remove component token — a struct layout
+// change, readers must match.
+#define WZ_ABI_VERSION 34u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -236,6 +242,12 @@ enum
     // restores them on select + after reload (read-back). The frame's single
     // connected environment producer, authored on a node like atmosphere.
     WZ_EDITOR_SCENE_NODE_HAS_ENVIRONMENT = 1u << 16u,
+    // RenderToTexture component present (issue #287): the node's
+    // `render_to_texture` struct carries the authored Texture asset-graph node ref
+    // + the composition switches + enabled so the inspector restores them on
+    // select + after reload (read-back). Per-node, unlike atmosphere/environment:
+    // any number of nodes may each drive their own target.
+    WZ_EDITOR_SCENE_NODE_HAS_RENDER_TO_TEXTURE = 1u << 17u,
 };
 
 typedef uint32_t WzEditorSceneCameraFlags;
@@ -449,6 +461,24 @@ typedef struct WzEditorSceneEnvironment
     uint32_t reserved2;
 } WzEditorSceneEnvironment;
 
+// Authored RenderToTexture-component field values surfaced read-back so the
+// inspector restores them (present iff WZ_EDITOR_SCENE_NODE_HAS_RENDER_TO_TEXTURE).
+// `has_target_ref` is 0/1; `target_asset_node_id` is the authored Texture
+// asset-graph node id (valid iff has_target_ref). `include_descendants`,
+// `also_draw_in_scene` and `enabled` are 0/1. All of these are ALSO the payload of
+// the live-edit verb wz_host_runtime_set_node_render_to_texture. Mirrors
+// SceneRenderToTextureAsset; the resolved target key re-bridges on bind, so only
+// the authored node id + switches are surfaced here.
+typedef struct WzEditorSceneRenderToTexture
+{
+    uint64_t target_asset_node_id;
+    uint8_t has_target_ref;
+    uint8_t include_descendants;
+    uint8_t also_draw_in_scene;
+    uint8_t enabled;
+    uint32_t reserved0;
+} WzEditorSceneRenderToTexture;
+
 typedef struct WzEditorSceneComponent
 {
     WzEditorStringSpan kind;
@@ -555,6 +585,10 @@ typedef struct WzEditorSceneNode
     // ENVIRONMENT. Appended last so existing field offsets are unchanged (the node
     // STRIDE changed — that is the WZ_ABI_VERSION 33 bump).
     WzEditorSceneEnvironment environment;
+    // RenderToTexture component field values, valid iff WZ_EDITOR_SCENE_NODE_HAS_
+    // RENDER_TO_TEXTURE. Appended last so existing field offsets are unchanged (the
+    // node STRIDE changed — that is the WZ_ABI_VERSION 34 bump).
+    WzEditorSceneRenderToTexture render_to_texture;
 } WzEditorSceneNode;
 
 typedef struct WzEditorSceneSnapshot
@@ -871,6 +905,8 @@ static_assert(offsetof(WzEditorSceneAtmosphere, has_atmosphere_ref) == 8);
 static_assert(offsetof(WzEditorSceneAtmosphere, enabled) == 9);
 
 static_assert(sizeof(WzEditorSceneEnvironment) == 16);
+
+static_assert(sizeof(WzEditorSceneRenderToTexture) == 16);
 static_assert(offsetof(WzEditorSceneEnvironment, environment_asset_node_id) == 0);
 static_assert(offsetof(WzEditorSceneEnvironment, has_environment_ref) == 8);
 static_assert(offsetof(WzEditorSceneEnvironment, enabled) == 9);
@@ -898,7 +934,7 @@ static_assert(sizeof(WzEditorSceneRenderableConstant) == 32);
 static_assert(offsetof(WzEditorSceneRenderableConstant, name) == 0);
 static_assert(offsetof(WzEditorSceneRenderableConstant, value) == 16);
 
-static_assert(sizeof(WzEditorSceneNode) == 768);
+static_assert(sizeof(WzEditorSceneNode) == 784);
 static_assert(offsetof(WzEditorSceneNode, id) == 0);
 static_assert(offsetof(WzEditorSceneNode, display_name) == 16);
 static_assert(offsetof(WzEditorSceneNode, parent_id) == 32);
@@ -924,6 +960,7 @@ static_assert(offsetof(WzEditorSceneNode, render_order) == 664);
 static_assert(offsetof(WzEditorSceneNode, motion_filter) == 668);
 static_assert(offsetof(WzEditorSceneNode, atmosphere) == 736);
 static_assert(offsetof(WzEditorSceneNode, environment) == 752);
+static_assert(offsetof(WzEditorSceneNode, render_to_texture) == 768);
 
 static_assert(sizeof(WzEditorSceneSnapshot) == 72);
 static_assert(offsetof(WzEditorSceneSnapshot, ok) == 0);
@@ -1703,6 +1740,21 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_environment(
     WzHostRuntime* runtime,
     const char* node_id_utf8,
     uint64_t environment_asset_node_id,
+    uint8_t enabled);
+
+// Author node `node_id_utf8`'s RenderToTexture component (issue #287): which
+// Texture asset-graph node the node's subtree draws into (target_asset_node_id,
+// 0 = unbound), whether descendants come along (include_descendants), whether the
+// same nodes also draw in the main pass (also_draw_in_scene), and enabled.
+// Presence-only add/remove goes through the generic "render_to_texture" component
+// token; this carries the editable field values. The read-back node-struct grew
+// (WzEditorSceneRenderToTexture) — WZ_ABI_VERSION 34 bump.
+WZ_ABI_API WzResult wz_host_runtime_set_node_render_to_texture(
+    WzHostRuntime* runtime,
+    const char* node_id_utf8,
+    uint64_t target_asset_node_id,
+    uint8_t include_descendants,
+    uint8_t also_draw_in_scene,
     uint8_t enabled);
 
 // Author the PREFERRED asset-graph-backed Scene-source component on node

@@ -135,6 +135,45 @@ TEST(EditorRuntimeControl, CameraPostCoalescesByIdAndDrainsOnce)
     EXPECT_TRUE(again.empty());
 }
 
+TEST(EditorRuntimeControl, RenderToTexturePostCoalescesByIdAndDrainsOnce)
+{
+    using wz::app::SceneNodeRenderToTextureEdit;
+
+    EditorRuntimeControl control;
+    wz::engine::assets::SceneRenderToTextureAsset first;
+    first.target_node_id = 7u;
+    wz::engine::assets::SceneRenderToTextureAsset second;
+    second.target_node_id = 9u;
+    second.also_draw_in_scene = true;
+
+    control.post_scene_node_render_to_texture(
+        SceneNodeRenderToTextureEdit{
+            .node_id = "card", .render_to_texture = first });
+    control.post_scene_node_render_to_texture(
+        SceneNodeRenderToTextureEdit{
+            .node_id = "card", .render_to_texture = second });
+
+    std::vector<SceneNodeRenderToTextureEdit> applied;
+    control.service_pending_scene_node_render_to_textures(
+        [&applied](const SceneNodeRenderToTextureEdit& edit) {
+            applied.push_back(edit);
+        });
+
+    // Dragging a switch or re-picking the target streams edits; only the latest
+    // matters, so one node collapses to one apply.
+    ASSERT_EQ(applied.size(), 1u);
+    ASSERT_TRUE(applied[0].render_to_texture.target_node_id.has_value());
+    EXPECT_EQ(*applied[0].render_to_texture.target_node_id, 9u);
+    EXPECT_TRUE(applied[0].render_to_texture.also_draw_in_scene);
+
+    std::vector<SceneNodeRenderToTextureEdit> again;
+    control.service_pending_scene_node_render_to_textures(
+        [&again](const SceneNodeRenderToTextureEdit& edit) {
+            again.push_back(edit);
+        });
+    EXPECT_TRUE(again.empty());
+}
+
 TEST(EditorRuntimeControl, ReorderPostCoalescesByIdAndDrainsOnce)
 {
     using wz::app::SceneNodeReorderEdit;

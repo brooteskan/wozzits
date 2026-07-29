@@ -713,6 +713,38 @@ namespace wz::engine::editor
             return out;
         }
 
+        // "render_to_texture" object (read-back, issue #287). Tolerant: a missing
+        // block is absent. Field names match scene_json_export's render_to_texture
+        // export (the authored target node id + the switches; the resolved target
+        // key re-bridges on bind). Note the exported id member is
+        // "target_asset_node_id" while the in-memory field is target_node_id.
+        std::optional<SceneSnapshotRenderToTexture> read_render_to_texture(
+            const wz::json::JSONValue& obj)
+        {
+            const auto* source =
+                wz::json::find_member(obj, "render_to_texture");
+            if (!source || source->kind != wz::json::JSONValueKind::Object) {
+                return std::nullopt;
+            }
+            SceneSnapshotRenderToTexture out;
+            if (const auto node_id =
+                    wz::json::read_number(*source, "target_asset_node_id");
+                node_id && *node_id > 0.0)
+            {
+                out.target_node_id =
+                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+            }
+            out.include_descendants =
+                wz::json::read_bool(*source, "include_descendants")
+                    .value_or(true);
+            out.also_draw_in_scene =
+                wz::json::read_bool(*source, "also_draw_in_scene")
+                    .value_or(false);
+            out.enabled =
+                wz::json::read_bool(*source, "enabled").value_or(true);
+            return out;
+        }
+
         // Read the authored custom-renderable ingredients (issue #229/#230)
         // from a node's "renderable_bindings" / "renderable_constants" arrays.
         // Tolerant: missing blocks yield empty vectors; field names match
@@ -975,6 +1007,19 @@ namespace wz::engine::editor
                     .enabled = source.environment->enabled,
                 };
             }
+            if (source.render_to_texture) {
+                // target_node_id is ALREADY an optional here (unlike atmosphere
+                // and environment, which use 0 = unbound), so it carries over
+                // directly.
+                node.render_to_texture = SceneSnapshotRenderToTexture{
+                    .target_node_id = source.render_to_texture->target_node_id,
+                    .include_descendants =
+                        source.render_to_texture->include_descendants,
+                    .also_draw_in_scene =
+                        source.render_to_texture->also_draw_in_scene,
+                    .enabled = source.render_to_texture->enabled,
+                };
+            }
 
             // Surface behavior bindings. Without this, a tree rebuilt from the
             // running scene (e.g. after the prefab-editor open_scene round-trip)
@@ -1176,6 +1221,7 @@ namespace wz::engine::editor
             node.audio_source = read_audio_source(value);
             node.atmosphere = read_atmosphere(value);
             node.environment = read_environment(value);
+            node.render_to_texture = read_render_to_texture(value);
             // Authored render-binding refs (issue #213): surface the persisted
             // node ids so the inspector reveals + pre-selects these sections.
             node.scene_source_node_id =

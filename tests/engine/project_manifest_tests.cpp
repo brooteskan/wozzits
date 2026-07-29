@@ -557,6 +557,143 @@ TEST(ProjectSceneSnapshot, SurfacesMotionFilterComponentAndFieldsFromNodes)
     EXPECT_FLOAT_EQ(node.motion_filter->terrain_floor_offset, 1.5f);
 }
 
+// The other half of the RenderToTexture parity check: the JSON reader. The two
+// snapshot paths are independent implementations of the same mapping, and every
+// "component missing / won't save" report so far has been one of them lagging the
+// other, so the on-disk path is asserted against the same authored values as the
+// asset path above. Note the exported member is "target_asset_node_id" while the
+// in-memory field is target_node_id -- a mismatch here reads back as an unbound
+// target with no error.
+TEST(ProjectSceneSnapshot, ReadsRenderToTextureFromSceneJSON)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "rtt_snapshot_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "RTT Snapshot",
+  "scene": "scene.json"
+})json");
+
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "rtt_scene",
+  "nodes": [
+    {
+      "id": "card",
+      "parent": null,
+      "render_to_texture": {
+        "target_asset_node_id": 42,
+        "include_descendants": false,
+        "also_draw_in_scene": true,
+        "enabled": false
+      }
+    },
+    {
+      "id": "plain",
+      "parent": null
+    }
+  ]
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    ASSERT_EQ(loaded.snapshot.roots.size(), 2u);
+
+    const auto& card = loaded.snapshot.roots[0];
+    const bool listed = std::any_of(
+        card.components.begin(), card.components.end(),
+        [](const auto& c) { return c.kind == "render_to_texture"; });
+    EXPECT_TRUE(listed);
+    ASSERT_TRUE(card.render_to_texture.has_value());
+    ASSERT_TRUE(card.render_to_texture->target_node_id.has_value());
+    EXPECT_EQ(*card.render_to_texture->target_node_id, 42u);
+    EXPECT_FALSE(card.render_to_texture->include_descendants);
+    EXPECT_TRUE(card.render_to_texture->also_draw_in_scene);
+    EXPECT_FALSE(card.render_to_texture->enabled);
+
+    // A node without the component neither lists it nor carries fields -- the
+    // reader is tolerant of absence, not defaulting it in.
+    const auto& plain = loaded.snapshot.roots[1];
+    EXPECT_FALSE(plain.render_to_texture.has_value());
+    EXPECT_FALSE(std::any_of(
+        plain.components.begin(), plain.components.end(),
+        [](const auto& c) { return c.kind == "render_to_texture"; }));
+}
+
+// Same parity requirement for RenderToTexture (#287). It reaches the snapshot by
+// two independent paths -- build_scene_snapshot_from_nodes for a grafted /
+// scenelet-round-trip node, and the JSON reader for a scene on disk -- and the
+// inspector gates its section on the `components` entry while restoring the
+// fields from node.render_to_texture. A path that surfaces one without the other
+// is the "component missing / won't save" failure the sibling components each
+// hit in turn, so assert both halves on the asset path here.
+TEST(ProjectSceneSnapshot, SurfacesRenderToTextureComponentAndFieldsFromNodes)
+{
+    wz::engine::assets::SceneNodeAsset card;
+    card.id = "card";
+    wz::engine::assets::SceneRenderToTextureAsset rtt;
+    rtt.target_node_id = 42u;
+    rtt.include_descendants = false;
+    rtt.also_draw_in_scene = true;
+    rtt.enabled = false;
+    card.render_to_texture = rtt;
+
+    const wz::engine::editor::SceneSnapshot snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes({ card });
+
+    ASSERT_EQ(snapshot.roots.size(), 1u);
+    const auto& node = snapshot.roots[0];
+
+    const bool listed = std::any_of(
+        node.components.begin(), node.components.end(),
+        [](const auto& c) { return c.kind == "render_to_texture"; });
+    EXPECT_TRUE(listed);
+
+    ASSERT_TRUE(node.render_to_texture.has_value());
+    ASSERT_TRUE(node.render_to_texture->target_node_id.has_value());
+    EXPECT_EQ(*node.render_to_texture->target_node_id, 42u);
+    // Every switch survives, including the two whose defaults are the opposite
+    // of what is authored here -- a defaults-shaped read-back would pass a test
+    // that only checked the target.
+    EXPECT_FALSE(node.render_to_texture->include_descendants);
+    EXPECT_TRUE(node.render_to_texture->also_draw_in_scene);
+    EXPECT_FALSE(node.render_to_texture->enabled);
+}
+
+// An UNBOUND render-to-texture (no target picked yet) must still surface as a
+// component so the inspector shows the section the user just added, with an
+// empty target rather than a phantom node 0.
+TEST(ProjectSceneSnapshot, SurfacesUnboundRenderToTextureFromNodes)
+{
+    wz::engine::assets::SceneNodeAsset card;
+    card.id = "card";
+    card.render_to_texture = wz::engine::assets::SceneRenderToTextureAsset{};
+
+    const wz::engine::editor::SceneSnapshot snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes({ card });
+
+    ASSERT_EQ(snapshot.roots.size(), 1u);
+    const auto& node = snapshot.roots[0];
+    const bool listed = std::any_of(
+        node.components.begin(), node.components.end(),
+        [](const auto& c) { return c.kind == "render_to_texture"; });
+    EXPECT_TRUE(listed);
+    ASSERT_TRUE(node.render_to_texture.has_value());
+    EXPECT_FALSE(node.render_to_texture->target_node_id.has_value());
+    EXPECT_TRUE(node.render_to_texture->include_descendants);
+    EXPECT_FALSE(node.render_to_texture->also_draw_in_scene);
+    EXPECT_TRUE(node.render_to_texture->enabled);
+}
+
 // A camera on a grafted / scenelet-round-trip node must surface the same way as
 // its sibling components: the removable `components` entry AND node.camera field
 // values. The editor reveals its Camera section on node.camera presence, so a

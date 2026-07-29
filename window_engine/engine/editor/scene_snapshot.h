@@ -134,6 +134,19 @@ namespace wz::engine::editor
         bool enabled = true;
     };
 
+    // Authored RenderToTexture-component field values surfaced read-back so the
+    // editor inspector restores them (issue #287): which Texture asset-graph node
+    // the subtree draws into, plus the two composition switches and the master
+    // enable. The resolved target key re-bridges on bind, so only the authored
+    // node id is surfaced.
+    struct SceneSnapshotRenderToTexture
+    {
+        std::optional<wz::asset::AssetGraphDraftNodeId> target_node_id;
+        bool include_descendants = true;
+        bool also_draw_in_scene = false;
+        bool enabled = true;
+    };
+
     // The high-impact subset of a MeshRenderStyleData that the editor reads back
     // and re-authors for a GLB component (issue #213 Phase 3b-2): surface +
     // wireframe enabled flags and RGBA colors. The rest of MeshRenderStyleData is
@@ -246,6 +259,7 @@ namespace wz::engine::editor
         std::optional<SceneSnapshotAudioSource> audio_source;
         std::optional<SceneSnapshotAtmosphere> atmosphere;
         std::optional<SceneSnapshotEnvironment> environment;
+        std::optional<SceneSnapshotRenderToTexture> render_to_texture;
         // Custom-renderable ingredients (issue #229/#230), surfaced read-back
         // (possibly empty) so the inspector pre-fills its binding rows +
         // constant overrides from the node's persisted state.

@@ -2128,7 +2128,13 @@ namespace wz::engine::assets
           [](const SceneNodeAsset& n) {
               return n.render_to_texture.has_value();
           },
-          &SceneComponentCounts::render_to_texture_sources },
+          &SceneComponentCounts::render_to_texture_sources,
+          nullptr,
+          "render_to_texture",
+          [](SceneNodeAsset& n) {
+              n.render_to_texture = SceneRenderToTextureAsset{};
+          },
+          [](SceneNodeAsset& n) { n.render_to_texture.reset(); } },
         { SceneComponentKind::InputReceiver,
           [](const SceneNodeAsset& n) { return n.input_receiver.has_value(); },
           &SceneComponentCounts::input_receivers },

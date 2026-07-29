@@ -1997,6 +1997,33 @@ namespace wz::app
         return true;
     }
 
+    bool WozzitsApp_v1::set_node_render_to_texture(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneRenderToTextureAsset& render_to_texture)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
+        if (!node) {
+            ctx_.logger.warn(
+                "set_node_render_to_texture: no-op (node '" + node_id
+                + "' missing)");
+            return false;
+        }
+        node->render_to_texture = render_to_texture;
+        // The resolved target key is re-derived by assemble_render_bindings from
+        // target_node_id, so drop whatever the caller handed us rather than
+        // trusting a key that may not match the new anchor.
+        node->render_to_texture->target = {};
+        document_.dirty() = true;
+
+        // A RenderBinding change (not a runtime rebuild): assemble_render_bindings
+        // is what resolves render_to_texture->target from the authored node id,
+        // and nothing about this edit invalidates the behavior runtime's entity
+        // ids. Edits are coalesced by id, so one re-assemble per service cycle.
+        apply_scene_change(SceneChange::render_binding());
+        return true;
+    }
+
     // Extract a short seam identifier from a source_location function name --
     // "void wz::app::WozzitsApp_v1::set_node_renderable_program(...)" -> the bare
     // "set_node_renderable_program". CSV-safe (a bare identifier: no comma) and

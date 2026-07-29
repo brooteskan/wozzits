@@ -753,6 +753,40 @@ namespace wz::app
         }
     }
 
+    void EditorRuntimeControl::post_scene_node_render_to_texture(
+        SceneNodeRenderToTextureEdit edit)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Coalesce by id -- toggling a switch / re-picking the target streams a
+        // few, only the latest matters.
+        for (SceneNodeRenderToTextureEdit& pending :
+             pending_render_to_texture_edits_)
+        {
+            if (pending.node_id == edit.node_id) {
+                pending.render_to_texture = edit.render_to_texture;
+                return;
+            }
+        }
+        pending_render_to_texture_edits_.push_back(std::move(edit));
+    }
+
+    void EditorRuntimeControl::service_pending_scene_node_render_to_textures(
+        const std::function<void(const SceneNodeRenderToTextureEdit&)>& applier)
+    {
+        std::vector<SceneNodeRenderToTextureEdit> edits;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_render_to_texture_edits_.empty()) {
+                return;
+            }
+            edits.swap(pending_render_to_texture_edits_);
+        }
+
+        for (const SceneNodeRenderToTextureEdit& edit : edits) {
+            applier(edit);
+        }
+    }
+
     void EditorRuntimeControl::post_scene_node_scene_source(
         SceneNodeSceneSourceEdit edit)
     {
@@ -1484,6 +1518,15 @@ namespace wz::app
                             // Save All persists the reference + enabled flag.
                             app.set_node_environment(
                                 edit.node_id, edit.environment);
+                        });
+                    control->service_pending_scene_node_render_to_textures(
+                        [&app](const SceneNodeRenderToTextureEdit& edit) {
+                            // Set the whole RenderToTexture component; the apply
+                            // re-assembles the render bindings so the target key
+                            // re-resolves, and marks the scene dirty so Save All
+                            // persists the reference + switches.
+                            app.set_node_render_to_texture(
+                                edit.node_id, edit.render_to_texture);
                         });
                     control->service_pending_scene_node_scene_sources(
                         [&app](const SceneNodeSceneSourceEdit& edit) {

@@ -404,6 +404,17 @@ namespace wz::app
             const wz::scene::AuthoredEntityId& node_id,
             const wz::engine::assets::SceneEnvironmentAsset& environment);
 
+        // Live edit: set the node's RenderToTexture component (issue #287) --
+        // which Texture asset the subtree draws into (via target_node_id) plus
+        // include_descendants / also_draw_in_scene / enabled. No-op (logged) when
+        // the node is missing. Marks the scene dirty so Save All persists it, and
+        // re-assembles the render bindings so the resolved target key re-resolves
+        // from the new node id.
+        bool set_node_render_to_texture(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneRenderToTextureAsset&
+                render_to_texture);
+
         // Flatten the node's referenced Scene asset into the live scene (#213):
         // resolve the node's scene_source, expand its GLB-named nodes as real,
         // persistent children of the node in document_.nodes() (id "<host>/<glbname>",

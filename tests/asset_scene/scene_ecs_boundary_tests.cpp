@@ -1808,9 +1808,9 @@ TEST(SceneECSBoundary, EveryEditorTokenAddsAndRemovesItsComponent)
             << binding.editor_token;
     }
 
-    // The nine the editor authors today. A bare loop would pass vacuously if the
-    // table lost every token.
-    EXPECT_EQ(tokens, 9u);
+    // The ten the editor authors today. A bare loop would pass vacuously if the
+    // table lost every token, so the count is asserted rather than implied.
+    EXPECT_EQ(tokens, 10u);
 }
 
 // Unknown tokens and missing nodes fail closed, unchanged by the table rewrite.
