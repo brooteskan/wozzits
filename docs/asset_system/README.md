@@ -728,17 +728,6 @@ Named bundles of known-good parameter values for terrain surface compilation
 `kSmoothTerrainCoverage` presets capture the baseline configuration for
 continuous terrain surface rendering.
 
-### LandscapeDocument
-
-**Header:** `engine/assets/landscape/landscape_document.h`
-
-A portable, versioned JSON sidecar (`.wzlandscape.json`) that captures the
-user-authored configuration for a terrain surface. This is a recipe document, not
-a baked asset: it stores source references (field file paths and formats),
-compile descriptors (`TerrainSplatFieldRecipe`), render settings (coverage,
-field accumulation, surface reconstruction, LOD, density), and toolhost
-preview state. Serialized via yyjson in `landscape_document_json.cpp`.
-
 ---
 
 ## Summary Count

@@ -162,6 +162,7 @@ then scale, bias, and clamp to [0,1].
   `gaussian_splat_terrain_preset.h` capture known-good parameter combinations.
   `kSmoothTerrainSurface` and `kSmoothTerrainCoverage` are the baseline presets.
 
-- `LandscapeDocument` (`.wzlandscape.json`) is the user-facing persistence format
-  for terrain configurations. It stores field source paths, the full recipe, and
-  all preview/render settings. See `engine/assets/landscape/landscape_document.h`.
+- Terrain configurations have no user-facing persistence format of their own.
+  `LandscapeDocument` (`.wzlandscape.json`) was that format for the retired imgui
+  terrain toolhost and was removed with it; authored terrain now persists through
+  the scene document's terrain components like every other authored component.
