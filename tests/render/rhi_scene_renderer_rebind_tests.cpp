@@ -265,3 +265,111 @@ TEST_F(WozzitsAppFixture, RebindToGraphWithoutRenderableClearsStaleKey)
     EXPECT_EQ(app.resident_gpu_resource_count(), 0u)
         << "nothing should be realized/drawn for the empty graph";
 }
+
+// B2-T1 (#311): the leak-cycle harness. The editor's commit loop is
+// bind_asset_graph over and over; the single-rebind equality above cannot see
+// a drip that starts on the second cycle or accumulates slowly. Two phases:
+//   * repeated SAME-CONTENT commits (the common editor loop — survivors are
+//     kept, so every count must hold exactly flat per cycle), then
+//   * alternating EMPTY <-> real commits, which force the full retire +
+//     re-register path (programs, shaders, descriptor tables, residency all
+//     drop to zero and must come back to the same baseline — including the
+//     empty->real RECOVERY, which no other test exercises).
+TEST_F(WozzitsAppFixture, RepeatedRebindCyclesHoldEveryCountFlat)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)))
+        << "test_rebind_fixture scene failed to load/compile";
+    render_one_frame(app);
+
+    // One full warm-up cycle so every lazily-built object (constant buffers,
+    // descriptor tables, PSO cache entries) exists before the baseline.
+    {
+        wz::asset::AssetGraphDraft draft;
+        ASSERT_TRUE(load_graph_draft(draft)) << "could not reload graph draft";
+        const wz::app::AssetGraphCompileResult bound =
+            app.bind_asset_graph(draft);
+        ASSERT_TRUE(bound.ok) << "warm-up rebind failed to compile";
+        render_one_frame(app);
+    }
+
+    const std::size_t resident = app.resident_gpu_resource_count();
+    const std::size_t programs = app.registered_program_count();
+    const std::size_t shaders = app.registered_shader_count();
+    const std::size_t tables = app.cached_descriptor_table_count();
+    ASSERT_GT(resident, 0u);
+    ASSERT_GT(programs, 0u);
+    ASSERT_GT(tables, 0u);
+
+    // Phase 1: same-content commits.
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        wz::asset::AssetGraphDraft draft;
+        ASSERT_TRUE(load_graph_draft(draft))
+            << "could not reload graph draft (cycle " << cycle << ")";
+        const wz::app::AssetGraphCompileResult bound =
+            app.bind_asset_graph(draft);
+        ASSERT_TRUE(bound.ok) << "rebind failed (cycle " << cycle << ")";
+        render_one_frame(app);
+
+        EXPECT_EQ(app.resident_gpu_resource_count(), resident)
+            << "GPU residency drifted on same-content commit " << cycle;
+        EXPECT_EQ(app.registered_program_count(), programs)
+            << "render-program registry drifted on same-content commit "
+            << cycle;
+        EXPECT_EQ(app.registered_shader_count(), shaders)
+            << "shader-module registry drifted on same-content commit "
+            << cycle;
+        EXPECT_EQ(app.cached_descriptor_table_count(), tables)
+            << "recorder descriptor tables drifted on same-content commit "
+            << cycle;
+        EXPECT_EQ(app.render_time_program_bridge_count(), 0u)
+            << "a render-time program bridge appeared on same-content commit "
+            << cycle;
+    }
+
+    // Phase 2: alternating empty <-> real commits.
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        wz::asset::AssetGraphDraft empty;
+        const wz::app::AssetGraphCompileResult emptied =
+            app.bind_asset_graph(empty);
+        ASSERT_TRUE(emptied.ok)
+            << "binding the empty graph failed (cycle " << cycle << ")";
+        EXPECT_EQ(app.registered_program_count(), 0u)
+            << "programs not retired on empty commit " << cycle;
+        EXPECT_EQ(app.registered_shader_count(), 0u)
+            << "shaders not retired on empty commit " << cycle;
+        EXPECT_EQ(app.cached_descriptor_table_count(), 0u)
+            << "descriptor tables not released on empty commit " << cycle;
+        render_one_frame(app);
+        EXPECT_EQ(app.resident_gpu_resource_count(), 0u)
+            << "residency not fully reclaimed on empty commit " << cycle;
+
+        wz::asset::AssetGraphDraft draft;
+        ASSERT_TRUE(load_graph_draft(draft))
+            << "could not reload graph draft (recovery " << cycle << ")";
+        const wz::app::AssetGraphCompileResult restored =
+            app.bind_asset_graph(draft);
+        ASSERT_TRUE(restored.ok)
+            << "re-binding the real graph failed (recovery " << cycle << ")";
+        render_one_frame(app);
+
+        EXPECT_EQ(app.resolved_renderable_node_count(), 1u)
+            << "scene did not re-bridge after the empty graph (recovery "
+            << cycle << ")";
+        EXPECT_EQ(app.resident_gpu_resource_count(), resident)
+            << "residency did not return to baseline after recovery "
+            << cycle;
+        EXPECT_EQ(app.registered_program_count(), programs)
+            << "program registry did not return to baseline after recovery "
+            << cycle;
+        EXPECT_EQ(app.registered_shader_count(), shaders)
+            << "shader registry did not return to baseline after recovery "
+            << cycle;
+        EXPECT_EQ(app.cached_descriptor_table_count(), tables)
+            << "descriptor tables did not return to baseline after recovery "
+            << cycle;
+    }
+}
