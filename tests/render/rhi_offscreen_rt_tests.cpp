@@ -178,6 +178,99 @@ TEST(OffscreenRenderTarget, CompositeLayersPlacesArtIntoMaterialTexture)
     wz::window::destroy_window(window);
 }
 
+// B2-T2 (#311): two layers with DISTINCT source textures in ONE recorded frame
+// must each sample their own texture. Descriptors are read at execute time, so
+// a composite that funnels every draw through one rewritten SRV slot renders
+// every layer as the LAST texture written — this pins the per-draw ring.
+TEST(OffscreenRenderTarget, CompositeTwoLayersKeepDistinctTextures)
+{
+    wz::window::WindowDesc window_desc{};
+    window_desc.title = "rhi_composite_two_layer_test";
+    window_desc.width = 256;
+    window_desc.height = 256;
+    window_desc.resizable = false;
+
+    wz::window::WindowHandle window = wz::window::create_window(window_desc);
+    if (!window.valid()) {
+        GTEST_SKIP() << "no window available for the two-layer composite test";
+    }
+    wz::gpu::Device device = wz::gpu::create_device(window);
+    if (!device.valid()) {
+        wz::window::destroy_window(window);
+        GTEST_SKIP() << "no GPU device available for the two-layer composite test";
+    }
+
+    constexpr std::uint32_t kSize = 128;
+    wz::gpu::TextureDesc rt_desc{};
+    rt_desc.width = kSize;
+    rt_desc.height = kSize;
+    rt_desc.format = wz::gpu::TextureFormat::RGBA8Unorm;
+    rt_desc.render_target = true;
+
+    const wz::gpu::GPUHandle red_tex = wz::gpu::create_texture(device, rt_desc);
+    const wz::gpu::GPUHandle green_tex = wz::gpu::create_texture(device, rt_desc);
+    const wz::gpu::GPUHandle material = wz::gpu::create_texture(device, rt_desc);
+    ASSERT_TRUE(red_tex.valid());
+    ASSERT_TRUE(green_tex.valid());
+    ASSERT_TRUE(material.valid());
+
+    const float red[4] = { 1.0f, 0.0f, 0.0f, 1.0f };
+    const float green[4] = { 0.0f, 1.0f, 0.0f, 1.0f };
+    ASSERT_TRUE(wz::gpu::begin_frame(device));
+    ASSERT_TRUE(gi::begin_offscreen_pass(device, red_tex, red));
+    ASSERT_TRUE(gi::end_offscreen_pass(device, red_tex));
+    ASSERT_TRUE(gi::begin_offscreen_pass(device, green_tex, green));
+    ASSERT_TRUE(gi::end_offscreen_pass(device, green_tex));
+    ASSERT_TRUE(wz::gpu::end_frame(device));
+
+    // RED at the top-left quadrant, GREEN at the bottom-right — disjoint rects,
+    // both draws recorded into the same frame before anything executes.
+    gi::TextureCompositeLayer layers[2]{};
+    layers[0].texture = red_tex;
+    layers[0].center_uv[0] = 0.25f;
+    layers[0].center_uv[1] = 0.25f;
+    layers[0].half_size_uv[0] = 0.25f;
+    layers[0].half_size_uv[1] = 0.25f;
+    layers[0].opacity = 1.0f;
+    layers[1] = layers[0];
+    layers[1].texture = green_tex;
+    layers[1].center_uv[0] = 0.75f;
+    layers[1].center_uv[1] = 0.75f;
+
+    const float base_blue[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+    ASSERT_TRUE(wz::gpu::begin_frame(device));
+    ASSERT_TRUE(gi::composite_texture_layers_dx12(
+        device, material, base_blue, layers, 2));
+    ASSERT_TRUE(wz::gpu::end_frame(device));
+
+    std::vector<std::uint8_t> px;
+    ASSERT_TRUE(gi::read_texture_rgba8_dx12(device, material, px));
+    ASSERT_EQ(px.size(), static_cast<std::size_t>(kSize) * kSize * 4u);
+    auto texel = [&](std::uint32_t x, std::uint32_t y) {
+        return &px[(static_cast<std::size_t>(y) * kSize + x) * 4u];
+    };
+
+    // Each placed rect holds ITS OWN layer's colour.
+    const std::uint8_t* first = texel(kSize / 4u, kSize / 4u);
+    EXPECT_GT(first[0], 200) << "first layer lost its texture (sampled a later "
+                                "layer's SRV — single-slot aliasing)";
+    EXPECT_LT(first[1], 60) << "first layer rendered the SECOND layer's texture";
+
+    const std::uint8_t* second = texel(kSize * 3u / 4u, kSize * 3u / 4u);
+    EXPECT_GT(second[1], 200) << "second layer did not composite its texture";
+    EXPECT_LT(second[0], 60) << "second layer rendered the first layer's texture";
+
+    // The base survives outside both rects.
+    const std::uint8_t* base = texel(kSize * 3u / 4u, kSize / 4u);
+    EXPECT_GT(base[2], 200) << "base colour missing outside the placed layers";
+
+    wz::gpu::release_texture(device, material);
+    wz::gpu::release_texture(device, green_tex);
+    wz::gpu::release_texture(device, red_tex);
+    wz::gpu::destroy_device(device);
+    wz::window::destroy_window(window);
+}
+
 TEST(OffscreenRenderTarget, RejectsRenderTargetWithMipChain)
 {
     // Pure validation (no device): a render target is a single 2D surface, so a

@@ -234,9 +234,11 @@ namespace
         }
         D3D12_DESCRIPTOR_HEAP_DESC hd{};
         hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        hd.NumDescriptors = 1;
+        hd.NumDescriptors = wz::gpu::dx12::TexturedQuadContext::kSrvCapacity;
         hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         impl->device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&ctx->srv_heap));
+        ctx->srv_stride = impl->device->GetDescriptorHandleIncrementSize(
+            D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
         impl->textured_quad_ctx = ctx;
         return ctx->root_sig && ctx->pso && ctx->pso_world && ctx->pso_composite
@@ -263,16 +265,25 @@ namespace wz::gpu::dx12::internal
         }
         TexturedQuadContext* ctx = impl->textured_quad_ctx;
 
-        // (Re)write the source texture's SRV into the quad heap's single slot.
+        // Write the source texture's SRV into the NEXT ring slot. Descriptors
+        // are read at execute time, so a slot is never rewritten within a frame
+        // — the old single rewritten slot made every recorded quad draw sample
+        // the LAST texture written. Cursor resets in begin_frame.
+        if (ctx->srv_cursor >= TexturedQuadContext::kSrvCapacity) {
+            return false;  // out of quad slots this frame; refuse, don't alias
+        }
+        const uint32_t slot = ctx->srv_cursor++;
+
         D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
         srv.Format = tex->format;
         srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
         srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srv.Texture2D.MostDetailedMip = 0;
         srv.Texture2D.MipLevels = 1;
-        impl->device->CreateShaderResourceView(
-            tex->texture, &srv,
-            ctx->srv_heap->GetCPUDescriptorHandleForHeapStart());
+        D3D12_CPU_DESCRIPTOR_HANDLE slot_cpu =
+            ctx->srv_heap->GetCPUDescriptorHandleForHeapStart();
+        slot_cpu.ptr += static_cast<SIZE_T>(slot) * ctx->srv_stride;
+        impl->device->CreateShaderResourceView(tex->texture, &srv, slot_cpu);
 
         ID3D12PipelineState* pso = ctx->pso;
         if (mode == TexturedQuadMode::WorldSurface) {
@@ -291,12 +302,15 @@ namespace wz::gpu::dx12::internal
             constants[16 + i] = tint_rgba ? tint_rgba[i] : 1.0f;
         }
 
+        D3D12_GPU_DESCRIPTOR_HANDLE slot_gpu =
+            ctx->srv_heap->GetGPUDescriptorHandleForHeapStart();
+        slot_gpu.ptr += static_cast<UINT64>(slot) * ctx->srv_stride;
+
         ID3D12DescriptorHeap* heaps[] = { ctx->srv_heap };
         impl->cmd->SetDescriptorHeaps(1, heaps);
         impl->cmd->SetGraphicsRootSignature(ctx->root_sig);
         impl->cmd->SetPipelineState(pso);
-        impl->cmd->SetGraphicsRootDescriptorTable(
-            0, ctx->srv_heap->GetGPUDescriptorHandleForHeapStart());
+        impl->cmd->SetGraphicsRootDescriptorTable(0, slot_gpu);
         impl->cmd->SetGraphicsRoot32BitConstants(
             1, kQuadRootConstantCount, constants, 0);
         impl->cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

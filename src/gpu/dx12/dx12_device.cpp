@@ -443,6 +443,15 @@ namespace wz::gpu::dx12
             return false;
         }
         assert(SUCCEEDED(hr));
+
+        // New frame, fresh SRV rings: last frame's slots are past the fence
+        // wait in end_frame, so they are free to reuse.
+        if (impl->blit_ctx) {
+            impl->blit_ctx->srv_cursor = 0;
+        }
+        if (impl->textured_quad_ctx) {
+            impl->textured_quad_ctx->srv_cursor = 0;
+        }
         // impl->cmd->SetGraphicsRootSignature(nullptr); // harmless placeholder sanity reset
 
         // transition to render target

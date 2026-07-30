@@ -53,13 +53,20 @@ namespace wz::gpu::dx12
 
     // Offscreen render-to-texture display (S6): a fullscreen-triangle blit that
     // samples an arbitrary RGBA texture onto the current render target. Lazily
-    // built on the first blit and reused; the SRV heap holds one shader-visible
-    // descriptor rewritten per blit for the source texture.
+    // built on the first blit and reused. The SRV heap is a per-frame RING, one
+    // slot consumed per blit: descriptors are read by the GPU at execute time,
+    // long after they are written, so a slot must never be rewritten within a
+    // frame — every recorded blit would sample the LAST texture written.
+    // srv_cursor resets in begin_frame.
     struct BlitContext
     {
-        ID3D12RootSignature*  root_sig  = nullptr;
-        ID3D12PipelineState*  pso       = nullptr;
-        ID3D12DescriptorHeap* srv_heap  = nullptr;
+        static constexpr uint32_t kSrvCapacity = 16;
+
+        ID3D12RootSignature*  root_sig   = nullptr;
+        ID3D12PipelineState*  pso        = nullptr;
+        ID3D12DescriptorHeap* srv_heap   = nullptr;
+        UINT                  srv_stride = 0;
+        uint32_t              srv_cursor = 0;
     };
 
     // Textured 3D mesh (S6 3D-mesh consumer): draw a textured quad transformed by a
@@ -72,11 +79,20 @@ namespace wz::gpu::dx12
     // occluded by scene geometry.
     struct TexturedQuadContext
     {
+        // Per-frame SRV ring, one slot per quad draw (see BlitContext): a slot
+        // rewritten within a frame would retroactively change every earlier
+        // recorded quad's source texture. Sized for the worst realistic frame
+        // (composite layers + overlays + cards). srv_cursor resets in
+        // begin_frame; an overflowing draw fails loudly instead of aliasing.
+        static constexpr uint32_t kSrvCapacity = 256;
+
         ID3D12RootSignature*  root_sig      = nullptr;
         ID3D12PipelineState*  pso           = nullptr;  // overlay: opaque, no depth
         ID3D12PipelineState*  pso_world     = nullptr;  // in-scene: alpha + depth
         ID3D12PipelineState*  pso_composite = nullptr;  // into a texture: alpha only
         ID3D12DescriptorHeap* srv_heap      = nullptr;
+        UINT                  srv_stride    = 0;
+        uint32_t              srv_cursor    = 0;
     };
 
     struct DX12Device
