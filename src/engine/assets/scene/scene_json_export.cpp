@@ -1740,8 +1740,17 @@ namespace wz::engine::assets
         JSONValuePtr collision_value(const SceneCollisionAsset& collision)
         {
             auto obj = object_value();
-            add_member(*obj, "asset",
-                string_value(asset_key_string(collision.collision_asset)));
+            // Emit the pre-resolved key only when there IS one. An empty key is
+            // the absence of a reference, not a reference to nothing, and the
+            // compiler fails the whole scene closed on an "asset" member it
+            // cannot resolve -- so writing the zero key turned a keyless
+            // collision (a graph-ref-only one, or one the editor just added)
+            // into an unloadable scene. Mirrors collision_asset_node_id and
+            // height_field_source below, which are already omitted when absent.
+            if (!(collision.collision_asset == wz::asset::AssetKey{})) {
+                add_member(*obj, "asset",
+                    string_value(asset_key_string(collision.collision_asset)));
+            }
             add_member(*obj, "layer_mask",
                 number_value(collision.layer_mask));
             add_member(*obj, "collides_with_mask",
@@ -2147,13 +2156,23 @@ namespace wz::engine::assets
             // Render-to-texture source (issue #287): the target's asset-graph
             // anchor plus the selection dials. The resolved target key is a
             // bridge product, re-derived on every (re)bind, never exported.
-            if (node.render_to_texture
-                && node.render_to_texture->target_node_id)
-            {
+            //
+            // Presence is the authored fact, so an UNBOUND target still persists
+            // the component (with the anchor member omitted, mirroring how
+            // collision_value omits collision_asset_node_id). Requiring a target
+            // here dropped the whole component -- and its three switches -- for
+            // the intermediate state the add verb and
+            // wz_host_runtime_set_node_render_to_texture(target=0) both produce.
+            // A targetless source is inert by design, not broken:
+            // authored_render_targets skips an empty target key rather than
+            // falling back to the backbuffer.
+            if (node.render_to_texture) {
                 auto rtt = object_value();
-                add_member(*rtt, "target_asset_node_id",
-                    number_value(static_cast<double>(
-                        *node.render_to_texture->target_node_id)));
+                if (node.render_to_texture->target_node_id) {
+                    add_member(*rtt, "target_asset_node_id",
+                        number_value(static_cast<double>(
+                            *node.render_to_texture->target_node_id)));
+                }
                 add_member(*rtt, "include_descendants",
                     bool_value(node.render_to_texture->include_descendants));
                 add_member(*rtt, "also_draw_in_scene",
@@ -2312,17 +2331,19 @@ namespace wz::engine::assets
                 add_member(*obj, "vector_field_source",
                     vector_field_source_value(*node.vector_field_source));
             }
-            // Persist the collision component when it carries ANY authored
-            // intent: a resolved key, a graph reference (issue #216/#217 — the
-            // key may not be bridged yet), a constraint toggle, or an inline
-            // heightfield source. (A bare default-constructed collision with no
-            // key/ref is still skipped.)
-            if (node.collision
-                && (!(node.collision->collision_asset == wz::asset::AssetKey{})
-                    || node.collision->collision_asset_node_id
-                    || node.collision->constrain_movement
-                    || node.collision->height_field_source))
-            {
+            // Persist the collision component whenever the node CARRIES one.
+            // Presence is the authored fact; the fields are just its state. This
+            // used to require "any authored intent" (a resolved key, a graph ref,
+            // a constraint toggle, or an inline heightfield) and so silently
+            // dropped the component the editor's "+ -> Collision" verb creates,
+            // which default-constructs every one of those (see
+            // add_node_optional_component): adding a collision and saving before
+            // configuring it lost the component with no diagnostic, while the
+            // live snapshot kept reporting it present all session. A keyless
+            // collision is deliberately inert at runtime, not invalid --
+            // collision_frame skips it on `collision_asset == AssetKey{}` -- so
+            // round-tripping it costs nothing and is what the editor means.
+            if (node.collision) {
                 add_member(*obj, "collision",
                     collision_value(*node.collision));
             }

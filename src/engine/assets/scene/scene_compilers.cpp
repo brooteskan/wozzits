@@ -1471,12 +1471,20 @@ namespace wz::engine::assets::internal
                         static_cast<wz::asset::AssetGraphDraftNodeId>(*anchor);
                 }
                 else {
-                    // Without a target there is nothing to render into, and a
-                    // silently inert component is the failure #287 is about.
-                    logger.error(
+                    // Without a target there is nothing to render into, so this
+                    // source contributes nothing -- authored_render_targets skips
+                    // an unresolved target rather than falling back to the
+                    // backbuffer. WARN rather than reject: a targetless component
+                    // is the intermediate state authoring legitimately produces
+                    // (add the component, pick the target afterwards), and the
+                    // exporter now persists it, so failing the load here would
+                    // turn "my component is inert" into "my whole scene will not
+                    // open". #287's point stands -- inert must not be SILENT --
+                    // and the warning is what carries that, not the hard failure.
+                    logger.warn(
                         "render_to_texture on node '" + node.id
-                        + "' has no 'target_asset_node_id'");
-                    return std::nullopt;
+                        + "' has no 'target_asset_node_id'; the source is inert "
+                          "until a target is assigned");
                 }
                 if (const auto v = read_bool(*rtt, "include_descendants")) {
                     out.include_descendants = *v;

@@ -2732,3 +2732,196 @@ TEST(SceneAssetModule, EventTriggerComponentRoundTripsThroughSceneJSON)
         wz::json::serialize_json(export_scene_to_json_document(*data2));
     EXPECT_EQ(reparsed_export, exported);
 }
+
+// A component the editor JUST ADDED, before the user configures anything, must
+// survive a save. These two pin the exporter against the failure the roundtrip
+// tests above cannot see: they all author a fully-populated component, so a
+// per-component export GUARD that keys on the FIELDS rather than on presence
+// passes every one of them and still deletes the component the editor's
+// "+ -> <kind>" verb creates. Both kinds below had exactly such a guard.
+//
+// The verb under test is the real one -- add_node_optional_component, the same
+// entry point wz_host_runtime_add_node_component drives -- so the test cannot
+// drift from what the editor actually does. Presence, not field content, is the
+// authored fact being persisted.
+
+TEST(SceneAssetModule, DefaultConstructedCollisionSurvivesExport)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_default_collision_export_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "default_collision_scene",
+  "nodes": [
+    { "id": "crate" }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "default_collision.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "default_collision",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    // The editor verb, verbatim: default-construct the component's slot. Every
+    // field stays at its default -- no asset key, no graph ref, no
+    // constrain_movement, no heightfield -- which is precisely the state the old
+    // export guard treated as "no authored intent" and skipped.
+    SceneAssetData edited = *scene_data;
+    ASSERT_TRUE(add_node_optional_component(edited.nodes, "crate", "collision"));
+    ASSERT_TRUE(edited.nodes[0].collision.has_value());
+    EXPECT_TRUE(
+        edited.nodes[0].collision->collision_asset == wz::asset::AssetKey{});
+    EXPECT_FALSE(edited.nodes[0].collision->collision_asset_node_id.has_value());
+    EXPECT_FALSE(edited.nodes[0].collision->constrain_movement);
+    EXPECT_FALSE(edited.nodes[0].collision->height_field_source.has_value());
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(edited));
+    EXPECT_NE(exported.find("\"collision\""), std::string::npos)
+        << "a freshly added collision was dropped on save";
+
+    // ...and it must come back on reload, or the editor's Collision section
+    // vanishes on the next project open while the live snapshot claimed all
+    // session that the component was there.
+    auto rel_path2 = write_scene_json(
+        root, "default_collision_reexport.scene.json", exported);
+    const auto reparsed =
+        assets.scenes().create_scene_from_json({
+            .name = "default_collision_reexport",
+            .path = rel_path2,
+        });
+    ASSERT_TRUE(reparsed.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+    const auto* data2 = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(reparsed));
+    ASSERT_NE(data2, nullptr);
+    ASSERT_EQ(data2->nodes.size(), 1u);
+    EXPECT_TRUE(node_has_optional_component(data2->nodes, "crate", "collision"))
+        << "a freshly added collision did not survive save -> reload";
+
+    // Stable under repeated saves (the editor rewrites the file every time).
+    const std::string collision_reparsed_export =
+        wz::json::serialize_json(export_scene_to_json_document(*data2));
+    EXPECT_EQ(collision_reparsed_export, exported);
+}
+
+TEST(SceneAssetModule, TargetlessRenderToTextureSurvivesExport)
+{
+    const wz::fs::Path root =
+        wz::fs::join(
+            wz::fs::temp_directory_path(),
+            "wozzits_scene_targetless_rtt_export_test");
+
+    ASSERT_EQ(wz::fs::create_directories(root), wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::gpu::Device device{};
+
+    wz::engine::assets::EngineAssetLibrary assets{ device, logger, root };
+
+    using namespace wz::engine::assets;
+
+    const char* scene_json = R"({
+  "schema": "wozzits.scene.v0",
+  "name": "targetless_rtt_scene",
+  "nodes": [
+    { "id": "overlay" }
+  ]
+})";
+
+    auto rel_path = write_scene_json(
+        root, "targetless_rtt.scene.json", scene_json);
+
+    const auto scene_asset =
+        assets.scenes().create_scene_from_json({
+            .name = "targetless_rtt",
+            .path = rel_path,
+        });
+    ASSERT_TRUE(scene_asset.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    const auto* scene_data = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(scene_asset));
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+
+    SceneAssetData edited = *scene_data;
+    ASSERT_TRUE(
+        add_node_optional_component(
+            edited.nodes, "overlay", "render_to_texture"));
+    SceneNodeAsset* overlay = find_scene_node(edited.nodes, "overlay");
+    ASSERT_NE(overlay, nullptr);
+    ASSERT_TRUE(overlay->render_to_texture.has_value());
+    ASSERT_FALSE(overlay->render_to_texture->target_node_id.has_value());
+    // Drive all three switches off their defaults, the way
+    // wz_host_runtime_set_node_render_to_texture(target=0, ...) does. The old
+    // guard threw these away with the component, so the loss was three authored
+    // decisions, not just a presence bit.
+    overlay->render_to_texture->include_descendants = false;
+    overlay->render_to_texture->also_draw_in_scene = true;
+    overlay->render_to_texture->enabled = false;
+
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(edited));
+    EXPECT_NE(exported.find("\"render_to_texture\""), std::string::npos)
+        << "an untargeted render_to_texture was dropped on save";
+    // The anchor member is omitted rather than written as 0: 0 is not a valid
+    // asset-graph node id (ids start at 1), so writing it would fabricate a
+    // reference to a node that cannot exist.
+    EXPECT_EQ(exported.find("\"target_asset_node_id\""), std::string::npos);
+
+    // Re-reading MUST succeed. The compiler used to reject a targetless source
+    // outright, which -- once the exporter started persisting one -- would have
+    // escalated "my component is inert" into "my scene will not open".
+    auto rel_path2 = write_scene_json(
+        root, "targetless_rtt_reexport.scene.json", exported);
+    const auto reparsed =
+        assets.scenes().create_scene_from_json({
+            .name = "targetless_rtt_reexport",
+            .path = rel_path2,
+        });
+    ASSERT_TRUE(reparsed.valid());
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+    const auto* data2 = assets.scenes().get_scene_data(
+        assets.scenes().get_scene(reparsed));
+    ASSERT_NE(data2, nullptr)
+        << "a targetless render_to_texture failed the whole scene load";
+    ASSERT_EQ(data2->nodes.size(), 1u);
+    ASSERT_TRUE(data2->nodes[0].render_to_texture.has_value())
+        << "an untargeted render_to_texture did not survive save -> reload";
+    EXPECT_FALSE(data2->nodes[0].render_to_texture->target_node_id.has_value());
+    EXPECT_FALSE(data2->nodes[0].render_to_texture->include_descendants);
+    EXPECT_TRUE(data2->nodes[0].render_to_texture->also_draw_in_scene);
+    EXPECT_FALSE(data2->nodes[0].render_to_texture->enabled);
+
+    const std::string rtt_reparsed_export =
+        wz::json::serialize_json(export_scene_to_json_document(*data2));
+    EXPECT_EQ(rtt_reparsed_export, exported);
+}
