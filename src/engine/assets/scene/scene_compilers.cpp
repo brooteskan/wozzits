@@ -1367,6 +1367,22 @@ namespace wz::engine::assets::internal
                 logger.error("scene node missing 'id' field");
                 return std::nullopt;
             }
+            // "spawn:" is the prefix instantiate_prefab_nodes mints for runtime
+            // spawns, and the save path drops every node carrying it as
+            // runtime-only. An AUTHORED node with that prefix therefore loads,
+            // displays and edits normally and is then silently deleted by the next
+            // save -- the author's node, gone, with no diagnostic anywhere.
+            // Refusing it at ingest is the only point that can still say so; by
+            // save time the information that it was authored is already lost.
+            // Loud rather than silently-dropped, for the same reason a malformed
+            // transform fails the node instead of quietly becoming identity.
+            if (id->rfind("spawn:", 0) == 0) {
+                logger.error(
+                    "scene node id '" + std::string(*id) + "' uses the reserved "
+                    "'spawn:' prefix, which the runtime mints for spawned prefab "
+                    "instances and the save path strips; rename the node");
+                return std::nullopt;
+            }
             node.id = *id;
             node.name = read_string(node_val, "name").value_or(*id);
 

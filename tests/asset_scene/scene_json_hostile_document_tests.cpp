@@ -213,6 +213,23 @@ namespace
             SceneInstantiateError::None);
     }
 
+    // B3-C4 (#312): "spawn:" is the prefix the runtime mints for spawned prefab
+    // instances, and three save-path sites drop every node carrying it as
+    // runtime-only. An authored node with that prefix used to load, export and
+    // round-trip cleanly and then vanish on the next save. Refused at ingest,
+    // because by save time nothing can still tell it was authored.
+    TEST(SceneJsonHostileDocument, AuthoredIdCannotUseTheReservedSpawnPrefix)
+    {
+        EXPECT_FALSE(parse_scene(scene_with_nodes(R"([{"id":"spawn:hero"}])")));
+        EXPECT_FALSE(parse_scene(scene_with_nodes(R"([{"id":"spawn:0:hero"}])")));
+
+        // Only the exact prefix is reserved -- the filter that motivates this is
+        // a literal rfind("spawn:", 0), so nothing else should be refused.
+        EXPECT_TRUE(parse_scene(scene_with_nodes(R"([{"id":"SPAWN:hero"}])")));
+        EXPECT_TRUE(parse_scene(scene_with_nodes(R"([{"id":"spawnhero"}])")));
+        EXPECT_TRUE(parse_scene(scene_with_nodes(R"([{"id":"my spawn:hero"}])")));
+    }
+
     TEST(SceneJsonHostileDocument, StructurallyUnusableDocumentsAreRejected)
     {
         EXPECT_FALSE(parse_scene(scene_with_nodes(R"([{"name":"no id"}])")));
