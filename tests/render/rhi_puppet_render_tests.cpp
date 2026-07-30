@@ -521,6 +521,29 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
             EXPECT_GT(s1_nonclear, 0u)
                 << "the MAIN pass of the two-pass frame rendered nothing";
             wz::gpu::present(device, /*sync_interval*/ 0);
+
+            // ── B2-H6 pin (#311): mask sets are cached PER SIZE. The frame
+            // above rendered the puppet at 128 then 256; before the fix each
+            // size change released and re-created the whole mask set — twice
+            // per frame, forever. A second identical two-pass frame must find
+            // both sizes' sets resident and build NOTHING.
+            const std::uint64_t mask_builds =
+                renderer.puppet_mask_set_builds();
+            EXPECT_GT(mask_builds, 0u)
+                << "no mask sets were ever built — Aka's masked Parts should "
+                   "have forced at least one";
+            ASSERT_TRUE(wz::gpu::begin_frame(device));
+            wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+            EXPECT_TRUE(renderer.render_scene(
+                nodes, assets, view_projection, camera_world_pos, {}, nullptr,
+                s1_rt));
+            EXPECT_TRUE(renderer.render_scene(
+                nodes, assets, view_projection, camera_world_pos));
+            ASSERT_TRUE(wz::gpu::end_frame(device));
+            EXPECT_EQ(renderer.puppet_mask_set_builds(), mask_builds)
+                << "mask sets were rebuilt for already-seen sizes — the "
+                   "per-pass create/release thrash is back (B2-H6)";
+            wz::gpu::present(device, /*sync_interval*/ 0);
             wz::gpu::release_texture(device, s1_rt);
         }
 

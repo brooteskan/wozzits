@@ -1568,7 +1568,8 @@ namespace wz::engine::rendering
             prealized.puppet_vertex_scratch.assign(puppet.vertex_count, {});
 
             prealized.puppet_mask_targets.clear();
-            prealized.puppet_mask_size = { 0u, 0u };
+            prealized.puppet_mask_sets.clear();
+            prealized.puppet_mask_bound_set = static_cast<std::size_t>(-1);
             prealized.puppet_part_mask_target.clear();
             prealized.puppet_part_mask_target.reserve(puppet.parts.size());
 
@@ -2338,61 +2339,130 @@ namespace wz::engine::rendering
             return true;
         }
 
-        // (Re)build the mask targets when the render target's size changed. The
-        // masked Part samples with its own target-space position, so a mask
-        // rasterised for a different size would be read at the wrong scale.
-        if (realized.puppet_mask_size[0] != target_w
-            || realized.puppet_mask_size[1] != target_h)
-        {
-            const wz::rhi::Tag mask_semantic =
-                gpu_.descriptor_semantics.find("puppet_mask");
-            std::size_t index = 0;
-            for (RealizedRenderable::PuppetMaskTarget& mask :
+        // Find (or build) the mask SET for THIS pass's dimensions. The masked
+        // Part samples with its own target-space position, so a mask
+        // rasterised for a different size would be read at the wrong scale —
+        // and a frame renders the puppet at one size PER PASS (each authored
+        // RTT + the main pass), alternating sizes every pass. Per-size sets
+        // are cached and LRU-evicted instead of rebuilt on every size change,
+        // which released + re-created the whole mask set twice per frame in
+        // mixed-size frames (B2-H6, #311).
+        ++puppet_mask_tick_;
+        constexpr std::size_t kNoSet = static_cast<std::size_t>(-1);
+        std::size_t set_index = kNoSet;
+        for (std::size_t i = 0; i < realized.puppet_mask_sets.size(); ++i) {
+            if (realized.puppet_mask_sets[i].size[0] == target_w
+                && realized.puppet_mask_sets[i].size[1] == target_h)
+            {
+                set_index = i;
+                break;
+            }
+        }
+        if (set_index == kNoSet) {
+            if (realized.puppet_mask_sets.size()
+                >= RealizedRenderable::kMaxPuppetMaskSets)
+            {
+                std::size_t lru = 0;
+                for (std::size_t i = 1;
+                     i < realized.puppet_mask_sets.size(); ++i)
+                {
+                    if (realized.puppet_mask_sets[i].last_used_tick
+                        < realized.puppet_mask_sets[lru].last_used_tick)
+                    {
+                        lru = i;
+                    }
+                }
+                for (const wz::rhi::GpuResourceHandle& resource :
+                     realized.puppet_mask_sets[lru].resources)
+                {
+                    if (resource.valid()) {
+                        gpu_.resources.release(resource);
+                    }
+                }
+                realized.puppet_mask_sets.erase(
+                    realized.puppet_mask_sets.begin()
+                    + static_cast<std::ptrdiff_t>(lru));
+                if (realized.puppet_mask_bound_set == lru) {
+                    realized.puppet_mask_bound_set = kNoSet;
+                }
+                else if (realized.puppet_mask_bound_set != kNoSet
+                    && realized.puppet_mask_bound_set > lru)
+                {
+                    --realized.puppet_mask_bound_set;
+                }
+            }
+
+            RealizedRenderable::PuppetMaskSet set{};
+            set.size = { target_w, target_h };
+            set.resources.reserve(realized.puppet_mask_targets.size());
+            set.render_targets.reserve(realized.puppet_mask_targets.size());
+            for (const RealizedRenderable::PuppetMaskTarget& mask :
                  realized.puppet_mask_targets)
             {
-                if (mask.resource.valid()) {
-                    gpu_.resources.release(mask.resource);
-                    mask.resource = {};
-                    mask.render_target = {};
-                }
-
                 wz::rhi::GpuResourceDesc desc =
                     wz::rhi::GpuResourceDesc::texture_2d(
                         target_w, target_h,
                         wz::rhi::TextureFormat::RGBA8Unorm,
                         wz::rhi::ResourceUsage_Sampled
                             | wz::rhi::ResourceUsage_RenderTarget);
-                // Identity is per renderable + source node, so two puppets (or
-                // two sources) never collide in the registry.
+                // Identity is per renderable + source node + SIZE: per-size
+                // sets coexist in the registry, and acquire's find-or-create
+                // must never hand one size's texture to another size's set.
                 desc.identity = wz::rhi::ResourceIdentity{
                     ea::rhi_asset_identity(
                         realized.renderable_key,
-                        "puppet_mask_" + std::to_string(mask.source_node)),
+                        "puppet_mask_" + std::to_string(mask.source_node)
+                            + "_" + std::to_string(target_w)
+                            + "x" + std::to_string(target_h)),
                     {} };
 
-                mask.resource = gpu_.resources.acquire(desc);
-                if (!mask.resource.valid()) {
-                    logger_.error(
-                        "RhiSceneRenderer: puppet mask target acquire failed");
-                    realized.puppet_mask_size = { 0u, 0u };
-                    return false;
-                }
+                const wz::rhi::GpuResourceHandle resource =
+                    gpu_.resources.acquire(desc);
                 const wz::rhi::GpuResource* res =
-                    gpu_.resources.get(mask.resource);
-                mask.render_target =
+                    gpu_.resources.get(resource);
+                const wz::gpu::GPUHandle render_target =
                     res ? gpu_.backend.gpu_handle_for(res->backend)
                         : wz::gpu::GPUHandle{};
-                mask.identity = desc.identity;
-                if (!mask.render_target.valid()) {
+                if (!resource.valid() || !render_target.valid()) {
                     logger_.error(
-                        "RhiSceneRenderer: puppet mask target has no GPU handle");
-                    realized.puppet_mask_size = { 0u, 0u };
+                        !resource.valid()
+                            ? "RhiSceneRenderer: puppet mask target acquire "
+                              "failed"
+                            : "RhiSceneRenderer: puppet mask target has no "
+                              "GPU handle");
+                    // Release the partial set; the next call retries fresh.
+                    if (resource.valid()) {
+                        gpu_.resources.release(resource);
+                    }
+                    for (const wz::rhi::GpuResourceHandle& acquired :
+                         set.resources)
+                    {
+                        gpu_.resources.release(acquired);
+                    }
                     return false;
                 }
+                set.resources.push_back(resource);
+                set.render_targets.push_back(render_target);
+            }
+            realized.puppet_mask_sets.push_back(std::move(set));
+            set_index = realized.puppet_mask_sets.size() - 1;
+            ++puppet_mask_set_builds_;
+        }
 
-                // Rebind every Part that samples this target. The packets hold
-                // raw SRG pointers, so mutating the SRG in place is what makes
-                // the already-built packets pick the new texture up.
+        RealizedRenderable::PuppetMaskSet& mask_set =
+            realized.puppet_mask_sets[set_index];
+        mask_set.last_used_tick = puppet_mask_tick_;
+
+        // Point the Part SRGs at THIS pass's set — a no-op while consecutive
+        // passes share a size. The packets hold raw SRG pointers and the
+        // recorder resolves an SRG at record time, so an earlier pass's
+        // recorded draws keep the set they were recorded with.
+        if (realized.puppet_mask_bound_set != set_index) {
+            const wz::rhi::Tag mask_semantic =
+                gpu_.descriptor_semantics.find("puppet_mask");
+            for (std::size_t index = 0;
+                 index < realized.puppet_mask_targets.size(); ++index)
+            {
                 for (std::size_t pi = 0;
                      pi < realized.puppet_part_mask_target.size()
                      && pi < realized.puppet_part_srgs.size();
@@ -2400,12 +2470,11 @@ namespace wz::engine::rendering
                 {
                     if (realized.puppet_part_mask_target[pi] == index) {
                         (void)realized.puppet_part_srgs[pi].set(
-                            mask_semantic, mask.resource);
+                            mask_semantic, mask_set.resources[index]);
                     }
                 }
-                ++index;
             }
-            realized.puppet_mask_size = { target_w, target_h };
+            realized.puppet_mask_bound_set = set_index;
         }
 
         // Render each source alone into its target. One offscreen pass each --
@@ -2415,17 +2484,23 @@ namespace wz::engine::rendering
         // blend variant accumulates alpha the same "over" way, so the variant
         // does not change the mask.
         bool ok = true;
-        for (const RealizedRenderable::PuppetMaskTarget& mask :
-             realized.puppet_mask_targets)
+        for (std::size_t i = 0;
+             i < realized.puppet_mask_targets.size()
+             && i < mask_set.render_targets.size();
+             ++i)
         {
-            if (!mask.render_target.valid()
+            const RealizedRenderable::PuppetMaskTarget& mask =
+                realized.puppet_mask_targets[i];
+            const wz::gpu::GPUHandle render_target =
+                mask_set.render_targets[i];
+            if (!render_target.valid()
                 || mask.source_packet >= realized.puppet_packets.size())
             {
                 continue;
             }
             const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
             if (!wz::gpu::dx12::internal::begin_offscreen_pass(
-                    gpu_.device, mask.render_target, clear))
+                    gpu_.device, render_target, clear))
             {
                 logger_.error(
                     "RhiSceneRenderer: puppet mask pass begin failed");
@@ -2441,7 +2516,7 @@ namespace wz::engine::rendering
                 ok = false;
             }
             wz::gpu::dx12::internal::end_offscreen_pass(
-                gpu_.device, mask.render_target);
+                gpu_.device, render_target);
         }
         return ok;
     }

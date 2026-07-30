@@ -237,6 +237,16 @@ namespace wz::engine::rendering
             return recorder_.cached_descriptor_table_count();
         }
 
+        // Cumulative puppet mask-texture SET builds (one per size first seen
+        // per puppet). Steady-state frames — including mixed-size frames
+        // (authored RTTs + the main pass) — must not grow this; the puppet
+        // render test asserts it stays flat across repeated two-pass frames
+        // (B2-H6).
+        [[nodiscard]] std::uint64_t puppet_mask_set_builds() const
+        {
+            return puppet_mask_set_builds_;
+        }
+
     private:
         struct RealizedProgram
         {
@@ -399,19 +409,35 @@ namespace wz::engine::rendering
             // Sized to the RENDER TARGET, because the masked Part samples with
             // its own target-space position -- the mask must be rasterised
             // through the same puppet->target placement, and that placement is
-            // recomputed per target (#280). So a target-size change invalidates
-            // them: puppet_mask_size records what they were built for, and they
-            // are rebuilt (and the Part SRGs rebound) when it no longer matches.
+            // recomputed per target (#280). A frame renders the puppet at one
+            // size PER PASS (each authored RTT + the main pass), so the mask
+            // textures live in per-size SETS, found by dims each pass --
+            // rebuilding on every size CHANGE released and re-created the
+            // whole mask set twice per frame in mixed-size frames (B2-H6,
+            // #311).
             struct PuppetMaskTarget
             {
                 std::size_t source_node = 0;      // index into Puppet::nodes
                 std::size_t source_packet = 0;    // its packet, for the prepass
-                wz::rhi::ResourceIdentity identity{};
-                wz::rhi::GpuResourceHandle resource{};  // SRG binding
-                wz::gpu::GPUHandle render_target{};     // begin_offscreen_pass
             };
             std::vector<PuppetMaskTarget> puppet_mask_targets;
-            std::array<uint32_t, 2> puppet_mask_size{ 0u, 0u };
+
+            // One resident mask-texture set per target size seen, LRU-capped
+            // (a window resize retires the old main size; steady state never
+            // evicts). resources/render_targets parallel puppet_mask_targets.
+            struct PuppetMaskSet
+            {
+                std::array<uint32_t, 2> size{ 0u, 0u };
+                uint64_t last_used_tick = 0;
+                std::vector<wz::rhi::GpuResourceHandle> resources;
+                std::vector<wz::gpu::GPUHandle> render_targets;
+            };
+            static constexpr std::size_t kMaxPuppetMaskSets = 4;
+            std::vector<PuppetMaskSet> puppet_mask_sets;
+            // Which set the Part SRGs currently bind; SIZE_MAX before the
+            // first bind. Record-time resolution snapshots the SRG, so an
+            // earlier pass's recorded draws keep their own set after a rebind.
+            std::size_t puppet_mask_bound_set = static_cast<std::size_t>(-1);
             // Parallel to puppet_packets: which mask target each Part samples,
             // or kNoMaskTarget for an unmasked Part (which binds the puppet's
             // 1x1 white texture instead).
@@ -567,6 +593,10 @@ namespace wz::engine::rendering
 
         // See render_time_program_bridge_count().
         std::size_t render_time_program_bridges_ = 0;
+
+        // See puppet_mask_set_builds(); the tick orders mask-set LRU eviction.
+        std::uint64_t puppet_mask_set_builds_ = 0;
+        std::uint64_t puppet_mask_tick_ = 0;
 
         // The renderer's animation clock, in seconds. Advanced ONCE per
         // simulation tick by the real frame delta (simulation_tick) and only
