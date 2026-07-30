@@ -274,6 +274,84 @@ TEST(SceneNodeList, ReparentMovesNodeAndRejectsCycles)
     EXPECT_EQ(*find_scene_node(nodes, "b")->parent_id, "a");   // unchanged
 }
 
+// B3-C1 (#312): the ancestry walk must TERMINATE on a parent cycle that does not
+// contain the node being reparented. It used to spin forever -- on the engine
+// thread, inside the edit drain, above simulation_tick and render, with no stop
+// check. Cyclic documents genuinely load (the JSON compiler copies `parent`
+// verbatim and a failed instantiate is logged and tolerated), and a behavior can
+// drive reparent with no editor present, so this was reachable without the editor.
+//
+// These assertions are secondary. The real assertion is that the test RETURNS:
+// a reintroduced hang shows up as the suite timing out on this case. Kept cheap
+// (3-4 nodes) so the timeout is unambiguous when it fires.
+TEST(SceneNodeList, ReparentTerminatesOnPreExistingParentCycle)
+{
+    {   // 2-cycle a <-> b, reparent an unrelated node onto it
+        std::vector<SceneNodeAsset> nodes(3);
+        nodes[0].id = "a";
+        nodes[0].parent_id = "b";
+        nodes[1].id = "b";
+        nodes[1].parent_id = "a";
+        nodes[2].id = "c";
+
+        EXPECT_FALSE(reparent_scene_node(nodes, "c", "a"));
+        EXPECT_FALSE(find_scene_node(nodes, "c")->parent_id.has_value());
+    }
+
+    {   // self-parent
+        std::vector<SceneNodeAsset> nodes(2);
+        nodes[0].id = "q";
+        nodes[0].parent_id = "q";
+        nodes[1].id = "c";
+
+        EXPECT_FALSE(reparent_scene_node(nodes, "c", "q"));
+    }
+
+    {   // 3-cycle x -> y -> z -> x
+        std::vector<SceneNodeAsset> nodes(4);
+        nodes[0].id = "x";
+        nodes[0].parent_id = "y";
+        nodes[1].id = "y";
+        nodes[1].parent_id = "z";
+        nodes[2].id = "z";
+        nodes[2].parent_id = "x";
+        nodes[3].id = "c";
+
+        EXPECT_FALSE(reparent_scene_node(nodes, "c", "x"));
+    }
+
+    {   // A cycle elsewhere must not block a legitimate reparent in the acyclic
+        // part -- the bound is a cycle detector, not a blanket refusal.
+        std::vector<SceneNodeAsset> nodes(4);
+        nodes[0].id = "a";
+        nodes[0].parent_id = "b";
+        nodes[1].id = "b";
+        nodes[1].parent_id = "a";
+        nodes[2].id = "p";
+        nodes[3].id = "c";
+
+        EXPECT_TRUE(reparent_scene_node(nodes, "c", "p"));
+        EXPECT_EQ(*find_scene_node(nodes, "c")->parent_id, "p");
+    }
+}
+
+// The same walk in the authoring module, whose only live caller is its own
+// reparent. Latent today, identical shape -- fixed together so the next caller
+// does not reintroduce it.
+TEST(SceneAuthoring, DescendantCheckTerminatesOnParentCycle)
+{
+    SceneAssetData scene;
+    scene.nodes.resize(3);
+    scene.nodes[0].id = "a";
+    scene.nodes[0].parent_id = "b";
+    scene.nodes[1].id = "b";
+    scene.nodes[1].parent_id = "a";
+    scene.nodes[2].id = "c";
+
+    EXPECT_FALSE(
+        authoring::reparent_scene_node(scene, "c", std::optional<std::string>("a")));
+}
+
 TEST(SceneNodeList, RemoveNodeDropsSubtree)
 {
     std::vector<SceneNodeAsset> nodes(4);

@@ -2757,18 +2757,39 @@ namespace wz::engine::assets
         }
         // Reject if new_parent is a descendant of the node (would form a cycle):
         // walk up new_parent's ancestry; if the node's id appears, reject.
+        //
+        // The walk is STEP-BOUNDED because the ancestry it walks is not trusted to
+        // be acyclic. A valid chain visits each node at most once, so exceeding
+        // nodes.size() steps proves a cycle -- and a PRE-EXISTING cycle that does
+        // not contain `id` reaches neither exit below (the ids all resolve, and
+        // none is a root), so the unbounded form spun forever. That hang landed on
+        // the engine thread inside the edit drain, above simulation_tick and
+        // render, with no stop check: one malformed authored document wedged the
+        // whole app. Cyclic documents do load -- the JSON compiler copies `parent`
+        // verbatim, and a failed instantiate is logged and tolerated, leaving
+        // document_.nodes() cyclic with every edit verb live -- and a behavior can
+        // drive reparent with no editor present at all.
+        //
+        // Exhausting the budget REJECTS rather than proceeding: this function is
+        // the safety net that refuses cycle-forming reparents, and against an
+        // already-cyclic ancestry it cannot show the edit is safe. Callers already
+        // handle false (the seam records it as a dropped edit), so this needs no
+        // new signalling. The rest of this header deliberately tolerates cycles
+        // (flatten_scene_nodes_preorder keeps a visited set, and see the note on
+        // subtree collection); this walker was the one exception.
         wz::scene::AuthoredEntityId cursor = new_parent_id;
-        while (const SceneNodeAsset* ancestor = find_scene_node(nodes, cursor)) {
-            if (!ancestor->parent_id) {
-                break;
+        for (std::size_t step = 0; step <= nodes.size(); ++step) {
+            const SceneNodeAsset* ancestor = find_scene_node(nodes, cursor);
+            if (!ancestor || !ancestor->parent_id) {
+                node->parent_id = new_parent_id;
+                return true;
             }
             if (*ancestor->parent_id == id) {
                 return false;
             }
             cursor = *ancestor->parent_id;
         }
-        node->parent_id = new_parent_id;
-        return true;
+        return false;   // budget exhausted => the ancestry is cyclic
     }
 
     // Remove the node `id` and its entire subtree from a flat node list. Returns

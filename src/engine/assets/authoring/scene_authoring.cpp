@@ -3,6 +3,7 @@
 #include <engine/assets/authoring/scene_authoring.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <unordered_set>
 #include <utility>
 
@@ -15,19 +16,34 @@ namespace wz::engine::assets::authoring
         return find_scene_node(scene, id) != nullptr;
     }
 
+    // Step-bounded for the same reason as reparent_scene_node's walk in
+    // scene_asset_data.h: the ancestry is not trusted to be acyclic, and an
+    // unbounded walk spins forever on a pre-existing cycle that does not contain
+    // `ancestor`. A valid chain visits each node at most once, so exceeding the
+    // node count proves a cycle.
+    //
+    // An exhausted budget answers TRUE ("treat as related"), which makes the one
+    // caller below REJECT the reparent. That is the same answer its twin in
+    // scene_asset_data.h gives, and the agreement is the point: two reparent
+    // implementations that disagree about the same malformed document are how
+    // this drifts back apart. If the ancestry cannot be walked, neither of them
+    // can show the edit is safe.
     bool is_scene_node_descendant_of(
         const SceneAssetData& scene,
         const SceneNodeId& node,
         const SceneNodeId& ancestor)
     {
         const SceneNodeAsset* current = find_scene_node(scene, node);
-        while (current && current->parent_id) {
+        for (std::size_t step = 0; step <= scene.nodes.size(); ++step) {
+            if (!current || !current->parent_id) {
+                return false;
+            }
             if (*current->parent_id == ancestor) {
                 return true;
             }
             current = find_scene_node(scene, *current->parent_id);
         }
-        return false;
+        return true;   // budget exhausted => cyclic ancestry, refuse to clear it
     }
 
     void collect_scene_subtree_ids(
