@@ -306,6 +306,13 @@ namespace wz::gpu::dx12
         impl->fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
         impl->fence_value = 1;
 
+        hr = device->CreateFence(
+            0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&impl->copy_fence));
+        assert(SUCCEEDED(hr));
+
+        impl->copy_fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        impl->copy_fence_value = 1;
+
         // ────── store backbuffers ───────────────────────────────────────────────────────
         for (UINT i = 0; i < 2; ++i)
         {
@@ -665,6 +672,47 @@ namespace wz::gpu::dx12
         wait_for_gpu(impl);
     }
 
+    bool dx12::copy_queue_wait(dx12::DX12Device* impl)
+    {
+        if (!impl || !impl->queue || !impl->copy_fence
+            || !impl->copy_fence_event)
+        {
+            return false;
+        }
+        if (dx12::dx12_device_lost(*impl)) {
+            return false;
+        }
+
+        // The copy fence, never the frame fence: the frame fence's values are
+        // the reclamation timeline, and only end_frame may signal those (see
+        // DX12Device::copy_fence).
+        HRESULT hr = impl->queue->Signal(
+            impl->copy_fence, impl->copy_fence_value);
+        if (!dx12::dx12_check_hr(
+                *impl, hr, "ID3D12CommandQueue::Signal(copy)"))
+        {
+            return false;
+        }
+
+        if (impl->copy_fence->GetCompletedValue() < impl->copy_fence_value) {
+            hr = impl->copy_fence->SetEventOnCompletion(
+                impl->copy_fence_value, impl->copy_fence_event);
+            if (!dx12::dx12_check_hr(
+                    *impl, hr, "ID3D12Fence::SetEventOnCompletion(copy)"))
+            {
+                return false;
+            }
+            if (WaitForSingleObject(impl->copy_fence_event, INFINITE)
+                != WAIT_OBJECT_0)
+            {
+                return false;
+            }
+        }
+
+        ++impl->copy_fence_value;
+        return true;
+    }
+
     uint64_t frame_timeline_value(Device& d)
     {
         auto* impl = static_cast<DX12Device*>(d.impl);
@@ -833,6 +881,8 @@ namespace wz::gpu::dx12
 
         if (impl->fence) { impl->fence->Release(); impl->fence = nullptr; }
         if (impl->fence_event) { CloseHandle(impl->fence_event); impl->fence_event = nullptr; }
+        if (impl->copy_fence) { impl->copy_fence->Release(); impl->copy_fence = nullptr; }
+        if (impl->copy_fence_event) { CloseHandle(impl->copy_fence_event); impl->copy_fence_event = nullptr; }
 
 #if defined(_DEBUG)
         if (impl->device)

@@ -102,6 +102,18 @@ namespace wz::gpu::dx12
         HANDLE fence_event = nullptr;
         UINT64 fence_value = 0;
 
+        // One-shot copy/upload fence, separate from the frame fence above. The
+        // frame fence's values ARE the rhi registry's reclamation timeline:
+        // frame_timeline_value() promises the value it returns is signaled
+        // only by end_frame, AFTER the frame's recorded draws execute. A
+        // mid-frame synchronous upload signaling that same value would make
+        // completed_timeline_value() reach it while the frame's command list
+        // is still unsubmitted — any release + collect in that window then
+        // destroys resources the recorded frame still references (#311).
+        ID3D12Fence* copy_fence = nullptr;
+        HANDLE copy_fence_event = nullptr;
+        UINT64 copy_fence_value = 0;
+
         // core
         ID3D12Device* device = nullptr;
         IDXGISwapChain3* swapchain = nullptr;
@@ -181,5 +193,10 @@ namespace wz::gpu::dx12
         const DX12Device* device) noexcept;
     const wz::gpu::DeviceLostInfo* dx12_device_lost_info(
         const DX12Device* device) noexcept;
+
+    // Wait for everything submitted so far on the queue, on the COPY fence.
+    // The single wait every one-shot upload/copy submission must use — never
+    // the frame fence (see DX12Device::copy_fence).
+    bool copy_queue_wait(DX12Device* impl);
 
 }

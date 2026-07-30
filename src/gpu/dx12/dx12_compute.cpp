@@ -104,27 +104,11 @@ namespace wz::gpu::dx12::internal
             ID3D12CommandList* lists[] = { cmd };
             impl->queue->ExecuteCommandLists(1, lists);
 
-            const UINT64 fence_value = impl->fence_value;
-            hr = impl->queue->Signal(impl->fence, fence_value);
-            if (!dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal")) {
-                return false;
-            }
-
-            if (impl->fence->GetCompletedValue() < fence_value) {
-                hr = impl->fence->SetEventOnCompletion(
-                    fence_value,
-                    impl->fence_event);
-                if (!dx12_check_hr(
-                        *impl,
-                        hr,
-                        "ID3D12Fence::SetEventOnCompletion")) {
-                    return false;
-                }
-                WaitForSingleObject(impl->fence_event, INFINITE);
-            }
-
-            ++impl->fence_value;
-            return true;
+            // One-shot submission: wait on the COPY fence. Signaling the frame
+            // fence here would complete the frame-timeline value the recorder
+            // touched this frame's resources with, while the frame's command
+            // list is still unsubmitted (#311).
+            return copy_queue_wait(impl);
         }
 
         bool create_one_shot_command_list(

@@ -1068,6 +1068,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(gpu texture_mip)
     rs_add_test_group(gpu compute_dispatch)
     rs_add_test_group(gpu shader_source_combine)
+    rs_add_test_group(gpu timeline_exclusivity)
 
     rs_add_test_group(asset_data_table data_table)
     rs_add_test_group(asset_data_table data_table_asset_module)

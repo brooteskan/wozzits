@@ -14,27 +14,9 @@ namespace
 {
     bool wait_for_gpu_upload(wz::gpu::dx12::DX12Device* impl)
     {
-        HRESULT hr = impl->queue->Signal(impl->fence, impl->fence_value);
-        if (FAILED(hr))
-            return false;
-
-        if (impl->fence->GetCompletedValue() < impl->fence_value)
-        {
-            hr = impl->fence->SetEventOnCompletion(
-                impl->fence_value,
-                impl->fence_event
-            );
-
-            if (FAILED(hr))
-                return false;
-
-            DWORD res = WaitForSingleObject(impl->fence_event, INFINITE);
-            if (res != WAIT_OBJECT_0)
-                return false;
-        }
-
-        impl->fence_value++;
-        return true;
+        // One-shot upload: wait on the COPY fence, never the frame fence
+        // (frame-timeline exclusivity, #311).
+        return wz::gpu::dx12::copy_queue_wait(impl);
     }
 
     D3D12_RESOURCE_DESC make_buffer_desc(UINT64 size)
