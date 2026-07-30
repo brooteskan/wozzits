@@ -72,9 +72,27 @@ public static class StatechartJson
         if (root is not JsonObject o)
             throw new StatechartFormatException("chart root must be an object");
 
+        // Refuse a schema this build does not know, matching the engine's parse_chart.
+        // Loading a NEWER chart as if it were v0 is worse here than in the engine: the
+        // editor would then re-Emit it under the v0 stamp, rewriting content it did not
+        // understand and silently DOWNGRADING the file.
+        //
+        // A MISSING schema is deliberately tolerated (defaulting to v0) where the engine
+        // refuses it. The asymmetry is the point: the editor is the tool you fix a chart
+        // WITH, and Emit always writes the field, so opening a hand-written schema-less
+        // chart and saving it heals the file. Refusing to open it would leave no route to
+        // repair, while the engine refusing to RUN one is recoverable by exactly that.
+        var schema = Str(o, "schema", StatechartSchema.V0);
+        if (schema != StatechartSchema.V0)
+            throw new StatechartFormatException(
+                $"unrecognized chart schema '{schema}' -- this build reads "
+                + $"'{StatechartSchema.V0}'. A chart from a newer editor is refused "
+                + "rather than loaded under the old meaning of its keys (and then "
+                + "saved back over the newer file).");
+
         var c = new Chart
         {
-            Schema = Str(o, "schema", StatechartSchema.V0),
+            Schema = schema,
             Name = Str(o, "name"),
         };
 
@@ -305,8 +323,53 @@ public static class StatechartJson
 
     /// <summary>Compile the chart to JSON text. <paramref name="indented"/> selects the
     /// readable .sc.json form vs the minified chart_ir embed.</summary>
+    /// <remarks>Does NOT validate. Prefer <see cref="EmitValidated"/> for anything that
+    /// PERSISTS the result (a .sc.json write, a chart_ir embed) -- see its remarks.</remarks>
     public static string Emit(Chart c, bool indented) =>
         ToJson(c).ToJsonString(new JsonSerializerOptions { WriteIndented = indented });
+
+    /// <summary>Compile, but first refuse any chart the engine's parser would reject, throwing
+    /// <see cref="StatechartFormatException"/>.</summary>
+    /// <remarks>
+    /// The one gate every PERSISTING write goes through, so the editor cannot hand the engine IR
+    /// its parser will refuse. The blocking classes (unknown transition target, unknown region
+    /// initial, zero regions, an effect naming a missing agent, a proximity naming a missing
+    /// binding, ...) are exactly what <c>parse_chart</c> rejects -- but <c>parse_chart</c> only
+    /// runs at PLAY time, where the failure surfaces as a runner that silently never starts.
+    /// Gating on the way out moves that from "my behaviour did nothing and I don't know why" to an
+    /// error at the moment of saving, naming the chart.
+    ///
+    /// It gates on BLOCKING findings only, never advisories -- an advisory chart loads and runs,
+    /// so refusing to save it would be a worse bug than the one this closes (see
+    /// <see cref="Inspect"/>).
+    ///
+    /// It throws rather than returning a status because the callers' correct response is identical
+    /// and non-optional: do not write, and report. A caller that genuinely wants the text of a
+    /// chart it is not persisting (a preview, a diff) should use <see cref="Emit"/>.
+    /// </remarks>
+    public static string EmitValidated(Chart c, bool indented)
+    {
+        var errors = Inspect(c)
+            .Where(i => i.Severity == IssueSeverity.Blocking)
+            .Select(i => i.Message)
+            .ToList();
+        if (errors.Count > 0)
+        {
+            // Name the chart and cap the list: a chart mid-edit can produce a long tail of
+            // errors sharing one cause, and an unbounded dump buries the first (usually the
+            // actionable) one in whatever surface shows this.
+            const int maxListed = 5;
+            var listed = string.Join("; ", errors.Take(maxListed));
+            var more = errors.Count > maxListed
+                ? $" (+{errors.Count - maxListed} more)"
+                : string.Empty;
+            var name = string.IsNullOrEmpty(c.Name) ? "<unnamed>" : c.Name;
+            throw new StatechartFormatException(
+                $"chart '{name}' is not valid, so it was not written: {listed}{more}");
+        }
+
+        return Emit(c, indented);
+    }
 
     /// <summary>Compile the chart to a JSON tree (pure[] topologically ordered).</summary>
     public static JsonObject ToJson(Chart c) => new()
@@ -536,57 +599,86 @@ public static class StatechartJson
     //  Validate: referential integrity for the editor's error surface
     // ======================================================================
 
-    /// <summary>Structural / referential problems (empty for a well-formed chart).
-    /// The editor surfaces these; the engine's parse_chart rejects the same classes.</summary>
-    public static IReadOnlyList<string> Validate(Chart c)
+    /// <summary>How badly a <see cref="Inspect"/> finding hurts.</summary>
+    public enum IssueSeverity
     {
-        var errors = new List<string>();
+        /// <summary>The engine's <c>parse_chart</c> REFUSES a chart with this, so the runner
+        /// never starts. Emitting such a chart is never useful; <see cref="EmitValidated"/>
+        /// blocks on these.</summary>
+        Blocking,
+
+        /// <summary>Editor-side policy or a silent-aliasing hazard the engine tolerates. Worth
+        /// showing the author, but the chart LOADS and RUNS, so it must not block a save.</summary>
+        Advisory,
+    }
+
+    /// <summary>One validation finding, with whether it stops the engine loading the chart.</summary>
+    public readonly record struct Issue(IssueSeverity Severity, string Message);
+
+    /// <summary>Structural / referential problems (empty for a well-formed chart), each tagged
+    /// with whether the engine's parser would REFUSE the chart over it.</summary>
+    /// <remarks>
+    /// The split matters because these two sets are NOT the same, though this file long claimed
+    /// they were. `parse_chart` never reads an agent's `owned` flag -- it is parsed and then
+    /// unused engine-side -- so the R2 owner-only rule below is an editor CONVENTION, not a load
+    /// failure. A shipping chart in the project (hunt_or_refuel) violates it and runs fine; a
+    /// save gate that blocked on every finding would have made that chart unsaveable. Likewise
+    /// the duplicate-id findings: the engine first-matches and silently aliases rather than
+    /// refusing, so they are real hazards worth reporting but not grounds to refuse a write.
+    /// </remarks>
+    public static IReadOnlyList<Issue> Inspect(Chart c)
+    {
+        var issues = new List<Issue>();
+        void Blocking(string m) => issues.Add(new Issue(IssueSeverity.Blocking, m));
+        void Advisory(string m) => issues.Add(new Issue(IssueSeverity.Advisory, m));
 
         var bindingPorts = new HashSet<string>();
         foreach (var b in c.Bindings)
             if (!bindingPorts.Add(b.Port))
-                errors.Add($"duplicate binding port '{b.Port}'");
+                Advisory($"duplicate binding port '{b.Port}'");
 
         var agentIds = new HashSet<string>();
         var ownedAgents = new HashSet<string>();
         foreach (var a in c.Agents)
         {
-            if (!agentIds.Add(a.Id)) errors.Add($"duplicate agent id '{a.Id}'");
+            if (!agentIds.Add(a.Id)) Advisory($"duplicate agent id '{a.Id}'");
             if (a.Owned) ownedAgents.Add(a.Id);
             if (a.Host != "self" && !bindingPorts.Contains(a.Host))
-                errors.Add($"agent '{a.Id}' host '{a.Host}' is not a binding port");
+                Blocking($"agent '{a.Id}' host '{a.Host}' is not a binding port");
         }
 
         var pureIds = new HashSet<string>();
         foreach (var p in c.Pure)
         {
-            if (p.Id.Length == 0) { errors.Add("pure op missing id"); continue; }
-            if (!pureIds.Add(p.Id)) errors.Add($"duplicate pure op id '{p.Id}'");
+            if (p.Id.Length == 0) { Blocking("pure op missing id"); continue; }
+            // Blocking despite the engine tolerating it: TopoSortPure cannot serialize a
+            // duplicate id at all, so Emit would throw before the engine ever saw it.
+            if (!pureIds.Add(p.Id)) Blocking($"duplicate pure op id '{p.Id}'");
         }
         foreach (var p in c.Pure)
         {
             if (p.IsRead && !agentIds.Contains(p.Agent))
-                errors.Add($"pure op '{p.Id}' reads unknown agent '{p.Agent}'");
+                Blocking($"pure op '{p.Id}' reads unknown agent '{p.Agent}'");
             if (p.Op == OpKind.Proximity && !bindingPorts.Contains(p.Target))
-                errors.Add($"proximity '{p.Id}' names unknown target binding '{p.Target}'");
+                Blocking($"proximity '{p.Id}' names unknown target binding '{p.Target}'");
             if (p.Op == OpKind.ReadState && p.Name.Length == 0)
-                errors.Add($"read_state '{p.Id}' needs a scalar name");
+                Blocking($"read_state '{p.Id}' needs a scalar name");
             foreach (var dep in OpRefs(p))
                 if (!pureIds.Contains(dep))
-                    errors.Add($"pure op '{p.Id}' references unknown op '{dep}'");
+                    Blocking($"pure op '{p.Id}' references unknown op '{dep}'");
         }
         if (HasPureCycle(c))
-            errors.Add("pure ops contain a cycle");
+            Blocking("pure ops contain a cycle");
 
         var stateIds = new HashSet<string>();
         foreach (var s in c.States)
             if (!stateIds.Add(s.Id))
-                errors.Add($"duplicate state id '{s.Id}'");
+                Advisory($"duplicate state id '{s.Id}'");
 
         void CheckRef(ValueRef? r, string where)
         {
             if (r is { Kind: RefKind.Op } && !pureIds.Contains(r.Op))
-                errors.Add($"{where} references unknown op '{r.Op}'");
+                Blocking($"{where} references unknown op '{r.Op}'");
         }
         void CheckEffect(Effect e, string where)
         {
@@ -596,40 +688,42 @@ public static class StatechartJson
                     // A measurement reads-with-collapse; unlike the R2 writes it may
                     // target a REFERENCED mind (the chart measuring the agent it names).
                     if (!agentIds.Contains(e.Agent))
-                        errors.Add($"{where} measure_at names unknown agent '{e.Agent}'");
+                        Blocking($"{where} measure_at names unknown agent '{e.Agent}'");
                     break;
                 case EffectKind.SetGoal:
                 case EffectKind.SetDecoherence:
                 case EffectKind.Rearm:
                 case EffectKind.Reward:
                     if (!agentIds.Contains(e.Agent))
-                        errors.Add($"{where} {NameOf(e.Kind)} names unknown agent '{e.Agent}'");
+                        Blocking($"{where} {NameOf(e.Kind)} names unknown agent '{e.Agent}'");
                     else if (!ownedAgents.Contains(e.Agent))
-                        errors.Add($"{where} {NameOf(e.Kind)} writes non-owned agent '{e.Agent}' (R2: writes are owner-only)");
+                        // ADVISORY, not blocking: the engine never reads `owned`, so it accepts
+                        // this and the chart runs. See the remarks on Inspect.
+                        Advisory($"{where} {NameOf(e.Kind)} writes non-owned agent '{e.Agent}' (R2: writes are owner-only)");
                     break;
                 case EffectKind.SetScale:
                 case EffectKind.SetVisible:
                 case EffectKind.PlaySound:
                     if (!bindingPorts.Contains(e.TargetBind))
-                        errors.Add($"{where} {NameOf(e.Kind)} targets unknown binding '{e.TargetBind}'");
+                        Blocking($"{where} {NameOf(e.Kind)} targets unknown binding '{e.TargetBind}'");
                     break;
                 case EffectKind.Call:
                     if (string.IsNullOrEmpty(e.Fn))
-                        errors.Add($"{where} call missing fn");
+                        Blocking($"{where} call missing fn");
                     foreach (var a in e.Args)
                     {
                         if (a.Kind == CallArgKind.Bind && !bindingPorts.Contains(a.Bind))
-                            errors.Add($"{where} call arg binds unknown binding '{a.Bind}'");
+                            Blocking($"{where} call arg binds unknown binding '{a.Bind}'");
                         else if (a.Kind == CallArgKind.Agent && !agentIds.Contains(a.Agent))
-                            errors.Add($"{where} call arg names unknown agent '{a.Agent}'");
+                            Blocking($"{where} call arg names unknown agent '{a.Agent}'");
                         else if (a.Kind == CallArgKind.Op && !pureIds.Contains(a.Op))
-                            errors.Add($"{where} call arg references unknown op '{a.Op}'");
+                            Blocking($"{where} call arg references unknown op '{a.Op}'");
                     }
                     break;
             }
             if (e.Kind is EffectKind.SetGoal or EffectKind.SetDecoherence or EffectKind.MeasureAt
                 or EffectKind.SetScale or EffectKind.SetVisible && e.Value == null)
-                errors.Add($"{where} {NameOf(e.Kind)} missing value");
+                Blocking($"{where} {NameOf(e.Kind)} missing value");
             CheckRef(e.Value, $"{where} {NameOf(e.Kind)}");
         }
 
@@ -641,12 +735,12 @@ public static class StatechartJson
             foreach (var t in s.Transitions)
             {
                 if (!stateIds.Contains(t.Target))
-                    errors.Add($"state '{s.Id}' transition targets unknown state '{t.Target}'");
+                    Blocking($"state '{s.Id}' transition targets unknown state '{t.Target}'");
                 if (t.Trigger.Kind == TriggerKind.Commit && !agentIds.Contains(t.Trigger.Agent))
-                    errors.Add($"state '{s.Id}' commit trigger names unknown agent '{t.Trigger.Agent}'");
+                    Blocking($"state '{s.Id}' commit trigger names unknown agent '{t.Trigger.Agent}'");
                 if (t.Trigger.Kind == TriggerKind.Guard)
                 {
-                    if (t.Trigger.Cond == null) errors.Add($"state '{s.Id}' guard missing cond");
+                    if (t.Trigger.Cond == null) Blocking($"state '{s.Id}' guard missing cond");
                     else CheckRef(t.Trigger.Cond, $"state '{s.Id}' guard");
                 }
                 foreach (var e in t.Actions) CheckEffect(e, $"state '{s.Id}' transition action");
@@ -656,16 +750,21 @@ public static class StatechartJson
         foreach (var r in c.Regions)
         {
             if (!stateIds.Contains(r.Initial))
-                errors.Add($"region '{r.Id}' initial state '{r.Initial}' is unknown");
+                Blocking($"region '{r.Id}' initial state '{r.Initial}' is unknown");
             foreach (var sid in r.States)
                 if (!stateIds.Contains(sid))
-                    errors.Add($"region '{r.Id}' names unknown state '{sid}'");
+                    Blocking($"region '{r.Id}' names unknown state '{sid}'");
         }
         if (c.Regions.Count == 0)
-            errors.Add("chart has no regions");
+            Blocking("chart has no regions");
 
-        return errors;
+        return issues;
     }
+
+    /// <summary>Every finding's message, in order, regardless of severity -- the editor's full
+    /// error surface. Use <see cref="Inspect"/> when the severity matters.</summary>
+    public static IReadOnlyList<string> Validate(Chart c) =>
+        Inspect(c).Select(i => i.Message).ToList();
 
     private static bool HasPureCycle(Chart c)
     {

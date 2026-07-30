@@ -331,6 +331,15 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     savedCharts[document.Name] = document.CompiledIr;
                     AppendEditorLog($"[editor] Saved statechart '{document.Name}'");
                 }
+                catch (StatechartFormatException ex)
+                {
+                    // Structurally invalid: Save wrote nothing and the document stays dirty.
+                    // Staying OUT of savedCharts is the load-bearing half -- otherwise the
+                    // refresh below would push IR the engine refuses into every attached
+                    // runner and into the scenelet FILES, so one broken chart would silently
+                    // stop the behaviour everywhere it runs, including in spawned actors.
+                    AppendEditorLog($"[editor] Statechart '{document.Name}' NOT saved: {ex.Message}");
+                }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     AppendEditorLog($"[editor] Statechart save failed for '{document.Name}': {ex.Message}");
@@ -972,9 +981,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            File.WriteAllText(path, StatechartJson.Emit(chart, indented: true));
+            // Validated like every other persisting write, even though the template above is
+            // valid by construction: if a future edit to that template breaks it, the failure
+            // should be a refused create here, not a runner that never starts at play time.
+            File.WriteAllText(path, StatechartJson.EmitValidated(chart, indented: true));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (
+            ex is IOException or UnauthorizedAccessException or StatechartFormatException)
         {
             AppendEditorLog($"[editor] Could not create statechart '{name}': {ex.Message}");
             return;

@@ -328,4 +328,144 @@ public sealed class StatechartCompilerTests
         var tr = back.States[0].Transitions.First(x => x.Trigger.Kind == TriggerKind.Event);
         Assert.Equal("died", tr.Trigger.EventName);
     }
+
+    // EmitValidated is the gate every PERSISTING write goes through, so the editor cannot hand
+    // the engine IR its parse_chart refuses. Before it existed, Validate had zero callers: the
+    // editor would happily write a structurally broken chart to .sc.json and embed it as a
+    // runner's chart_ir, and the only symptom was a runner that silently never started at play
+    // time (parse_chart fails, the store returns null, the log says "bad IR" with no reason).
+    //
+    // Each case below is a class the ENGINE parser rejects, so each is a chart that would have
+    // been written and then refused: no regions (statechart_ir.cpp), an unknown transition
+    // target, an effect naming an agent that no longer exists.
+
+    [Fact]
+    public void EmitValidated_Refuses_A_Chart_With_No_Regions()
+    {
+        // The reachable route: deleting every state empties each region, and the control pane
+        // then drops the empty regions -- leaving a chart the engine refuses outright.
+        var c = MinimalValid();
+        c.States.Clear();
+        c.Regions.Clear();
+
+        var ex = Assert.Throws<StatechartFormatException>(
+            () => StatechartJson.EmitValidated(c, indented: true));
+        Assert.Contains("no regions", ex.Message);
+    }
+
+    [Fact]
+    public void EmitValidated_Refuses_A_Dangling_Transition_Target()
+    {
+        var c = MinimalValid();
+        c.States[0].Transitions.Add(new Transition
+        {
+            Target = "DELETED",
+            Trigger = new Trigger { Kind = TriggerKind.After, Seconds = 1.0 },
+        });
+
+        var ex = Assert.Throws<StatechartFormatException>(
+            () => StatechartJson.EmitValidated(c, indented: false));
+        Assert.Contains("DELETED", ex.Message);
+    }
+
+    [Fact]
+    public void EmitValidated_Refuses_An_Effect_Naming_A_Missing_Agent()
+    {
+        var c = MinimalValid();
+        c.States[0].Do.Add(new Effect
+        {
+            Kind = EffectKind.Rearm,
+            Agent = "ghost",
+        });
+
+        var ex = Assert.Throws<StatechartFormatException>(
+            () => StatechartJson.EmitValidated(c, indented: false));
+        Assert.Contains("ghost", ex.Message);
+    }
+
+    [Fact]
+    public void EmitValidated_Message_Names_The_Chart_And_Says_Nothing_Was_Written()
+    {
+        // Whatever surface shows this (the editor log, the runner-attach status line) has only
+        // the message, so it has to identify WHICH chart and make clear the write did not happen.
+        var c = MinimalValid();
+        c.Name = "traffic_light";
+        c.Regions.Clear();
+
+        var ex = Assert.Throws<StatechartFormatException>(
+            () => StatechartJson.EmitValidated(c, indented: true));
+        Assert.Contains("traffic_light", ex.Message);
+        Assert.Contains("not written", ex.Message);
+    }
+
+    [Fact]
+    public void Load_Refuses_An_Unrecognized_Schema_But_Tolerates_A_Missing_One()
+    {
+        // A newer chart must not load as v0: this build would then re-Emit it under the v0
+        // stamp and silently downgrade the file, losing whatever the newer revision meant.
+        var newer = StatechartJson.Emit(MinimalValid(), indented: false)
+            .Replace("wozzits.statechart.ir.v0", "wozzits.statechart.ir.v1");
+        var ex = Assert.Throws<StatechartFormatException>(() => StatechartJson.Load(newer));
+        Assert.Contains("wozzits.statechart.ir.v1", ex.Message);
+
+        // A MISSING schema still loads (and Emit writes the field back, healing the file).
+        // The editor is the tool you REPAIR a chart with; refusing to open one would leave
+        // no route to fix it. The engine is strict here instead -- see parse_chart.
+        var bare = JsonNode.Parse(StatechartJson.Emit(MinimalValid(), indented: false))!.AsObject();
+        bare.Remove("schema");
+        var loaded = StatechartJson.Load(bare.ToJsonString());
+        Assert.Equal(StatechartSchema.V0, loaded.Schema);
+        Assert.Contains(StatechartSchema.V0, StatechartJson.Emit(loaded, indented: false));
+    }
+
+    [Fact]
+    public void Inspect_Classifies_The_R2_Owner_Only_Rule_As_Advisory()
+    {
+        // The engine PARSES an agent's `owned` flag and then never reads it -- neither
+        // statechart_ir.cpp nor statechart_runner.cpp consults it -- so a write to a non-owned
+        // agent loads and runs. R2 is an editor convention, so it must not be Blocking, or the
+        // save gate refuses charts the engine is perfectly happy with.
+        var c = MinimalValid();
+        c.Agents.Add(new AgentDecl { Id = "peer", Owned = false, Host = "lamp" });
+        c.States[0].Do.Add(new Effect
+        {
+            Kind = EffectKind.SetDecoherence,
+            Agent = "peer",
+            Value = ValueRef.Number(0.5),
+        });
+
+        var issues = StatechartJson.Inspect(c);
+        var r2 = Assert.Single(issues, i => i.Message.Contains("non-owned"));
+        Assert.Equal(StatechartJson.IssueSeverity.Advisory, r2.Severity);
+        Assert.DoesNotContain(issues, i => i.Severity == StatechartJson.IssueSeverity.Blocking);
+    }
+
+    [Fact]
+    public void EmitValidated_Allows_A_Chart_Whose_Only_Findings_Are_Advisory()
+    {
+        // The guard against over-blocking. hunt_or_refuel.sc.json -- a chart that ships in the
+        // project and runs -- trips the R2 rule 8 times; gating on every finding would have made
+        // it, and any chart like it, permanently unsaveable. An advisory chart must still emit.
+        var c = MinimalValid();
+        c.Agents.Add(new AgentDecl { Id = "peer", Owned = false, Host = "lamp" });
+        c.States[0].Do.Add(new Effect { Kind = EffectKind.Rearm, Agent = "peer" });
+
+        Assert.NotEmpty(StatechartJson.Validate(c));                       // reported...
+        Assert.Contains("\"id\":\"peer\"", StatechartJson.EmitValidated(c, indented: false));
+    }                                                                      // ...but written
+
+    [Fact]
+    public void EmitValidated_Passes_A_Valid_Chart_Through_Byte_Identically()
+    {
+        // Validation gates, it never rewrites: a good chart must serialize exactly as Emit does,
+        // or turning the gate on would churn every .sc.json in the project on next save.
+        var c = MinimalValid();
+
+        Assert.Equal(
+            StatechartJson.Emit(c, indented: true),
+            StatechartJson.EmitValidated(c, indented: true));
+        Assert.Equal(
+            StatechartJson.Emit(c, indented: false),
+            StatechartJson.EmitValidated(c, indented: false));
+    }
 }

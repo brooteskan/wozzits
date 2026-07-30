@@ -64,6 +64,10 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
     // The chart compiled to the minified chart_ir a statechart_runner embeds. Used to refresh
     // attached runners on save so an edited chart takes effect (a runner runs a compiled snapshot,
     // not the .sc.json file -- without this you'd have to re-attach after every edit).
+    //
+    // Unvalidated on purpose: a property that throws is a trap for the UI, and the one caller that
+    // PERSISTS this reads it only after Save() returned, which validates first. Anything new that
+    // embeds this must go through Save() (or EmitValidated) rather than reading it cold.
     public string CompiledIr => StatechartJson.Emit(_chart, indented: false);
 
     // Editable name shown in the document header; committing it renames the chart's files.
@@ -179,11 +183,15 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
 
     // Write the chart back to its .sc.json (only when actually edited, so an untouched chart is
     // never reformatted) and the hand-placed layout to the editor-owned sidecar.
+    //
+    // Throws StatechartFormatException when the chart is structurally invalid, BEFORE writing
+    // anything -- so a chart the engine's parse_chart would refuse is never persisted, and the
+    // document stays dirty for the user to fix rather than half-saving. The caller reports.
     public void Save()
     {
         if (!IsReadOnly && (Control.IsDirty || Dataflow.IsDirty))
         {
-            File.WriteAllText(_path, StatechartJson.Emit(_chart, indented: true));
+            File.WriteAllText(_path, StatechartJson.EmitValidated(_chart, indented: true));
         }
 
         File.WriteAllText(LayoutPath, CaptureLayout().ToJson());

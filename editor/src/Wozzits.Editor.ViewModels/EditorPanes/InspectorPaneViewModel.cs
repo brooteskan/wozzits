@@ -1577,7 +1577,20 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
-        var chartIr = StatechartJson.Emit(chart, indented: false);
+        // Validate before attaching. This chart came off DISK -- hand-edited, or written by an
+        // older build -- so it may be structurally invalid even though it parsed. Attaching it
+        // anyway embeds IR the engine's parse_chart refuses, and the only symptom would be a
+        // runner that silently never starts once you hit Play.
+        string chartIr;
+        try
+        {
+            chartIr = StatechartJson.EmitValidated(chart, indented: false);
+        }
+        catch (StatechartFormatException e)
+        {
+            StatechartRunnerStatus = $"Couldn't attach: {e.Message}";
+            return;
+        }
 
         // One runner per node: reuse the existing behavior (update its config), else add one. It is
         // NOT mirrored into the Behaviors list -- the card is its sole home.

@@ -398,4 +398,53 @@ public sealed class StatechartDocumentTests
         var reopenedState = reopened.Control.States.First(s => s.StateId == "DELIBERATE");
         Assert.Equal(movedX, reopenedState.X, 3);
     }
+
+    [Fact]
+    public void Save_Refuses_A_Structurally_Invalid_Chart_And_Writes_Nothing()
+    {
+        // Delete every state: the control pane prunes the regions' state lists and then drops
+        // the emptied regions, leaving a chart the engine's parse_chart refuses ("chart has no
+        // regions"). Before Save validated, this wrote happily to .sc.json and the compiled IR
+        // was pushed into every attached runner -- which then silently never started.
+        var path = FreshChartPath("traffic_light.sc.json");
+        File.WriteAllText(path, "SENTINEL");
+        var document = new StatechartDocumentViewModel(
+            "traffic_light", path, Golden("traffic_light.sc.json"));
+        var canvas = (IEditorCanvas)document.Control;
+
+        while (document.Control.States.Count > 0)
+        {
+            canvas.SelectOnly(document.Control.States[0]);
+            canvas.DeleteSelected();
+        }
+
+        var ex = Assert.Throws<StatechartFormatException>(document.Save);
+        Assert.Contains("no regions", ex.Message);
+
+        // Nothing was written, and the document stays dirty so the user can fix and re-save --
+        // a half-save that clobbered the good file with a broken chart would be the worst
+        // outcome of the three.
+        Assert.Equal("SENTINEL", File.ReadAllText(path));
+        Assert.True(document.IsDirty);
+    }
+
+    [Fact]
+    public void Save_Still_Writes_A_Chart_That_Stays_Valid_After_An_Edit()
+    {
+        // The gate must not be trigger-happy: deleting ONE of two states leaves a chart whose
+        // region still has a state, so this is an ordinary successful save. (Guards against a
+        // validation rule that rejects everything and makes the editor unusable.)
+        var path = FreshChartPath("traffic_light.sc.json");
+        var document = new StatechartDocumentViewModel(
+            "traffic_light", path, Golden("traffic_light.sc.json"));
+        var canvas = (IEditorCanvas)document.Control;
+
+        canvas.SelectOnly(document.Control.States.First(s => s.StateId == "HOLD"));
+        canvas.DeleteSelected();
+
+        document.Save();
+
+        Assert.Single(StatechartJson.Load(File.ReadAllText(path)).States);
+        Assert.False(document.IsDirty);
+    }
 }
