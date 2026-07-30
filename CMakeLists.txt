@@ -613,6 +613,51 @@ function(rs_add_test_group category name)
 
 endfunction()
 
+# A test that calls the C ABI's EXPORTS, not just its structs. Distinct from
+# rs_add_test_group because it links wozzits_abi (the shared library) on top of
+# window_engine: the exports live in the DLL, so a test that only links
+# window_engine cannot reach them -- which is why wozzits_abi.cpp carried 78
+# exports and no direct test for months (issue #308, part A1's standing
+# TEST-GAP). WZ_ABI_EXPORTS is deliberately NOT defined here, so WZ_ABI_API
+# resolves empty and the declarations are plain externs the linker satisfies
+# from the import library.
+#
+# No runtime copy step is needed: the DLL and the test executables share this
+# build directory, so Windows resolves it beside the exe.
+function(rs_add_abi_test_group category name)
+    set(target "${category}_${name}")
+
+    add_executable(${target}
+        tests/${category}/${name}.cpp)
+
+    set_target_properties(${target}
+        PROPERTIES FOLDER "tests/${category}"
+    )
+
+    target_compile_definitions(${target}
+        PRIVATE
+            WZ_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+            # A project the session exports can actually OPEN: it carries both a
+            # manifest and an asset graph. wz_host_create_project alone writes no
+            # graph, so a session opened on its output fails with "project manifest
+            # does not define an asset graph" -- which would silently SKIP every
+            # test needing a live session, i.e. exactly the ones worth having. The
+            # test copies this before use and never writes back.
+            WZ_ABI_TEST_PROJECT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/terrain_constraint_fixture"
+    )
+
+    target_link_libraries(${target}
+        PRIVATE
+            gtest
+            GTest::gtest_main
+            window_engine
+            wozzits_abi
+    )
+
+    add_test(NAME ${target} COMMAND ${target})
+
+endfunction()
+
 # ----------------------------
 # Tests
 # ----------------------------
@@ -792,6 +837,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(engine runtime_camera_tests)
     rs_add_test_group(engine flying_camera_tests)
     rs_add_test_group(engine project_manifest_tests)
+    rs_add_abi_test_group(engine abi_export_contract_tests)
     rs_add_test_group(engine asset_graph_editor_session_tests)
     rs_add_test_group(engine asset_graph_schema_registry_tests)
     rs_add_test_group(engine asset_catalog_tests)
