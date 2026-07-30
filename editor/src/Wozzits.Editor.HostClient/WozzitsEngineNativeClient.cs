@@ -1459,7 +1459,7 @@ public sealed partial class WozzitsEngineNativeClient
     internal EngineMutationResponse SetNodeCollision(
         IntPtr runtime,
         string nodeId,
-        uint assetGraphNodeId,
+        ulong assetGraphNodeId,
         bool constrainMovement)
     {
         if (runtime == IntPtr.Zero)

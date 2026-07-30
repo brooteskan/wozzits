@@ -8,7 +8,7 @@ namespace Wozzits.Editor.HostClient;
 internal static partial class WozzitsEngineAbi
 {
     private const string LibraryName = "wozzits_abi";
-    internal const uint AbiVersion = 34;
+    internal const uint AbiVersion = 35;
 
     private static int _resolverRegistered;
 
@@ -736,7 +736,7 @@ internal static partial class WozzitsEngineAbi
     internal static partial WzResult WzEditorRuntimeSetNodeCollision(
         IntPtr runtime,
         string nodeIdUtf8,
-        uint assetGraphNodeId,
+        ulong assetGraphNodeId,
         byte constrainMovement);
 
     // Author a node's ATMOSPHERE component: the Atmosphere asset-graph node the
@@ -1075,6 +1075,9 @@ internal static class WozzitsEngineAbiLayout
         AssertOffset<WzEditorAssetGraphSnapshotAbi>(
             nameof(WzEditorAssetGraphSnapshotAbi.Ok),
             0);
+        AssertOffset<WzEditorAssetGraphSnapshotAbi>(
+            nameof(WzEditorAssetGraphSnapshotAbi.AbiVersion),
+            4);
         AssertOffset<WzEditorAssetGraphSnapshotAbi>(
             nameof(WzEditorAssetGraphSnapshotAbi.Error),
             8);
@@ -1770,7 +1773,10 @@ internal readonly struct WzEditorBehaviorModuleParamAbi
 internal readonly struct WzEditorAssetGraphSnapshotAbi
 {
     public readonly uint Ok;
-    public readonly uint Reserved;
+    // Was `Reserved`; the engine now stamps its ABI version here, so the graph
+    // editor is no longer the one decoder without a version gate. Same offset and
+    // size, so the layout asserts below are unchanged.
+    public readonly uint AbiVersion;
     public readonly WzEditorStringSpanAbi Error;
     public readonly WzEditorStringSpanAbi Schema;
     public readonly WzEditorTableSpanAbi Nodes;

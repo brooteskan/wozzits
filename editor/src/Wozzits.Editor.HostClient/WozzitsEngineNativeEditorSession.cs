@@ -643,7 +643,7 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
 
     public EngineMutationResponse SetNodeCollision(
         string nodeId,
-        uint assetGraphNodeId,
+        ulong assetGraphNodeId,
         bool constrainMovement)
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)

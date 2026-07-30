@@ -4209,12 +4209,12 @@ public sealed partial class ProjectOpeningTests
             return new EngineMutationResponse { Ok = true };
         }
 
-        public List<(string NodeId, uint AssetGraphNodeId, bool ConstrainMovement)>
+        public List<(string NodeId, ulong AssetGraphNodeId, bool ConstrainMovement)>
             Collisions { get; } = [];
 
         public EngineMutationResponse SetNodeCollision(
             string nodeId,
-            uint assetGraphNodeId,
+            ulong assetGraphNodeId,
             bool constrainMovement)
         {
             Collisions.Add((nodeId, assetGraphNodeId, constrainMovement));

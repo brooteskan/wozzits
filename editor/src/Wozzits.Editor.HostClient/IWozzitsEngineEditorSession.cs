@@ -80,6 +80,18 @@ public interface IWozzitsEngineEditorSession
 
     EngineMutationResponse SetAssetGraphZoom(double zoom);
 
+    // DEAD file-based twins -- do not route an edit through these. Their engine
+    // exports (wz_host_scene_set_node_properties / _node_transform / _camera) cast
+    // every value argument to (void) and return
+    // "scene authoring mutations are not implemented in the engine ABI yet", so the
+    // call always FAILS and nothing is ever written. Every working edit goes through
+    // the runtime seam instead: the *Live members below, which post to the running
+    // engine and are persisted by SaveScene.
+    //
+    // They are kept because the naming pair (SetSceneNodeX vs SetSceneNodeXLive) is
+    // the tell that distinguishes the two families, and deleting half of it would
+    // make the surviving half look arbitrary. Marked rather than deleted so the next
+    // reader does not have to trace the export to find out which one persists.
     EngineMutationResponse SetSceneNodeProperties(
         string nodeId,
         string name,
@@ -198,6 +210,9 @@ public interface IWozzitsEngineEditorSession
     // switch back). Empty response when no viewport is running.
     EngineSceneSnapshotResponse LoadRuntimeSceneSnapshot();
 
+    // DEAD file-based twin, like SetSceneNodeProperties/SetSceneNodeTransform above:
+    // wz_host_scene_set_camera discards its arguments and fails. Camera edits go
+    // through SetRuntimeSceneNodeCamera.
     EngineMutationResponse SetSceneNodeCamera(
         string nodeId,
         EngineSceneCameraEdit edit);
@@ -309,7 +324,7 @@ public interface IWozzitsEngineEditorSession
     // Live + host-gated, no-op success when no viewport is running.
     EngineMutationResponse SetNodeCollision(
         string nodeId,
-        uint assetGraphNodeId,
+        ulong assetGraphNodeId,
         bool constrainMovement);
 
     // Author a node's Atmosphere component: which Atmosphere asset-graph node the
