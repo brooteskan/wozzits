@@ -1164,6 +1164,20 @@ namespace wz::engine::rendering
         return screen_constants_buffer_;
     }
 
+    bool RhiSceneRenderer::record_view_buffer_refresh(
+        wz::rhi::GpuResourceHandle handle,
+        const void* data,
+        uint64_t size)
+    {
+        const wz::rhi::GpuResource* resource = gpu_.resources.get(handle);
+        const wz::gpu::GPUHandle gpu = resource
+            ? gpu_.backend.gpu_handle_for(resource->backend)
+            : wz::gpu::GPUHandle{};
+        return gpu.valid()
+            && wz::gpu::dx12::internal::record_compute_buffer_update_dx12(
+                   gpu_.device, gpu, data, size, 0);
+    }
+
     bool RhiSceneRenderer::bind_view_constants(
         RealizedRenderable& realized,
         const wz::rhi::ShaderResourceGroupLayout* slot0_layout)
@@ -2713,7 +2727,10 @@ namespace wz::engine::rendering
             // Refresh in place: the handle and identity are stable, so the
             // recorder's cached descriptor tables keep viewing the same
             // resource and only the bytes change (the #145 per-frame door).
-            if (!gpu_.resources.update(
+            // RECORDED into the frame's command list — see
+            // record_view_buffer_refresh — so a multi-pass frame (authored
+            // RTTs + main) shows each pass its own values (B2-S1, #311).
+            if (!record_view_buffer_refresh(
                     view_constants_buffer_, &view_constants_,
                     sizeof(view_constants_)))
             {
@@ -2729,7 +2746,7 @@ namespace wz::engine::rendering
             static_cast<float>(target_w),
             static_cast<float>(target_h));
         if (screen_constants_buffer_.valid()) {
-            if (!gpu_.resources.update(
+            if (!record_view_buffer_refresh(
                     screen_constants_buffer_, &screen_constants_,
                     sizeof(screen_constants_)))
             {

@@ -527,6 +527,17 @@ namespace wz::engine::rendering
             RealizedRenderable& realized,
             const wz::rhi::ShaderResourceGroupLayout* slot0_layout);
 
+        // Refresh a view/screen constants buffer AS A RECORDED COPY in the
+        // frame's command list, not the immediate registry.update: a frame
+        // records one pass per authored render target plus the main pass, each
+        // refreshing these buffers with ITS values — an immediate copy
+        // executes before the whole frame, so every pass's draws would read
+        // the LAST refresh (B2-S1, #311). Recorded, each pass reads its own.
+        bool record_view_buffer_refresh(
+            wz::rhi::GpuResourceHandle handle,
+            const void* data,
+            uint64_t size);
+
         EngineGpuContext&           gpu_;
         wz::Logger&                 logger_;
         RhiContext                  ctx_;

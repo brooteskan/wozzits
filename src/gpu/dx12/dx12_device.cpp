@@ -459,6 +459,13 @@ namespace wz::gpu::dx12
         if (impl->textured_quad_ctx) {
             impl->textured_quad_ctx->srv_cursor = 0;
         }
+
+        // Drain the previous frame's recorded-update staging: end_frame waited
+        // for that frame, so the GPU is done reading it.
+        for (ID3D12Resource* staging : impl->frame_upload_staging) {
+            staging->Release();
+        }
+        impl->frame_upload_staging.clear();
         // impl->cmd->SetGraphicsRootSignature(nullptr); // harmless placeholder sanity reset
 
         // transition to render target
@@ -748,6 +755,12 @@ namespace wz::gpu::dx12
         if (!dx12_device_lost(*impl)) {
             wait_for_gpu(impl);
         }
+
+        // Recorded-update staging from the final frame (waited-for above).
+        for (ID3D12Resource* staging : impl->frame_upload_staging) {
+            staging->Release();
+        }
+        impl->frame_upload_staging.clear();
 
         // 1. Destroy renderer/backend context first.
         if (impl->ctx)

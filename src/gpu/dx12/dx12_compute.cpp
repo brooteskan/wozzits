@@ -894,6 +894,76 @@ namespace wz::gpu::dx12::internal
         return ok;
     }
 
+    bool record_compute_buffer_update_dx12(
+        Device& device,
+        GPUHandle destination,
+        const void* data,
+        uint64_t byte_count,
+        uint64_t byte_offset)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !impl->cmd || !impl->device || !data || byte_count == 0u) {
+            return false;
+        }
+
+        DX12ComputeBuffer* buffer = impl->compute_buffers.get(destination);
+        if (!buffer || !buffer->valid()) {
+            return false;
+        }
+
+        const uint64_t dst_byte_count = buffer_byte_count(*buffer);
+        if (byte_offset > dst_byte_count
+            || byte_count > dst_byte_count - byte_offset)
+        {
+            return false;
+        }
+
+        const D3D12_HEAP_PROPERTIES upload_heap =
+            CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        const D3D12_RESOURCE_DESC upload_desc =
+            CD3DX12_RESOURCE_DESC::Buffer(byte_count);
+
+        ID3D12Resource* upload = nullptr;
+        HRESULT hr = impl->device->CreateCommittedResource(
+            &upload_heap,
+            D3D12_HEAP_FLAG_NONE,
+            &upload_desc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&upload));
+        if (FAILED(hr)) {
+            return false;
+        }
+
+        void* mapped = nullptr;
+        const D3D12_RANGE read_range{ 0, 0 };
+        hr = upload->Map(0, &read_range, &mapped);
+        if (FAILED(hr) || !mapped) {
+            upload->Release();
+            return false;
+        }
+        std::memcpy(mapped, data, static_cast<size_t>(byte_count));
+        upload->Unmap(0, nullptr);
+
+        // Record into the FRAME's list, not a one-shot: the copy executes in
+        // queue order between the draws recorded before and after it, so a
+        // buffer refreshed once per pass shows each pass its own values. The
+        // staging buffer must survive until the frame executes — it parks in
+        // the frame arena, drained at the next begin_frame.
+        const D3D12_RESOURCE_STATES final_state = buffer->state;
+        transition_buffer(impl->cmd, *buffer, D3D12_RESOURCE_STATE_COPY_DEST);
+        impl->cmd->CopyBufferRegion(
+            buffer->resource,
+            byte_offset,
+            upload,
+            0,
+            byte_count);
+        transition_buffer(impl->cmd, *buffer, final_state);
+
+        impl->frame_upload_staging.push_back(upload);
+        return true;
+    }
+
     bool release_compute_buffer_dx12(Device& device, GPUHandle handle)
     {
         auto* impl = static_cast<DX12Device*>(device.impl);

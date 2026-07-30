@@ -438,6 +438,92 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
         wz::gpu::present(device, /*sync_interval*/ 0);
         wz::gpu::release_texture(device, rt);
 
+        // ── B2-S1 pin (#311): the authored-RTT frame shape — an offscreen
+        // pass AND the main pass in ONE begin/end_frame, exactly what
+        // render_authored_render_targets + render_scene produce. The puppet VS
+        // converts its pixel-space affine (CPU-packed per pass) to NDC by
+        // dividing by the SCREEN buffer's viewport, read at EXECUTE time; both
+        // passes refresh that one buffer. With an immediate (one-shot) refresh
+        // every draw read the LAST pass's dims: the offscreen puppet collapsed
+        // to a corner sliver (measured 43 px at x=[3,8] y=[3,17] of 128²) and
+        // masked Parts vanished (mask_uv aliased too). The refresh is now a
+        // RECORDED copy ordered with the frame, so each pass reads its own
+        // dims and the fit+centered puppet must span the target's midline.
+        {
+            wz::gpu::TextureDesc s1_desc{};
+            s1_desc.width = 128;
+            s1_desc.height = 128;
+            s1_desc.format = wz::gpu::TextureFormat::RGBA8Unorm;
+            s1_desc.render_target = true;
+            const wz::gpu::GPUHandle s1_rt =
+                wz::gpu::create_texture(device, s1_desc);
+            ASSERT_TRUE(s1_rt.valid());
+
+            ASSERT_TRUE(wz::gpu::begin_frame(device));
+            wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+            EXPECT_TRUE(renderer.render_scene(
+                nodes, assets, view_projection, camera_world_pos, {}, nullptr,
+                s1_rt));
+            EXPECT_TRUE(renderer.render_scene(
+                nodes, assets, view_projection, camera_world_pos));
+            ASSERT_TRUE(wz::gpu::end_frame(device));
+
+            std::vector<std::uint8_t> s1_px;
+            ASSERT_TRUE(wz::gpu::dx12::internal::read_texture_rgba8_dx12(
+                device, s1_rt, s1_px));
+            ASSERT_EQ(s1_px.size(), static_cast<std::size_t>(128) * 128 * 4);
+            std::uint32_t min_x = 128, max_x = 0, min_y = 128, max_y = 0;
+            std::size_t s1_drawn = 0;
+            for (std::uint32_t y = 0; y < 128; ++y) {
+                for (std::uint32_t x = 0; x < 128; ++x) {
+                    const std::size_t i =
+                        (static_cast<std::size_t>(y) * 128 + x) * 4;
+                    std::uint8_t m = s1_px[i];
+                    if (s1_px[i + 1] > m) m = s1_px[i + 1];
+                    if (s1_px[i + 2] > m) m = s1_px[i + 2];
+                    if (s1_px[i + 3] > m) m = s1_px[i + 3];
+                    if (m > 8u) {
+                        ++s1_drawn;
+                        if (x < min_x) min_x = x;
+                        if (x > max_x) max_x = x;
+                        if (y < min_y) min_y = y;
+                        if (y > max_y) max_y = y;
+                    }
+                }
+            }
+            ASSERT_GT(s1_drawn, 0u)
+                << "two-pass frame: nothing drawn into the offscreen target";
+            EXPECT_GT(max_x, 68u)
+                << "offscreen pass drew with the MAIN pass's screen constants "
+                   "(B2-S1 regressed); bbox x=[" << min_x << "," << max_x
+                << "] y=[" << min_y << "," << max_y << "] drawn=" << s1_drawn
+                << " of 128x128";
+            EXPECT_GT(max_y, 68u)
+                << "offscreen puppet confined to the top of its target "
+                   "(B2-S1 regressed); bbox x=[" << min_x << "," << max_x
+                << "] y=[" << min_y << "," << max_y << "] drawn=" << s1_drawn;
+
+            // The main pass of the same frame still renders the puppet with
+            // ITS dims — the recorded refresh must not starve later passes.
+            std::vector<std::uint8_t> s1_bb;
+            ASSERT_TRUE(wz::gpu::dx12::internal::read_backbuffer_rgba8_dx12(
+                device, s1_bb));
+            std::size_t s1_nonclear = 0;
+            for (std::size_t i = 0; i + 3 < s1_bb.size(); i += 4) {
+                const int dr = static_cast<int>(s1_bb[i]) - 26;
+                const int dg = static_cast<int>(s1_bb[i + 1]) - 26;
+                const int db = static_cast<int>(s1_bb[i + 2]) - 31;
+                if (dr > 15 || dr < -15 || dg > 15 || dg < -15
+                    || db > 15 || db < -15) {
+                    ++s1_nonclear;
+                }
+            }
+            EXPECT_GT(s1_nonclear, 0u)
+                << "the MAIN pass of the two-pass frame rendered nothing";
+            wz::gpu::present(device, /*sync_interval*/ 0);
+            wz::gpu::release_texture(device, s1_rt);
+        }
+
         // Structural wiring proofs:
         //  - the puppet program realized from the asset compiler (no render-time
         //    bridge), like the splat/clipmap tests assert,

@@ -760,6 +760,19 @@ namespace wz::gpu::dx12::internal {
         const void* data,
         uint64_t byte_count,
         uint64_t byte_offset = 0);
+    // Record the update INTO THE FRAME'S command list instead of the immediate
+    // one-shot above: the new bytes are visible to draws recorded AFTER this
+    // call, while draws recorded BEFORE it still read the previous content.
+    // Required for any buffer refreshed more than once per frame with
+    // different values — with the immediate copy every recorded draw reads the
+    // LAST refresh at execute (#311 B2-S1). Staging rides a per-frame arena
+    // released at the next begin_frame. Call only between begin/end_frame.
+    bool record_compute_buffer_update_dx12(
+        Device& device,
+        GPUHandle destination,
+        const void* data,
+        uint64_t byte_count,
+        uint64_t byte_offset = 0);
     bool release_compute_buffer_dx12(Device& device, GPUHandle handle);
     bool release_compute_pipeline_dx12(Device& device, GPUHandle handle);
 

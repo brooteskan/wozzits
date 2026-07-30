@@ -16,6 +16,8 @@
 #include <gpu/gaussian_splat_color_lod_settings.h>
 #include <gpu/gaussian_splat_coverage_settings.h>
 
+#include <vector>
+
 // The engine-layer submit context is only stored by pointer; the full type
 // lives in engine/render_backends/dx12/dx12_submit.h, included by the TUs
 // that actually call into the submit path.
@@ -101,6 +103,12 @@ namespace wz::gpu::dx12
         ID3D12Fence* fence = nullptr;
         HANDLE fence_event = nullptr;
         UINT64 fence_value = 0;
+
+        // Staging buffers referenced by THIS frame's recorded in-frame copies
+        // (record_compute_buffer_update_dx12). Frames are fully synchronous
+        // (end_frame waits), so the previous frame's staging is release-safe
+        // at begin_frame, which drains this.
+        std::vector<ID3D12Resource*> frame_upload_staging;
 
         // One-shot copy/upload fence, separate from the frame fence above. The
         // frame fence's values ARE the rhi registry's reclamation timeline:
