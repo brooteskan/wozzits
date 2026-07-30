@@ -1730,6 +1730,20 @@ namespace {
 //     provenance) -> it belongs to no kind. Add it to the accepted list below so
 //     the next reader knows it was a decision, not an oversight.
 //
+// EITHER WAY there is a THIRD obligation this guard used to stay silent about, and
+// the silence is what made it a recurring bug: decide whether the field is surfaced
+// to the EDITOR, in engine/editor/scene_snapshot.h. That means BOTH reader paths --
+// read_node (from scene JSON) and flat_node_from_asset (from live nodes) -- because a
+// field only one of them fills is the "my component vanished after a prefab re-open"
+// failure, which has now been fixed one component at a time for camera, behaviors,
+// geometry, collision/motion, motion filter, render_to_texture and scene_source. If
+// the answer is "not surfaced", say so in the category-4 list in that header; the
+// deliberate omissions are pinned by
+// ProjectSceneSnapshot.DeliberatelyUnsurfacedAuthoredFields.
+//
+// A parity test between the two readers cannot cover this: a field absent from BOTH
+// looks exactly like agreement. Only the written-down decision distinguishes them.
+//
 // Accepted non-component fields, as of the 2026-07-29 audit: the ingredient and
 // resolved-key fields that fold into Kind::Renderable (geometry_glb_node_id,
 // render_program_node_id, render_program_asset), mesh_index (a lookup key into

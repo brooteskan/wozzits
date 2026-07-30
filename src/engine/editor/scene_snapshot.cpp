@@ -206,6 +206,36 @@ namespace wz::engine::editor
             };
         }
 
+        // Read an asset-graph node id out of `key`. The ONE route from a JSON number
+        // to a node id in this file: a raw static_cast of the double is UB when the
+        // value does not fit (a hand-edited or downloaded scene with
+        // "asset_graph_node_id": 1e30 is enough), so narrow_number rejects instead of
+        // wrapping. These readers are documented tolerant, so an unusable number ends
+        // up treated as an absent member -- the same outcome as a malformed block.
+        //
+        // ZERO IS NOT A NODE ID, so it reads as UNSET. AssetGraphDraft allocates from
+        // 1 (draft.h: next_node_id = 1) and spells "invalid" as UINT64_MAX, so 0 is
+        // never a node anything can reference. Everything else already agreed: the
+        // scene COMPILER gates every one of these same members on `> 0.0`, and every
+        // write path (set_node_renderable_asset / _audio_renderable / _scene_source /
+        // geometry / render_program / collision) treats an incoming 0 as "detach".
+        //
+        // This reader was the lone dissenter, and it disagreed with ITSELF as well:
+        // three of these members accepted 0 and five rejected it, so one authored "0"
+        // meant "no ref" in five components and "a ref to node 0" in three. Worse
+        // than untidy -- it made the editor read-back disagree with the RUNTIME
+        // reader about the same file, showing a reference the running scene does not
+        // have, and the ABI projection (which packs 0 as the absent value) then
+        // reported has_<x>_ref = 1 with id 0, a state nothing downstream can resolve.
+        std::optional<wz::asset::AssetGraphDraftNodeId> read_node_id_number(
+            const wz::json::JSONValue& obj,
+            const char* key)
+        {
+            const auto id =
+                wz::json::read_integral<wz::asset::AssetGraphDraftNodeId>(obj, key);
+            return (id && *id != 0u) ? id : std::nullopt;
+        }
+
         std::optional<SceneSnapshotRenderable> read_renderable(
             const wz::json::JSONValue& obj)
         {
@@ -217,13 +247,8 @@ namespace wz::engine::editor
             }
 
             SceneSnapshotRenderable out;
-            if (const auto node_id =
-                    wz::json::read_number(*renderable, "asset_graph_node_id");
-                node_id && *node_id >= 0.0)
-            {
-                out.asset_graph_node_id =
-                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
-            }
+            out.asset_graph_node_id =
+                read_node_id_number(*renderable, "asset_graph_node_id");
             out.source = out.asset_graph_node_id
                 ? SceneSnapshotRenderableSource{
                     .kind = "asset-graph-node",
@@ -248,12 +273,7 @@ namespace wz::engine::editor
             if (!ref || ref->kind != wz::json::JSONValueKind::Object) {
                 return std::nullopt;
             }
-            const auto node_id =
-                wz::json::read_number(*ref, "asset_graph_node_id");
-            if (!node_id || *node_id < 0.0) {
-                return std::nullopt;
-            }
-            return static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+            return read_node_id_number(*ref, "asset_graph_node_id");
         }
 
         std::string node_kind(const SceneSnapshotNode& node)
@@ -434,6 +454,69 @@ namespace wz::engine::editor
             return behavior;
         }
 
+        // Convert an in-memory MeshRenderStyleData into the snapshot's
+        // high-impact subset -- the runtime-snapshot twin of read_mesh_style
+        // below, kept in lockstep with it so the node-asset path reports the
+        // same style fields the JSON path does. Narrower than the source struct
+        // on purpose: only the surface/wireframe enable + color are editor-
+        // authorable here (see SceneSnapshotMeshStyle).
+        SceneSnapshotMeshStyle snapshot_mesh_style_from_asset(
+            const wz::engine::assets::MeshRenderStyleData& style)
+        {
+            SceneSnapshotMeshStyle out;
+            out.surface_enabled = style.surface.enabled;
+            std::copy(
+                style.surface.color, style.surface.color + 4, out.surface_rgba);
+            out.wireframe_enabled = style.wireframe.enabled;
+            std::copy(
+                style.wireframe.color,
+                style.wireframe.color + 4,
+                out.wireframe_rgba);
+            return out;
+        }
+
+        // Convert an authored SceneGLBSceneSource descriptor into the snapshot
+        // summary -- the runtime-snapshot twin of read_scene_source. Without
+        // this a host node's GLB source (path, consume mode, scene index, base
+        // style, per-mesh overrides) vanished from the inspector after any
+        // open_scene / grafted rebuild, because only the JSON path filled it.
+        SceneSnapshotSceneSource snapshot_scene_source_from_asset(
+            const wz::engine::assets::SceneGLBSceneSource& source)
+        {
+            SceneSnapshotSceneSource out;
+            out.kind = "glb";
+            out.path = source.path;
+            // These two tokens are the contract read_scene_source parses; they
+            // must stay identical to scene_json_export's
+            // scene_source_consume_mode_name (file-local there, hence spelled
+            // again rather than shared).
+            out.consume_mode =
+                source.consume_mode
+                    == wz::engine::assets::SceneSourceConsumeMode::Flatten
+                ? "flatten"
+                : "instance";
+            out.scene_index = source.scene_index;
+            // has_base_style mirrors the exporter, which writes a "base_style"
+            // object only when the optional is engaged -- so an unset base style
+            // reads as absent on both paths rather than as an all-default style.
+            if (source.base_style) {
+                out.has_base_style = true;
+                out.base_style = snapshot_mesh_style_from_asset(*source.base_style);
+            }
+            out.style_override_count =
+                static_cast<uint32_t>(source.style_overrides.size());
+            out.style_overrides.reserve(source.style_overrides.size());
+            for (const auto& override_entry : source.style_overrides) {
+                out.style_overrides.push_back(
+                    SceneSnapshotMeshStyleOverride{
+                        .mesh_index = override_entry.mesh_index,
+                        .style =
+                            snapshot_mesh_style_from_asset(override_entry.style),
+                    });
+            }
+            return out;
+        }
+
         // Read the high-impact subset (surface/wireframe enabled + color) of a
         // MeshRenderStyleData JSON object (issue #213 Phase 3b-2). The shape is
         // written by scene_json_export.cpp::mesh_render_style_data_value: a
@@ -536,11 +619,9 @@ namespace wz::engine::editor
             }
             SceneSnapshotCollision out;
             if (const auto node_id =
-                    wz::json::read_number(*collision, "collision_asset_node_id");
-                node_id && *node_id >= 0.0)
+                    read_node_id_number(*collision, "collision_asset_node_id"))
             {
-                out.collision_asset_node_id =
-                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+                out.collision_asset_node_id = *node_id;
             }
             out.constrain_movement =
                 wz::json::read_bool(*collision, "constrain_movement")
@@ -653,12 +734,10 @@ namespace wz::engine::editor
                 return std::nullopt;
             }
             SceneSnapshotAudioSource out;
-            if (const auto node_id = wz::json::read_number(
-                    *source, "audio_renderable_node_id");
-                node_id && *node_id > 0.0)
+            if (const auto node_id =
+                    read_node_id_number(*source, "audio_renderable_node_id"))
             {
-                out.audio_renderable_node_id =
-                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+                out.audio_renderable_node_id = *node_id;
             }
             out.auto_play =
                 wz::json::read_bool(*source, "auto_play").value_or(true);
@@ -678,12 +757,10 @@ namespace wz::engine::editor
                 return std::nullopt;
             }
             SceneSnapshotAtmosphere out;
-            if (const auto node_id = wz::json::read_number(
-                    *source, "atmosphere_asset_node_id");
-                node_id && *node_id > 0.0)
+            if (const auto node_id =
+                    read_node_id_number(*source, "atmosphere_asset_node_id"))
             {
-                out.atmosphere_asset_node_id =
-                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+                out.atmosphere_asset_node_id = *node_id;
             }
             out.enabled =
                 wz::json::read_bool(*source, "enabled").value_or(true);
@@ -701,12 +778,10 @@ namespace wz::engine::editor
                 return std::nullopt;
             }
             SceneSnapshotEnvironment out;
-            if (const auto node_id = wz::json::read_number(
-                    *source, "environment_asset_node_id");
-                node_id && *node_id > 0.0)
+            if (const auto node_id =
+                    read_node_id_number(*source, "environment_asset_node_id"))
             {
-                out.environment_asset_node_id =
-                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+                out.environment_asset_node_id = *node_id;
             }
             out.enabled =
                 wz::json::read_bool(*source, "enabled").value_or(true);
@@ -728,11 +803,9 @@ namespace wz::engine::editor
             }
             SceneSnapshotRenderToTexture out;
             if (const auto node_id =
-                    wz::json::read_number(*source, "target_asset_node_id");
-                node_id && *node_id > 0.0)
+                    read_node_id_number(*source, "target_asset_node_id"))
             {
-                out.target_node_id =
-                    static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+                out.target_node_id = *node_id;
             }
             out.include_descendants =
                 wz::json::read_bool(*source, "include_descendants")
@@ -773,12 +846,10 @@ namespace wz::engine::editor
                 }
                 SceneSnapshotRenderableBinding binding{};
                 binding.semantic = std::string(*semantic);
-                if (const auto anchor = wz::json::read_number(
-                        *entry_ptr, "asset_graph_node_id");
-                    anchor && *anchor > 0.0)
+                if (const auto anchor =
+                        read_node_id_number(*entry_ptr, "asset_graph_node_id"))
                 {
-                    binding.asset_graph_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(*anchor);
+                    binding.asset_graph_node_id = *anchor;
                 }
                 out.push_back(std::move(binding));
             }
@@ -854,8 +925,9 @@ namespace wz::engine::editor
         // projection of a runtime-grafted node — id/name/parent/visible/local
         // transform + renderable presence. It must mirror read_node's authored
         // components read-back (camera, collision, motion, motion filter, audio
-        // source, behaviors, render-binding refs) so a scenelet-round-trip / spawned
-        // node reveals + restores the same inspector sections the JSON path does;
+        // source, behaviors, render-binding refs, scene source) so a scenelet-
+        // round-trip / spawned node reveals + restores the same inspector
+        // sections the JSON path does;
         // each removable component appears in `components` (the section's gate) AND
         // carries its field values. Only derived/non-authorable state is omitted.
         FlatSceneSnapshotNode flat_node_from_asset(
@@ -904,6 +976,19 @@ namespace wz::engine::editor
             // editor restarted onto the JSON path.
             node.render_program_node_id = source.render_program_node_id;
             node.geometry_node_id = source.geometry_asset_node_id;
+
+            // The scene-source pair, the third member of that same family and
+            // the last one this path was missing. The projection sets
+            // WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF / _HAS_SCENE_SOURCE from
+            // these two fields, so leaving them empty did not merely blank the
+            // "Subtree from asset" dropdown -- RestoreSubtreeReferenceState took
+            // its "no reference" branch and HID the section outright, on a node
+            // whose reference was intact in the live scene and on disk.
+            node.scene_source_node_id = source.scene_source_node_id;
+            if (source.glb_scene_source) {
+                node.scene_source =
+                    snapshot_scene_source_from_asset(*source.glb_scene_source);
+            }
 
             // Custom-renderable ingredients (issue #229/#230): surface the
             // authored bindings + constant overrides so the inspector
@@ -1134,8 +1219,11 @@ namespace wz::engine::editor
                 node.parent_id = std::string(*parent);
             }
             node.visible = wz::json::read_bool(value, "visible").value_or(true);
-            node.render_order = static_cast<int>(
-                wz::json::read_number(value, "render_order").value_or(0.0));
+            // An out-of-range render_order falls back to the default layer rather than
+            // wrapping to an arbitrary one (a wrapped value would silently reorder
+            // draws); 0 is what a node without the member already gets.
+            node.render_order =
+                wz::json::read_integral<int>(value, "render_order").value_or(0);
             node.transform = read_transform(value);
             node.camera = read_camera(value);
             node.renderable = read_renderable(value);

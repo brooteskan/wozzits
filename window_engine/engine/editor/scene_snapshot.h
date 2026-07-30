@@ -225,6 +225,43 @@ namespace wz::engine::editor
         std::vector<SceneSnapshotBehaviorConfig> config;
     };
 
+    // The editor's view of one authored node. A STRICT SUBSET of SceneNodeAsset, and
+    // the subset is a decision that has to be made per field -- both reader paths
+    // (read_node from JSON, flat_node_from_asset from live nodes) must fill whatever
+    // lands here, or the inspector shows different things depending on how the tree
+    // was built.
+    //
+    // WHAT IS DELIBERATELY *NOT* HERE, so the omission reads as a decision rather
+    // than an oversight (a parity test cannot catch these: absent on BOTH paths looks
+    // like agreement):
+    //
+    //  1. Bridge products -- the resolved AssetKeys (renderable_asset, geometry_asset,
+    //     render_program_asset, scene_source, collision_asset). Re-derived on every
+    //     (re)bind, so the authored NODE ID is the durable fact and the only one
+    //     surfaced.
+    //  2. Lookup keys and import provenance -- mesh_index (an index into
+    //     SceneAssetData::glb_meshes), imported_node, mesh_processing.
+    //  3. Components with no editor verb yet -- roughly thirty kinds (lights,
+    //     mesh_*/terrain_*/field_* sources, event_listener/_trigger, sky_*,
+    //     input_receiver, controllers, compute_kernel, render_shader, ...). These
+    //     appear when an authoring verb does, which is the render_to_texture
+    //     precedent: Kind first, then token, then UI.
+    //  4. Authored fields on components that ARE surfaced -- the sharp category,
+    //     because a reader reasonably assumes coverage once the component is here:
+    //       - node `active` (#252 live axis; `visible` IS surfaced, so this reads as
+    //         half the two-axes story). Needs an ABI field + setter verb + UI, not
+    //         just a snapshot field.
+    //       - node `motion_type` (Static/Animated).
+    //       - `audio_listener.active` -- the component is surfaced presence-only.
+    //       - `geometry_glb_node_id` -- which GLB part a node's geometry names
+    //         (#213 increment 3).
+    //       - `scene_source_child_overrides` -- the host's per-child patches.
+    //     All five round-trip correctly through the compiler + exporter, so nothing is
+    //     LOST; they are invisible to the editor, not to the runtime.
+    //
+    // Category 4 is pinned by ProjectSceneSnapshot.DeliberatelyUnsurfacedAuthoredFields
+    // (tests/engine/project_manifest_tests.cpp) -- surfacing one of them fails that
+    // test, which is the prompt to update this list and mirror it into the ABI.
     struct SceneSnapshotNode
     {
         std::string id;
@@ -292,8 +329,15 @@ namespace wz::engine::editor
     // (id; display_name=name; parent_id; kind; visible; local transform; renderable
     // presence). Parent/child is assembled like the file path: a node whose parent
     // is not in `nodes` becomes a root but KEEPS its parent_id (that is how the
-    // editor finds the host to graft under). Grafted nodes are plain — no
-    // camera/components/behaviors are surfaced (they are not authored/editable).
+    // editor finds the host to graft under).
+    //
+    // This path must stay in PER-COMPONENT parity with the JSON reader: it also
+    // surfaces the removable optional components (both as `components` entries,
+    // which gate the inspector's sections, and as their field values), the
+    // behavior bindings, the render-binding refs and the scene source. A field
+    // only one of the two paths fills is the recurring "my component vanished
+    // after a prefab re-open" bug — the tree the editor rebuilds from the running
+    // scene comes through HERE, not through the file reader.
     SceneSnapshot build_scene_snapshot_from_nodes(
         const std::vector<wz::engine::assets::SceneNodeAsset>& nodes);
 }

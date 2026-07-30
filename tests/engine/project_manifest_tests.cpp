@@ -1304,6 +1304,134 @@ TEST(ProjectSceneSnapshot, SurfacesGlbSceneSourceInAbiBlob)
         0u);
 }
 
+// The LIVE twin of the test above, and of SurfacesRenderBindingRefsInAbiBlob:
+// the scene-source PAIR -- the glb_scene_source descriptor and the
+// scene_source_node_id graph ref -- must also come through
+// build_scene_snapshot_from_nodes, the path the editor uses after open_scene.
+//
+// This was the last hole in that path's per-component parity, and it did not
+// merely blank a dropdown: the inspector's RestoreSubtreeReferenceState reads
+// SceneSourceNodeId, and with the field empty it takes the "no reference" branch
+// and sets HasSubtreeSection = false -- HIDING the section on a node whose
+// reference was intact in the live scene and on disk. So both the presence FLAGS
+// and the payload are asserted here; a projection that packed the payload but
+// left the flag clear would look fine in the struct and still hide the section.
+//
+// consume_mode is deliberately Flatten (not the default Instance) so the enum ->
+// token mapping is pinned, not just exercised.
+TEST(ProjectSceneSnapshot, SurfacesSceneSourceFromNodes)
+{
+    wz::engine::assets::SceneNodeAsset host;
+    host.id = "tank_host";
+    host.name = "tank_host";
+    // The graph-ref half (D2-C3): "Subtree from asset" points at a Scene-from-GLB
+    // asset-graph node.
+    host.scene_source_node_id = 31u;
+    // The descriptor half (D2-C4): the self-contained GLB source.
+    wz::engine::assets::SceneGLBSceneSource glb;
+    glb.path = "gltf/test-mesh-a.glb";
+    glb.scene_index = 2u;
+    glb.consume_mode = wz::engine::assets::SceneSourceConsumeMode::Flatten;
+    wz::engine::assets::MeshRenderStyleData base_style{};
+    base_style.surface.enabled = true;
+    base_style.surface.color[0] = 0.1f;
+    base_style.surface.color[1] = 0.2f;
+    base_style.surface.color[2] = 0.3f;
+    base_style.surface.color[3] = 1.0f;
+    base_style.wireframe.enabled = false;
+    base_style.wireframe.color[0] = 0.4f;
+    glb.base_style = base_style;
+    wz::engine::assets::MeshRenderStyleData override_style{};
+    override_style.surface.enabled = false;
+    override_style.surface.color[0] = 0.7f;
+    override_style.wireframe.enabled = true;
+    override_style.wireframe.color[0] = 1.0f;
+    override_style.wireframe.color[3] = 0.25f;
+    glb.style_overrides.push_back(
+        wz::engine::assets::SceneGLBSceneSourceStyleOverride{
+            .mesh_index = 1u,
+            .style = override_style,
+        });
+    host.glb_scene_source = glb;
+
+    wz::engine::assets::SceneNodeAsset plain;
+    plain.id = "plain";
+
+    const wz::engine::editor::SceneSnapshot snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes({ host, plain });
+
+    ASSERT_EQ(snapshot.roots.size(), 2u);
+    const auto& node = snapshot.roots[0];
+    EXPECT_EQ(node.id, "tank_host");
+
+    ASSERT_TRUE(node.scene_source_node_id.has_value())
+        << "the live path dropped the Subtree-from-asset reference";
+    EXPECT_EQ(*node.scene_source_node_id, 31u);
+
+    ASSERT_TRUE(node.scene_source.has_value())
+        << "the live path dropped the GLB scene-source descriptor";
+    EXPECT_EQ(node.scene_source->kind, "glb");
+    EXPECT_EQ(node.scene_source->path, "gltf/test-mesh-a.glb");
+    EXPECT_EQ(node.scene_source->consume_mode, "flatten");
+    EXPECT_EQ(node.scene_source->scene_index, 2u);
+    EXPECT_TRUE(node.scene_source->has_base_style);
+    EXPECT_EQ(node.scene_source->style_override_count, 1u);
+
+    EXPECT_TRUE(node.scene_source->base_style.surface_enabled);
+    EXPECT_FLOAT_EQ(node.scene_source->base_style.surface_rgba[0], 0.1f);
+    EXPECT_FLOAT_EQ(node.scene_source->base_style.surface_rgba[2], 0.3f);
+    EXPECT_FALSE(node.scene_source->base_style.wireframe_enabled);
+    EXPECT_FLOAT_EQ(node.scene_source->base_style.wireframe_rgba[0], 0.4f);
+
+    ASSERT_EQ(node.scene_source->style_overrides.size(), 1u);
+    const auto& ov = node.scene_source->style_overrides[0];
+    EXPECT_EQ(ov.mesh_index, 1u);
+    EXPECT_FALSE(ov.style.surface_enabled);
+    EXPECT_FLOAT_EQ(ov.style.surface_rgba[0], 0.7f);
+    EXPECT_TRUE(ov.style.wireframe_enabled);
+    EXPECT_FLOAT_EQ(ov.style.wireframe_rgba[3], 0.25f);
+
+    // A node with neither keeps both absent -- the read-back must not fabricate
+    // a scene source on every plain node.
+    const auto& plain_node = snapshot.roots[1];
+    EXPECT_EQ(plain_node.scene_source, std::nullopt);
+    EXPECT_EQ(plain_node.scene_source_node_id, std::nullopt);
+
+    // The flags the inspector actually gates on, through the real projection.
+    wz::engine::editor::ProjectSnapshotLoadResult project_result;
+    project_result.ok = true;
+    project_result.status =
+        wz::engine::project::ProjectManifestProbeStatus::Valid;
+    project_result.scene.ok = true;
+    project_result.scene.snapshot = snapshot;
+
+    const auto blob =
+        wz::engine::editor::project_snapshot_abi_blob(project_result);
+    ASSERT_GE(blob.size(), sizeof(WzEditorProjectSnapshot));
+    const auto& abi =
+        *reinterpret_cast<const WzEditorProjectSnapshot*>(blob.data());
+    ASSERT_EQ(abi.scene.roots.count, 2u);
+    const WzEditorSceneNode* roots_abi =
+        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
+
+    EXPECT_NE(
+        roots_abi[0].flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE, 0u)
+        << "HAS_SCENE_SOURCE stayed clear, so the GLB summary reads as absent";
+    EXPECT_NE(
+        roots_abi[0].flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF, 0u)
+        << "HAS_SCENE_SOURCE_REF stayed clear, so the editor HIDES the "
+           "\"Subtree from asset\" section";
+    EXPECT_EQ(roots_abi[0].scene_source_node_id, 31u);
+    EXPECT_EQ(abi_string(blob, roots_abi[0].scene_source.consume_mode),
+        "flatten");
+    EXPECT_EQ(roots_abi[0].scene_source.scene_index, 2u);
+
+    EXPECT_EQ(
+        roots_abi[1].flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE, 0u);
+    EXPECT_EQ(
+        roots_abi[1].flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF, 0u);
+}
+
 // The v26 snapshot surfaces the authored render-binding node ids (issue #213) —
 // the "Subtree from asset" scene_source ref and the render-binding geometry +
 // render-program refs — so the editor's inspector reveals + pre-selects those
@@ -1870,4 +1998,300 @@ TEST(GlbSceneHierarchy, FailedImportYieldsNotOkBlob)
         abi_string(blob, root.error),
         "failed to read GLB file: does_not_exist.glb");
     EXPECT_EQ(root.components.count, 0u);
+}
+
+// A scene file is untrusted input -- hand-edited, or from a shared/downloaded project
+// -- and every integral field in it arrives as a double. static_cast of a double that
+// does not fit is UNDEFINED BEHAVIOUR, so numbers like 1e30 used to be read as
+// whatever the wrap produced: a node id pointing at a node that cannot exist, or a
+// draw layer nothing authored. The readers are documented tolerant, so the required
+// outcome is the same as for a malformed member -- treated as absent, defaults kept,
+// the rest of the scene loading normally.
+TEST(ProjectSceneSnapshot, OutOfRangeNumbersAreTreatedAsAbsentNotWrapped)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "out_of_range_numbers_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Out Of Range Numbers",
+  "scene": "scene.json"
+})json");
+
+    // Every integral field a snapshot reader narrows, each holding a value no integer
+    // type here can represent. The node must still load, with these fields absent.
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "out_of_range_scene",
+  "nodes": [
+    {
+      "id": "hostile",
+      "render_order": 1e30,
+      "renderable": { "asset_graph_node_id": 1e30 },
+      "geometry": { "asset_graph_node_id": -5 },
+      "render_program": { "asset_graph_node_id": 1e30 },
+      "collision": { "collision_asset_node_id": 1e30, "constrain_movement": true },
+      "audio_source": { "audio_renderable_node_id": 1e30 },
+      "atmosphere": { "atmosphere_asset_node_id": 1e30 },
+      "environment": { "environment_asset_node_id": -1 },
+      "render_to_texture": { "target_asset_node_id": 1e30, "enabled": true },
+      "renderable_bindings": [
+        { "semantic": "scalar_field_texture", "asset_graph_node_id": 1e30 }
+      ],
+      "glb_scene_source": { "path": "a.glb", "scene_index": 1e30 }
+    }
+  ]
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    ASSERT_EQ(loaded.snapshot.roots.size(), 1u);
+    const auto& node = loaded.snapshot.roots[0];
+    EXPECT_EQ(node.id, "hostile");
+
+    // Node-id fields: absent, NOT some wrapped id.
+    ASSERT_TRUE(node.renderable.has_value());
+    EXPECT_FALSE(node.renderable->asset_graph_node_id.has_value());
+    EXPECT_FALSE(node.geometry_node_id.has_value());
+    EXPECT_FALSE(node.render_program_node_id.has_value());
+    ASSERT_TRUE(node.collision.has_value());
+    EXPECT_FALSE(node.collision->collision_asset_node_id.has_value());
+    ASSERT_TRUE(node.audio_source.has_value());
+    EXPECT_FALSE(node.audio_source->audio_renderable_node_id.has_value());
+    ASSERT_TRUE(node.atmosphere.has_value());
+    EXPECT_FALSE(node.atmosphere->atmosphere_asset_node_id.has_value());
+    ASSERT_TRUE(node.environment.has_value());
+    EXPECT_FALSE(node.environment->environment_asset_node_id.has_value());
+    ASSERT_TRUE(node.render_to_texture.has_value());
+    EXPECT_FALSE(node.render_to_texture->target_node_id.has_value());
+    ASSERT_EQ(node.renderable_bindings.size(), 1u);
+    EXPECT_FALSE(node.renderable_bindings[0].asset_graph_node_id.has_value());
+
+    // ...and the sibling fields on those same components still came through, so the
+    // rejection is per-field and does not discard the component around it.
+    EXPECT_TRUE(node.collision->constrain_movement);
+    EXPECT_TRUE(node.render_to_texture->enabled);
+    EXPECT_EQ(node.renderable_bindings[0].semantic, "scalar_field_texture");
+
+    // Non-node-id integrals fall back to their defaults.
+    EXPECT_EQ(node.render_order, 0);
+    ASSERT_TRUE(node.scene_source.has_value());
+    EXPECT_EQ(node.scene_source->path, "a.glb");
+    EXPECT_EQ(node.scene_source->scene_index, 0u);
+}
+
+// Node id 0 means UNSET, in every component, on both read paths. AssetGraphDraft
+// allocates ids from 1 and spells invalid as UINT64_MAX, so 0 is never a node
+// anything can reference -- and every WRITE path already agrees, treating an incoming
+// 0 as "detach". The readers used to disagree with each other: three accepted 0 and
+// five rejected it, so one authored "0" meant "no ref" in five components and "a ref
+// to node 0" in three. The three that accepted it produced an engaged optional that
+// the ABI projection then packed as has_<x>_ref = 1 with id 0 -- unresolvable
+// downstream, and shown in the inspector as a real selection.
+TEST(ProjectSceneSnapshot, NodeIdZeroReadsAsUnsetInEveryComponent)
+{
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "node_id_zero_project";
+
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Node Id Zero",
+  "scene": "scene.json"
+})json");
+
+    write_text_file(
+        project_root / "scene.json",
+        R"json({
+  "schema": "wozzits.scene.v0",
+  "name": "node_id_zero_scene",
+  "nodes": [
+    {
+      "id": "zeroed",
+      "renderable": { "asset_graph_node_id": 0 },
+      "geometry": { "asset_graph_node_id": 0 },
+      "render_program": { "asset_graph_node_id": 0 },
+      "scene_source": { "asset_graph_node_id": 0 },
+      "collision": { "collision_asset_node_id": 0, "constrain_movement": true },
+      "audio_source": { "audio_renderable_node_id": 0 },
+      "atmosphere": { "atmosphere_asset_node_id": 0 },
+      "environment": { "environment_asset_node_id": 0 },
+      "render_to_texture": { "target_asset_node_id": 0, "enabled": true },
+      "renderable_bindings": [
+        { "semantic": "scalar_field_texture", "asset_graph_node_id": 0 }
+      ]
+    }
+  ]
+})json");
+
+    const auto loaded = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+
+    ASSERT_TRUE(loaded.ok) << loaded.error;
+    ASSERT_EQ(loaded.snapshot.roots.size(), 1u);
+    const auto& node = loaded.snapshot.roots[0];
+
+    // The three that used to accept 0 -- these are the regression.
+    ASSERT_TRUE(node.renderable.has_value());
+    EXPECT_FALSE(node.renderable->asset_graph_node_id.has_value());
+    EXPECT_EQ(node.renderable_source.kind, "none");
+    EXPECT_FALSE(node.geometry_node_id.has_value());
+    EXPECT_FALSE(node.render_program_node_id.has_value());
+    EXPECT_FALSE(node.scene_source_node_id.has_value());
+    ASSERT_TRUE(node.collision.has_value());
+    EXPECT_FALSE(node.collision->collision_asset_node_id.has_value());
+
+    // ...and the five that already rejected it still do.
+    ASSERT_TRUE(node.audio_source.has_value());
+    EXPECT_FALSE(node.audio_source->audio_renderable_node_id.has_value());
+    ASSERT_TRUE(node.atmosphere.has_value());
+    EXPECT_FALSE(node.atmosphere->atmosphere_asset_node_id.has_value());
+    ASSERT_TRUE(node.environment.has_value());
+    EXPECT_FALSE(node.environment->environment_asset_node_id.has_value());
+    ASSERT_TRUE(node.render_to_texture.has_value());
+    EXPECT_FALSE(node.render_to_texture->target_node_id.has_value());
+    ASSERT_EQ(node.renderable_bindings.size(), 1u);
+    EXPECT_FALSE(node.renderable_bindings[0].asset_graph_node_id.has_value());
+
+    // Unsetting the ref never drops the component or its other fields.
+    EXPECT_TRUE(node.collision->constrain_movement);
+    EXPECT_TRUE(node.render_to_texture->enabled);
+    EXPECT_EQ(node.renderable_bindings[0].semantic, "scalar_field_texture");
+
+    // The presence FLAGS must agree, or the inspector reveals a picker with nothing
+    // selectable behind it.
+    wz::engine::editor::ProjectSnapshotLoadResult project_result;
+    project_result.ok = true;
+    project_result.status =
+        wz::engine::project::ProjectManifestProbeStatus::Valid;
+    project_result.scene = loaded;
+    const auto blob =
+        wz::engine::editor::project_snapshot_abi_blob(project_result);
+    ASSERT_GE(blob.size(), sizeof(WzEditorProjectSnapshot));
+    const auto& abi =
+        *reinterpret_cast<const WzEditorProjectSnapshot*>(blob.data());
+    ASSERT_EQ(abi.scene.roots.count, 1u);
+    const WzEditorSceneNode* roots =
+        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
+    EXPECT_EQ(roots[0].flags & WZ_EDITOR_SCENE_NODE_HAS_GEOMETRY, 0u);
+    EXPECT_EQ(roots[0].flags & WZ_EDITOR_SCENE_NODE_HAS_RENDER_PROGRAM, 0u);
+    EXPECT_EQ(roots[0].flags & WZ_EDITOR_SCENE_NODE_HAS_SCENE_SOURCE_REF, 0u);
+    EXPECT_EQ(roots[0].collision.has_collision_ref, 0u);
+}
+
+// A DECISION-RECORDING tripwire, not a prohibition. These authored fields sit on
+// nodes/components the snapshot DOES surface, so a reader reasonably assumes they are
+// covered -- and they are not. Because they are absent from BOTH reader paths, a
+// parity test between the two cannot see the gap: symmetric absence looks like
+// agreement. This is the only mechanism that can.
+//
+// Every one of them round-trips correctly through the compiler + exporter, so nothing
+// is lost on save/reload; they are invisible to the EDITOR, not to the runtime. That
+// is why they are hardening rather than bugs.
+//
+// IF THIS TEST FAILS you have surfaced one of them, which is welcome -- it means
+// removing its line here, updating the category-4 list in
+// engine/editor/scene_snapshot.h, and (for anything the inspector should show) adding
+// the ABI field + presence flag + the editor-side mirror, in lockstep. Surfacing one
+// on only ONE reader path is the recurring bug this whole area keeps hitting, so fill
+// both.
+TEST(ProjectSceneSnapshot, DeliberatelyUnsurfacedAuthoredFields)
+{
+    // Build a live node with every category-4 field set AWAY from its default, so a
+    // reader that started surfacing one would show a distinguishable value.
+    wz::engine::assets::SceneNodeAsset node;
+    node.id = "loaded";
+    node.active = false;   // #252 live axis; `visible` is surfaced, this is not
+    node.motion_type = wz::scene::TransformNode::MotionType::Animated;
+    node.geometry_asset_node_id = 12u;
+    node.geometry_glb_node_id = "turret_part";   // which GLB part the geometry names
+    wz::engine::assets::SceneAudioListenerAsset listener;
+    listener.active = false;
+    node.audio_listener = listener;
+    node.scene_source_child_overrides.push_back(
+        wz::engine::assets::SceneSourceChildOverride{ .child_id = "body" });
+
+    const wz::engine::editor::SceneSnapshot live =
+        wz::engine::editor::build_scene_snapshot_from_nodes({ node });
+    ASSERT_EQ(live.roots.size(), 1u);
+    const auto& surfaced = live.roots[0];
+
+    // The node IS surfaced, and so is the sibling axis -- which is exactly why the
+    // omissions below are easy to mistake for coverage.
+    EXPECT_EQ(surfaced.id, "loaded");
+    ASSERT_TRUE(surfaced.visible.has_value());
+    EXPECT_TRUE(*surfaced.visible);
+
+    // audio_listener reaches the editor as PRESENCE ONLY: the component lists (so its
+    // row and remove button appear) but its `active` field has nowhere to land -- there
+    // is no SceneSnapshotAudioListener struct at all.
+    EXPECT_TRUE(std::any_of(
+        surfaced.components.begin(),
+        surfaced.components.end(),
+        [](const auto& c) { return c.kind == "audio_listener"; }));
+
+    // The geometry REF is surfaced; which GLB PART it names is not, so a node using
+    // indexed GLB-part geometry looks identical to one using the whole mesh.
+    ASSERT_TRUE(surfaced.geometry_node_id.has_value());
+    EXPECT_EQ(*surfaced.geometry_node_id, 12u);
+
+    // The remaining three have no representation whatsoever. Asserted through the ABI
+    // projection as well as the snapshot struct, since that is the surface the editor
+    // actually consumes -- a field could exist in one and not the other.
+    wz::engine::editor::ProjectSnapshotLoadResult project_result;
+    project_result.ok = true;
+    project_result.status =
+        wz::engine::project::ProjectManifestProbeStatus::Valid;
+    project_result.scene.ok = true;
+    project_result.scene.snapshot = live;
+    const auto blob =
+        wz::engine::editor::project_snapshot_abi_blob(project_result);
+    ASSERT_GE(blob.size(), sizeof(WzEditorProjectSnapshot));
+    const auto& abi =
+        *reinterpret_cast<const WzEditorProjectSnapshot*>(blob.data());
+    ASSERT_EQ(abi.scene.roots.count, 1u);
+    const WzEditorSceneNode* roots_abi =
+        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
+
+    // `visible` crosses the ABI; the category-4 fields have no counterpart to compare
+    // against, which is the finding. So assert the OBSERVABLE consequence instead:
+    // build a second node differing ONLY in those fields and require the two ABI blobs
+    // to be byte-identical. If any of them starts being surfaced -- as a flag bit, a
+    // new struct member, a string, anything the projection writes -- the bytes diverge
+    // and this fails. That is a stronger net than checking named fields, because it
+    // needs no advance knowledge of HOW a future author chooses to carry the value.
+    //
+    // What it does NOT catch: a field surfaced into SceneSnapshotNode but never packed
+    // into the ABI (invisible to the editor either way, so harmless), and `audio_listener
+    // .active` / `geometry_glb_node_id`, whose components already contribute bytes --
+    // those two are covered by the presence-only assertions above.
+    wz::engine::assets::SceneNodeAsset flipped = node;
+    flipped.active = true;
+    flipped.motion_type = wz::scene::TransformNode::MotionType::Static;
+    flipped.scene_source_child_overrides.clear();
+
+    wz::engine::editor::ProjectSnapshotLoadResult flipped_result = project_result;
+    flipped_result.scene.snapshot =
+        wz::engine::editor::build_scene_snapshot_from_nodes({ flipped });
+    const auto flipped_blob =
+        wz::engine::editor::project_snapshot_abi_blob(flipped_result);
+
+    EXPECT_EQ(flipped_blob, blob)
+        << "flipping active / motion_type / scene_source_child_overrides changed the "
+           "editor ABI blob, so one of them is now surfaced. That is fine -- update "
+           "the category-4 list in engine/editor/scene_snapshot.h and this test, and "
+           "make sure BOTH reader paths fill it, not just one.";
 }
