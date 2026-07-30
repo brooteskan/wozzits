@@ -174,6 +174,12 @@ namespace wz::engine::behavior::statechart
 
                 std::string id = str(o, "id");
                 if (id.empty()) return fail("pure op missing id");
+                // A duplicate would not merely shadow: refs resolved BEFORE it keep
+                // pointing at the earlier op while later refs get this one, so one id
+                // carries two values in the same chart. Refuse it -- the editor
+                // cannot even serialize a duplicate (TopoSortPure throws).
+                if (pure_i.contains(id))
+                    return fail("duplicate pure op id '" + id + "'");
                 pure_i[id] = static_cast<int>(c.pure.size());
                 c.pure.push_back(p);
                 return true;
@@ -387,10 +393,35 @@ namespace wz::engine::behavior::statechart
 
                 c.name = str(root, "name");
 
+                // Declaration NAMES must be present and unique. Both rules exist to
+                // stop a name lookup succeeding by accident:
+                //
+                //  * EMPTY is the dangerous one. Every lookup here goes through
+                //    str(), which yields "" for an absent member, and index_of_*
+                //    matches by value -- so a single declaration with an empty name
+                //    turns into a WILDCARD that any missing field silently binds to.
+                //    A transition with no "target" would resolve to a state with no
+                //    "id" instead of failing; an effect with no "agent" would drive
+                //    whichever agent forgot its id.
+                //  * DUPLICATE resolves to the first match, so the later declaration
+                //    is unreachable and which one you get depends on authoring order.
+                //    For pure ops it is worse than unreachable: refs already resolved
+                //    keep pointing at the earlier op while later refs get the newer
+                //    one, so one id means two different values in one chart.
+                //
+                // The editor refuses all of these too (StatechartJson.Inspect), so
+                // this is the engine catching up rather than adding a rule -- a chart
+                // the editor would not emit should not be one the engine silently
+                // runs differently.
                 if (const JSONValue* bs = arr(root, "bindings"))
                     for (auto& b : bs->array_values) {
                         Binding bd;
                         bd.port = str(*b, "port");
+                        if (bd.port.empty())
+                            return fail("binding is missing its 'port' name");
+                        if (c.index_of_binding(bd.port) >= 0)
+                            return fail(
+                                "duplicate binding port '" + bd.port + "'");
                         bd.find = str(*b, "find");
                         bd.subtree = str(*b, "scope") != "global";
                         c.bindings.push_back(std::move(bd));
@@ -400,6 +431,10 @@ namespace wz::engine::behavior::statechart
                     for (auto& a : as->array_values) {
                         AgentDecl ad;
                         ad.id = str(*a, "id");
+                        if (ad.id.empty())
+                            return fail("agent is missing its 'id'");
+                        if (c.index_of_agent(ad.id) >= 0)
+                            return fail("duplicate agent id '" + ad.id + "'");
                         const JSONValue* ow = find_member(*a, "owned");
                         ad.owned = !(ow && ow->kind == JSONValueKind::Bool)
                             || ow->bool_value;
@@ -426,8 +461,14 @@ namespace wz::engine::behavior::statechart
                 // then parse bodies.
                 const JSONValue* ss = arr(root, "states");
                 if (ss)
-                    for (auto& s : ss->array_values)
-                        c.states.push_back(State{ str(*s, "id"), {}, {}, {}, {} });
+                    for (auto& s : ss->array_values) {
+                        std::string sid = str(*s, "id");
+                        if (sid.empty())
+                            return fail("state is missing its 'id'");
+                        if (c.index_of_state(sid) >= 0)
+                            return fail("duplicate state id '" + sid + "'");
+                        c.states.push_back(State{ std::move(sid), {}, {}, {}, {} });
+                    }
                 if (ss) {
                     size_t idx = 0;
                     for (auto& s : ss->array_values) {
@@ -450,9 +491,18 @@ namespace wz::engine::behavior::statechart
                                 if (!trigger(*trg, tr.trigger)) return false;
                                 if (!effect_list(*t, "actions", tr.actions))
                                     return false;
-                                int tgt = c.index_of_state(str(*t, "target"));
+                                // Now that no state can carry an empty id, an absent
+                                // "target" can no longer alias onto one -- but say so
+                                // directly rather than reporting it as target '' is
+                                // unknown.
+                                const std::string target = str(*t, "target");
+                                if (target.empty())
+                                    return fail(
+                                        "transition on state '" + st.id
+                                        + "' is missing its 'target'");
+                                int tgt = c.index_of_state(target);
                                 if (tgt < 0) return fail("transition target '"
-                                    + str(*t, "target") + "' is unknown");
+                                    + target + "' is unknown");
                                 tr.target = static_cast<uint16_t>(tgt);
                                 st.transitions.push_back(std::move(tr));
                             }
@@ -463,13 +513,27 @@ namespace wz::engine::behavior::statechart
                     for (auto& r : rs->array_values) {
                         Region rg;
                         rg.id = str(*r, "id");
-                        int init = c.index_of_state(str(*r, "initial"));
-                        if (init < 0) return fail("region initial state unknown");
+                        const std::string initial = str(*r, "initial");
+                        if (initial.empty())
+                            return fail(
+                                "region '" + rg.id + "' is missing its 'initial' "
+                                "state");
+                        int init = c.index_of_state(initial);
+                        if (init < 0)
+                            return fail(
+                                "region '" + rg.id + "' initial state '" + initial
+                                + "' is unknown");
                         rg.initial = static_cast<uint16_t>(init);
                         if (const JSONValue* sl = arr(*r, "states"))
                             for (auto& sid : sl->array_values) {
+                                // A non-string entry yields "" here, which no state
+                                // can match any more, so it reports as unknown
+                                // rather than silently binding to one.
                                 int si = c.index_of_state(sid->string_value);
-                                if (si < 0) return fail("region names unknown state");
+                                if (si < 0)
+                                    return fail(
+                                        "region '" + rg.id + "' names unknown state '"
+                                        + sid->string_value + "'");
                                 rg.states.push_back(static_cast<uint16_t>(si));
                             }
                         c.regions.push_back(std::move(rg));

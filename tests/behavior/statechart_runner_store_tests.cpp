@@ -131,6 +131,108 @@ TEST(StatechartRunnerStore, RefusesAChartWhoseSchemaIsNotThisBuilds)
     EXPECT_NE(missing_error.find("schema"), std::string::npos) << missing_error;
 }
 
+// A declaration name that is EMPTY or DUPLICATED is refused, because either one makes
+// a name lookup succeed by accident.
+//
+// Empty is the sharp case. Every lookup in the parser goes through str(), which yields
+// "" for an absent member, and index_of_* matches by value -- so ONE declaration with
+// an empty name became a wildcard that any missing field silently bound to. A
+// transition with no "target" resolved to a state with no "id" and the chart ran,
+// pointing somewhere nobody authored.
+//
+// Duplicates resolved to the first match, so the later declaration was unreachable and
+// which one you got depended on authoring order. For pure ops it was worse: refs
+// resolved BEFORE the duplicate kept the earlier op while later refs got the newer one,
+// so one id carried two values in one chart.
+//
+// The editor refuses all of these (StatechartJson.Inspect marks them Blocking), so this
+// is the engine catching up rather than a new rule.
+TEST(StatechartRunnerStore, RefusesEmptyOrDuplicateDeclarationNames)
+{
+    wz::engine::behavior::StatechartRunnerStore store;
+
+    const auto chart = [](const char* bindings,
+                          const char* agents,
+                          const char* pure,
+                          const char* states,
+                          const char* regions) {
+        return std::string(R"({"schema":"wozzits.statechart.ir.v0","name":"x",)")
+            + R"("bindings":)" + bindings
+            + R"(,"agents":)" + agents
+            + R"(,"pure":)" + pure
+            + R"(,"regions":)" + regions
+            + R"(,"states":)" + states + "}";
+    };
+    constexpr const char* kOneState =
+        R"([{"id":"s","transitions":[]}])";
+    constexpr const char* kOneRegion =
+        R"([{"id":"r","initial":"s","states":["s"]}])";
+
+    const auto refused = [&](const char* label, const std::string& ir,
+                             const char* expect) {
+        std::string error;
+        EXPECT_EQ(store.load(label, ir, &error), nullptr) << label;
+        EXPECT_NE(error.find(expect), std::string::npos) << label << ": " << error;
+    };
+
+    // Baseline: the same shape with well-formed names loads.
+    std::string ok_error;
+    EXPECT_NE(
+        store.load(
+            "ok",
+            chart(R"([{"port":"a","find":"a"}])",
+                  R"([{"id":"m","owned":true,"host":"self"}])",
+                  "[]", kOneState, kOneRegion),
+            &ok_error),
+        nullptr) << ok_error;
+
+    refused("bind_empty",
+        chart(R"([{"port":"","find":"a"}])", "[]", "[]", kOneState, kOneRegion),
+        "port");
+    refused("bind_dup",
+        chart(R"([{"port":"a","find":"a"},{"port":"a","find":"b"}])",
+              "[]", "[]", kOneState, kOneRegion),
+        "duplicate binding port");
+    refused("agent_empty",
+        chart("[]", R"([{"id":"","owned":true,"host":"self"}])",
+              "[]", kOneState, kOneRegion),
+        "agent is missing");
+    refused("agent_dup",
+        chart("[]",
+              R"([{"id":"m","owned":true,"host":"self"},)"
+              R"({"id":"m","owned":true,"host":"self"}])",
+              "[]", kOneState, kOneRegion),
+        "duplicate agent id");
+    refused("pure_dup",
+        chart("[]", R"([{"id":"m","owned":true,"host":"self"}])",
+              R"([{"id":"z","op":"marginal","agent":"m","slot":0},)"
+              R"({"id":"z","op":"marginal","agent":"m","slot":1}])",
+              kOneState, kOneRegion),
+        "duplicate pure op id");
+    refused("state_empty",
+        chart("[]", "[]", "[]", R"([{"transitions":[]}])",
+              R"([{"id":"r","initial":"","states":[]}])"),
+        "state is missing");
+    refused("state_dup",
+        chart("[]", "[]", "[]",
+              R"([{"id":"s","transitions":[]},{"id":"s","transitions":[]}])",
+              kOneRegion),
+        "duplicate state id");
+
+    // The payoff: a transition with NO target used to bind to an empty-id state and
+    // run. With empty ids refused it cannot, and the message names the real problem
+    // instead of reporting target '' as unknown.
+    refused("missing_target",
+        chart("[]", "[]", "[]",
+              R"([{"id":"s","transitions":[{"trigger":)"
+              R"({"kind":"after","seconds":1}}]}])",
+              kOneRegion),
+        "missing its 'target'");
+    refused("missing_initial",
+        chart("[]", "[]", "[]", kOneState, R"([{"id":"r","states":["s"]}])"),
+        "missing its 'initial'");
+}
+
 // An integral chart field that cannot hold the authored number is REPORTED, not
 // wrapped. `static_cast<uint16_t>(-1.0)` is undefined behaviour, and on the usual
 // target it quietly yields 65535 -- so a typo'd slot used to read a completely
