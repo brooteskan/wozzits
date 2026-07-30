@@ -123,6 +123,24 @@ namespace wz::json
         return read_integral<uint32_t>(obj, key);
     }
 
+    // Narrow a JSON number to float, REJECTING a value the float cannot hold.
+    // The DOM is guaranteed free of NaN/inf -- yyjson refuses to parse `1e309`,
+    // `NaN` and `Infinity` -- so the double arriving here is always finite. But
+    // `1e308` is a perfectly legal JSON number that becomes `inf` on the way to
+    // float, and `static_cast<float>` of an out-of-range double is UB besides.
+    // Without this, the parser's own guarantee was thrown away one layer up and
+    // an `inf` translation reached the scene graph, the world matrices and the
+    // renderer, none of which check. Rejecting keeps the DOM's finiteness
+    // promise intact all the way to the field.
+    inline std::optional<float> narrow_float(double value) noexcept
+    {
+        const float narrowed = static_cast<float>(value);
+        if (!std::isfinite(narrowed)) {
+            return std::nullopt;
+        }
+        return narrowed;
+    }
+
     inline bool read_float3(
         const JSONValue& obj,
         std::string_view key,
@@ -133,10 +151,20 @@ namespace wz::json
             return false;
         if (v->array_values.size() != 3)
             return false;
+        float parsed[3]{};
         for (int i = 0; i < 3; ++i) {
             if (v->array_values[i]->kind != JSONValueKind::Number)
                 return false;
-            out[i] = static_cast<float>(v->array_values[i]->number_value);
+            const auto narrowed =
+                narrow_float(v->array_values[i]->number_value);
+            if (!narrowed)
+                return false;
+            parsed[i] = *narrowed;
+        }
+        // Written only once the whole vector is known good, so a rejected read
+        // leaves the caller's default intact instead of a half-updated vector.
+        for (int i = 0; i < 3; ++i) {
+            out[i] = parsed[i];
         }
         return true;
     }
@@ -151,10 +179,18 @@ namespace wz::json
             return false;
         if (v->array_values.size() != 4)
             return false;
+        float parsed[4]{};
         for (int i = 0; i < 4; ++i) {
             if (v->array_values[i]->kind != JSONValueKind::Number)
                 return false;
-            out[i] = static_cast<float>(v->array_values[i]->number_value);
+            const auto narrowed =
+                narrow_float(v->array_values[i]->number_value);
+            if (!narrowed)
+                return false;
+            parsed[i] = *narrowed;
+        }
+        for (int i = 0; i < 4; ++i) {
+            out[i] = parsed[i];
         }
         return true;
     }

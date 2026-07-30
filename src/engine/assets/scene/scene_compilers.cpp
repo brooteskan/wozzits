@@ -53,12 +53,35 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
-        AuthoredTransform parse_transform(const wz::json::JSONValue& obj)
+        // A transform member that is PRESENT but unreadable is an error, not a
+        // default. Silently substituting identity for `[1,2]`, `["1","2","3"]`
+        // or a value that does not survive the narrowing to float loses the
+        // author's placement with no diagnostic at all -- the node just appears
+        // at the origin. An ABSENT member keeps its default, which is what a
+        // partial transform block legitimately means.
+        std::optional<AuthoredTransform> parse_transform(
+            const wz::json::JSONValue& obj,
+            std::string& bad_member)
         {
             AuthoredTransform t{};
-            read_float3(obj, "translation", t.translation);
-            read_float4(obj, "rotation_quat", t.rotation_quat);
-            read_float3(obj, "scale", t.scale);
+            if (find_member(obj, "translation")
+                && !read_float3(obj, "translation", t.translation))
+            {
+                bad_member = "translation";
+                return std::nullopt;
+            }
+            if (find_member(obj, "rotation_quat")
+                && !read_float4(obj, "rotation_quat", t.rotation_quat))
+            {
+                bad_member = "rotation_quat";
+                return std::nullopt;
+            }
+            if (find_member(obj, "scale")
+                && !read_float3(obj, "scale", t.scale))
+            {
+                bad_member = "scale";
+                return std::nullopt;
+            }
             return t;
         }
 
@@ -1330,7 +1353,17 @@ namespace wz::engine::assets::internal
 
             const auto* transform = find_member(node_val, "transform");
             if (transform && transform->kind == wz::json::JSONValueKind::Object) {
-                node.local = parse_transform(*transform);
+                std::string bad_member;
+                auto local = parse_transform(*transform, bad_member);
+                if (!local) {
+                    logger.error(
+                        "transform on node '" + node.id + "' has a malformed '"
+                        + bad_member
+                        + "' (expected finite numbers, 3 for a vector and 4 for "
+                          "a quaternion)");
+                    return std::nullopt;
+                }
+                node.local = *local;
             }
 
             auto vis = read_bool(node_val, "visible");
