@@ -266,7 +266,7 @@ public sealed partial class ProjectOpeningTests
                 Path.Combine(projectRoot, "assets.graph.json"),
                 """
                 {
-                  "schema": "wozzits.asset_graph.v2",
+                  "schema": "wozzits.scene_editor.assets.graph.v2",
                   "nodes": []
                 }
                 """);
@@ -1854,7 +1854,7 @@ public sealed partial class ProjectOpeningTests
                 Path.Combine(projectRoot, "assets.graph.json"),
                 """
                 {
-                  "schema": "wozzits.asset_graph.v2",
+                  "schema": "wozzits.scene_editor.assets.graph.v2",
                   "nodes": []
                 }
                 """);
@@ -1922,7 +1922,7 @@ public sealed partial class ProjectOpeningTests
                 Path.Combine(projectRoot, "assets.graph.json"),
                 """
                 {
-                  "schema": "wozzits.asset_graph.v2",
+                  "schema": "wozzits.scene_editor.assets.graph.v2",
                   "nodes": []
                 }
                 """);
@@ -1991,7 +1991,7 @@ public sealed partial class ProjectOpeningTests
                 Path.Combine(projectRoot, "assets.graph.json"),
                 """
                 {
-                  "schema": "wozzits.asset_graph.v2",
+                  "schema": "wozzits.scene_editor.assets.graph.v2",
                   "nodes": []
                 }
                 """);
@@ -2060,7 +2060,7 @@ public sealed partial class ProjectOpeningTests
                 Path.Combine(projectRoot, "assets.graph.json"),
                 """
                 {
-                  "schema": "wozzits.asset_graph.v2",
+                  "schema": "wozzits.scene_editor.assets.graph.v2",
                   "nodes": []
                 }
                 """);

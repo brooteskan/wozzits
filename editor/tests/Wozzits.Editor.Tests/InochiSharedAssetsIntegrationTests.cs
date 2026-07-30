@@ -28,7 +28,7 @@ public sealed class InochiSharedAssetsIntegrationTests
             """{"schema":"wozzits.project.v1","formatVersion":1,"name":"InochiTest","asset_graph":"assets.graph.json"}""");
         File.WriteAllText(
             Path.Combine(projectDir, "assets.graph.json"),
-            """{"schema":"wozzits.asset_graph.v2","nodes":[]}""");
+            """{"schema":"wozzits.scene_editor.assets.graph.v2","nodes":[]}""");
 
         try
         {

@@ -93,6 +93,26 @@ public partial class App : Application
         if (projectSnapshot.IsValid)
         {
             editorLog.AppendLine($"[editor] Project loaded: {projectSnapshot.ProjectName}");
+            // IsValid means the MANIFEST parsed -- the scene and asset graph load
+            // separately and can each fail without touching it. The engine
+            // computes a reason for either failure and used to hand it over
+            // unread, so a project whose scene.json was corrupt, missing, or on
+            // an unrecognized schema opened looking healthy with an empty tree
+            // and no explanation anywhere (A3-C5, #77). Opening anyway is
+            // deliberate: refusing would leave no way to open a project in order
+            // to repair it. Say so instead.
+            if (!projectSnapshot.Scene.Ok)
+            {
+                editorLog.AppendLine(
+                    "[editor] WARNING: the scene did not load, so the tree is "
+                    + $"empty: {projectSnapshot.Scene.Error}");
+            }
+            if (!projectSnapshot.AssetGraph.Ok)
+            {
+                editorLog.AppendLine(
+                    "[editor] WARNING: the asset graph did not load, so nothing "
+                    + $"will resolve or render: {projectSnapshot.AssetGraph.Error}");
+            }
             // Per-run file mirror of the whole console (engine + editor + play
             // process). Owned by the view model, which disposes it on shutdown.
             var fileLogSink = FileLogSink.CreateDefault();
