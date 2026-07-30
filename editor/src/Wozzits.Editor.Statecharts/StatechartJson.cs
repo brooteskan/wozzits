@@ -622,9 +622,14 @@ public static class StatechartJson
     /// they were. `parse_chart` never reads an agent's `owned` flag -- it is parsed and then
     /// unused engine-side -- so the R2 owner-only rule below is an editor CONVENTION, not a load
     /// failure. A shipping chart in the project (hunt_or_refuel) violates it and runs fine; a
-    /// save gate that blocked on every finding would have made that chart unsaveable. Likewise
-    /// the duplicate-id findings: the engine first-matches and silently aliases rather than
-    /// refusing, so they are real hazards worth reporting but not grounds to refuse a write.
+    /// save gate that blocked on every finding would have made that chart unsaveable. R2 is now
+    /// the ONLY advisory: the duplicate-id findings used to be advisory too, on the grounds that
+    /// the engine first-matched and silently aliased rather than refusing, and that stopped being
+    /// true when parse_chart started rejecting them.
+    ///
+    /// Keep this classification honest as the engine's parser changes. An advisory the engine
+    /// actually refuses means the editor writes charts that will not load; a blocking finding the
+    /// engine tolerates means refusing to save something that runs.
     /// </remarks>
     public static IReadOnlyList<Issue> Inspect(Chart c)
     {
@@ -632,16 +637,24 @@ public static class StatechartJson
         void Blocking(string m) => issues.Add(new Issue(IssueSeverity.Blocking, m));
         void Advisory(string m) => issues.Add(new Issue(IssueSeverity.Advisory, m));
 
+        // Declaration names must be present and unique, matching parse_chart. An EMPTY name is
+        // the sharp case rather than a tidiness rule: engine-side every lookup goes through a
+        // helper that yields "" for an absent member and matches by value, so one empty-named
+        // declaration becomes a wildcard that any missing field silently binds to.
         var bindingPorts = new HashSet<string>();
         foreach (var b in c.Bindings)
-            if (!bindingPorts.Add(b.Port))
-                Advisory($"duplicate binding port '{b.Port}'");
+        {
+            if (b.Port.Length == 0) Blocking("binding is missing its port name");
+            else if (!bindingPorts.Add(b.Port))
+                Blocking($"duplicate binding port '{b.Port}'");
+        }
 
         var agentIds = new HashSet<string>();
         var ownedAgents = new HashSet<string>();
         foreach (var a in c.Agents)
         {
-            if (!agentIds.Add(a.Id)) Advisory($"duplicate agent id '{a.Id}'");
+            if (a.Id.Length == 0) Blocking("agent is missing its id");
+            else if (!agentIds.Add(a.Id)) Blocking($"duplicate agent id '{a.Id}'");
             if (a.Owned) ownedAgents.Add(a.Id);
             if (a.Host != "self" && !bindingPorts.Contains(a.Host))
                 Blocking($"agent '{a.Id}' host '{a.Host}' is not a binding port");
@@ -651,8 +664,8 @@ public static class StatechartJson
         foreach (var p in c.Pure)
         {
             if (p.Id.Length == 0) { Blocking("pure op missing id"); continue; }
-            // Blocking despite the engine tolerating it: TopoSortPure cannot serialize a
-            // duplicate id at all, so Emit would throw before the engine ever saw it.
+            // A duplicate does not merely shadow: refs resolved before it keep pointing at the
+            // earlier op while later refs get this one. TopoSortPure also cannot serialize it.
             if (!pureIds.Add(p.Id)) Blocking($"duplicate pure op id '{p.Id}'");
         }
         foreach (var p in c.Pure)
@@ -672,8 +685,11 @@ public static class StatechartJson
 
         var stateIds = new HashSet<string>();
         foreach (var s in c.States)
-            if (!stateIds.Add(s.Id))
-                Advisory($"duplicate state id '{s.Id}'");
+        {
+            if (s.Id.Length == 0) Blocking("state is missing its id");
+            else if (!stateIds.Add(s.Id))
+                Blocking($"duplicate state id '{s.Id}'");
+        }
 
         void CheckRef(ValueRef? r, string where)
         {

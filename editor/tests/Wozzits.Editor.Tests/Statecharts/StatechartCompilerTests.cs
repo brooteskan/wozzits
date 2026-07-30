@@ -419,6 +419,49 @@ public sealed class StatechartCompilerTests
     }
 
     [Fact]
+    public void Inspect_Blocks_Empty_And_Duplicate_Declaration_Names()
+    {
+        // parse_chart refuses all of these, so the editor must not write them. Empty is the
+        // sharp case: engine-side every lookup yields "" for an absent member and matches by
+        // value, so one empty-named declaration became a wildcard that any missing field
+        // silently bound to (a transition with no target resolving to a state with no id).
+        void Blocks(Chart c, string fragment)
+        {
+            var blocking = StatechartJson.Inspect(c)
+                .Where(i => i.Severity == StatechartJson.IssueSeverity.Blocking)
+                .Select(i => i.Message)
+                .ToList();
+            Assert.Contains(blocking, m => m.Contains(fragment));
+            Assert.Throws<StatechartFormatException>(
+                () => StatechartJson.EmitValidated(c, indented: false));
+        }
+
+        var emptyPort = MinimalValid();
+        emptyPort.Bindings.Add(new Binding { Port = "", Find = "x" });
+        Blocks(emptyPort, "port");
+
+        var dupPort = MinimalValid();
+        dupPort.Bindings.Add(new Binding { Port = "lamp", Find = "other" });
+        Blocks(dupPort, "duplicate binding port");
+
+        var emptyAgent = MinimalValid();
+        emptyAgent.Agents.Add(new AgentDecl { Id = "", Owned = true, Host = "self" });
+        Blocks(emptyAgent, "agent is missing");
+
+        var dupAgent = MinimalValid();
+        dupAgent.Agents.Add(new AgentDecl { Id = "sig", Owned = true, Host = "self" });
+        Blocks(dupAgent, "duplicate agent id");
+
+        var emptyState = MinimalValid();
+        emptyState.States.Add(new State { Id = "" });
+        Blocks(emptyState, "state is missing");
+
+        var dupState = MinimalValid();
+        dupState.States.Add(new State { Id = "S" });
+        Blocks(dupState, "duplicate state id");
+    }
+
+    [Fact]
     public void Inspect_Classifies_The_R2_Owner_Only_Rule_As_Advisory()
     {
         // The engine PARSES an agent's `owned` flag and then never reads it -- neither
@@ -438,6 +481,15 @@ public sealed class StatechartCompilerTests
         var r2 = Assert.Single(issues, i => i.Message.Contains("non-owned"));
         Assert.Equal(StatechartJson.IssueSeverity.Advisory, r2.Severity);
         Assert.DoesNotContain(issues, i => i.Severity == StatechartJson.IssueSeverity.Blocking);
+
+        // R2 is the ONLY advisory left. The duplicate-id findings were advisory too, on the
+        // grounds that the engine first-matched and silently aliased -- which stopped being
+        // true when parse_chart started refusing them. If a future engine change makes
+        // something else tolerated (or refuses R2), this is where the classification has to
+        // move, or the editor and the engine disagree about what is writable again.
+        Assert.Equal(
+            StatechartJson.IssueSeverity.Advisory,
+            Assert.Single(issues).Severity);
     }
 
     [Fact]
