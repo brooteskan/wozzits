@@ -97,6 +97,8 @@ namespace wz::engine::assets
             fp.mix_string(node.id);
             fp.mix_string(node.name);
             fp.mix_value(node.visible);
+            fp.mix_value(node.active);
+            fp.mix_value(node.render_order);
             fp.mix_value(node.motion_type);
 
             const bool has_parent = node.parent_id.has_value();
@@ -120,6 +122,9 @@ namespace wz::engine::assets
                 node.scene_source_node_id.has_value();
             const bool has_glb_scene_source =
                 node.glb_scene_source.has_value();
+            const bool has_render_to_texture =
+                node.render_to_texture.has_value();
+            const bool has_mesh_index = node.mesh_index.has_value();
             const bool has_asset_reference = node.asset_reference.has_value();
             const bool has_camera = node.camera.has_value();
             const bool has_direct_light_source =
@@ -148,6 +153,10 @@ namespace wz::engine::assets
                 node.mesh_mask_render_style.has_value();
             const bool has_mesh_region_set =
                 node.mesh_region_set.has_value();
+            const bool has_mesh_sparse_operator_source =
+                node.mesh_sparse_operator_source.has_value();
+            const bool has_mesh_level_mask_source =
+                node.mesh_level_mask_source.has_value();
             const bool has_scalar_field_source =
                 node.scalar_field_source.has_value();
             const bool has_vector_field_source =
@@ -155,6 +164,7 @@ namespace wz::engine::assets
             const bool has_collision = node.collision.has_value();
             const bool has_proximity = node.proximity.has_value();
             const bool has_motion = node.motion.has_value();
+            const bool has_motion_filter = node.motion_filter.has_value();
             const bool has_terrain = node.terrain.has_value();
             const bool has_terrain_render_style =
                 node.terrain_render_style.has_value();
@@ -174,6 +184,8 @@ namespace wz::engine::assets
             fp.mix_value(has_render_program);
             fp.mix_value(has_scene_source);
             fp.mix_value(has_glb_scene_source);
+            fp.mix_value(has_render_to_texture);
+            fp.mix_value(has_mesh_index);
             fp.mix_value(has_asset_reference);
             fp.mix_value(has_camera);
             fp.mix_value(has_direct_light_source);
@@ -192,11 +204,14 @@ namespace wz::engine::assets
             fp.mix_value(has_mesh_render_style);
             fp.mix_value(has_mesh_mask_render_style);
             fp.mix_value(has_mesh_region_set);
+            fp.mix_value(has_mesh_sparse_operator_source);
+            fp.mix_value(has_mesh_level_mask_source);
             fp.mix_value(has_scalar_field_source);
             fp.mix_value(has_vector_field_source);
             fp.mix_value(has_collision);
             fp.mix_value(has_proximity);
             fp.mix_value(has_motion);
+            fp.mix_value(has_motion_filter);
             fp.mix_value(has_terrain);
             fp.mix_value(has_terrain_render_style);
             fp.mix_value(has_terrain_mesh_source);
@@ -296,6 +311,24 @@ namespace wz::engine::assets
                 if (ov.render_program_node_id) {
                     fp.mix_value(*ov.render_program_node_id);
                 }
+            }
+
+            // Render-to-texture source (issue #287). The authored anchor is the
+            // target node id; `target` is a bridge product re-resolved on every
+            // bind, so it stays out for the same reason renderable_asset does.
+            if (node.render_to_texture) {
+                const auto& rtt = *node.render_to_texture;
+                fp.mix_value(rtt.target_node_id.has_value());
+                if (rtt.target_node_id) {
+                    fp.mix_value(*rtt.target_node_id);
+                }
+                fp.mix_value(rtt.include_descendants);
+                fp.mix_value(rtt.also_draw_in_scene);
+                fp.mix_value(rtt.enabled);
+            }
+
+            if (node.mesh_index) {
+                fp.mix_value(*node.mesh_index);
             }
 
             if (node.asset_reference) {
@@ -510,6 +543,18 @@ namespace wz::engine::assets
                 fp.mix_value(source.constant_value);
             }
 
+            // The operator the two consumers below reference by name. Its
+            // resolved_operator_asset is a materialization product, so only the
+            // authored recipe is mixed.
+            if (node.mesh_sparse_operator_source) {
+                const auto& source = *node.mesh_sparse_operator_source;
+                fp.mix_value(source.enabled);
+                fp.mix_string(source.operator_id);
+                fp.mix_value(source.kind);
+                fp.mix_value(source.domain);
+                fp.mix_value(source.value_convention);
+            }
+
             if (node.mesh_sparse_apply_field) {
                 const auto& field = *node.mesh_sparse_apply_field;
                 fp.mix_value(field.enabled);
@@ -531,6 +576,22 @@ namespace wz::engine::assets
                 fp.mix_value(bands.iterations_per_band);
                 fp.mix_value(bands.mode);
                 fp.mix_value(bands.tau);
+            }
+
+            if (node.mesh_level_mask_source) {
+                const auto& source = *node.mesh_level_mask_source;
+                fp.mix_value(source.enabled);
+                fp.mix_string(source.input_field_ref);
+                fp.mix_string(source.output_field_id);
+                fp.mix_value(source.domain);
+                fp.mix_value(
+                    static_cast<uint64_t>(source.regions.size()));
+                for (const auto& region : source.regions) {
+                    fp.mix_value(region.input_channel_id);
+                    fp.mix_value(region.output_channel_id);
+                    fp.mix_value(region.min_value);
+                    fp.mix_value(region.max_value);
+                }
             }
 
             if (node.mesh_render_style) {
@@ -733,6 +794,25 @@ namespace wz::engine::assets
                 fp.mix_value(motion.enabled);
             }
 
+            if (node.motion_filter) {
+                const auto& filter = *node.motion_filter;
+                fp.mix_bytes(
+                    filter.translation_smoothing,
+                    sizeof(filter.translation_smoothing));
+                fp.mix_value(filter.terrain_floor);
+                fp.mix_value(filter.terrain_floor_offset);
+                for (const SceneMotionFilterRotationAxis& axis :
+                     { filter.roll, filter.pitch, filter.yaw })
+                {
+                    fp.mix_value(axis.smoothing_time);
+                    fp.mix_value(axis.level);
+                    fp.mix_value(axis.limit);
+                    fp.mix_value(axis.limit_min_degrees);
+                    fp.mix_value(axis.limit_max_degrees);
+                }
+                fp.mix_value(filter.enabled);
+            }
+
             if (node.terrain) {
                 const auto& terrain = *node.terrain;
                 mix_asset_key(fp, terrain.terrain_asset);
@@ -903,6 +983,33 @@ namespace wz::engine::assets
             fp.mix_value(light.light.type);
             fp.mix_value(light.light.intensity);
             fp.mix_value(light.light.range);
+        }
+
+        // Sky draws are derived from the sky_surface/sky_visual node pair at
+        // materialize time, but they are the form the renderer consumes, so a
+        // scene that resolved a different set is a different scene.
+        fp.mix_value(scene.sky_draws.size());
+        for (const auto& sky : scene.sky_draws) {
+            fp.mix_string(sky.surface_node);
+            fp.mix_string(sky.visual_node);
+            fp.mix_value(sky.visual_kind);
+            fp.mix_value(sky.projection);
+            fp.mix_value(sky.radius);
+            fp.mix_value(sky.visible_to_camera);
+            fp.mix_bytes(sky.solid_color, sizeof(sky.solid_color));
+            fp.mix_bytes(
+                sky.gradient_top_color, sizeof(sky.gradient_top_color));
+            fp.mix_bytes(
+                sky.gradient_bottom_color, sizeof(sky.gradient_bottom_color));
+            mix_asset_key(fp, sky.texture_asset);
+            fp.mix_string(sky.texture_path);
+            fp.mix_value(sky.texture_format);
+            mix_asset_key(fp, sky.scalar_field_asset);
+            mix_asset_key(fp, sky.vector_field_asset);
+            fp.mix_value(sky.exposure);
+            fp.mix_value(sky.rotation_x_radians);
+            fp.mix_value(sky.rotation_y_radians);
+            fp.mix_value(sky.rotation_z_radians);
         }
 
         const bool has_active_camera =
