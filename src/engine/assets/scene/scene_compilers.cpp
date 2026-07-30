@@ -53,6 +53,30 @@ namespace wz::engine::assets::internal
             return desc;
         }
 
+        // An authored asset-graph node id, or nullopt when the member is absent
+        // or cannot name a node. Every JSON number is a double, and the old
+        // `*n > 0.0` test then cast straight to uint64_t -- so `1e300` became
+        // 9223372036854775808 (a garbage id that resolves to nothing) and,
+        // sharper, `1.7` became 1: a SILENT REBINDING to a different asset than
+        // the one authored. Requiring an exact positive integer makes both read
+        // as "no id", which every call site already handles: it falls through to
+        // the resolved-key path or leaves the binding absent.
+        std::optional<wz::asset::AssetGraphDraftNodeId> read_graph_node_id(
+            const wz::json::JSONValue& obj,
+            std::string_view key)
+        {
+            const auto raw = read_number(obj, key);
+            if (!raw || *raw != std::trunc(*raw)) {
+                return std::nullopt;
+            }
+            const auto narrowed =
+                wz::json::narrow_number<wz::asset::AssetGraphDraftNodeId>(*raw);
+            if (!narrowed || *narrowed == 0u) {
+                return std::nullopt;
+            }
+            return narrowed;
+        }
+
         // A transform member that is PRESENT but unreadable is an error, not a
         // default. Silently substituting identity for `[1,2]`, `["1","2","3"]`
         // or a value that does not survive the narrowing to float loses the
@@ -1375,9 +1399,13 @@ namespace wz::engine::assets::internal
             if (act) node.active = *act;
 
             // Draw-order layer key — absent keeps the default 0 (the "World"
-            // layer), so pre-existing scenes render unchanged.
-            if (auto order = read_number(node_val, "render_order")) {
-                node.render_order = static_cast<int>(*order);
+            // layer), so pre-existing scenes render unchanged. Range-guarded
+            // because the cast used to be raw: `1e300` AND `-1e300` both landed
+            // on INT_MIN, i.e. the frontmost layer, indistinguishably.
+            if (const auto order =
+                    wz::json::read_integral<int>(node_val, "render_order"))
+            {
+                node.render_order = *order;
             }
 
             auto motion = read_string(node_val, "motion_type");
@@ -1396,11 +1424,10 @@ namespace wz::engine::assets::internal
                     return std::nullopt;
                 }
                 const auto node_id =
-                    read_number(*renderable, "asset_graph_node_id");
-                if (node_id && *node_id > 0.0) {
+                    read_graph_node_id(*renderable, "asset_graph_node_id");
+                if (node_id) {
                     node.renderable_asset_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(
-                            *node_id);
+                        *node_id;
                     node.renderable_asset.reset();
                 }
                 else if (!parse_asset_reference_object(
@@ -1425,10 +1452,11 @@ namespace wz::engine::assets::internal
                         "geometry on node '" + node.id + "' is not an object");
                     return std::nullopt;
                 }
-                const auto gid = read_number(*geometry, "asset_graph_node_id");
-                if (gid && *gid > 0.0) {
+                const auto gid =
+                    read_graph_node_id(*geometry, "asset_graph_node_id");
+                if (gid) {
                     node.geometry_asset_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(*gid);
+                        *gid;
                     node.geometry_asset.reset();
                     // Indexed GLB-part geometry (issue #213 increment 3): the part
                     // name within the referenced Scene-from-GLB node, if present.
@@ -1447,10 +1475,11 @@ namespace wz::engine::assets::internal
                         + "' is not an object");
                     return std::nullopt;
                 }
-                const auto pid = read_number(*program, "asset_graph_node_id");
-                if (pid && *pid > 0.0) {
+                const auto pid =
+                    read_graph_node_id(*program, "asset_graph_node_id");
+                if (pid) {
                     node.render_program_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(*pid);
+                        *pid;
                     node.render_program_asset.reset();
                 }
             }
@@ -1481,11 +1510,10 @@ namespace wz::engine::assets::internal
                     SceneRenderableSemanticBinding binding{};
                     binding.semantic = std::string(*semantic);
                     const auto anchor =
-                        read_number(entry, "asset_graph_node_id");
-                    if (anchor && *anchor > 0.0) {
+                        read_graph_node_id(entry, "asset_graph_node_id");
+                    if (anchor) {
                         binding.asset_graph_node_id =
-                            static_cast<wz::asset::AssetGraphDraftNodeId>(
-                                *anchor);
+                            *anchor;
                     }
                     node.renderable_bindings.push_back(std::move(binding));
                 }
@@ -1498,10 +1526,11 @@ namespace wz::engine::assets::internal
                 rtt && rtt->kind == wz::json::JSONValueKind::Object)
             {
                 SceneRenderToTextureAsset out{};
-                const auto anchor = read_number(*rtt, "target_asset_node_id");
-                if (anchor && *anchor > 0.0) {
+                const auto anchor =
+                    read_graph_node_id(*rtt, "target_asset_node_id");
+                if (anchor) {
                     out.target_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(*anchor);
+                        *anchor;
                 }
                 else {
                     // Without a target there is nothing to render into, so this
@@ -1569,11 +1598,10 @@ namespace wz::engine::assets::internal
                     return std::nullopt;
                 }
                 const auto node_id =
-                    read_number(*scene_source, "asset_graph_node_id");
-                if (node_id && *node_id > 0.0) {
+                    read_graph_node_id(*scene_source, "asset_graph_node_id");
+                if (node_id) {
                     node.scene_source_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(
-                            *node_id);
+                        *node_id;
                     node.scene_source.reset();
                 }
             }
@@ -1705,11 +1733,10 @@ namespace wz::engine::assets::internal
                         && program->kind == wz::json::JSONValueKind::Object)
                     {
                         const auto pid =
-                            read_number(*program, "asset_graph_node_id");
-                        if (pid && *pid > 0.0) {
+                            read_graph_node_id(*program, "asset_graph_node_id");
+                        if (pid) {
                             ov.render_program_node_id =
-                                static_cast<wz::asset::AssetGraphDraftNodeId>(
-                                    *pid);
+                                *pid;
                         }
                     }
                     node.scene_source_child_overrides.push_back(std::move(ov));
@@ -1934,10 +1961,10 @@ namespace wz::engine::assets::internal
                 }
 
                 const auto aid =
-                    read_number(*atmosphere, "atmosphere_asset_node_id");
-                if (aid && *aid > 0.0) {
+                    read_graph_node_id(*atmosphere, "atmosphere_asset_node_id");
+                if (aid) {
                     component.atmosphere_asset_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(*aid);
+                        *aid;
                     component.atmosphere_asset = {};
                 }
 
@@ -1975,10 +2002,10 @@ namespace wz::engine::assets::internal
                 }
 
                 const auto eid =
-                    read_number(*environment, "environment_asset_node_id");
-                if (eid && *eid > 0.0) {
+                    read_graph_node_id(*environment, "environment_asset_node_id");
+                if (eid) {
                     component.environment_asset_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(*eid);
+                        *eid;
                     component.environment_asset = {};
                 }
 
@@ -4484,10 +4511,10 @@ namespace wz::engine::assets::internal
                 // node id, mirroring render_program. Only the id is persisted;
                 // collision_asset is re-bridged on (re)bind.
                 const auto cid =
-                    read_number(*collision, "collision_asset_node_id");
-                if (cid && *cid > 0.0) {
+                    read_graph_node_id(*collision, "collision_asset_node_id");
+                if (cid) {
                     component.collision_asset_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(*cid);
+                        *cid;
                     component.collision_asset = {};
                 }
 
@@ -5273,10 +5300,10 @@ namespace wz::engine::assets::internal
                 // Prefer the stable authored asset-graph node id; fall back to a
                 // resolved key for runtime-ready scenes. Mirrors the renderable.
                 const auto node_id =
-                    read_number(*as, "audio_renderable_node_id");
-                if (node_id && *node_id > 0.0) {
+                    read_graph_node_id(*as, "audio_renderable_node_id");
+                if (node_id) {
                     source.audio_renderable_node_id =
-                        static_cast<wz::asset::AssetGraphDraftNodeId>(*node_id);
+                        *node_id;
                 }
                 else if (auto renderable =
                              read_string(*as, "audio_renderable")) {
