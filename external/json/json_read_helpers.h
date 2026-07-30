@@ -6,12 +6,57 @@
 
 #include <external/json/json_document.h>
 
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string_view>
+#include <type_traits>
 
 namespace wz::json
 {
+    // Convert a JSON number to an integral type, REJECTING anything the target
+    // cannot represent. Every JSON number arrives as a double, and
+    // `static_cast<T>(d)` is undefined behaviour when the truncated value does not
+    // fit T -- so `"slot": 1e30` or `"asset_graph_node_id": -1` in a file the
+    // engine happily reads was UB, benign-looking on x86 (it wraps) and a trap
+    // under UBSan. Rejecting turns that into a value the caller can handle the way
+    // it already handles a missing or malformed member.
+    //
+    // Truncates toward zero, like the cast it replaces, so 2.7 -> 2.
+    //
+    // The bound is computed as a power of two rather than from numeric_limits::max()
+    // on purpose: max() for a 64-bit type is not representable as a double and
+    // rounds UP when converted, so the natural `d <= (double)max()` test would
+    // ACCEPT 2^64 and hand the cast the one value that is still UB. 2^digits is
+    // exact, and an integer-valued double below it is in range.
+    template <typename T>
+    inline std::optional<T> narrow_number(double value) noexcept
+    {
+        static_assert(std::is_integral_v<T>, "narrow_number targets integers");
+
+        if (!std::isfinite(value)) {
+            return std::nullopt;   // NaN / +-inf
+        }
+        const double truncated = std::trunc(value);
+        constexpr int kValueBits = std::numeric_limits<T>::digits;
+        const double limit = std::ldexp(1.0, kValueBits);   // 2^digits, exact
+        if (truncated >= limit) {
+            return std::nullopt;
+        }
+        if constexpr (std::is_signed_v<T>) {
+            if (truncated < -limit) {
+                return std::nullopt;
+            }
+        }
+        else {
+            if (truncated < 0.0) {
+                return std::nullopt;
+            }
+        }
+        return static_cast<T>(truncated);
+    }
+
     inline const JSONValue* find_member(
         const JSONValue& obj,
         std::string_view key) noexcept
@@ -54,16 +99,28 @@ namespace wz::json
         return v->bool_value;
     }
 
-    inline std::optional<uint32_t> read_uint(
+    // Read member `key` as an integral value, or nullopt when it is missing, not a
+    // number, or out of range for T (see narrow_number).
+    template <typename T>
+    inline std::optional<T> read_integral(
         const JSONValue& obj,
         std::string_view key) noexcept
     {
         const auto* v = find_member(obj, key);
-        if (!v || v->kind != JSONValueKind::Number)
+        if (!v || v->kind != JSONValueKind::Number) {
             return std::nullopt;
-        if (v->number_value < 0.0)
-            return std::nullopt;
-        return static_cast<uint32_t>(v->number_value);
+        }
+        return narrow_number<T>(v->number_value);
+    }
+
+    // Guards the UPPER bound too, not just the negative side: the old body rejected
+    // < 0 and then cast, so a value above UINT32_MAX was still UB. Every caller
+    // already treats nullopt as "absent or unusable", so nothing had to change.
+    inline std::optional<uint32_t> read_uint(
+        const JSONValue& obj,
+        std::string_view key) noexcept
+    {
+        return read_integral<uint32_t>(obj, key);
     }
 
     inline bool read_float3(

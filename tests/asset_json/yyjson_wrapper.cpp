@@ -1,9 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <external/json/json_parser.h>
+#include <external/json/json_read_helpers.h>
 #include <external/json/json_writer.h>
 
+#include <cmath>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 
 TEST(JSONParser, ParsesNull)
@@ -241,4 +245,71 @@ TEST(JSONWriter, EscapesStrings)
     ASSERT_TRUE(parsed.ok) << parsed.error.message;
     ASSERT_NE(parsed.document.root, nullptr);
     EXPECT_EQ(parsed.document.root->string_value, value.string_value);
+}
+
+// Every JSON number arrives as a double, so every integral field in every parser is
+// reached by a double->int conversion -- which is UNDEFINED BEHAVIOUR when the value
+// does not fit. narrow_number is the one place that is allowed to do it, and it
+// rejects rather than wrapping, so a hand-edited or downloaded file cannot smuggle
+// UB (or a silently wrong id/slot/layer) into the engine.
+TEST(JSONReadHelpers, NarrowNumberRejectsWhatTheTargetCannotHold)
+{
+    using wz::json::narrow_number;
+
+    // Exact bounds are accepted; one past them is not.
+    EXPECT_EQ(narrow_number<uint16_t>(0.0), std::optional<uint16_t>(0u));
+    EXPECT_EQ(narrow_number<uint16_t>(65535.0), std::optional<uint16_t>(65535u));
+    EXPECT_FALSE(narrow_number<uint16_t>(65536.0).has_value());
+    EXPECT_FALSE(narrow_number<uint16_t>(-1.0).has_value());
+    EXPECT_FALSE(narrow_number<uint16_t>(1e30).has_value());
+
+    EXPECT_EQ(narrow_number<int8_t>(127.0), std::optional<int8_t>(int8_t{ 127 }));
+    EXPECT_EQ(narrow_number<int8_t>(-128.0), std::optional<int8_t>(int8_t{ -128 }));
+    EXPECT_FALSE(narrow_number<int8_t>(128.0).has_value());
+    EXPECT_FALSE(narrow_number<int8_t>(-129.0).has_value());
+
+    // Non-finite input has no integral answer at all.
+    EXPECT_FALSE(
+        narrow_number<int>(std::numeric_limits<double>::quiet_NaN()).has_value());
+    EXPECT_FALSE(
+        narrow_number<int>(std::numeric_limits<double>::infinity()).has_value());
+    EXPECT_FALSE(
+        narrow_number<int>(-std::numeric_limits<double>::infinity()).has_value());
+
+    // Truncates toward zero, like the cast it replaces.
+    EXPECT_EQ(narrow_number<int>(2.7), std::optional<int>(2));
+    EXPECT_EQ(narrow_number<int>(-2.7), std::optional<int>(-2));
+
+    // THE trap this implementation exists for. uint64_t's max is not representable as
+    // a double and rounds UP, so the obvious `d <= (double)max()` test would accept
+    // 2^64 -- the one value whose cast is still UB. The bound is the exact power of
+    // two instead, so 2^64 is out and the largest double below it is in.
+    EXPECT_FALSE(narrow_number<uint64_t>(std::ldexp(1.0, 64)).has_value());
+    EXPECT_EQ(
+        narrow_number<uint64_t>(18446744073709549568.0),   // 2^64 - 2048
+        std::optional<uint64_t>(18446744073709549568ull));
+    EXPECT_FALSE(narrow_number<int64_t>(std::ldexp(1.0, 63)).has_value());
+}
+
+TEST(JSONReadHelpers, ReadIntegralAndReadUintGuardBothEnds)
+{
+    const auto parsed = wz::json::parse_json_string(
+        R"({"ok":7,"negative":-1,"huge":1e30,"past32":4294967296,)"
+        R"("max32":4294967295,"fractional":2.9,"text":"7"})");
+    ASSERT_TRUE(parsed.ok) << parsed.error.message;
+    ASSERT_NE(parsed.document.root, nullptr);
+    const wz::json::JSONValue& o = *parsed.document.root;
+
+    EXPECT_EQ(wz::json::read_integral<int>(o, "ok"), std::optional<int>(7));
+    EXPECT_EQ(wz::json::read_integral<int>(o, "fractional"), std::optional<int>(2));
+    EXPECT_FALSE(wz::json::read_integral<int>(o, "missing").has_value());
+    EXPECT_FALSE(wz::json::read_integral<int>(o, "text").has_value());
+    EXPECT_FALSE(wz::json::read_integral<uint32_t>(o, "negative").has_value());
+
+    // read_uint used to reject only the NEGATIVE side and then cast, so anything
+    // above UINT32_MAX was still UB. Both ends are guarded now.
+    EXPECT_EQ(wz::json::read_uint(o, "max32"), std::optional<uint32_t>(4294967295u));
+    EXPECT_FALSE(wz::json::read_uint(o, "past32").has_value());
+    EXPECT_FALSE(wz::json::read_uint(o, "huge").has_value());
+    EXPECT_FALSE(wz::json::read_uint(o, "negative").has_value());
 }
