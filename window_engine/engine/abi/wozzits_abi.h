@@ -1480,6 +1480,16 @@ WZ_ABI_API WzResult wz_host_runtime_behavior_module_catalog(
 // line is "name\tpath" (the prefab name and its resource-relative scene-file path,
 // tab-separated). An empty buffer means the project has no scenelets. Gathered when
 // the scene loaded. WZ_RESULT_INVALID_ARGUMENT for a null runtime.
+// Drain the posted edits the engine thread could not apply because the target node
+// was gone (issue #308, A1-C6). The scene-mutation verbs are fire-and-forget -- they
+// return OK before the id is resolved against the live scene -- so this is the only
+// channel that carries the outcome back to the host. Newline-delimited, one line per
+// drop. TAKE semantics: each drop is handed out once, so surface what you drain.
+// Additive export; no ABI version change.
+WZ_ABI_API WzResult wz_host_runtime_take_dropped_edits(
+    WzHostRuntime* runtime,
+    WzBuffer* out_edits);
+
 WZ_ABI_API WzResult wz_host_runtime_scenelet_catalog(
     WzHostRuntime* runtime,
     WzBuffer* out_scenelets);

@@ -1954,6 +1954,50 @@ extern "C"
         }
     }
 
+    // Drain the edits the engine thread could not apply because the node was gone
+    // (A1-C6). The scene-mutation verbs are fire-and-forget: they return OK before
+    // the id is resolved, so this is the only channel that carries the real outcome
+    // back. Newline-delimited, one line per drop, mirroring the catalog exports.
+    //
+    // TAKE semantics -- each drop is reported once, so the host must surface what it
+    // drains rather than polling for a level. Reporting from the apply site means no
+    // false positives: there is no published id set to go stale.
+    WzResult wz_host_runtime_take_dropped_edits(
+        WzHostRuntime* runtime,
+        WzBuffer* out_edits)
+    {
+        if (const WzResult target =
+                prepare_output_buffer(out_edits, "out_edits");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
+        }
+
+        try {
+            std::string joined;
+            for (const std::string& entry :
+                 runtime->control.take_dropped_edits())
+            {
+                if (!joined.empty()) {
+                    joined.push_back('\n');
+                }
+                joined += entry;
+            }
+            const std::vector<uint8_t> bytes(joined.begin(), joined.end());
+            return copy_bytes_to_buffer(bytes, out_edits);
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(
+                WZ_RESULT_INTERNAL_ERROR, "take dropped edits failed");
+        }
+    }
+
     WzResult wz_host_runtime_scenelet_catalog(
         WzHostRuntime* runtime,
         WzBuffer* out_scenelets)

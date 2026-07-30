@@ -405,3 +405,58 @@ TEST(EditorRuntimeControl, BindReturnsBoundDraftOnSuccess)
     EXPECT_TRUE(result.ok);
     EXPECT_EQ(draft.nodes.size(), 4u);
 }
+
+// A1-C6: the scene-mutation verbs are fire-and-forget -- they post and return OK
+// long before the engine thread resolves the node id -- so when the target turns
+// out to be gone the miss used to be a log line and a discarded bool, and the
+// caller was told the edit succeeded. This is the channel that carries the real
+// outcome back.
+//
+// Reporting from the APPLY site is what makes it free of false positives: there is
+// no published id set that could go stale between the post and the apply, so a
+// recorded drop always means the node genuinely was not there.
+TEST(EditorRuntimeControl, DroppedEditsAreRecordedAndDrainedOnce)
+{
+    EditorRuntimeControl control;
+
+    EXPECT_TRUE(control.take_dropped_edits().empty());
+
+    control.post_scene_node_properties(
+        SceneNodePropertiesEdit{ .id = "ghost", .name = "n", .visible = true });
+
+    // The applier reports false the way WozzitsApp_v1 does for a missing node.
+    control.service_pending_scene_node_properties(
+        [&control](const SceneNodePropertiesEdit& edit) {
+            control.record_dropped_edit("set_node_properties", edit.id);
+        });
+
+    const std::vector<std::string> drained = control.take_dropped_edits();
+    ASSERT_EQ(drained.size(), 1u);
+    EXPECT_NE(drained[0].find("set_node_properties"), std::string::npos)
+        << drained[0];
+    EXPECT_NE(drained[0].find("ghost"), std::string::npos) << drained[0];
+
+    // TAKE semantics: a second drain is empty, so the host reports each drop once
+    // instead of re-surfacing a level every refresh.
+    EXPECT_TRUE(control.take_dropped_edits().empty());
+}
+
+// The record is bounded: dragging against a stale id posts one edit per frame, and
+// an unbounded list would grow for as long as the drag lasts. Past the cap the
+// entries stop accumulating but the COUNT is still reported, so the report never
+// silently understates what happened.
+TEST(EditorRuntimeControl, DroppedEditRecordIsBoundedButReportsTheOverflow)
+{
+    EditorRuntimeControl control;
+
+    for (int i = 0; i < 100; ++i) {
+        control.record_dropped_edit("set_node_transform", "ghost");
+    }
+
+    const std::vector<std::string> drained = control.take_dropped_edits();
+    EXPECT_LT(drained.size(), 100u);
+    EXPECT_NE(drained.back().find("more dropped edits not listed"),
+        std::string::npos) << drained.back();
+
+    EXPECT_TRUE(control.take_dropped_edits().empty());
+}

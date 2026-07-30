@@ -443,6 +443,30 @@ namespace wz::app
         void set_scenelets(std::vector<SceneletCatalogEntry> scenelets);
         [[nodiscard]] std::vector<SceneletCatalogEntry> scenelets() const;
 
+        // ─── Dropped-edit reporting ─────────────────────────────────────────
+        // The scene-mutation verbs are FIRE-AND-FORGET: they validate the handle
+        // and the id string, post, and return OK long before the engine thread
+        // resolves the id against the live scene. So when the target turns out to
+        // be gone -- after a graph swap, a despawn, or an open_scene -- the miss
+        // was a log line and a discarded bool, and the CALLER was told the edit
+        // succeeded. That is the mechanism behind the recurring "my edit didn't
+        // take" reports (#308, A1-C6).
+        //
+        // This is the outcome channel. The engine thread records a miss as it
+        // applies (where the answer is definitive -- no id set to go stale, so no
+        // false positives), the editor drains it and attributes it to the node.
+        // Deliberately NOT a blocking handshake per verb: post_scene_node_transform
+        // is coalesced by id precisely because the inspector spams it during a
+        // drag, and a per-edit round-trip to the engine thread would stutter the UI.
+        void record_dropped_edit(
+            std::string_view verb,
+            std::string_view node_id);
+
+        // Take semantics: each drop is reported once. Bounded, so a drag against a
+        // stale id cannot grow this without limit; the last entry says how many
+        // were discarded.
+        [[nodiscard]] std::vector<std::string> take_dropped_edits();
+
         // Owner thread: submit an ASSET-GRAPH draft to bind; blocks until the
         // engine thread binds it (or the engine stops). The draft is moved to the
         // engine and the bound draft (with resolved keys + validation) is moved
@@ -752,6 +776,8 @@ namespace wz::app
         std::atomic_bool paused_{ false };
         std::vector<std::string> behavior_modules_;  // guarded by mutex_
         std::vector<SceneletCatalogEntry> scenelets_;  // guarded by mutex_
+        std::vector<std::string> dropped_edits_;  // guarded by mutex_
+        std::size_t dropped_edits_discarded_ = 0;  // guarded by mutex_
         // #194: the asset-GRAPH bind handshake (bind_asset_graph /
         // service_pending_asset_graph_bind). Named for the graph so they read
         // distinctly from the scene-edit queues + handshakes below.

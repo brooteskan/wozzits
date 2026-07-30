@@ -134,6 +134,38 @@ namespace wz::app
         return scenelets_;
     }
 
+    void EditorRuntimeControl::record_dropped_edit(
+        std::string_view verb,
+        std::string_view node_id)
+    {
+        // Keep the cap small: these are read by a human, and a drag against a
+        // stale id can produce one per frame. Past the cap we only count.
+        constexpr std::size_t kMaxDroppedEdits = 32;
+
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (dropped_edits_.size() >= kMaxDroppedEdits) {
+            ++dropped_edits_discarded_;
+            return;
+        }
+        dropped_edits_.push_back(
+            std::string(verb) + ": node '" + std::string(node_id)
+            + "' is not in the running scene, so the edit was dropped");
+    }
+
+    std::vector<std::string> EditorRuntimeControl::take_dropped_edits()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::vector<std::string> out;
+        out.swap(dropped_edits_);
+        if (dropped_edits_discarded_ > 0) {
+            out.push_back(
+                "... and " + std::to_string(dropped_edits_discarded_)
+                + " more dropped edits not listed");
+            dropped_edits_discarded_ = 0;
+        }
+        return out;
+    }
+
     AssetGraphCompileResult EditorRuntimeControl::bind_asset_graph(
         wz::asset::AssetGraphDraft& draft)
     {
@@ -1356,29 +1388,47 @@ namespace wz::app
                         control->frame_profiling_enabled());
                     control->service_pending_asset_graph_bind(binder);
                     control->service_pending_scene_node_transforms(
-                        [&app](const SceneNodeTransformEdit& edit) {
-                            app.set_node_transform(edit.id, edit.transform);
+                        [&app, control](const SceneNodeTransformEdit& edit) {
+                            if (!app.set_node_transform(edit.id, edit.transform)) {
+                                control->record_dropped_edit(
+                                    "set_node_transform", edit.id);
+                            }
                         });
                     control->service_pending_scene_node_properties(
-                        [&app](const SceneNodePropertiesEdit& edit) {
-                            app.set_node_properties(
-                                edit.id, edit.name, edit.visible);
+                        [&app, control](const SceneNodePropertiesEdit& edit) {
+                            if (!app.set_node_properties(
+                                edit.id, edit.name, edit.visible)) {
+                                control->record_dropped_edit(
+                                    "set_node_properties", edit.id);
+                            }
                         });
                     control->service_pending_scene_node_reparents(
-                        [&app](const SceneNodeReparentEdit& edit) {
-                            app.reparent_node(edit.id, edit.new_parent_id);
+                        [&app, control](const SceneNodeReparentEdit& edit) {
+                            if (!app.reparent_node(edit.id, edit.new_parent_id)) {
+                                control->record_dropped_edit(
+                                    "reparent_node", edit.id);
+                            }
                         });
                     control->service_pending_scene_node_reorders(
-                        [&app](const SceneNodeReorderEdit& edit) {
-                            app.reorder_node(edit.id, edit.before_id);
+                        [&app, control](const SceneNodeReorderEdit& edit) {
+                            if (!app.reorder_node(edit.id, edit.before_id)) {
+                                control->record_dropped_edit(
+                                    "reorder_node", edit.id);
+                            }
                         });
                     control->service_pending_scene_node_render_orders(
-                        [&app](const SceneNodeRenderOrderEdit& edit) {
-                            app.set_node_render_order(edit.id, edit.render_order);
+                        [&app, control](const SceneNodeRenderOrderEdit& edit) {
+                            if (!app.set_node_render_order(edit.id, edit.render_order)) {
+                                control->record_dropped_edit(
+                                    "set_node_render_order", edit.id);
+                            }
                         });
                     control->service_pending_scene_node_removes(
-                        [&app](const wz::scene::AuthoredEntityId& id) {
-                            app.remove_node(id);
+                        [&app, control](const wz::scene::AuthoredEntityId& id) {
+                            if (!app.remove_node(id)) {
+                                control->record_dropped_edit(
+                                    "remove_node", id);
+                            }
                         });
                     control->service_pending_scene_node_behaviors(
                         [&app](const SceneNodeBehaviorEdit& edit) {
@@ -1442,23 +1492,32 @@ namespace wz::app
                             }
                         });
                     control->service_pending_scene_node_renderables(
-                        [&app](const SceneNodeRenderableEdit& edit) {
+                        [&app, control](const SceneNodeRenderableEdit& edit) {
                             // Author the preferred asset-graph renderable (or
                             // clear it when asset_graph_node_id == 0).
-                            app.set_node_renderable_asset(
-                                edit.node_id, edit.asset_graph_node_id);
+                            if (!app.set_node_renderable_asset(
+                                edit.node_id, edit.asset_graph_node_id)) {
+                                control->record_dropped_edit(
+                                    "set_node_renderable_asset", edit.node_id);
+                            }
                         });
                     control->service_pending_scene_node_audio_renderables(
-                        [&app](const SceneNodeAudioRenderableEdit& edit) {
+                        [&app, control](const SceneNodeAudioRenderableEdit& edit) {
                             // Author the AudioSource's renderable reference (or
                             // clear it when asset_graph_node_id == 0).
-                            app.set_node_audio_renderable(
-                                edit.node_id, edit.asset_graph_node_id);
+                            if (!app.set_node_audio_renderable(
+                                edit.node_id, edit.asset_graph_node_id)) {
+                                control->record_dropped_edit(
+                                    "set_node_audio_renderable", edit.node_id);
+                            }
                         });
                     control->service_pending_scene_node_audio_source_plays(
-                        [&app](const SceneNodeAudioSourcePlayEdit& edit) {
-                            app.set_node_audio_source_play(
-                                edit.node_id, edit.auto_play, edit.enabled);
+                        [&app, control](const SceneNodeAudioSourcePlayEdit& edit) {
+                            if (!app.set_node_audio_source_play(
+                                edit.node_id, edit.auto_play, edit.enabled)) {
+                                control->record_dropped_edit(
+                                    "set_node_audio_source_play", edit.node_id);
+                            }
                         });
                     control->service_pending_scene_node_render_bindings(
                         [&app](const SceneNodeRenderBindingEdit& edit) {
