@@ -60,7 +60,7 @@ public sealed partial class WozzitsEngineNativeClient
     {
         return new EngineAssetCatalogEntry
         {
-            Type = checked((int)entry.Type),
+            Type = CheckedInt(entry.Type, "an asset catalog entry type"),
             TypeName = ReadString(bytes, entry.TypeName),
             Category = ReadString(bytes, entry.Category),
             Schemas = ReadTable<WzEditorAssetCatalogSchemaAbi, EngineAssetCatalogSchema>(
@@ -104,7 +104,7 @@ public sealed partial class WozzitsEngineNativeClient
                 (b, param) => new EngineActuatorParam
                 {
                     Name = ReadString(b, param.Name),
-                    Kind = checked((int)param.Kind),
+                    Kind = CheckedInt(param.Kind, "an actuator parameter kind"),
                     DefaultValue = param.DefaultValue,
                 }),
         };
@@ -142,7 +142,7 @@ public sealed partial class WozzitsEngineNativeClient
                 {
                     Key = ReadString(b, param.Key),
                     Label = ReadString(b, param.Label),
-                    Type = checked((int)param.Type),
+                    Type = CheckedInt(param.Type, "a behavior parameter type"),
                     DefaultNumber = param.DefaultNumber,
                     DefaultString = ReadString(b, param.DefaultString),
                 }),
@@ -189,6 +189,7 @@ public sealed partial class WozzitsEngineNativeClient
     {
         var bytes = ReadBufferBytes(buffer, "Engine ABI returned an empty asset graph snapshot buffer.");
         var snapshot = ReadStruct<WzEditorAssetGraphSnapshotAbi>(bytes, offset: 0);
+        ValidateAbiVersion(snapshot.AbiVersion);
         return ReadAssetGraphSnapshot(bytes, snapshot);
     }
 
@@ -256,7 +257,7 @@ public sealed partial class WozzitsEngineNativeClient
         return new EngineAssetGraphNode
         {
             Id = node.Id,
-            Type = checked((int)node.Type),
+            Type = CheckedInt(node.Type, "an asset graph node type"),
             TypeName = ReadString(bytes, node.TypeName),
             Schema = ReadString(bytes, node.Schema),
             DisplayName = ReadString(bytes, node.DisplayName),
@@ -350,10 +351,33 @@ public sealed partial class WozzitsEngineNativeClient
         };
     }
 
+    // A scene tree is a few levels deep; the cap only has to be past anything real.
+    // Without one, a blob whose node lists itself as its own child (Children.Offset
+    // equal to its own, Count 1) recursed forever. CheckedBufferOffset cannot catch
+    // that -- it only proves a span lies INSIDE the buffer, and a self-referential
+    // span does. The result was StackOverflowException, which .NET cannot catch: no
+    // log line, no error dialog, instant process death and unsaved work lost.
+    private const int MaxSceneNodeDepth = 64;
+
     private static EngineSceneNode ReadSceneNode(
         byte[] bytes,
         WzEditorSceneNodeAbi node)
     {
+        return ReadSceneNode(bytes, node, depth: 0);
+    }
+
+    private static EngineSceneNode ReadSceneNode(
+        byte[] bytes,
+        WzEditorSceneNodeAbi node,
+        int depth)
+    {
+        if (depth >= MaxSceneNodeDepth)
+        {
+            throw new InvalidOperationException(
+                $"Engine ABI returned a scene tree deeper than {MaxSceneNodeDepth} "
+                + "levels, which means the node spans are self-referential.");
+        }
+
         return new EngineSceneNode
         {
             Id = ReadString(bytes, node.Id),
@@ -449,7 +473,7 @@ public sealed partial class WozzitsEngineNativeClient
             Children = ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
                 bytes,
                 node.Children,
-                ReadSceneNode),
+                (b, child) => ReadSceneNode(b, child, depth + 1)),
         };
     }
 
@@ -831,14 +855,38 @@ public sealed partial class WozzitsEngineNativeClient
             throw new InvalidOperationException(emptyMessage);
         }
 
-        if (buffer.Size > int.MaxValue)
+        // Bounded well below int.MaxValue on purpose: `new byte[2_000_000_000]`
+        // passes an int.MaxValue check and then raises OutOfMemoryException, which is
+        // NOT in the wrappers' catch lists -- so a drifted Size would terminate the
+        // editor instead of surfacing as a failed call. No real response is anywhere
+        // near this; the largest are scene/graph snapshots of a few MB.
+        const long maxResponseBytes = 256L * 1024L * 1024L;
+        if (buffer.Size > (ulong)maxResponseBytes)
         {
-            throw new InvalidOperationException("Engine ABI returned a response that is too large.");
+            throw new InvalidOperationException(
+                $"Engine ABI returned a response of {buffer.Size} bytes, above the "
+                + $"{maxResponseBytes}-byte limit.");
         }
 
         var bytes = new byte[(int)buffer.Size];
         Marshal.Copy(buffer.Data, bytes, startIndex: 0, length: bytes.Length);
         return bytes;
+    }
+
+    // The ABI carries these as uint while the managed model uses int. A drifted or
+    // hostile blob can hold a value above int.MaxValue, and `checked((int)...)` would
+    // raise OverflowException -- which is NOT one of the four types the wrappers
+    // catch, so it would reach the UI thread and terminate the editor. Every decode
+    // failure has to arrive as InvalidOperationException, the type they do handle.
+    private static int CheckedInt(uint value, string what)
+    {
+        if (value > int.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"Engine ABI returned {what} out of range: {value}.");
+        }
+
+        return (int)value;
     }
 
     private static int CheckedBufferOffset(
