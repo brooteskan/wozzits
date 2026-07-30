@@ -509,6 +509,17 @@ internal static partial class WozzitsEngineAbi
     internal static partial WzResult WzEditorRuntimeReloadBehaviorModules(
         IntPtr runtime);
 
+    // The edits the engine thread could not apply because the node was gone
+    // (#308, A1-C6). The mutation verbs are fire-and-forget, so this is the only
+    // channel carrying the outcome back. Newline-delimited; TAKE semantics, so
+    // whatever is drained must be surfaced -- a second call returns nothing.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_take_dropped_edits")]
+    internal static partial WzResult WzEditorRuntimeTakeDroppedEdits(
+        IntPtr runtime,
+        out WzBuffer outEdits);
+
     [LibraryImport(
         LibraryName,
         EntryPoint = "wz_host_runtime_behavior_module_catalog")]

@@ -1936,6 +1936,56 @@ public sealed partial class WozzitsEngineNativeClient
         }
     }
 
+    // Drain the engine's dropped-edit report. TAKE semantics engine-side, so a
+    // caller that discards the result loses it -- surface what comes back.
+    internal IReadOnlyList<string> TakeDroppedEdits(IntPtr runtime)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return [];
+        }
+
+        WozzitsEngineAbi.EnsureResolverRegistered();
+
+        WzBuffer buffer = default;
+        try
+        {
+            var result = WozzitsEngineAbi.WzEditorRuntimeTakeDroppedEdits(
+                runtime,
+                out buffer);
+            if (result.Code != WzResultCode.Ok)
+            {
+                return [];
+            }
+
+            var text = buffer.Data != IntPtr.Zero && buffer.Size != 0
+                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
+                    buffer.Data,
+                    checked((int)buffer.Size)) ?? string.Empty
+                : string.Empty;
+            return string.IsNullOrEmpty(text)
+                ? []
+                : text.Split(
+                    '\n',
+                    StringSplitOptions.RemoveEmptyEntries
+                        | StringSplitOptions.TrimEntries);
+        }
+        catch (Exception ex) when (ex is DllNotFoundException
+            or EntryPointNotFoundException
+            or BadImageFormatException
+            or InvalidOperationException)
+        {
+            return [];
+        }
+        finally
+        {
+            if (buffer.Data != IntPtr.Zero)
+            {
+                WozzitsEngineAbi.WzFreeBuffer(ref buffer);
+            }
+        }
+    }
+
     internal IReadOnlyList<string> GetBehaviorModuleCatalog(IntPtr runtime)
     {
         if (runtime == IntPtr.Zero)

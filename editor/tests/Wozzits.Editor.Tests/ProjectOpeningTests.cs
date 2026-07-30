@@ -4579,6 +4579,15 @@ public sealed partial class ProjectOpeningTests
 
         public IReadOnlyList<string> BehaviorModuleCatalog { get; set; } = [];
 
+        public List<string> DroppedEdits { get; } = [];
+
+        public IReadOnlyList<string> TakeDroppedEdits()
+        {
+            var drained = DroppedEdits.ToList();
+            DroppedEdits.Clear();   // TAKE semantics, like the engine
+            return drained;
+        }
+
         public IReadOnlyList<string> GetBehaviorModuleCatalog()
         {
             return BehaviorModuleCatalog;

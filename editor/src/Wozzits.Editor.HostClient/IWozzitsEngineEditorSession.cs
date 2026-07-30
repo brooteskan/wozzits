@@ -161,6 +161,11 @@ public interface IWozzitsEngineEditorSession
     // behavior" from the imported modules.
     IReadOnlyList<string> GetBehaviorModuleCatalog();
 
+    // Edits the engine could not apply because the target node was gone. The
+    // mutation verbs return OK before the id is resolved, so this is how a dropped
+    // edit becomes visible at all. TAKE semantics: each is reported once.
+    IReadOnlyList<string> TakeDroppedEdits();
+
     // The project's scenelets (prefabs) for the scenelet menu: each is a name +
     // resource-relative scene-file path. Empty when no viewport is running. The
     // path feeds OpenScene to edit that prefab in place.

@@ -271,6 +271,13 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     private void SaveAll()
     {
+        // Report any edit the engine could not apply BEFORE writing (#308, A1-C6).
+        // The mutation verbs are fire-and-forget: they return OK before the engine
+        // thread resolves the node id, so an edit aimed at a node that a graph swap,
+        // despawn or open_scene removed used to vanish with the caller told it
+        // succeeded. Save is where that matters most -- we are about to persist a
+        // state that does NOT contain the edit the user thinks they made.
+        ReportDroppedEdits();
         _editorSession?.SaveAssetGraph();
         // Save All is an explicit user action, so a scene that did not persist
         // has to say so — silence here reads as "saved" (typically: the viewport
@@ -282,6 +289,21 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         SaveSubGraphSidecar();
         SaveOpenStatecharts();
         SaveOpenMinds();
+    }
+
+    // Drain the engine's dropped-edit report and surface each line. TAKE semantics
+    // engine-side, so this must log what it drains -- nothing else will show it.
+    private void ReportDroppedEdits()
+    {
+        if (_editorSession is null)
+        {
+            return;
+        }
+
+        foreach (var dropped in _editorSession.TakeDroppedEdits())
+        {
+            AppendEditorLog($"[editor] Edit did NOT apply -- {dropped}");
+        }
     }
 
     // Editor-only sub-graph groupings persist in a sidecar next to the asset graph

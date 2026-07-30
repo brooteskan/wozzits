@@ -374,6 +374,16 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.ReloadBehaviorModules(runtime.Handle);
     }
 
+    public IReadOnlyList<string> TakeDroppedEdits()
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return [];
+        }
+
+        return _client.TakeDroppedEdits(runtime.Handle);
+    }
+
     public IReadOnlyList<string> GetBehaviorModuleCatalog()
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)

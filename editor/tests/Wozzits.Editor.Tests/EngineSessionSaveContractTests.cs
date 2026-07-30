@@ -41,6 +41,48 @@ public sealed partial class ProjectOpeningTests
         Assert.Contains("Scene NOT saved", viewModel.EngineLogText);
     }
 
+    // A1-C6: the scene-mutation verbs return OK before the engine thread resolves
+    // the node id, so an edit aimed at a node a graph swap / despawn / open_scene
+    // removed used to disappear with the caller told it succeeded. Save is where
+    // that has to surface -- we are about to persist a state that does not contain
+    // the edit the user believes they made.
+    [Fact]
+    public void SaveAllSurfacesAnEditTheEngineDropped()
+    {
+        var editorSession = new RecordingEditorSession { RuntimeRunning = true };
+        editorSession.DroppedEdits.Add(
+            "set_node_properties: node 'ghost' is not in the running scene, "
+            + "so the edit was dropped");
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(),
+            editorSession: editorSession);
+
+        viewModel.SaveAllCommand.Execute(null);
+
+        Assert.Contains("Edit did NOT apply", viewModel.EngineLogText);
+        Assert.Contains("ghost", viewModel.EngineLogText);
+
+        // TAKE semantics all the way through: a second Save must not repeat a drop
+        // that was already reported, or every later save re-accuses the same node.
+        var before = viewModel.EngineLogText;
+        viewModel.SaveAllCommand.Execute(null);
+        var added = viewModel.EngineLogText.Substring(before.Length);
+        Assert.DoesNotContain("Edit did NOT apply", added);
+    }
+
+    [Fact]
+    public void SaveAllStaysQuietWhenNothingWasDropped()
+    {
+        var editorSession = new RecordingEditorSession { RuntimeRunning = true };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(),
+            editorSession: editorSession);
+
+        viewModel.SaveAllCommand.Execute(null);
+
+        Assert.DoesNotContain("Edit did NOT apply", viewModel.EngineLogText);
+    }
+
     [Fact]
     public void SaveAllStaysQuietWhenTheSceneSaves()
     {
