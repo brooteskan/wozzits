@@ -15,12 +15,14 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -30,6 +32,11 @@ namespace wz::engine::assets
 {
     namespace
     {
+        // One constant for the reader and the writer, so the gate below and the
+        // string emitted by save_asset_graph_draft_to_v2_json cannot drift.
+        constexpr std::string_view kAssetGraphV2Schema =
+            "wozzits.scene_editor.assets.graph.v2";
+
         bool parse_project_asset_key_text(
             const std::string& raw, wz::asset::AssetKey& out)
         {
@@ -108,14 +115,36 @@ namespace wz::engine::assets
             return true;
         }
 
+        // Exact non-negative integers only. The old body guarded `< 0.0` and
+        // then cast, so `1e300` was UB that landed on 9223372036854775808 and
+        // `1.5` silently became node 1 -- a graph edge pointing somewhere the
+        // author never named. Both now read as absent, which every caller
+        // already treats as a hard error ("invalid node id").
         std::optional<uint64_t> read_uint64_json(
             const wz::json::JSONValue& value, std::string_view name)
         {
             const auto number = wz::json::read_number(value, name);
-            if (!number || *number < 0.0) {
+            if (!number || *number != std::trunc(*number)) {
                 return std::nullopt;
             }
-            return static_cast<uint64_t>(*number);
+            return wz::json::narrow_number<uint64_t>(*number);
+        }
+
+        // Same treatment for the small enum-ish fields, which were read as
+        // `read_number(...).value_or(0.0)` and cast straight to their storage
+        // width: an out-of-range value became a well-defined but non-existent
+        // enumerator. Out of range now reads as the 0 default, matching the
+        // absent case.
+        template <typename T>
+        T read_enum_scalar_json(
+            const wz::json::JSONValue& value, std::string_view name)
+        {
+            const auto raw = wz::json::read_number(value, name);
+            if (!raw || *raw != std::trunc(*raw)) {
+                return T{};
+            }
+            const auto narrowed = wz::json::narrow_number<T>(*raw);
+            return narrowed ? *narrowed : T{};
         }
 
         bool read_param_value_json(
@@ -234,8 +263,7 @@ namespace wz::engine::assets
             }
 
             node.type = static_cast<wz::asset::AssetType>(
-                static_cast<uint16_t>(
-                    wz::json::read_number(item, "type").value_or(0.0)));
+                read_enum_scalar_json<uint16_t>(item, "type"));
             if (const auto schema_text = wz::json::read_string(item, "schema")) {
                 if (!parse_schema_id_text(*schema_text, node.schema)) {
                     error = "invalid schema";
@@ -243,17 +271,13 @@ namespace wz::engine::assets
                 }
             }
             node.stage = static_cast<wz::asset::AssetStage>(
-                static_cast<uint8_t>(
-                    wz::json::read_number(item, "stage").value_or(0.0)));
+                read_enum_scalar_json<uint8_t>(item, "stage"));
             node.residency = static_cast<wz::asset::ResidencyIntent>(
-                static_cast<uint8_t>(
-                    wz::json::read_number(item, "residency").value_or(0.0)));
+                read_enum_scalar_json<uint8_t>(item, "residency"));
             node.kind = static_cast<wz::asset::AssetNodeKind>(
-                static_cast<uint8_t>(
-                    wz::json::read_number(item, "kind").value_or(0.0)));
+                read_enum_scalar_json<uint8_t>(item, "kind"));
             node.demand_root = static_cast<wz::asset::DemandRoot>(
-                static_cast<uint8_t>(
-                    wz::json::read_number(item, "demand_root").value_or(0.0)));
+                read_enum_scalar_json<uint8_t>(item, "demand_root"));
             node.payload = std::vector<uint8_t>{};
 
             if (const auto* params = asset_graph_node_meta_json(item, "params")) {
@@ -298,6 +322,25 @@ namespace wz::engine::assets
         wz::asset::AssetGraphDraft& draft,
         std::string& error)
     {
+        // Read back the schema this loader's own writer emits. Without this, any
+        // object with a "nodes" array loaded as a v2 graph -- a v1 document (they
+        // exist: resources/projects/dag_trials) failed with the unrelated
+        // "invalid node id" because v1 nodes carry no node_id, and a future v3
+        // would be read under v2 key meanings with no diagnostic at all.
+        //
+        // Deliberately asymmetric, matching the statechart gate: a WRONG schema
+        // is refused, a MISSING one is accepted. Rejecting the missing case buys
+        // nothing (a document that omits it is hand-written, not a different
+        // dialect) and would break every caller that builds a graph document
+        // inline.
+        if (const auto schema = wz::json::read_string(root, "schema")) {
+            if (*schema != kAssetGraphV2Schema) {
+                error = "asset graph schema is '" + std::string(*schema)
+                    + "', expected '" + std::string(kAssetGraphV2Schema) + "'";
+                return false;
+            }
+        }
+
         const auto* nodes = wz::json::find_member(root, "nodes");
         if (!nodes || nodes->kind != wz::json::JSONValueKind::Array) {
             error = "missing nodes";
@@ -314,8 +357,13 @@ namespace wz::engine::assets
                 return false;
             }
 
+            // 0 is refused alongside the INVALID sentinel: the draft allocator
+            // starts at 1 (draft.h next_node_id) and BOTH scene-side readers
+            // treat 0 as "no id", so a node numbered 0 is one nothing in the
+            // project can reference. This reader was the last place that let one
+            // in.
             const auto node_id = read_uint64_json(*item, "node_id");
-            if (!node_id
+            if (!node_id || *node_id == 0u
                 || *node_id == wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE)
             {
                 error = "invalid node id";
@@ -356,9 +404,9 @@ namespace wz::engine::assets
                     authored_edges.push_back(wz::asset::AuthoredGraphEdge{
                         .from = *from_node_id,
                         .to = *node_id,
-                        .to_input_port = static_cast<uint32_t>(
-                            wz::json::read_number(*dep, "to_input_port")
-                                .value_or(0.0)),
+                        .to_input_port =
+                            read_enum_scalar_json<uint32_t>(
+                                *dep, "to_input_port"),
                     });
                 }
             }
@@ -639,7 +687,7 @@ namespace wz::engine::assets
         json_add_member(
             root,
             "schema",
-            json_string("wozzits.scene_editor.assets.graph.v2"));
+            json_string(std::string(kAssetGraphV2Schema)));
         json_add_member(root, "version", json_number(2));
 
         auto nodes = json_array();

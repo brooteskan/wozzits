@@ -78,7 +78,7 @@ namespace
         write_text_file(
             project_root / "assets.graph.json",
             R"json({
-  "schema": "wozzits.asset_graph.v2",
+  "schema": "wozzits.scene_editor.assets.graph.v2",
   "nodes": [
     {
       "node_id": 1,
@@ -136,7 +136,7 @@ namespace
         write_text_file(
             project_root / "assets.graph.json",
             R"json({
-  "schema": "wozzits.asset_graph.v2",
+  "schema": "wozzits.scene_editor.assets.graph.v2",
   "nodes": [
     {
       "node_id": 1,

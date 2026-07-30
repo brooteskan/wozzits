@@ -1138,6 +1138,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(asset_scene scene_atmosphere_binding_tests)
     rs_add_test_group(asset_scene scene_environment_binding_tests)
     rs_add_test_group(asset_scene scene_fingerprint_sensitivity_tests)
+    rs_add_test_group(asset_scene scene_json_hostile_document_tests)
 
     rs_add_test_group(asset_gltf gltf_importer)
 
