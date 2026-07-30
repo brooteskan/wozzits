@@ -35,8 +35,16 @@ namespace wz::engine::behavior
         // Parse-or-fetch a chart by name (cached; many instances share one parse).
         // Returns nullptr if the IR text is malformed (logs nothing here -- the
         // caller reports; keep the store side-effect-light).
+        //
+        // On failure, `error` (when given) receives parse_chart's REASON -- "transition
+        // target 'X' is unknown", "chart has no regions", and ~20 others. The store
+        // still does not log, but a caller that only knows "it failed" cannot tell the
+        // author anything actionable, and the runner then sits inert for the whole
+        // session while the process exits 0.
         const statechart::Chart* load(
-            const std::string& name, const std::string& ir_text);
+            const std::string& name,
+            const std::string& ir_text,
+            std::string* error = nullptr);
 
         // Build a fresh Runtime for `chart` (initial states, timers, commit-refs).
         uint64_t create(const statechart::Chart* chart);

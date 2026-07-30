@@ -14,10 +14,20 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wz::engine::behavior::statechart
 {
+    // The one schema id this build reads. parse_chart REQUIRES it: the format is
+    // versioned precisely so a later revision can change what a key means, and a
+    // parser that ignores the version reads a future chart as if it were this one
+    // -- silently and wrongly, which is the failure the `reward` toward->branch
+    // rename already had to be defended against by hand. The editor's writer
+    // stamps this same string (Wozzits.Editor.Statecharts.StatechartSchema.V0);
+    // the pair must be changed together, in both repos, when the format moves.
+    inline constexpr std::string_view kChartSchema = "wozzits.statechart.ir.v0";
+
     // A value input: a literal, or the output of a pure op (by index). Bools are
     // carried as 0/1 in `constant`; truthiness is (value != 0).
     struct Ref

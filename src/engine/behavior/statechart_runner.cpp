@@ -18,15 +18,23 @@ namespace wz::engine::behavior
     }
 
     const sc::Chart* StatechartRunnerStore::load(
-        const std::string& name, const std::string& ir_text)
+        const std::string& name,
+        const std::string& ir_text,
+        std::string* error)
     {
         auto it = charts_.find(name);
         if (it != charts_.end() && it->second.source_ir == ir_text) {
             return &it->second.chart;   // same IR under this name -> reuse the cached parse
         }
         sc::Chart chart;
-        std::string error;
-        if (!sc::parse_chart(ir_text, chart, error)) {
+        std::string parse_error;
+        if (!sc::parse_chart(ir_text, chart, parse_error)) {
+            // Hand the reason back. It used to be collected into a local and dropped
+            // on the floor, so every one of parse_chart's specific messages died here
+            // and the author was told only that the IR was bad.
+            if (error != nullptr) {
+                *error = std::move(parse_error);
+            }
             return nullptr;
         }
         // Insert or REPLACE: an edited chart re-embeds under the same name with new IR, so the
@@ -450,17 +458,27 @@ namespace wz::engine::behavior
                 if (name.empty()) {
                     name = "chart";
                 }
+                std::string load_error;
                 const sc::Chart* chart =
-                    statechart_runner_store().load(name, ir);
+                    statechart_runner_store().load(name, ir, &load_error);
                 if (!chart) {
                     // ERROR, not info (v39): this runner is now inert for the whole
                     // session while the scene around it keeps running and the process
                     // exits 0. At INFO this was indistinguishable from the "loaded"
                     // line below, and a broken chart rode through two verification
                     // passes on the strength of a clean exit code.
+                    //
+                    // Carry the REASON, not just the verdict: parse_chart names the
+                    // exact defect ("transition target 'X' is unknown", "chart has no
+                    // regions", the reward 'toward'/'branch' port instruction), and
+                    // that string is the whole difference between a fixable error and
+                    // "my behaviour does nothing". An empty IR reports as a JSON parse
+                    // failure, which is also the answer (a runner with no chart_ir).
                     wz_log_errorf(
-                        facts, "[statechart] '%s' failed to load (bad IR)",
-                        name.c_str());
+                        facts,
+                        "[statechart] '%s' failed to load: %s",
+                        name.c_str(),
+                        load_error.empty() ? "bad IR" : load_error.c_str());
                     return;
                 }
                 s->handle = statechart_runner_store().create(chart);

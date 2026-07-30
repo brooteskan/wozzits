@@ -59,6 +59,29 @@ namespace wz::engine::behavior::statechart
                 return (v && v->kind == JSONValueKind::Number) ? v->number_value : d;
             }
 
+            // Read an integral chart field, FAILING the parse when the number will not
+            // fit. static_cast<uint16_t>(1e30) is undefined behaviour, and a chart is
+            // authored data: a typo'd `"slot": -1` silently becoming slot 65535 reads
+            // an unrelated decision and the chart just behaves oddly. An absent or
+            // non-number member keeps `dflt`, matching num() above -- only a present,
+            // out-of-range number is an error.
+            template <typename T>
+            bool integral(const JSONValue& o, const char* k, T& out, T dflt = T{})
+            {
+                const JSONValue* v = find_member(o, k);
+                if (!v || v->kind != JSONValueKind::Number) {
+                    out = dflt;
+                    return true;
+                }
+                const auto narrowed = wz::json::narrow_number<T>(v->number_value);
+                if (!narrowed) {
+                    return fail(
+                        std::string("'") + k + "' is out of range for this field");
+                }
+                out = *narrowed;
+                return true;
+            }
+
             bool ref(const JSONValue& o, Ref& r)
             {
                 if (const JSONValue* cv = find_member(o, "const")) {
@@ -110,8 +133,13 @@ namespace wz::engine::behavior::statechart
                     int a = c.index_of_agent(str(o, "agent"));
                     if (a < 0) return fail("read op names unknown agent");
                     p.agent = static_cast<uint16_t>(a);
-                    p.slot = static_cast<uint16_t>(
-                        num(o, p.op == OpKind::Memory ? "q" : "slot"));
+                    if (!integral(
+                            o,
+                            p.op == OpKind::Memory ? "q" : "slot",
+                            p.slot))
+                    {
+                        return false;
+                    }
                 }
                 else if (p.op == OpKind::Select) {
                     const JSONValue* cd = find_member(o, "cond");
@@ -179,7 +207,7 @@ namespace wz::engine::behavior::statechart
                 if (k == "set_goal") {
                     e.kind = EffectKind::SetGoal;
                     if (!agent(e) || !value(e)) return fail("set_goal");
-                    e.slot = static_cast<uint16_t>(num(o, "slot"));
+                    if (!integral(o, "slot", e.slot)) return false;
                 }
                 else if (k == "measure_at") {
                     // Chart-timed non-commuting measurement: measure decision `slot`
@@ -187,7 +215,7 @@ namespace wz::engine::behavior::statechart
                     // set_goal (agent + slot + a value Ref, here the angle).
                     e.kind = EffectKind::MeasureAt;
                     if (!agent(e) || !value(e)) return fail("measure_at");
-                    e.slot = static_cast<uint16_t>(num(o, "slot"));
+                    if (!integral(o, "slot", e.slot)) return false;
                 }
                 else if (k == "set_decoherence") {
                     e.kind = EffectKind::SetDecoherence;
@@ -200,7 +228,7 @@ namespace wz::engine::behavior::statechart
                 else if (k == "reward") {
                     e.kind = EffectKind::Reward;
                     if (!agent(e)) return fail("reward");
-                    e.slot = static_cast<uint16_t>(num(o, "q"));
+                    if (!integral(o, "q", e.slot)) return false;
                     // `branch` names the branch being reinforced -- true is the 1
                     // branch, driving that fact's memory_preference toward -1. That
                     // is the VALUE convention the whole learning API uses (behavior
@@ -308,10 +336,10 @@ namespace wz::engine::behavior::statechart
                     int a = c.index_of_agent(str(o, "agent"));
                     if (a < 0) return fail("commit names unknown agent");
                     t.agent = static_cast<uint16_t>(a);
-                    t.slot = static_cast<uint16_t>(num(o, "slot"));
-                    const JSONValue* ov = find_member(o, "outcome");
-                    t.outcome = (ov && ov->kind == JSONValueKind::Number)
-                        ? static_cast<int8_t>(ov->number_value) : -2;  // "any"
+                    if (!integral(o, "slot", t.slot)) return false;
+                    // -2 == "any", which is also what the writer's `"outcome": "any"`
+                    // string lands on (not a Number, so the default stands).
+                    if (!integral<int8_t>(o, "outcome", t.outcome, -2)) return false;
                 }
                 else if (k == "after") {
                     t.kind = TriggerKind::After;
@@ -335,6 +363,28 @@ namespace wz::engine::behavior::statechart
                 const JSONValue& root = *doc.root;
                 if (root.kind != JSONValueKind::Object)
                     return fail("chart root must be an object");
+
+                // Gate on the schema id BEFORE reading anything else, exactly as the
+                // scene reader does. Without this the version the editor stamps was
+                // decorative: a `...ir.v1` chart would be parsed as v0, so every key
+                // whose meaning the new revision changed would be read under the old
+                // meaning and the chart would run -- wrongly, with no diagnostic. That
+                // is strictly worse than refusing to run it. Absent counts as
+                // unrecognized: everything the editor writes carries the field, so a
+                // chart without one has an unknown provenance rather than a known-old
+                // one, and guessing is the behaviour being removed.
+                const std::string schema = str(root, "schema");
+                if (schema.empty())
+                    return fail(
+                        "chart is missing its 'schema' field (expected '"
+                        + std::string(kChartSchema) + "')");
+                if (schema != kChartSchema)
+                    return fail(
+                        "unrecognized chart schema '" + schema + "' -- this build "
+                        "reads '" + std::string(kChartSchema) + "'. A chart from a "
+                        "newer editor needs a newer engine; it is refused rather "
+                        "than read under the old meaning of its keys.");
+
                 c.name = str(root, "name");
 
                 if (const JSONValue* bs = arr(root, "bindings"))
@@ -389,8 +439,15 @@ namespace wz::engine::behavior::statechart
                             for (auto& t : ts->array_values) {
                                 Transition tr;
                                 const JSONValue* trg = find_member(*t, "trigger");
-                                if (!trg || !trigger(*trg, tr.trigger))
-                                    return fail("bad transition trigger");
+                                if (!trg)
+                                    return fail(
+                                        "transition is missing its 'trigger'");
+                                // trigger() already reported exactly what was wrong;
+                                // the old `|| !trigger(...)` collapsed both cases into
+                                // one fail() that CLOBBERED that message with a
+                                // generic "bad transition trigger" -- throwing away
+                                // the reason at the last step before the caller.
+                                if (!trigger(*trg, tr.trigger)) return false;
                                 if (!effect_list(*t, "actions", tr.actions))
                                     return false;
                                 int tgt = c.index_of_state(str(*t, "target"));
