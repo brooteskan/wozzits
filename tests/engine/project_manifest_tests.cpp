@@ -3,6 +3,8 @@
 #include <asset/draft.h>
 #include <engine/abi/wozzits_abi.h>
 #include <engine/assets/gltf/gltf_importer.h>
+#include <engine/assets/scene/scene_json_export.h>
+#include <external/json/json_writer.h>
 #include <engine/editor/asset_graph_layout.h>
 #include <engine/editor/asset_graph_snapshot.h>
 #include <engine/editor/project_snapshot.h>
@@ -2263,8 +2265,6 @@ TEST(ProjectSceneSnapshot, DeliberatelyUnsurfacedAuthoredFields)
     const auto& abi =
         *reinterpret_cast<const WzEditorProjectSnapshot*>(blob.data());
     ASSERT_EQ(abi.scene.roots.count, 1u);
-    const WzEditorSceneNode* roots_abi =
-        abi_table<WzEditorSceneNode>(blob, abi.scene.roots);
 
     // `visible` crosses the ABI; the category-4 fields have no counterpart to compare
     // against, which is the finding. So assert the OBSERVABLE consequence instead:
@@ -2294,4 +2294,94 @@ TEST(ProjectSceneSnapshot, DeliberatelyUnsurfacedAuthoredFields)
            "editor ABI blob, so one of them is now surfaced. That is fine -- update "
            "the category-4 list in engine/editor/scene_snapshot.h and this test, and "
            "make sure BOTH reader paths fill it, not just one.";
+}
+
+// D2-S1, decided rather than left suspected. The visit-1 report claimed the two
+// snapshot paths disagree about whether a node is a renderable for two node shapes
+// the editor cannot author, and ranked it SUSPECTED because no user action produces
+// them. A TEST can author them directly, so the claim is checkable.
+//
+// flat_node_from_asset calls a node renderable if ANY of renderable_asset_node_id,
+// renderable_asset or the LEGACY `renderable` is set. read_node requires a
+// "renderable" JSON object -- and the exporter writes the legacy slot as
+// "debug_renderable" (which read_node never reads) and suppresses "renderable"
+// entirely when mesh_source is present. If the report is right, one node reports
+// kind "renderable" live and "node" from disk.
+TEST(ProjectSceneSnapshot, LegacyAndMeshSourceRenderablesAgreeAcrossBothPaths)
+{
+    // CONFIRMED and UNFIXED, so this is a reproduction rather than a passing pin.
+    // Measured 2026-07-29:
+    //   legacy renderable only : live kind=renderable src=scene-source
+    //                            disk kind=node       src=none
+    //   mesh_source + ref      : live kind=renderable src=asset-graph-node
+    //                            disk kind=node       src=none
+    //
+    // Both halves are export-side. The legacy slot is written as
+    // "debug_renderable", which read_node never reads; and the "renderable" member
+    // is suppressed outright when mesh_source is present, which is D2-H8 -- so the
+    // mesh_source half of this finding and H8 are ONE root cause and want one fix.
+    //
+    // Skipped rather than deleted: the shapes are not editor-authorable, so without
+    // this the next visit would have to re-derive them from scratch. Skipped rather
+    // than inverted into a characterization test, because asserting the current
+    // values would read as "this divergence is intended". Remove the skip when
+    // D2-S1/D2-H8 land -- the assertions below are the ones that should then hold.
+    GTEST_SKIP() << "D2-S1 (with D2-H8) is confirmed and unfixed -- see #318";
+
+    using namespace wz::engine::assets;
+
+    // Shape 1: ONLY the legacy embedded renderable. The exporter emits it as
+    // "debug_renderable".
+    SceneNodeAsset legacy;
+    legacy.id = "legacy_only";
+    legacy.renderable = SceneRenderableBinding{};
+
+    // Shape 2: a mesh_source AND an authored renderable ref. The exporter's
+    // `!node.mesh_source &&` guard suppresses the "renderable" member entirely.
+    SceneNodeAsset with_mesh_source;
+    with_mesh_source.id = "mesh_sourced";
+    with_mesh_source.mesh_source = SceneMeshSourceAsset{};
+    with_mesh_source.renderable_asset_node_id = 21u;
+
+    const wz::engine::editor::SceneSnapshot live =
+        wz::engine::editor::build_scene_snapshot_from_nodes(
+            { legacy, with_mesh_source });
+    ASSERT_EQ(live.roots.size(), 2u);
+
+    // Round-trip the SAME nodes through the real exporter and the JSON reader.
+    SceneAssetData data;
+    data.nodes = { legacy, with_mesh_source };
+    const std::string exported =
+        wz::json::serialize_json(export_scene_to_json_document(data));
+
+    TempProjectRoot temp;
+    const fs::path project_root = temp.root / "renderable_kind_parity_project";
+    write_text_file(
+        manifest_path(project_root),
+        R"json({
+  "schema": "wozzits.project.v1",
+  "formatVersion": 1,
+  "name": "Renderable Kind Parity",
+  "scene": "scene.json"
+})json");
+    write_text_file(project_root / "scene.json", exported);
+
+    const auto from_disk = wz::engine::editor::load_project_scene_snapshot(
+        wz::engine::project::ProjectManifestLoadDesc{
+            .project_root = project_root.string(),
+        });
+    ASSERT_TRUE(from_disk.ok) << from_disk.error;
+    ASSERT_EQ(from_disk.snapshot.roots.size(), 2u);
+
+    // The claim under test: same node, same question, same answer on both paths.
+    for (std::size_t i = 0; i < 2u; ++i) {
+        EXPECT_EQ(live.roots[i].id, from_disk.snapshot.roots[i].id);
+        EXPECT_EQ(live.roots[i].kind, from_disk.snapshot.roots[i].kind)
+            << "node '" << live.roots[i].id << "' reports a different kind "
+            << "depending on which reader built the snapshot";
+        EXPECT_EQ(
+            live.roots[i].renderable_source.kind,
+            from_disk.snapshot.roots[i].renderable_source.kind)
+            << "node '" << live.roots[i].id << "' renderable_source diverges";
+    }
 }
