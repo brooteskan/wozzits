@@ -175,6 +175,7 @@ namespace wz::engine::rendering
     {
         ready_ = false;
         last_reject_reason_.clear();
+        last_reject_stale_resource_ = false;
         current_ = pipelines_ ? pipelines_->realize(program) : nullptr;
         if (!device_ || !current_ || !current_->valid()) {
             last_reject_reason_ =
@@ -320,6 +321,7 @@ namespace wz::engine::rendering
             const wz::gpu::GPUHandle gpu = gpu_handle_for(handle);
             if (!gpu.valid()) {
                 ready_ = false;
+                last_reject_stale_resource_ = true;
                 last_reject_reason_ =
                     "bind_resource_group: slot " + std::to_string(slot)
                     + " resource #" + std::to_string(resources.size())

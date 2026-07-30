@@ -67,6 +67,18 @@ namespace wz::engine::rendering
             return last_reject_reason_;
         }
 
+        // True when the last rejection was a STALE RESOURCE: an SRG resource
+        // whose registry entry is gone (released + collected, or device loss).
+        // Distinguished from structural rejects (layout mismatch etc.) because
+        // the caller's correct response differs: a stale resource is healed by
+        // re-realizing the renderable (re-acquire rebuilds the buffer), while a
+        // structural reject would just fail again. Cleared per packet in
+        // set_pipeline, like last_reject_reason.
+        [[nodiscard]] bool last_reject_was_stale_resource() const noexcept
+        {
+            return last_reject_stale_resource_;
+        }
+
         // Release every cached SRV descriptor table and drop the cache. The
         // cache keys tables by the engine GPUHandles of the buffers they view;
         // a graph swap retires those buffers, so the tables must be released
@@ -116,6 +128,8 @@ namespace wz::engine::rendering
         bool ready_ = true;
         // Diagnostic reason for the last ready_ = false (see last_reject_reason).
         std::string last_reject_reason_;
+        // See last_reject_was_stale_resource().
+        bool last_reject_stale_resource_ = false;
         // The value end_frame will signal for the frame being recorded; the
         // renderer sets it once per frame via set_frame_timeline. Resources
         // resolved by this recorder are touched with it (see bind_resource_group

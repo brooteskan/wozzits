@@ -1858,6 +1858,12 @@ namespace wz::engine::rendering
         wz::rhi::GpuResourceHandle normals_handle{};
         wz::rhi::GpuResourceHandle uvs_handle{};
         bool owns_buffers = false;
+        // Which of the four buffers THIS realize created (vs found shared in
+        // the registry). A failure below releases only the created ones.
+        bool created_positions = false;
+        bool created_indices = false;
+        bool created_normals = false;
+        bool created_uvs = false;
         uint32_t index_count = 0;
         uint32_t vertex_count = 0;
 
@@ -1900,6 +1906,16 @@ namespace wz::engine::rendering
                 ctx_.resource_variants.acquire("mesh.pull_positions");
             const wz::rhi::Tag index_variant =
                 ctx_.resource_variants.acquire("mesh.pull_indices");
+            // Pull buffers are deduped by mesh identity, so an acquire may
+            // return a buffer another realized renderable is drawing with. A
+            // FAILURE below may only release what THIS realize created —
+            // releasing a found (shared) buffer destroys it under the sharer
+            // (which has no self-heal at realize granularity). Probe the
+            // registry before each acquire to learn created-vs-found.
+            created_positions = !gpu_.resources.find(wz::rhi::ResourceIdentity{
+                source->buffer_identity, position_variant }).valid();
+            created_indices = !gpu_.resources.find(wz::rhi::ResourceIdentity{
+                source->buffer_identity, index_variant }).valid();
             const std::vector<float> positions = tight_mesh_positions(*mesh);
             positions_handle = acquire_pull_buffer(
                 gpu_.resources, source->buffer_identity, position_variant,
@@ -1913,7 +1929,11 @@ namespace wz::engine::rendering
             if (!positions_handle.valid() || !indices_handle.valid()) {
                 logger_.error("RhiSceneRenderer: pull buffer upload failed");
                 release_unrealized_pull_buffers(
-                    gpu_.resources, positions_handle, indices_handle);
+                    gpu_.resources,
+                    created_positions ? positions_handle
+                                      : wz::rhi::GpuResourceHandle{},
+                    created_indices ? indices_handle
+                                    : wz::rhi::GpuResourceHandle{});
                 failed_renderables_.insert(renderable_key);
                 return nullptr;
             }
@@ -1926,6 +1946,9 @@ namespace wz::engine::rendering
             if (wants_normals && mesh->has_normals) {
                 const wz::rhi::Tag normal_variant =
                     ctx_.resource_variants.acquire("mesh.pull_normals");
+                created_normals = !gpu_.resources.find(
+                    wz::rhi::ResourceIdentity{
+                        source->buffer_identity, normal_variant }).valid();
                 const std::vector<float> normals = tight_mesh_normals(*mesh);
                 normals_handle = acquire_pull_buffer(
                     gpu_.resources, source->buffer_identity, normal_variant,
@@ -1940,6 +1963,9 @@ namespace wz::engine::rendering
             if (wants_uvs && mesh->has_uv0) {
                 const wz::rhi::Tag uv_variant =
                     ctx_.resource_variants.acquire("mesh.pull_uvs");
+                created_uvs = !gpu_.resources.find(
+                    wz::rhi::ResourceIdentity{
+                        source->buffer_identity, uv_variant }).valid();
                 const std::vector<float> uvs = tight_mesh_uvs(*mesh);
                 uvs_handle = acquire_pull_buffer(
                     gpu_.resources, source->buffer_identity, uv_variant,
@@ -1972,6 +1998,23 @@ namespace wz::engine::rendering
         realized.normals = normals_handle;
         realized.uvs = uvs_handle;
         realized.owns_buffers = owns_buffers;
+        // Failure cleanup for the checks below: release only the pull buffers
+        // THIS realize created — a found buffer is shared with a live
+        // renderable and must survive this renderable's failure.
+        const auto release_created_pull_buffers = [&]() {
+            if (!realized.owns_buffers) {
+                return;
+            }
+            release_unrealized_pull_buffers(
+                gpu_.resources,
+                created_positions ? realized.positions
+                                  : wz::rhi::GpuResourceHandle{},
+                created_indices ? realized.indices
+                                : wz::rhi::GpuResourceHandle{},
+                created_normals ? realized.normals
+                                : wz::rhi::GpuResourceHandle{},
+                created_uvs ? realized.uvs : wz::rhi::GpuResourceHandle{});
+        };
         // Baked mesh-style shading (issue #195 slice A): mutually exclusive with
         // the clipmap pack branch below (a clipmap recipe never carries a style).
         if (source->style.has_style && !source->clipmap) {
@@ -2116,22 +2159,14 @@ namespace wz::engine::rendering
                 && realized.object_srg.set(pulled_indices, realized.indices);
         }
         if (!srg_ok || !realized.object_srg.satisfies(*slot2_layout)) {
-            if (realized.owns_buffers) {
-                release_unrealized_pull_buffers(
-                    gpu_.resources, realized.positions, realized.indices,
-                    realized.normals, realized.uvs);
-            }
+            release_created_pull_buffers();
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: object SRG build failed");
             failed_renderables_.insert(renderable_key);
             return nullptr;
         }
         if (!bind_view_constants(realized, slot0_layout)) {
-            if (realized.owns_buffers) {
-                release_unrealized_pull_buffers(
-                    gpu_.resources, realized.positions, realized.indices,
-                    realized.normals, realized.uvs);
-            }
+            release_created_pull_buffers();
             realized_renderables_.erase(it);
             failed_renderables_.insert(renderable_key);
             return nullptr;
@@ -2184,11 +2219,7 @@ namespace wz::engine::rendering
                 wz::rhi::StreamBufferIndices{}, 0,
                 wz::rhi::DrawListMask::from(forward_) }))
         {
-            if (realized.owns_buffers) {
-                release_unrealized_pull_buffers(
-                    gpu_.resources, realized.positions, realized.indices,
-                    realized.normals, realized.uvs);
-            }
+            release_created_pull_buffers();
             realized_renderables_.erase(it);
             logger_.error("RhiSceneRenderer: draw packet build failed");
             failed_renderables_.insert(renderable_key);
@@ -2812,6 +2843,13 @@ namespace wz::engine::rendering
             cmd->RSSetScissorRects(1, &scissor);
         }
 
+        // Renderables whose packets were rejected for a STALE resource this
+        // frame. Their realized entries are erased AFTER the pass closes (a
+        // re-realize does synchronous GPU uploads, which must not happen with
+        // a pass open), so the next frame rebuilds them — one dark frame, then
+        // healed — instead of erroring every frame until a graph swap.
+        std::vector<wz::asset::AssetKey> stale_rejected;
+
         for (const std::size_t node_index : draw_order) {
             const ea::SceneNodeAsset& node = nodes[node_index];
             if (!node_effective_visible[node_index] || !node.renderable_asset) {
@@ -2962,6 +3000,9 @@ namespace wz::engine::rendering
                             "RhiSceneRenderer: puppet part "
                             + std::to_string(part_index) + " rejected — "
                             + recorder_.last_reject_reason());
+                        if (recorder_.last_reject_was_stale_resource()) {
+                            stale_rejected.push_back(*node.renderable_asset);
+                        }
                     }
                     ++part_index;
                 }
@@ -2973,6 +3014,9 @@ namespace wz::engine::rendering
                     logger_.error(
                         "RhiSceneRenderer: renderable packet rejected — "
                         + recorder_.last_reject_reason());
+                    if (recorder_.last_reject_was_stale_resource()) {
+                        stale_rejected.push_back(*node.renderable_asset);
+                    }
                 }
             }
         }
@@ -2982,6 +3026,15 @@ namespace wz::engine::rendering
         if (to_offscreen) {
             wz::gpu::dx12::internal::end_offscreen_pass(
                 gpu_.device, offscreen_target);
+        }
+
+        // Self-heal stale-resource rejections: drop those realized entries now
+        // that the pass is closed, so the next frame's pre-pass re-realizes
+        // them (a fresh acquire rebuilds the destroyed buffer). A cause that
+        // persists fails the re-realize and lands in failed_renderables_, so
+        // this cannot ping-pong realize/reject forever.
+        for (const wz::asset::AssetKey& key : stale_rejected) {
+            realized_renderables_.erase(key);
         }
 
         if (recorded == 0) {
