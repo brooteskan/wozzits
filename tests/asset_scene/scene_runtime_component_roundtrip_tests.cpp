@@ -932,7 +932,12 @@ TEST(SceneAssetModule, ProximityComponentRoundTripsThroughSceneJSON)
     EXPECT_NE(exported.find("\"detects_with_mask\""), std::string::npos);
 }
 
-TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
+// #312: the Motion component is SPLIT by persistence. Its terrain-constraint
+// fields are authored -- the inspector exposes them -- and round-trip exactly.
+// linear_velocity / angular_velocity / space are runtime state reachable only
+// through the behavior API, and are neither read nor written. This document
+// deliberately still carries them, standing in for a legacy scene.
+TEST(SceneAssetModule, MotionAuthoredFieldsRoundTripAndRuntimeStateIsNotPersisted)
 {
     const wz::fs::Path root = wz::fs::join(
         wz::fs::temp_directory_path(),
@@ -981,15 +986,19 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     ASSERT_NE(scene_data, nullptr);
     ASSERT_EQ(scene_data->nodes.size(), 1u);
     ASSERT_TRUE(scene_data->nodes[0].motion.has_value());
-    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[0], 1.5f);
-    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[1], -2.0f);
-    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[2], 3.25f);
-    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[0], 0.25f);
-    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[1], 0.5f);
-    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[2], -0.75f);
+    // Runtime state is IGNORED on load (#312), even though this document carries
+    // it -- legacy files do, and an unknown/stale member is the format's
+    // forward-compatible case. The authored struct keeps its defaults.
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[0], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[1], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->linear_velocity[2], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[0], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[1], 0.0f);
+    EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->angular_velocity[2], 0.0f);
     EXPECT_EQ(
         scene_data->nodes[0].motion->space,
-        wz::engine::assets::SceneMotionSpace::Local);
+        wz::engine::assets::SceneMotionSpace::World);
+    // The authored half of the same component still round-trips exactly.
     EXPECT_TRUE(scene_data->nodes[0].motion->terrain_constrained);
     EXPECT_FLOAT_EQ(scene_data->nodes[0].motion->terrain_ride_height, 0.35f);
     EXPECT_FLOAT_EQ(
@@ -1004,27 +1013,29 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     const auto result = wz::engine::assets::instantiate_scene(*scene_data);
     ASSERT_TRUE(result.ok()) << result.error_detail;
     ASSERT_EQ(result.instance.motions.size(), 1u);
+    // The runtime component starts AT REST: a scene load never seeds motion from
+    // disk. Behaviors set it via SetLinearVelocity / SetAngularVelocity.
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.linear_velocity[0],
-        1.5f);
+        0.0f);
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.linear_velocity[1],
-        -2.0f);
+        0.0f);
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.linear_velocity[2],
-        3.25f);
+        0.0f);
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.angular_velocity[0],
-        0.25f);
+        0.0f);
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.angular_velocity[1],
-        0.5f);
+        0.0f);
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.angular_velocity[2],
-        -0.75f);
+        0.0f);
     EXPECT_EQ(
         result.instance.motions[0].component.space,
-        wz::engine::assets::SceneMotionSpace::Local);
+        wz::engine::assets::SceneMotionSpace::World);
     EXPECT_TRUE(result.instance.motions[0].component.terrain_constrained);
     EXPECT_FLOAT_EQ(
         result.instance.motions[0].component.terrain_ride_height,
@@ -1042,9 +1053,12 @@ TEST(SceneAssetModule, MotionComponentRoundTripsThroughSceneJSON)
     const std::string exported = wz::json::serialize_json(
         wz::engine::assets::export_scene_to_json_document(*scene_data));
     EXPECT_NE(exported.find("\"motion\""), std::string::npos);
-    EXPECT_NE(exported.find("\"linear_velocity\""), std::string::npos);
-    EXPECT_NE(exported.find("\"angular_velocity\""), std::string::npos);
-    EXPECT_NE(exported.find("\"space\""), std::string::npos);
+    // Runtime state is never written back out -- the point of #312. A save must
+    // not capture whatever the simulation happened to be doing at that instant
+    // and reload it as authored intent.
+    EXPECT_EQ(exported.find("\"linear_velocity\""), std::string::npos);
+    EXPECT_EQ(exported.find("\"angular_velocity\""), std::string::npos);
+    EXPECT_EQ(exported.find("\"space\""), std::string::npos);
     EXPECT_NE(exported.find("\"terrain_constrained\""), std::string::npos);
     EXPECT_NE(exported.find("\"terrain_ride_height\""), std::string::npos);
     EXPECT_NE(
@@ -1118,7 +1132,12 @@ TEST(SceneAssetModule, MotionComponentDefaultsMissingLinearVelocity)
     EXPECT_FALSE(scene_data->nodes[0].motion->enabled);
 }
 
-TEST(SceneAssetModule, MotionComponentRejectsInvalidSpace)
+// #312 changed this contract deliberately. `space` used to be authored, and an
+// unrecognised value failed the whole scene load. It is now runtime state that
+// the parser does not read at all, so a stale or nonsense value is ignored like
+// any other unknown member -- a legacy scene carrying `"space": "screen"` must
+// still open. The rejection this test used to assert would now block that.
+TEST(SceneAssetModule, MotionIgnoresUnreadRuntimeSpaceInsteadOfRejectingTheScene)
 {
     const wz::fs::Path root = wz::fs::join(
         wz::fs::temp_directory_path(),
@@ -1152,7 +1171,17 @@ TEST(SceneAssetModule, MotionComponentRejectsInvalidSpace)
     });
     ASSERT_TRUE(scene_asset.valid());
     ASSERT_TRUE(assets.commit());
-    EXPECT_FALSE(assets.resolve_all().ok());
+    EXPECT_TRUE(assets.resolve_all().ok());
+
+    const auto handle = assets.scenes().get_scene(scene_asset);
+    ASSERT_TRUE(handle.valid());
+    const auto* scene_data = assets.scenes().get_scene_data(handle);
+    ASSERT_NE(scene_data, nullptr);
+    ASSERT_EQ(scene_data->nodes.size(), 1u);
+    ASSERT_TRUE(scene_data->nodes[0].motion.has_value());
+    EXPECT_EQ(
+        scene_data->nodes[0].motion->space,
+        wz::engine::assets::SceneMotionSpace::World);
 }
 
 TEST(SceneAssetModule, CollisionComponentResolvesSymbolicSceneReference)

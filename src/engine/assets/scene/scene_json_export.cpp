@@ -1925,17 +1925,13 @@ namespace wz::engine::assets
         JSONValuePtr motion_value(const SceneMotionAsset& motion)
         {
             auto obj = object_value();
-            add_member(*obj, "linear_velocity",
-                float_array(motion.linear_velocity, 3));
-            add_member(*obj, "angular_velocity",
-                float_array(motion.angular_velocity, 3));
-            add_member(
-                *obj,
-                "space",
-                string_value(
-                    motion.space == SceneMotionSpace::Local
-                        ? "local"
-                        : "world"));
+            // linear_velocity / angular_velocity / space are RUNTIME state and are
+            // deliberately NOT persisted (#312) -- see the matching note in the
+            // parser. They are settable only through the behavior API, never in
+            // the inspector, so writing them made a save capture whatever the
+            // simulation happened to be doing at that instant and reload it as
+            // authored intent. The parser ignores them too, so this is a clean
+            // drop rather than a write/read asymmetry.
             add_member(
                 *obj,
                 "terrain_constrained",

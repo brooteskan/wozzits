@@ -4719,41 +4719,24 @@ namespace wz::engine::assets::internal
                 && motion_component->kind == wz::json::JSONValueKind::Object)
             {
                 SceneMotionAsset component{};
-                if (find_member(*motion_component, "linear_velocity")) {
-                    if (!read_float3(
-                            *motion_component,
-                            "linear_velocity",
-                            component.linear_velocity))
-                    {
-                        logger.error("motion on node '" + node.id
-                            + "' has invalid linear_velocity");
-                        return std::nullopt;
-                    }
-                }
-                if (find_member(*motion_component, "angular_velocity")) {
-                    if (!read_float3(
-                            *motion_component,
-                            "angular_velocity",
-                            component.angular_velocity))
-                    {
-                        logger.error("motion on node '" + node.id
-                            + "' has invalid angular_velocity");
-                        return std::nullopt;
-                    }
-                }
-                if (auto space = read_string(*motion_component, "space")) {
-                    if (*space == "world") {
-                        component.space = SceneMotionSpace::World;
-                    }
-                    else if (*space == "local") {
-                        component.space = SceneMotionSpace::Local;
-                    }
-                    else {
-                        logger.error("motion on node '" + node.id
-                            + "' has invalid space");
-                        return std::nullopt;
-                    }
-                }
+                // linear_velocity / angular_velocity / space are RUNTIME state,
+                // not authored data, and are deliberately neither read nor
+                // written (#312). David's rule: if a field cannot be set in the
+                // editor's inspector, and the only way to set it is the behavior
+                // API, it does not belong on disk. The Motion inspector exposes
+                // the terrain-constraint fields only -- these three are reachable
+                // solely through SetLinearVelocity / SetAngularVelocity /
+                // SetMotionSpace, which write the live SceneInstance.
+                //
+                // Ignored rather than rejected: legacy scenes carry these keys,
+                // and unknown/stale members are already the format's
+                // forward-compatible case. A file keeps them until its next save,
+                // which then drops them. `space` goes with the velocities because
+                // it exists only to interpret them.
+                //
+                // Runtime state gets a persistence story later, via components
+                // designed for it -- not by quietly reusing the authored Motion
+                // component as a save slot.
                 auto terrain_constrained =
                     read_bool(*motion_component, "terrain_constrained");
                 if (terrain_constrained) {

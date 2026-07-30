@@ -1171,7 +1171,11 @@ TEST(SceneECSBoundary, FingerprintTracksTerrainConstraintSurface)
     EXPECT_NE(original, changed);
 }
 
-TEST(SceneECSBoundary, FingerprintTracksMotionComponentData)
+// The fingerprint is AUTHORED identity. Motion's terrain-constraint fields are
+// authored and must move it; its velocity/space are runtime state that #312
+// stopped persisting, so they must NOT -- otherwise the hash claims two scenes
+// differ over a value neither of them can load from disk.
+TEST(SceneECSBoundary, FingerprintTracksAuthoredMotionButNotRuntimeState)
 {
     using namespace wz::engine::assets;
 
@@ -1180,22 +1184,24 @@ TEST(SceneECSBoundary, FingerprintTracksMotionComponentData)
 
     SceneNodeAsset node{};
     node.id = "mover";
-    node.motion = SceneMotionAsset{
-        .linear_velocity = { 1.0f, 0.0f, 0.0f },
-    };
+    node.motion = SceneMotionAsset{};
     scene.nodes.push_back(std::move(node));
 
     const uint64_t original = scene_asset_fingerprint(scene);
 
+    // Runtime state: invisible to authored identity, by design.
+    scene.nodes[0].motion->linear_velocity[0] = 1.0f;
+    EXPECT_EQ(original, scene_asset_fingerprint(scene));
+
+    scene.nodes[0].motion->linear_velocity[0] = 0.0f;
     scene.nodes[0].motion->angular_velocity[1] = 0.5f;
-    const uint64_t angular_changed = scene_asset_fingerprint(scene);
-    EXPECT_NE(original, angular_changed);
+    EXPECT_EQ(original, scene_asset_fingerprint(scene));
 
     scene.nodes[0].motion->angular_velocity[1] = 0.0f;
     scene.nodes[0].motion->space = SceneMotionSpace::Local;
-    const uint64_t space_changed = scene_asset_fingerprint(scene);
-    EXPECT_NE(original, space_changed);
+    EXPECT_EQ(original, scene_asset_fingerprint(scene));
 
+    // Authored fields: every one of them must move it.
     scene.nodes[0].motion->space = SceneMotionSpace::World;
     scene.nodes[0].motion->terrain_constrained = true;
     const uint64_t terrain_constrained_changed =
@@ -1222,6 +1228,11 @@ TEST(SceneECSBoundary, FingerprintTracksMotionComponentData)
     scene.nodes[0].motion->terrain_alignment_strength = 0.5f;
     const uint64_t align_strength_changed = scene_asset_fingerprint(scene);
     EXPECT_NE(original, align_strength_changed);
+
+    scene.nodes[0].motion->terrain_alignment_strength = 1.0f;
+    scene.nodes[0].motion->enabled = false;
+    const uint64_t enabled_changed = scene_asset_fingerprint(scene);
+    EXPECT_NE(original, enabled_changed);
 }
 
 TEST(SceneECSBoundary, FingerprintTracksEditorAuthoringDrafts)

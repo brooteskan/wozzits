@@ -779,13 +779,11 @@ namespace wz::engine::assets
 
             if (node.motion) {
                 const auto& motion = *node.motion;
-                fp.mix_bytes(
-                    motion.linear_velocity,
-                    sizeof(motion.linear_velocity));
-                fp.mix_bytes(
-                    motion.angular_velocity,
-                    sizeof(motion.angular_velocity));
-                fp.mix_value(static_cast<uint8_t>(motion.space));
+                // linear_velocity / angular_velocity / space are runtime state,
+                // no longer read from or written to disk (#312), so they are not
+                // part of authored identity and are excluded here. This is the
+                // header's completeness contract working as intended: the rule is
+                // every AUTHORED member, and these stopped being authored.
                 fp.mix_value(motion.terrain_constrained);
                 fp.mix_value(motion.terrain_ride_height);
                 fp.mix_value(motion.terrain_footprint_radius);
