@@ -530,6 +530,17 @@ namespace wz::engine::assets
         rhi_resource_tracker_.resize(write);
     }
 
+    void EngineAssetLibrary::evict_unregistered_compiled_state()
+    {
+        const uint32_t evicted = system_.evict_unregistered();
+        if (evicted > 0u) {
+            logger_.info(
+                "asset compiled-state eviction: "
+                + std::to_string(evicted)
+                + " unregistered keys dropped (will recompile if re-added)");
+        }
+    }
+
     void EngineAssetLibrary::reconcile_rhi_render_program_registries()
     {
         if (!gpu_context_) {

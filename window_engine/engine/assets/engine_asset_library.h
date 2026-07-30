@@ -440,6 +440,15 @@ namespace wz::engine::assets
         // their lifecycle. Semantic registries are graph-independent and kept.
         void reconcile_rhi_render_program_registries();
 
+        // Evict the compiled-state (cache + compiled-node) entries of every
+        // key no longer in the registered set — the compiled-state half of the
+        // two teardown sweeps above. Without it, a departed key that later
+        // REJOINS resolves as a zero-cost cache hit and skips the compiler,
+        // so the rhi registrations / residency the sweeps tore down are never
+        // re-established and the asset stays dark (delete-subtree + undo;
+        // #311). Same-content rebinds evict nothing, keeping their fast path.
+        void evict_unregistered_compiled_state();
+
     private:
         // Member declaration order is load-bearing — C++ initialises in this order.
         //

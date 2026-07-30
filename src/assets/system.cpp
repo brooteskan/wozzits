@@ -496,6 +496,30 @@ namespace wz::asset
         return ok;
     }
 
+    uint32_t AssetSystem::evict_unregistered()
+    {
+        uint32_t evicted = 0;
+        for (const AssetKey& key : cache_.keys()) {
+            if (is_registered(key)) {
+                continue;
+            }
+            cache_.evict(key);
+            compiled_nodes_.erase(key);
+            ++evicted;
+        }
+        // Compiled nodes without a cache slot (carrier nodes hold payload but
+        // no handle) reconcile against the same live set.
+        for (auto it = compiled_nodes_.begin(); it != compiled_nodes_.end();) {
+            if (is_registered(it->first)) {
+                ++it;
+                continue;
+            }
+            it = compiled_nodes_.erase(it);
+            ++evicted;
+        }
+        return evicted;
+    }
+
     uint32_t AssetSystem::resolve_roots(
         std::span<const AssetKey> roots,
         ResolvePolicy policy,

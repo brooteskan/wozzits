@@ -236,6 +236,18 @@ namespace wz::asset {
         uint32_t evict_evictable_not_demanded(
             std::span<const AssetKey> roots);
 
+        // Evict the cache + compiled-node entries of every key NOT in the
+        // registered set. The bind path runs this in the same sweep that tears
+        // down a departed key's external side effects (rhi program/shader
+        // registrations, GPU residency): a still-valid cache entry for such a
+        // key would make a later RE-registration of the same content resolve
+        // as a zero-cost hit and skip the compiler — the one thing that
+        // re-establishes those side effects — leaving the asset permanently
+        // dark (delete-subtree + undo; found by the #311 leak-cycle harness).
+        // Registered keys are untouched, so the same-content rebind fast path
+        // keeps its hits. Returns the number of keys evicted.
+        uint32_t evict_unregistered();
+
         uint32_t resolve_roots(
             std::span<const AssetKey> roots,
             ResolvePolicy policy,

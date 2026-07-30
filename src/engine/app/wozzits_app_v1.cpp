@@ -229,6 +229,14 @@ namespace wz::app
         // collect(UINT64_MAX) reclaims both these and the renderer-side buffers.
         ctx_.assets->release_unregistered_rhi_resources();
 
+        // The compiled-state half of the teardown: a departed key that later
+        // rejoins must RECOMPILE (re-registering its rhi programs/shaders and
+        // re-publishing residency), not resolve as a cache hit against side
+        // effects the two sweeps above just tore down. Without this,
+        // delete-subtree + undo left those assets permanently dark (#311,
+        // found by the leak-cycle harness).
+        ctx_.assets->evict_unregistered_compiled_state();
+
         // Rebind the renderer to the new graph: invalidate the realized caches
         // (keyed by the OUTGOING graph's AssetKeys) and deferred-release the
         // outgoing graph's GPU resources, so renderables re-realize against the

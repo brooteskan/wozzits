@@ -11,6 +11,7 @@
 #include "types.h"
 #include <unordered_map>
 #include <optional>
+#include <vector>
 
 namespace wz::asset {
 
@@ -72,6 +73,18 @@ public:
     // Total slots (valid + soft-invalidated).
     uint32_t size()  const { return static_cast<uint32_t>(entries_.size()); }
     bool     empty() const { return entries_.empty(); }
+
+    // Every slot's key (valid + soft-invalidated), for sweeps that reconcile
+    // the cache against an external live set. Snapshot, so the caller may
+    // evict while iterating the result.
+    std::vector<AssetKey> keys() const {
+        std::vector<AssetKey> out;
+        out.reserve(entries_.size());
+        for (const auto& [key, entry] : entries_) {
+            out.push_back(key);
+        }
+        return out;
+    }
 
 private:
     std::unordered_map<AssetKey, CacheEntry, AssetKeyHash> entries_;
