@@ -30,7 +30,7 @@ extern "C" {
 // plus the live-edit verb wz_host_runtime_set_node_render_to_texture and the
 // generic "render_to_texture" add/remove component token — a struct layout
 // change, readers must match.
-#define WZ_ABI_VERSION 34u
+#define WZ_ABI_VERSION 35u
 
 #if defined(_WIN32) && defined(WZ_ABI_EXPORTS)
 #define WZ_ABI_API __declspec(dllexport)
@@ -196,7 +196,13 @@ typedef struct WzEditorAssetGraphConnectionCheck
 typedef struct WzEditorAssetGraphSnapshot
 {
     uint32_t ok;
-    uint32_t reserved;
+    // Every other top-level snapshot struct carries its version and every other
+    // top-level reader validates it; this one carried a `reserved` hole instead, so
+    // the graph editor was the ONE decoder with no version gate. The next time a
+    // graph struct grows a field it would decode at the wrong stride and show
+    // plausible-looking node positions/params -- which the user then saves back over
+    // the graph. Repurposing the hole keeps the layout byte-identical.
+    uint32_t abi_version;
     WzEditorStringSpan error;
     WzEditorStringSpan schema;
     WzEditorTableSpan nodes;
@@ -801,6 +807,7 @@ static_assert(offsetof(WzEditorAssetGraphConnectionCheck, message) == 48);
 
 static_assert(sizeof(WzEditorAssetGraphSnapshot) == 80);
 static_assert(offsetof(WzEditorAssetGraphSnapshot, ok) == 0);
+static_assert(offsetof(WzEditorAssetGraphSnapshot, abi_version) == 4);
 static_assert(offsetof(WzEditorAssetGraphSnapshot, error) == 8);
 static_assert(offsetof(WzEditorAssetGraphSnapshot, nodes) == 40);
 static_assert(offsetof(WzEditorAssetGraphSnapshot, edges) == 56);
@@ -1667,7 +1674,10 @@ WZ_ABI_API WzResult wz_host_runtime_set_node_renderable_param(
 WZ_ABI_API WzResult wz_host_runtime_set_node_collision(
     WzHostRuntime* runtime,
     const char* node_id_utf8,
-    uint32_t asset_graph_node_id,
+    // uint64_t, matching AssetGraphDraftNodeId and every sibling verb. It was
+    // uint32_t while the field it fills is 64-bit, so a high-bit id was silently
+    // truncated and two distinct ids could alias onto one.
+    uint64_t asset_graph_node_id,
     uint8_t constrain_movement);
 
 // Set node `node_id_utf8`'s Motion terrain-stick fields (issue #216/#217):

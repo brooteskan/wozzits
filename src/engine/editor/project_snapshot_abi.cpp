@@ -522,6 +522,7 @@ namespace wz::engine::editor
             const AssetGraphSnapshotLoadResult& result)
         {
             WzEditorAssetGraphSnapshot out{};
+            out.abi_version = WZ_ABI_VERSION;
             out.ok = result.ok ? 1u : 0u;
             out.error = builder.append_string(result.error);
             out.schema = builder.append_string(result.snapshot.schema);

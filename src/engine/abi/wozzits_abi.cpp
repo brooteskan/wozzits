@@ -144,6 +144,13 @@ namespace
         return result(WZ_RESULT_OK, "");
     }
 
+    // Call this FIRST in any export that fills a WzBuffer -- before validating the
+    // handle, the session, or any string argument. The caller owns the buffer and is
+    // entitled to assume that a failed call leaves it empty: a host reusing one
+    // WzBuffer across calls would otherwise read the PREVIOUS response's bytes as if
+    // they were fresh, and a host passing an uninitialized stack WzBuffer would free
+    // a garbage pointer. Seven exports used to validate first and so returned with
+    // the caller's buffer untouched on every early-out.
     WzResult prepare_output_buffer(WzBuffer* out, const char* parameter_name)
     {
         if (!out) {
@@ -1033,13 +1040,13 @@ extern "C"
         WzHostSession* session,
         WzBuffer* out_snapshot)
     {
-        if (const WzResult target = validate_session(session);
+        if (const WzResult target =
+                prepare_output_buffer(out_snapshot, "out_snapshot");
             target.code != WZ_RESULT_OK)
         {
             return target;
         }
-        if (const WzResult target =
-                prepare_output_buffer(out_snapshot, "out_snapshot");
+        if (const WzResult target = validate_session(session);
             target.code != WZ_RESULT_OK)
         {
             return target;
@@ -1068,13 +1075,13 @@ extern "C"
         uint32_t to_input_port,
         WzBuffer* out_check)
     {
-        if (const WzResult target = validate_session(session);
+        if (const WzResult target =
+                prepare_output_buffer(out_check, "out_check");
             target.code != WZ_RESULT_OK)
         {
             return target;
         }
-        if (const WzResult target =
-                prepare_output_buffer(out_check, "out_check");
+        if (const WzResult target = validate_session(session);
             target.code != WZ_RESULT_OK)
         {
             return target;
@@ -1108,13 +1115,13 @@ extern "C"
         uint32_t to_input_port,
         WzBuffer* out_check)
     {
-        if (const WzResult target = validate_session(session);
+        if (const WzResult target =
+                prepare_output_buffer(out_check, "out_check");
             target.code != WZ_RESULT_OK)
         {
             return target;
         }
-        if (const WzResult target =
-                prepare_output_buffer(out_check, "out_check");
+        if (const WzResult target = validate_session(session);
             target.code != WZ_RESULT_OK)
         {
             return target;
@@ -1154,6 +1161,26 @@ extern "C"
             target.code != WZ_RESULT_OK)
         {
             return target;
+        }
+
+        // AssetType's underlying type is uint16_t, so the uint32_t parameter has to
+        // be range-checked rather than cast: the truncation was SILENT and it
+        // ALIASED, so 0x10001 arrived as Mesh(1) and minted a Mesh node the caller
+        // never asked for, while 0x10000 became Unknown and was rejected with a
+        // message naming the wrong problem.
+        if (type > 0xFFFFu) {
+            return dynamic_error(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "type " + std::to_string(type)
+                    + " is out of range for an asset type (max 65535)");
+        }
+        // `Any` is a port-type wildcard, explicitly never a node's own type (see
+        // asset/types.h). Reject it here rather than minting a node whose type
+        // matches every edge check.
+        if (static_cast<wz::asset::AssetType>(type) == wz::asset::AssetType::Any) {
+            return result(
+                WZ_RESULT_INVALID_ARGUMENT,
+                "AssetType::Any is an input-port wildcard, not a node type");
         }
 
         try {
@@ -1890,14 +1917,14 @@ extern "C"
         WzHostRuntime* runtime,
         WzBuffer* out_modules)
     {
-        if (!runtime) {
-            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
-        }
         if (const WzResult target =
                 prepare_output_buffer(out_modules, "out_modules");
             target.code != WZ_RESULT_OK)
         {
             return target;
+        }
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
         }
 
         try {
@@ -1931,14 +1958,14 @@ extern "C"
         WzHostRuntime* runtime,
         WzBuffer* out_scenelets)
     {
-        if (!runtime) {
-            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
-        }
         if (const WzResult target =
                 prepare_output_buffer(out_scenelets, "out_scenelets");
             target.code != WZ_RESULT_OK)
         {
             return target;
+        }
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
         }
 
         try {
@@ -1974,14 +2001,14 @@ extern "C"
         const char* parent_id_utf8,
         WzBuffer* out_new_id)
     {
-        if (!runtime) {
-            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
-        }
         if (const WzResult target =
                 prepare_output_buffer(out_new_id, "out_new_id");
             target.code != WZ_RESULT_OK)
         {
             return target;
+        }
+        if (!runtime) {
+            return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
         }
 
         try {
@@ -2009,6 +2036,12 @@ extern "C"
         const char* module_utf8,
         WzBuffer* out_binding_id)
     {
+        if (const WzResult target =
+                prepare_output_buffer(out_binding_id, "out_binding_id");
+            target.code != WZ_RESULT_OK)
+        {
+            return target;
+        }
         if (const WzResult gate = require_host_scene_authoring(runtime);
             gate.code != WZ_RESULT_OK)
         {
@@ -2021,12 +2054,6 @@ extern "C"
         if (!module_utf8 || module_utf8[0] == '\0') {
             return result(
                 WZ_RESULT_INVALID_ARGUMENT, "module_utf8 must not be empty");
-        }
-        if (const WzResult target =
-                prepare_output_buffer(out_binding_id, "out_binding_id");
-            target.code != WZ_RESULT_OK)
-        {
-            return target;
         }
 
         try {
@@ -2430,7 +2457,7 @@ extern "C"
     WzResult wz_host_runtime_set_node_collision(
         WzHostRuntime* runtime,
         const char* node_id_utf8,
-        uint32_t asset_graph_node_id,
+        uint64_t asset_graph_node_id,
         uint8_t constrain_movement)
     {
         if (const WzResult gate = require_host_scene_authoring(runtime);
@@ -2696,7 +2723,7 @@ extern "C"
         {
             return gate;
         }
-        if (!node_id_utf8 || node_id_utf8[0] == ' ') {
+        if (!node_id_utf8 || node_id_utf8[0] == '\0') {
             return result(
                 WZ_RESULT_INVALID_ARGUMENT, "node_id_utf8 must not be empty");
         }
