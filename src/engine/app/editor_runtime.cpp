@@ -1887,6 +1887,18 @@ namespace wz::app
                 if (!control || !control->paused()) {
                     app.simulation_tick(frame_input, dt, drive_camera);
                 }
+                else {
+                    // Paused freezes the SCENE, not the VIEWPORT (#313, B4-C8).
+                    // The gate used to skip all of simulation_tick, which took
+                    // the projection aspect and the fly-cam with it: resizing
+                    // while paused stretched the image because the swapchain
+                    // resized and the aspect did not, and you could not look
+                    // around the scene you had paused to inspect. Both live in
+                    // update_view now; materialize_active_view is what carries
+                    // the result into the render path, and with behaviors not
+                    // running there is nothing to order it after.
+                    app.paused_frame_tick(frame_input, dt, drive_camera);
+                }
 
                 if (!wz::gpu::begin_frame(ctx.device)) {
                     ctx.logger.error("begin_frame failed");

@@ -664,6 +664,41 @@ namespace wz::app
         return graph_ok && scene_resolve.ok();
     }
 
+    void WozzitsApp_v1::update_view(
+        const wz::input::InputState& input, float dt, bool drive_camera)
+    {
+        // The fly-cam consumes input only when the host arms it (drive_camera);
+        // behaviors always get the input, so a controller can drive the scene
+        // without panning the camera. aspect tracking is independent.
+        // update_free_fly moves the camera and marks the editor-camera-dirty
+        // flag on a real pose change (editor mode only).
+        //
+        // Deliberately NOT part of simulation_tick: this is viewport
+        // maintenance, not simulation, and it has to keep running while the
+        // editor's "Pause Simulation" is on. It used to live inside the tick,
+        // so pausing froze the projection aspect while the swapchain kept
+        // resizing (a resize while paused stretched the image) and froze the
+        // fly-cam, which is the opposite of what pausing is for -- you pause to
+        // look around the stopped scene. #313, B4-C8.
+        if (drive_camera) {
+            view_.update_free_fly(input, dt);
+        }
+        if (input.window.width > 0 && input.window.height > 0) {
+            view_.set_aspect(static_cast<float>(input.window.width)
+                / static_cast<float>(input.window.height));
+        }
+    }
+
+    void WozzitsApp_v1::paused_frame_tick(
+        const wz::input::InputState& input, float dt, bool drive_camera)
+    {
+        update_view(input, dt, drive_camera);
+        // Nothing to order this after: with the simulation gated, behaviors
+        // have not moved the scene camera, so the view sources are already
+        // current.
+        materialize_active_view();
+    }
+
     void WozzitsApp_v1::simulation_tick(
         const wz::input::InputState& input, float dt, bool drive_camera)
     {
@@ -673,18 +708,7 @@ namespace wz::app
         const std::chrono::steady_clock::time_point sim_started =
             std::chrono::steady_clock::now();
 
-        // The fly-cam consumes input only when the host arms it (drive_camera);
-        // behaviors below always get the input, so a controller can drive the
-        // scene without panning the camera. aspect tracking is independent.
-        // update_free_fly moves the camera and marks the editor-camera-dirty flag
-        // on a real pose change (editor mode only).
-        if (drive_camera) {
-            view_.update_free_fly(input, dt);
-        }
-        if (input.window.width > 0 && input.window.height > 0) {
-            view_.set_aspect(static_cast<float>(input.window.width)
-                / static_cast<float>(input.window.height));
-        }
+        update_view(input, dt, drive_camera);
 
         // Run the scene's behaviors before render prep so this frame draws the
         // post-behavior transforms (dispatch + command-apply happen ahead of render

@@ -683,6 +683,25 @@ namespace wz::app
             const wz::input::InputState& input,
             float dt,
             bool drive_camera = true);
+
+        // What a host must call INSTEAD of simulation_tick on a frame where it
+        // has paused the simulation (the editor's "Pause Simulation"): advance
+        // the viewport — free-fly camera, projection aspect — and materialize
+        // the active view so the result reaches render_scene.
+        //
+        // Pausing must freeze the SCENE, not the VIEWPORT. Both of these used to
+        // live inside simulation_tick, so the pause gate took them with it: the
+        // swapchain kept resizing while the projection aspect did not (a resize
+        // while paused stretched the image), and the fly-cam stopped responding,
+        // which is the opposite of what pausing is for — you pause to look
+        // around the stopped scene. #313, B4-C8.
+        //
+        // simulation_tick does all of this itself, so never call both in one
+        // frame.
+        void paused_frame_tick(
+            const wz::input::InputState& input,
+            float dt,
+            bool drive_camera = true);
         bool render_scene();      // record scene draws (between begin/end frame)
 
         // S6 3D-mesh consumer showcase: display the scene's authored
@@ -837,6 +856,14 @@ namespace wz::app
         // behaviors moved the scene camera node). This is the app's REACTION half
         // of the view seam: the scene lookup lives here, the camera math in
         // ViewController.
+        // Viewport-only advance (fly-cam + aspect). Shared by simulation_tick
+        // and paused_frame_tick so the paused path cannot drift from the
+        // running one (#313, B4-C8).
+        void update_view(
+            const wz::input::InputState& input,
+            float dt,
+            bool drive_camera);
+
         void materialize_active_view();
 
         // The frame's global fog, or nullptr for "no fog" — what render_scene
