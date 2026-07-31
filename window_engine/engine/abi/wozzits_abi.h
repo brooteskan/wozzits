@@ -1340,11 +1340,22 @@ WZ_ABI_API void wz_host_runtime_set_frame_profiling(
 // NEW exported fn — WZ_ABI_VERSION unchanged (no struct change).
 WZ_ABI_API void wz_host_runtime_set_paused(WzHostRuntime* runtime, int paused);
 
-// Compile the session's current asset-graph draft on the running engine: copies
-// the draft, binds it on the engine thread (materialize -> swap -> resolve ->
-// rebind the renderer), and blocks until done. The draft is the only thing that
-// crosses to the engine thread (Option Y, #189). Returns WZ_RESULT_OK on a
-// clean compile; otherwise an error describing the failure.
+// Compile the session's current asset-graph draft on the running engine: MOVES
+// the draft out of the session, binds it on the engine thread (materialize ->
+// swap -> resolve -> rebind the renderer), blocks until done, and moves the
+// bound draft back. The draft is the only thing that crosses to the engine
+// thread (Option Y, #189). Returns WZ_RESULT_OK on a clean compile; otherwise
+// an error describing the failure.
+//
+// THE SESSION IS BUSY FOR THE DURATION. It is moved-from, not copied — this
+// call takes the draft rather than duplicating it, and the bind is seconds of
+// GPU work. Every other `session` export (save, snapshot, and all the authoring
+// mutations) therefore fails with WZ_RESULT_INVALID_ARGUMENT and a "session is
+// busy" message until this returns, rather than reading or mutating a husk.
+// A host that calls this off its UI thread to stay responsive — which is the
+// intended use — must be prepared for that refusal on the UI thread. Saving
+// through the husk used to write an empty graph over the project's real one
+// (#313, B4-C1).
 WZ_ABI_API WzResult wz_host_runtime_bind_draft(
     WzHostRuntime* runtime,
     WzHostSession* session);

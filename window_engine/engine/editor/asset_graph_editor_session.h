@@ -8,6 +8,7 @@
 
 #include <external/json/json_document.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -148,11 +149,88 @@ namespace wz::engine::editor
             return document_.root.get();
         }
 
+        // ─── The draft loan (issue #313, B4-C1) ─────────────────────────────
+        // A bind MOVES draft_ out of this session onto the engine thread and
+        // moves the bound draft back when it finishes (Option Y, #189). For
+        // that whole window draft() is a moved-from HUSK, and the window is not
+        // brief: it is seconds of GPU work, which the editor deliberately runs
+        // on a background thread (Task.Run) so its UI stays live and reachable.
+        //
+        // So the husk is observable by another thread, and every use of it is
+        // wrong in a way that destroys authored data: a READER (the save) writes
+        // an empty assets.graph.json over the project's real graph, and a WRITER
+        // (add node, connect, set param) has its mutation silently destroyed
+        // when the bound draft moves back on top of it.
+        //
+        // draft_on_loan() is how a caller refuses instead of doing either. The
+        // ABI gates every session export on it in ONE place (validate_session),
+        // so a new session export cannot forget to ask.
+        [[nodiscard]] bool draft_on_loan() const noexcept
+        {
+            return loan_depth_.depth.load(std::memory_order_acquire) > 0;
+        }
+
+        // RAII bracket for the window above. Counted rather than boolean so a
+        // second overlapping bind cannot end the first one's loan early (that
+        // overlap is its own defect — #313 B4-C2 — and this must not paper over
+        // it by reporting the draft present while a bind still holds it).
+        class DraftLoan
+        {
+        public:
+            explicit DraftLoan(AssetGraphEditorSession& session) noexcept
+                : session_(&session)
+            {
+                session_->loan_depth_.depth.fetch_add(
+                    1, std::memory_order_acq_rel);
+            }
+
+            DraftLoan(const DraftLoan&) = delete;
+            DraftLoan& operator=(const DraftLoan&) = delete;
+            DraftLoan(DraftLoan&&) = delete;
+            DraftLoan& operator=(DraftLoan&&) = delete;
+
+            // Releases on ANY exit, including a throwing bind — the draft is
+            // back in the session by then (bind_asset_graph's own handback
+            // guarantees that), so leaving the loan held would wedge saving for
+            // the rest of the session.
+            ~DraftLoan()
+            {
+                session_->loan_depth_.depth.fetch_sub(
+                    1, std::memory_order_acq_rel);
+            }
+
+        private:
+            AssetGraphEditorSession* session_ = nullptr;
+        };
+
     private:
+        // std::atomic is not movable and this class keeps its defaulted move
+        // operations, so the counter rides in a holder that moves by value.
+        struct LoanDepth
+        {
+            std::atomic<int> depth{ 0 };
+
+            LoanDepth() = default;
+
+            LoanDepth(LoanDepth&& other) noexcept
+                : depth(other.depth.load(std::memory_order_acquire))
+            {
+            }
+
+            LoanDepth& operator=(LoanDepth&& other) noexcept
+            {
+                depth.store(
+                    other.depth.load(std::memory_order_acquire),
+                    std::memory_order_release);
+                return *this;
+            }
+        };
+
         wz::engine::project::ProjectManifestLoadDesc desc_;
         wz::json::JSONDocument document_;
         wz::asset::AssetGraphDraft draft_;
         const wz::asset::CompilerRegistry* registry_ = nullptr;
+        LoanDepth loan_depth_;
     };
 
     struct AssetGraphEditorSessionOpenResult

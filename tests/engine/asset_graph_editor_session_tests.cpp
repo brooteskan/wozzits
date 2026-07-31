@@ -3,6 +3,7 @@
 #include <engine/editor/asset_graph_editor_session.h>
 
 #include <asset/draft.h>
+#include <engine/app/editor_runtime.h>
 #include <engine/assets/puppet_program.h>
 #include <engine/assets/schema_ids.h>
 #include <engine/assets/type_extensions.h>
@@ -13,10 +14,13 @@
 #include <logging/logger.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <ranges>
+#include <stdexcept>
+#include <thread>
 
 namespace
 {
@@ -699,4 +703,130 @@ TEST(AssetGraphEditorSession, AddInochiSharedAssetsAuthorsSubgraphAndStagesShade
     EXPECT_EQ(program_again, program);
     EXPECT_EQ(session->draft().nodes.size(), nodes_before + 4u + variants);
     EXPECT_EQ(session->draft().edges.size(), edges_before + 2u + 2u * variants);
+}
+
+// ─── The draft loan (issue #313, B4-C1) ─────────────────────────────────────
+// A bind MOVES the draft out of the session and moves the bound one back. For
+// that window the session holds a husk, and the editor keeps calling into the
+// session on another thread meanwhile (it runs the bind off its UI thread on
+// purpose). Saving through the husk wrote an EMPTY assets.graph.json over the
+// project's real graph. draft_on_loan() is what every session export now checks.
+
+TEST(AssetGraphEditorSession, DraftLoanCountsSoAnOverlappingBindCannotEndItEarly)
+{
+    TempProjectRoot temp;
+    write_project(temp.root);
+    auto registry = make_registry();
+    auto session = open_session(temp.root, registry);
+    ASSERT_NE(session, nullptr);
+
+    EXPECT_FALSE(session->draft_on_loan());
+    {
+        const wz::engine::editor::AssetGraphEditorSession::DraftLoan outer(
+            *session);
+        EXPECT_TRUE(session->draft_on_loan());
+        {
+            // A second, overlapping bind. When IT ends, the first bind still
+            // holds the draft — reporting "present" here would reopen exactly
+            // the window this exists to close.
+            const wz::engine::editor::AssetGraphEditorSession::DraftLoan inner(
+                *session);
+            EXPECT_TRUE(session->draft_on_loan());
+        }
+        EXPECT_TRUE(session->draft_on_loan());
+    }
+    EXPECT_FALSE(session->draft_on_loan());
+}
+
+TEST(AssetGraphEditorSession, DraftLoanIsReleasedWhenTheBindThrows)
+{
+    TempProjectRoot temp;
+    write_project(temp.root);
+    auto registry = make_registry();
+    auto session = open_session(temp.root, registry);
+    ASSERT_NE(session, nullptr);
+
+    // A compile that throws must not wedge saving for the rest of the session.
+    try {
+        const wz::engine::editor::AssetGraphEditorSession::DraftLoan loan(
+            *session);
+        EXPECT_TRUE(session->draft_on_loan());
+        throw std::runtime_error("bind failed");
+    }
+    catch (const std::runtime_error&) {
+    }
+    EXPECT_FALSE(session->draft_on_loan());
+}
+
+TEST(AssetGraphEditorSession, DraftLoanCoversExactlyTheWindowWhereTheDraftIsAHusk)
+{
+    TempProjectRoot temp;
+    write_project(temp.root);
+    auto registry = make_registry();
+    auto session = open_session(temp.root, registry);
+    ASSERT_NE(session, nullptr);
+
+    const size_t authored_nodes = session->draft().nodes.size();
+    ASSERT_GT(authored_nodes, 0u)
+        << "the fixture must author something, or 'the draft is a husk' is vacuous";
+
+    // Drive the REAL seam the way wozzits_abi.cpp's wz_host_runtime_bind_draft
+    // does: take the loan, hand the session's draft to bind_asset_graph. No
+    // device is involved — only the handshake is under test.
+    wz::app::EditorRuntimeControl control;
+    std::atomic_bool binding{ false };
+    std::atomic_bool release_binder{ false };
+    std::atomic_bool observed_husk{ false };
+    std::atomic_bool observed_loan{ false };
+
+    std::thread owner([&] {
+        const wz::engine::editor::AssetGraphEditorSession::DraftLoan loan(
+            *session);
+        auto report = control.bind_asset_graph(session->draft());
+        (void)report;
+    });
+
+    // Engine-thread side: claim the draft, then PARK inside the binder so the
+    // husk window is wide open and observable rather than raced past.
+    std::thread engine([&] {
+        while (!binding.load(std::memory_order_acquire)) {
+            control.service_pending_asset_graph_bind(
+                [&](wz::asset::AssetGraphDraft& draft) {
+                    binding.store(true, std::memory_order_release);
+                    while (!release_binder.load(std::memory_order_acquire)) {
+                        std::this_thread::yield();
+                    }
+                    wz::app::AssetGraphCompileResult r;
+                    r.ok = true;
+                    EXPECT_EQ(draft.nodes.size(), authored_nodes)
+                        << "the engine thread must receive the AUTHORED graph";
+                    return r;
+                });
+            std::this_thread::yield();
+        }
+    });
+
+    while (!binding.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    // This is the editor's UI thread during a compile. Both halves of B4-C1:
+    // the draft really is empty, and the loan really does say so.
+    observed_husk.store(
+        session->draft().nodes.empty(), std::memory_order_release);
+    observed_loan.store(session->draft_on_loan(), std::memory_order_release);
+
+    release_binder.store(true, std::memory_order_release);
+    owner.join();
+    engine.join();
+
+    EXPECT_TRUE(observed_husk.load(std::memory_order_acquire))
+        << "the premise of B4-C1: mid-bind the session's draft is moved-from";
+    EXPECT_TRUE(observed_loan.load(std::memory_order_acquire))
+        << "the fix: the loan is held for exactly that window, so every session "
+           "export refuses instead of saving an empty graph over the real one";
+
+    // And the authored graph came back — the loan must not outlive the bind.
+    EXPECT_FALSE(session->draft_on_loan());
+    EXPECT_EQ(session->draft().nodes.size(), authored_nodes);
 }

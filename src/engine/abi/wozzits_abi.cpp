@@ -132,6 +132,21 @@ namespace
         return result(WZ_RESULT_OK, "");
     }
 
+    // THE single gate point for every session export. Two questions, both of
+    // which every one of them has to ask before touching session->editor:
+    //
+    //  1. is the handle real?
+    //  2. is the session's draft currently ON LOAN to a bind on the engine
+    //     thread? (issue #313, B4-C1)
+    //
+    // (2) is here rather than in the individual exports because the failure it
+    // prevents is authored-data loss and it is silent: during a bind the draft
+    // is moved out, so a save writes an EMPTY assets.graph.json over the real
+    // graph, and an authoring mutation is destroyed when the bound draft moves
+    // back on top of it. The bind is seconds of GPU work and the editor runs it
+    // on a background thread precisely so the UI stays live, so "nobody would
+    // call during a bind" is exactly wrong. Gating here means a NEW session
+    // export inherits the refusal instead of having to remember it.
     WzResult validate_session(
         WzHostSession* session,
         const char* parameter_name = "session")
@@ -140,6 +155,13 @@ namespace
             return dynamic_error(
                 WZ_RESULT_INVALID_ARGUMENT,
                 std::string(parameter_name) + " must not be null");
+        }
+        if (session->editor->draft_on_loan()) {
+            return dynamic_error(
+                WZ_RESULT_INVALID_ARGUMENT,
+                std::string(parameter_name)
+                    + " is busy: its asset graph is being compiled on the "
+                      "engine thread. Wait for the compile to finish and retry.");
         }
         return result(WZ_RESULT_OK, "");
     }
@@ -1562,6 +1584,18 @@ extern "C"
         try {
             // The draft is moved to the engine thread and the bound draft moved
             // back into the session in place (AssetGraphDraft is move-only).
+            //
+            // For that whole window the session holds a moved-from husk, and the
+            // window is SECONDS (materialize -> swap -> resolve -> rebind) on a
+            // thread the editor deliberately keeps off its UI thread. The loan
+            // makes every other session export refuse for the duration instead
+            // of reading or mutating the husk — without it, Save All during a
+            // compile writes an empty assets.graph.json over the real one
+            // (#313, B4-C1). Released on every exit, including a throwing bind:
+            // bind_asset_graph's own handback guard guarantees the draft is back
+            // in the session by then.
+            const wz::engine::editor::AssetGraphEditorSession::DraftLoan loan(
+                *session->editor);
             wz::asset::AssetGraphDraft& draft = session->editor->draft();
             const wz::app::AssetGraphCompileResult report =
                 runtime->control.bind_asset_graph(draft);
