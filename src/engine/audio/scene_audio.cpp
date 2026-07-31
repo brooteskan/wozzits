@@ -582,7 +582,20 @@ namespace wz::engine::audio {
             cmd.gain_l = gain_l;
             cmd.gain_r = gain_r;
             cmd.itd_frames = itd_frames;
-            cmd.pitch = pitch;
+            // COMPOSE Doppler with the AUTHORED playback rate, do not replace
+            // it (#313, B4-C3). Voice has one pitch field and set_spatial_client
+            // ASSIGNS into it, so sending a Doppler-only ratio here wiped the
+            // renderable's authored pitch on the first spatialization tick after
+            // a voice started -- the Pitch dial was dead for every spatialized
+            // clip in play mode, and Doppler was being applied around the wrong
+            // base. Reusing the pitch field as the Doppler transport is
+            // deliberate (see voice.h and Mixer::set_spatial_client); computing
+            // the ratio from a hardcoded 1.0 was not.
+            //
+            // The clamp above bounds the DOPPLER RATIO; the authored factor
+            // multiplies on top of it, so an authored 2.0 stays 2.0 at rest
+            // rather than being squeezed into the Doppler range.
+            cmd.pitch = pitch * renderable->pitch;
             cmd.ramp_frames = ramp_frames;
             if (scheduler.post(cmd)) {
                 ++posted;

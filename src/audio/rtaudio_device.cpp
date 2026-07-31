@@ -84,7 +84,14 @@ namespace wz::audio::rtaudio
             options.numberOfBuffers = 0;
             options.priority = 0;
 
-            device->audio.openStream(
+            // RtAudio 6 REPORTS BY RETURN VALUE, NOT BY THROWING (RtAudio.h
+            // pins 6.0.1 here, and openStream/startStream/stopStream are all
+            // declared returning RtAudioErrorType). The catch blocks below are
+            // inherited from the RtAudio 4/5 contract and can no longer fire,
+            // so discarding this return meant a failed open still handed back a
+            // live Device and the whole audio stack reported success against a
+            // stream that was never opened. #313, B4-C4.
+            const RtAudioErrorType opened = device->audio.openStream(
                 &output_params,
                 nullptr,
                 RTAUDIO_FLOAT32,
@@ -94,12 +101,15 @@ namespace wz::audio::rtaudio
                 device.get(),
                 &options);
 
+            if (opened != RTAUDIO_NO_ERROR || !device->audio.isStreamOpen()) {
+                return nullptr;
+            }
+
             return device.release();
         }
-        catch (const RtAudioErrorType&) {
-            return nullptr;
-        }
         catch (const std::exception&) {
+            // Kept for the allocation/parameter paths that can still throw;
+            // RtAudio's own failures arrive as the return value above.
             return nullptr;
         }
     }
@@ -132,13 +142,22 @@ namespace wz::audio::rtaudio
 
         try {
             if (!device->audio.isStreamRunning()) {
-                device->audio.startStream();
+                // Same as the open: the return value IS the error report in
+                // RtAudio 6, so discarding it made every start succeed (#313,
+                // B4-C4). AudioOutput::start already tears the device down on
+                // a false return, so reporting the truth is all that is needed
+                // for a failed start to stop pretending.
+                const RtAudioErrorType started = device->audio.startStream();
+                if (started != RTAUDIO_NO_ERROR) {
+                    device->running = false;
+                    return false;
+                }
             }
 
-            device->running = true;
-            return true;
+            device->running = device->audio.isStreamRunning();
+            return device->running;
         }
-        catch (...) {
+        catch (const std::exception&) {
             device->running = false;
             return false;
         }
@@ -152,10 +171,13 @@ namespace wz::audio::rtaudio
 
         try {
             if (device->audio.isStreamRunning()) {
-                device->audio.stopStream();
+                // Return value checked for symmetry with start(); a failed stop
+                // still leaves us wanting `running` false, and destroy_device
+                // closes the stream regardless.
+                (void)device->audio.stopStream();
             }
         }
-        catch (...) {
+        catch (const std::exception&) {
         }
 
         device->running = false;
@@ -163,6 +185,26 @@ namespace wz::audio::rtaudio
 
     bool is_running(const Device* device)
     {
-        return device && device->running;
+        if (!device) {
+            return false;
+        }
+
+        // Ask the STREAM, not our cached flag (#313, B4-C5). `running` only
+        // ever changes when we call start/stop, so a stream that stopped on its
+        // own -- the device was unplugged, the driver dropped it, the endpoint
+        // was reconfigured -- left this reporting true forever. Callers use it
+        // to decide whether audio is live (AudioOutput::running, and through
+        // that the per-tick spatialization gate), so a lie here is silent
+        // silence.
+        //
+        // const_cast because RtAudio::isStreamRunning is not const; it is a
+        // plain read of the stream state and mutates nothing.
+        auto& audio = const_cast<Device*>(device)->audio;
+        try {
+            return device->running && audio.isStreamRunning();
+        }
+        catch (const std::exception&) {
+            return false;
+        }
     }
 }

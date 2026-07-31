@@ -56,7 +56,8 @@ namespace wz::engine::assets::test {
 
         // Build + resolve a real audio-renderable so its key resolves at runtime.
         wz::asset::AssetKey make_resolved_renderable(float gain,
-                                                     bool looping = false)
+                                                     bool looping = false,
+                                                     float pitch = 1.0f)
         {
             const AudioClipAsset clip =
                 library_->audio_clips().create_procedural_tone_audio_clip({
@@ -72,7 +73,7 @@ namespace wz::engine::assets::test {
                 library_->audio_renderables().create_audio_renderable({
                     .clip = clip,
                     .gain = gain,
-                    .pitch = 1.0f,
+                    .pitch = pitch,
                     .looping = looping,
                     });
             EXPECT_TRUE(library_->commit());
@@ -1052,6 +1053,99 @@ namespace wz::engine::assets::test {
                       *library_, result.instance,
                       1.0f / 60.0f, 48000, scheduler, spat_state_),
                   0u);
+    }
+
+    // The authored playback rate must SURVIVE spatialization (#313, B4-C3).
+    //
+    // Voice has a single pitch field and Mixer::set_spatial_client ASSIGNS into
+    // it, so a SetSpatial carrying a Doppler-only ratio wiped the renderable's
+    // authored pitch on the first spatialization tick after a voice started.
+    // Nothing caught it because every fixture in this file authored pitch = 1.0,
+    // where the clobber is invisible.
+    //
+    // Observable without reaching into Voice: the clip is 480 frames (0.01 s at
+    // 48 kHz) and non-looping, so playback RATE decides when it runs out. At the
+    // authored 2x it is exhausted inside the first 256-frame block; at 1x (the
+    // bug) it is still sounding through the second. A static listener/source
+    // pair means Doppler is exactly 1.0, so the only thing under test is whether
+    // the authored factor survived.
+    TEST_F(SceneAudioPlayerTest, SpatializationPreservesTheAuthoredPitch)
+    {
+        struct Rendered
+        {
+            double first_block = 0.0;
+            double second_block = 0.0;
+        };
+
+        const auto render_with_authored_pitch = [this](float pitch) -> Rendered
+        {
+            const wz::asset::AssetKey renderable =
+                make_resolved_renderable(1.0f, /*looping*/ false, pitch);
+
+            SceneAssetData authored{};
+            SceneNodeAsset listener{};
+            listener.id = "listener";
+            listener.audio_listener = SceneAudioListenerAsset{ .active = true };
+            authored.nodes.push_back(std::move(listener));
+            SceneNodeAsset speaker{};
+            speaker.id = "speaker";
+            speaker.audio_source = SceneAudioSourceAsset{
+                .audio_renderable = renderable,
+                .auto_play = true,
+                .enabled = true,
+            };
+            authored.nodes.push_back(std::move(speaker));
+
+            auto result = instantiate_scene(authored);
+            EXPECT_TRUE(result.ok());
+
+            // Co-located-ish and STATIC: no relative motion, so the Doppler
+            // ratio is exactly 1.0 and cannot mask the authored factor.
+            EXPECT_TRUE(seat_world(result.instance, "listener",
+                                   translate(0.0f, 0.0f, 0.0f)));
+            EXPECT_TRUE(seat_world(result.instance, "speaker",
+                                   translate(1.0f, 0.0f, 0.0f)));
+
+            wz::audio::AudioScheduler scheduler(16, 64);
+            EXPECT_EQ(wz::engine::audio::play_scene_audio_sources(
+                          *library_, result.instance, scheduler, grain_store_)
+                          .played,
+                      1u);
+
+            wz::engine::audio::AudioSpatializationState state{};
+            EXPECT_EQ(wz::engine::audio::update_scene_audio_spatialization(
+                          *library_, result.instance,
+                          /*dt*/ 1.0f / 60.0f, /*sample_rate*/ 48000,
+                          scheduler, state),
+                      1u);
+
+            Rendered out{};
+            std::vector<float> block(2 * 256, 0.0f);
+            scheduler.process(block.data(), 256, 2, 48000);
+            const ChannelEnergy first = stereo_energy(block);
+            out.first_block = first.l + first.r;
+
+            std::fill(block.begin(), block.end(), 0.0f);
+            scheduler.process(block.data(), 256, 2, 48000);
+            const ChannelEnergy second = stereo_energy(block);
+            out.second_block = second.l + second.r;
+            return out;
+        };
+
+        // Control: at the default rate the 480-frame clip spans both blocks.
+        const Rendered unity = render_with_authored_pitch(1.0f);
+        EXPECT_GT(unity.first_block, 0.0);
+        EXPECT_GT(unity.second_block, 0.0)
+            << "control is broken: a 1x clip must still be sounding in block 2";
+
+        // The property: an authored 2x really plays at 2x after spatialization,
+        // so the clip is gone before block 2. Under the bug the SetSpatial reset
+        // the voice to 1.0 and this block still had energy.
+        const Rendered doubled = render_with_authored_pitch(2.0f);
+        EXPECT_GT(doubled.first_block, 0.0);
+        EXPECT_NEAR(doubled.second_block, 0.0, 1.0e-4)
+            << "the authored pitch was overwritten by the spatialization pass: "
+               "the clip is still playing when a 2x rate should have finished it";
     }
 
 } // namespace wz::engine::assets::test
