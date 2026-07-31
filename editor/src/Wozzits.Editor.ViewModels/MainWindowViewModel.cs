@@ -278,7 +278,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // succeeded. Save is where that matters most -- we are about to persist a
         // state that does NOT contain the edit the user thinks they made.
         ReportDroppedEdits();
-        _editorSession?.SaveAssetGraph();
+        // The asset-graph save can legitimately REFUSE: while a compile is
+        // binding, the engine holds the session's draft and the session is busy
+        // (#313, B4-C1 — saving through it used to write an empty graph over the
+        // project's real one). Save All is an explicit user action, so a graph
+        // that did not persist has to say so; discarding this result is how the
+        // silent version looked from here.
+        if (_editorSession?.SaveAssetGraph() is { Ok: false } graphSave)
+        {
+            AppendEditorLog($"[editor] Asset graph NOT saved: {graphSave.Error}");
+        }
         // Save All is an explicit user action, so a scene that did not persist
         // has to say so — silence here reads as "saved" (typically: the viewport
         // was closed, so the engine holds no scene to write).
