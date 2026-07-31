@@ -2226,9 +2226,23 @@ static inline void* wz_get_instance_state(
 //
 // From on_init this allocates the block ON FIRST init and constructs T in place,
 // so T's default member initializers actually run (unlike a raw void* cast). On a
-// later init (hot reload) the preserved block is returned AS-IS — state survives
-// the reload and is NOT re-initialized. From a frame fact it just fetches the
-// existing block. Returns nullptr if no state is available.
+// later init (hot reload) a block whose LAYOUT STILL MATCHES is returned AS-IS —
+// state survives the reload and is NOT re-initialized. If sizeof(T)/alignof(T)
+// changed, the host resets the block to the new size (and warns), so a grown
+// struct costs its state rather than reading off the end of a stale block. From a
+// frame fact it just fetches the existing block. Returns nullptr if no state is
+// available.
+//
+// TWO RESIDUALS, both wanting WzBehaviorStateDesc + wz_alloc_instance_state_desc:
+//  1. A reset block starts ZEROED, not at T's default member initializers —
+//     nothing in the ABI lets this helper learn that a reset happened. If your
+//     defaults are load-bearing (a -1 "no target" sentinel, say), re-establish
+//     them in on_init rather than relying on the reset.
+//  2. A change that keeps sizeof(T) and alignof(T) identical — reordering fields,
+//     or swapping one for another of the same width — is INVISIBLE, and the
+//     preserved bytes are reinterpreted under the new layout. That is what
+//     layout_version is for: declare one and bump it when the shape changes
+//     without the size changing.
 //
 // T must be trivially copyable: instance state is plain data the host preserves
 // as raw bytes across reloads — it is never destructed, so no RAII members.
@@ -2238,12 +2252,35 @@ static inline T* wz_instance_state(const WzBehaviorInitFacts* facts)
     static_assert(std::is_trivially_copyable<T>::value,
         "behavior instance state must be trivially copyable (plain data)");
 
-    if (void* existing = wz_get_instance_state(facts)) {
-        return static_cast<T*>(existing);  // reuse preserved block (reload)
-    }
+    // EVERY init routes through the allocator, including a reload. The allocator
+    // is the only place that compares the requested layout against the preserved
+    // block: it returns a compatible block untouched, and resets an incompatible
+    // one (with a host warning). The old fast path returned whatever
+    // wz_get_instance_state handed back WITHOUT passing sizeof(T), so growing a
+    // state struct and hot-reloading gave the new code a block sized for the OLD
+    // struct -- every access to the new tail field ran off its end, with a
+    // correct guard sitting one branch away, unreached (#309 A2-C3).
+    const bool had_block = wz_get_instance_state(facts) != nullptr;
     void* raw = wz_alloc_instance_state(
         facts, (uint32_t)sizeof(T), (uint32_t)alignof(T));
-    return raw ? new (raw) T{} : nullptr;  // first init: construct (defaults run)
+    if (!raw) {
+        return nullptr;
+    }
+    if (had_block) {
+        // A reload. The allocator has already reconciled the layout: a compatible
+        // block comes back untouched (state survives, which is the feature), and
+        // an incompatible one has been freed and reallocated at the NEW size,
+        // zeroed, with a host warning. Either way it is correctly sized and must
+        // not be constructed over -- constructing would wipe a preserved block.
+        //
+        // Deliberate consequence: a RESET block starts ZEROED rather than at T's
+        // default member initializers, because nothing in the ABI lets this helper
+        // ask whether the reset happened. Do not try to infer it from pointer
+        // identity: the allocator readily hands back the just-freed address, so
+        // that test reports "preserved" for a block that was actually reset.
+        return static_cast<T*>(raw);
+    }
+    return new (raw) T{};   // first init: construct so defaults run
 }
 
 template <typename T>

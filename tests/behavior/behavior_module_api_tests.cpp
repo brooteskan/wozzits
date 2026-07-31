@@ -2361,3 +2361,119 @@ TEST(BehaviorModuleApi, GrainProgramFansOutPerParamCommands)
     EXPECT_EQ(wz_write_grain_program(&facts, 7u, nullptr, 1.0f), 0u);
     EXPECT_EQ(wz_write_grain_program(nullptr, 7u, &prog, 1.0f), 0u);
 }
+
+// ── A2-C3 (#309): wz_instance_state<T> must not hand back a stale-sized block ──
+//
+// The host has a correct layout guard: allocate_instance_state compares the
+// requested (size, alignment, layout_version) against the preserved block and
+// resets it (with a warning) on a mismatch. The helper used to short-circuit past
+// it -- if get_instance_state returned anything, it was cast to T* WITHOUT ever
+// passing sizeof(T) -- so growing a state struct and hot-reloading gave the new
+// code a block sized for the OLD struct, and every access to the new tail field
+// ran off its end.
+//
+// These drive the helper against the REAL host storage, not a mock, so the
+// compatibility semantics under test are the shipping ones.
+namespace
+{
+    struct InstanceStateHost
+    {
+        wz::engine::assets::BehaviorStateStorage storage;
+        std::string binding = "node:1#behavior";
+
+        WzBehaviorInitFacts facts()
+        {
+            WzBehaviorInitFacts f{};
+            f.behavior_state_user = this;
+            f.alloc_instance_state =
+                [](void* user, uint32_t size, uint32_t alignment) -> void*
+                {
+                    auto* self = static_cast<InstanceStateHost*>(user);
+                    auto* block = self->storage.allocate_instance_state(
+                        self->binding, size, alignment);
+                    return block ? block->data : nullptr;
+                };
+            f.get_instance_state =
+                [](void* user) -> void*
+                {
+                    auto* self = static_cast<InstanceStateHost*>(user);
+                    auto* block =
+                        self->storage.find_instance_state(self->binding);
+                    return block ? block->data : nullptr;
+                };
+            return f;
+        }
+
+        uint32_t block_size()
+        {
+            auto* block = storage.find_instance_state(binding);
+            return block ? block->size : 0u;
+        }
+    };
+
+    struct StateV1
+    {
+        uint32_t a = 7u;
+    };
+
+    struct StateV2          // the same behavior after the author grows its state
+    {
+        uint32_t a = 7u;
+        uint32_t b = 9u;
+    };
+}
+
+TEST(BehaviorModuleApi, InstanceStateSurvivesReloadWhenLayoutIsUnchanged)
+{
+    InstanceStateHost host;
+    WzBehaviorInitFacts facts = host.facts();
+
+    StateV1* first = wz_instance_state<StateV1>(&facts);
+    ASSERT_NE(first, nullptr);
+    EXPECT_EQ(first->a, 7u);        // default member initializer ran
+    first->a = 42u;                 // ...then the behavior wrote to it
+
+    // A reload with an UNCHANGED layout must preserve the block verbatim: this is
+    // the feature, and the fix must not cost it.
+    StateV1* again = wz_instance_state<StateV1>(&facts);
+    ASSERT_NE(again, nullptr);
+    EXPECT_EQ(again, first);
+    EXPECT_EQ(again->a, 42u);
+    EXPECT_EQ(host.block_size(), sizeof(StateV1));
+}
+
+TEST(BehaviorModuleApi, InstanceStateBlockGrowsWhenTheStateStructGrows)
+{
+    InstanceStateHost host;
+    WzBehaviorInitFacts facts = host.facts();
+
+    StateV1* v1 = wz_instance_state<StateV1>(&facts);
+    ASSERT_NE(v1, nullptr);
+    v1->a = 42u;
+    ASSERT_EQ(host.block_size(), sizeof(StateV1));
+
+    // The author grew the struct and hot-reloaded. The block MUST be resized --
+    // before the fix it came back at sizeof(StateV1) and every read of `b` was
+    // off the end of the allocation.
+    StateV2* v2 = wz_instance_state<StateV2>(&facts);
+    ASSERT_NE(v2, nullptr);
+    EXPECT_EQ(host.block_size(), sizeof(StateV2))
+        << "reload handed back a block sized for the OLD struct";
+
+    // A reset block comes back ZEROED, not at StateV2's default member
+    // initializers. Documented and deliberate: nothing in the ABI lets the helper
+    // learn that the host reset the block, and inferring it from pointer identity
+    // does NOT work -- the allocator readily returns the just-freed address, which
+    // is exactly what this assertion caught when the fix first tried it. The point
+    // is that the old bytes are gone and the block is the right size.
+    EXPECT_EQ(v2->a, 0u);
+    EXPECT_EQ(v2->b, 0u);
+}
+
+TEST(BehaviorModuleApi, InstanceStateReturnsNullWhenTheHostRefuses)
+{
+    WzBehaviorInitFacts facts{};   // no callbacks wired
+    EXPECT_EQ(wz_instance_state<StateV1>(&facts), nullptr);
+    EXPECT_EQ(wz_instance_state<StateV1>(
+        static_cast<const WzBehaviorInitFacts*>(nullptr)), nullptr);
+}
