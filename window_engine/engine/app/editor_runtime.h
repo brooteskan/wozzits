@@ -370,6 +370,53 @@ namespace wz::app
     class EditorRuntimeControl
     {
     public:
+        // ─── Shutdown interlock (issue #313, B4-C12) ────────────────────────
+        // wz_host_runtime_stop joins the engine thread and then DELETES the
+        // runtime, taking this object's mutex_ and cv_ with it. But join()
+        // only proves the ENGINE thread is gone — a different owner thread can
+        // still be blocked inside one of the seven blocking handshakes, and
+        // that is the normal shape rather than a corner case: the editor runs
+        // the graph bind on a .NET threadpool thread so its UI stays live, and
+        // the UI thread is the one that calls stop.
+        //
+        // Every blocking verb opens a CallerScope. stop() calls begin_close()
+        // and then wait_for_callers_to_exit() before the delete, so it cannot
+        // return while a call is still inside.
+        //
+        // WHAT THIS DOES NOT COVER, and cannot: a call that has not STARTED
+        // when stop() runs. The drain sees no caller, the object is destroyed,
+        // and the late call then dereferences a dangling handle. That is the
+        // ordinary rule for any handle-based C API — the host must not begin a
+        // verb concurrently with stop — and no interlock living inside the
+        // object can fix it, because checking the flag already means touching
+        // freed memory. In the editor this holds: the graph pane serialises its
+        // own operations and stop runs from the UI thread at shutdown.
+        class CallerScope
+        {
+        public:
+            explicit CallerScope(EditorRuntimeControl& control) noexcept;
+            ~CallerScope();
+
+            CallerScope(const CallerScope&) = delete;
+            CallerScope& operator=(const CallerScope&) = delete;
+
+            // False once begin_close() has run: the verb must return its
+            // not-running failure immediately, touching nothing else.
+            [[nodiscard]] bool admitted() const noexcept { return admitted_; }
+
+        private:
+            EditorRuntimeControl* control_ = nullptr;
+            bool admitted_ = false;
+        };
+
+        // Owner thread, during teardown: refuse new callers and wake the ones
+        // already inside. Idempotent.
+        void begin_close();
+
+        // Owner thread, during teardown: block until every CallerScope has been
+        // released. MUST be called before destroying this object.
+        void wait_for_callers_to_exit();
+
         void request_stop();
         [[nodiscard]] bool stop_requested() const;
 
@@ -767,6 +814,13 @@ namespace wz::app
         [[nodiscard]] bool finished() const;
 
     private:
+        // Deliberately NOT guarded by mutex_ and NOT signalled through cv_: the
+        // whole point is that a departing caller's last act must not touch a
+        // member that stop() may already have destroyed. See CallerScope's
+        // destructor and wait_for_callers_to_exit().
+        std::atomic<int> active_callers_{ 0 };
+        std::atomic<bool> closing_{ false };
+
         mutable std::mutex mutex_;
         std::condition_variable cv_;
         std::atomic_bool stop_{ false };

@@ -14,6 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -675,5 +676,122 @@ TEST(EditorRuntimeControl, ConcurrentAddChildCallersEachGetTheirOwnMintedId)
                 << "round " << round << ", caller " << i
                 << " got the id minted for another caller";
         }
+    }
+}
+
+// ─── Shutdown interlock (issue #313, B4-C12) ───────────────────────────────
+// wz_host_runtime_stop joins the engine thread and then deletes the runtime,
+// taking this object with it. join() only proves the ENGINE thread is gone; a
+// different owner thread can still be unwinding out of a blocking verb, and
+// that is the normal shape — the editor runs the graph bind on a .NET
+// threadpool thread while the UI thread is the one that calls stop.
+//
+// NOTE ON WHAT IS AND IS NOT ASSERTABLE HERE. wait_for_callers_to_exit()
+// guarantees no thread is still INSIDE the control when it returns; it says
+// nothing about statements a caller thread runs afterwards. A first draft of
+// these tests asserted "the caller's own done-flag is set by the time the drain
+// returns", which races legitimately: the flag is stored after the CallerScope
+// has already been released. What is pinned below instead is the property the
+// delete actually depends on — the drain terminates, and every caller leaves
+// through the not-running path with its authored state intact.
+
+TEST(EditorRuntimeControl, BeginCloseReleasesAParkedCallerSoTheDrainTerminates)
+{
+    // A caller parked in a blocking verb with NOTHING servicing it — the state
+    // wz_host_runtime_stop finds after join() when the editor's threadpool
+    // thread is mid-bind. begin_close() is what releases it; without that the
+    // drain below would never return.
+    auto control = std::make_unique<EditorRuntimeControl>();
+
+    AssetGraphCompileResult report;
+    wz::asset::AssetGraphDraft draft = make_draft(3);
+    std::thread caller([&] { report = control->bind_asset_graph(draft); });
+
+    // Let the caller reach the wait. No handshake to poll on, so this is a
+    // sleep; the assertions below do not depend on it being exact.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    control->begin_close();
+    control->wait_for_callers_to_exit();
+    caller.join();
+
+    EXPECT_FALSE(report.ok)
+        << "the parked caller must leave through the not-running path";
+    EXPECT_EQ(draft.nodes.size(), 3u)
+        << "and must get its authored draft back, not a moved-from husk";
+
+    // Stands in for wz_host_runtime_stop's `delete runtime`: after the drain,
+    // destroying the control must be safe.
+    control.reset();
+}
+
+TEST(EditorRuntimeControl, ACallerArrivingAfterBeginCloseIsRefusedNotBlocked)
+{
+    // The other half: once closing, a verb must return its not-running failure
+    // immediately rather than parking on a cv nobody will notify again. If this
+    // regressed the test would hang rather than fail, which is itself the
+    // signal.
+    EditorRuntimeControl control;
+    control.begin_close();
+
+    wz::asset::AssetGraphDraft draft = make_draft(4);
+    const auto report = control.bind_asset_graph(draft);
+    EXPECT_FALSE(report.ok);
+    EXPECT_EQ(draft.nodes.size(), 4u)
+        << "a refusal must not cost the caller its graph";
+
+    const auto added = control.add_child("parent");
+    EXPECT_FALSE(added.ok);
+
+    control.wait_for_callers_to_exit();  // nobody inside: returns immediately
+}
+
+TEST(EditorRuntimeControl, DestroyingRightAfterTheDrainIsSafeUnderConcurrentCallers)
+{
+    // Stress rather than a crisp assertion, and worth being honest about that:
+    // the failure this guards is a use-after-free, which shows up as a crash or
+    // a debug-CRT heap assert rather than a failed EXPECT. Several owner threads
+    // call while the owner closes and destroys underneath them, many rounds. The
+    // countable part (every caller returned) is checked after join, where it is
+    // race-free.
+    constexpr int kCallers = 4;
+    for (int round = 0; round < 25; ++round) {
+        auto control = std::make_unique<EditorRuntimeControl>();
+        std::atomic_int returned{ 0 };
+
+        std::vector<std::thread> callers;
+        for (int i = 0; i < kCallers; ++i) {
+            callers.emplace_back([&, i] {
+                if (i % 2 == 0) {
+                    wz::asset::AssetGraphDraft d = make_draft(2);
+                    auto r = control->bind_asset_graph(d);
+                    (void)r;
+                }
+                else {
+                    auto r = control->add_child("p");
+                    (void)r;
+                }
+                returned.fetch_add(1, std::memory_order_acq_rel);
+            });
+        }
+
+        // Every caller must be INSIDE before the owner closes. The interlock
+        // covers calls already in flight; it cannot cover a call that has not
+        // started yet, and neither can any handle-based C API (that is the
+        // host's use-after-free, not ours). Nothing services these verbs, so
+        // after this sleep all four are parked in their waits.
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        control->begin_close();
+        control->wait_for_callers_to_exit();
+        // Destroy while the caller threads are still winding down. This is the
+        // point of the test: the drain must have made it safe.
+        control.reset();
+
+        for (std::thread& t : callers) {
+            t.join();
+        }
+        ASSERT_EQ(returned.load(std::memory_order_acquire), kCallers)
+            << "round " << round << ": a caller never returned";
     }
 }

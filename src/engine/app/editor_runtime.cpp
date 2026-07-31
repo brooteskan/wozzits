@@ -205,10 +205,11 @@ namespace wz::app
     AssetGraphCompileResult EditorRuntimeControl::bind_asset_graph(
         wz::asset::AssetGraphDraft& draft)
     {
+        const CallerScope scope(*this);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock,
             [this] { return !asset_graph_cycle_busy_ || finished_; });
-        if (finished_) {
+        if (!scope.admitted() || finished_) {
             return bind_failed("engine runtime is not running");
         }
 
@@ -972,9 +973,10 @@ namespace wz::app
     wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(
         const wz::scene::AuthoredEntityId& parent_id)
     {
+        const CallerScope scope(*this);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] { return !add_cycle_busy_ || finished_; });
-        if (finished_) {
+        if (!scope.admitted() || finished_) {
             return wz::engine::assets::SceneAddChildResult{
                 .ok = false,
                 .new_id = {},
@@ -1030,9 +1032,10 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& root_node_id,
         const wz::fs::Path& out_path)
     {
+        const CallerScope scope(*this);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] { return !export_cycle_busy_ || finished_; });
-        if (finished_) {
+        if (!scope.admitted() || finished_) {
             return false;  // runtime is not running — nothing to export
         }
 
@@ -1081,9 +1084,10 @@ namespace wz::app
 
     bool EditorRuntimeControl::open_scene(const wz::fs::Path& scene_path)
     {
+        const CallerScope scope(*this);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] { return !open_scene_cycle_busy_ || finished_; });
-        if (finished_) {
+        if (!scope.admitted() || finished_) {
             return false;  // runtime is not running
         }
 
@@ -1131,10 +1135,11 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id,
         const std::string& module)
     {
+        const CallerScope scope(*this);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(
             lock, [this] { return !add_behavior_cycle_busy_ || finished_; });
-        if (finished_) {
+        if (!scope.admitted() || finished_) {
             return wz::engine::assets::SceneAddBehaviorResult{
                 .ok = false,
                 .binding_id = {},
@@ -1194,9 +1199,10 @@ namespace wz::app
     std::vector<wz::engine::assets::SceneNodeAsset>
     EditorRuntimeControl::request_grafted_scene_nodes()
     {
+        const CallerScope scope(*this);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] { return !grafted_cycle_busy_ || finished_; });
-        if (finished_) {
+        if (!scope.admitted() || finished_) {
             return {};  // no runtime — caller falls back to its JSON tree
         }
 
@@ -1242,9 +1248,10 @@ namespace wz::app
     std::vector<wz::engine::assets::SceneNodeAsset>
     EditorRuntimeControl::request_scene_nodes()
     {
+        const CallerScope scope(*this);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] { return !scene_nodes_cycle_busy_ || finished_; });
-        if (finished_) {
+        if (!scope.admitted() || finished_) {
             return {};
         }
 
@@ -1283,6 +1290,51 @@ namespace wz::app
             has_scene_nodes_result_ = true;
         }
         cv_.notify_all();
+    }
+
+    EditorRuntimeControl::CallerScope::CallerScope(
+        EditorRuntimeControl& control) noexcept
+        : control_(&control)
+    {
+        // Increment FIRST, then test. begin_close() stores closing_ and then
+        // reads the count, so an increment landing before that store is
+        // guaranteed visible to the drain (it waits for us), and one landing
+        // after sees closing_ and backs straight out. Sequential consistency on
+        // both sides: this is a teardown path, not a hot one.
+        control_->active_callers_.fetch_add(1);
+        admitted_ = !control_->closing_.load();
+    }
+
+    EditorRuntimeControl::CallerScope::~CallerScope()
+    {
+        // THIS MUST BE THE LAST TOUCH OF THE CONTROL BY THIS THREAD, which is
+        // why every verb declares its CallerScope BEFORE its unique_lock: the
+        // scope then destructs AFTER the lock has been released. Reverse the
+        // declarations and stop() can delete between this decrement and
+        // ~unique_lock, so the lock's own unlock touches a freed mutex —
+        // exactly the bug this exists to prevent, one level down.
+        control_->active_callers_.fetch_sub(1);
+    }
+
+    void EditorRuntimeControl::begin_close()
+    {
+        closing_.store(true);
+        // Wake anyone already inside; finished_ is what their wait predicates
+        // test, and it is idempotent.
+        mark_finished();
+    }
+
+    void EditorRuntimeControl::wait_for_callers_to_exit()
+    {
+        // A spin-with-yield rather than a condition variable ON PURPOSE. The
+        // signal a departing caller sends must not touch this object, so it is
+        // a bare atomic decrement and nothing else — there is no lock to wait
+        // under and no cv to notify. Only the thread that is about to delete
+        // waits here, and begin_close() has already unblocked every caller, so
+        // this is bounded by how long a verb takes to unwind, not by the engine.
+        while (active_callers_.load() != 0) {
+            std::this_thread::yield();
+        }
     }
 
     void EditorRuntimeControl::mark_finished()

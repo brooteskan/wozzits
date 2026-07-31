@@ -1537,6 +1537,14 @@ extern "C"
         if (runtime->thread.joinable()) {
             runtime->thread.join();
         }
+        // join() proves the ENGINE thread is gone. It proves nothing about an
+        // owner thread still unwinding out of a blocking verb — and the editor
+        // has more than one owner thread (it runs the graph bind on a .NET
+        // threadpool thread so its UI stays live, and the UI thread is the one
+        // calling stop). Deleting under such a caller frees the mutex and
+        // condition variable it is about to touch on its way out. #313, B4-C12.
+        runtime->control.begin_close();
+        runtime->control.wait_for_callers_to_exit();
         delete runtime;
     }
 
