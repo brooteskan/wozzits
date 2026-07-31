@@ -3,9 +3,19 @@
 #include <platform/win32/ri_win32.h>
 #include <malloc.h>
 
+#include <atomic>
+#include <cstdint>
+
 namespace
 {
     HWND g_input_hwnd = nullptr;
+
+    // Raw-input transitions lost because the event queue was full. A dropped
+    // button edge is not cosmetic -- input.cpp latches mouse.down and clears it
+    // only on a received UP, so a lost UP sticks that button down until another
+    // one arrives. The drop-telemetry hook here used to be commented out
+    // (#313, B4-S4); it is cheap and this is the one place that knows.
+    std::atomic<uint64_t> g_dropped_input_events{ 0 };
 }
 
 namespace
@@ -103,6 +113,82 @@ namespace wz::platform::win32
 
 namespace wz::platform::win32
 {
+    uint64_t ri_dropped_input_events()
+    {
+        return g_dropped_input_events.load(std::memory_order_relaxed);
+    }
+
+    std::size_t ri_translate_mouse(
+        const RAWMOUSE& m,
+        wz::event::Event* out,
+        std::size_t capacity)
+    {
+        if (!out || capacity == 0) {
+            return 0;
+        }
+
+        std::size_t count = 0;
+        const auto emit = [&](wz::event::Event::Type type) -> wz::event::Event*
+        {
+            if (count >= capacity) {
+                return nullptr;
+            }
+            wz::event::Event& e = out[count++];
+            e = wz::event::Event{};
+            e.source = wz::event::Event::Source::Platform;
+            e.category = wz::event::Event::Category::Input;
+            e.timestamp = wz::time::TimeSource::now_ticks();
+            e.type = type;
+            return &e;
+        };
+
+        // Motion. Independent of everything else in the packet -- this is the
+        // one that used to shadow the wheel and button branches.
+        if (m.lLastX != 0 || m.lLastY != 0) {
+            if (wz::event::Event* e = emit(wz::event::Event::Type::MouseMove)) {
+                e->mouse_move.dx = m.lLastX;
+                e->mouse_move.dy = m.lLastY;
+            }
+        }
+
+        // Wheel.
+        if (m.usButtonFlags & RI_MOUSE_WHEEL) {
+            if (wz::event::Event* e = emit(wz::event::Event::Type::MouseWheel)) {
+                e->mouse_wheel.delta = static_cast<int16_t>(m.usButtonData);
+            }
+        }
+
+        // Buttons. EVERY edge set in this packet gets its own event: the flags
+        // genuinely OR together (a click faster than one report interval sets
+        // DOWN and UP at once, routine on a high-polling-rate mouse), and the
+        // old chained else-if kept only whichever was tested first.
+        struct ButtonEdge
+        {
+            USHORT flag;
+            uint8_t button;
+            bool pressed;
+        };
+        static constexpr ButtonEdge kEdges[] = {
+            { RI_MOUSE_LEFT_BUTTON_DOWN, 0, true },
+            { RI_MOUSE_LEFT_BUTTON_UP, 0, false },
+            { RI_MOUSE_RIGHT_BUTTON_DOWN, 1, true },
+            { RI_MOUSE_RIGHT_BUTTON_UP, 1, false },
+        };
+        for (const ButtonEdge& edge : kEdges) {
+            if ((m.usButtonFlags & edge.flag) == 0) {
+                continue;
+            }
+            if (wz::event::Event* e =
+                    emit(wz::event::Event::Type::MouseButton))
+            {
+                e->mouse_button.button = edge.button;
+                e->mouse_button.pressed = edge.pressed;
+            }
+        }
+
+        return count;
+    }
+
     void ri_process_input(LPARAM lParam)
     {
 
@@ -133,75 +219,23 @@ namespace wz::platform::win32
 
         if (raw->header.dwType == RIM_TYPEMOUSE)
         {
-            const RAWMOUSE& m = raw->data.mouse;
+            // One packet can carry motion + wheel + several button edges. Emit
+            // ALL of them (#313, B4-C6/B4-C15) -- the old if/else-if chain kept
+            // at most one, and a dropped button UP latches that button down
+            // forever in input.cpp.
+            wz::event::Event events[kRawMouseMaxEvents];
+            const std::size_t count =
+                ri_translate_mouse(raw->data.mouse, events, kRawMouseMaxEvents);
 
-            wz::event::Event e{};
-            e.source = wz::event::Event::Source::Platform;
-            e.category = wz::event::Event::Category::Input;
-            e.timestamp = wz::time::TimeSource::now_ticks();
-
-            bool pushed = false;
-
-            // -------------------------
-            // 1. Mouse movement (highest priority)
-            // -------------------------
-            if (m.lLastX != 0 || m.lLastY != 0)
-            {
-                e.type = wz::event::Event::Type::MouseMove;
-                e.mouse_move.dx = m.lLastX;
-                e.mouse_move.dy = m.lLastY;
-
-                pushed = wz::event::event_queue.try_push(e);
+            for (std::size_t i = 0; i < count; ++i) {
+                if (!wz::event::event_queue.try_push(events[i])) {
+                    // The queue is full, so this transition is LOST. For a
+                    // button edge that means a stuck latch, so it is worth more
+                    // than the commented-out counter that used to live here
+                    // (#313, B4-S4).
+                    ++g_dropped_input_events;
+                }
             }
-
-            // -------------------------
-            // 2. Wheel (mutually exclusive with movement per packet in practice)
-            // -------------------------
-            else if (m.usButtonFlags & RI_MOUSE_WHEEL)
-            {
-                e.type = wz::event::Event::Type::MouseWheel;
-                e.mouse_wheel.delta = (int16_t)m.usButtonData;
-
-                pushed = wz::event::event_queue.try_push(e);
-            }
-
-            // -------------------------
-            // 3. Buttons (may OR together in same packet, but still ONE event)
-            // -------------------------
-            else if (m.usButtonFlags & (
-                RI_MOUSE_LEFT_BUTTON_DOWN |
-                RI_MOUSE_LEFT_BUTTON_UP |
-                RI_MOUSE_RIGHT_BUTTON_DOWN |
-                RI_MOUSE_RIGHT_BUTTON_UP))
-            {
-                e.type = wz::event::Event::Type::MouseButton;
-
-                if (m.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN)
-                {
-                    e.mouse_button.button = 0;
-                    e.mouse_button.pressed = true;
-                }
-                else if (m.usButtonFlags & RI_MOUSE_LEFT_BUTTON_UP)
-                {
-                    e.mouse_button.button = 0;
-                    e.mouse_button.pressed = false;
-                }
-                else if (m.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN)
-                {
-                    e.mouse_button.button = 1;
-                    e.mouse_button.pressed = true;
-                }
-                else if (m.usButtonFlags & RI_MOUSE_RIGHT_BUTTON_UP)
-                {
-                    e.mouse_button.button = 1;
-                    e.mouse_button.pressed = false;
-                }
-
-                pushed = wz::event::event_queue.try_push(e);
-            }
-            // optional debug hook (later useful)
-            // if (!pushed) { drop counter / telemetry 
-            (void)pushed;
         }
 
         else if (raw->header.dwType == RIM_TYPEKEYBOARD)
