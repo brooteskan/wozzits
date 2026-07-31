@@ -20,6 +20,42 @@ namespace wz::app
 {
     namespace
     {
+        // Holds a blocking handshake's cycle open until the caller has TAKEN
+        // its result, then wakes the next caller (#313, B4-C2 — see the
+        // *_cycle_busy_ comment in editor_runtime.h for what goes wrong
+        // without it).
+        //
+        // A guard rather than an explicit clear at each return because these
+        // functions have three exits apiece — success, engine-stopped-before-
+        // claiming, engine-stopped-mid-flight — and leaking the flag on any one
+        // of them wedges that verb for the rest of the session, which is a
+        // worse failure than the bug being fixed.
+        //
+        // Runs while the caller's unique_lock is still held: the lock is
+        // declared before the guard, so it is destroyed after it. Notifying
+        // under the lock is intentional and harmless here.
+        struct HandshakeCycle
+        {
+            bool& busy;
+            std::condition_variable& cv;
+
+            HandshakeCycle(bool& busy_flag, std::condition_variable& cond)
+                : busy(busy_flag)
+                , cv(cond)
+            {
+                busy = true;
+            }
+
+            HandshakeCycle(const HandshakeCycle&) = delete;
+            HandshakeCycle& operator=(const HandshakeCycle&) = delete;
+
+            ~HandshakeCycle()
+            {
+                busy = false;
+                cv.notify_all();
+            }
+        };
+
         AssetGraphCompileResult bind_failed(const std::string& message)
         {
             AssetGraphCompileResult result;
@@ -171,11 +207,12 @@ namespace wz::app
     {
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock,
-            [this] { return !has_asset_graph_request_ || finished_; });
+            [this] { return !asset_graph_cycle_busy_ || finished_; });
         if (finished_) {
             return bind_failed("engine runtime is not running");
         }
 
+        const HandshakeCycle cycle(asset_graph_cycle_busy_, cv_);
         pending_asset_graph_draft_ = std::move(draft);
         has_asset_graph_request_ = true;
         has_asset_graph_result_ = false;
@@ -936,7 +973,7 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& parent_id)
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !has_add_request_ || finished_; });
+        cv_.wait(lock, [this] { return !add_cycle_busy_ || finished_; });
         if (finished_) {
             return wz::engine::assets::SceneAddChildResult{
                 .ok = false,
@@ -946,6 +983,7 @@ namespace wz::app
         }
 
         pending_add_parent_ = parent_id;
+        const HandshakeCycle cycle(add_cycle_busy_, cv_);
         has_add_request_ = true;
         has_add_result_ = false;
         cv_.notify_all();
@@ -993,13 +1031,14 @@ namespace wz::app
         const wz::fs::Path& out_path)
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !has_export_request_ || finished_; });
+        cv_.wait(lock, [this] { return !export_cycle_busy_ || finished_; });
         if (finished_) {
             return false;  // runtime is not running — nothing to export
         }
 
         pending_export_root_ = root_node_id;
         pending_export_path_ = out_path;
+        const HandshakeCycle cycle(export_cycle_busy_, cv_);
         has_export_request_ = true;
         has_export_result_ = false;
         cv_.notify_all();
@@ -1043,12 +1082,13 @@ namespace wz::app
     bool EditorRuntimeControl::open_scene(const wz::fs::Path& scene_path)
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !has_open_scene_request_ || finished_; });
+        cv_.wait(lock, [this] { return !open_scene_cycle_busy_ || finished_; });
         if (finished_) {
             return false;  // runtime is not running
         }
 
         pending_open_scene_path_ = scene_path;
+        const HandshakeCycle cycle(open_scene_cycle_busy_, cv_);
         has_open_scene_request_ = true;
         has_open_scene_result_ = false;
         cv_.notify_all();
@@ -1093,7 +1133,7 @@ namespace wz::app
     {
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(
-            lock, [this] { return !has_add_behavior_request_ || finished_; });
+            lock, [this] { return !add_behavior_cycle_busy_ || finished_; });
         if (finished_) {
             return wz::engine::assets::SceneAddBehaviorResult{
                 .ok = false,
@@ -1104,6 +1144,7 @@ namespace wz::app
 
         pending_add_behavior_node_ = node_id;
         pending_add_behavior_module_ = module;
+        const HandshakeCycle cycle(add_behavior_cycle_busy_, cv_);
         has_add_behavior_request_ = true;
         has_add_behavior_result_ = false;
         cv_.notify_all();
@@ -1154,11 +1195,12 @@ namespace wz::app
     EditorRuntimeControl::request_grafted_scene_nodes()
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !has_grafted_request_ || finished_; });
+        cv_.wait(lock, [this] { return !grafted_cycle_busy_ || finished_; });
         if (finished_) {
             return {};  // no runtime — caller falls back to its JSON tree
         }
 
+        const HandshakeCycle cycle(grafted_cycle_busy_, cv_);
         has_grafted_request_ = true;
         has_grafted_result_ = false;
         cv_.notify_all();
@@ -1201,11 +1243,12 @@ namespace wz::app
     EditorRuntimeControl::request_scene_nodes()
     {
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !has_scene_nodes_request_ || finished_; });
+        cv_.wait(lock, [this] { return !scene_nodes_cycle_busy_ || finished_; });
         if (finished_) {
             return {};
         }
 
+        const HandshakeCycle cycle(scene_nodes_cycle_busy_, cv_);
         has_scene_nodes_request_ = true;
         has_scene_nodes_result_ = false;
         cv_.notify_all();

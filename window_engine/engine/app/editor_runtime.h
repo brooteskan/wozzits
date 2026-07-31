@@ -778,6 +778,42 @@ namespace wz::app
         std::vector<SceneletCatalogEntry> scenelets_;  // guarded by mutex_
         std::vector<std::string> dropped_edits_;  // guarded by mutex_
         std::size_t dropped_edits_discarded_ = 0;  // guarded by mutex_
+        // ─── The blocking handshakes, and the *_cycle_busy_ flags ───────────
+        // There are seven request/response handshakes below (asset-graph bind,
+        // add-child, add-behavior, grafted nodes, scene nodes, export subtree,
+        // open scene). Each is: the caller posts a request and blocks; the
+        // engine thread claims it, does the work OUTSIDE the lock, publishes a
+        // result; the caller wakes and takes it.
+        //
+        // They all share mutex_ and cv_, so a publish wakes EVERY waiter and
+        // nothing in the payload says whose answer it is. That is only safe if
+        // at most one caller is inside a given verb's cycle at a time, and the
+        // entry gate used to test the wrong thing: it waited for
+        // `!has_X_request_`, which goes false the moment the ENGINE CLAIMS the
+        // request — long before the result is published. A second caller
+        // admitted in that gap would clear has_X_result_ as part of posting,
+        // SWALLOWING the first caller's publish (that caller then waits
+        // forever), and either caller could consume the other's result.
+        // Measured, both symptoms, at two concurrent callers: #313, B4-C2.
+        //
+        // *_cycle_busy_ is the correct gate — true from the moment a caller
+        // posts until it has TAKEN its result, i.e. the whole cycle rather than
+        // just the request half. It is cleared on every exit path (including
+        // the stopped-engine ones) by a scope guard in the .cpp, which also
+        // wakes the next caller. `finished_` still short-circuits everything,
+        // so a stopping engine never leaves a caller blocked on a busy cycle.
+        //
+        // These are NOT one shared flag: the verbs are independent and an
+        // engine-side bind takes seconds, so one flag would stall an unrelated
+        // add-child on the UI thread for the duration of a compile.
+        bool asset_graph_cycle_busy_ = false;
+        bool add_cycle_busy_ = false;
+        bool add_behavior_cycle_busy_ = false;
+        bool grafted_cycle_busy_ = false;
+        bool scene_nodes_cycle_busy_ = false;
+        bool export_cycle_busy_ = false;
+        bool open_scene_cycle_busy_ = false;
+
         // #194: the asset-GRAPH bind handshake (bind_asset_graph /
         // service_pending_asset_graph_bind). Named for the graph so they read
         // distinctly from the scene-edit queues + handshakes below.

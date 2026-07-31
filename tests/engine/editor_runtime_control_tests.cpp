@@ -12,6 +12,7 @@
 #include <engine/app/editor_runtime.h>
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <stdexcept>
 #include <string>
@@ -459,4 +460,220 @@ TEST(EditorRuntimeControl, DroppedEditRecordIsBoundedButReportsTheOverflow)
         std::string::npos) << drained.back();
 
     EXPECT_TRUE(control.take_dropped_edits().empty());
+}
+
+// ─── Concurrent owners (issue #313, B4-C2, and the B4-T1 test gap) ──────────
+// Every other threaded test in this file uses exactly ONE owner thread, which
+// is why the seam's actual purpose went unpinned: the seven blocking handshakes
+// share one mutex and one condition variable, a publish wakes EVERY waiter, and
+// nothing in the payload says whose answer it is. Measured before the fix, at
+// two concurrent callers: callers received each other's results, and callers
+// hung forever with every request already serviced.
+//
+// The editor really does have more than one owner thread — it runs the graph
+// bind on a .NET threadpool thread (Task.Run) so its UI stays live.
+//
+// THESE TESTS RUN MANY ROUNDS ON PURPOSE. A single round of four callers is not
+// a regression pin: the first version of this test ran one round and PASSED
+// with the fix neutered, because the wake order that exposes the bug is a race
+// and Windows usually wakes the longest waiter first. Reverting the fix now
+// fails these within a few rounds. If this ever gets "simplified" back to one
+// round, it stops testing anything.
+//
+// A round that hangs is released through mark_finished() rather than hanging
+// the suite: every handshake wait has `|| finished_`, so a stalled caller
+// returns a typed failure and the assertions report a real failure.
+namespace
+{
+    constexpr int kConcurrentOwners = 4;
+    constexpr int kConcurrentRounds = 40;
+    constexpr auto kOwnerDeadline = std::chrono::seconds(10);
+
+    // Releases every blocked caller if they do not all return in time.
+    struct OwnerWatchdog
+    {
+        EditorRuntimeControl& control;
+        const std::atomic_int& finished;
+        std::atomic_bool fired{ false };
+        std::atomic_bool done{ false };
+        std::thread thread;
+
+        OwnerWatchdog(EditorRuntimeControl& c, const std::atomic_int& f)
+            : control(c)
+            , finished(f)
+        {
+            thread = std::thread([this] {
+                const auto deadline =
+                    std::chrono::steady_clock::now() + kOwnerDeadline;
+                while (!done.load(std::memory_order_acquire)) {
+                    if (finished.load(std::memory_order_acquire)
+                        >= kConcurrentOwners)
+                    {
+                        return;
+                    }
+                    if (std::chrono::steady_clock::now() > deadline) {
+                        fired.store(true, std::memory_order_release);
+                        control.mark_finished();
+                        return;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                }
+            });
+        }
+
+        ~OwnerWatchdog()
+        {
+            done.store(true, std::memory_order_release);
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+    };
+}
+
+TEST(EditorRuntimeControl, ConcurrentBindCallersEachGetTheirOwnDraftAndReport)
+{
+    for (int round = 0; round < kConcurrentRounds; ++round) {
+        EditorRuntimeControl control;
+        std::atomic_bool engine_running{ true };
+        std::atomic_int finished{ 0 };
+
+        // Engine thread: tag the report with the draft's size, so a caller can
+        // tell WHOSE bind came back. The sleep widens the claimed-but-not-yet-
+        // published window that a second caller used to be admitted into.
+        std::thread engine([&] {
+            while (engine_running.load(std::memory_order_acquire)) {
+                control.service_pending_asset_graph_bind(
+                    [](wz::asset::AssetGraphDraft& draft) {
+                        std::this_thread::sleep_for(
+                            std::chrono::microseconds(300));
+                        AssetGraphCompileResult report;
+                        report.ok = true;
+                        report.diagnostics.push_back(
+                            wz::asset::AssetGraphDraftValidationMessage{
+                                .severity = wz::asset::
+                                    AssetGraphDraftValidationSeverity::Info,
+                                .node =
+                                    wz::asset::INVALID_ASSET_GRAPH_DRAFT_NODE,
+                                .message = std::to_string(draft.nodes.size()),
+                            });
+                        return report;
+                    });
+                std::this_thread::yield();
+            }
+        });
+
+        // Unique, non-zero node count per caller: 2, 4, 6, 8.
+        std::vector<wz::asset::AssetGraphDraft> drafts;
+        std::vector<AssetGraphCompileResult> reports(kConcurrentOwners);
+        for (int i = 0; i < kConcurrentOwners; ++i) {
+            drafts.push_back(make_draft(static_cast<size_t>((i + 1) * 2)));
+        }
+
+        bool hung = false;
+        {
+            OwnerWatchdog watchdog(control, finished);
+            std::vector<std::thread> owners;
+            for (int i = 0; i < kConcurrentOwners; ++i) {
+                owners.emplace_back([&, i] {
+                    // Stagger so callers land at different points of each
+                    // other's cycles rather than all piling on the entry gate.
+                    std::this_thread::sleep_for(
+                        std::chrono::microseconds(i * 60));
+                    reports[static_cast<size_t>(i)] = control.bind_asset_graph(
+                        drafts[static_cast<size_t>(i)]);
+                    finished.fetch_add(1, std::memory_order_acq_rel);
+                });
+            }
+            for (std::thread& owner : owners) {
+                owner.join();
+            }
+            hung = watchdog.fired.load(std::memory_order_acquire);
+        }
+
+        engine_running.store(false, std::memory_order_release);
+        engine.join();
+
+        ASSERT_FALSE(hung)
+            << "round " << round
+            << ": a caller never returned — a publish was consumed by the "
+               "wrong waiter, or swallowed by a caller posting over it";
+
+        for (int i = 0; i < kConcurrentOwners; ++i) {
+            const size_t expected = static_cast<size_t>((i + 1) * 2);
+            const auto& report = reports[static_cast<size_t>(i)];
+            ASSERT_EQ(drafts[static_cast<size_t>(i)].nodes.size(), expected)
+                << "round " << round << ", caller " << i
+                << " got another caller's authored draft back";
+            ASSERT_FALSE(report.diagnostics.empty())
+                << "round " << round << ", caller " << i;
+            ASSERT_EQ(report.diagnostics[0].message, std::to_string(expected))
+                << "round " << round << ", caller " << i
+                << " got the report for another caller's bind";
+        }
+    }
+}
+
+TEST(EditorRuntimeControl, ConcurrentAddChildCallersEachGetTheirOwnMintedId)
+{
+    // The same defect lived in all seven handshakes, so pin a second one: the
+    // shape is shared, and a fix applied to only the bind would pass the test
+    // above while leaving these six broken.
+    for (int round = 0; round < kConcurrentRounds; ++round) {
+        EditorRuntimeControl control;
+        std::atomic_bool engine_running{ true };
+        std::atomic_int finished{ 0 };
+
+        std::thread engine([&] {
+            while (engine_running.load(std::memory_order_acquire)) {
+                control.service_pending_add_child(
+                    [](const wz::scene::AuthoredEntityId& parent) {
+                        std::this_thread::sleep_for(
+                            std::chrono::microseconds(300));
+                        return wz::engine::assets::SceneAddChildResult{
+                            .ok = true,
+                            .new_id = parent + "/child",
+                            .error = {},
+                        };
+                    });
+                std::this_thread::yield();
+            }
+        });
+
+        std::vector<wz::engine::assets::SceneAddChildResult> results(
+            kConcurrentOwners);
+        bool hung = false;
+        {
+            OwnerWatchdog watchdog(control, finished);
+            std::vector<std::thread> owners;
+            for (int i = 0; i < kConcurrentOwners; ++i) {
+                owners.emplace_back([&, i] {
+                    std::this_thread::sleep_for(
+                        std::chrono::microseconds(i * 60));
+                    results[static_cast<size_t>(i)] =
+                        control.add_child("P" + std::to_string(i));
+                    finished.fetch_add(1, std::memory_order_acq_rel);
+                });
+            }
+            for (std::thread& owner : owners) {
+                owner.join();
+            }
+            hung = watchdog.fired.load(std::memory_order_acquire);
+        }
+
+        engine_running.store(false, std::memory_order_release);
+        engine.join();
+
+        ASSERT_FALSE(hung)
+            << "round " << round << ": a caller never returned from add_child";
+
+        for (int i = 0; i < kConcurrentOwners; ++i) {
+            const auto& got = results[static_cast<size_t>(i)];
+            ASSERT_TRUE(got.ok)
+                << "round " << round << ", caller " << i << ": " << got.error;
+            ASSERT_EQ(got.new_id, "P" + std::to_string(i) + "/child")
+                << "round " << round << ", caller " << i
+                << " got the id minted for another caller";
+        }
+    }
 }
