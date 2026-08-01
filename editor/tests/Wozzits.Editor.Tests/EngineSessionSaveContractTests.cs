@@ -272,6 +272,58 @@ public sealed partial class ProjectOpeningTests
         Assert.False(node.Collision?.ConstrainMovement ?? false);
     }
 
+    // D3-C12. Nine dedicated remove handlers ran the engine call inside
+    // `if (EnsureCanApply()) { ... }` and then dropped the component from the
+    // editor's own model UNCONDITIONALLY -- so with the viewport closed the ✕
+    // still "worked": the section vanished, the engine was never asked, and the
+    // component was still there on the next snapshot. RemoveCameraComponent was
+    // the one handler that already returned early and gated on response.Ok; these
+    // nine now match it.
+    [Theory]
+    [InlineData(false, "the viewport is down, so the engine is never asked")]
+    [InlineData(true, "the engine is asked and refuses")]
+    public void RemovingAComponentTheEngineDidNotRemoveKeepsItInTheEditor(
+        bool runtimeRunning,
+        string _)
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            RuntimeRunning = runtimeRunning,
+            RejectComponentEditsWith = runtimeRunning ? "node is not in the scene" : null,
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node(
+                                "node",
+                                parentId: "root",
+                                visible: true,
+                                components: [Component("collision", "Collision")],
+                                collision: new EngineSceneNodeCollision()),
+                        ]))),
+            editorSession: editorSession);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var node = Assert.Single(root.Children, n => n.Id == "node");
+        viewModel.SceneTree.SelectNode(node);
+        Assert.True(viewModel.Inspector.HasCollisionComponent);
+
+        viewModel.Inspector.RemoveCollisionComponentCommand.Execute(null);
+
+        // Either way the engine did not remove it, so the editor must not pretend
+        // it did -- the section stays, and the user gets a reason.
+        Assert.True(viewModel.Inspector.HasCollisionComponent);
+        Assert.NotEmpty(viewModel.Inspector.LastEditError);
+        Assert.Contains(node.Components, c => c.Kind == "collision");
+
+        // With the viewport down the engine must not even be asked.
+        Assert.Equal(runtimeRunning ? 1 : 0, editorSession.RemovedComponents.Count);
+    }
+
     private static MindDocumentViewModel? OpenMindDocument(MainWindowViewModel viewModel)
     {
         return viewModel.DockFactory is null

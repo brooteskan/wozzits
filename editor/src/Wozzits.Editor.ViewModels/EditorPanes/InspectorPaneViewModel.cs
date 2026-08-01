@@ -3042,17 +3042,15 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // and hide the section. Re-attach via "Add Component → Subtree from asset".
     private void RemoveSubtreeComponent()
     {
-        if (EnsureCanApply())
+        // Asset-graph node id 0 clears the reference on the engine side.
+        if (!EnsureCanApply()
+            || !SetEditResponse(_editorSession!.SetNodeSceneSource(
+                NodeId, assetGraphNodeId: 0u, consumeMode: 0u)))
         {
-            // Asset-graph node id 0 clears the reference on the engine side.
-            var response = _editorSession!.SetNodeSceneSource(
-                NodeId, assetGraphNodeId: 0u, consumeMode: 0u);
-            SetEditResponse(response);
-            if (response.Ok)
-            {
-                SceneSourceChanged?.Invoke();
-            }
+            return;
         }
+
+        SceneSourceChanged?.Invoke();
 
         // Clear the cached tree-node VM too, so reselect keeps it removed (the node
         // no longer references a subtree source).
@@ -3144,9 +3142,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // via "Add Component → Render program".
     private void RemoveRenderProgramComponent()
     {
-        if (EnsureCanApply())
+        if (!EnsureCanApply()
+            || !SetEditResponse(_editorSession!.SetNodeRenderProgram(NodeId, 0)))
         {
-            SetEditResponse(_editorSession!.SetNodeRenderProgram(NodeId, 0));
+            return;
         }
 
         // Clear the cached tree-node VM too, so reselect keeps the program removed.
@@ -3243,9 +3242,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // drawing) and hide the section. Re-attach via "Add Component → Geometry".
     private void RemoveGeometryComponent()
     {
-        if (EnsureCanApply())
+        if (!EnsureCanApply()
+            || !SetEditResponse(_editorSession!.SetNodeGeometryAsset(NodeId, 0)))
         {
-            SetEditResponse(_editorSession!.SetNodeGeometryAsset(NodeId, 0));
+            return;
         }
 
         // Clear the cached tree-node VM too, so reselect keeps the geometry removed.
@@ -3373,10 +3373,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // via "Add Component → Collision".
     private void RemoveCollisionComponent()
     {
-        if (EnsureCanApply())
+        if (!EnsureCanApply()
+            || !SetEditResponse(
+                _editorSession!.RemoveNodeComponent(NodeId, "collision")))
         {
-            var response = _editorSession!.RemoveNodeComponent(NodeId, "collision");
-            SetEditResponse(response);
+            return;
         }
 
         MirrorComponentRemoved("collision");
@@ -3513,10 +3514,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // Atmosphere".
     private void RemoveAtmosphereComponent()
     {
-        if (EnsureCanApply())
+        if (!EnsureCanApply()
+            || !SetEditResponse(
+                _editorSession!.RemoveNodeComponent(NodeId, "atmosphere")))
         {
-            var response = _editorSession!.RemoveNodeComponent(NodeId, "atmosphere");
-            SetEditResponse(response);
+            return;
         }
 
         MirrorComponentRemoved("atmosphere");
@@ -3648,10 +3650,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // Environment".
     private void RemoveEnvironmentComponent()
     {
-        if (EnsureCanApply())
+        if (!EnsureCanApply()
+            || !SetEditResponse(
+                _editorSession!.RemoveNodeComponent(NodeId, "environment")))
         {
-            var response = _editorSession!.RemoveNodeComponent(NodeId, "environment");
-            SetEditResponse(response);
+            return;
         }
 
         MirrorComponentRemoved("environment");
@@ -3777,11 +3780,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // Remove the AudioSource component (section ✕): generic remove verb + hide.
     private void RemoveAudioSourceComponent()
     {
-        if (EnsureCanApply())
+        if (!EnsureCanApply()
+            || !SetEditResponse(
+                _editorSession!.RemoveNodeComponent(NodeId, "audio_source")))
         {
-            var response =
-                _editorSession!.RemoveNodeComponent(NodeId, "audio_source");
-            SetEditResponse(response);
+            return;
         }
 
         MirrorComponentRemoved("audio_source");
@@ -3877,10 +3880,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // Remove the Motion component (the section's ✕), mirroring the camera ✕.
     private void RemoveMotionComponent()
     {
-        if (EnsureCanApply())
+        if (!EnsureCanApply()
+            || !SetEditResponse(
+                _editorSession!.RemoveNodeComponent(NodeId, "motion")))
         {
-            var response = _editorSession!.RemoveNodeComponent(NodeId, "motion");
-            SetEditResponse(response);
+            return;
         }
 
         MirrorComponentRemoved("motion");
@@ -4001,10 +4005,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // Remove the Motion Filter component (the section's ✕), mirroring Motion.
     private void RemoveMotionFilterComponent()
     {
-        if (EnsureCanApply())
+        if (!EnsureCanApply()
+            || !SetEditResponse(
+                _editorSession!.RemoveNodeComponent(NodeId, "motion_filter")))
         {
-            SetEditResponse(
-                _editorSession!.RemoveNodeComponent(NodeId, "motion_filter"));
+            return;
         }
 
         MirrorComponentRemoved("motion_filter");

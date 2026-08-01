@@ -4172,7 +4172,7 @@ public sealed partial class ProjectOpeningTests
         public EngineMutationResponse RemoveNodeComponent(string nodeId, string kind)
         {
             RemovedComponents.Add((nodeId, kind));
-            return new EngineMutationResponse { Ok = true };
+            return ComponentEditResult();
         }
 
         public List<(string NodeId, ulong AssetGraphNodeId)> RenderableAssets { get; } = [];
