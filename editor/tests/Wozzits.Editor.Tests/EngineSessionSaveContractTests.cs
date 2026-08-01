@@ -324,6 +324,55 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal(runtimeRunning ? 1 : 0, editorSession.RemovedComponents.Count);
     }
 
+    // D3-C5. The nine transform boxes are plain TextBoxes and TryParseComponent
+    // was a bare double.TryParse, so a non-finite value went straight into the
+    // live polytree. save_scene then writes the JSON token `null` for it, which
+    // read_float3 refuses on load -- and ONE refused component aborts the whole
+    // scene parse, so a single keystroke could make the project unopenable.
+    //
+    // "1e39" is the case that makes this a real bug rather than a hostile-input
+    // one: it is a perfectly FINITE double and an ordinary fat-fingered exponent,
+    // and it only becomes +inf on the engine's static_cast<float>. A
+    // double.IsFinite check would let it through -- the bound has to be float.
+    [Theory]
+    [InlineData("1e39", false)]
+    [InlineData("-1e39", false)]
+    [InlineData("NaN", false)]
+    [InlineData("Infinity", false)]
+    [InlineData("-Infinity", false)]
+    [InlineData("1e999", false)]
+    [InlineData("1.5", true)]
+    [InlineData("-0.5", true)]
+    [InlineData("0", true)]
+    [InlineData("3.4e38", true)]     // just inside float range: must still work
+    public void ALiveTransformComponentIsRejectedUnlessItSurvivesTheFloatCast(
+        string text,
+        bool expectedAccepted)
+    {
+        var parse = typeof(WozzitsEngineNativeClient).GetMethod(
+            "TryParseLiveTransform",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(parse);
+
+        var edit = new EngineSceneTransformEdit
+        {
+            TranslationX = text,
+            TranslationY = "0",
+            TranslationZ = "0",
+            RotationX = "0",
+            RotationY = "0",
+            RotationZ = "0",
+            ScaleX = "1",
+            ScaleY = "1",
+            ScaleZ = "1",
+        };
+
+        var args = new object?[] { edit, null };
+        var accepted = (bool)parse!.Invoke(null, args)!;
+
+        Assert.Equal(expectedAccepted, accepted);
+    }
+
     private static MindDocumentViewModel? OpenMindDocument(MainWindowViewModel viewModel)
     {
         return viewModel.DockFactory is null

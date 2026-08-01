@@ -2109,11 +2109,35 @@ public sealed partial class WozzitsEngineNativeClient
 
     private static bool TryParseComponent(string text, out double value)
     {
-        return double.TryParse(
-            text,
-            System.Globalization.NumberStyles.Float,
-            System.Globalization.CultureInfo.InvariantCulture,
-            out value);
+        if (!double.TryParse(
+                text,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out value))
+        {
+            return false;
+        }
+
+        // The bound that matters is FLOAT range, not double (D3-C5). The engine
+        // stores these via static_cast<float> (wz_host_runtime_set_node_transform),
+        // so "1e39" -- a perfectly finite double, and an ordinary fat-fingered
+        // exponent -- becomes +inf on that cast. Nothing downstream checks: it
+        // reaches the live polytree, and save_scene then emits the JSON token
+        // `null` for any non-finite value (json_writer.cpp), which read_float3
+        // REFUSES on load, and one refused component aborts the WHOLE scene
+        // parse. So one keystroke can make the project unopenable.
+        //
+        // Rejected the same way an unparseable field is -- skipped quietly, per
+        // this seam's existing contract -- so the next valid keystroke posts all
+        // nine components together. Same idiom as SetAssetGraphZoom's IsFinite
+        // guard above, which this path simply never got.
+        if (!float.IsFinite((float)value))
+        {
+            value = 0.0;
+            return false;
+        }
+
+        return true;
     }
 
     // Author a node's Camera field values against the live viewport runtime (the
