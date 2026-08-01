@@ -3250,22 +3250,47 @@ extern "C"
                     wz::engine::editor::project_snapshot_abi_blob(snapshot));
             };
 
+        // A read-back that produced NO ANSWER (D3-P039). The response itself is
+        // well-formed -- snapshot.ok stays true -- but scene.ok is false and
+        // carries a reason, so the editor can tell "the engine did not answer"
+        // from "the scene is empty". Every path below used to hand back an
+        // ok=true empty scene, which the editor faithfully rendered as a scene
+        // with no nodes, destroying a live tree with no error anywhere.
+        const auto failed_blob = [](const char* reason) {
+            wz::engine::editor::ProjectSnapshotLoadResult snapshot{};
+            snapshot.ok = true;
+            snapshot.status =
+                wz::engine::project::ProjectManifestProbeStatus::Valid;
+            snapshot.asset_graph.ok = true;
+            snapshot.scene.ok = false;
+            snapshot.scene.error = reason;
+            return make_buffer(
+                wz::engine::editor::project_snapshot_abi_blob(snapshot));
+        };
+
         try {
             if (!runtime) {
-                return build_blob(wz::engine::editor::SceneSnapshot{});
+                return failed_blob("no runtime to read grafted scene nodes from");
             }
 
-            // Blocking handshake: the engine thread copies its grafted nodes
-            // (empty vector if it is not running). Mirrors add_child_node.
-            const std::vector<wz::engine::assets::SceneNodeAsset> grafted =
-                runtime->control.request_grafted_scene_nodes();
+            // Blocking handshake: the engine thread copies its grafted nodes.
+            // nullopt means it never answered. Mirrors add_child_node.
+            const std::optional<std::vector<wz::engine::assets::SceneNodeAsset>>
+                grafted = runtime->control.request_grafted_scene_nodes();
+            if (!grafted) {
+                return failed_blob(
+                    "the engine did not answer the grafted scene node request "
+                    "(the viewport stopped or was closing)");
+            }
             return build_blob(
-                wz::engine::editor::build_scene_snapshot_from_nodes(grafted));
+                wz::engine::editor::build_scene_snapshot_from_nodes(*grafted));
         }
         catch (...) {
-            // Never crash the editor over a read-back; hand back an empty scene.
+            // Never crash the editor over a read-back -- but say that it failed
+            // rather than reporting an empty scene.
             try {
-                return build_blob(wz::engine::editor::SceneSnapshot{});
+                return failed_blob(
+                    "reading the grafted scene nodes raised an exception");
             }
             catch (...) {
                 return WzBuffer{ nullptr, 0u };
@@ -3293,18 +3318,39 @@ extern "C"
                     wz::engine::editor::project_snapshot_abi_blob(snapshot));
             };
 
+        // See the twin in wz_host_runtime_grafted_scene_snapshot (D3-P039). This
+        // one matters more: the editor rebuilds its WHOLE scene tree from this
+        // response, so an ok=true empty scene wiped the tree, the selection and
+        // every merged graft while the scene was intact in the engine and on disk.
+        const auto failed_blob = [](const char* reason) {
+            wz::engine::editor::ProjectSnapshotLoadResult snapshot{};
+            snapshot.ok = true;
+            snapshot.status =
+                wz::engine::project::ProjectManifestProbeStatus::Valid;
+            snapshot.asset_graph.ok = true;
+            snapshot.scene.ok = false;
+            snapshot.scene.error = reason;
+            return make_buffer(
+                wz::engine::editor::project_snapshot_abi_blob(snapshot));
+        };
+
         try {
             if (!runtime) {
-                return build_blob(wz::engine::editor::SceneSnapshot{});
+                return failed_blob("no runtime to read the scene from");
             }
-            const std::vector<wz::engine::assets::SceneNodeAsset> nodes =
-                runtime->control.request_scene_nodes();
+            const std::optional<std::vector<wz::engine::assets::SceneNodeAsset>>
+                nodes = runtime->control.request_scene_nodes();
+            if (!nodes) {
+                return failed_blob(
+                    "the engine did not answer the scene node request (the "
+                    "viewport stopped or was closing)");
+            }
             return build_blob(
-                wz::engine::editor::build_scene_snapshot_from_nodes(nodes));
+                wz::engine::editor::build_scene_snapshot_from_nodes(*nodes));
         }
         catch (...) {
             try {
-                return build_blob(wz::engine::editor::SceneSnapshot{});
+                return failed_blob("reading the scene raised an exception");
             }
             catch (...) {
                 return WzBuffer{ nullptr, 0u };

@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -804,10 +805,14 @@ namespace wz::app
         // #213) and block until the engine thread produces a COPY of them,
         // returning it. Like add_child this is a blocking request/response — the
         // caller (the editor, reading them to merge under their hosts) needs the
-        // data back, and the engine thread owns scene_nodes_. Returns an empty
-        // vector if the runtime is not running (it never started, or stopped
-        // before servicing) so the editor degrades to its JSON tree.
-        std::vector<wz::engine::assets::SceneNodeAsset>
+        // data back, and the engine thread owns scene_nodes_.
+        //
+        // std::nullopt means NO ANSWER — the caller was not admitted, or the
+        // runtime finished before servicing the request. An empty vector means the
+        // engine answered and there is genuinely nothing grafted (D3-P039). These
+        // used to be the same value, so a read-back that failed was indistinguishable
+        // from an empty result and the editor destroyed a live tree over it.
+        std::optional<std::vector<wz::engine::assets::SceneNodeAsset>>
         request_grafted_scene_nodes();
 
         // Engine thread: if a grafted-nodes request is pending, run `provider`
@@ -818,9 +823,10 @@ namespace wz::app
                 std::vector<wz::engine::assets::SceneNodeAsset>()>& provider);
 
         // Owner thread: blocking fetch of the running scene's AUTHORED nodes, so
-        // the editor can rebuild its tree after open_scene swaps the scene. Empty
-        // vector when the runtime is not running.
-        std::vector<wz::engine::assets::SceneNodeAsset> request_scene_nodes();
+        // the editor can rebuild its tree after open_scene swaps the scene.
+        // std::nullopt when there was no answer; see request_grafted_scene_nodes.
+        std::optional<std::vector<wz::engine::assets::SceneNodeAsset>>
+        request_scene_nodes();
 
         // Engine thread: if a scene-nodes request is pending, run `provider` (copies
         // the authored scene nodes) and publish the result. Called once per frame.

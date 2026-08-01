@@ -1196,14 +1196,16 @@ namespace wz::app
         cv_.notify_all();
     }
 
-    std::vector<wz::engine::assets::SceneNodeAsset>
+    std::optional<std::vector<wz::engine::assets::SceneNodeAsset>>
     EditorRuntimeControl::request_grafted_scene_nodes()
     {
         const CallerScope scope(*this);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] { return !grafted_cycle_busy_ || finished_; });
         if (!scope.admitted() || finished_) {
-            return {};  // no runtime — caller falls back to its JSON tree
+            // NO ANSWER, not "nothing grafted" (D3-P039). Both used to return an
+            // empty vector, so the caller could not tell them apart.
+            return std::nullopt;
         }
 
         const HandshakeCycle cycle(grafted_cycle_busy_, cv_);
@@ -1214,7 +1216,7 @@ namespace wz::app
         cv_.wait(lock, [this] { return has_grafted_result_ || finished_; });
         if (!has_grafted_result_) {
             has_grafted_request_ = false;
-            return {};  // engine stopped before servicing
+            return std::nullopt;  // engine stopped before servicing
         }
 
         has_grafted_result_ = false;
@@ -1245,14 +1247,15 @@ namespace wz::app
         cv_.notify_all();
     }
 
-    std::vector<wz::engine::assets::SceneNodeAsset>
+    std::optional<std::vector<wz::engine::assets::SceneNodeAsset>>
     EditorRuntimeControl::request_scene_nodes()
     {
         const CallerScope scope(*this);
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait(lock, [this] { return !scene_nodes_cycle_busy_ || finished_; });
         if (!scope.admitted() || finished_) {
-            return {};
+            // NO ANSWER, not "the scene is empty" (D3-P039).
+            return std::nullopt;
         }
 
         const HandshakeCycle cycle(scene_nodes_cycle_busy_, cv_);
@@ -1263,7 +1266,7 @@ namespace wz::app
         cv_.wait(lock, [this] { return has_scene_nodes_result_ || finished_; });
         if (!has_scene_nodes_result_) {
             has_scene_nodes_request_ = false;
-            return {};
+            return std::nullopt;
         }
 
         has_scene_nodes_result_ = false;
