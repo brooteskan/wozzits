@@ -15,7 +15,19 @@ public sealed class EditorLogBuffer
             return;
         }
 
-        Action<string>? handler;
+        // DELIVERED UNDER THE LOCK (D3-P069). The handler used to be captured
+        // inside the lock and invoked outside it, so the order lines reach the
+        // subscriber could differ from the order they were buffered in. The buffer
+        // is fed from at least two threads -- the UI thread, and the engine's
+        // LOGGER WORKER via OnNativeLog -- so this is the ordinary case, not a
+        // corner: FileLogSink stamps DateTime.Now at Write time, which made the
+        // mirrored file's timestamps non-monotonic too, and the file's own comment
+        // claims it is "a complete, ordered timeline of a run".
+        //
+        // The cost is that producers serialise across the handler. That is close to
+        // free here, because the handler's real work (FileLogSink.Write) already
+        // takes its own lock, so the critical sections nearly coincide -- and the
+        // locks are always taken in this order, so there is no cycle to deadlock on.
         lock (_gate)
         {
             _lines.Add(line);
@@ -24,24 +36,26 @@ public sealed class EditorLogBuffer
                 _lines.RemoveAt(0);
             }
 
-            handler = _lineReceived;
+            _lineReceived?.Invoke(line);
         }
-
-        handler?.Invoke(line);
     }
 
     public IDisposable Subscribe(Action<string> handler)
     {
-        List<string> snapshot;
+        // Replay under the lock as well, for the same reason: registering the
+        // handler and then replaying outside the lock let a line appended by
+        // another thread be delivered BEFORE the backlog it came after. In the
+        // real startup sequence that is the preamble naming which wozzits_abi.dll
+        // was loaded and whether the scene failed to load -- exactly the lines an
+        // operator reads to diagnose a bad launch.
         lock (_gate)
         {
-            snapshot = [.. _lines];
-            _lineReceived += handler;
-        }
+            foreach (var line in _lines)
+            {
+                handler(line);
+            }
 
-        foreach (var line in snapshot)
-        {
-            handler(line);
+            _lineReceived += handler;
         }
 
         return new Subscription(this, handler);
