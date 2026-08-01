@@ -823,6 +823,8 @@ public sealed partial class WozzitsEngineNativeClient
     // blob, so charging them too could exceed the length on an honest response -- and
     // they cannot amplify by themselves, because ReadString runs once per field of an
     // already-decoded record. Bounding the records transitively bounds the strings.
+    // (TAbi is `unmanaged` rather than `struct` for the reason spelled out on
+    // ReadStruct below -- it turns a future runtime kill into a compile error.)
     [ThreadStatic]
     private static long _tableByteBudget;
 
@@ -839,7 +841,7 @@ public sealed partial class WozzitsEngineNativeClient
         byte[] bytes,
         WzEditorTableSpanAbi span,
         Func<byte[], TAbi, TManaged> convert)
-        where TAbi : struct
+        where TAbi : unmanaged
     {
         if (span.Count == 0)
         {
@@ -870,8 +872,16 @@ public sealed partial class WozzitsEngineNativeClient
         return values;
     }
 
+    // `unmanaged`, not `struct` (D3-P054). MemoryMarshal.Read<T> and Marshal.SizeOf<T>
+    // both throw ArgumentException for a type carrying managed references -- and
+    // ArgumentException is NOT one of the four types the P/Invoke wrappers catch, so
+    // it escapes to the UI thread and terminates the editor on the first project
+    // open. `struct` accepts such a type and defers the failure to run time;
+    // `unmanaged` makes adding one (a convenience `string Name` beside a
+    // WzEditorStringSpanAbi, say) a compile error at the declaration site instead.
+    // Zero behavioural change today: all the mirror structs are already primitive.
     private static T ReadStruct<T>(byte[] bytes, ulong offset)
-        where T : struct
+        where T : unmanaged
     {
         var size = Marshal.SizeOf<T>();
         var checkedOffset = CheckedBufferOffset(bytes, offset, size, count: 1);
