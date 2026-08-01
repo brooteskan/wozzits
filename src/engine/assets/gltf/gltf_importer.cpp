@@ -34,6 +34,106 @@ namespace wz::engine::assets
             dst[1] = v.y();
         }
 
+        // Resolve an accessor index and prove it is safe to iterate as
+        // `expected_type`, or return nullptr (issue #310, A4-C15/C16/C17/C20/C21).
+        //
+        // None of this is done for us. fastgltf deliberately defers ALL of it to
+        // fastgltf::validate(), which this importer does not call -- its own
+        // source says the keys "are only validated in the validate() method" --
+        // and even validate() does not check that an accessor's byte range fits
+        // its bufferView, or that the bufferView fits its buffer. The container
+        // framing IS checked by fastgltf; every number below comes from the
+        // JSON, where nothing was checking it.
+        //
+        // The four things that could go wrong, all of which end in an
+        // out-of-bounds read of attacker-chosen length:
+        //   1. accessorIndex past asset.accessors  -> reads a garbage Accessor
+        //      whose count/offset then drive everything else.
+        //   2. count * stride past the bufferView, or the view past the buffer
+        //      -- e.g. a 12-byte BIN chunk with count 10,000,000.
+        //   3. accessor.type disagreeing with the C++ element we iterate as:
+        //      stride comes from the ACCESSOR's declared type, so a SCALAR
+        //      accessor read as fvec3 walks 12 bytes at every 4-byte step. This
+        //      was guarded only by an assert, and clang-release sets NDEBUG, so
+        //      the guard did not exist in shipping builds.
+        //   4. a buffer whose data was never loaded (an external URI, which we
+        //      correctly decline to open) still reaching the adapter, whose
+        //      empty-span fallback is then subspan'd at the JSON's byteOffset --
+        //      a read at nullptr + an attacker-chosen offset.
+        const fastgltf::Accessor* checked_accessor(
+            const fastgltf::Asset& asset,
+            std::size_t accessor_index,
+            fastgltf::AccessorType expected_type)
+        {
+            if (accessor_index >= asset.accessors.size())
+                return nullptr;
+
+            const fastgltf::Accessor& accessor = asset.accessors[accessor_index];
+
+            if (accessor.type != expected_type)
+                return nullptr;
+            if (accessor.count == 0)
+                return nullptr;
+            if (!accessor.bufferViewIndex.has_value())
+                return nullptr;
+
+            const std::size_t view_index = accessor.bufferViewIndex.value();
+            if (view_index >= asset.bufferViews.size())
+                return nullptr;
+
+            const fastgltf::BufferView& view = asset.bufferViews[view_index];
+            if (view.bufferIndex >= asset.buffers.size())
+                return nullptr;
+
+            const fastgltf::Buffer& buffer = asset.buffers[view.bufferIndex];
+
+            // The bytes must actually be in memory. Declining to open an
+            // external URI is correct; continuing as though we had is not.
+            const bool data_present =
+                std::holds_alternative<fastgltf::sources::Array>(buffer.data)
+                || std::holds_alternative<fastgltf::sources::Vector>(buffer.data)
+                || std::holds_alternative<fastgltf::sources::ByteView>(buffer.data)
+                || std::holds_alternative<fastgltf::sources::BufferView>(buffer.data);
+            if (!data_present)
+                return nullptr;
+
+            if (view.byteOffset > buffer.byteLength)
+                return nullptr;
+            if (view.byteLength > buffer.byteLength - view.byteOffset)
+                return nullptr;
+
+            // A sparse accessor reads through its own index/value views, which
+            // this range arithmetic does not describe. Refuse rather than
+            // approve it on the strength of a check that does not apply.
+            if (accessor.sparse.has_value())
+                return nullptr;
+
+            const std::size_t element_size =
+                fastgltf::getElementByteSize(accessor.type, accessor.componentType);
+            if (element_size == 0)
+                return nullptr;
+
+            const std::size_t stride =
+                view.byteStride.value_or(element_size);
+            if (stride < element_size)
+                return nullptr;
+
+            if (accessor.byteOffset > view.byteLength)
+                return nullptr;
+
+            // Last touched byte = byteOffset + (count-1)*stride + element_size.
+            // Written as subtraction against the space remaining so neither the
+            // multiply nor the add can overflow before the comparison.
+            const std::size_t available = view.byteLength - accessor.byteOffset;
+            if (available < element_size)
+                return nullptr;
+            const std::size_t span_for_elements = available - element_size;
+            if (accessor.count - 1 > span_for_elements / stride)
+                return nullptr;
+
+            return &accessor;
+        }
+
         bool import_primitive(
             const fastgltf::Asset& asset,
             const fastgltf::Primitive& primitive,
@@ -47,9 +147,13 @@ namespace wz::engine::assets
             if (position_attribute == primitive.attributes.end())
                 return false;
 
-            const auto& position_accessor = asset.accessors[position_attribute->accessorIndex];
-            if (!position_accessor.bufferViewIndex.has_value())
+            const fastgltf::Accessor* position_checked = checked_accessor(
+                asset,
+                position_attribute->accessorIndex,
+                fastgltf::AccessorType::Vec3);
+            if (position_checked == nullptr)
                 return false;
+            const fastgltf::Accessor& position_accessor = *position_checked;
 
             out_mesh.topology = MeshPrimitiveTopology::TriangleList;
             out_mesh.index_format = MeshIndexFormat::UInt32;
@@ -73,7 +177,13 @@ namespace wz::engine::assets
                 const auto* normal_attribute = primitive.findAttribute("NORMAL");
                 if (normal_attribute != primitive.attributes.end())
                 {
-                    const auto& normal_accessor = asset.accessors[normal_attribute->accessorIndex];
+                    const fastgltf::Accessor* normal_checked = checked_accessor(
+                        asset,
+                        normal_attribute->accessorIndex,
+                        fastgltf::AccessorType::Vec3);
+                    if (normal_checked == nullptr)
+                        return false;
+                    const fastgltf::Accessor& normal_accessor = *normal_checked;
 
                     if (normal_accessor.count != out_mesh.vertices.size())
                         return false;
@@ -94,7 +204,13 @@ namespace wz::engine::assets
                 const auto* uv_attribute = primitive.findAttribute("TEXCOORD_0");
                 if (uv_attribute != primitive.attributes.end())
                 {
-                    const auto& uv_accessor = asset.accessors[uv_attribute->accessorIndex];
+                    const fastgltf::Accessor* uv_checked = checked_accessor(
+                        asset,
+                        uv_attribute->accessorIndex,
+                        fastgltf::AccessorType::Vec2);
+                    if (uv_checked == nullptr)
+                        return false;
+                    const fastgltf::Accessor& uv_accessor = *uv_checked;
 
                     if (uv_accessor.count != out_mesh.vertices.size())
                         return false;
@@ -113,19 +229,40 @@ namespace wz::engine::assets
             if (!primitive.indicesAccessor.has_value())
                 return false;
 
-            const auto& index_accessor = asset.accessors[primitive.indicesAccessor.value()];
-            if (!index_accessor.bufferViewIndex.has_value())
+            const fastgltf::Accessor* index_checked = checked_accessor(
+                asset,
+                primitive.indicesAccessor.value(),
+                fastgltf::AccessorType::Scalar);
+            if (index_checked == nullptr)
                 return false;
+            const fastgltf::Accessor& index_accessor = *index_checked;
 
             out_mesh.indices.resize(index_accessor.count);
+
+            // An index can be perfectly in bounds of its own bufferView and
+            // still be nonsense as a VERTEX reference (issue #310, A4-C19).
+            // MeshData::valid() only checks non-empty and count % 3, so an
+            // index of 4294967295 against 3 vertices was accepted here and
+            // dereferenced later: mesh_cluster_hierarchy_compilers.cpp indexes
+            // cluster_for_vertex[...] with it, and the render path hands it
+            // straight to a GPU index buffer. The invariant is already enforced
+            // in mesh_compilers.cpp and collision_compilers.cpp -- this was the
+            // producer that never established it.
+            bool indices_in_range = true;
+            const std::size_t vertex_count = out_mesh.vertices.size();
 
             fastgltf::iterateAccessorWithIndex<std::uint32_t>(
                 asset,
                 index_accessor,
                 [&](std::uint32_t index_value, std::size_t index)
                 {
+                    if (index_value >= vertex_count)
+                        indices_in_range = false;
                     out_mesh.indices[index] = index_value;
                 });
+
+            if (!indices_in_range)
+                return false;
 
             return out_mesh.valid();
         }

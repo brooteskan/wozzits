@@ -471,3 +471,167 @@ TEST(GLTFImporter, RejectsSharedChildNodeInSceneGraph)
         &error));
     EXPECT_FALSE(error.empty());
 }
+
+// --------------------------------------------------------------------------
+// Hostile GLB mesh payloads (issue #310, A4-C16 / A4-C17 / A4-C19 / A4-C21).
+//
+// fastgltf defers ALL of this to fastgltf::validate(), which this importer does
+// not call -- and even validate() does not check that an accessor's byte range
+// fits its bufferView, or the bufferView its buffer. Everything below is a
+// number taken straight from the JSON that nothing was checking.
+//
+// Each case was revert-checked by neutering checked_accessor() in place:
+//   hugecount   -> ACCESS_VIOLATION (0xC0000005)
+//   wrongtype   -> Debug assert in fastgltf's tools.hpp; clang-release sets
+//                  NDEBUG, so in a shipping build this is the OOB read instead
+//   externaluri -> Debug assert on an unloaded buffer; in release, a read at
+//                  nullptr + the JSON's byteOffset
+// so these are pins on real behaviour, not on a guard's opinion of itself.
+// --------------------------------------------------------------------------
+
+namespace
+{
+    void put_u32_le(std::vector<std::uint8_t>& v, std::uint32_t x)
+    {
+        v.push_back(static_cast<std::uint8_t>(x));
+        v.push_back(static_cast<std::uint8_t>(x >> 8));
+        v.push_back(static_cast<std::uint8_t>(x >> 16));
+        v.push_back(static_cast<std::uint8_t>(x >> 24));
+    }
+
+    std::vector<std::uint8_t> make_glb(std::string json,
+                                       std::vector<std::uint8_t> bin)
+    {
+        while (json.size() % 4 != 0) json.push_back(' ');
+        while (bin.size() % 4 != 0)  bin.push_back(0);
+
+        std::vector<std::uint8_t> out;
+        put_u32_le(out, 0x46546C67u);   // 'glTF'
+        put_u32_le(out, 2u);
+        put_u32_le(out, 0u);            // total length, patched below
+
+        put_u32_le(out, static_cast<std::uint32_t>(json.size()));
+        put_u32_le(out, 0x4E4F534Au);   // 'JSON'
+        out.insert(out.end(), json.begin(), json.end());
+
+        put_u32_le(out, static_cast<std::uint32_t>(bin.size()));
+        put_u32_le(out, 0x004E4942u);   // 'BIN\0'
+        out.insert(out.end(), bin.begin(), bin.end());
+
+        const std::uint32_t total = static_cast<std::uint32_t>(out.size());
+        std::memcpy(out.data() + 8, &total, 4);
+        return out;
+    }
+
+    // One triangle: 3 vertices x 3 floats, then 3 uint32 indices.
+    std::vector<std::uint8_t> triangle_bin()
+    {
+        std::vector<std::uint8_t> b;
+        for (const float f : { 0.f,0.f,0.f, 1.f,0.f,0.f, 0.f,1.f,0.f }) {
+            std::uint8_t t[4];
+            std::memcpy(t, &f, 4);
+            b.insert(b.end(), t, t + 4);
+        }
+        for (const std::uint32_t i : { 0u, 1u, 2u }) {
+            std::uint8_t t[4];
+            std::memcpy(t, &i, 4);
+            b.insert(b.end(), t, t + 4);
+        }
+        return b;
+    }
+
+    bool import_glb(const std::vector<std::uint8_t>& glb,
+                    wz::engine::assets::ImportedGLTFMeshSet& out)
+    {
+        return wz::engine::assets::import_glb_meshes(
+            glb.data(), glb.size(),
+            wz::engine::assets::GLTFImportOptions{},
+            out);
+    }
+}
+
+// Control: the hand-built container itself is well-formed and imports, so a
+// rejection below is about the payload rather than the harness.
+TEST(GLTFImporter, ImportsHandBuiltTriangleGLB)
+{
+    const char* json = R"({"asset":{"version":"2.0"},
+"buffers":[{"byteLength":48}],
+"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},
+               {"buffer":0,"byteOffset":36,"byteLength":12}],
+"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},
+             {"bufferView":1,"componentType":5125,"count":3,"type":"SCALAR"}],
+"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}]})";
+
+    wz::engine::assets::ImportedGLTFMeshSet out;
+    ASSERT_TRUE(import_glb(make_glb(json, triangle_bin()), out));
+    ASSERT_EQ(out.meshes.size(), 1u);
+    EXPECT_EQ(out.meshes[0].mesh.vertex_count(), 3u);
+    EXPECT_EQ(out.meshes[0].mesh.index_count(), 3u);
+}
+
+TEST(GLTFImporter, RejectsAccessorCountLargerThanItsBufferView)
+{
+    // 12 real bytes; the accessor claims 10,000,000 VEC3 elements. Before the
+    // fix this resized to 10M vertices and read ~120 MB past a 12-byte buffer.
+    const char* json = R"({"asset":{"version":"2.0"},
+"buffers":[{"byteLength":12}],
+"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":12}],
+"accessors":[{"bufferView":0,"componentType":5126,"count":10000000,"type":"VEC3"},
+             {"bufferView":0,"componentType":5125,"count":3,"type":"SCALAR"}],
+"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}]})";
+
+    wz::engine::assets::ImportedGLTFMeshSet out;
+    EXPECT_FALSE(import_glb(make_glb(json, std::vector<std::uint8_t>(12u, 0u)), out));
+}
+
+TEST(GLTFImporter, RejectsAccessorTypeThatDisagreesWithTheElementRead)
+{
+    // POSITION declared SCALAR (stride 4) but iterated as fvec3 (12 bytes per
+    // element), so every read runs 8 bytes past its step.
+    const char* json = R"({"asset":{"version":"2.0"},
+"buffers":[{"byteLength":48}],
+"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},
+               {"buffer":0,"byteOffset":36,"byteLength":12}],
+"accessors":[{"bufferView":0,"componentType":5126,"count":9,"type":"SCALAR"},
+             {"bufferView":1,"componentType":5125,"count":3,"type":"SCALAR"}],
+"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}]})";
+
+    wz::engine::assets::ImportedGLTFMeshSet out;
+    EXPECT_FALSE(import_glb(make_glb(json, triangle_bin()), out));
+}
+
+TEST(GLTFImporter, RejectsTriangleIndexPastTheVertexCount)
+{
+    // The index is in bounds of its own bufferView and nonsense as a vertex
+    // reference. MeshData::valid() checks only non-empty and count % 3, so this
+    // was accepted here and dereferenced downstream.
+    std::vector<std::uint8_t> bin = triangle_bin();
+    const std::uint32_t huge = 0xFFFFFFFFu;
+    std::memcpy(bin.data() + 36 + 8, &huge, 4);
+
+    const char* json = R"({"asset":{"version":"2.0"},
+"buffers":[{"byteLength":48}],
+"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},
+               {"buffer":0,"byteOffset":36,"byteLength":12}],
+"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},
+             {"bufferView":1,"componentType":5125,"count":3,"type":"SCALAR"}],
+"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}]})";
+
+    wz::engine::assets::ImportedGLTFMeshSet out;
+    EXPECT_FALSE(import_glb(make_glb(json, bin), out));
+}
+
+TEST(GLTFImporter, RejectsBufferWhoseDataWasNeverLoaded)
+{
+    // Declining to open an external URI is correct. Continuing as though we had
+    // is not: the adapter's empty-span fallback was then subspan'd at the
+    // JSON's byteOffset, giving a read at nullptr + an attacker-chosen offset.
+    const char* json = R"({"asset":{"version":"2.0"},
+"buffers":[{"uri":"data.bin","byteLength":4096}],
+"bufferViews":[{"buffer":0,"byteOffset":140737488355328,"byteLength":36}],
+"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],
+"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":0}]}]})";
+
+    wz::engine::assets::ImportedGLTFMeshSet out;
+    EXPECT_FALSE(import_glb(make_glb(json, {}), out));
+}
