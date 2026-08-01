@@ -1479,6 +1479,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     savedMinds[document.Name] = document.CompiledIr;
                     AppendEditorLog($"[editor] Saved mind '{document.Name}'");
                 }
+                catch (MindFormatException ex)
+                {
+                    // Same contract as the statechart half above, and it was missing
+                    // here: a mind with no qubits (delete the last one -- there is no
+                    // floor in the pane) throws out of Emit. Uncaught it left Save All
+                    // -- a synchronous RelayCommand with no global handler behind it --
+                    // and killed the editor, losing every other unsaved document.
+                    // Staying OUT of savedMinds is the load-bearing half, exactly as
+                    // for charts: the refresh below would otherwise push IR the engine
+                    // refuses into every attached quantum_agent and scenelet FILE.
+                    AppendEditorLog($"[editor] Mind '{document.Name}' NOT saved: {ex.Message}");
+                }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     AppendEditorLog($"[editor] Mind save failed for '{document.Name}': {ex.Message}");

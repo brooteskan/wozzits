@@ -1,6 +1,10 @@
+using Dock.Model.Core;
+using Dock.Model.Mvvm.Controls;
 using Wozzits.Editor.HostClient;
 using Wozzits.Editor.Protocol;
+using Wozzits.Editor.Statecharts;
 using Wozzits.Editor.ViewModels;
+using Wozzits.Editor.ViewModels.EditorPanes.Minds;
 
 namespace Wozzits.Editor.Tests;
 
@@ -95,5 +99,84 @@ public sealed partial class ProjectOpeningTests
 
         Assert.Equal(1, editorSession.SaveSceneCount);
         Assert.DoesNotContain("Scene NOT saved", viewModel.EngineLogText);
+    }
+
+    // D3-C6. A mind with no qubits is two clicks away (the pane has no floor on
+    // DeleteSelected), and MindJson.Emit refuses it. SaveOpenMinds caught only
+    // IOException/UnauthorizedAccessException, so MindFormatException escaped
+    // SaveAll -- a SYNCHRONOUS RelayCommand with no global unhandled handler
+    // anywhere in the editor -- and killed the process, losing every OTHER
+    // unsaved document too.
+    //
+    // Assert.Null(record) is the load-bearing half: on the unfixed code this
+    // test does not merely fail an assertion, the exception escapes here. The
+    // log assertion pins the second half of the contract (the statechart twin's
+    // comment calls it "load-bearing"): a mind that did not save must stay OUT
+    // of savedMinds, or the refresh pushes IR the engine refuses into every
+    // attached quantum_agent and into the scenelet FILES.
+    [Fact]
+    public void SaveAllSurvivesAMindThatCannotBeEmitted()
+    {
+        var dir = Path.Combine(
+            Path.GetTempPath(), "wz_saveall_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "broken.mind.json");
+            var mind = new Mind { Name = "broken" };
+            mind.Qubits.Add(new MindQubit { Id = "q0" });
+            File.WriteAllText(path, MindJson.Emit(mind, indented: true));
+
+            var viewModel = new MainWindowViewModel(
+                ProjectSnapshot(),
+                editorSession: new RecordingEditorSession { RuntimeRunning = true },
+                projectDirectory: dir);
+            viewModel.OpenMindCommand.Execute(new MindFileInfo("broken", path));
+
+            var document = viewModel.EditorLayout is null
+                ? null
+                : OpenMindDocument(viewModel);
+            Assert.NotNull(document);
+
+            // Delete the last qubit -- the pane allows it, and Emit then refuses.
+            document!.Pane.SelectOnly(document.Pane.Nodes[0]);
+            document.Pane.DeleteSelected();
+            Assert.True(document.IsDirty);
+
+            var record = Record.Exception(() => viewModel.SaveAllCommand.Execute(null));
+
+            Assert.Null(record);
+            Assert.Contains("Mind 'broken' NOT saved", viewModel.EngineLogText);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    private static MindDocumentViewModel? OpenMindDocument(MainWindowViewModel viewModel)
+    {
+        return viewModel.DockFactory is null
+            ? null
+            : FindMindDocuments(viewModel.EditorLayout).FirstOrDefault();
+    }
+
+    private static IEnumerable<MindDocumentViewModel> FindMindDocuments(object? dockable)
+    {
+        if (dockable is Document { Context: MindDocumentViewModel mind })
+        {
+            yield return mind;
+        }
+
+        if (dockable is IDock dock && dock.VisibleDockables is not null)
+        {
+            foreach (var child in dock.VisibleDockables)
+            {
+                foreach (var found in FindMindDocuments(child))
+                {
+                    yield return found;
+                }
+            }
+        }
     }
 }
