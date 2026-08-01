@@ -2356,14 +2356,23 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     {
         foreach (var component in node.Components)
         {
-            // Camera, Collision, Motion, Audio Source, and Atmosphere are shown +
-            // removed via their own parameter sections below, not as generic rows.
+            // Every component with its own parameter section below is shown and
+            // removed THERE, not as a generic row. Anything section-owned that is
+            // missing from this list gets TWO controls (D3-C15): removing it via
+            // the generic row leaves the dedicated section live and populated, and
+            // touching that section silently re-creates the component the user
+            // just removed. "environment" was missing -- it has a dedicated
+            // section (HasEnvironmentComponent / RemoveEnvironmentComponentCommand)
+            // exactly like its atmosphere twin.
+            // render_to_texture is deliberately absent: it has no dedicated
+            // section, so a generic row is the only control it has.
             if (string.Equals(component.Kind, "camera", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "collision", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "motion", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "motion_filter", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "audio_source", StringComparison.Ordinal)
-                || string.Equals(component.Kind, "atmosphere", StringComparison.Ordinal))
+                || string.Equals(component.Kind, "atmosphere", StringComparison.Ordinal)
+                || string.Equals(component.Kind, "environment", StringComparison.Ordinal))
             {
                 continue;
             }

@@ -891,6 +891,48 @@ public sealed partial class ProjectOpeningTests
             c => c.Kind == "proximity");
     }
 
+    // D3-C15. A component with its own parameter section must NOT also get a
+    // generic row -- two controls for one component means removing it via the
+    // generic row leaves the dedicated section live, and touching that section
+    // silently re-creates what the user just removed. "environment" was missing
+    // from SetComponentFields' skip list while its atmosphere twin was present.
+    // Asserted for the whole family so a future section-owned component that
+    // forgets the list fails here rather than shipping the double control.
+    [Theory]
+    [InlineData("environment")]
+    [InlineData("atmosphere")]
+    [InlineData("collision")]
+    [InlineData("motion")]
+    [InlineData("motion_filter")]
+    [InlineData("audio_source")]
+    public void SectionOwnedComponentsDoNotAlsoGetAGenericRow(string kind)
+    {
+        // The component has to be in the node's SNAPSHOT component list, which is
+        // what SetComponentFields iterates. Driving AddComponentCommand instead
+        // makes this test vacuous -- it passes with the skip list neutered.
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node(
+                                "node",
+                                parentId: "root",
+                                visible: true,
+                                components: [Component(kind, kind)]),
+                        ]))),
+            editorSession: new RecordingEditorSession());
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var node = Assert.Single(root.Children, n => n.Id == "node");
+
+        viewModel.SceneTree.SelectNode(node);
+
+        Assert.DoesNotContain(viewModel.Inspector.Components, c => c.Kind == kind);
+    }
+
     // Inspector "Subtree from asset" section (issue #213 piece 2): the asset graph's
     // "Scene from GLB" nodes are threaded into the picker (matched by schema, NOT by
     // the shared asset-type name); "Add Component → subtree_from_asset" reveals the
