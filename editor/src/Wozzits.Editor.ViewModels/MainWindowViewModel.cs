@@ -1080,7 +1080,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         var dir = Path.Combine(_projectDirectory, "behavior", "statecharts");
-        Directory.CreateDirectory(dir);
         var name = FreshStatechartName(dir);
         var path = Path.Combine(dir, name + ".sc.json");
 
@@ -1092,6 +1091,18 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            // INSIDE the try (D3-P063). This is the first filesystem call on the
+            // path -- the guard above only tests two strings -- and it throws
+            // DirectoryNotFoundException / UnauthorizedAccessException on a removed
+            // drive, a read-only share or a folder renamed while the editor was
+            // open. Both derive from the families this catch already lists, so
+            // sitting one line above it meant a menu click terminated the editor
+            // where the intended behaviour was already written directly below.
+            // (FreshStatechartName runs before this deliberately: it only does
+            // File.Exists, which does not throw, and an absent folder holds no
+            // charts, so the name it picks is right either way.)
+            Directory.CreateDirectory(dir);
+
             // Validated like every other persisting write, even though the template above is
             // valid by construction: if a future edit to that template breaks it, the failure
             // should be a refused create here, not a runner that never starts at play time.
@@ -1386,7 +1397,6 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         }
 
         var dir = Path.Combine(_projectDirectory, "behavior", "minds");
-        Directory.CreateDirectory(dir);
         var name = FreshMindName(dir);
         var path = Path.Combine(dir, name + ".mind.json");
 
@@ -1395,6 +1405,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            // INSIDE the try (D3-P063) -- see the twin in NewStatechart above.
+            Directory.CreateDirectory(dir);
             File.WriteAllText(path, MindJson.Emit(mind, indented: true));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
