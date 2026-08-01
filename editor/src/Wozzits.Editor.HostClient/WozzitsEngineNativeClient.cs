@@ -641,21 +641,25 @@ public sealed partial class WozzitsEngineNativeClient
 
             return ReadProjectSnapshot(buffer).Scene;
         }
-        catch (DllNotFoundException)
+        // Carry the reason (D3-C23). These used to discard it and return a bare
+        // response, and SceneTreeEditorPaneViewModel renders `scene.Error`
+        // verbatim -- so a decode failure showed the user the literal string
+        // "Could not load scene: " with nothing after the colon.
+        catch (DllNotFoundException ex)
         {
-            return new EngineSceneSnapshotResponse();
+            return FailedSceneSnapshot(ex);
         }
-        catch (EntryPointNotFoundException)
+        catch (EntryPointNotFoundException ex)
         {
-            return new EngineSceneSnapshotResponse();
+            return FailedSceneSnapshot(ex);
         }
-        catch (BadImageFormatException)
+        catch (BadImageFormatException ex)
         {
-            return new EngineSceneSnapshotResponse();
+            return FailedSceneSnapshot(ex);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            return new EngineSceneSnapshotResponse();
+            return FailedSceneSnapshot(ex);
         }
         finally
         {
@@ -665,6 +669,13 @@ public sealed partial class WozzitsEngineNativeClient
             }
         }
     }
+
+    // A decode/load failure the caller can actually show. The exception type is
+    // included because the four we catch mean very different things to a user:
+    // DllNotFound/BadImageFormat is a broken or wrong-architecture engine build,
+    // EntryPointNotFound is an ABI skew, InvalidOperation is a refused decode.
+    private static EngineSceneSnapshotResponse FailedSceneSnapshot(Exception ex) =>
+        new() { Ok = false, Error = $"{ex.GetType().Name}: {ex.Message}" };
 
     internal EngineAssetGraphSnapshotResponse LoadAssetGraphSnapshot(IntPtr session)
     {
