@@ -252,3 +252,71 @@ TEST(ThreadedLogger, WaitUntilIdleBlocksUntilAllDelivered)
 
     wz::logging::shutdown_logger(logger);
 }
+
+// ---------------------------------------------------------------------------
+// Idle backoff (issue #313, B4-C10)
+// ---------------------------------------------------------------------------
+// The worker loop used a bare std::this_thread::yield() on an empty queue,
+// which on Windows is SwitchToThread() and returns immediately when nothing
+// else is ready -- i.e. a pure spin. Measured at 99.0% of one core over a 3s
+// idle window with nothing being logged, for the lifetime of every engine
+// process. It now spins briefly and then sleeps.
+//
+// CPU usage itself is not assertable without flakiness, so what is pinned here
+// is the property that would break if someone "fixed" the burn by simply
+// sleeping longer: a message logged after the worker has gone idle must still
+// arrive promptly.
+
+TEST(ThreadedLogger, AMessageAfterAnIdlePeriodStillArrivesPromptly)
+{
+    wz::logging::internal::MemoryLogSink sink;
+    wz::Logger logger;
+    wz::logging::init_logger(logger, { wz::LogLevel::Debug, false, &sink });
+
+    wz::logging::log(logger, wz::LogLevel::Info, "before idle");
+    wz::logging::wait_until_idle(logger);
+
+    // Long enough that the worker has certainly left its spin phase and is in
+    // the sleeping branch.
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+
+    const auto sent = std::chrono::steady_clock::now();
+    wz::logging::log(logger, wz::LogLevel::Info, "after idle");
+    wz::logging::wait_until_idle(logger);
+    const auto latency = std::chrono::steady_clock::now() - sent;
+
+    auto snap = sink.snapshot();
+    ASSERT_EQ(snap.size(), 2u);
+    EXPECT_STREQ(snap[1].text, "after idle");
+
+    // Generous bound: the backoff sleep is ~1ms, so anything approaching this
+    // means the idle sleep has been raised to something that makes logging
+    // useless for diagnosing a live system.
+    EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(latency)
+                  .count(),
+              250)
+        << "a message after an idle period took too long to reach the sink";
+
+    wz::logging::shutdown_logger(logger);
+}
+
+TEST(ThreadedLogger, ABurstAfterIdleIsStillDrainedInFull)
+{
+    // The backoff must not cost throughput: the spin phase exists so a burst
+    // drains at full speed once the first message wakes the worker.
+    wz::logging::internal::MemoryLogSink sink;
+    wz::Logger logger;
+    wz::logging::init_logger(logger, { wz::LogLevel::Debug, false, &sink });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+
+    constexpr int kBurst = 500;
+    for (int i = 0; i < kBurst; ++i) {
+        wz::logging::log(logger, wz::LogLevel::Info, "burst");
+    }
+    wz::logging::wait_until_idle(logger);
+
+    EXPECT_EQ(sink.snapshot().size(), static_cast<size_t>(kBurst));
+
+    wz::logging::shutdown_logger(logger);
+}

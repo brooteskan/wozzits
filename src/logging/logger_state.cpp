@@ -1,9 +1,11 @@
 #include "logging/internal/logger_state.h"
 #include "logging/internal/memory_log_sink.h"
 
+#include <chrono>
 #include <cstdio>
 #include <ctime>
 #include <cstring>
+#include <thread>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -137,10 +139,31 @@ namespace wz::logging::internal
     {
         LogMessage msg;
 
+        // BACKOFF, not a bare yield (#313, B4-C10). std::this_thread::yield()
+        // maps to SwitchToThread() on Windows, which yields only to a ready
+        // thread on the SAME processor and returns immediately when there is
+        // none -- so an idle queue made this a pure spin. Measured: 99.0% of one
+        // core over a 3s idle window with NOTHING being logged, for the lifetime
+        // of every engine process.
+        //
+        // Spin briefly first so a burst still drains at full speed, then sleep.
+        // The cost is up to kIdleSleep of extra latency on the first message
+        // after an idle period, which for logging is not a cost at all.
+        //
+        // Deliberately NOT a condition variable: that would put a mutex in
+        // LoggerState::push, which is reachable from ANY thread -- including the
+        // audio realtime callback, where taking a lock is a priority-inversion
+        // hazard. The producer side stays lock-free.
+        constexpr int kSpinsBeforeSleep = 64;
+        constexpr auto kIdleSleep = std::chrono::milliseconds(1);
+        int idle_spins = 0;
+
         while (running_.load(std::memory_order_acquire))
         {
             if (queue_.try_pop(msg))
             {
+                idle_spins = 0;
+
                 dispatch(msg);
 
                 if (in_flight_.fetch_sub(1, std::memory_order_acq_rel) == 1)
@@ -149,9 +172,14 @@ namespace wz::logging::internal
                     idle_cv_.notify_all();
                 }
             }
+            else if (idle_spins < kSpinsBeforeSleep)
+            {
+                ++idle_spins;
+                std::this_thread::yield();
+            }
             else
             {
-                std::this_thread::yield();
+                std::this_thread::sleep_for(kIdleSleep);
             }
         }
 
