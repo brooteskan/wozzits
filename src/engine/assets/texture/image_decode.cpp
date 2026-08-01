@@ -12,7 +12,10 @@
 #define STBI_NO_STDIO
 #include <stb_image.h>
 
+#include <climits>
 #include <cstddef>
+#include <cstdint>
+#include <string>
 
 namespace wz::engine::assets
 {
@@ -22,6 +25,63 @@ namespace wz::engine::assets
         if (bytes.empty()) {
             out.error = "empty image bytes";
             return out;
+        }
+
+        // stb takes an int length; a span larger than INT_MAX would arrive
+        // negative, and buffer+len with a negative len is out-of-bounds pointer
+        // arithmetic before stb ever looks at it. Refuse rather than narrow.
+        if (bytes.size() > static_cast<std::size_t>(INT_MAX)) {
+            out.error = "image is too large to decode (over 2 GiB)";
+            return out;
+        }
+
+        // Bound the dimensions from the HEADER, before stb allocates anything
+        // (issue #310, A4-C12). stb sizes its raw buffer from the declared
+        // dimensions before decompressing, so without this a ~1 MB file whose
+        // header claims 16384x16384 RGBA costs a gigabyte -- and costs it even
+        // when the compressed payload is truncated and the decode then fails.
+        // In the Inochi path that gigabyte was also RETAINED for the asset's
+        // lifetime, once per texture entry, with nothing bounding the entries.
+        {
+            int info_w = 0, info_h = 0, info_channels = 0;
+            if (stbi_info_from_memory(
+                    bytes.data(),
+                    static_cast<int>(bytes.size()),
+                    &info_w, &info_h, &info_channels) == 0)
+            {
+                const char* reason = stbi_failure_reason();
+                out.error = reason != nullptr
+                    ? std::string("image header rejected: ") + reason
+                    : "image header could not be read";
+                return out;
+            }
+
+            if (info_w <= 0 || info_h <= 0) {
+                out.error = "image header declares non-positive dimensions";
+                return out;
+            }
+
+            const auto uw = static_cast<uint32_t>(info_w);
+            const auto uh = static_cast<uint32_t>(info_h);
+            if (uw > kMaxImageAxis || uh > kMaxImageAxis) {
+                out.error =
+                    "image is " + std::to_string(uw) + "x" + std::to_string(uh)
+                    + ", which exceeds the maximum axis of "
+                    + std::to_string(kMaxImageAxis);
+                return out;
+            }
+
+            // 64-bit product: both axes are individually inside the cap here,
+            // so this is the only place the total can still be unreasonable.
+            const std::uint64_t decoded_bytes =
+                static_cast<std::uint64_t>(uw) * static_cast<std::uint64_t>(uh) * 4ull;
+            if (decoded_bytes > kMaxDecodedImageBytes) {
+                out.error =
+                    "image would decode to " + std::to_string(decoded_bytes)
+                    + " bytes, over the " + std::to_string(kMaxDecodedImageBytes)
+                    + " byte limit";
+                return out;
+            }
         }
 
         int w = 0, h = 0, source_channels = 0;

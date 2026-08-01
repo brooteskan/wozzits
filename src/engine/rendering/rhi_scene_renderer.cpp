@@ -1732,6 +1732,7 @@ namespace wz::engine::rendering
                     packet_by_node.emplace(puppet.parts[i].node_index, i);
                 }
                 std::unordered_map<std::size_t, std::size_t> target_by_node;
+                std::size_t dropped_mask_sources = 0;
                 for (const auto& part : puppet.parts) {
                     std::size_t target = RealizedRenderable::kNoMaskTarget;
                     if (part.mask_source != PartDraw::kNoMaskSource) {
@@ -1742,18 +1743,58 @@ namespace wz::engine::rendering
                                 packet_by_node.find(part.mask_source);
                             pit2 != packet_by_node.end())
                         {
-                            const auto [it, inserted] = target_by_node.emplace(
-                                part.mask_source,
-                                prealized.puppet_mask_targets.size());
-                            if (inserted) {
+                            // Bound the number of DISTINCT mask sources (issue
+                            // #310, A4-C14). Each one costs a full-size RGBA8
+                            // render target AND an offscreen pass every frame,
+                            // and nothing was limiting them: kMaxPuppetMaskSets
+                            // bounds how many SIZE variants may coexist, not how
+                            // many targets are in a set. So ~100 KB of puppet
+                            // JSON -- 512 Parts each masked by a different
+                            // sibling, six floats of geometry apiece -- asked
+                            // for 512 targets, about 4.2 GB at 1080p, and 512
+                            // begin/record/end round trips per render.
+                            //
+                            // 32 is 8x the reference puppet shipped in this
+                            // repo (76 Parts, 4 distinct mask sources) and is
+                            // still ~265 MB of targets at 1080p, so it is
+                            // generous for real content while keeping the worst
+                            // case bounded. Raise it if authored content ever
+                            // legitimately approaches it.
+                            const auto existing =
+                                target_by_node.find(part.mask_source);
+                            if (existing != target_by_node.end()) {
+                                target = existing->second;
+                            }
+                            else if (prealized.puppet_mask_targets.size()
+                                     < RealizedRenderable::kMaxPuppetMaskTargets)
+                            {
+                                target = prealized.puppet_mask_targets.size();
+                                target_by_node.emplace(part.mask_source, target);
                                 prealized.puppet_mask_targets.push_back(
                                     RealizedRenderable::PuppetMaskTarget{
                                         part.mask_source, pit2->second });
                             }
-                            target = it->second;
+                            else {
+                                // Degrade to UNMASKED rather than failing the
+                                // puppet, which is what an unresolvable mask
+                                // source already does two lines up -- the same
+                                // outcome for the same reason, so the puppet
+                                // still draws.
+                                ++dropped_mask_sources;
+                            }
                         }
                     }
                     prealized.puppet_part_mask_target.push_back(target);
+                }
+
+                if (dropped_mask_sources != 0) {
+                    logger_.warn(
+                        "RhiSceneRenderer: puppet declares more than "
+                        + std::to_string(
+                            RealizedRenderable::kMaxPuppetMaskTargets)
+                        + " distinct mask sources; "
+                        + std::to_string(dropped_mask_sources)
+                        + " Part(s) will render unmasked");
                 }
             }
 

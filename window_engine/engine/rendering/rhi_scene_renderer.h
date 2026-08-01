@@ -433,6 +433,19 @@ namespace wz::engine::rendering
                 std::vector<wz::gpu::GPUHandle> render_targets;
             };
             static constexpr std::size_t kMaxPuppetMaskSets = 4;
+
+            // Maximum DISTINCT mask sources in one puppet (issue #310,
+            // A4-C14). Each costs a full-size RGBA8 render target AND an
+            // offscreen pass every frame. kMaxPuppetMaskSets above bounds how
+            // many SIZE variants may coexist, NOT how many targets are in a
+            // set, so nothing limited this: ~100 KB of puppet JSON could ask
+            // for 512 targets (~4.2 GB at 1080p) and 512 passes per render.
+            //
+            // 32 is 8x the reference puppet shipped in this repo (76 Parts, 4
+            // distinct mask sources) and still ~265 MB of targets at 1080p.
+            // Excess sources degrade to unmasked rather than failing the
+            // puppet, matching what an unresolvable mask source already does.
+            static constexpr std::size_t kMaxPuppetMaskTargets = 32;
             std::vector<PuppetMaskSet> puppet_mask_sets;
             // Which set the Part SRGs currently bind; SIZE_MAX before the
             // first bind. Record-time resolution snapshots the SRG, so an
