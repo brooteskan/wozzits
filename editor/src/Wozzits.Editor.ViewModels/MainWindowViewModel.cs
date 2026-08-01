@@ -76,7 +76,8 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             () => _editorSession is not null);
         LaunchStandaloneCommand = new RelayCommand(
             LaunchStandalone,
-            () => !string.IsNullOrWhiteSpace(_projectDirectory));
+            () => !string.IsNullOrWhiteSpace(_projectDirectory)
+                && !IsStandaloneRunning);
         OpenSceneletCommand = new RelayCommand<SceneletInfo?>(
             OpenScenelet, _ => _editorSession is not null);
         BackToSceneCommand = new RelayCommand(
@@ -654,11 +655,61 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     // project's behavior-module DLLs, so behaviors play faithfully. The play
     // runs in its own window; closing the editor closes the host's stdin pipe,
     // which ends the play gracefully.
+    // True while a play we launched is still alive. The handle is the only way
+    // to know: the play is a separate process, so nothing else reports it.
+    private bool IsStandaloneRunning
+    {
+        get
+        {
+            if (_standaloneProcess is null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return !_standaloneProcess.HasExited;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;  // never started
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                return false;  // handle no longer queryable — treat as gone
+            }
+        }
+    }
+
     private void LaunchStandalone()
     {
+        // SINGLE INSTANCE (#313, B4-C13). CanExecute only tested that a project
+        // was open, so a second click spawned a second full engine -- its own
+        // GPU device, its own copies of every behavior DLL -- and overwrote
+        // _standaloneProcess, dropping the only handle to the first one. After
+        // that the first play could not be tracked or stopped at all, and the
+        // launcher's own doc comment ("returns the started Process so the caller
+        // can hold a reference") shows the handle was meant to be used.
+        //
+        // NOT a fix for Shutdown() leaving the process alone: that is
+        // deliberate and documented -- closing the editor closes the host's
+        // stdin pipe, which ends the play gracefully.
+        if (IsStandaloneRunning)
+        {
+            AppendEditorLog(
+                "[editor] Play is already running; close it before starting "
+                + "another.");
+            return;
+        }
+
+        // Release the handle of a play that has since exited before taking a
+        // new one; Process owns an OS handle and dropping it silently leaks
+        // one per play for the editor's lifetime.
+        _standaloneProcess?.Dispose();
         _standaloneProcess = _standaloneLauncher.Launch(
             _projectDirectory,
             AppendEditorLog);
+        LaunchStandaloneCommand.NotifyCanExecuteChanged();
     }
 
     // Recompile the project's behavior-module DLLs (cmake, streamed to the
