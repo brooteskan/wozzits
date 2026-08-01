@@ -668,3 +668,139 @@ TEST(GaussianSplatPLYSchema, IgnoresUnknownExtraProperties)
 
     std::filesystem::remove(path);
 }
+
+// ---------------------------------------------------------------------------
+// Hostile PLY headers (issue #310, A4-C2 / A4-C3 / A4-C4).
+//
+// These guards live in the wz_ply WRAPPER rather than in vendored tinyply, and
+// they therefore protect BOTH entry points into this library -- the
+// gaussian-splat importer and the star-catalog importer both arrive through
+// read_ply_bytes.
+//
+// Every case below was MEASURED against the real importer before the fix:
+//   wrapping count  -> ACCESS_VIOLATION      (0xC0000005) from 145 bytes
+//   colliding key   -> HEAP CORRUPTION       (0xC0000374) from 1151 bytes
+//   unknown type    -> ok=1 with SILENTLY SHIFTED rows, no error, no log
+//
+// So the regression signal for the first two is a CRASHED TEST RUNNER, not a
+// red assertion. Keep them binary: the count guard is deliberately weaker for
+// ASCII payloads (one byte per row, because "0 0 0\n" is six bytes for three
+// doubles whose binary stride is 24), so an ASCII version of the first test
+// would not exercise the same bound.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    std::vector<std::uint8_t> ply_bytes(const std::string& header,
+                                        const std::vector<std::uint8_t>& payload)
+    {
+        std::vector<std::uint8_t> bytes(header.begin(), header.end());
+        bytes.insert(bytes.end(), payload.begin(), payload.end());
+        return bytes;
+    }
+}
+
+TEST(ExternalPLYReader, RejectsElementCountThatCannotFitThePayload)
+{
+    // 2^62 + 1 with a 12-byte binary stride: count * 12 wraps to exactly 12, so
+    // tinyply would allocate 12 bytes, read the 12 bytes present without
+    // tripping its EOF guard, and then scatter 2^62 rows out of them.
+    const std::string header =
+        "ply\nformat binary_little_endian 1.0\n"
+        "element vertex 4611686018427387905\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "end_header\n";
+
+    const std::vector<std::uint8_t> payload(12u, 0u);
+    const auto bytes = ply_bytes(header, payload);
+
+    const auto result = wz::external::ply::read_ply_bytes(bytes);
+    EXPECT_FALSE(result.ok);
+    EXPECT_FALSE(result.error.message.empty());
+}
+
+TEST(ExternalPLYReader, RejectsWrappingElementCountWithNoPayloadAtAll)
+{
+    // 2^62 exactly: BOTH tinyply products wrap to zero, giving a zero-length
+    // bulk buffer that was then indexed from row 0 -- a fault from a file with
+    // no payload bytes whatsoever.
+    const std::string header =
+        "ply\nformat binary_little_endian 1.0\n"
+        "element vertex 4611686018427387904\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "end_header\n";
+
+    const auto result = wz::external::ply::read_ply_bytes(ply_bytes(header, {}));
+    EXPECT_FALSE(result.ok);
+    EXPECT_FALSE(result.error.message.empty());
+}
+
+TEST(ExternalPLYReader, RejectsHeaderWhoseElementPropertyKeysCollide)
+{
+    // "vertex" + "x" == "verte" + "xx" under tinyply's unseparated buffer key.
+    // The second is a LIST property specifically to slip past tinyply's own
+    // duplicate-request guard, which this wrapper never triggers because it
+    // skips list properties at request time.
+    const std::string header =
+        "ply\nformat binary_little_endian 1.0\n"
+        "element vertex 1\n"
+        "property float x\n"
+        "element verte 1\n"
+        "property list uchar float xx\n"
+        "end_header\n";
+
+    std::vector<std::uint8_t> payload(4u, 0u);   // vertex.x
+    payload.push_back(0xFFu);                    // list count = 255
+    payload.insert(payload.end(), 255u * 4u, 0x41u);
+
+    const auto result = wz::external::ply::read_ply_bytes(ply_bytes(header, payload));
+    EXPECT_FALSE(result.ok);
+    EXPECT_FALSE(result.error.message.empty());
+}
+
+TEST(ExternalPLYReader, RejectsUnknownPropertyTypeInsteadOfDesyncingTheStream)
+{
+    // `half` is not a tinyply type, so it became Type::INVALID with stride 0.
+    // The four real bytes of `w` were never consumed and every later field
+    // shifted by four -- silently, with ok=1. Row 0 read correctly and row 1
+    // read (50, 11, 21) instead of (11, 21, 31), which is exactly the kind of
+    // wrongness no assertion downstream would think to question.
+    const std::string header =
+        "ply\nformat binary_little_endian 1.0\n"
+        "element vertex 2\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "property half w\n"
+        "property float nx\n"
+        "end_header\n";
+
+    const std::vector<std::uint8_t> payload(2u * 5u * 4u, 0u);
+
+    const auto result = wz::external::ply::read_ply_bytes(ply_bytes(header, payload));
+    EXPECT_FALSE(result.ok);
+    EXPECT_FALSE(result.error.message.empty());
+}
+
+// The guards must not cost us well-formed files: a binary PLY whose count and
+// payload agree still reads, and reads correctly.
+TEST(ExternalPLYReader, StillAcceptsAWellFormedBinaryPLY)
+{
+    const std::string header =
+        "ply\nformat binary_little_endian 1.0\n"
+        "element vertex 1\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "end_header\n";
+
+    std::vector<std::uint8_t> payload;
+    for (const float v : { 1.0f, 2.0f, 3.0f }) {
+        std::uint8_t b[4];
+        std::memcpy(b, &v, 4);
+        payload.insert(payload.end(), b, b + 4);
+    }
+
+    const auto result = wz::external::ply::read_ply_bytes(ply_bytes(header, payload));
+    ASSERT_TRUE(result.ok) << result.error.message;
+
+    const auto* table = find_table(result.document, "vertex");
+    ASSERT_NE(table, nullptr);
+    EXPECT_EQ(table->row_count, 1u);
+}

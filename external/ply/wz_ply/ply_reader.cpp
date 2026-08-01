@@ -35,6 +35,25 @@ namespace wz::external::ply
             }
         }
 
+        // On-disk size of one scalar of `type`, in a BINARY payload. Computed
+        // here rather than read out of tinyply's PropertyTable so the guard
+        // below does not depend on vendored internals.
+        std::uint64_t binary_stride_of(tinyply::Type type)
+        {
+            switch (type)
+            {
+            case tinyply::Type::INT8:
+            case tinyply::Type::UINT8:   return 1u;
+            case tinyply::Type::INT16:
+            case tinyply::Type::UINT16:  return 2u;
+            case tinyply::Type::INT32:
+            case tinyply::Type::UINT32:
+            case tinyply::Type::FLOAT32: return 4u;
+            case tinyply::Type::FLOAT64: return 8u;
+            default:                     return 0u;
+            }
+        }
+
         double read_scalar_as_double(const uint8_t* data, tinyply::Type type)
         {
             switch (type)
@@ -110,13 +129,73 @@ namespace wz::external::ply
         try
         {
             tinyply::PlyFile file;
-            file.parse_header(stream);
+
+            // parse_header's return value used to be DISCARDED (issue #310,
+            // A4-C4). An unrecognised property type does not throw -- it becomes
+            // Type::INVALID with a stride of ZERO, so tinyply's skip does
+            // is.ignore(0), the field's real bytes are never consumed, and every
+            // subsequent field in every subsequent row is read SHIFTED. Measured
+            // before this change: a 2-row file whose true values were
+            // x=10/11 y=20/21 z=30/31 imported as ok=1 with row 1 reading
+            // (50, 11, 21) -- a clean 4-byte desync, no error, no log line.
+            // This fires on merely UNUSUAL files, not just hostile ones: `half`
+            // is a type real exporters emit.
+            if (!file.parse_header(stream))
+            {
+                result.ok = false;
+                result.error.message =
+                    "PLY header is malformed or declares an unsupported "
+                    "property type";
+                return result;
+            }
 
             Document document;
 
             std::vector<RequestedProperty> requested_properties;
 
             const std::vector<tinyply::PlyElement> elements = file.get_elements();
+
+            // Refuse any header in which two (element, property) pairs share a
+            // buffer key (issue #310, A4-C3).
+            //
+            // tinyply keys its destination buffers on
+            // hash_fnv1a(element.name + property.name) with NO SEPARATOR
+            // (tinyply.h:553, insert side tinyply.h:1113), so "vertex" + "x"
+            // collides EXACTLY with "verte" + "xx" -- no hash brute-force, just
+            // string concatenation. tinyply's own duplicate guard
+            // (tinyply.h:1116) only fires when both colliding properties are
+            // REQUESTED, and this wrapper skips list properties at request time,
+            // so making the second one a list bypasses it entirely: the lookup
+            // then finds the first property's 4-byte buffer and writes a
+            // 255-element list into it. Measured before this change:
+            // STATUS_HEAP_CORRUPTION (0xC0000374) from a 1151-byte file.
+            //
+            // Detecting the collision here keeps the fix in our wrapper and
+            // leaves vendored tinyply untouched. Reconstructing the exact key
+            // (plain concatenation) is deliberate -- a separator here would test
+            // a different question than the one tinyply actually asks.
+            {
+                std::unordered_map<std::string, std::string> key_owner;
+                for (const tinyply::PlyElement& element : elements)
+                {
+                    for (const tinyply::PlyProperty& p : element.properties)
+                    {
+                        const std::string key = element.name + p.name;
+                        const std::string owner = element.name + "." + p.name;
+                        const auto [it, inserted] =
+                            key_owner.emplace(key, owner);
+                        if (!inserted)
+                        {
+                            result.ok = false;
+                            result.error.message =
+                                "PLY header is ambiguous: '" + owner
+                                + "' and '" + it->second
+                                + "' share one internal buffer key";
+                            return result;
+                        }
+                    }
+                }
+            }
 
             document.header.elements.reserve(elements.size());
 
@@ -160,6 +239,84 @@ namespace wz::external::ply
                 }
 
                 document.header.elements.push_back(std::move(element));
+            }
+
+            // Bound every declared element count against the bytes that are
+            // actually present, BEFORE handing the stream to tinyply (issue
+            // #310, A4-C2/A4-C8).
+            //
+            // tinyply validates only that a count is not NEGATIVE
+            // (tinyply.h:520). It then computes `count * stride` as an
+            // unchecked size_t in two places (tinyply.h:856 per-property,
+            // tinyply.h:1205 for the bulk read). With `element vertex
+            // 4611686018427387905` (2^62+1) and three floats, count*12 wraps to
+            // 12 -- so a 12-byte buffer is allocated, the bulk read asks for 12
+            // bytes, the file supplies exactly 12, tinyply's EOF guard never
+            // fires, and the scatter loop then runs 2^62 times writing past both
+            // allocations. Measured before this change: ACCESS_VIOLATION from a
+            // 145-byte file, and the 2^62 variant faults with ZERO payload
+            // bytes.
+            //
+            // The guard lives HERE, in the wrapper, rather than in vendored
+            // tinyply, and it covers BOTH entry points into this library --
+            // the gaussian-splat importer and the star-catalog importer both
+            // come through read_ply_bytes/read_ply_stream.
+            //
+            // Expressed as a DIVISION so the bound cannot itself overflow.
+            {
+                const std::streampos data_begin = stream.tellg();
+                stream.seekg(0, std::ios::end);
+                const std::streampos stream_end = stream.tellg();
+                stream.seekg(data_begin);
+
+                const std::uint64_t remaining_bytes =
+                    (stream_end > data_begin)
+                        ? static_cast<std::uint64_t>(stream_end - data_begin)
+                        : 0u;
+
+                const bool binary = file.is_binary_file();
+
+                for (const tinyply::PlyElement& element : elements)
+                {
+                    const std::uint64_t count =
+                        static_cast<std::uint64_t>(element.size);
+                    if (count == 0u)
+                        continue;
+
+                    // Minimum bytes one row of this element can occupy. For a
+                    // BINARY payload that is the exact fixed stride (list
+                    // properties add at least their count field on top, so
+                    // using the fixed part alone stays a valid lower bound).
+                    //
+                    // For ASCII it is NOT the binary stride -- "0 0 0\n" is six
+                    // bytes for three doubles whose binary stride is 24 -- so
+                    // using the stride there would reject legitimate files.
+                    // One byte per row is the only safe universal bound, and it
+                    // is still sufficient: the overflow attack needs a count
+                    // astronomically larger than any file.
+                    std::uint64_t min_row_bytes = 1u;
+                    if (binary) {
+                        std::uint64_t stride = 0u;
+                        for (const tinyply::PlyProperty& p : element.properties)
+                            stride += p.isList
+                                          ? binary_stride_of(p.listType)
+                                          : binary_stride_of(p.propertyType);
+                        if (stride > min_row_bytes)
+                            min_row_bytes = stride;
+                    }
+
+                    if (count > remaining_bytes / min_row_bytes)
+                    {
+                        result.ok = false;
+                        result.error.message =
+                            "PLY element '" + element.name
+                            + "' declares " + std::to_string(count)
+                            + " entries, which cannot fit in the "
+                            + std::to_string(remaining_bytes)
+                            + " bytes of payload present";
+                        return result;
+                    }
+                }
             }
 
             file.read(stream);
