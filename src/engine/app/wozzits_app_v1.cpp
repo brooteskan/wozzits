@@ -3425,6 +3425,31 @@ namespace wz::app
 
     void WozzitsApp_v1::start_scene_audio()
     {
+        // Members destruct in REVERSE declaration order, so grain_desc_store_
+        // must be declared BEFORE audio_runtime_ to OUTLIVE it: a PlayGrainCloud
+        // command carries a raw pointer into the store, and ~AudioRuntime is
+        // what stops the realtime thread that may still be dereferencing it
+        // (#313, B4-S5). Pinned here because the ordering is invisible at every
+        // use site, so a tidy-up of the member list would silently put the bug
+        // back with nothing to catch it.
+        //
+        // -Winvalid-offsetof is suppressed rather than worked around: the
+        // warning exists because a non-standard-layout offset is not portable
+        // to compute, and this uses it only to COMPARE two members of the same
+        // type, which is exactly what the declaration order question is.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Winvalid-offsetof"
+#endif
+        static_assert(
+            offsetof(WozzitsApp_v1, grain_desc_store_)
+                < offsetof(WozzitsApp_v1, audio_runtime_),
+            "grain_desc_store_ must be declared before audio_runtime_ so that "
+            "it is destroyed AFTER it (#313, B4-S5)");
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+
         // Editor stays silent (audition is a later editor path); only play mode
         // auto-plays. Audio is optional — a missing device must not fail the app.
         if (!view_.prefer_scene_camera())

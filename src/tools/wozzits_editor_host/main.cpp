@@ -361,7 +361,7 @@ int main(int argc, char** argv)
         }
         shutdown_requested->store(true, std::memory_order_release);
     });
-    input_thread.detach();
+    // Deliberately NOT detached (#313, B4-S6) — see the join below.
 
     bool shutdown_logged = false;
     ULONGLONG shutdown_requested_at = 0;
@@ -414,6 +414,49 @@ int main(int argc, char** argv)
 
     stdout_thread.join();
     stderr_thread.join();
+
+    // The stdin reader used to be detached, and main returned straight past it
+    // (#313, B4-S6). On the ordinary end-of-play path — the user closes the play
+    // window while the EDITOR is still running — the editor holds its end of the
+    // pipe open on purpose, so getline never returns EOF and that thread is
+    // still parked inside std::cin when the CRT tears std::cin down underneath
+    // it. The two pipe-relay threads were joined; this one was simply forgotten.
+    //
+    // Usually it is already finished (the editor exiting closes the pipe, which
+    // ends the read), so the first wait succeeds immediately. Otherwise
+    // CancelSynchronousIo aborts the blocking read on that specific thread; the
+    // reader sees a failed getline and returns.
+    //
+    // Bounded and best-effort ON PURPOSE. CancelSynchronousIo does nothing if
+    // the thread has not entered the read yet, so an unbounded retry could hang
+    // at exit — which would be a worse bug than the one being fixed. If it will
+    // not come back, detach and accept the old behaviour rather than block.
+    {
+        const HANDLE input_handle =
+            static_cast<HANDLE>(input_thread.native_handle());
+        bool joined = false;
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            if (WaitForSingleObject(input_handle, 0) == WAIT_OBJECT_0) {
+                joined = true;
+                break;
+            }
+            CancelSynchronousIo(input_handle);
+            if (WaitForSingleObject(input_handle, 25) == WAIT_OBJECT_0) {
+                joined = true;
+                break;
+            }
+        }
+
+        if (joined) {
+            input_thread.join();
+        }
+        else {
+            write_log(
+                "warn",
+                "stdin reader did not unblock; leaving it detached at exit");
+            input_thread.detach();
+        }
+    }
 
     write_log(
         "info",

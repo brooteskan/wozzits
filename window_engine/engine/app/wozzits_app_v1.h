@@ -1448,15 +1448,26 @@ namespace wz::app
         // editor's scenelet menu (the read-only catalog behind scenelet_catalog()).
         std::vector<SceneletCatalogEntry>        scenelet_catalog_{};
 
-        // Play-mode audio runtime: owns the realtime scheduler and (when started)
-        // the output device. Started lazily on the first play-mode scene load and
-        // stopped when leaving play; the editor leaves it idle.
-        wz::engine::audio::AudioRuntime          audio_runtime_{};
+        // ── DECLARATION ORDER BELOW IS LOAD-BEARING (#313, B4-S5) ──────────
+        // Members destruct in REVERSE declaration order, so the store must be
+        // declared BEFORE the runtime in order to OUTLIVE it. It used to be the
+        // other way round: the store died first, while ~AudioRuntime -- the
+        // thing that actually stops the device -- had not run yet, so the
+        // realtime audio thread could still be servicing a PlayGrainCloud
+        // command holding a pointer into freed storage. Do not reorder these
+        // two, and do not move either one out of this pair.
 
         // Stable owner of grain-cloud descriptors posted to the audio thread (a
         // PlayGrainCloud command carries a pointer into this). Cleared on scene
         // load after the runtime is (re)started.
         wz::engine::audio::GrainCloudDescStore    grain_desc_store_{};
+
+        // Play-mode audio runtime: owns the realtime scheduler and (when started)
+        // the output device. Started lazily on the first play-mode scene load and
+        // stopped when leaving play; the editor leaves it idle. Destroyed BEFORE
+        // grain_desc_store_ (see above) so the device thread is stopped while the
+        // descriptors it may dereference are still alive.
+        wz::engine::audio::AudioRuntime          audio_runtime_{};
 
         // AudioSource client ids already auto-played this scene. start_scene_audio()
         // clears + fills it; start_spawned_audio() consults + extends it so a spawned
