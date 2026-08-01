@@ -356,57 +356,20 @@ public sealed partial class WozzitsEngineNativeClient
     // log line, no error dialog, instant process death and unsaved work lost.
     private const int MaxSceneNodeDepth = 64;
 
-    // The depth cap bounds DEPTH, not WORK (D3-C1). It closes the self-referential
-    // case above -- a node that is its own child -- and misses the BRANCHING one:
-    // sibling node records may name the SAME child table, which is a DAG rather
-    // than a cycle, so it never exceeds the cap and expands exponentially.
-    // Measured: a 99,000-byte buffer at depth 62 decodes 2^63 nodes -- still
-    // running at 31 s and 11.3 GB. The end state is OutOfMemoryException, which is
-    // NOT in the wrappers' catch list, i.e. exactly the process death the depth cap
-    // was added to prevent.
-    //
-    // The bound is DERIVED, not picked: a well-formed blob writes each node record
-    // exactly once (AbiBlobBuilder::append_table is pure append, no interning), so
-    // the number of nodes it can honestly describe is at most its own length over
-    // the node stride. Decoding more than that PROVES two spans alias. No magic
-    // number, and it scales with the response instead of guessing a scene size.
-    private sealed class SceneNodeBudget
-    {
-        private int _remaining;
-
-        public SceneNodeBudget(int bufferLength, int nodeStride)
-        {
-            _remaining = Math.Max(1, bufferLength / Math.Max(1, nodeStride));
-        }
-
-        public void SpendOne()
-        {
-            if (--_remaining < 0)
-            {
-                throw new InvalidOperationException(
-                    "Engine ABI returned more scene nodes than the response could "
-                    + "describe, which means the node spans overlap.");
-            }
-        }
-    }
-
     private static List<EngineSceneNode> ReadSceneRoots(
         byte[] bytes,
         WzEditorTableSpanAbi roots)
     {
-        var budget = new SceneNodeBudget(
-            bytes.Length, Marshal.SizeOf<WzEditorSceneNodeAbi>());
         return ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
             bytes,
             roots,
-            (b, node) => ReadSceneNode(b, node, depth: 0, budget));
+            (b, node) => ReadSceneNode(b, node, depth: 0));
     }
 
     private static EngineSceneNode ReadSceneNode(
         byte[] bytes,
         WzEditorSceneNodeAbi node,
-        int depth,
-        SceneNodeBudget budget)
+        int depth)
     {
         if (depth >= MaxSceneNodeDepth)
         {
@@ -414,8 +377,6 @@ public sealed partial class WozzitsEngineNativeClient
                 $"Engine ABI returned a scene tree deeper than {MaxSceneNodeDepth} "
                 + "levels, which means the node spans are self-referential.");
         }
-
-        budget.SpendOne();
 
         return new EngineSceneNode
         {
@@ -512,7 +473,7 @@ public sealed partial class WozzitsEngineNativeClient
             Children = ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
                 bytes,
                 node.Children,
-                (b, child) => ReadSceneNode(b, child, depth + 1, budget)),
+                (b, child) => ReadSceneNode(b, child, depth + 1)),
         };
     }
 
@@ -840,6 +801,40 @@ public sealed partial class WozzitsEngineNativeClient
         };
     }
 
+    // D3-C1 bounded the WORK a scene decode could do, and put the bound in the wrong
+    // place. D3-P053/P071: the same aliasing amplifies with NO recursion at all, so
+    // no depth cap applies and a scene-node cap cannot see it. ReadAssetGraphSnapshot
+    // decodes N node records, each opening four sub-tables (InputPorts, OutputPorts,
+    // Diagnostics, Params) and each param a fifth (Options). N records naming ONE
+    // shared M-entry sub-table decode N*M elements with every individual span in
+    // bounds -- CheckedBufferOffset can only ever reason about one span against the
+    // buffer. Same shape reaches a scene node's Components/Behaviors tables.
+    //
+    // So the budget belongs on the TABLE PRIMITIVE, where it covers every reader
+    // including ones not written yet, rather than on any single decoder.
+    //
+    // The bound is DERIVED, not picked, exactly as D3-C1's was: AbiBlobBuilder::
+    // append_table is pure append with no interning (project_snapshot_abi.cpp:50-68),
+    // so every table in a well-formed response occupies its own disjoint bytes and
+    // the sum of all table extents is at most the response length. Charging past
+    // that PROVES two spans alias. No magic number, and it scales with the response.
+    //
+    // Charged in BYTES over tables ONLY. Strings and the root structs share the same
+    // blob, so charging them too could exceed the length on an honest response -- and
+    // they cannot amplify by themselves, because ReadString runs once per field of an
+    // already-decoded record. Bounding the records transitively bounds the strings.
+    [ThreadStatic]
+    private static long _tableByteBudget;
+
+    // Reset at the one choke point every decode passes through (ReadBufferBytes), so
+    // a reader cannot be added that forgets to opt in. A nested decode -- there are
+    // none today -- would restart the outer budget, which only ever LOOSENS the
+    // bound; it can never reject a response that would otherwise have decoded.
+    private static void BeginDecodeBudget(int bufferLength)
+    {
+        _tableByteBudget = bufferLength;
+    }
+
     private static List<TManaged> ReadTable<TAbi, TManaged>(
         byte[] bytes,
         WzEditorTableSpanAbi span,
@@ -853,6 +848,17 @@ public sealed partial class WozzitsEngineNativeClient
 
         var itemSize = Marshal.SizeOf<TAbi>();
         var offset = CheckedBufferOffset(bytes, span.Offset, itemSize, span.Count);
+
+        // CheckedBufferOffset has already proved this product fits the buffer, so it
+        // cannot overflow here.
+        _tableByteBudget -= (long)((ulong)itemSize * span.Count);
+        if (_tableByteBudget < 0)
+        {
+            throw new InvalidOperationException(
+                "Engine ABI returned more table data than the response can contain, "
+                + "which means the table spans overlap.");
+        }
+
         var values = new List<TManaged>(checked((int)span.Count));
         for (var index = 0; index < checked((int)span.Count); ++index)
         {
@@ -909,6 +915,7 @@ public sealed partial class WozzitsEngineNativeClient
 
         var bytes = new byte[(int)buffer.Size];
         Marshal.Copy(buffer.Data, bytes, startIndex: 0, length: bytes.Length);
+        BeginDecodeBudget(bytes.Length);
         return bytes;
     }
 

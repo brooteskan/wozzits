@@ -83,28 +83,7 @@ public sealed class SceneSnapshotDecoderTests
     {
         var read = typeof(WozzitsEngineNativeClient).GetMethod(
             "ReadProjectSnapshot", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var tBuf = T("WzBuffer");
-
-        var mem = Marshal.AllocHGlobal(blob.Length);
-        try
-        {
-            Marshal.Copy(blob, 0, mem, blob.Length);
-            var buffer = Activator.CreateInstance(tBuf)!;
-            tBuf.GetField("Data")!.SetValue(buffer, mem);
-            tBuf.GetField("Size")!.SetValue(buffer, (ulong)blob.Length);
-            try
-            {
-                return read.Invoke(null, new[] { buffer })!;
-            }
-            catch (TargetInvocationException tie)
-            {
-                throw tie.InnerException ?? tie;
-            }
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(mem);
-        }
+        return Invoke(read, blob);
     }
 
     // The control: a well-formed chain still decodes. Without this, "it threw" is
@@ -140,16 +119,29 @@ public sealed class SceneSnapshotDecoderTests
 
         var error = Assert.Throws<InvalidOperationException>(() => Decode(blob));
 
-        Assert.Contains("scene nodes", error.Message);
+        Assert.Contains("table spans overlap", error.Message);
     }
 
     // The linear self-referential case the depth cap was originally added for.
+    //
+    // LOAD-BEARING PADDING: the decode budget charges one node stride per level, so
+    // on a minimal blob it exhausts after a couple of levels and refuses this before
+    // the depth cap ever fires -- leaving the depth cap untested. Sizing the blob
+    // past MaxSceneNodeDepth strides is what keeps this test pinned to the guard it
+    // names. Do not "simplify" the padding away.
     [Fact]
-    public void ASelfReferentialChildTableIsRefused()
+    public void ASelfReferentialChildTableIsRefusedByTheDepthCap()
     {
         var tSnap = T("WzEditorProjectSnapshotAbi");
         var tNode = T("WzEditorSceneNodeAbi");
-        var blob = BuildSharedChildTableBlob(levels: 1, branch: 1);
+        var nodeSize = Marshal.SizeOf(tNode);
+        var maxDepth = (int)typeof(WozzitsEngineNativeClient)
+            .GetField("MaxSceneNodeDepth", BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetRawConstantValue()!;
+
+        var minimal = BuildSharedChildTableBlob(levels: 1, branch: 1);
+        var blob = new byte[minimal.Length + (maxDepth + 8) * nodeSize];
+        minimal.CopyTo(blob, 0);
         var tableBase = (Marshal.SizeOf(tSnap) + 7) / 8 * 8;
 
         // Point the single node's Children span at its own table.
@@ -158,6 +150,86 @@ public sealed class SceneSnapshotDecoderTests
         BitConverter.TryWriteBytes(
             blob.AsSpan(tableBase + Off(tNode, "Children") + 8), 1ul);
 
-        Assert.Throws<InvalidOperationException>(() => Decode(blob));
+        var error = Assert.Throws<InvalidOperationException>(() => Decode(blob));
+
+        Assert.Contains("deeper than", error.Message);
+    }
+
+    // D3-P053/P071: the SAME aliasing with NO recursion, so neither the depth cap
+    // nor a scene-node cap can see it. N asset-graph node records all naming ONE
+    // M-entry Params table decode N*M params -- every span individually in bounds.
+    // At 1000 x 1000 the unbudgeted decoder materialises a million params and three
+    // million strings; with the budget it refuses once the charged table bytes pass
+    // what the response could contain.
+    [Fact]
+    public void SharedSubTablesInTheAssetGraphAreRefused()
+    {
+        var tSnap = T("WzEditorAssetGraphSnapshotAbi");
+        var tNode = T("WzEditorAssetGraphNodeAbi");
+        var tParam = T("WzEditorAssetGraphParamAbi");
+        var tTable = T("WzEditorTableSpanAbi");
+
+        const int nodes = 1000;
+        const int paramsPerNode = 1000;
+        var nodeSize = Marshal.SizeOf(tNode);
+        var paramSize = Marshal.SizeOf(tParam);
+        var nodeBase = (Marshal.SizeOf(tSnap) + 7) / 8 * 8;
+        var paramBase = nodeBase + nodes * nodeSize;
+        var blob = new byte[paramBase + paramsPerNode * paramSize];
+
+        var abiVersion = (uint)T("WozzitsEngineAbi")
+            .GetField("AbiVersion", BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetRawConstantValue()!;
+        BitConverter.TryWriteBytes(blob.AsSpan(Off(tSnap, "AbiVersion")), abiVersion);
+        BitConverter.TryWriteBytes(blob.AsSpan(Off(tSnap, "Ok")), 1u);
+
+        void PutTable(int at, ulong offset, ulong count)
+        {
+            BitConverter.TryWriteBytes(blob.AsSpan(at + Off(tTable, "Offset")), offset);
+            BitConverter.TryWriteBytes(blob.AsSpan(at + Off(tTable, "Count")), count);
+        }
+
+        PutTable(Off(tSnap, "Nodes"), (ulong)nodeBase, nodes);
+        for (var index = 0; index < nodes; ++index)
+        {
+            PutTable(
+                nodeBase + index * nodeSize + Off(tNode, "Params"),
+                (ulong)paramBase,
+                paramsPerNode);
+        }
+
+        var read = typeof(WozzitsEngineNativeClient).GetMethod(
+            "ReadAssetGraphSnapshot",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [T("WzBuffer")]);
+        var error = Assert.Throws<InvalidOperationException>(
+            () => Invoke(read!, blob));
+
+        Assert.Contains("table spans overlap", error.Message);
+    }
+
+    private static object Invoke(MethodInfo read, byte[] blob)
+    {
+        var tBuf = T("WzBuffer");
+        var mem = Marshal.AllocHGlobal(blob.Length);
+        try
+        {
+            Marshal.Copy(blob, 0, mem, blob.Length);
+            var buffer = Activator.CreateInstance(tBuf)!;
+            tBuf.GetField("Data")!.SetValue(buffer, mem);
+            tBuf.GetField("Size")!.SetValue(buffer, (ulong)blob.Length);
+            try
+            {
+                return read.Invoke(null, [buffer])!;
+            }
+            catch (TargetInvocationException tie)
+            {
+                throw tie.InnerException ?? tie;
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(mem);
+        }
     }
 }
