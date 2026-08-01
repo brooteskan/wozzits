@@ -343,10 +343,7 @@ public sealed partial class WozzitsEngineNativeClient
             {
                 Schema = ReadString(bytes, snapshot.Schema),
                 Name = ReadString(bytes, snapshot.Name),
-                Roots = ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
-                    bytes,
-                    snapshot.Roots,
-                    ReadSceneNode),
+                Roots = ReadSceneRoots(bytes, snapshot.Roots),
             },
         };
     }
@@ -359,17 +356,57 @@ public sealed partial class WozzitsEngineNativeClient
     // log line, no error dialog, instant process death and unsaved work lost.
     private const int MaxSceneNodeDepth = 64;
 
-    private static EngineSceneNode ReadSceneNode(
-        byte[] bytes,
-        WzEditorSceneNodeAbi node)
+    // The depth cap bounds DEPTH, not WORK (D3-C1). It closes the self-referential
+    // case above -- a node that is its own child -- and misses the BRANCHING one:
+    // sibling node records may name the SAME child table, which is a DAG rather
+    // than a cycle, so it never exceeds the cap and expands exponentially.
+    // Measured: a 99,000-byte buffer at depth 62 decodes 2^63 nodes -- still
+    // running at 31 s and 11.3 GB. The end state is OutOfMemoryException, which is
+    // NOT in the wrappers' catch list, i.e. exactly the process death the depth cap
+    // was added to prevent.
+    //
+    // The bound is DERIVED, not picked: a well-formed blob writes each node record
+    // exactly once (AbiBlobBuilder::append_table is pure append, no interning), so
+    // the number of nodes it can honestly describe is at most its own length over
+    // the node stride. Decoding more than that PROVES two spans alias. No magic
+    // number, and it scales with the response instead of guessing a scene size.
+    private sealed class SceneNodeBudget
     {
-        return ReadSceneNode(bytes, node, depth: 0);
+        private int _remaining;
+
+        public SceneNodeBudget(int bufferLength, int nodeStride)
+        {
+            _remaining = Math.Max(1, bufferLength / Math.Max(1, nodeStride));
+        }
+
+        public void SpendOne()
+        {
+            if (--_remaining < 0)
+            {
+                throw new InvalidOperationException(
+                    "Engine ABI returned more scene nodes than the response could "
+                    + "describe, which means the node spans overlap.");
+            }
+        }
+    }
+
+    private static List<EngineSceneNode> ReadSceneRoots(
+        byte[] bytes,
+        WzEditorTableSpanAbi roots)
+    {
+        var budget = new SceneNodeBudget(
+            bytes.Length, Marshal.SizeOf<WzEditorSceneNodeAbi>());
+        return ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
+            bytes,
+            roots,
+            (b, node) => ReadSceneNode(b, node, depth: 0, budget));
     }
 
     private static EngineSceneNode ReadSceneNode(
         byte[] bytes,
         WzEditorSceneNodeAbi node,
-        int depth)
+        int depth,
+        SceneNodeBudget budget)
     {
         if (depth >= MaxSceneNodeDepth)
         {
@@ -377,6 +414,8 @@ public sealed partial class WozzitsEngineNativeClient
                 $"Engine ABI returned a scene tree deeper than {MaxSceneNodeDepth} "
                 + "levels, which means the node spans are self-referential.");
         }
+
+        budget.SpendOne();
 
         return new EngineSceneNode
         {
@@ -473,7 +512,7 @@ public sealed partial class WozzitsEngineNativeClient
             Children = ReadTable<WzEditorSceneNodeAbi, EngineSceneNode>(
                 bytes,
                 node.Children,
-                (b, child) => ReadSceneNode(b, child, depth + 1)),
+                (b, child) => ReadSceneNode(b, child, depth + 1, budget)),
         };
     }
 
