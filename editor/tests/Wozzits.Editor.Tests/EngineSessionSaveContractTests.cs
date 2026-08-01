@@ -222,6 +222,56 @@ public sealed partial class ProjectOpeningTests
         Assert.False(viewModel.Inspector.HasSceneNodeSelection);
     }
 
+    // D3-C13. SetEditResponse used to return void, so every Apply*/On*FieldEdited
+    // pair recorded the engine's answer into LastEditError and then mirrored the
+    // edit onto the cached tree node REGARDLESS. A rejected edit therefore showed
+    // as applied -- and reselecting the node before the next snapshot refresh
+    // confirmed the lie, because the mirror is exactly what a reselect reads.
+    [Fact]
+    public void ARejectedComponentEditIsNotMirroredOntoTheCachedNode()
+    {
+        var editorSession = new RecordingEditorSession
+        {
+            RuntimeRunning = true,
+            RejectComponentEditsWith = "collision node is not in the running scene",
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node(
+                                "node",
+                                parentId: "root",
+                                visible: true,
+                                components: [Component("collision", "Collision")],
+                                collision: new EngineSceneNodeCollision
+                                {
+                                    ConstrainMovement = false,
+                                }),
+                        ]))),
+            editorSession: editorSession);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var node = Assert.Single(root.Children, n => n.Id == "node");
+        viewModel.SceneTree.SelectNode(node);
+        Assert.False(viewModel.Inspector.CollisionConstrainMovement);
+
+        viewModel.Inspector.CollisionConstrainMovement = true;
+
+        // The engine WAS asked -- this is a rejection, not a short-circuit.
+        Assert.Single(editorSession.Collisions);
+        // ...and it said no, so the user is told...
+        Assert.Equal(
+            "collision node is not in the running scene",
+            viewModel.Inspector.LastEditError);
+        // ...and the cached node must still hold the pre-edit value, or a reselect
+        // would show an edit the engine never accepted.
+        Assert.False(node.Collision?.ConstrainMovement ?? false);
+    }
+
     private static MindDocumentViewModel? OpenMindDocument(MainWindowViewModel viewModel)
     {
         return viewModel.DockFactory is null

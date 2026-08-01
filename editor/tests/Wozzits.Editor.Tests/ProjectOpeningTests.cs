@@ -4192,7 +4192,7 @@ public sealed partial class ProjectOpeningTests
             ulong assetGraphNodeId)
         {
             AudioRenderables.Add((nodeId, assetGraphNodeId));
-            return new EngineMutationResponse { Ok = true };
+            return ComponentEditResult();
         }
 
         public List<(string NodeId, bool AutoPlay, bool Enabled)>
@@ -4204,7 +4204,7 @@ public sealed partial class ProjectOpeningTests
             bool enabled)
         {
             AudioSourcePlays.Add((nodeId, autoPlay, enabled));
-            return new EngineMutationResponse { Ok = true };
+            return ComponentEditResult();
         }
 
         public List<(string NodeId, ulong AssetGraphNodeId)> GeometryAssets { get; } = [];
@@ -4254,13 +4254,24 @@ public sealed partial class ProjectOpeningTests
         public List<(string NodeId, ulong AssetGraphNodeId, bool ConstrainMovement)>
             Collisions { get; } = [];
 
+        // Set to make the component-reference verbs REFUSE, so a test can drive
+        // the rejected-edit path. The verbs still record the attempt: the point of
+        // D3-C13 is that the engine was asked and said no, and the editor mirrored
+        // the edit locally anyway.
+        public string? RejectComponentEditsWith { get; set; }
+
+        private EngineMutationResponse ComponentEditResult() =>
+            RejectComponentEditsWith is { } error
+                ? new EngineMutationResponse { Ok = false, Error = error }
+                : new EngineMutationResponse { Ok = true };
+
         public EngineMutationResponse SetNodeCollision(
             string nodeId,
             ulong assetGraphNodeId,
             bool constrainMovement)
         {
             Collisions.Add((nodeId, assetGraphNodeId, constrainMovement));
-            return new EngineMutationResponse { Ok = true };
+            return ComponentEditResult();
         }
 
         public List<(string NodeId, ulong AtmosphereAssetNodeId, bool Enabled)>
@@ -4272,7 +4283,7 @@ public sealed partial class ProjectOpeningTests
             bool enabled)
         {
             Atmospheres.Add((nodeId, atmosphereAssetNodeId, enabled));
-            return new EngineMutationResponse { Ok = true };
+            return ComponentEditResult();
         }
 
         public List<(string NodeId, ulong EnvironmentAssetNodeId, bool Enabled)>
@@ -4284,7 +4295,7 @@ public sealed partial class ProjectOpeningTests
             bool enabled)
         {
             Environments.Add((nodeId, environmentAssetNodeId, enabled));
-            return new EngineMutationResponse { Ok = true };
+            return ComponentEditResult();
         }
 
         public record MotionTerrainEdit(

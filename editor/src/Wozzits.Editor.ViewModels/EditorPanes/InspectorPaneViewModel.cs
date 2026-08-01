@@ -2224,9 +2224,16 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         return true;
     }
 
-    private void SetEditResponse(EngineMutationResponse response)
+    // Records the engine's answer AND returns it, so a caller that mirrors the
+    // edit into local state has to look at it (D3-C13). This used to return void:
+    // every Apply*/On*FieldEdited pair called it and then mirrored the edit onto
+    // the cached tree node UNCONDITIONALLY, so an edit the engine REJECTED still
+    // showed as applied until the next snapshot refresh -- and reselecting the
+    // node in between confirmed the lie.
+    private bool SetEditResponse(EngineMutationResponse response)
     {
         LastEditError = response.Ok ? string.Empty : response.Error;
+        return response.Ok;
     }
 
     private void ClearNodeFields()
@@ -3319,12 +3326,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
         var response = _editorSession!.SetNodeCollision(
             NodeId, AssetGraphNodeIdAsUint(option.Id), CollisionConstrainMovement);
-        SetEditResponse(response);
-        if (response.Ok)
+        if (SetEditResponse(response))
         {
             CollisionReferenceLabel = option.Label;
+            MirrorCollisionEdit();
         }
-        MirrorCollisionEdit();
     }
 
     // Re-push the collision binding when the constrain-movement flag toggles, with
@@ -3340,9 +3346,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         var assetId = SelectedCollisionOption is { } option
             ? AssetGraphNodeIdAsUint(option.Id)
             : 0u;
-        SetEditResponse(_editorSession!.SetNodeCollision(
-            NodeId, assetId, CollisionConstrainMovement));
-        MirrorCollisionEdit();
+        if (SetEditResponse(_editorSession!.SetNodeCollision(
+            NodeId, assetId, CollisionConstrainMovement)))
+        {
+            MirrorCollisionEdit();
+        }
     }
 
     // Mirror the live collision edit onto the cached tree-node VM (visibility-
@@ -3461,12 +3469,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
         var response = _editorSession!.SetNodeAtmosphere(
             NodeId, option.Id, AtmosphereEnabled);
-        SetEditResponse(response);
-        if (response.Ok)
+        if (SetEditResponse(response))
         {
             AtmosphereReferenceLabel = option.Label;
+            MirrorAtmosphereEdit();
         }
-        MirrorAtmosphereEdit();
     }
 
     // Re-push the atmosphere binding when the enabled flag toggles, with the
@@ -3480,9 +3487,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         var assetId = SelectedAtmosphereOption is { } option ? option.Id : 0ul;
-        SetEditResponse(_editorSession!.SetNodeAtmosphere(
-            NodeId, assetId, AtmosphereEnabled));
-        MirrorAtmosphereEdit();
+        if (SetEditResponse(_editorSession!.SetNodeAtmosphere(
+            NodeId, assetId, AtmosphereEnabled)))
+        {
+            MirrorAtmosphereEdit();
+        }
     }
 
     // Mirror the live atmosphere edit onto the cached tree-node VM so an immediate
@@ -3595,12 +3604,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
         var response = _editorSession!.SetNodeEnvironment(
             NodeId, option.Id, EnvironmentEnabled);
-        SetEditResponse(response);
-        if (response.Ok)
+        if (SetEditResponse(response))
         {
             EnvironmentReferenceLabel = option.Label;
+            MirrorEnvironmentEdit();
         }
-        MirrorEnvironmentEdit();
     }
 
     // Re-push the environment binding when the enabled flag toggles, with the
@@ -3614,9 +3622,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         var assetId = SelectedEnvironmentOption is { } option ? option.Id : 0ul;
-        SetEditResponse(_editorSession!.SetNodeEnvironment(
-            NodeId, assetId, EnvironmentEnabled));
-        MirrorEnvironmentEdit();
+        if (SetEditResponse(_editorSession!.SetNodeEnvironment(
+            NodeId, assetId, EnvironmentEnabled)))
+        {
+            MirrorEnvironmentEdit();
+        }
     }
 
     // Mirror the live environment edit onto the cached tree-node VM so an immediate
@@ -3727,12 +3737,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         }
 
         var response = _editorSession!.SetNodeAudioRenderable(NodeId, option.Id);
-        SetEditResponse(response);
-        if (response.Ok)
+        if (SetEditResponse(response))
         {
             AudioRenderableReferenceLabel = option.Label;
+            MirrorAudioSourceEdit();
         }
-        MirrorAudioSourceEdit();
     }
 
     // Re-push the play policy when auto_play / enabled toggles. Suppressed while a
@@ -3743,9 +3752,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         {
             return;
         }
-        SetEditResponse(_editorSession!.SetNodeAudioSourcePlay(
-            NodeId, AudioSourceAutoPlay, AudioSourceEnabled));
-        MirrorAudioSourceEdit();
+        if (SetEditResponse(_editorSession!.SetNodeAudioSourcePlay(
+            NodeId, AudioSourceAutoPlay, AudioSourceEnabled)))
+        {
+            MirrorAudioSourceEdit();
+        }
     }
 
     // Mirror the live edit onto the cached tree-node VM so an immediate reselect
