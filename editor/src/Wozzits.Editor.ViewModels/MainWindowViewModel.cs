@@ -360,7 +360,12 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                 try
                 {
                     document.Save();
-                    savedCharts[document.Name] = document.CompiledIr;
+                    // ValidatedIr, not CompiledIr (D3-C29): Save() only runs
+                    // EmitValidated when the CHART changed, so a layout-only save
+                    // -- a pan or a zoom -- reaches here with IR that may still be
+                    // refused by the engine. This is the persisting reader
+                    // CompiledIr's comment names, so the validation belongs here.
+                    savedCharts[document.Name] = document.ValidatedIr();
                     AppendEditorLog($"[editor] Saved statechart '{document.Name}'");
                 }
                 catch (StatechartFormatException ex)

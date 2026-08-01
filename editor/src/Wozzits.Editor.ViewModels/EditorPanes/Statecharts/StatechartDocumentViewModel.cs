@@ -70,6 +70,15 @@ public sealed class StatechartDocumentViewModel : ViewModelBase
     // embeds this must go through Save() (or EmitValidated) rather than reading it cold.
     public string CompiledIr => StatechartJson.Emit(_chart, indented: false);
 
+    // The same IR, but refusing what parse_chart would refuse. Save() validates
+    // ONLY when the chart itself changed -- a layout-only save (pan / zoom / drag,
+    // which set IsLayoutDirty but not IsDirty) or a read-only chart skips
+    // EmitValidated entirely, while IsDirty is still true, so the persisting
+    // reader still runs (D3-C29). That made the contract in CompiledIr's comment
+    // above false in exactly the case nobody would think to check. Callers that
+    // EMBED the IR -- into runners, into scenelet files -- must use this.
+    public string ValidatedIr() => StatechartJson.EmitValidated(_chart, indented: false);
+
     // Editable name shown in the document header; committing it renames the chart's files.
     public EditableFieldViewModel NameEditor { get; }
 

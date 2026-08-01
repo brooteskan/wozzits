@@ -2290,6 +2290,57 @@ public sealed partial class ProjectOpeningTests
         return path;
     }
 
+    // D3-C29. StatechartDocumentViewModel.Save() runs EmitValidated only when the
+    // CHART changed (Control.IsDirty || Dataflow.IsDirty). A pan/zoom/drag sets
+    // IsLayoutDirty instead, which still makes document.IsDirty true -- so Save()
+    // returned without validating and SaveOpenStatecharts then read CompiledIr,
+    // pushing IR the engine refuses into every attached runner AND the scenelet
+    // FILES. CompiledIr's own comment claims "its only persisting reader runs
+    // after Save() has already validated"; this is the case where that is false.
+    [Fact]
+    public void ALayoutOnlySaveDoesNotEmbedUnvalidatedChartIr()
+    {
+        var dir = Path.Combine(AppContext.BaseDirectory, "runner-fixtures");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "layout_only_invalid.sc.json");
+        // Parses fine, but names a state that does not exist -- exactly what
+        // parse_chart refuses, and what EmitValidated is there to catch.
+        File.WriteAllText(
+            path,
+            "{\n"
+            + "  \"schema\": \"wozzits.statechart.ir.v0\",\n"
+            + "  \"name\": \"layout_only_invalid\",\n"
+            + "  \"bindings\": [ { \"port\": \"p\", \"find\": \"x\", \"scope\": \"subtree\" } ],\n"
+            + "  \"agents\": [], \"pure\": [],\n"
+            + "  \"regions\": [ { \"id\": \"r0\", \"initial\": \"s0\", \"states\": [\"s0\"] } ],\n"
+            + "  \"states\": [ { \"id\": \"s0\", \"do\": [], \"transitions\": "
+            + "[ { \"target\": \"NO_SUCH_STATE\", "
+            + "\"trigger\": { \"kind\": \"event\", \"event\": \"e\" } } ] } ]\n"
+            + "}\n");
+
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(scene: SceneSnapshot(Node("host", "Host"))),
+            editorSession: new RecordingEditorSession { RuntimeRunning = true },
+            projectDirectory: dir);
+        viewModel.OpenStatechartCommand.Execute(
+            new StatechartFileInfo("layout_only_invalid", path));
+
+        var document = FindStatechartDocuments(viewModel.EditorLayout).FirstOrDefault();
+        Assert.NotNull(document);
+
+        // A real user gesture that dirties the LAYOUT only, not the chart.
+        document!.Control.ZoomByWheel(1);
+        Assert.False(document.Control.IsDirty);
+        Assert.True(document.Control.IsLayoutDirty);
+        Assert.True(document.IsDirty);
+
+        viewModel.SaveAllCommand.Execute(null);
+
+        // The invalid IR must not be announced as saved and must not be embedded.
+        Assert.Contains("NOT saved", viewModel.EngineLogText);
+        Assert.DoesNotContain("Saved statechart 'layout_only_invalid'", viewModel.EngineLogText);
+    }
+
     // D3-C14. AttachStatechartRunner discarded all four of its trailing calls
     // (chart config, chart_ir config, events, SaveScene) and then reported
     // "Running 'X'." unconditionally. chart_ir is the load-bearing one -- it is
