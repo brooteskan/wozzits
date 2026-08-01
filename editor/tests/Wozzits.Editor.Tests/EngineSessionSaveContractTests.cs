@@ -5,6 +5,7 @@ using Wozzits.Editor.Protocol;
 using Wozzits.Editor.Statecharts;
 using Wozzits.Editor.ViewModels;
 using Wozzits.Editor.ViewModels.EditorPanes.Minds;
+using Wozzits.Editor.ViewModels.EditorPanes.Statecharts;
 
 namespace Wozzits.Editor.Tests;
 
@@ -178,6 +179,47 @@ public sealed partial class ProjectOpeningTests
         // while the property -- and so the menu's check mark -- still reads true.
         Assert.Equal([true, true], editorSession.FrameProfilingToggles);
         Assert.True(viewModel.FrameProfilingEnabled);
+    }
+
+    // D3-C17. "Rebuild Behavior Modules" calls RefreshDeclaredParams, which
+    // re-Inspected the CACHED scene node whenever one had ever been selected --
+    // even though selecting an asset-graph node (or a statechart state) leaves
+    // _inspectedSceneNode set and only changes the selection KIND. So a rebuild
+    // yanked the pane back to a node the user was no longer looking at, throwing
+    // away anything typed into an Apply-gated field on the way. Its sibling
+    // RefreshBehaviorModuleCatalog already gated on HasSceneNodeSelection.
+    [Fact]
+    public void RefreshingDeclaredParamsDoesNotHijackANonSceneSelection()
+    {
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children: [Node("mesh", parentId: "root", visible: true)]))),
+            editorSession: new RecordingEditorSession());
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var mesh = Assert.Single(root.Children, n => n.Id == "mesh");
+
+        // Select a scene node first -- that is what populates the cache.
+        viewModel.SceneTree.SelectNode(mesh);
+        Assert.True(viewModel.Inspector.HasSceneNodeSelection);
+
+        // Then select a statechart state. This is the path that matters: unlike
+        // the asset-graph path (which clears the cached scene node, and so is
+        // ALREADY safe -- writing this test against it makes it vacuous), the
+        // statechart overloads only change the selection kind.
+        viewModel.Inspector.Inspect(
+            new StateNodeViewModel(new State { Id = "s1" }, isInitial: true));
+        Assert.True(viewModel.Inspector.HasStatechartStateSelection);
+        Assert.False(viewModel.Inspector.HasSceneNodeSelection);
+
+        viewModel.Inspector.RefreshDeclaredParams();
+
+        // The pane must stay where the user left it.
+        Assert.True(viewModel.Inspector.HasStatechartStateSelection);
+        Assert.False(viewModel.Inspector.HasSceneNodeSelection);
     }
 
     private static MindDocumentViewModel? OpenMindDocument(MainWindowViewModel viewModel)

@@ -2496,7 +2496,15 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public void RefreshDeclaredParams()
     {
         _moduleParamCatalog = null;
-        if (_inspectedSceneNode is not null)
+        // Gate on what is ACTUALLY selected, not merely on a scene node having
+        // been selected at some point (D3-C15's neighbour, D3-C17). Inspect(state)
+        // / Inspect(dataflow node) never clear _inspectedSceneNode, so after
+        // selecting a statechart state this re-Inspected the stale scene node and
+        // yanked the pane back to it -- discarding anything typed into an
+        // Apply-gated field (Label / Module / Events / camera FOV-near-far-aspect),
+        // which is held only in the view model until its Apply command runs.
+        // RefreshBehaviorModuleCatalog below already gates exactly this way.
+        if (HasSceneNodeSelection && _inspectedSceneNode is not null)
         {
             Inspect(_inspectedSceneNode);   // re-pulls the catalog while rebuilding the cards
         }
