@@ -275,6 +275,21 @@ namespace wz::engine::assets::internal
                             + wav.string());
                         return compile_failed_node(input);
                     }
+                    // The single-clip WAV compiler has always rejected
+                    // non-finite samples; this path did not, because the check
+                    // was a helper in that compiler's anonymous namespace and
+                    // was therefore unreachable from here (issue #310, A4-C11).
+                    // A NaN in a banked clip survives the mixer's hard-clip
+                    // limiter -- std::clamp is NaN-transparent -- and reaches
+                    // the audio device.
+                    if (const size_t bad = clip.first_non_finite_sample();
+                        bad != AudioClipData::npos)
+                    {
+                        logger.error(
+                            "audio clip bank WAV contains a non-finite sample at index "
+                            + std::to_string(bad) + ": " + wav.string());
+                        return compile_failed_node(input);
+                    }
 
                     const wz::asset::ResourceHandle clip_handle =
                         audio_clip_table.add(std::move(clip));

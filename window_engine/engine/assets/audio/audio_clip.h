@@ -96,6 +96,44 @@ namespace wz::engine::assets {
                 && samples.size() == static_cast<size_t>(sample_count());
         }
 
+        // Index of the first NaN/infinity sample, or npos when every sample is
+        // finite (issue #310, A4-C11).
+        //
+        // This lives on the DATA rather than in a compiler because it was a
+        // compiler-local helper -- in an anonymous namespace -- that made the
+        // single-clip WAV compiler check finiteness while the directory-BANK
+        // compiler could not, and so did not. decode_wav faithfully memcpy's
+        // IEEE-float sample bits, so a WAV whose sample word is 0x7FC00000
+        // decoded to a clip that passed valid() carrying NaN, and the mixer's
+        // hard-clip limiter is NaN-transparent (std::clamp returns v when both
+        // v<lo and hi<v are false), so it reached the device buffer.
+        //
+        // Any future consumer of an AudioClipData gets the same question
+        // answered the same way, which is the point.
+        static constexpr size_t npos = static_cast<size_t>(-1);
+
+        size_t first_non_finite_sample() const noexcept
+        {
+            for (size_t i = 0; i < samples.size(); ++i) {
+                const float v = samples[i];
+                // Deliberately not std::isfinite(v): this must stay usable from
+                // a noexcept accessor in a header without pulling <cmath> in on
+                // every includer. A value is non-finite exactly when it is
+                // unordered with itself (NaN) or compares equal to no finite
+                // bound (inf), both caught by the two tests below.
+                if (v != v)
+                    return i;
+                if (v > 3.402823466e+38f || v < -3.402823466e+38f)
+                    return i;
+            }
+            return npos;
+        }
+
+        bool all_samples_finite() const noexcept
+        {
+            return first_non_finite_sample() == npos;
+        }
+
         // Interleaved sample accessor. frame in [0, frame_count), ch in [0, channels).
         float at(uint64_t frame, uint32_t ch = 0) const
         {
