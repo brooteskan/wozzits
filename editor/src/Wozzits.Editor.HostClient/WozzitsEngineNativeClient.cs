@@ -207,11 +207,7 @@ public sealed partial class WozzitsEngineNativeClient
                 };
             }
 
-            var path = buffer.Data != IntPtr.Zero && buffer.Size != 0
-                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
-                    buffer.Data,
-                    checked((int)buffer.Size)) ?? string.Empty
-                : string.Empty;
+            var path = ReadTextBuffer(buffer);
             return new EngineCreateSceneletResponse { Ok = true, Path = path };
         }
         catch (Exception ex) when (ex is DllNotFoundException
@@ -1005,11 +1001,7 @@ public sealed partial class WozzitsEngineNativeClient
                 };
             }
 
-            var newId = buffer.Data != IntPtr.Zero && buffer.Size != 0
-                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
-                    buffer.Data,
-                    checked((int)buffer.Size)) ?? string.Empty
-                : string.Empty;
+            var newId = ReadTextBuffer(buffer);
             return new EngineAddSceneNodeResponse { Ok = true, NodeId = newId };
         }
         catch (DllNotFoundException ex)
@@ -1068,11 +1060,7 @@ public sealed partial class WozzitsEngineNativeClient
                 };
             }
 
-            var bindingId = buffer.Data != IntPtr.Zero && buffer.Size != 0
-                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
-                    buffer.Data,
-                    checked((int)buffer.Size)) ?? string.Empty
-                : string.Empty;
+            var bindingId = ReadTextBuffer(buffer);
             return new EngineAddSceneNodeResponse { Ok = true, NodeId = bindingId };
         }
         catch (DllNotFoundException ex)
@@ -1893,11 +1881,7 @@ public sealed partial class WozzitsEngineNativeClient
                 return [];
             }
 
-            var text = buffer.Data != IntPtr.Zero && buffer.Size != 0
-                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
-                    buffer.Data,
-                    checked((int)buffer.Size)) ?? string.Empty
-                : string.Empty;
+            var text = ReadTextBuffer(buffer);
             if (string.IsNullOrEmpty(text))
             {
                 return [];
@@ -1969,11 +1953,7 @@ public sealed partial class WozzitsEngineNativeClient
                 return [];
             }
 
-            var text = buffer.Data != IntPtr.Zero && buffer.Size != 0
-                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
-                    buffer.Data,
-                    checked((int)buffer.Size)) ?? string.Empty
-                : string.Empty;
+            var text = ReadTextBuffer(buffer);
             return string.IsNullOrEmpty(text)
                 ? []
                 : text.Split(
@@ -2017,11 +1997,7 @@ public sealed partial class WozzitsEngineNativeClient
                 return [];
             }
 
-            var text = buffer.Data != IntPtr.Zero && buffer.Size != 0
-                ? System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
-                    buffer.Data,
-                    checked((int)buffer.Size)) ?? string.Empty
-                : string.Empty;
+            var text = ReadTextBuffer(buffer);
             return string.IsNullOrEmpty(text)
                 ? []
                 : text.Split(
@@ -2403,6 +2379,34 @@ public sealed partial class WozzitsEngineNativeClient
         }
 
         return line;
+    }
+
+    // Decode a native UTF-8 text buffer (a path, a node id, a short JSON blob).
+    //
+    // The six call sites used to do `checked((int)buffer.Size)` inline, which
+    // raises OverflowException for a drifted size -- and OverflowException is in
+    // NO wrapper's catch filter (D3-C27). It would escape to the UI thread, where
+    // an `async void` caller such as MainWindow.OnNewScenelet turns it into silent
+    // process death, taking every unsaved document with it.
+    //
+    // 256 KiB is comfortably above the 32,767-character Windows extended-length
+    // path limit even at 4 bytes per character (~131 KB), and four orders of
+    // magnitude below int.MaxValue. Over-length degrades to empty, which is the
+    // "no result" every one of these callers already handles -- the same shape as
+    // ReadBufferBytes' cap, and for the same stated reason.
+    private const ulong MaxTextBufferBytes = 256UL * 1024UL;
+
+    private static string ReadTextBuffer(WzBuffer buffer)
+    {
+        if (buffer.Data == IntPtr.Zero
+            || buffer.Size == 0
+            || buffer.Size > MaxTextBufferBytes)
+        {
+            return string.Empty;
+        }
+
+        return System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
+            buffer.Data, (int)buffer.Size) ?? string.Empty;
     }
 
     private static EngineMutationResponse InvokeMutation(Func<WzResult> invoke)
