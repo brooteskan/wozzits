@@ -324,7 +324,18 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
             Nodes.Add(new AssetGraphNodeCardViewModel(node, CanvasPadding));
         }
 
-        var nodesById = Nodes.ToDictionary(node => node.Id);
+        // First-wins rather than ToDictionary's throwing overload (D3-P047). The
+        // decoder now refuses a colliding node table outright, so this is belt and
+        // braces -- but LoadSnapshot is public and reachable from the shell, and it
+        // runs from the MainWindowViewModel constructor, where an ArgumentException
+        // means the editor does not start. The edge loop below already skips edges
+        // whose endpoints are missing, so the defensiveness is consistent now.
+        var nodesById = new Dictionary<ulong, AssetGraphNodeCardViewModel>();
+        foreach (var node in Nodes)
+        {
+            nodesById.TryAdd(node.Id, node);
+        }
+
         foreach (var edge in response.Snapshot.Edges)
         {
             if (!nodesById.TryGetValue(edge.From, out var from)
@@ -1643,9 +1654,15 @@ public sealed class AssetGraphEditorPaneViewModel : ViewModelBase
         }
 
         var wasDraftGraph = IsDraftGraph;
-        var positions = Nodes.ToDictionary(
-            node => node.Id,
-            node => (node.X, node.Y));
+
+        // First-wins, same reason as LoadSnapshot's (D3-P047): this runs on the
+        // commit path, where a throw lands in an async continuation with nothing to
+        // catch it.
+        var positions = new Dictionary<ulong, (double X, double Y)>();
+        foreach (var node in Nodes)
+        {
+            positions.TryAdd(node.Id, (node.X, node.Y));
+        }
         var selectedIds = SelectedNodes
             .Select(node => node.Id)
             .ToHashSet();

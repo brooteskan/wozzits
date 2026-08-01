@@ -208,6 +208,67 @@ public sealed class SceneSnapshotDecoderTests
         Assert.Contains("table spans overlap", error.Message);
     }
 
+    // D3-P047. Node ids must be distinct and nothing upstream proved it. A stride
+    // skew -- a field appended to WzEditorAssetGraphNodeAbi without a version bump,
+    // the drift this project has actually hit -- decodes ids from neighbouring bytes
+    // and stays in bounds, so neither ValidateAbiVersion nor CheckedBufferOffset
+    // sees it. The consumer's ToDictionary then threw ArgumentException out of the
+    // MainWindowViewModel constructor, i.e. the editor did not start.
+    [Fact]
+    public void DuplicateAssetGraphNodeIdsAreRefusedInsteadOfThrowingLater()
+    {
+        var response = DecodeAssetGraph(nodeIds: [7, 7]);
+        var ok = (bool)response.GetType().GetProperty("Ok")!.GetValue(response)!;
+        var error = (string)response.GetType().GetProperty("Error")!.GetValue(response)!;
+
+        Assert.False(ok);
+        Assert.Contains("node id 7 twice", error);
+    }
+
+    // The control: distinct ids still decode, so the refusal above is the duplicate
+    // check firing and not the blob being malformed in some other way.
+    [Fact]
+    public void DistinctAssetGraphNodeIdsStillDecode()
+    {
+        var response = DecodeAssetGraph(nodeIds: [7, 8]);
+        var ok = (bool)response.GetType().GetProperty("Ok")!.GetValue(response)!;
+
+        Assert.True(ok);
+    }
+
+    private static object DecodeAssetGraph(ulong[] nodeIds)
+    {
+        var tSnap = T("WzEditorAssetGraphSnapshotAbi");
+        var tNode = T("WzEditorAssetGraphNodeAbi");
+        var tTable = T("WzEditorTableSpanAbi");
+
+        var nodeSize = Marshal.SizeOf(tNode);
+        var nodeBase = (Marshal.SizeOf(tSnap) + 7) / 8 * 8;
+        var blob = new byte[nodeBase + nodeIds.Length * nodeSize];
+
+        var abiVersion = (uint)T("WozzitsEngineAbi")
+            .GetField("AbiVersion", BindingFlags.NonPublic | BindingFlags.Static)!
+            .GetRawConstantValue()!;
+        BitConverter.TryWriteBytes(blob.AsSpan(Off(tSnap, "AbiVersion")), abiVersion);
+        BitConverter.TryWriteBytes(blob.AsSpan(Off(tSnap, "Ok")), 1u);
+        BitConverter.TryWriteBytes(
+            blob.AsSpan(Off(tSnap, "Nodes") + Off(tTable, "Offset")), (ulong)nodeBase);
+        BitConverter.TryWriteBytes(
+            blob.AsSpan(Off(tSnap, "Nodes") + Off(tTable, "Count")), (ulong)nodeIds.Length);
+
+        for (var index = 0; index < nodeIds.Length; ++index)
+        {
+            BitConverter.TryWriteBytes(
+                blob.AsSpan(nodeBase + index * nodeSize + Off(tNode, "Id")), nodeIds[index]);
+        }
+
+        var read = typeof(WozzitsEngineNativeClient).GetMethod(
+            "ReadAssetGraphSnapshot",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            [T("WzBuffer")]);
+        return Invoke(read!, blob);
+    }
+
     private static object Invoke(MethodInfo read, byte[] blob)
     {
         var tBuf = T("WzBuffer");

@@ -224,6 +224,44 @@ public sealed partial class WozzitsEngineNativeClient
         byte[] bytes,
         WzEditorAssetGraphSnapshotAbi snapshot)
     {
+        var nodes = ReadTable<WzEditorAssetGraphNodeAbi, EngineAssetGraphNode>(
+            bytes,
+            snapshot.Nodes,
+            ReadAssetGraphNode);
+
+        // Node ids must be distinct, and nothing upstream proved it (D3-P047).
+        // AssetGraphDraft allocates them sequentially so an honest snapshot cannot
+        // collide -- which is exactly why a collision means the decode is wrong, and
+        // the likely cause is stride skew from a field appended to
+        // WzEditorAssetGraphNodeAbi without a version bump, the drift this project
+        // has hit before. ValidateAbiVersion cannot catch that (the version did not
+        // change) and CheckedBufferOffset cannot either: a wrong stride stays in
+        // bounds and decodes to plausible garbage.
+        //
+        // Refusing HERE rather than letting the consumer throw is what keeps the
+        // documented policy intact. AssetGraphEditorPaneViewModel.LoadSnapshot does
+        // `Nodes.ToDictionary(node => node.Id)`, whose throwing overload raises
+        // ArgumentException on the first collision -- and it runs from the
+        // MainWindowViewModel constructor, so the throw escapes
+        // OnFrameworkInitializationCompleted and the editor does not start at all.
+        // That directly defeats App.axaml.cs's deliberate choice to open a project
+        // with a broken asset graph anyway, "refusing would leave no way to open a
+        // project in order to repair it". Ok=false lands on that same warning path.
+        var seen = new HashSet<ulong>();
+        foreach (var node in nodes)
+        {
+            if (!seen.Add(node.Id))
+            {
+                return new EngineAssetGraphSnapshotResponse
+                {
+                    Ok = false,
+                    Error =
+                        $"Engine ABI returned asset graph node id {node.Id} twice; "
+                        + "the node table did not decode correctly.",
+                };
+            }
+        }
+
         return new EngineAssetGraphSnapshotResponse
         {
             Ok = snapshot.Ok != 0,
@@ -232,10 +270,7 @@ public sealed partial class WozzitsEngineNativeClient
             {
                 Schema = ReadString(bytes, snapshot.Schema),
                 Zoom = snapshot.Zoom,
-                Nodes = ReadTable<WzEditorAssetGraphNodeAbi, EngineAssetGraphNode>(
-                    bytes,
-                    snapshot.Nodes,
-                    ReadAssetGraphNode),
+                Nodes = nodes,
                 Edges = ReadTable<WzEditorAssetGraphEdgeAbi, EngineAssetGraphEdge>(
                     bytes,
                     snapshot.Edges,
