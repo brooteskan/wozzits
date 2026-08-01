@@ -410,9 +410,24 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     var chartName = behavior.Config.FirstOrDefault(c => c.Name == "chart")?.Value;
                     if (chartName is not null && savedCharts.TryGetValue(chartName, out var ir))
                     {
-                        _editorSession.SetNodeBehaviorConfig(node.Id, behavior.Id, "chart_ir", "string", ir);
-                        refreshed++;
-                        AppendEditorLog($"[editor] Refreshed runner on '{node.DisplayName}' from chart '{chartName}'");
+                        // Report what the engine actually did (D3-C8). This used to
+                        // discard the response and log "Refreshed runner on 'X'"
+                        // unconditionally -- from inside Save All, whose own body
+                        // twenty lines up checks SaveScene precisely because
+                        // "silence here reads as saved".
+                        var response = _editorSession.SetNodeBehaviorConfig(
+                            node.Id, behavior.Id, "chart_ir", "string", ir);
+                        if (response.Ok)
+                        {
+                            refreshed++;
+                            AppendEditorLog($"[editor] Refreshed runner on '{node.DisplayName}' from chart '{chartName}'");
+                        }
+                        else
+                        {
+                            AppendEditorLog(
+                                $"[editor] Runner on '{node.DisplayName}' NOT refreshed "
+                                + $"from chart '{chartName}': {response.Error}");
+                        }
                     }
                 }
 
@@ -422,9 +437,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         Walk(SceneTree.Nodes);
 
-        if (refreshed > 0)
+        if (refreshed > 0 && _editorSession.SaveScene() is { Ok: false } save)
         {
-            _editorSession.SaveScene();
+            AppendEditorLog(
+                $"[editor] Scene NOT saved after refreshing {refreshed} runner(s): {save.Error}");
         }
 
         // The walk above only covers the OPEN scene. A runner in a scenelet that is not the
@@ -1536,10 +1552,20 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                         .FirstOrDefault(c => c.Name == QuantumAgentMindAttachment.ConfigMind)?.Value;
                     if (mindName is not null && savedMinds.TryGetValue(mindName, out var ir))
                     {
-                        _editorSession.SetNodeBehaviorConfig(
+                        // Same contract as the runner twin above (D3-C8).
+                        var response = _editorSession.SetNodeBehaviorConfig(
                             node.Id, behavior.Id, QuantumAgentMindAttachment.ConfigMindIr, "string", ir);
-                        refreshed++;
-                        AppendEditorLog($"[editor] Refreshed quantum_agent on '{node.DisplayName}' from mind '{mindName}'");
+                        if (response.Ok)
+                        {
+                            refreshed++;
+                            AppendEditorLog($"[editor] Refreshed quantum_agent on '{node.DisplayName}' from mind '{mindName}'");
+                        }
+                        else
+                        {
+                            AppendEditorLog(
+                                $"[editor] quantum_agent on '{node.DisplayName}' NOT refreshed "
+                                + $"from mind '{mindName}': {response.Error}");
+                        }
                     }
                 }
 
@@ -1549,9 +1575,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         Walk(SceneTree.Nodes);
 
-        if (refreshed > 0)
+        if (refreshed > 0 && _editorSession.SaveScene() is { Ok: false } save)
         {
-            _editorSession.SaveScene();
+            AppendEditorLog(
+                $"[editor] Scene NOT saved after refreshing {refreshed} quantum_agent(s): {save.Error}");
         }
 
         // Same scenelet blind-spot as runners: a quantum_agent in a scenelet (e.g. the tank's

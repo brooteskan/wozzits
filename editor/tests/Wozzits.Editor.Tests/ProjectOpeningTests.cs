@@ -2295,6 +2295,76 @@ public sealed partial class ProjectOpeningTests
     // "Running 'X'." unconditionally. chart_ir is the load-bearing one -- it is
     // what actually makes the runner run -- so a refusal there left the user
     // looking at a running-status line for a runner that would never start.
+    // D3-C8. RefreshAttachedRunners, called FROM SaveAll, discarded the
+    // SetNodeBehaviorConfig response and logged "Refreshed runner on 'X'"
+    // unconditionally -- twenty lines below SaveAll's own SaveScene check, whose
+    // comment says "silence here reads as saved". So Save All affirmatively
+    // claimed work the engine had refused.
+    [Fact]
+    public void SaveAllReportsARunnerRefreshTheEngineRefused()
+    {
+        var session = new RecordingEditorSession
+        {
+            RuntimeRunning = true,
+            NextAddedBehaviorId = "runner.1",
+            BehaviorModuleCatalog = ["statechart_runner"],
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(scene: SceneSnapshot(Node("host", "Host"))),
+            editorSession: session);
+
+        var chartPath = WriteRunnerFixtureChart("refresh_fixture", "bind1", "laser");
+        viewModel.Inspector.SetStatechartsProvider(() => new[]
+        {
+            new StatechartFileInfo("refresh_fixture", chartPath),
+        });
+
+        // Attach a runner while the engine still accepts everything.
+        var host = viewModel.SceneTree.Nodes.First(n => n.Id == "host");
+        viewModel.SceneTree.SelectNode(host);
+        viewModel.Inspector.AddComponentCommand.Execute("statechart_runner");
+        viewModel.Inspector.SelectedStatechartRunnerChart =
+            viewModel.Inspector.StatechartRunnerCharts.First(c => c.Name == "refresh_fixture");
+        viewModel.Inspector.AttachStatechartRunnerCommand.Execute(null);
+        Assert.True(viewModel.Inspector.HasAttachedStatechartRunner);
+
+        // Open the chart and dirty it, so Save All has something to re-embed.
+        viewModel.OpenStatechartCommand.Execute(
+            new StatechartFileInfo("refresh_fixture", chartPath));
+        var document = FindStatechartDocuments(viewModel.EditorLayout).FirstOrDefault();
+        Assert.NotNull(document);
+        document!.Control.MarkChartDirty();
+        Assert.True(document.IsDirty);
+
+        // Now make the re-embed refuse.
+        session.RejectBehaviorConfigKey = "chart_ir";
+
+        viewModel.SaveAllCommand.Execute(null);
+
+        Assert.Contains("NOT refreshed", viewModel.EngineLogText);
+        Assert.DoesNotContain("Refreshed runner on 'Host'", viewModel.EngineLogText);
+    }
+
+    private static IEnumerable<StatechartDocumentViewModel> FindStatechartDocuments(object? dockable)
+    {
+        if (dockable is Dock.Model.Mvvm.Controls.Document
+            { Context: StatechartDocumentViewModel chart })
+        {
+            yield return chart;
+        }
+
+        if (dockable is Dock.Model.Core.IDock dock && dock.VisibleDockables is not null)
+        {
+            foreach (var child in dock.VisibleDockables)
+            {
+                foreach (var found in FindStatechartDocuments(child))
+                {
+                    yield return found;
+                }
+            }
+        }
+    }
+
     [Fact]
     public void AttachingAStatechartRunnerReportsARefusedChartIrWrite()
     {
