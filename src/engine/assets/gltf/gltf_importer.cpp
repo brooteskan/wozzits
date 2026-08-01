@@ -368,6 +368,24 @@ namespace wz::engine::assets
         const auto flattened_mesh_indices =
             make_flattened_mesh_indices(asset);
 
+        // glTF requires the node hierarchy to be a disjoint union of STRICT
+        // TREES, and nothing upstream enforces it: fastgltf::validate does not
+        // check node.children bounds or acyclicity, and the range test below is
+        // satisfied on every pass of a cycle. Without this set, a file whose
+        // node lists itself as its own child recursed forever -- measured as a
+        // STATUS_STACK_OVERFLOW from a 79-byte .gltf (issue #310, A4-C18).
+        //
+        // That is not survivable: a stack overflow is not a catchable C++
+        // exception, so the ABI's catch(...) cannot contain it, and this runs at
+        // PROJECT LOAD via resolve_glb_scene_sources -- so one such GLB source
+        // made the project permanently unopenable in the editor AND the
+        // standalone app, with no route to opening it to repair it.
+        //
+        // Revisiting is an ERROR rather than a skip because a node reached twice
+        // is malformed even when the graph is acyclic: today it would be emitted
+        // twice under two different parents.
+        std::vector<std::uint8_t> visited(asset.nodes.size(), 0u);
+
         auto visit_node =
             [&](std::size_t node_index,
                 const std::optional<std::string>& parent_id,
@@ -375,6 +393,14 @@ namespace wz::engine::assets
         {
             if (node_index >= asset.nodes.size())
                 return fail("glTF scene references node out of range");
+
+            if (visited[node_index]) {
+                return fail(
+                    "glTF node graph is not a tree: node "
+                    + std::to_string(node_index)
+                    + " is reachable more than once (cycle or shared child)");
+            }
+            visited[node_index] = 1u;
 
             const auto& node = asset.nodes[node_index];
 

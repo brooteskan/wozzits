@@ -384,3 +384,90 @@ TEST(GLBMeshAsset, UsesProjectDiskCache)
     EXPECT_EQ(second.has_normals, first.has_normals);
     EXPECT_EQ(second.has_uv0, first.has_uv0);
 }
+
+// --------------------------------------------------------------------------
+// Hostile scene graphs (issue #310, A4-C18).
+//
+// glTF requires the node hierarchy to be a disjoint union of STRICT TREES, and
+// nothing upstream enforced it: fastgltf::validate checks neither node.children
+// bounds nor acyclicity, and the importer's own range check is satisfied on
+// every pass of a cycle. The walk recursed forever.
+//
+// Measured before the fix: both files below produced STATUS_STACK_OVERFLOW
+// (0xC00000FD) from under 100 bytes. That is not a recoverable failure -- a
+// stack overflow is not a catchable C++ exception, so the ABI's catch(...)
+// cannot contain it -- and this path runs at PROJECT LOAD via
+// resolve_glb_scene_sources, so one such GLB source made the project
+// permanently unopenable in both the editor and the standalone app.
+//
+// These two are the regression pin: with the visited set removed they do not
+// fail, they CRASH THE TEST RUNNER, which is a louder signal than a red test.
+// --------------------------------------------------------------------------
+
+TEST(GLTFImporter, RejectsSelfReferencingSceneNode)
+{
+    const char* gltf = R"({
+  "asset": { "version": "2.0" },
+  "scenes": [ { "nodes": [0] } ],
+  "nodes": [ { "children": [0] } ]
+})";
+
+    wz::engine::assets::ImportedGLTFScene out;
+    std::string error;
+
+    EXPECT_FALSE(wz::engine::assets::import_gltf_scene(
+        reinterpret_cast<const std::uint8_t*>(gltf),
+        std::strlen(gltf),
+        wz::engine::assets::GLTFSceneImportOptions{},
+        out,
+        &error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST(GLTFImporter, RejectsCyclicSceneNodeGraph)
+{
+    const char* gltf = R"({
+  "asset": { "version": "2.0" },
+  "scenes": [ { "nodes": [0] } ],
+  "nodes": [ { "children": [1] }, { "children": [0] } ]
+})";
+
+    wz::engine::assets::ImportedGLTFScene out;
+    std::string error;
+
+    EXPECT_FALSE(wz::engine::assets::import_gltf_scene(
+        reinterpret_cast<const std::uint8_t*>(gltf),
+        std::strlen(gltf),
+        wz::engine::assets::GLTFSceneImportOptions{},
+        out,
+        &error));
+    EXPECT_FALSE(error.empty());
+}
+
+// A node reached twice is malformed even when the graph is ACYCLIC -- before
+// the fix this emitted the shared node twice under two different parents, which
+// is a quieter form of the same defect and is why revisiting is an error rather
+// than a skip.
+TEST(GLTFImporter, RejectsSharedChildNodeInSceneGraph)
+{
+    const char* gltf = R"({
+  "asset": { "version": "2.0" },
+  "scenes": [ { "nodes": [0, 1] } ],
+  "nodes": [
+    { "name": "a", "children": [2] },
+    { "name": "b", "children": [2] },
+    { "name": "shared" }
+  ]
+})";
+
+    wz::engine::assets::ImportedGLTFScene out;
+    std::string error;
+
+    EXPECT_FALSE(wz::engine::assets::import_gltf_scene(
+        reinterpret_cast<const std::uint8_t*>(gltf),
+        std::strlen(gltf),
+        wz::engine::assets::GLTFSceneImportOptions{},
+        out,
+        &error));
+    EXPECT_FALSE(error.empty());
+}
