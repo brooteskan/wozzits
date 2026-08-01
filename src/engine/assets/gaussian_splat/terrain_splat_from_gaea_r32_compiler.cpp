@@ -46,6 +46,7 @@ namespace wz::engine::assets::internal
         using wz::json::find_member;
         using wz::json::read_number;
         using wz::json::read_uint;
+        using wz::json::narrow_float;
     }
 
 
@@ -129,9 +130,30 @@ namespace wz::engine::assets::internal
                         "terrain-splat recipe: sidecar missing 'step_z'");
                     return compile_failed_node(input);
                 }
-                float height_scale = static_cast<float>(*height_scale_v);
-                float step_x       = static_cast<float>(*step_x_v);
-                float step_z       = static_cast<float>(*step_z_v);
+                // Narrow through the shared helper rather than a bare cast
+                // (issue #310, A4-C22). `1e308` is a legal finite JSON number
+                // that becomes inf on the way to float, and the cast is UB
+                // besides. The .r32's own NaN/inf rejection further down does
+                // NOT cover this: the poison is manufactured AFTER that check,
+                // from a legal 0.0 sample, because a Gaea file honouring the
+                // documented [0,1] contract contains 0.0 at its minimum and
+                // `0.0f * inf` is NaN. Those NaNs then became splat positions
+                // and silently escaped the AABB reduction -- `wy < bmin` and
+                // `wy > bmax` are both false for NaN -- while the non-zero
+                // samples drove the bounds to +/-inf. The compile still
+                // SUCCEEDED, because cloud.valid() is only !splats.empty().
+                const auto height_scale_n = narrow_float(*height_scale_v);
+                const auto step_x_n       = narrow_float(*step_x_v);
+                const auto step_z_n       = narrow_float(*step_z_v);
+                if (!height_scale_n || !step_x_n || !step_z_n) {
+                    logger.error(
+                        "terrain-splat recipe: sidecar 'height_scale', 'step_x' "
+                        "or 'step_z' is outside the range of a float");
+                    return compile_failed_node(input);
+                }
+                float height_scale = *height_scale_n;
+                float step_x       = *step_x_n;
+                float step_z       = *step_z_n;
 
                 float overlap_factor  = 1.25f;
                 float thickness       = 0.0f;
@@ -139,13 +161,18 @@ namespace wz::engine::assets::internal
                 float opacity         = 0.95f;
                 float flat_lum        = 0.55f;
                 float steep_lum       = 0.30f;
-                if (auto v = read_number(json, "overlap_factor"))  overlap_factor = static_cast<float>(*v);
-                if (auto v = read_number(json, "thickness"))       thickness      = static_cast<float>(*v);
+                if (auto v = read_number(json, "overlap_factor"))
+                    if (auto n = narrow_float(*v)) overlap_factor = *n;
+                if (auto v = read_number(json, "thickness"))
+                    if (auto n = narrow_float(*v)) thickness = *n;
                 if (auto v = read_uint(json, "subsample_step"))    subsample      = *v;
                 if (subsample == 0u) subsample = 1u;
-                if (auto v = read_number(json, "opacity"))         opacity   = static_cast<float>(*v);
-                if (auto v = read_number(json, "flat_luminance"))   flat_lum  = static_cast<float>(*v);
-                if (auto v = read_number(json, "steep_luminance"))  steep_lum = static_cast<float>(*v);
+                if (auto v = read_number(json, "opacity"))
+                    if (auto n = narrow_float(*v)) opacity = *n;
+                if (auto v = read_number(json, "flat_luminance"))
+                    if (auto n = narrow_float(*v)) flat_lum = *n;
+                if (auto v = read_number(json, "steep_luminance"))
+                    if (auto n = narrow_float(*v)) steep_lum = *n;
 
                 // Normal smoothing — optional sidecar fields.
                 uint32_t normal_smooth_flag   = 0u;
@@ -153,7 +180,14 @@ namespace wz::engine::assets::internal
                 float    normal_smooth_sigma  = 1.0f;
                 if (auto v = read_uint(json, "normal_smoothing_enabled"))       normal_smooth_flag   = *v;
                 if (auto v = read_uint(json, "normal_smoothing_radius_cells"))  normal_smooth_radius = *v;
-                if (auto v = read_number(json, "normal_smoothing_sigma_cells")) normal_smooth_sigma  = static_cast<float>(*v);
+                // Bounded because the smoothing loop is O((2r+1)^2) PER EMITTED
+                // TEXEL and its in-range test discards out-of-bounds samples
+                // WITHOUT shortening the loop, so a large radius is a compile
+                // that never returns rather than one that is merely slow.
+                // 4096 is far past any useful smoothing kernel.
+                if (normal_smooth_radius > 4096u) normal_smooth_radius = 4096u;
+                if (auto v = read_number(json, "normal_smoothing_sigma_cells"))
+                    if (auto n = narrow_float(*v)) normal_smooth_sigma = *n;
 
                 // ── 5. Resolve dimensions: sidecar overrides, else square ──
                 uint32_t width  = read_uint(json, "width").value_or(0u);
