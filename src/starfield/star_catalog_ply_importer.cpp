@@ -4,6 +4,7 @@
 
 #include <ply/ply_reader.h>
 
+#include <cmath>
 #include <cstddef>
 
 namespace wz::engine::starfield
@@ -76,21 +77,56 @@ namespace wz::engine::starfield
 
         result.catalog.source_name = table->element_name;
         result.catalog.stars.reserve(static_cast<std::size_t>(table->row_count));
+        std::size_t non_finite_rows = 0;
         for (std::size_t row = 0; row < table->row_count; ++row) {
             const double vmag = cell(*table, row, iv);
+
+            // The magnitude window ADMITS NaN -- both comparisons are false for
+            // it -- so this cull was not the filter it looked like (issue #310,
+            // A4-C9). A NaN vmag then makes flux = pow(10, -0.4*NaN) = NaN, so
+            // radiance and magnitude reach the GPU as NaN; the star field is
+            // drawn with additive blending, where NaN + dst = NaN, so a single
+            // bad row does not merely lose one star, it poisons whatever was
+            // already in those framebuffer pixels and anything a later
+            // neighbourhood filter spreads it into. A NaN in x/y/z survives
+            // normalize() untouched for the same reason (len == 0.0f is false
+            // for NaN), so the direction needs checking too.
+            //
+            // ASCII PLYs were accidentally immune because tinyply rejects NaN
+            // while parsing text; binary ones -- which is what tycho2_prep
+            // writes -- were not.
+            //
+            // The sibling importer over this same reader has always rejected
+            // the whole file on any non-finite value. Skipping the ROW rather
+            // than failing the file, because a star catalogue is a bulk
+            // observational import where one bad row among millions is a data
+            // problem, not a reason to lose the sky.
+            const double x = cell(*table, row, ix);
+            const double y = cell(*table, row, iy);
+            const double z = cell(*table, row, iz);
+            if (!std::isfinite(vmag) || !std::isfinite(x)
+                || !std::isfinite(y) || !std::isfinite(z)) {
+                ++non_finite_rows;
+                continue;
+            }
+
             if (vmag < params.magnitude_min || vmag > params.magnitude_max) {
                 continue;
             }
             const wz::math::Vec3 dir{
-                static_cast<float>(cell(*table, row, ix)),
-                static_cast<float>(cell(*table, row, iy)),
-                static_cast<float>(cell(*table, row, iz)),
+                static_cast<float>(x),
+                static_cast<float>(y),
+                static_cast<float>(z),
             };
             const bool has_bv = ibv >= 0;
-            const double bv = has_bv ? cell(*table, row, ibv) : 0.0;
+            double bv = has_bv ? cell(*table, row, ibv) : 0.0;
+            if (!std::isfinite(bv))
+                bv = 0.0;   // colour index degrades to neutral, not to NaN tint
             result.catalog.stars.push_back(
                 star_from_direction(dir, vmag, bv, has_bv, params));
         }
+
+        result.non_finite_rows_skipped = non_finite_rows;
 
         if (result.catalog.stars.empty()) {
             result.error = "star PLY produced no stars (all culled?)";

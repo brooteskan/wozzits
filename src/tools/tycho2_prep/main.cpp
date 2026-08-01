@@ -19,6 +19,7 @@
 #include <starfield/star_catalog.h>
 #include <starfield/tycho2.h>
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -101,6 +102,13 @@ namespace
         out.write(
             reinterpret_cast<const char*>(verts.data()),
             static_cast<std::streamsize>(verts.size() * sizeof(Vertex)));
+
+        // close() before good(): the last filebuf block is still unflushed at
+        // the point `return out.good()` used to be evaluated, so a disk-full
+        // failure on the final write happened in the DESTRUCTOR, after the
+        // return value had already been computed as true. The tool then printed
+        // its success line over a PLY short of its declared vertex count.
+        out.close();
         return out.good();
     }
 }
@@ -121,7 +129,7 @@ int main(int argc, char** argv)
     }
 
     std::vector<Vertex> verts;
-    uint64_t read = 0, kept = 0;
+    uint64_t read = 0, kept = 0, skipped_non_finite = 0;
     std::string line;
     while (std::getline(in, line)) {
         ++read;
@@ -135,6 +143,31 @@ int main(int argc, char** argv)
         }
         const wz::math::Vec3 dir =
             sf::direction_from_ra_dec(record->ra_hours, record->dec_deg);
+
+        // Refuse to BAKE a non-finite star (issue #310, A4-C10).
+        //
+        // strtod accepts the literal tokens "nan" and "inf", and returns
+        // HUGE_VAL with ERANGE on overflow; field_number's only acceptance test
+        // is that some characters were consumed, so a garbled catalogue line
+        // yields a record whose ra_hours is NaN or infinite. cos(inf) is NaN,
+        // so the direction becomes (NaN,NaN,NaN) -- and the magnitude cull
+        // above does not stop it, because `NaN > max_mag` is false.
+        //
+        // An offline tool crashing on a bad input file would be a minor matter.
+        // What made this worth fixing is that it does not crash: it writes a
+        // well-formed binary PLY containing the NaN, prints "wrote N stars" and
+        // exits 0, and the runtime importer then trusts it. A tool that
+        // silently produces corrupt output its consumer believes is the case
+        // that has to fail loudly.
+        const bool finite_star =
+            std::isfinite(dir.x) && std::isfinite(dir.y) && std::isfinite(dir.z)
+            && std::isfinite(record->vmag)
+            && (!record->has_bv || std::isfinite(record->bv));
+        if (!finite_star) {
+            ++skipped_non_finite;
+            continue;
+        }
+
         verts.push_back(Vertex{
             dir.x, dir.y, dir.z,
             static_cast<float>(record->vmag),
@@ -158,5 +191,9 @@ int main(int argc, char** argv)
 
     std::cout << "tycho2_prep: read " << read << " lines, wrote " << kept
               << " stars -> " << opts.out_path << "\n";
+    if (skipped_non_finite != 0) {
+        std::cerr << "tycho2_prep: WARNING skipped " << skipped_non_finite
+                  << " record(s) with non-finite position or magnitude\n";
+    }
     return 0;
 }

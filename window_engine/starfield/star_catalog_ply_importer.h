@@ -10,6 +10,7 @@
 
 #include <starfield/star_catalog.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -21,6 +22,13 @@ namespace wz::engine::starfield
         bool        ok = false;
         StarCatalog catalog;
         std::string error;
+
+        // Rows dropped because a required value was NaN or infinite (issue
+        // #310, A4-C9). Reported rather than merely skipped so a silently
+        // degraded catalogue is visible: the magnitude window admitted NaN, and
+        // a NaN star reaches the additively-blended GPU buffer where it
+        // poisons the pixels it lands on rather than just failing to draw.
+        std::size_t non_finite_rows_skipped = 0;
     };
 
     // Parse PLY bytes and build a StarCatalog. The "vertex" element must carry
