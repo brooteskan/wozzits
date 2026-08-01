@@ -83,6 +83,24 @@ namespace wz::fs
         return from_win32(GetLastError());
     }
 
+    // ReadFile/WriteFile take a DWORD count, so a single call cannot express a
+    // length >= 4 GiB -- it silently takes the length modulo 2^32. Both are also
+    // permitted to transfer FEWER bytes than asked for at any size. Every whole-
+    // file transfer below therefore loops in chunks and checks the TOTAL against
+    // the size it set out to move; a mismatch is IOError, never a short buffer
+    // handed back as if it were the whole file.
+    //
+    // 64 MiB keeps each individual I/O modest while costing only 64 iterations
+    // on a 4 GiB file.
+    static constexpr std::size_t kMaxIOChunkBytes = 64u * 1024u * 1024u;
+
+    static DWORD io_chunk_size(std::size_t remaining)
+    {
+        return remaining > kMaxIOChunkBytes
+                   ? static_cast<DWORD>(kMaxIOChunkBytes)
+                   : static_cast<DWORD>(remaining);
+    }
+
     /// @brief Reads the contents of a file into a buffer.
     /// @param path The path to the file.
     /// @return The result containing the file contents or an error.
@@ -119,17 +137,46 @@ namespace wz::fs
         Buffer buffer;
         buffer.resize(static_cast<size_t>(size.QuadPart));
 
-        DWORD bytes_read = 0;
-        if (!ReadFile(file, buffer.data(), (DWORD)buffer.size(), &bytes_read, nullptr))
+        // See kMaxIOChunkBytes. Reading the whole file in ONE ReadFile call
+        // truncated the count to 32 bits, so a 4 GiB file read as 0 bytes and a
+        // 4 GiB + 1 KiB file read as 1 KiB -- and the old code then did
+        // buffer.resize(bytes_read) and returned FileError::None, so a caller
+        // could not tell a whole file from a prefix. That silence is the real
+        // hazard: a decoder handed a prefix sees a well-formed-but-tiny asset
+        // (a 32768-square Gaea .r32 becomes a 16x16 terrain), and anyone who
+        // notices the ceiling is tempted to hand-roll their own reader instead.
+        std::size_t total_read = 0;
+        while (total_read < buffer.size())
         {
-            result.error = last_error();
-            CloseHandle(file);
-            return result;
+            DWORD bytes_read = 0;
+            if (!ReadFile(file,
+                          buffer.data() + total_read,
+                          io_chunk_size(buffer.size() - total_read),
+                          &bytes_read,
+                          nullptr))
+            {
+                result.error = last_error();
+                CloseHandle(file);
+                return result;
+            }
+
+            // EOF before GetFileSizeEx's promise. CreateFileW above shares only
+            // FILE_SHARE_READ, so a concurrent writer is already excluded --
+            // this means the file genuinely changed underneath us.
+            if (bytes_read == 0)
+                break;
+
+            total_read += bytes_read;
         }
 
         CloseHandle(file);
 
-        buffer.resize(bytes_read);
+        if (total_read != buffer.size())
+        {
+            result.error = FileError::IOError;
+            return result;
+        }
+
         result.value = std::move(buffer);
         result.error = FileError::None;
 
@@ -160,19 +207,39 @@ namespace wz::fs
         if (file == INVALID_HANDLE_VALUE)
             return last_error();
 
-        DWORD written = 0;
+        // Same defect as read_file, and worse in consequence: `written` was never
+        // compared against data.size(), so a short write (disk full, quota) --
+        // and any payload >= 4 GiB via the DWORD truncation -- produced a
+        // TRUNCATED FILE reported as a successful write. This function is the
+        // disk-cache write path and, through write_file_text, the scene and
+        // scenelet JSON writer, so a silent partial write here is authored-data
+        // loss.
+        std::size_t total_written = 0;
+        while (total_written < data.size())
+        {
+            DWORD written = 0;
+            if (!WriteFile(file,
+                           data.data() + total_written,
+                           io_chunk_size(data.size() - total_written),
+                           &written,
+                           nullptr))
+            {
+                const FileError err = last_error();
+                CloseHandle(file);
+                return err;
+            }
 
-        BOOL ok = WriteFile(
-            file,
-            data.data(),
-            (DWORD)data.size(),
-            &written,
-            nullptr);
+            // WriteFile reporting success having moved nothing would spin here.
+            if (written == 0)
+                break;
+
+            total_written += written;
+        }
 
         CloseHandle(file);
 
-        if (!ok)
-            return last_error();
+        if (total_written != data.size())
+            return FileError::IOError;
 
         return FileError::None;
     }

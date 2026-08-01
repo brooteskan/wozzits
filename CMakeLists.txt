@@ -849,6 +849,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     # First tests of src/platform/win32 (#313, B4-T4 -- the layer had none).
     rs_add_test_group(platform raw_input_translation_tests)
+    rs_add_test_group(platform filesystem_whole_file_io_tests)
 
     # Strict-isolation render check (issue #213): launch the standalone
     # wozzits_app_v1 executable as a SEPARATE PROCESS on the portable render
