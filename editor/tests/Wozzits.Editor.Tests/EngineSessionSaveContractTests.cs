@@ -154,6 +154,32 @@ public sealed partial class ProjectOpeningTests
         }
     }
 
+    // D3-C16. SimulationPaused is resynced after a viewport restart (with a
+    // comment saying why); FrameProfilingEnabled, an identically-shaped toggle
+    // twelve lines away in the same file, was not. The fresh runtime came back
+    // with profiling off while the _Run menu still showed it checked -- and
+    // clicking that menu item could not fix it, because SetProperty short-circuits
+    // on an unchanged value, so the user had to toggle off and then on again.
+    [Fact]
+    public void RestartingTheViewportReappliesFrameProfiling()
+    {
+        var editorSession = new RecordingEditorSession { RuntimeRunning = true };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(),
+            editorSession: editorSession);
+
+        viewModel.FrameProfilingEnabled = true;
+        Assert.Equal([true], editorSession.FrameProfilingToggles);
+
+        viewModel.RestartViewportCommand.Execute(null);
+
+        Assert.Equal(1, editorSession.RestartRuntimeCount);
+        // The re-push is the fix: without it the fresh runtime keeps profiling off
+        // while the property -- and so the menu's check mark -- still reads true.
+        Assert.Equal([true, true], editorSession.FrameProfilingToggles);
+        Assert.True(viewModel.FrameProfilingEnabled);
+    }
+
     private static MindDocumentViewModel? OpenMindDocument(MainWindowViewModel viewModel)
     {
         return viewModel.DockFactory is null

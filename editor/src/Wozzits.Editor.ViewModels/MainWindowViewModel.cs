@@ -622,6 +622,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         _editorSession?.RestartRuntime();
         // A fresh runtime starts unpaused, so keep the toggle in sync.
         SimulationPaused = false;
+        // ...and unprofiled, so PUSH the profiling toggle rather than assigning it
+        // (D3-C16). Assignment is not enough: SetProperty short-circuits on an
+        // unchanged value, so `FrameProfilingEnabled = FrameProfilingEnabled` sends
+        // nothing. That short-circuit is also why the obvious user recovery failed
+        // -- clicking a menu item that is already checked does nothing -- leaving
+        // the menu claiming profiling was on while the new runtime had it off,
+        // recoverable only by toggling off and on again.
+        _editorSession?.SetFrameProfiling(FrameProfilingEnabled);
         // The runtime is back (or gone): re-enable the inspector's edit surface.
         // The scene tree self-heals (it re-checks on context-menu open).
         Inspector.RefreshEditAvailability();
