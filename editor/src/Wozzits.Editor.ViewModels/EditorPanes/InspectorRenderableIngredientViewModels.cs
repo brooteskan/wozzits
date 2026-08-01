@@ -185,11 +185,18 @@ public sealed class InspectorRenderableConstantRowViewModel : ViewModelBase
         var value = new float[4];
         for (var i = 0; i < 4; ++i)
         {
+            // Non-finite counts as not-yet-parseable (D3-P065). float.TryParse takes
+            // "NaN" and "Infinity" by name and returns +inf for "1e39", and this
+            // value is pushed to SetNodeRenderableParam -- i.e. straight into a GPU
+            // constant tail, where it reaches the shader. Treated exactly like a
+            // half-typed number: not applied, no error spam, and the next valid
+            // keystroke re-applies all four components together.
             if (!float.TryParse(
                     _components[i],
                     NumberStyles.Float,
                     CultureInfo.InvariantCulture,
-                    out value[i]))
+                    out value[i])
+                || !float.IsFinite(value[i]))
             {
                 return;
             }

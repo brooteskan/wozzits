@@ -4221,6 +4221,22 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private static uint AssetGraphNodeIdAsUint(ulong id) =>
         id <= uint.MaxValue ? (uint)id : 0u;
 
+    // Non-finite is refused as unparseable (D3-P065). float.TryParse ACCEPTS "NaN"
+    // and "Infinity" by name, and returns true with +inf for "1e39" -- an ordinary
+    // fat-fingered exponent -- so all three used to reach SetNodeMotionTerrain /
+    // SetNodeMotionFilter unchecked.
+    //
+    // The disk round-trip is what makes it worth guarding, and it is SILENT here
+    // where the transform path is loud: scene_json_export writes non-finite as the
+    // JSON token `null`, and the motion fields are read back with per-field
+    // read_number, whose nullopt is indistinguishable from "absent" -- so the field
+    // takes its in-class default and one setting quietly resets itself on the next
+    // project open while every other field on the component survives. (The
+    // transform path at least aborts the whole parse loudly; see D3-C5.)
+    //
+    // Mapping to 0 rather than skipping the edit is this helper's existing contract
+    // for anything unparseable, and it writes a value the user can SEE instead of a
+    // silent revert.
     private static float ParseFloatOrZero(string text)
     {
         return float.TryParse(
@@ -4228,6 +4244,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             NumberStyles.Float,
             CultureInfo.InvariantCulture,
             out var value)
+            && float.IsFinite(value)
             ? value
             : 0f;
     }
