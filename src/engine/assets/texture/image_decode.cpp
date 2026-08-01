@@ -45,8 +45,24 @@ namespace wz::engine::assets
         out.height = static_cast<uint32_t>(h);
         const std::size_t byte_count =
             static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4u;
+
+        // assign() ran BEFORE stbi_image_free, so a throw from the copy leaked
+        // stb's decoded buffer permanently (issue #310, A4-C13). That is not
+        // hypothetical: at this point stb is holding w*h*4 bytes and the copy is
+        // asking the allocator for a second block of exactly the same size, so
+        // it is the single most likely allocation in the loader to fail -- and
+        // the .inp texture path can reach here with ~1 GiB blocks. Nothing
+        // between here and the ABI catches, so each retry leaked again.
+        //
+        // A scope guard rather than reordering, because the copy genuinely has
+        // to happen before the free.
+        struct StbPixelsGuard
+        {
+            stbi_uc* p;
+            ~StbPixelsGuard() { if (p != nullptr) stbi_image_free(p); }
+        } guard{ pixels };
+
         out.rgba8.assign(pixels, pixels + byte_count);
-        stbi_image_free(pixels);
         out.ok = true;
         return out;
     }
