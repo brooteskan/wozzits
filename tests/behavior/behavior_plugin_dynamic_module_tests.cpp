@@ -1,5 +1,12 @@
 ﻿#include "behavior_test_support.h"
 
+#include <fstream>
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 namespace
 {
     std::string loaded_copy_from_detail(const std::string& detail)
@@ -254,3 +261,101 @@ TEST(BehaviorPluginAbi, RejectsInvalidRegistrations)
     EXPECT_TRUE(registry.registrations().empty());
 }
 
+
+// ─── Orphaned shadow copies (issue #313, B4-C14) ───────────────────────────
+// A behavior DLL is loaded from a ".wzload.<pid>.<n>.dll" shadow copy, and the
+// ONLY code that deletes one is unload_dynamic_module_copy, reached through
+// ordinary C++ teardown. The editor's play host force-kills the runtime with
+// TerminateProcess once its shutdown grace expires, and TerminateProcess runs
+// no destructors -- so every force-killed play left its copies in the project's
+// behavior folder, permanently. Nothing else deleted them: the module scan only
+// SKIPPED them. A killed process cannot clean up after itself, so the sweep
+// happens on the next scan instead.
+
+#if defined(_WIN32)
+
+TEST(BehaviorPluginDynamicModule, ScanReapsCopiesLeftByADeadProcess)
+{
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path()
+        / "wz_behavior_reap_tests";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    ASSERT_FALSE(ec);
+
+    const auto touch = [](const fs::path& p) {
+        std::ofstream f(p, std::ios::binary);
+        f << "not a real dll";
+    };
+
+    // A copy owned by a process that cannot exist: pid 0 is never a real
+    // process, so use a plainly dead one instead -- spawn nothing and pick an
+    // id far outside the live range by reusing our own with an offset, then
+    // confirm it is not alive before relying on it.
+    const uint32_t self = static_cast<uint32_t>(GetCurrentProcessId());
+    uint32_t dead = self + 4;
+    for (int i = 0; i < 4096 && dead != 0; ++i, dead += 4) {
+        const HANDLE h =
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, dead);
+        if (h == nullptr && GetLastError() == ERROR_INVALID_PARAMETER) {
+            break;  // provably no such process
+        }
+        if (h != nullptr) {
+            CloseHandle(h);
+        }
+    }
+
+    const fs::path orphan =
+        dir / ("mod.wzload." + std::to_string(dead) + ".0.dll");
+    const fs::path mine =
+        dir / ("mod.wzload." + std::to_string(self) + ".0.dll");
+    const fs::path real = dir / "unrelated.dll";
+    touch(orphan);
+    touch(mine);
+    touch(real);
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    plugins.load_dynamic_modules_from_directory(registry, dir, nullptr);
+
+    EXPECT_FALSE(fs::exists(orphan))
+        << "a copy whose owning process is gone must be reaped -- nothing else "
+           "ever deletes it, so it accumulates for the life of the project";
+    EXPECT_TRUE(fs::exists(mine))
+        << "a copy owned by a LIVE process (here, us) must be left alone: it "
+           "may still be loaded";
+    EXPECT_TRUE(fs::exists(real))
+        << "the sweep must only touch .wzload copies";
+
+    fs::remove_all(dir, ec);
+}
+
+TEST(BehaviorPluginDynamicModule, ScanLeavesCopiesWithNoParsablePidAlone)
+{
+    // Fail in the safe direction: an unrecognised name is left on disk rather
+    // than deleted on a guess.
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path()
+        / "wz_behavior_reap_unparsable_tests";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    ASSERT_FALSE(ec);
+
+    const fs::path odd = dir / "mod.wzload.notapid.0.dll";
+    {
+        std::ofstream f(odd, std::ios::binary);
+        f << "x";
+    }
+
+    BehaviorRegistry registry;
+    BehaviorPluginHost plugins;
+    plugins.load_dynamic_modules_from_directory(registry, dir, nullptr);
+
+    EXPECT_TRUE(fs::exists(odd));
+
+    fs::remove_all(dir, ec);
+}
+
+#endif  // _WIN32

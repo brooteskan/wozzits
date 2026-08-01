@@ -114,6 +114,114 @@ namespace wz::engine::behavior
             }
             remove_behavior_load_copy(module.loaded_path);
         }
+
+        // The owning process id encoded in a ".wzload.<pid>.<n>.dll" name, or 0
+        // if the name does not carry one.
+        uint32_t behavior_load_copy_owner_pid(
+            const std::filesystem::path& path)
+        {
+            const std::wstring name = path.filename().wstring();
+            const std::wstring marker = L".wzload.";
+            const size_t start = name.find(marker);
+            if (start == std::wstring::npos) {
+                return 0;
+            }
+
+            size_t i = start + marker.size();
+            uint64_t pid = 0;
+            bool any = false;
+            for (; i < name.size() && name[i] >= L'0' && name[i] <= L'9'; ++i) {
+                pid = pid * 10u + static_cast<uint64_t>(name[i] - L'0');
+                any = true;
+                if (pid > 0xFFFFFFFFull) {
+                    return 0;  // not a plausible pid
+                }
+            }
+            return any ? static_cast<uint32_t>(pid) : 0;
+        }
+
+        bool process_is_alive(uint32_t pid)
+        {
+            if (pid == 0) {
+                return false;
+            }
+            const HANDLE handle =
+                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (handle == nullptr) {
+                // ERROR_ACCESS_DENIED means it exists but we may not query it;
+                // treat anything other than "no such process" as ALIVE so we
+                // never delete a copy another instance still has loaded.
+                return GetLastError() != ERROR_INVALID_PARAMETER;
+            }
+            DWORD exit_code = 0;
+            const bool still_running =
+                GetExitCodeProcess(handle, &exit_code) != 0
+                && exit_code == STILL_ACTIVE;
+            CloseHandle(handle);
+            return still_running;
+        }
+
+        // Delete shadow copies left behind by processes that are gone
+        // (#313, B4-C14).
+        //
+        // The only deleter of a .wzload copy is unload_dynamic_module_copy,
+        // reached through ordinary C++ teardown. But the editor's play host
+        // force-kills the runtime with TerminateProcess once its shutdown grace
+        // period expires, and TerminateProcess runs NO destructors -- so every
+        // force-killed play leaves its copies in the project's behavior folder,
+        // permanently and unboundedly. Nothing anywhere else deletes them: the
+        // scan below only SKIPS them.
+        //
+        // A process that has been killed cannot clean up after itself, so the
+        // cleanup has to happen on somebody's next start. Ownership is encoded
+        // in the filename, so this deletes only copies whose owner is provably
+        // gone; a live owner (another editor, another play, or THIS process)
+        // keeps its copies. Failures are ignored -- a copy still held open by a
+        // process we misjudged simply survives to the next sweep, which is the
+        // safe direction to fail in.
+        uint32_t reap_orphaned_behavior_load_copies(
+            const std::filesystem::path& directory,
+            wz::Logger* logger)
+        {
+            std::error_code ec;
+            std::filesystem::directory_iterator it{
+                directory,
+                std::filesystem::directory_options::skip_permission_denied,
+                ec,
+            };
+            if (ec) {
+                return 0;
+            }
+
+            const uint32_t self = static_cast<uint32_t>(GetCurrentProcessId());
+            uint32_t reaped = 0;
+            const std::filesystem::directory_iterator end{};
+            for (; it != end; it.increment(ec)) {
+                if (ec) {
+                    ec.clear();
+                    break;
+                }
+                const std::filesystem::path path = it->path();
+                if (!is_behavior_load_copy_path(path)) {
+                    continue;
+                }
+                const uint32_t owner = behavior_load_copy_owner_pid(path);
+                if (owner == 0 || owner == self || process_is_alive(owner)) {
+                    continue;
+                }
+                std::error_code remove_ec;
+                if (std::filesystem::remove(path, remove_ec) && !remove_ec) {
+                    ++reaped;
+                }
+            }
+
+            if (reaped > 0 && logger) {
+                logger->info(
+                    "[behavior] reaped " + std::to_string(reaped)
+                    + " orphaned module copies left by a force-killed process");
+            }
+            return reaped;
+        }
 #endif
 
         WzCollisionEventKind to_abi_collision_kind(
@@ -3150,6 +3258,13 @@ namespace wz::engine::behavior
         {
             return 0;
         }
+
+#if defined(_WIN32)
+        // Before loading anything, clear out copies whose owning process is
+        // gone. A force-killed play (TerminateProcess) cannot delete its own,
+        // so this is the only thing that ever will (#313, B4-C14).
+        reap_orphaned_behavior_load_copies(directory, logger);
+#endif
 
         uint32_t loaded = 0;
         std::filesystem::directory_iterator it{
