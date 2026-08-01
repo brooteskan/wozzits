@@ -2213,8 +2213,21 @@ public sealed partial class WozzitsEngineNativeClient
 
     internal static void RecordAbiLoadPath(string loadPath) => AbiLoadPath = loadPath;
 
+    // Resolved ONCE per process. The newest-wins scan below is deliberately
+    // time-based, so re-running it mid-session can pick a DIFFERENT config than
+    // the resident engine already loaded (D3-C25): rebuild another config while
+    // the editor is open and Play -- which derives its host exe from this path --
+    // would launch that config's host against an engine image from the first one,
+    // while DescribeLoadedAbi's diagnostics get rewritten to name the new file.
+    // Whichever DLL this process actually loaded is the answer for its lifetime.
+    private static readonly object AbiPathGate = new();
+    private static string? _resolvedAbiPath;
+
     public static string ResolveDefaultAbiPath()
     {
+        // The explicit override is re-read every call and is NOT memoized: it is
+        // free (no directory scan), it is the documented escape hatch, and a
+        // caller that sets it means it. Only the time-based scan below is cached.
         var configured = Environment.GetEnvironmentVariable(AbiPathEnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(configured))
         {
@@ -2226,6 +2239,14 @@ public sealed partial class WozzitsEngineNativeClient
             return configured;
         }
 
+        lock (AbiPathGate)
+        {
+            return _resolvedAbiPath ??= ResolveDefaultAbiPathUncached();
+        }
+    }
+
+    private static string ResolveDefaultAbiPathUncached()
+    {
         // An installed editor ships wozzits_abi.dll beside its own executable (the
         // "here is the app" folder that `cmake --install --component app` +
         // `dotnet publish` both target). Prefer that co-located copy over the dev

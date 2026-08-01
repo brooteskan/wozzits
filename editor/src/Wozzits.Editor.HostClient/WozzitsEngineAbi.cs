@@ -34,13 +34,45 @@ internal static partial class WozzitsEngineAbi
             return IntPtr.Zero;
         }
 
-        var source = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
-        if (!File.Exists(source))
+        // A DllImportResolver is invoked once per DISTINCT EXTERN METHOD, not once
+        // per library, so this runs ~78 times over a session. Resolve the load path
+        // exactly ONCE (D3-C2): on the second call TryShadowCopy's File.Copy targets
+        // our own, now-loaded shadow DLL, fails, and the fallback below loaded THE
+        // BUILD OUTPUT -- locking the file the shadow copy exists to keep free and
+        // mapping a second engine image with its own C++ statics. Measured: after
+        // extern #1 the build output was unlocked and one image was mapped; after
+        // extern #2 it was locked and two were.
+        var loadPath = _resolvedLoadPath;
+        if (loadPath is null)
+        {
+            lock (ResolveGate)
+            {
+                _resolvedLoadPath = loadPath = ResolveLoadPathOnce();
+            }
+        }
+
+        if (loadPath.Length == 0)
         {
             // Nothing at the resolved path -> let the default runtime search
             // (app dir / PATH) try, exactly as before.
-            WozzitsEngineNativeClient.RecordAbiLoadPath(source);
             return IntPtr.Zero;
+        }
+
+        return NativeLibrary.Load(loadPath, assembly, searchPath);
+    }
+
+    private static readonly object ResolveGate = new();
+
+    // "" means "nothing there, fall back to the runtime's own search".
+    private static string? _resolvedLoadPath;
+
+    private static string ResolveLoadPathOnce()
+    {
+        var source = WozzitsEngineNativeClient.ResolveDefaultAbiPath();
+        if (!File.Exists(source))
+        {
+            WozzitsEngineNativeClient.RecordAbiLoadPath(source);
+            return string.Empty;
         }
 
         // Load a private SHADOW COPY, never the build output itself, so a running
@@ -49,7 +81,7 @@ internal static partial class WozzitsEngineAbi
         // denied" relink, and the freshest build is picked up on the next launch.
         var loadPath = TryShadowCopy(source) ?? source;
         WozzitsEngineNativeClient.RecordAbiLoadPath(loadPath);
-        return NativeLibrary.Load(loadPath, assembly, searchPath);
+        return loadPath;
     }
 
     // Copy the resolved DLL (+ its .pdb, best-effort for stack traces) into a
@@ -92,9 +124,18 @@ internal static partial class WozzitsEngineAbi
         }
     }
 
-    // Reclaim shadow dirs left by dead editor processes. A dir held by a still-
-    // running editor has its DLL locked, so Delete throws and is skipped — only
-    // orphaned copies are removed.
+    // Reclaim shadow dirs left by DEAD editor processes.
+    //
+    // The locked DLL is NOT enough to protect a live owner (D3-C3): .NET's
+    // recursive delete records the first error and KEEPS GOING, so it strips
+    // every unlocked file in that directory -- notably the ~85 MB
+    // wozzits_abi.pdb that TryShadowCopy copies for stack traces -- and leaves
+    // only the .dll behind. Measured: [dll, pdb, other] -> [dll].
+    //
+    // So skip any directory whose owning pid is still alive, including our own.
+    // A recycled pid means we skip a genuinely orphaned directory until the next
+    // launch; that is a bounded leak, and the alternative is deleting a running
+    // editor's symbols.
     private static void CleanupStaleShadowDirs()
     {
         try
@@ -107,19 +148,52 @@ internal static partial class WozzitsEngineAbi
 
             foreach (var dir in Directory.EnumerateDirectories(root))
             {
+                if (IsOwnedByLiveProcess(dir))
+                {
+                    continue;
+                }
+
                 try
                 {
                     Directory.Delete(dir, recursive: true);
                 }
                 catch
                 {
-                    // In use by a live editor (locked DLL) — leave it be.
+                    // Raced another editor's cleanup, or the owner started
+                    // holding it between the check and here. Leave it be.
                 }
             }
         }
         catch
         {
             // Cleanup is best-effort; never let it break loading.
+        }
+    }
+
+    private static bool IsOwnedByLiveProcess(string dir)
+    {
+        if (!int.TryParse(Path.GetFileName(dir), out var pid))
+        {
+            return false;   // not one of ours; the delete below will fail harmlessly
+        }
+
+        if (pid == Environment.ProcessId)
+        {
+            return true;
+        }
+
+        try
+        {
+            using var owner = Process.GetProcessById(pid);
+            return !owner.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;   // no such process -> genuinely orphaned
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
         }
     }
 
