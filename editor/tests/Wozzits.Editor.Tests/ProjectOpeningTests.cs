@@ -2290,6 +2290,47 @@ public sealed partial class ProjectOpeningTests
         return path;
     }
 
+    // D3-C14. AttachStatechartRunner discarded all four of its trailing calls
+    // (chart config, chart_ir config, events, SaveScene) and then reported
+    // "Running 'X'." unconditionally. chart_ir is the load-bearing one -- it is
+    // what actually makes the runner run -- so a refusal there left the user
+    // looking at a running-status line for a runner that would never start.
+    [Fact]
+    public void AttachingAStatechartRunnerReportsARefusedChartIrWrite()
+    {
+        var session = new RecordingEditorSession
+        {
+            NextAddedBehaviorId = "runner.1",
+            BehaviorModuleCatalog = ["statechart_runner"],
+            RejectBehaviorConfigKey = "chart_ir",
+        };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(scene: SceneSnapshot(Node("host", "Host"))),
+            editorSession: session);
+
+        var chartPath = WriteRunnerFixtureChart("runner_fixture", "bind1", "laser");
+        viewModel.Inspector.SetStatechartsProvider(() => new[]
+        {
+            new StatechartFileInfo("runner_fixture", chartPath),
+        });
+
+        var host = viewModel.SceneTree.Nodes.First(n => n.Id == "host");
+        viewModel.SceneTree.SelectNode(host);
+        viewModel.Inspector.AddComponentCommand.Execute("statechart_runner");
+        viewModel.Inspector.SelectedStatechartRunnerChart =
+            viewModel.Inspector.StatechartRunnerCharts.First(c => c.Name == "runner_fixture");
+
+        viewModel.Inspector.AttachStatechartRunnerCommand.Execute(null);
+
+        // The write WAS attempted -- this is a refusal, not a short-circuit.
+        Assert.Contains(session.BehaviorConfigs, c => c.Key == "chart_ir");
+        // ...and the status must say so instead of claiming the chart is running.
+        Assert.Contains("Couldn't attach", viewModel.Inspector.StatechartRunnerStatus);
+        Assert.DoesNotContain("Running", viewModel.Inspector.StatechartRunnerStatus);
+        Assert.NotEmpty(viewModel.Inspector.LastEditError);
+        Assert.False(viewModel.Inspector.HasAttachedStatechartRunner);
+    }
+
     [Fact]
     public void InspectorAttachesStatechartRunnerFromComponentsMenuWithAuthoredConfig()
     {
@@ -4148,8 +4189,18 @@ public sealed partial class ProjectOpeningTests
             string value)
         {
             BehaviorConfigs.Add((nodeId, bindingId, key, kind, value));
-            return new EngineMutationResponse { Ok = true };
+            // Set RejectBehaviorConfigKey to make ONE key refuse, so a test can
+            // drive the "attach reported success but the write was refused" path.
+            return string.Equals(key, RejectBehaviorConfigKey, StringComparison.Ordinal)
+                ? new EngineMutationResponse
+                {
+                    Ok = false,
+                    Error = $"'{key}' was refused by the engine",
+                }
+                : new EngineMutationResponse { Ok = true };
         }
+
+        public string? RejectBehaviorConfigKey { get; set; }
 
         public EngineMutationResponse ClearNodeBehaviorConfig(
             string nodeId,

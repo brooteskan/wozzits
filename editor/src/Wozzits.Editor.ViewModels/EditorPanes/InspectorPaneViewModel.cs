@@ -1617,13 +1617,27 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             NotifyComponentStateChanged();
         }
 
-        _editorSession!.SetNodeBehaviorConfig(
-            NodeId, runner.Id, StatechartRunnerAttachment.ConfigChart, "string", _selectedRunnerChart.Name);
-        _editorSession.SetNodeBehaviorConfig(
-            NodeId, runner.Id, StatechartRunnerAttachment.ConfigChartIr, "string", chartIr);
-        _editorSession.SetNodeBehaviorEvents(
-            NodeId, runner.Id, string.Join(Environment.NewLine, StatechartRunnerAttachment.RunnerEvents));
-        _editorSession.SaveScene();
+        // Every one of these was discarded (D3-C14), so a refusal anywhere still
+        // ended at "Running 'X'." with nothing attached. The chart_ir write is the
+        // load-bearing one: it is what actually makes the runner run.
+        foreach (var step in new[]
+                 {
+                     _editorSession!.SetNodeBehaviorConfig(
+                         NodeId, runner.Id, StatechartRunnerAttachment.ConfigChart, "string", _selectedRunnerChart.Name),
+                     _editorSession.SetNodeBehaviorConfig(
+                         NodeId, runner.Id, StatechartRunnerAttachment.ConfigChartIr, "string", chartIr),
+                     _editorSession.SetNodeBehaviorEvents(
+                         NodeId, runner.Id, string.Join(Environment.NewLine, StatechartRunnerAttachment.RunnerEvents)),
+                     _editorSession.SaveScene(),
+                 })
+        {
+            if (!step.Ok)
+            {
+                LastEditError = step.Error;
+                StatechartRunnerStatus = $"Couldn't attach: {step.Error}";
+                return;
+            }
+        }
 
         // Mirror the config onto the local model so reselecting the node reflects the running chart.
         runner.Config.Clear();
@@ -1812,11 +1826,24 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
-        _editorSession!.SetNodeBehaviorConfig(
-            NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMind, "string", _selectedAgentMind.Name);
-        _editorSession.SetNodeBehaviorConfig(
-            NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMindIr, "string", mindIr);
-        _editorSession.SaveScene();
+        // Discarded before (D3-C14): a refused mind_ir write still read as
+        // "Using mind 'X'." while the agent kept its old scalar config.
+        foreach (var step in new[]
+                 {
+                     _editorSession!.SetNodeBehaviorConfig(
+                         NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMind, "string", _selectedAgentMind.Name),
+                     _editorSession.SetNodeBehaviorConfig(
+                         NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMindIr, "string", mindIr),
+                     _editorSession.SaveScene(),
+                 })
+        {
+            if (!step.Ok)
+            {
+                LastEditError = step.Error;
+                QuantumAgentMindStatus = $"Couldn't attach: {step.Error}";
+                return;
+            }
+        }
 
         SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMind, _selectedAgentMind.Name);
         SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMindIr, mindIr);
@@ -1840,11 +1867,24 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
-        _editorSession!.SetNodeBehaviorConfig(
-            NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMindIr, "string", string.Empty);
-        _editorSession.SetNodeBehaviorConfig(
-            NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMind, "string", string.Empty);
-        _editorSession.SaveScene();
+        // Discarded before (D3-C14): a refused clear still read as "Detached",
+        // leaving the agent running the mind the user believed they removed.
+        foreach (var step in new[]
+                 {
+                     _editorSession!.SetNodeBehaviorConfig(
+                         NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMindIr, "string", string.Empty),
+                     _editorSession.SetNodeBehaviorConfig(
+                         NodeId, agent.Id, QuantumAgentMindAttachment.ConfigMind, "string", string.Empty),
+                     _editorSession.SaveScene(),
+                 })
+        {
+            if (!step.Ok)
+            {
+                LastEditError = step.Error;
+                QuantumAgentMindStatus = $"Couldn't detach: {step.Error}";
+                return;
+            }
+        }
 
         SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMindIr, string.Empty);
         SetLocalBehaviorConfig(agent, QuantumAgentMindAttachment.ConfigMind, string.Empty);
