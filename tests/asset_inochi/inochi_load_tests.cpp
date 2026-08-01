@@ -2,6 +2,7 @@
 
 #include <engine/assets/inochi/inochi_puppet.h>
 
+#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <ios>
@@ -295,4 +296,96 @@ TEST(InochiLoad, RejectsBogusTextureCount)
     ic::Puppet p;
     std::string err;
     EXPECT_FALSE(ic::load_puppet(b.data(), b.size(), p, &err));
+}
+
+// ---------------------------------------------------------------------------
+// Out-of-float-range JSON values (issue #310, A4-C6 / A4-C7).
+//
+// yyjson refuses to parse NaN, Infinity and 1e309, so the DOM handed to the
+// loader is always finite. But `1e308` is a perfectly legal finite JSON double
+// that becomes `inf` on the way to float, and the loader's four hand-rolled
+// readers cast without checking -- while j::read_float3, used on the SAME
+// transform object, did check. So `trans` and `rot` were range-checked and
+// `scale` was not.
+//
+// Measured before the fix: this exact 392-byte container loaded with ok=1 and
+// carried inf in transform.scale, mesh.verts AND SimplePhysics.gravity.
+// Downstream that is 0.0f * inf = NaN in the affine, which propagates to every
+// descendant and silently stops the whole puppet rendering; the physics path
+// then latches the NaN into persistent state so it never recovers. Nothing
+// logged, and load_puppet returned true.
+//
+// The invariant this pins is deliberately broad -- NO non-finite value anywhere
+// in a loaded Puppet -- so it keeps holding as fields are added.
+// ---------------------------------------------------------------------------
+TEST(InochiLoad, OutOfFloatRangeNumbersNeverReachThePuppet)
+{
+    const std::string json =
+        "{\"meta\":{\"name\":\"probe\"},"
+        "\"nodes\":{"
+          "\"uuid\":1,\"type\":\"Node\","
+          "\"transform\":{\"trans\":[0,0,0],\"rot\":[0,0,0],\"scale\":[1e308,1]},"
+          "\"children\":["
+            "{\"uuid\":2,\"type\":\"Part\","
+             "\"transform\":{\"trans\":[0,0,0],\"rot\":[0,0,0],\"scale\":[1,1]},"
+             "\"mesh\":{\"verts\":[1e308,1e308,0,0,1,1],"
+                      "\"uvs\":[0,0,0,0,0,0],\"indices\":[0,1,2]},"
+             "\"textures\":[0]},"
+            "{\"uuid\":3,\"type\":\"SimplePhysics\",\"param\":1,\"gravity\":1e308}"
+          "]}}";
+
+    const std::vector<std::uint8_t> bytes = build_inp(json, make_tga(2, 2));
+
+    ic::Puppet puppet;
+    std::string error;
+    ASSERT_TRUE(ic::load_puppet(bytes.data(), bytes.size(), puppet, &error))
+        << error;
+
+    for (std::size_t i = 0; i < puppet.nodes.size(); ++i) {
+        const ic::Node& node = puppet.nodes[i];
+
+        for (int c = 0; c < 3; ++c) {
+            EXPECT_TRUE(std::isfinite(node.transform.trans[c])) << "node " << i;
+            EXPECT_TRUE(std::isfinite(node.transform.rot[c]))   << "node " << i;
+        }
+        for (int c = 0; c < 2; ++c)
+            EXPECT_TRUE(std::isfinite(node.transform.scale[c])) << "node " << i;
+
+        EXPECT_TRUE(std::isfinite(node.gravity)) << "node " << i;
+
+        for (const float v : node.mesh.verts)
+            EXPECT_TRUE(std::isfinite(v)) << "node " << i << " vert";
+        for (const float v : node.mesh.uvs)
+            EXPECT_TRUE(std::isfinite(v)) << "node " << i << " uv";
+    }
+}
+
+// The uint32 twin: `1e30` passed the old `>= 0.0` test and was then cast, which
+// is UB and decoded differently per target -- 0 on x64, saturating on ARM64 --
+// so one file meant two different meshes. An out-of-range index is now dropped
+// rather than silently becoming index 0.
+TEST(InochiLoad, OutOfRangeIndexValuesAreDroppedNotCast)
+{
+    const std::string json =
+        "{\"nodes\":{"
+          "\"uuid\":1,\"type\":\"Part\","
+          "\"mesh\":{\"verts\":[0,0,1,0,1,1],\"uvs\":[0,0,0,0,0,0],"
+                   "\"indices\":[0,1,1e30,2,-5]},"
+          "\"textures\":[0]}}";
+
+    const std::vector<std::uint8_t> bytes = build_inp(json, make_tga(2, 2));
+
+    ic::Puppet puppet;
+    std::string error;
+    ASSERT_TRUE(ic::load_puppet(bytes.data(), bytes.size(), puppet, &error))
+        << error;
+
+    ASSERT_FALSE(puppet.nodes.empty());
+    const ic::Node& part = puppet.nodes[0];
+
+    // 1e30 and -5 are both refused; 0, 1 and 2 survive in order.
+    ASSERT_EQ(part.mesh.indices.size(), 3u);
+    EXPECT_EQ(part.mesh.indices[0], 0u);
+    EXPECT_EQ(part.mesh.indices[1], 1u);
+    EXPECT_EQ(part.mesh.indices[2], 2u);
 }

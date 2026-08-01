@@ -48,10 +48,34 @@ namespace wz::engine::assets::inochi
             return j::find_member(obj, key);
         }
 
+        // Every reader below narrows through j::narrow_float / j::narrow_number
+        // rather than a bare static_cast (issue #310, A4-C6/A4-C7).
+        //
+        // The DOM cannot contain NaN or inf -- yyjson refuses to parse `NaN`,
+        // `Infinity` and `1e309` -- but `1e308` is a perfectly legal finite JSON
+        // double that becomes `inf` on the way to float, and the cast is UB
+        // besides. These four readers threw the parser's guarantee away one
+        // layer up, while j::read_float3 on the SAME transform object did not:
+        // `trans` and `rot` were range-checked and `scale` was not.
+        //
+        // Measured before this change: a 392-byte .inp containing only legal
+        // JSON produced load_puppet ok=1 with inf in transform.scale, mesh.verts
+        // and SimplePhysics.gravity. Downstream that is 0.0f * inf = NaN in the
+        // affine, which propagates to every descendant and silently stops the
+        // whole puppet rendering -- and the physics path LATCHES the NaN into
+        // persistent PendulumState/PuppetParams, so it never recovers.
+        //
+        // An out-of-range value now takes the same path as a missing one: the
+        // documented fallback, or a skipped entry. That is deliberate -- these
+        // are forward-compatible optional readers, and turning "present but
+        // absurd" into "absent" keeps a bad field local instead of letting it
+        // poison the transform chain.
         float num(const j::JSONValue& obj, std::string_view key, float fallback)
         {
             const auto v = j::read_number(obj, key);
-            return v ? static_cast<float>(*v) : fallback;
+            if (!v) return fallback;
+            const auto narrowed = j::narrow_float(*v);
+            return narrowed ? *narrowed : fallback;
         }
 
         std::uint32_t uint_or(const j::JSONValue& obj, std::string_view key, std::uint32_t fallback)
@@ -80,7 +104,9 @@ namespace wz::engine::assets::inochi
             for (int i = 0; i < 2; ++i) {
                 const auto& e = v->array_values[i];
                 if (!e || e->kind != j::JSONValueKind::Number) return false;
-                out[i] = static_cast<float>(e->number_value);
+                const auto narrowed = j::narrow_float(e->number_value);
+                if (!narrowed) return false;
+                out[i] = *narrowed;
             }
             return true;
         }
@@ -90,8 +116,9 @@ namespace wz::engine::assets::inochi
             if (!arr || arr->kind != j::JSONValueKind::Array) return;
             out.reserve(arr->array_values.size());
             for (const auto& e : arr->array_values) {
-                if (e && e->kind == j::JSONValueKind::Number)
-                    out.push_back(static_cast<float>(e->number_value));
+                if (!e || e->kind != j::JSONValueKind::Number) continue;
+                if (const auto narrowed = j::narrow_float(e->number_value))
+                    out.push_back(*narrowed);
             }
         }
 
@@ -100,8 +127,15 @@ namespace wz::engine::assets::inochi
             if (!arr || arr->kind != j::JSONValueKind::Array) return;
             out.reserve(arr->array_values.size());
             for (const auto& e : arr->array_values) {
-                if (e && e->kind == j::JSONValueKind::Number && e->number_value >= 0.0)
-                    out.push_back(static_cast<std::uint32_t>(e->number_value));
+                if (!e || e->kind != j::JSONValueKind::Number) continue;
+                // narrow_number rejects negatives and anything outside the
+                // uint32 range. The old `>= 0.0` test let `1e30` through to a
+                // static_cast, which is UB and decoded differently on x64 (0)
+                // than on ARM64 (saturates) -- so one file meant two different
+                // meshes depending on the target.
+                if (const auto narrowed =
+                        j::narrow_number<std::uint32_t>(e->number_value))
+                    out.push_back(*narrowed);
             }
         }
 
@@ -339,10 +373,26 @@ namespace wz::engine::assets::inochi
                         auto& dst = b.deform_values[xi * ny + yi];
                         dst.reserve(cell->array_values.size() * 2);
                         for (const auto& pr : cell->array_values) {
-                            if (pr && pr->kind == j::JSONValueKind::Array && pr->array_values.size() >= 2) {
-                                dst.push_back(static_cast<float>(pr->array_values[0]->number_value));
-                                dst.push_back(static_cast<float>(pr->array_values[1]->number_value));
-                            }
+                            if (!pr || pr->kind != j::JSONValueKind::Array
+                                || pr->array_values.size() < 2)
+                                continue;
+                            // These two were the only reads in the file that
+                            // took .number_value WITHOUT first checking the
+                            // element is a Number, so a String or Object cell
+                            // silently decoded as a (0,0) deform offset instead
+                            // of being skipped. Narrowed and kind-checked like
+                            // every sibling reader; the pair is pushed only if
+                            // BOTH halves survive, so dst never ends up with an
+                            // odd length.
+                            const auto& a = pr->array_values[0];
+                            const auto& b_ = pr->array_values[1];
+                            if (!a || a->kind != j::JSONValueKind::Number) continue;
+                            if (!b_ || b_->kind != j::JSONValueKind::Number) continue;
+                            const auto dx = j::narrow_float(a->number_value);
+                            const auto dy = j::narrow_float(b_->number_value);
+                            if (!dx || !dy) continue;
+                            dst.push_back(*dx);
+                            dst.push_back(*dy);
                         }
                     }
                 }
@@ -354,8 +404,14 @@ namespace wz::engine::assets::inochi
                     if (!col || col->kind != j::JSONValueKind::Array) continue;
                     for (std::size_t yi = 0; yi < col->array_values.size() && yi < ny; ++yi) {
                         const auto& cell = col->array_values[yi];
-                        if (cell && cell->kind == j::JSONValueKind::Number)
-                            b.scalar_values[xi * ny + yi] = static_cast<float>(cell->number_value);
+                        if (!cell || cell->kind != j::JSONValueKind::Number)
+                            continue;
+                        // Leave the 0.0f the grid was assigned rather than
+                        // storing an inf: a binding value feeds accumulate_scalar,
+                        // whose weights would carry the inf into every node
+                        // driven by this parameter.
+                        if (const auto narrowed = j::narrow_float(cell->number_value))
+                            b.scalar_values[xi * ny + yi] = *narrowed;
                     }
                 }
             }
