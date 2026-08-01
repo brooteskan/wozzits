@@ -427,11 +427,13 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
         return _client.AddChildNode(runtime.Handle, parentId);
     }
 
-    public EngineSceneSnapshot LoadGraftedSceneNodes()
+    public EngineSceneSnapshotResponse LoadGraftedSceneNodes()
     {
         if (_runtime is not { } runtime || !runtime.IsRunning)
         {
-            return new EngineSceneSnapshot();
+            // Not running is a legitimate "no grafts", not a failed read: the
+            // caller should drop any stale grafts it merged earlier.
+            return new EngineSceneSnapshotResponse { Ok = true };
         }
         return _client.LoadRuntimeGraftedSceneNodes(runtime.Handle);
     }

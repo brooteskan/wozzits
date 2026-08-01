@@ -206,9 +206,13 @@ public interface IWozzitsEngineEditorSession
     // grafted sub-trees a "Subtree from asset" reference produces, which live only
     // in the live runtime and are absent from the saved scene.json. Each returned
     // root carries its host node's id as ParentId so the caller can merge the
-    // sub-tree under that host in the JSON-sourced tree. An empty snapshot (no
-    // roots) when no viewport is running or nothing is grafted.
-    EngineSceneSnapshot LoadGraftedSceneNodes();
+    // sub-tree under that host in the JSON-sourced tree.
+    //
+    // A RESPONSE, not a bare snapshot (D3-P039): Ok=false means the read-back did
+    // not happen, which is not the same as "nothing is grafted" and must not be
+    // acted on. Ok=true with no roots means the engine answered and there are no
+    // grafts.
+    EngineSceneSnapshotResponse LoadGraftedSceneNodes();
 
     // The running scene's authored nodes as a full scene snapshot -- used to
     // rebuild the tree after OpenScene swaps the working scene (open a scenelet, or

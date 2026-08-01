@@ -200,7 +200,9 @@ public sealed partial class ProjectOpeningTests
         {
             var grafted = session.LoadGraftedSceneNodes();
             Assert.NotNull(grafted);
-            Assert.Empty(grafted.Roots);
+            // Not running is a legitimate "no grafts", so Ok stays true (D3-P039).
+            Assert.True(grafted.Ok);
+            Assert.Empty(grafted.Snapshot.Roots);
         }
         finally
         {
@@ -2894,6 +2896,56 @@ public sealed partial class ProjectOpeningTests
         Assert.Empty(Assert.Single(sceneTree.Nodes).Children);
     }
 
+    // D3-P039. A grafted read-back that FAILED is not "nothing is grafted". The
+    // drop-then-fetch order meant a failure removed the grafts already merged and
+    // put nothing back, so the sub-trees vanished from the tree while they were
+    // alive in the engine -- and nothing said so.
+    [Fact]
+    public void SceneTreeMergeKeepsExistingGraftsWhenTheReadBackFails()
+    {
+        var session = new RecordingEditorSession
+        {
+            GraftedScene = new EngineSceneSnapshot
+            {
+                Roots =
+                [
+                    new EngineSceneNode
+                    {
+                        Id = "root/graft",
+                        ParentId = "root",
+                        Kind = "node",
+                    },
+                ],
+            },
+        };
+        var sceneTree = new SceneTreeEditorPaneViewModel(session);
+        sceneTree.LoadSnapshot(new EngineSceneSnapshotResponse
+        {
+            Ok = true,
+            Snapshot = new EngineSceneSnapshot
+            {
+                Roots = [new EngineSceneNode { Id = "root", Kind = "node" }],
+            },
+        });
+        sceneTree.MergeGraftedNodes();
+        Assert.Single(Assert.Single(sceneTree.Nodes).Children);
+
+        // The viewport closes mid-call: the engine answers with Ok=false.
+        session.GraftedSceneOk = false;
+        sceneTree.MergeGraftedNodes();
+
+        Assert.Single(Assert.Single(sceneTree.Nodes).Children);
+
+        // ...and the control, on the same tree: an EMPTY but SUCCESSFUL answer
+        // still means "nothing is grafted" and must still drop them. Without this
+        // half the fix would read as "never drop grafts", which is a different bug.
+        session.GraftedSceneOk = true;
+        session.GraftedScene = new EngineSceneSnapshot();
+        sceneTree.MergeGraftedNodes();
+
+        Assert.Empty(Assert.Single(sceneTree.Nodes).Children);
+    }
+
     // issue #213: assigning a "Subtree from asset" reference in the inspector
     // re-merges the runtime's grafted children into the scene tree (the
     // MainWindowViewModel wiring), so they appear under the host without a reload.
@@ -4717,12 +4769,35 @@ public sealed partial class ProjectOpeningTests
         // a test assert the re-merge re-queried the runtime.
         public EngineSceneSnapshot GraftedScene { get; set; } = new();
 
+        // D3-P039: a read-back that FAILED is not "nothing is grafted". The fake
+        // could only ever report success, which is part of why the distinction
+        // went unnoticed -- same enabler as the Ok=true-only mutation verbs.
+        public bool GraftedSceneOk { get; set; } = true;
+
         public int LoadGraftedCount { get; private set; }
 
-        public EngineSceneSnapshot LoadGraftedSceneNodes()
+        public EngineSceneSnapshotResponse LoadGraftedSceneNodes()
         {
             LoadGraftedCount++;
-            return GraftedScene;
+            if (!GraftedSceneOk)
+            {
+                // A FAILED response carries no snapshot -- that is what the engine
+                // actually produces (failed_blob writes no scene nodes) and what
+                // FailedSceneSnapshot returns. Handing back the roots anyway made
+                // the fake unfalsifiable: the caller re-merged them and the test
+                // passed with its guard removed.
+                return new EngineSceneSnapshotResponse
+                {
+                    Ok = false,
+                    Error = "grafted read-back failed",
+                };
+            }
+
+            return new EngineSceneSnapshotResponse
+            {
+                Ok = true,
+                Snapshot = GraftedScene,
+            };
         }
 
         public EngineSceneSnapshotResponse RuntimeSceneSnapshot { get; set; } =

@@ -95,6 +95,18 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
 
     public void LoadSnapshot(EngineSceneSnapshotResponse? scene)
     {
+        // BRANCH FIRST, THEN CLEAR (D3-P039). This used to clear unconditionally
+        // and branch afterwards, so a failed read-back destroyed the tree, the
+        // selection and every merged graft on its way to reporting the failure --
+        // while the scene was intact in the engine and on disk. The !Ok branch
+        // reads as if it handles this; it never got the chance to.
+        if (scene is not null && !scene.Ok)
+        {
+            EmptyState = $"Could not load scene: {scene.Error}";
+            OnPropertyChanged(nameof(EmptyState));
+            return;
+        }
+
         SetSelectedNode(null);
         Nodes.Clear();
         // The previous tree (and any grafts merged into it) is gone.
@@ -103,10 +115,6 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
         if (scene is null)
         {
             EmptyState = "No scene loaded.";
-        }
-        else if (!scene.Ok)
-        {
-            EmptyState = $"Could not load scene: {scene.Error}";
         }
         else
         {
@@ -143,7 +151,18 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
             return;
         }
 
-        // Drop the prior grafts first (each tracked root removes its sub-tree).
+        // FETCH BEFORE DROPPING (D3-P039). The drop used to come first, so a
+        // read-back that failed -- the viewport closing mid-call, a decode error --
+        // removed the grafts already in the tree and merged nothing back. An empty
+        // ANSWER still means "nothing is grafted" and must still drop them; only a
+        // failed answer is left alone.
+        var grafted = _editorSession.LoadGraftedSceneNodes();
+        if (!grafted.Ok)
+        {
+            return;
+        }
+
+        // Drop the prior grafts (each tracked root removes its sub-tree).
         if (_mergedGraftRoots.Count > 0)
         {
             foreach (var graft in _mergedGraftRoots)
@@ -153,9 +172,8 @@ public sealed class SceneTreeEditorPaneViewModel : ViewModelBase
             _mergedGraftRoots.Clear();
         }
 
-        var grafted = _editorSession.LoadGraftedSceneNodes();
         var changed = false;
-        foreach (var root in grafted.Roots)
+        foreach (var root in grafted.Snapshot.Roots)
         {
             // The graft root carries its host's id as ParentId; find that host in
             // the authored tree. Skip a graft with no/unknown host (defensive).

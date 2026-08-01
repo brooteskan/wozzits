@@ -569,11 +569,11 @@ public sealed partial class WozzitsEngineNativeClient
     // meaningful (its roots are instance-grafted sub-trees, each carrying its host
     // id as ParentId). A null/not-running runtime, or any failure, yields an empty
     // snapshot so the caller leaves its JSON tree untouched.
-    internal EngineSceneSnapshot LoadRuntimeGraftedSceneNodes(IntPtr runtime)
+    internal EngineSceneSnapshotResponse LoadRuntimeGraftedSceneNodes(IntPtr runtime)
     {
         if (runtime == IntPtr.Zero)
         {
-            return new EngineSceneSnapshot();
+            return new EngineSceneSnapshotResponse { Ok = true };
         }
 
         WozzitsEngineAbi.EnsureResolverRegistered();
@@ -584,26 +584,32 @@ public sealed partial class WozzitsEngineNativeClient
             buffer = WozzitsEngineAbi.WzEditorRuntimeGraftedSceneSnapshot(runtime);
             if (buffer.Data == IntPtr.Zero)
             {
-                return new EngineSceneSnapshot();
+                return FailedSceneSnapshot(
+                    new InvalidOperationException(
+                        "the engine returned no grafted scene snapshot buffer"));
             }
 
-            return ReadProjectSnapshot(buffer).Scene.Snapshot;
+            return ReadProjectSnapshot(buffer).Scene;
         }
-        catch (DllNotFoundException)
+        // Carry the reason, and Ok=false, the same way the scene twin does
+        // (D3-P039). These used to return a bare empty snapshot, which the caller
+        // could not distinguish from "nothing is grafted" -- so a failed read-back
+        // silently REMOVED the grafts already merged into the tree.
+        catch (DllNotFoundException ex)
         {
-            return new EngineSceneSnapshot();
+            return FailedSceneSnapshot(ex);
         }
-        catch (EntryPointNotFoundException)
+        catch (EntryPointNotFoundException ex)
         {
-            return new EngineSceneSnapshot();
+            return FailedSceneSnapshot(ex);
         }
-        catch (BadImageFormatException)
+        catch (BadImageFormatException ex)
         {
-            return new EngineSceneSnapshot();
+            return FailedSceneSnapshot(ex);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            return new EngineSceneSnapshot();
+            return FailedSceneSnapshot(ex);
         }
         finally
         {
