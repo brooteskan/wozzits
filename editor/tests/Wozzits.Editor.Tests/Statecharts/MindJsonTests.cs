@@ -100,4 +100,51 @@ public sealed class MindJsonTests
         m.Bonds.Add(new MindBond { A = "q0", B = "nope", J = 1 });
         Assert.Contains(MindJson.Validate(m), e => e.Contains("not in the mind"));
     }
+
+    // D3-C24. Load ignored `schema` entirely while Emit hardcoded MindSchema.V0,
+    // so the editor stamped a conformance claim onto every mind it wrote without
+    // ever checking one -- and the engine's parse_mind does not read the field at
+    // all, so the editor was the only party that could have. Load now reads it,
+    // refuses a foreign one, and Emit round-trips what was read.
+    [Fact]
+    public void AForeignSchemaIsRefusedRatherThanReStamped()
+    {
+        var json = MindJson.Emit(SampleMind(), indented: false)
+            .Replace(MindSchema.V0, "wozzits.mind.ir.v99");
+
+        var ex = Assert.Throws<MindFormatException>(() => MindJson.Load(json));
+
+        Assert.Contains("wozzits.mind.ir.v99", ex.Message);
+    }
+
+    // Deliberately asymmetric, matching the chart gate (D2-H3): a MISSING schema
+    // is accepted as v0 so older files still open, and saving heals them.
+    [Fact]
+    public void AMissingSchemaIsAcceptedAndHealedOnSave()
+    {
+        var node = JsonNode.Parse(MindJson.Emit(SampleMind(), indented: false))!.AsObject();
+        node.Remove("schema");
+
+        var loaded = MindJson.Load(node.ToJsonString());
+
+        Assert.Equal(MindSchema.V0, loaded.Schema);
+        Assert.Contains(MindSchema.V0, MindJson.Emit(loaded, indented: false));
+    }
+
+    // Every mind in the live project must still load. A schema gate is a
+    // strictness change, and the risk is bricking a file that ships today.
+    [Fact]
+    public void EveryCorpusMindStillLoads()
+    {
+        var dir = System.IO.Path.Combine(
+            CorpusLocator.ProjectDir(), "behavior", "minds");
+        var files = System.IO.Directory.GetFiles(dir, "*.mind.json");
+        Assert.NotEmpty(files);
+
+        foreach (var file in files)
+        {
+            var mind = MindJson.Load(System.IO.File.ReadAllText(file));
+            Assert.Equal(MindSchema.V0, mind.Schema);
+        }
+    }
 }

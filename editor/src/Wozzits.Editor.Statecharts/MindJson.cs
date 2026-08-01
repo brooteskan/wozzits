@@ -40,11 +40,33 @@ public static class MindJson
         if (root is not JsonObject o)
             throw new MindFormatException("mind root must be an object");
 
+        // Read the schema, and ROUND-TRIP it. Load ignored this field entirely
+        // while Emit hardcoded MindSchema.V0 (D3-C24), so the editor stamped a
+        // conformance claim onto every mind it wrote without ever having checked
+        // one -- and the engine's parse_mind does not look at the field at all, so
+        // the editor is the only party that could. Writing a claim nobody verifies
+        // is the worst of both.
+        //
+        // Same gate, and the same deliberate asymmetry, as StatechartJson.Load
+        // (D2-H3): a MISSING schema is accepted as v0, so older files still open
+        // and saving heals them, while a PRESENT but unrecognized one is refused
+        // rather than loaded under the old meaning of its keys and then saved back
+        // over the newer file.
+        var schema = o["schema"] is { } schemaNode
+            ? schemaNode.ToString()
+            : MindSchema.V0;
+        if (schema != MindSchema.V0)
+            throw new MindFormatException(
+                $"unrecognized mind schema '{schema}' -- this build reads "
+                + $"'{MindSchema.V0}'. A mind from a newer editor is refused "
+                + "rather than loaded under the old meaning of its keys (and then "
+                + "saved back over the newer file).");
+
         int qubits = (int)(AsNum(o["qubits"]) ?? 0);
         if (qubits < 1)
             throw new MindFormatException("mind needs a positive `qubits` count");
 
-        var m = new Mind { Name = (string?)o["name"] ?? "" };
+        var m = new Mind { Schema = schema, Name = (string?)o["name"] ?? "" };
         for (int i = 0; i < qubits; i++)
             m.Qubits.Add(new MindQubit { Id = $"q{i}" });
 
@@ -106,7 +128,10 @@ public static class MindJson
 
         var root = new JsonObject
         {
-            ["schema"] = MindSchema.V0,
+            // What was READ, not a constant (D3-C24). Load refuses anything but
+            // v0 today, so this is v0 in practice -- the point is that the value
+            // now travels with the document instead of being asserted here.
+            ["schema"] = m.Schema,
             ["qubits"] = m.Qubits.Count,
         };
         if (m.Name.Length > 0) root["name"] = m.Name;
