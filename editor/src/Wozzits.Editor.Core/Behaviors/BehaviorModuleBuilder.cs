@@ -30,6 +30,45 @@ public sealed record BehaviorBuildResult(
         new(outcome, []);
 }
 
+// The first N diagnostic lines of a build, captured from BOTH output pumps
+// (D3-P051). This is a type rather than a List in a closure because .NET raises
+// Process.OutputDataReceived and Process.ErrorDataReceived from two independent
+// AsyncStreamReader pumps on threadpool threads, with no serialisation between
+// them -- and the collector is installed as both.
+//
+// The benign outcome of racing List<T>.Add is a dropped or duplicated diagnostic,
+// so the build-error card shows a short list and the user chases the wrong compile
+// error. The bad one is an Add landing during a Grow, which writes past the stale
+// array and raises IndexOutOfRangeException INSIDE the user callback --
+// AsyncStreamReader catches that and rethrows it on a fresh ThreadPool work item,
+// where nothing catches it and the editor dies mid-rebuild.
+internal sealed class BehaviorDiagnosticCapture(int max)
+{
+    private readonly object _gate = new();
+    private readonly List<string> _lines = [];
+
+    public void Offer(string line)
+    {
+        // The Count test has to be inside the lock too: read outside it, two
+        // threads both see max-1 and the cap is exceeded.
+        lock (_gate)
+        {
+            if (_lines.Count < max && BehaviorModuleBuilder.IsDiagnosticLine(line))
+            {
+                _lines.Add(line);
+            }
+        }
+    }
+
+    public IReadOnlyList<string> Snapshot()
+    {
+        lock (_gate)
+        {
+            return _lines.ToArray();
+        }
+    }
+}
+
 // Compiles a project's behavior-module DLLs by driving CMake, mirroring the old
 // imgui toolhost editor's rebuild step (cmake --preset / cmake --build, in the
 // project's behavior/ folder). All tool output (including compiler errors) is
@@ -86,14 +125,19 @@ public sealed class BehaviorModuleBuilder
 
         // Tee: every line still goes to the console verbatim; diagnostics are also kept
         // so a failure can be shown on the behavior card instead of only whispered here.
-        var errors = new List<string>();
+        //
+        // The capture is a synchronised type, not a bare List, because Tee is called
+        // from TWO threads (D3-P051). It is installed as both OutputDataReceived and
+        // ErrorDataReceived, and .NET raises those from two independent
+        // AsyncStreamReader pumps on threadpool threads with no serialisation
+        // between them -- ninja relaying a clang diagnostic on stdout while CMake
+        // writes to stderr is the everyday case. `log` itself is thread-safe
+        // (AppendEditorLog holds its own locks), so the capture was the whole gap.
+        var errors = new BehaviorDiagnosticCapture(MaxCapturedErrors);
         void Tee(string line)
         {
             log(line);
-            if (errors.Count < MaxCapturedErrors && IsDiagnosticLine(line))
-            {
-                errors.Add(line);
-            }
+            errors.Offer(line);
         }
 
         // A behavior folder copied from another project (or another machine)
@@ -118,12 +162,12 @@ public sealed class BehaviorModuleBuilder
         if (!await RunStepAsync(behaviorDir, $"--preset {Preset}", Tee, cancellationToken)
                 .ConfigureAwait(false))
         {
-            return new BehaviorBuildResult(BehaviorBuildOutcome.Failed, errors);
+            return new BehaviorBuildResult(BehaviorBuildOutcome.Failed, errors.Snapshot());
         }
         if (!await RunStepAsync(behaviorDir, $"--build --preset {Preset}", Tee, cancellationToken)
                 .ConfigureAwait(false))
         {
-            return new BehaviorBuildResult(BehaviorBuildOutcome.Failed, errors);
+            return new BehaviorBuildResult(BehaviorBuildOutcome.Failed, errors.Snapshot());
         }
 
         log(LogPrefix + "Behavior modules built.");
@@ -153,18 +197,40 @@ public sealed class BehaviorModuleBuilder
 
         // Stream stdout and stderr (clang-cl diagnostics arrive on stderr) to the
         // console as they appear.
+        //
+        // Both bodies swallow, because an exception raised in one of these handlers
+        // does not travel anywhere useful: AsyncStreamReader.FlushMessageQueue
+        // catches it and rethrows it on a FRESH ThreadPool work item, outside any
+        // try in this file and outside the AsyncRelayCommand awaiting the rebuild.
+        // With no global handler in the editor, that is process death whose stack
+        // does not even mention the build. Losing a console line is the better
+        // trade, and it can only happen if `log` itself faults.
         process.OutputDataReceived += (_, e) =>
         {
             if (e.Data is not null)
             {
-                log(e.Data);
+                try
+                {
+                    log(e.Data);
+                }
+                catch
+                {
+                    // See above: nothing can usefully handle this here.
+                }
             }
         };
         process.ErrorDataReceived += (_, e) =>
         {
             if (e.Data is not null)
             {
-                log(e.Data);
+                try
+                {
+                    log(e.Data);
+                }
+                catch
+                {
+                    // See above: nothing can usefully handle this here.
+                }
             }
         };
 
