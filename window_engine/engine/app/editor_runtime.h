@@ -20,6 +20,7 @@
 #include <file/filesystem.h>
 #include <logging/logging.h>
 #include <scene/scene_ecs.h>  // AuthoredEntityId
+#include <time/w_time.h>  // Tick
 
 #include <atomic>
 #include <condition_variable>
@@ -366,6 +367,31 @@ namespace wz::app
         wz::scene::AuthoredEntityId node_id;
         wz::engine::assets::SceneRenderToTextureAsset render_to_texture;
     };
+
+    // The frame loop's timing rules, as a pure function so they can be tested
+    // without a device (#313, B4-S2 and B4-C9).
+    //
+    // `sampled` is the raw clock read. The returned `now` is what the caller must
+    // store as its new `last` — it is NOT always `sampled`, because a clock that
+    // failed to advance is corrected forward rather than allowed to produce a
+    // zero or (through unsigned subtraction) an astronomically large delta.
+    struct FrameDelta
+    {
+        wz::time::Tick now{};
+        float dt = 0.0f;
+    };
+
+    // Upper bound on a frame delta. The engine thread's only message pump sits
+    // inside DispatchMessage, and the Win32 modal move/size loop blocks there
+    // for as long as the user drags the window border, so the next frame's raw
+    // delta is unbounded and user-controlled. RhiSceneRenderer::simulation_tick
+    // holds the same limit for its animation clock; keep the two equal.
+    inline constexpr float kMaxFrameSeconds = 0.25f;
+
+    [[nodiscard]] FrameDelta compute_frame_delta(
+        wz::time::Tick last,
+        wz::time::Tick sampled,
+        uint64_t ticks_per_second);
 
     class EditorRuntimeControl
     {

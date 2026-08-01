@@ -1292,6 +1292,41 @@ namespace wz::app
         cv_.notify_all();
     }
 
+    FrameDelta compute_frame_delta(
+        wz::time::Tick last,
+        wz::time::Tick sampled,
+        uint64_t ticks_per_second)
+    {
+        FrameDelta out{};
+        // Tick is UNSIGNED, so a clock that failed to advance -- or went
+        // backwards, which QPC can do across a core switch on some hardware --
+        // makes `sampled - last` colossal rather than negative. Correct it
+        // forward, exactly as the engine's other frame loop has always done
+        // (engine.cpp: `if (end <= last) end = last + 1;`). #313, B4-S2.
+        out.now = (sampled <= last) ? last + 1 : sampled;
+
+        if (ticks_per_second == 0) {
+            return out;  // no usable clock: a zero delta beats a garbage one
+        }
+
+        out.dt = static_cast<float>(
+            static_cast<double>(out.now - last)
+            / static_cast<double>(ticks_per_second));
+
+        // Bound it. See kMaxFrameSeconds: the pump can block for an unbounded,
+        // user-controlled interval, and the raw delta went to motion
+        // integration and terrain constraints while the renderer clamped its
+        // own copy one line away (#313, B4-C9). Physics teleported; animation
+        // did not.
+        if (!(out.dt > 0.0f)) {
+            out.dt = 0.0f;  // also catches NaN, which compares false here
+        }
+        else if (out.dt > kMaxFrameSeconds) {
+            out.dt = kMaxFrameSeconds;
+        }
+        return out;
+    }
+
     EditorRuntimeControl::CallerScope::CallerScope(
         EditorRuntimeControl& control) noexcept
         : control_(&control)
@@ -1838,13 +1873,16 @@ namespace wz::app
                     wz::time::Frame{},
                     controller_sample);
 
-                const wz::time::Tick now_ticks =
-                    wz::time::TimeSource::now_ticks();
-                const float dt = static_cast<float>(
-                    static_cast<double>(now_ticks - last_ticks)
-                    / static_cast<double>(
-                        wz::time::TimeSource::ticks_per_second()));
-                last_ticks = now_ticks;
+                // All the loop's timing rules live in compute_frame_delta so
+                // they can be tested without a device: the monotonicity guard
+                // (#313, B4-S2) and the clamp that keeps an unbounded pump stall
+                // out of physics (#313, B4-C9 / B4-C7).
+                const FrameDelta frame = compute_frame_delta(
+                    last_ticks,
+                    wz::time::TimeSource::now_ticks(),
+                    wz::time::TimeSource::ticks_per_second());
+                const float dt = frame.dt;
+                last_ticks = frame.now;
 
                 // Fly-cam enable toggle (ESC), driven entirely by the frame input
                 // snapshot (no direct platform calls): ESC enables the camera only

@@ -981,6 +981,11 @@ namespace wz::engine::rendering
         // the renderer's animation clock rides it (#282). Guard against a
         // negative or absurd delta (a debugger stop, a load hitch): animation
         // should resume, not teleport.
+        //
+        // The host frame loop now clamps to the same bound before anyone sees
+        // the delta (#313, B4-C9 -- this guard used to be the ONLY one, so the
+        // simulation teleported while animation held). Kept as defence in depth
+        // for hosts that tick the renderer directly; keep the two limits equal.
         constexpr float kMaxTickSeconds = 0.25f;
         if (dt_seconds > 0.0f) {
             animation_seconds_ += static_cast<double>(

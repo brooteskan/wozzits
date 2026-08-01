@@ -795,3 +795,81 @@ TEST(EditorRuntimeControl, DestroyingRightAfterTheDrainIsSafeUnderConcurrentCall
             << "round " << round << ": a caller never returned";
     }
 }
+
+// ─── Frame delta (issue #313, B4-S2 and B4-C9) ─────────────────────────────
+// The loop's timing rules, extracted so they can be tested without a device.
+// Two defects lived here: the delta was an UNSIGNED tick subtraction with no
+// monotonicity guard (the engine's other frame loop has carried that guard for
+// a long time), and it was handed unclamped to motion integration and terrain
+// constraints while the renderer clamped its own copy one line away -- so a
+// stall teleported physics while animation correctly held still.
+
+namespace
+{
+    constexpr uint64_t kTicksPerSecond = 10'000'000;  // 100ns ticks, like QPC
+    using wz::app::compute_frame_delta;
+    using wz::app::kMaxFrameSeconds;
+}
+
+TEST(FrameDelta, AnOrdinaryFrameMeasuresTheRealInterval)
+{
+    const auto frame = compute_frame_delta(
+        1'000'000, 1'000'000 + kTicksPerSecond / 60, kTicksPerSecond);
+    EXPECT_NEAR(frame.dt, 1.0f / 60.0f, 1.0e-6f);
+    EXPECT_EQ(frame.now, 1'000'000u + kTicksPerSecond / 60);
+}
+
+TEST(FrameDelta, AClockThatDidNotAdvanceYieldsATinyPositiveDeltaNotAHugeOne)
+{
+    // B4-S2. Tick is unsigned: without the guard `sampled - last` wraps to
+    // ~1.8e19 ticks and dt becomes astronomically large.
+    const auto frame = compute_frame_delta(5'000, 5'000, kTicksPerSecond);
+    EXPECT_GT(frame.dt, 0.0f);
+    EXPECT_LT(frame.dt, 1.0e-3f);
+    EXPECT_EQ(frame.now, 5'001u) << "the corrected tick must move forward, or "
+                                    "the next frame repeats the same fault";
+}
+
+TEST(FrameDelta, AClockThatWentBACKWARDSDoesNotProduceAGiantDelta)
+{
+    // QPC can retrograde slightly across a core switch on some hardware.
+    const auto frame = compute_frame_delta(9'000, 8'000, kTicksPerSecond);
+    EXPECT_GT(frame.dt, 0.0f);
+    EXPECT_LT(frame.dt, 1.0e-3f);
+    EXPECT_EQ(frame.now, 9'001u);
+}
+
+TEST(FrameDelta, AnUnboundedPumpStallIsClampedBeforeAnyoneSeesIt)
+{
+    // B4-C9 / B4-C7. The Win32 modal move/size loop blocks the engine thread's
+    // only pump for as long as the user holds the window border, so the next
+    // frame's raw delta is user-controlled. Ten seconds of it must not reach
+    // motion integration.
+    const auto frame =
+        compute_frame_delta(0, 10 * kTicksPerSecond, kTicksPerSecond);
+    EXPECT_FLOAT_EQ(frame.dt, kMaxFrameSeconds);
+    EXPECT_EQ(frame.now, 10u * kTicksPerSecond)
+        << "the clamp bounds the DELTA, not the clock: time itself still moved";
+}
+
+TEST(FrameDelta, TheClampMatchesTheRenderersOwnLimit)
+{
+    // The renderer keeps an identical bound as defence in depth. If these two
+    // ever diverge, animation and simulation resume at different rates after a
+    // stall -- the exact split B4-C9 reported.
+    EXPECT_FLOAT_EQ(kMaxFrameSeconds, 0.25f);
+}
+
+TEST(FrameDelta, ADeltaJustUnderTheBoundIsNotClamped)
+{
+    const auto frame = compute_frame_delta(
+        0, static_cast<wz::time::Tick>(0.24 * kTicksPerSecond),
+        kTicksPerSecond);
+    EXPECT_NEAR(frame.dt, 0.24f, 1.0e-4f);
+}
+
+TEST(FrameDelta, AZeroTickRateYieldsZeroRatherThanADivisionByZero)
+{
+    const auto frame = compute_frame_delta(0, 1'000, 0);
+    EXPECT_FLOAT_EQ(frame.dt, 0.0f);
+}
