@@ -66,9 +66,26 @@ public sealed class FileLogSink : IDisposable
                 return;
             }
 
-            _writer.Write(DateTime.Now.ToString("HH:mm:ss.fff"));
-            _writer.Write(' ');
-            _writer.WriteLine(line);
+            // The constructor's promise above covers OPEN failures; writes were
+            // uncovered (D3-P061). AutoFlush means every line is a real syscall, so
+            // a full disk or a removed volume surfaces HERE, not at Dispose -- and
+            // Write is the first statement of AppendEditorLog, which ~60 UI-thread
+            // call sites reach. With no global handler, one IOException on a status
+            // line took the editor down and every dirty document with it.
+            //
+            // Degrade to the same no-op the constructor already degrades to: stop
+            // writing, keep the editor alive. Retrying per line would just re-throw
+            // once a volume is gone.
+            try
+            {
+                _writer.Write(DateTime.Now.ToString("HH:mm:ss.fff"));
+                _writer.Write(' ');
+                _writer.WriteLine(line);
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+            {
+                _writer = null;
+            }
         }
     }
 
