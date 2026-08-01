@@ -46,7 +46,11 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     // console keeps only the last N lines). Captures engine + editor + the separate
     // play process, all of which converge on AppendEditorLog.
     private readonly FileLogSink? _fileLogSink;
-    private readonly StandaloneAppLauncher _standaloneLauncher = new();
+
+    // A delegate rather than the launcher itself, in the same style as `dispatch`
+    // above: it is the only seam a test can use to drive the play lifecycle without
+    // a real engine host on disk.
+    private readonly Func<string, Action<string>, Process?> _standaloneLauncher;
     private Process? _standaloneProcess;
     private bool _shutdown;
 
@@ -61,11 +65,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         EditorLogBuffer? editorLog = null,
         Action<Action>? dispatch = null,
         string? projectDirectory = null,
-        FileLogSink? fileLogSink = null)
+        FileLogSink? fileLogSink = null,
+        Func<string, Action<string>, Process?>? standaloneLauncher = null)
     {
         _editorSession = editorSession;
         _editorSessionLifetime = editorSession as IDisposable;
         _dispatch = dispatch;
+        _standaloneLauncher = standaloneLauncher
+            ?? new StandaloneAppLauncher().Launch;
         _projectDirectory = projectDirectory ?? string.Empty;
         SaveAllCommand = new RelayCommand(SaveAll);
         RestartViewportCommand = new RelayCommand(RestartViewport, () => _editorSession is not null);
@@ -735,10 +742,44 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         // new one; Process owns an OS handle and dropping it silently leaks
         // one per play for the editor's lifetime.
         _standaloneProcess?.Dispose();
-        _standaloneProcess = _standaloneLauncher.Launch(
+        _standaloneProcess = _standaloneLauncher(
             _projectDirectory,
             AppendEditorLog);
         LaunchStandaloneCommand.NotifyCanExecuteChanged();
+
+        // ...and announce the OTHER end of the transition (D3-P045). Making
+        // CanExecute depend on IsStandaloneRunning gave the command a state change
+        // that nothing signalled: the launcher's own Exited handler only logs, so
+        // running -> exited never raised CanExecuteChanged and the menu item kept
+        // its cached IsEnabled=false. Whether the user could recover depended
+        // entirely on whether Avalonia happened to re-query on submenu reopen --
+        // and if it does not, Play is dead for the rest of the editor session.
+        if (_standaloneProcess is not null)
+        {
+            _standaloneProcess.Exited += OnStandaloneExited;
+
+            // Subscribing after Start leaves a gap: a play that dies immediately
+            // (a stale WOZZITS_EDITOR_HOST, a missing DLL) can raise Exited before
+            // we attach, and the event does not replay for a late subscriber.
+            if (!IsStandaloneRunning)
+            {
+                OnStandaloneExited(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    // Process.Exited arrives on a threadpool thread; CanExecuteChanged drives UI
+    // state, so it goes through the same dispatcher hop as the log flush.
+    private void OnStandaloneExited(object? sender, EventArgs e)
+    {
+        if (_dispatch is not null)
+        {
+            _dispatch(LaunchStandaloneCommand.NotifyCanExecuteChanged);
+        }
+        else
+        {
+            LaunchStandaloneCommand.NotifyCanExecuteChanged();
+        }
     }
 
     // Recompile the project's behavior-module DLLs (cmake, streamed to the
