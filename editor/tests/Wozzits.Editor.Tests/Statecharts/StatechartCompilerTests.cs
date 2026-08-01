@@ -1,4 +1,6 @@
 using System.Text.Json.Nodes;
+using System.IO;
+using System.Linq;
 using Wozzits.Editor.Statecharts;
 
 namespace Wozzits.Editor.Tests.Statecharts;
@@ -519,5 +521,66 @@ public sealed class StatechartCompilerTests
         Assert.Equal(
             StatechartJson.Emit(c, indented: false),
             StatechartJson.EmitValidated(c, indented: false));
+    }
+
+    // D3-H1. EmitValidated gained slot/qubit/outcome RANGE rules mirroring the
+    // engine's field widths (uint16_t slot/q, int8_t outcome). A strictness
+    // change has to be run over the REAL corpus before landing: the risk is not
+    // that it fails to catch something, it is that it makes a chart that ships
+    // and runs today permanently unsaveable.
+    //
+    // Every chart in the live project must still validate.
+    [Fact]
+    public void EveryCorpusChartStillPassesEmitValidated()
+    {
+        var files = CorpusLocator.GoldenChartFiles();
+        Assert.NotEmpty(files);
+
+        foreach (var file in files)
+        {
+            var path = Path.Combine(CorpusLocator.StatechartsDir(), file);
+            var chart = StatechartJson.Load(File.ReadAllText(path));
+            var blocking = StatechartJson.Inspect(chart)
+                .Where(i => i.Severity == StatechartJson.IssueSeverity.Blocking)
+                .Select(i => i.Message)
+                .ToList();
+            Assert.True(
+                blocking.Count == 0,
+                $"{file} is now BLOCKING: {string.Join("; ", blocking)}");
+        }
+    }
+
+    // ...and the new rules actually fire on the values the engine refuses.
+    [Theory]
+    [InlineData(70000)]
+    [InlineData(65536)]
+    [InlineData(-1)]
+    public void AnOutOfRangeSlotIsBlocking(int slot)
+    {
+        var chart = new Chart { Name = "range_probe" };
+        var state = new State { Id = "s0" };
+        state.Entry.Add(new Effect { Kind = EffectKind.SetGoal, Slot = slot });
+        chart.States.Add(state);
+
+        Assert.Contains(
+            StatechartJson.Inspect(chart),
+            i => i.Severity == StatechartJson.IssueSeverity.Blocking
+                 && i.Message.Contains("out of range"));
+        Assert.Throws<StatechartFormatException>(
+            () => StatechartJson.EmitValidated(chart, indented: false));
+    }
+
+    [Fact]
+    public void AnInRangeSlotIsAccepted()
+    {
+        var chart = new Chart { Name = "range_probe" };
+        var state = new State { Id = "s0" };
+        state.Entry.Add(new Effect { Kind = EffectKind.SetGoal, Slot = 65535 });
+        chart.States.Add(state);
+
+        Assert.DoesNotContain(
+            StatechartJson.Inspect(chart),
+            i => i.Severity == StatechartJson.IssueSeverity.Blocking
+                 && i.Message.Contains("out of range"));
     }
 }

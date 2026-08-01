@@ -683,6 +683,38 @@ public static class StatechartJson
         if (HasPureCycle(c))
             Blocking("pure ops contain a cycle");
 
+        // Range, mirroring the engine's field widths (D3-H1). parse_chart reads
+        // slot/q through narrow_number<uint16_t> and outcome through int8_t
+        // (statechart_ir.h:65,99,113-114) and REFUSES the whole chart naming the
+        // field. The editors for these are free-text with only a `>= 0` check, so
+        // a typo saved clean here and the chart then failed to load at play time
+        // -- exactly the class this gate exists to mirror. That refusal was added
+        // the same day, under the same issue (#318), as EmitValidated itself.
+        const int maxSlot = ushort.MaxValue;
+        foreach (var p in c.Pure)
+        {
+            if (p.Slot is < 0 or > maxSlot)
+                Blocking($"pure op '{p.Id}' slot/qubit {p.Slot} is out of range (0..{maxSlot})");
+        }
+        foreach (var s in c.States)
+        {
+            var effects = s.Entry.Concat(s.Do).Concat(s.Exit)
+                .Concat(s.Transitions.SelectMany(t => t.Actions));
+            foreach (var e in effects)
+            {
+                if (e.Slot is < 0 or > maxSlot)
+                    Blocking($"state '{s.Id}' effect slot/qubit {e.Slot} is out of range (0..{maxSlot})");
+            }
+            foreach (var t in s.Transitions)
+            {
+                if (t.Trigger.Slot is < 0 or > maxSlot)
+                    Blocking($"state '{s.Id}' commit slot {t.Trigger.Slot} is out of range (0..{maxSlot})");
+                if (t.Trigger.Outcome is { } outcome
+                    && outcome is < sbyte.MinValue or > sbyte.MaxValue)
+                    Blocking($"state '{s.Id}' commit outcome {outcome} is out of range");
+            }
+        }
+
         var stateIds = new HashSet<string>();
         foreach (var s in c.States)
         {
