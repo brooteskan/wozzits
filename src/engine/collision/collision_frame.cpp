@@ -262,6 +262,22 @@ namespace wz::engine::collision
                     const uint32_t begin = grid.cell_offsets[cell];
                     const uint32_t end = grid.cell_offsets[cell + 1u];
                     for (uint32_t i = begin; i < end; ++i) {
+                        // The VALUES in cell_offsets are unvalidated (issue
+                        // #310, A4-C26): the check above bounds the LENGTH of
+                        // cell_offsets, and the decoder bounds only the element
+                        // COUNTS, so nothing requires the offsets to be
+                        // monotonic or within cell_triangle_indices. The `tri`
+                        // check below already guards the second hop; this
+                        // guards the first, which it did not.
+                        //
+                        // Both sibling walks of this same CSR structure already
+                        // have this line -- collision_surface_sampling.cpp:789
+                        // and behavior_plugin_adapter.cpp:656 -- so this was an
+                        // omission, not a contract the other two were being
+                        // paranoid about.
+                        if (i >= grid.cell_triangle_indices.size()) {
+                            continue;
+                        }
                         const uint32_t tri =
                             grid.cell_triangle_indices[i];
                         if (tri >= data.triangle_bounds.size()) {

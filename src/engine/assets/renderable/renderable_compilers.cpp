@@ -898,8 +898,13 @@ namespace wz::engine::assets::internal
             const TerrainVisualProxyChunkRecord& chunk,
             const TerrainVisualProxySurfelDensityLevel& level)
         {
+            // Third instance of the same wrapping uint32 sum (issue #310,
+            // A4-C27), and the one that goes on to index
+            // chunk.surfels[first_surfel + i]. All three sites carried it, so
+            // there was no defence in depth: a wrapped range passed every gate.
             if (!level.valid()
-                || level.first_surfel + level.surfel_count
+                || static_cast<std::uint64_t>(level.first_surfel)
+                       + static_cast<std::uint64_t>(level.surfel_count)
                     > chunk.surfels.size())
             {
                 return;

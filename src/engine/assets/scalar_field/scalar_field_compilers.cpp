@@ -845,11 +845,48 @@ namespace wz::engine::assets::internal
 
                 // ── 3. Validate byte count ────────────────────────────────────
 
-                const uint32_t count =
-                    desc->width * desc->height * desc->depth;
+                // Both products are computed in 64-bit (issue #310, A4-C23).
+                //
+                // As uint32 they WRAPPED, and the wrap was load-bearing rather
+                // than theoretical: width=65536, height=16384, depth=1 -- each
+                // inside its own declared range -- gives count = 2^30, whose
+                // byte count 2^32 wraps to ZERO. So `bytes->size() != 0` was the
+                // check, a zero-byte .r32 passed it, and the compiler then
+                // allocated 2^30 floats (4 GiB) of zeros and published a
+                // 65536x16384 resident texture plus a full CPU mip pyramid.
+                // count = 2^30+1 wraps to 4 instead, so a FOUR-byte file bought
+                // the same 4 GiB field.
+                //
+                // ScalarFieldData::count() has the same 32-bit product, so
+                // valid() agreed with the wrapped arithmetic instead of
+                // catching it; nothing downstream was going to notice.
+                //
+                // The declared ParamDecl min/max do not bound this -- they are
+                // documented as slider range only, and params.get<uint32_t>
+                // performs no clamp, so a hand-edited assets.graph.json or an
+                // ABI set_param arrives unfiltered.
+                const uint64_t count_64 =
+                    static_cast<uint64_t>(desc->width)
+                    * static_cast<uint64_t>(desc->height)
+                    * static_cast<uint64_t>(desc->depth);
 
-                const uint32_t expected_bytes =
-                    count * static_cast<uint32_t>(sizeof(float));
+                const uint64_t expected_bytes_64 =
+                    count_64 * static_cast<uint64_t>(sizeof(float));
+
+                // The field is addressed with 32-bit counts downstream, so a
+                // shape that cannot be expressed there is refused here rather
+                // than silently truncated into one that can.
+                if (count_64 > static_cast<uint64_t>(UINT32_MAX)) {
+                    logger.error(
+                        "scalar field dimensions overflow a 32-bit sample count: "
+                        + std::to_string(desc->width) + "x"
+                        + std::to_string(desc->height) + "x"
+                        + std::to_string(desc->depth));
+                    return compile_failed_node(input);
+                }
+
+                const uint32_t count = static_cast<uint32_t>(count_64);
+                const uint64_t expected_bytes = expected_bytes_64;
 
                 if (bytes->size() != expected_bytes) {
                     logger.error("scalar field byte count mismatch: expected "

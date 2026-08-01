@@ -2200,7 +2200,13 @@ namespace wz::engine::assets::internal
                 for (const TerrainVisualProxySurfelDensityLevel& level :
                      chunk.surfel_density_levels)
                 {
-                    if (level.first_surfel + level.surfel_count
+                    // uint32 + uint32 WRAPS (issue #310, A4-C27): with
+                    // first_surfel = 0xFFFFFFFF and surfel_count = 1 the sum is
+                    // 0, so `0 > size()` is false and an entry addressing far
+                    // past the allocation was ACCEPTED rather than becoming a
+                    // cache miss. Widened so the sum is the real one.
+                    if (static_cast<std::uint64_t>(level.first_surfel)
+                            + static_cast<std::uint64_t>(level.surfel_count)
                         > chunk.surfels.size())
                     {
                         return false;

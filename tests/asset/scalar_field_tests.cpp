@@ -324,6 +324,56 @@ namespace wz::engine::assets::test {
         EXPECT_FALSE(handle.valid());
     }
 
+    // Dimensions whose 32-bit sample count or byte count would WRAP
+    // (issue #310, A4-C23).
+    //
+    // 65536 x 16384 x 1 are each inside their own declared range, but the
+    // product is 2^30 and its byte count 2^32 wrapped to ZERO in uint32 -- so
+    // the byte-count guard read `bytes->size() != 0`, an EMPTY file passed it,
+    // and the compiler allocated 2^30 floats (4 GiB) of zeros and published a
+    // 65536x16384 resident texture plus a full CPU mip pyramid. ScalarFieldData
+    // ::count() shares the 32-bit product, so valid() agreed with the wrapped
+    // arithmetic rather than catching it.
+    //
+    // The declared ParamDecl min/max do not bound this -- documented as slider
+    // range only, and params.get<uint32_t> does not clamp -- so a hand-edited
+    // assets.graph.json or an ABI set_param arrives unfiltered, which is what
+    // this test stands in for.
+    //
+    // The file written here is EMPTY on purpose: that is precisely the input
+    // the wrapped guard accepted. If this test ever starts allocating
+    // gigabytes, the 64-bit widening has been undone.
+    TEST_F(ScalarFieldTest, ScalarFieldRejectsDimensionsThatWrapUint32)
+    {
+        const auto rel = write_field_file("wrap_dims.rawf32", {});
+
+        ScalarFieldFileDesc desc{
+            .name = "wrap_dims",
+            .path = rel,
+            .width = 65536u,
+            .height = 16384u,
+            .depth = 1u,
+        };
+
+        // Sanity on the premise, so the numbers are not mysterious later:
+        // the 32-bit byte count of this shape is zero.
+        const uint64_t byte_count =
+            static_cast<uint64_t>(desc.width) * desc.height * desc.depth
+            * sizeof(float);
+        ASSERT_EQ(byte_count & 0xFFFFFFFFull, 0ull);
+
+        const ScalarFieldAsset asset =
+            library_->scalar_fields().create_scalar_field(desc);
+        ASSERT_TRUE(asset.valid());
+
+        ASSERT_TRUE(library_->commit());
+        library_->resolve_all();
+
+        const ScalarFieldHandle handle =
+            library_->scalar_fields().get_scalar_field(asset);
+        EXPECT_FALSE(handle.valid());
+    }
+
     // The compiler rejects a registration with any zero dimension.
     // Zero width, height, or depth makes count() == 0 which is incoherent.
     TEST_F(ScalarFieldTest, ScalarFieldRejectsZeroDimensions)

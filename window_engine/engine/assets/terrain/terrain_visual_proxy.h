@@ -328,7 +328,11 @@ namespace wz::engine::assets
                  surfel_density_levels)
             {
                 if (!level.valid()
-                    || level.first_surfel + level.surfel_count
+                    // Same wrapping sum as the decoder and the consumer
+                    // (issue #310, A4-C27). All three carried it, so there was
+                    // no defence in depth -- a wrapped range passed every gate.
+                    || static_cast<std::uint64_t>(level.first_surfel)
+                           + static_cast<std::uint64_t>(level.surfel_count)
                         > surfels.size())
                 {
                     return false;
