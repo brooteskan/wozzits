@@ -699,6 +699,14 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     // ─── Collision (terrain-stick track) ─────────────────────────────────────────
 
+    // The authored collision asset id when it does NOT resolve to an option --
+    // the referenced asset-graph node was deleted, or the graph failed to load
+    // (D3-C11). Without it, a persisted-but-unresolved reference and a genuinely
+    // unset one collapse into "SelectedCollisionOption is null", and the one
+    // control still live in that state (the picker is disabled, the checkbox is
+    // not) pushes id 0, which CLEARS the reference the label is still showing.
+    private ulong? _unresolvedCollisionAssetNodeId;
+
     // The Collision asset-graph node chosen in the picker. Bound TwoWay to the
     // ComboBox; a user pick applies immediately (no Apply button), mirroring the
     // render-program picker. Programmatic restores assign the field, not this setter.
@@ -710,6 +718,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             if (SetProperty(ref _selectedCollisionOption, value)
                 && value is not null)
             {
+                // A real pick supersedes whatever unresolved id we were holding.
+                _unresolvedCollisionAssetNodeId = null;
                 ApplyCollision();
             }
         }
@@ -765,6 +775,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // The Atmosphere asset-graph node chosen in the picker. Bound TwoWay to the
     // ComboBox; a pick applies immediately (no Apply button). Programmatic restores
     // assign the field, not this setter.
+    // See _unresolvedCollisionAssetNodeId (D3-C11) -- same hazard, same fix.
+    private ulong? _unresolvedAtmosphereAssetNodeId;
+
     public InspectorAssetGraphRefOptionViewModel? SelectedAtmosphereOption
     {
         get => _selectedAtmosphereOption;
@@ -773,6 +786,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             if (SetProperty(ref _selectedAtmosphereOption, value)
                 && value is not null)
             {
+                _unresolvedAtmosphereAssetNodeId = null;
                 ApplyAtmosphere();
             }
         }
@@ -825,6 +839,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     // The FrameEnvironment asset-graph node chosen in the picker. Bound TwoWay to
     // the ComboBox; a pick applies immediately. Programmatic restores assign the
     // field, not this setter.
+    // See _unresolvedCollisionAssetNodeId (D3-C11) -- same hazard, same fix.
+    private ulong? _unresolvedEnvironmentAssetNodeId;
+
     public InspectorAssetGraphRefOptionViewModel? SelectedEnvironmentOption
     {
         get => _selectedEnvironmentOption;
@@ -833,6 +850,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             if (SetProperty(ref _selectedEnvironmentOption, value)
                 && value is not null)
             {
+                _unresolvedEnvironmentAssetNodeId = null;
                 ApplyEnvironment();
             }
         }
@@ -3383,9 +3401,13 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
+        // Fall back to the authored-but-unresolved id, NOT 0 -- 0 means "clear the
+        // reference" (wozzits_abi.h), so toggling this checkbox on a node whose
+        // collision asset no longer resolves used to silently destroy the binding
+        // while the UI still displayed it as "Referencing: #7".
         var assetId = SelectedCollisionOption is { } option
             ? AssetGraphNodeIdAsUint(option.Id)
-            : 0u;
+            : AssetGraphNodeIdAsUint(_unresolvedCollisionAssetNodeId ?? 0ul);
         if (SetEditResponse(_editorSession!.SetNodeCollision(
             NodeId, assetId, CollisionConstrainMovement)))
         {
@@ -3447,12 +3469,16 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             var option = AvailableCollisionSources.FirstOrDefault(
                 o => o.Id == assetNodeId);
             _selectedCollisionOption = option;
+            // The label fallback below proves resolution can fail; remember WHICH
+            // id failed so a later re-push preserves it instead of clearing it.
+            _unresolvedCollisionAssetNodeId = option is null ? assetNodeId : null;
             CollisionReferenceLabel = option?.Label
                 ?? $"#{assetNodeId.ToString(CultureInfo.InvariantCulture)}";
         }
         else
         {
             _selectedCollisionOption = null;
+            _unresolvedCollisionAssetNodeId = null;
             CollisionReferenceLabel = string.Empty;
         }
         OnPropertyChanged(nameof(SelectedCollisionOption));
@@ -3464,6 +3490,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private void ResetCollisionState()
     {
         _selectedCollisionOption = null;
+        _unresolvedCollisionAssetNodeId = null;
         OnPropertyChanged(nameof(SelectedCollisionOption));
         CollisionReferenceLabel = string.Empty;
         // Reset the flag without echoing a live edit.
@@ -3527,7 +3554,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
-        var assetId = SelectedAtmosphereOption is { } option ? option.Id : 0ul;
+        // D3-C11: preserve an authored-but-unresolved id; 0 means CLEAR.
+        var assetId = SelectedAtmosphereOption is { } option
+            ? option.Id
+            : _unresolvedAtmosphereAssetNodeId ?? 0ul;
         if (SetEditResponse(_editorSession!.SetNodeAtmosphere(
             NodeId, assetId, AtmosphereEnabled)))
         {
@@ -3587,12 +3617,14 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             var option = AvailableAtmospheres.FirstOrDefault(
                 o => o.Id == assetNodeId);
             _selectedAtmosphereOption = option;
+            _unresolvedAtmosphereAssetNodeId = option is null ? assetNodeId : null;
             AtmosphereReferenceLabel = option?.Label
                 ?? $"#{assetNodeId.ToString(CultureInfo.InvariantCulture)}";
         }
         else
         {
             _selectedAtmosphereOption = null;
+            _unresolvedAtmosphereAssetNodeId = null;
             AtmosphereReferenceLabel = string.Empty;
         }
         OnPropertyChanged(nameof(SelectedAtmosphereOption));
@@ -3604,6 +3636,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private void ResetAtmosphereState()
     {
         _selectedAtmosphereOption = null;
+        _unresolvedAtmosphereAssetNodeId = null;
         OnPropertyChanged(nameof(SelectedAtmosphereOption));
         AtmosphereReferenceLabel = string.Empty;
         // Reset the flag without echoing a live edit.
@@ -3663,7 +3696,10 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             return;
         }
 
-        var assetId = SelectedEnvironmentOption is { } option ? option.Id : 0ul;
+        // D3-C11: preserve an authored-but-unresolved id; 0 means CLEAR.
+        var assetId = SelectedEnvironmentOption is { } option
+            ? option.Id
+            : _unresolvedEnvironmentAssetNodeId ?? 0ul;
         if (SetEditResponse(_editorSession!.SetNodeEnvironment(
             NodeId, assetId, EnvironmentEnabled)))
         {
@@ -3723,12 +3759,14 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             var option = AvailableEnvironments.FirstOrDefault(
                 o => o.Id == assetNodeId);
             _selectedEnvironmentOption = option;
+            _unresolvedEnvironmentAssetNodeId = option is null ? assetNodeId : null;
             EnvironmentReferenceLabel = option?.Label
                 ?? $"#{assetNodeId.ToString(CultureInfo.InvariantCulture)}";
         }
         else
         {
             _selectedEnvironmentOption = null;
+            _unresolvedEnvironmentAssetNodeId = null;
             EnvironmentReferenceLabel = string.Empty;
         }
         OnPropertyChanged(nameof(SelectedEnvironmentOption));
@@ -3740,6 +3778,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private void ResetEnvironmentState()
     {
         _selectedEnvironmentOption = null;
+        _unresolvedEnvironmentAssetNodeId = null;
         OnPropertyChanged(nameof(SelectedEnvironmentOption));
         EnvironmentReferenceLabel = string.Empty;
         // Reset the flag without echoing a live edit.

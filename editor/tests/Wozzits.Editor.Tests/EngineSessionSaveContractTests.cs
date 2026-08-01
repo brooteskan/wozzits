@@ -373,6 +373,55 @@ public sealed partial class ProjectOpeningTests
         Assert.Equal(expectedAccepted, accepted);
     }
 
+    // D3-C11. When a node's persisted collision asset id does not resolve to any
+    // available option -- the referenced asset-graph node was deleted, or the
+    // graph failed to load -- SelectedCollisionOption is null while the label
+    // still reads "#7", so the UI asserts the reference exists. The picker is
+    // disabled in that state (IsEnabled=HasAvailableCollisionSources) but the
+    // "Constrain movement" checkbox is NOT, and toggling it re-pushed id 0 --
+    // which the ABI defines as CLEAR. The one control the user could still touch
+    // was the one that destroyed the reference.
+    [Fact]
+    public void TogglingAFlagPreservesAnUnresolvedComponentReference()
+    {
+        var editorSession = new RecordingEditorSession { RuntimeRunning = true };
+        var viewModel = new MainWindowViewModel(
+            ProjectSnapshot(
+                // No asset-graph nodes at all, so id 7 cannot resolve.
+                scene: SceneSnapshot(
+                    Node(
+                        "root",
+                        children:
+                        [
+                            Node(
+                                "node",
+                                parentId: "root",
+                                visible: true,
+                                components: [Component("collision", "Collision")],
+                                collision: new EngineSceneNodeCollision
+                                {
+                                    CollisionAssetNodeId = 7,
+                                    ConstrainMovement = false,
+                                }),
+                        ]))),
+            editorSession: editorSession);
+
+        var root = Assert.Single(viewModel.SceneTree.Nodes);
+        var node = Assert.Single(root.Children, n => n.Id == "node");
+        viewModel.SceneTree.SelectNode(node);
+
+        // The state the bug needs: unresolved, but displayed as a live reference.
+        Assert.Null(viewModel.Inspector.SelectedCollisionOption);
+        Assert.Equal("#7", viewModel.Inspector.CollisionReferenceLabel);
+
+        viewModel.Inspector.CollisionConstrainMovement = true;
+
+        var pushed = Assert.Single(editorSession.Collisions);
+        Assert.True(pushed.ConstrainMovement);
+        // 7, not 0. Pushing 0 here silently destroys the binding the label shows.
+        Assert.Equal(7ul, pushed.AssetGraphNodeId);
+    }
+
     private static MindDocumentViewModel? OpenMindDocument(MainWindowViewModel viewModel)
     {
         return viewModel.DockFactory is null
