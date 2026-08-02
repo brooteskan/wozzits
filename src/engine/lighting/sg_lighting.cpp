@@ -84,7 +84,14 @@ namespace wz::engine::lighting
     Vec3 integral(const SphericalGaussian& g)
     {
         const float l = g.sharpness > kSharpnessFloor ? g.sharpness : kSharpnessFloor;
-        const float scale = (kTwoPi / l) * (1.0f - std::exp(-2.0f * l));
+        // -expm1(-2l), not 1 - exp(-2l): for small l the latter cancels to
+        // EXACTLY 0 in float32 (exp(-2e-8) rounds to 1.0f, and float32 eps at
+        // 1.0 is 1.19e-7, an order of magnitude larger than 2e-8), so the whole
+        // integral vanished at precisely the broad-lobe limit kSharpnessFloor
+        // exists to protect. The correct value there is 4*pi. Measured: the
+        // cancelling form returns 0 at l = 1e-8 and is 10.6% low at 1e-7;
+        // expm1 is exact throughout (issue #316, C3-C1).
+        const float scale = (kTwoPi / l) * -std::expm1(-2.0f * l);
         return g.amplitude * scale;
     }
 
@@ -94,14 +101,16 @@ namespace wz::engine::lighting
         // amplitude A_a*A_b*exp(|dm| - la - lb), where dm = la*axis_a + lb*axis_b.
         // Integrating that SG over the sphere gives the result below.
         const Vec3  dm = a.axis * a.sharpness + b.axis * b.sharpness;
-        float       lm = wz::math::length(dm);
-        if (lm < kSharpnessFloor) {
-            lm = kSharpnessFloor;
-        }
+        // Reject direction, matching integral() twelve lines above: `lm <
+        // kSharpnessFloor` is false for NaN, so the accept spelling let a NaN
+        // |dm| through the floor it exists to enforce.
+        const float dm_len = wz::math::length(dm);
+        const float lm = dm_len > kSharpnessFloor ? dm_len : kSharpnessFloor;
 
+        // See integral(): -expm1(-2lm) rather than the cancelling 1 - exp(-2lm).
         const float scale =
             std::exp(lm - a.sharpness - b.sharpness)
-            * (kTwoPi / lm) * (1.0f - std::exp(-2.0f * lm));
+            * (kTwoPi / lm) * -std::expm1(-2.0f * lm);
 
         return Vec3{
             a.amplitude.x * b.amplitude.x * scale,

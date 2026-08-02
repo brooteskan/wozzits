@@ -47,6 +47,21 @@ StructuredBuffer<SkyPoint> sky_gaussian_points : register(t4, space2);
 
 static const float PI = 3.14159265358979323846f;
 
+// 1 - exp(-x) for x >= 0, without the cancellation.
+//
+// Written naively, exp(-x) rounds to exactly 1.0f once x falls below the float32
+// epsilon at 1.0 (1.19e-7), so `1 - exp(-x)` becomes exactly 0 and annihilates
+// whatever it multiplies. That is what happened at the SG sharpness floor below:
+// the term the floor exists to keep finite was instead driven to zero, so a very
+// broad lobe -- the most uniform sky there is -- contributed no light at all.
+// The CPU twin uses -expm1(-x); HLSL has no expm1, so use the series, whose
+// truncation error at the switch point is ~x^3/6 = 1.7e-10 relative.
+// (issue #316, C3-C1)
+float minus_expm1(float x)
+{
+    return (x < 1e-3f) ? (x - 0.5f * x * x) : (1.0f - exp(-x));
+}
+
 // Closed-form product integral of two SGs, per channel (sg_lighting.cpp).
 float3 sg_inner_product(
     float3 axis_a, float sharp_a, float3 amp_a,
@@ -55,7 +70,7 @@ float3 sg_inner_product(
     float3 dm = axis_a * sharp_a + axis_b * sharp_b;
     float  lm = max(length(dm), 1e-8f);
     float  scale =
-        exp(lm - sharp_a - sharp_b) * (2.0f * PI / lm) * (1.0f - exp(-2.0f * lm));
+        exp(lm - sharp_a - sharp_b) * (2.0f * PI / lm) * minus_expm1(2.0f * lm);
     return amp_a * amp_b * scale;
 }
 

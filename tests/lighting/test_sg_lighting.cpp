@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 using namespace wz::engine::lighting;
@@ -453,4 +454,63 @@ TEST(SgLighting, EmitterDiffuseFallsOffWithAngle)
 
     EXPECT_GT(straight.x, dim.x);
     EXPECT_GT(dim.x, 0.0f);
+}
+
+// --- issue #316 C3-C1: the sharpness floor must guard, not annihilate --------
+//
+// integral() and inner_product() both compute a factor of the form
+// (2*pi/l) * (1 - exp(-2l)). In float32, exp(-2l) rounds to exactly 1.0f once
+// 2l drops below the epsilon at 1.0 (1.19e-7), so the factor becomes exactly 0
+// and the whole term vanishes -- at precisely the broad-lobe limit that
+// kSharpnessFloor (1e-8) exists to protect. The exact limit as l -> 0 is 4*pi.
+//
+// The sweep spans the collapse band on purpose: measured, the naive form is 0 at
+// l=1e-8, 10.6% low at 1e-7, and correct only from about 1e-6 up. A test at a
+// single "reasonable" sharpness cannot see any of that.
+TEST(SgLighting, IntegralIsExactForAnArbitrarilyBroadLobe)
+{
+    constexpr float kFourPi = 4.0f * 3.14159265358979323846f;
+
+    for (const float sharpness : { 0.0f, 1e-9f, 1e-8f, 1e-7f, 1e-6f, 1e-4f }) {
+        SphericalGaussian g;
+        g.axis = Vec3{ 0.0f, 0.0f, 1.0f };
+        g.sharpness = sharpness;
+        g.amplitude = Vec3{ 1.0f, 1.0f, 1.0f };
+
+        // A lobe this broad is essentially uniform over the sphere, so its
+        // integral is 4*pi * amplitude. Before the fix this returned 0.
+        const Vec3 e = integral(g);
+        EXPECT_NEAR(e.x, kFourPi, 1e-2f) << "sharpness=" << sharpness;
+    }
+
+    // And the ordinary range is untouched: at the cosine-lobe sharpness the
+    // value must still match what quadrature says (IntegralMatchesQuadrature
+    // covers the general case; this pins that the fix changed nothing there).
+    SphericalGaussian g;
+    g.axis = Vec3{ 0.0f, 0.0f, 1.0f };
+    g.sharpness = 2.133f;
+    g.amplitude = Vec3{ 1.0f, 1.0f, 1.0f };
+    EXPECT_NEAR(integral(g).x, 2.90435f, 1e-3f);
+}
+
+// The same collapse reached the SG product integral, which is what every
+// irradiance and specular lookup goes through.
+TEST(SgLighting, InnerProductSurvivesTwoBroadLobes)
+{
+    SphericalGaussian a;
+    a.axis = Vec3{ 0.0f, 0.0f, 1.0f };
+    a.sharpness = 1e-8f;
+    a.amplitude = Vec3{ 1.0f, 1.0f, 1.0f };
+
+    SphericalGaussian b = a;
+
+    const Vec3 p = inner_product(a, b);
+    EXPECT_GT(p.x, 1.0f) << "two near-uniform lobes cannot integrate to zero";
+    EXPECT_TRUE(std::isfinite(p.x));
+
+    // A NaN axis must land on the floor rather than propagate: the guard is now
+    // written in the reject direction, matching integral()'s.
+    SphericalGaussian bad = a;
+    bad.axis = Vec3{ std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f };
+    EXPECT_TRUE(std::isfinite(inner_product(bad, b).x));
 }
