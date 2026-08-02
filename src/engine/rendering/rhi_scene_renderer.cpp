@@ -3175,6 +3175,16 @@ namespace wz::engine::rendering
             realized_renderables_.erase(key);
         }
 
+        // What the D3D12 debug layer thought of the pass we just recorded
+        // (#317). The layer has always been enabled in debug builds and nothing
+        // held an ID3D12InfoQueue, so its verdicts reached only the native debug
+        // stream -- which is how a hard EXECUTION ERROR against a null DSV
+        // shipped green in two suites. Drained HERE rather than once per frame
+        // because a frame records one pass per authored render target plus the
+        // main pass, and the pass is the unit that is wrong; in release the
+        // layer is absent and this is one null check.
+        report_debug_layer_messages(to_offscreen ? "offscreen" : "main");
+
         if (recorded == 0) {
             return true;
         }
@@ -3185,5 +3195,26 @@ namespace wz::engine::rendering
             return false;
         }
         return true;
+    }
+
+    void RhiSceneRenderer::report_debug_layer_messages(const char* pass)
+    {
+        for (const std::string& message :
+             wz::gpu::dx12::internal::take_debug_messages(gpu_.device))
+        {
+            // Severity is already in the text; route CORRUPTION/ERROR to
+            // error() so the editor surfaces them the way it surfaces a
+            // recorder rejection, and leave WARNING at warn().
+            if (message.rfind("D3D12 WARNING", 0) == 0) {
+                logger_.warn(
+                    std::string("RhiSceneRenderer [") + pass + " pass] "
+                    + message);
+            }
+            else {
+                logger_.error(
+                    std::string("RhiSceneRenderer [") + pass + " pass] "
+                    + message);
+            }
+        }
     }
 }

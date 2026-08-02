@@ -3,6 +3,7 @@
 // file: gpu/dx12/dx12_internal.h
 
 #include <span>
+#include <string>
 #include <vector>
 #include <gpu/gpu.h>
 #pragma clang diagnostic push
@@ -31,6 +32,21 @@ namespace wz::gpu::dx12::internal
 {
     ID3D12Device* get_device(Device& d);
     ID3D12GraphicsCommandList* get_command_list(Device& d);
+
+    // Drain the D3D12 debug layer's stored messages (CORRUPTION/ERROR/WARNING
+    // only), oldest first, and clear the queue.
+    //
+    // The debug layer has always been ENABLED in debug builds and nothing was
+    // ever listening: no ID3D12InfoQueue existed anywhere in the engine, so
+    // every verdict it rendered went only to the native debug stream, visible
+    // solely under an attached debugger. That is how a hard EXECUTION ERROR
+    // (#615, depth-enabled PSO against a null DSV) shipped green in two test
+    // suites -- see #317. This layer owns no logger, so it hands the messages
+    // up as plain strings and the engine logs them.
+    //
+    // Returns empty when the debug layer is unavailable (release builds), so a
+    // per-frame caller costs one null check there.
+    std::vector<std::string> take_debug_messages(Device& d);
     ID3D12RootSignature* create_empty_root_signature(ID3D12Device* device);
 
     // added for imgui tooling integration.

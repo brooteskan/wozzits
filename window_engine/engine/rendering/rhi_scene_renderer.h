@@ -566,6 +566,14 @@ namespace wz::engine::rendering
             RealizedRenderable& realized,
             const wz::rhi::ShaderResourceGroupLayout* slot0_layout);
 
+        // Drain the D3D12 debug layer's messages for the pass just recorded and
+        // route them into the editor-visible log (#317). `pass` names which one
+        // ("main" / "offscreen") so a message can be attributed: the offscreen
+        // passes are where the depth/DSV mismatch lives, and a per-frame drain
+        // could not tell them apart. No-op in release, where the layer is not
+        // installed.
+        void report_debug_layer_messages(const char* pass);
+
         // Refresh a view/screen constants buffer AS A RECORDED COPY in the
         // frame's command list, not the immediate registry.update: a frame
         // records one pass per authored render target plus the main pass, each

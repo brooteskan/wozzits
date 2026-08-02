@@ -127,6 +127,13 @@ namespace wz::gpu::dx12
         IDXGISwapChain3* swapchain = nullptr;
         ID3D12CommandQueue* queue = nullptr;
 
+        // The debug layer's message sink, when the layer is installed (debug
+        // builds only; null otherwise). Drained by take_debug_messages() so the
+        // engine can log what the layer says -- before #317 the layer was
+        // enabled and nobody held this interface, so its verdicts were
+        // invisible outside a debugger.
+        ID3D12InfoQueue* info_queue = nullptr;
+
         // frame
         ID3D12CommandAllocator* allocator = nullptr;
         ID3D12GraphicsCommandList* cmd = nullptr;

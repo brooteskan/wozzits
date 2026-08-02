@@ -163,6 +163,20 @@ namespace wz::gpu::dx12
         hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
         assert(SUCCEEDED(hr));
 
+        // Hold the debug layer's message queue so someone can actually read it
+        // (#317). Enabling the layer above without this made every verdict it
+        // renders -- unbound vertex buffers, wrong resource states, the
+        // depth/DSV mismatch that shipped green in two suites -- reachable only
+        // from an attached debugger. QueryInterface fails when the layer is not
+        // installed, which is the release build; take_debug_messages then
+        // returns empty.
+        ID3D12InfoQueue* info_queue = nullptr;
+        if (device
+            && FAILED(device->QueryInterface(IID_PPV_ARGS(&info_queue))))
+        {
+            info_queue = nullptr;
+        }
+
         D3D12_COMMAND_QUEUE_DESC qdesc = {};
         qdesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 
@@ -254,6 +268,7 @@ namespace wz::gpu::dx12
         // ────── store everything ───────────────────────────────────────────────────────
         DX12Device* impl = new DX12Device{};
         impl->device = device;
+        impl->info_queue = info_queue;
         impl->swapchain = swapchain;
         impl->queue = queue;
         impl->allocator = allocator;
@@ -891,6 +906,10 @@ namespace wz::gpu::dx12
         if (impl->allocator) { impl->allocator->Release(); impl->allocator = nullptr; }
         if (impl->swapchain) { impl->swapchain->Release(); impl->swapchain = nullptr; }
         if (impl->queue) { impl->queue->Release();     impl->queue = nullptr; }
+        // Before the device: the info queue holds a reference to it, so
+        // releasing it later would keep the device alive past its own release
+        // and turn the shutdown report into a false live-object leak.
+        if (impl->info_queue) { impl->info_queue->Release(); impl->info_queue = nullptr; }
 
         if (impl->fence) { impl->fence->Release(); impl->fence = nullptr; }
         if (impl->fence_event) { CloseHandle(impl->fence_event); impl->fence_event = nullptr; }
@@ -1152,6 +1171,50 @@ namespace wz::gpu::dx12::internal
         auto* impl = (DX12Device*)d.impl;
         assert(impl);
         return impl->device;
+    }
+
+    std::vector<std::string> take_debug_messages(Device& d)
+    {
+        std::vector<std::string> out;
+        auto* impl = (DX12Device*)d.impl;
+        if (!impl || !impl->info_queue) {
+            return out;
+        }
+
+        ID3D12InfoQueue* q = impl->info_queue;
+        const UINT64 count = q->GetNumStoredMessages();
+        for (UINT64 i = 0; i < count; ++i) {
+            SIZE_T length = 0;
+            if (FAILED(q->GetMessage(i, nullptr, &length)) || length == 0) {
+                continue;
+            }
+            std::vector<char> storage(length);
+            auto* message = reinterpret_cast<D3D12_MESSAGE*>(storage.data());
+            if (FAILED(q->GetMessage(i, message, &length))) {
+                continue;
+            }
+            // INFO/MESSAGE are per-resource-creation chatter; only the three
+            // severities that mean "this frame is wrong" are worth a log line.
+            const char* severity =
+                message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION
+                    ? "CORRUPTION"
+                : message->Severity == D3D12_MESSAGE_SEVERITY_ERROR
+                    ? "ERROR"
+                : message->Severity == D3D12_MESSAGE_SEVERITY_WARNING
+                    ? "WARNING"
+                    : nullptr;
+            if (!severity) {
+                continue;
+            }
+            out.push_back(
+                std::string("D3D12 ") + severity + " #"
+                + std::to_string(static_cast<int>(message->ID)) + ": "
+                + std::string(
+                    message->pDescription,
+                    message->pDescription + message->DescriptionByteLength));
+        }
+        q->ClearStoredMessages();
+        return out;
     }
 
     ID3D12GraphicsCommandList* get_command_list(Device& d)
