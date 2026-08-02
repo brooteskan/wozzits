@@ -160,10 +160,18 @@ namespace wz::engine::rendering
         RhiDx12PipelineCache(const RhiDx12PipelineCache&) = delete;
         RhiDx12PipelineCache& operator=(const RhiDx12PipelineCache&) = delete;
 
+        // Realize (or find) the pipeline for `program` AS THE CURRENTLY BOUND
+        // PASS needs it. Whether that pass has a depth-stencil view is part of
+        // the key: D3D12 refuses a non-UNKNOWN DSVFormat against a null DSV, so
+        // a program drawn both into the backbuffer and into an authored render
+        // target needs two pipelines. The flag is read from the device, not
+        // passed in, so it cannot disagree with what OMSetRenderTargets did.
         [[nodiscard]] const RhiDx12RealizedPipeline* realize(
             wz::rhi::Tag program);
         [[nodiscard]] const RhiDx12RealizedPipeline* get(
             wz::rhi::Tag program) const noexcept;
+        [[nodiscard]] const RhiDx12RealizedPipeline* get(
+            wz::rhi::Tag program, bool depth_target_bound) const noexcept;
 
         void clear() noexcept;
 
@@ -171,6 +179,10 @@ namespace wz::engine::rendering
         struct Entry
         {
             wz::rhi::Tag program{};
+            // See realize(). Half of the cache key, not a property of the
+            // program -- the same program yields a different pipeline
+            // depending on what the pass bound.
+            bool depth_target_bound = false;
             RhiDx12RealizedPipeline realized{};
         };
 

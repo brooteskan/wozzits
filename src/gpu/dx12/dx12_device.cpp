@@ -515,6 +515,7 @@ namespace wz::gpu::dx12
             FALSE,
             dsv_ptr
         );
+        impl->depth_target_bound = dsv_ptr != nullptr;
 
 
         // ────── viewport + scissor ───────────────────────────────────────────────────────
@@ -1096,6 +1097,7 @@ namespace wz::gpu::dx12::internal
         // No depth target: the overlay/puppet path is depth-disabled. A dedicated
         // offscreen depth buffer is a follow-up for depth-tested content.
         impl->cmd->OMSetRenderTargets(1, &tex->rtv, FALSE, nullptr);
+        impl->depth_target_bound = false;
         D3D12_VIEWPORT vp{};
         vp.TopLeftX = 0.0f;
         vp.TopLeftY = 0.0f;
@@ -1128,6 +1130,7 @@ namespace wz::gpu::dx12::internal
         D3D12_CPU_DESCRIPTOR_HANDLE rtv = get_current_rtv(d);
         D3D12_CPU_DESCRIPTOR_HANDLE dsv = get_dsv(d);
         impl->cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+        impl->depth_target_bound = true;
         D3D12_VIEWPORT vp{};
         vp.TopLeftX = 0.0f;
         vp.TopLeftY = 0.0f;
@@ -1171,6 +1174,19 @@ namespace wz::gpu::dx12::internal
         auto* impl = (DX12Device*)d.impl;
         assert(impl);
         return impl->device;
+    }
+
+    bool depth_target_bound(Device& d)
+    {
+        auto* impl = (DX12Device*)d.impl;
+        return impl && impl->depth_target_bound;
+    }
+
+    void set_depth_target_bound(Device& d, bool bound)
+    {
+        if (auto* impl = (DX12Device*)d.impl) {
+            impl->depth_target_bound = bound;
+        }
     }
 
     std::vector<std::string> take_debug_messages(Device& d)

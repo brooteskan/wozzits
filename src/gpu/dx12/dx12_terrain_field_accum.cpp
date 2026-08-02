@@ -515,6 +515,8 @@ void TerrainFieldAccumRenderer::render(
     D3D12_CPU_DESCRIPTOR_HANDLE rtv_handles[2] = { rtv0, rtv1 };
     D3D12_CPU_DESCRIPTOR_HANDLE dsv = dx::get_dsv(device);
     cmd->OMSetRenderTargets(2, rtv_handles, FALSE, &dsv);
+    // See DX12Device::depth_target_bound -- every bind in this layer sets it.
+    dx::set_depth_target_bound(device, true);
 
     // Viewport + scissor
     D3D12_VIEWPORT viewport{};
@@ -591,6 +593,7 @@ void TerrainFieldAccumRenderer::render(
     // ── Re-bind backbuffer as RT (no depth for resolve) ──
     D3D12_CPU_DESCRIPTOR_HANDLE bb_rtv = dx::get_current_rtv(device);
     cmd->OMSetRenderTargets(1, &bb_rtv, FALSE, nullptr);
+    dx::set_depth_target_bound(device, false);
     cmd->RSSetViewports(1, &viewport);
     cmd->RSSetScissorRects(1, &scissor);
 

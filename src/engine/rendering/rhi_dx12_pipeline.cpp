@@ -370,6 +370,7 @@ namespace
         ID3D12RootSignature* root_signature,
         const wz::rhi::RenderProgramDesc& program,
         const wz::rhi::ProgramBytecode& bytecode,
+        bool depth_target_bound,
         wz::Logger* logger)
     {
         if (!root_signature) {
@@ -407,6 +408,21 @@ namespace
                 program.blend_mode);
 
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        if (!depth_target_bound) {
+            // The pass bound no DSV, so the only legal pipeline is one that
+            // declares no depth format: D3D12 treats DSVFormat != UNKNOWN
+            // against a null DSV as EXECUTION ERROR #615 and the draw is
+            // undefined. This is the model begin_frame already documents from
+            // the other side ("the bound DSV is then ignored" for a
+            // depth-disabled program) -- the pipeline just never learned that
+            // the offscreen pass binds none. The program's depth_mode is a
+            // request that only means something when there is something to
+            // test against. See #317.
+            desc.DepthStencilState.DepthEnable = FALSE;
+            desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+            desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+        }
+        else
         switch (program.depth_mode) {
         case wz::rhi::DepthMode::Disabled:
             desc.DepthStencilState.DepthEnable = FALSE;
@@ -575,10 +591,20 @@ namespace wz::engine::rendering
     const RhiDx12RealizedPipeline* RhiDx12PipelineCache::get(
         wz::rhi::Tag program) const noexcept
     {
+        return device_ ? get(program,
+                             wz::gpu::dx12::internal::depth_target_bound(
+                                 *device_))
+                       : nullptr;
+    }
+
+    const RhiDx12RealizedPipeline* RhiDx12PipelineCache::get(
+        wz::rhi::Tag program, bool depth_target_bound) const noexcept
+    {
         const auto entry = std::ranges::find_if(
             entries_,
-            [program](const Entry& candidate) {
-                return candidate.program == program;
+            [program, depth_target_bound](const Entry& candidate) {
+                return candidate.program == program
+                    && candidate.depth_target_bound == depth_target_bound;
             });
         if (entry != entries_.end()) {
             return &entry->realized;
@@ -589,11 +615,22 @@ namespace wz::engine::rendering
     const RhiDx12RealizedPipeline* RhiDx12PipelineCache::realize(
         wz::rhi::Tag program)
     {
-        if (const RhiDx12RealizedPipeline* existing = get(program)) {
-            return existing;
-        }
         if (!device_ || !programs_ || !shaders_ || !program.valid()) {
             return nullptr;
+        }
+
+        // Part of the key, not of the program: whether the pass we are about to
+        // record into bound a depth-stencil view. One program drawn into the
+        // backbuffer and into an authored render target needs two pipelines,
+        // because D3D12 refuses a non-UNKNOWN DSVFormat against a null DSV.
+        // Read from the device rather than plumbed through the renderer so it
+        // cannot disagree with what OMSetRenderTargets actually did (#317).
+        const bool depth_bound =
+            wz::gpu::dx12::internal::depth_target_bound(*device_);
+
+        if (const RhiDx12RealizedPipeline* existing =
+                get(program, depth_bound)) {
+            return existing;
         }
 
         if (const wz::rhi::RenderProgramDesc* desc = programs_->get(program)) {
@@ -639,6 +676,7 @@ namespace wz::engine::rendering
                 root_signature,
                 *desc,
                 *bytecode,
+                depth_bound,
                 logger_);
             if (!pso) {
                 root_signature->Release();
@@ -647,6 +685,7 @@ namespace wz::engine::rendering
 
             entries_.push_back(Entry{
                 program,
+                depth_bound,
                 RhiDx12RealizedPipeline{
                     root_signature,
                     pso,
@@ -705,6 +744,9 @@ namespace wz::engine::rendering
 
         entries_.push_back(Entry{
             program,
+            // A compute pipeline has no render targets, so the depth key is
+            // irrelevant to it; false keeps one entry per compute program.
+            /*depth_target_bound*/ false,
             RhiDx12RealizedPipeline{
                 root_signature,
                 pso,

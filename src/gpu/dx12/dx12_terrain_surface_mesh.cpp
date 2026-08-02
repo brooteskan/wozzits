@@ -380,6 +380,8 @@ void TerrainSurfaceMeshRenderer::draw(
     D3D12_CPU_DESCRIPTOR_HANDLE bb_rtv = dx::get_current_rtv(device);
     D3D12_CPU_DESCRIPTOR_HANDLE dsv    = dx::get_dsv(device);
     cmd->OMSetRenderTargets(1, &bb_rtv, FALSE, &dsv);
+    // See DX12Device::depth_target_bound -- every bind in this layer sets it.
+    dx::set_depth_target_bound(device, true);
 
     D3D12_VIEWPORT viewport{};
     viewport.Width    = static_cast<float>(vp_w);

@@ -149,6 +149,19 @@ namespace wz::gpu::dx12
         ID3D12DescriptorHeap* dsv_heap = nullptr;
         ID3D12Resource*       depth_buffer = nullptr;
 
+        // Whether the CURRENTLY BOUND pass has a depth-stencil view.
+        //
+        // D3D12 requires a pipeline's DSVFormat to be UNKNOWN when the bound
+        // DSV is null; a pipeline declaring D32_FLOAT against no DSV is an
+        // EXECUTION ERROR (#615) and its draw is undefined. The PSO builder
+        // reads this so the pipeline can honour what the pass actually bound
+        // -- which is the model begin_frame's own comment describes ("the
+        // bound DSV is then ignored" for a depth-disabled program). See #317.
+        //
+        // INVARIANT: every OMSetRenderTargets in this layer must set it.
+        // `grep -n OMSetRenderTargets src/gpu/dx12/*.cpp` is the whole list.
+        bool depth_target_bound = false;
+
         UINT frame_index = 0;
 
         HWND hwnd = nullptr;

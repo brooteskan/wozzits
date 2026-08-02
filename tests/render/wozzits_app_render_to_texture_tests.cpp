@@ -86,6 +86,27 @@ namespace
             ASSERT_TRUE(wz::gpu::end_frame(ctx.device));
         }
     };
+
+    // What the D3D12 debug layer said, collected from the engine log.
+    //
+    // RhiSceneRenderer drains the layer per pass and logs what it finds, so the
+    // log IS the observation point -- take_debug_messages has already been
+    // consumed by the time a test could call it.
+    struct DebugLayerErrors
+    {
+        std::vector<std::string> messages;
+
+        static void sink(const wz::logging::LogRecordView& record, void* user)
+        {
+            const std::string_view text(record.text, record.text_size);
+            if (text.find("D3D12 ERROR") == std::string_view::npos
+                && text.find("D3D12 CORRUPTION") == std::string_view::npos)
+            {
+                return;
+            }
+            static_cast<DebugLayerErrors*>(user)->messages.emplace_back(text);
+        }
+    };
 }
 
 TEST_F(WozzitsAppRenderToTextureFixture, AuthoredSourceFillsItsTargetAndLeavesTheScene)
@@ -149,4 +170,44 @@ TEST_F(WozzitsAppRenderToTextureFixture, AuthoredSourceFillsItsTargetAndLeavesTh
            "also_draw_in_scene off it must appear only on its target";
 
     wz::gpu::present(ctx.device, /*sync_interval*/ 0);
+}
+
+// ── #317 D1-C5 pin: an authored render-to-texture frame must be legal D3D12 ──
+//
+// The offscreen pass binds NO depth-stencil view, while create_pipeline_state
+// derived DSVFormat from the program's depth_mode alone -- so every draw in
+// that pass ran a depth-enabled pipeline against a null DSV. D3D12 calls that
+// EXECUTION ERROR #615 and the draw is UNDEFINED. It shipped green here and in
+// the composite-material suite for as long as authored render targets have
+// existed, because nothing read the debug layer.
+//
+// This asserts on what the LAYER says rather than on pixels, because the bug
+// produced perfectly plausible pixels -- the assertion that catches it has to
+// be about legality, not appearance. It is observable at all only because the
+// renderer now drains the layer into the log (05cf03e4).
+TEST_F(WozzitsAppRenderToTextureFixture, OffscreenPassIssuesNoIllegalDraws)
+{
+    DebugLayerErrors observed;
+    wz::logging::set_log_sink(ctx.logger, &DebugLayerErrors::sink, &observed);
+
+    {
+        wz::app::WozzitsApp_v1 app(ctx);
+        ASSERT_TRUE(app.load_scene(load_desc()));
+        // Two frames: the first realizes, the second draws through the CACHED
+        // pipelines. A per-pass variant that were correct only on the realize
+        // path would pass with one frame and fail here.
+        render_one_frame(app);
+        render_one_frame(app);
+        wz::gpu::present(ctx.device, /*sync_interval*/ 0);
+    }
+
+    wz::logging::set_log_sink(ctx.logger, nullptr, nullptr);
+
+    for (const std::string& message : observed.messages) {
+        ADD_FAILURE() << message;
+    }
+    EXPECT_TRUE(observed.messages.empty())
+        << observed.messages.size()
+        << " D3D12 debug-layer error(s) during an authored "
+           "render-to-texture frame";
 }

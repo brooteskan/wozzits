@@ -33,6 +33,22 @@ namespace wz::gpu::dx12::internal
     ID3D12Device* get_device(Device& d);
     ID3D12GraphicsCommandList* get_command_list(Device& d);
 
+    // Does the CURRENTLY BOUND pass have a depth-stencil view?
+    //
+    // D3D12 requires a pipeline's DSVFormat to be UNKNOWN when the bound DSV is
+    // null. The offscreen render-to-texture pass deliberately binds no depth,
+    // while the PSO builder derived DSVFormat from the program's depth_mode
+    // alone -- so every authored-RTT pass drew depth-enabled pipelines against
+    // a null DSV: EXECUTION ERROR #615, undefined draws, and green test suites
+    // because nobody read the debug layer. The PSO cache keys on this so the
+    // two variants of a program can coexist. See #317.
+    [[nodiscard]] bool depth_target_bound(Device& d);
+
+    // Record what the OMSetRenderTargets you just issued actually bound.
+    // Every render-target bind in this layer must call it -- `grep -n
+    // OMSetRenderTargets src/gpu/dx12/*.cpp` is the whole list.
+    void set_depth_target_bound(Device& d, bool bound);
+
     // THE mapping from wz::rhi::BlendMode to DX12 render-target blend state.
     //
     // There used to be two, and they disagreed. #272 unified the ENUM (the
