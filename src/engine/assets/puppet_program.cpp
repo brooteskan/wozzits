@@ -181,20 +181,10 @@ float4 main(PSIn input) : SV_TARGET
         }
     }
 
-    wz::rhi::BlendMode rhi_blend_for(PuppetProgramBlend blend)
-    {
-        switch (blend) {
-        case PuppetProgramBlend::Multiply: return wz::rhi::BlendMode::Multiply;
-        case PuppetProgramBlend::Screen:   return wz::rhi::BlendMode::Screen;
-        case PuppetProgramBlend::ClipToLower:
-            return wz::rhi::BlendMode::SourceAtop;
-        case PuppetProgramBlend::SliceFromLower:
-            return wz::rhi::BlendMode::SliceFromDestination;
-        case PuppetProgramBlend::Additive: return wz::rhi::BlendMode::Additive;
-        case PuppetProgramBlend::Normal:   break;
-        }
-        return wz::rhi::BlendMode::PremultipliedAlpha;
-    }
+    // rhi_blend_for now lives in puppet_program.h: the reverse lookup in
+    // puppet_program_variants_from_graph requires it to be injective, and a
+    // constexpr definition lets a static_assert enforce that at compile time
+    // rather than leaving it to a comment.
 
     PuppetProgramBlend puppet_program_blend_for_part(inochi::BlendMode part_blend)
     {

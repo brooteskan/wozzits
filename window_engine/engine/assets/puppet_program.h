@@ -100,7 +100,55 @@ namespace wz::engine::assets
     // because the puppet's atlas + pixel shader work in premultiplied space
     // (#277); Multiply/Screen are the coverage-aware rhi recipes; ClipToLower /
     // SliceFromLower are SourceAtop / SliceFromDestination (#299).
-    [[nodiscard]] wz::rhi::BlendMode rhi_blend_for(PuppetProgramBlend blend);
+    //
+    // Defined here rather than in the .cpp so the injectivity static_assert
+    // below can evaluate it: this mapping MUST be one-to-one, and that is not a
+    // stylistic preference. puppet_program_variants_from_graph recovers which
+    // variant a compiled program is by searching for the ordinal whose
+    // rhi_blend_for matches the program's COMPILED blend state, taking the
+    // first match. Two ordinals sharing an rhi mode would silently file one
+    // variant's key under the other and leave the loser's slot empty --
+    // falling back to Normal, i.e. drawing the wrong blend with no diagnostic.
+    [[nodiscard]] constexpr wz::rhi::BlendMode rhi_blend_for(
+        PuppetProgramBlend blend) noexcept
+    {
+        switch (blend) {
+        case PuppetProgramBlend::Multiply: return wz::rhi::BlendMode::Multiply;
+        case PuppetProgramBlend::Screen:   return wz::rhi::BlendMode::Screen;
+        case PuppetProgramBlend::ClipToLower:
+            return wz::rhi::BlendMode::SourceAtop;
+        case PuppetProgramBlend::SliceFromLower:
+            return wz::rhi::BlendMode::SliceFromDestination;
+        case PuppetProgramBlend::Additive: return wz::rhi::BlendMode::Additive;
+        case PuppetProgramBlend::Normal:   break;
+        }
+        return wz::rhi::BlendMode::PremultipliedAlpha;
+    }
+
+    // The reverse lookup's precondition, checked by the compiler instead of
+    // trusted. Appending a variant that reuses an existing rhi blend mode now
+    // fails the build here rather than mis-rendering at runtime.
+    [[nodiscard]] constexpr bool puppet_program_blends_map_injectively() noexcept
+    {
+        for (std::size_t i = 0; i < kPuppetProgramBlendCount; ++i) {
+            for (std::size_t j = i + 1; j < kPuppetProgramBlendCount; ++j) {
+                if (rhi_blend_for(static_cast<PuppetProgramBlend>(i))
+                    == rhi_blend_for(static_cast<PuppetProgramBlend>(j)))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    static_assert(
+        puppet_program_blends_map_injectively(),
+        "two PuppetProgramBlend variants map to the same wz::rhi::BlendMode; "
+        "puppet_program_variants_from_graph recovers a variant by matching its "
+        "compiled blend state and takes the first match, so one of the two "
+        "would be filed under the other and the loser would silently render as "
+        "Normal. Give the new variant its own rhi::BlendMode, or drop it.");
 
     // The variant a Part's authored Inochi blend mode draws through. What is
     // left without one is the modes that read destination COLOUR (Overlay,
