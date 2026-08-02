@@ -409,8 +409,24 @@ namespace wz::engine::rendering
                 + (detail.empty() ? std::string{} : " error=" + detail));
             return std::nullopt;
         }
+        // A SUCCESSFUL compile can still carry diagnostics, and this blob was
+        // being released unread -- so every HLSL warning the engine has ever
+        // produced went nowhere. FXC's warning set is correctness-grade
+        // (X4008 division by zero, X3206 implicit vector truncation, X3556
+        // integer division), and none of it was reaching a log. Measured over
+        // the whole shader corpus: 87 shaders compile and 12 emit diagnostics
+        // nobody had seen (issue #316, C3-C2). Twin of D1-C6, where the D3D12
+        // debug layer was enabled and its verdicts likewise read by no one.
         if (error_blob) {
+            const std::string warnings(
+                static_cast<const char*>(error_blob->GetBufferPointer()),
+                error_blob->GetBufferSize());
             error_blob->Release();
+            if (!warnings.empty()) {
+                logger.warn(
+                    std::string("rhi render-program: HLSL diagnostics target=")
+                    + target + " entry=" + entry_text + " -- " + warnings);
+            }
         }
         if (!shader_blob || shader_blob->GetBufferSize() == 0u) {
             if (shader_blob) {
