@@ -1191,7 +1191,23 @@ namespace wz::asset {
                     ? key_factory(node->node, dep_keys)
                     : std::nullopt;
 
-            if (factory_key && *factory_key != node->node.key) {
+            // The key this node's CURRENT params and deps derive to. Compare it
+            // against the stored key for EVERY node, not just the ones a key
+            // factory claims: a node whose key came from the generic fallback
+            // used to be trusted unconditionally, so params that arrived
+            // without a Created/Modified state -- a hand-edited
+            // assets.graph.json, or any tool that rewrites params -- kept the
+            // old key while the new value still reached the compiler. The same
+            // AssetKey then denoted different content, which the disk cache
+            // cannot detect: its path is derived from the key and its stored_key
+            // check compares against that same unchanged key, so every
+            // integrity check passes and the stale artifact is served.
+            const AssetKey derived_key =
+                factory_key
+                    ? *factory_key
+                    : make_asset_key(node->node, dep_keys);
+
+            if (!(derived_key == node->node.key)) {
                 must_materialize = true;
             }
 
@@ -1208,13 +1224,7 @@ namespace wz::asset {
                 continue;
             }
 
-            node->node.key =
-                factory_key
-                    ? *factory_key
-                    : resolve_asset_graph_draft_key(
-                        node->node,
-                        dep_keys,
-                        key_factory);
+            node->node.key = derived_key;
             rematerialized.insert(node->id);
         }
 

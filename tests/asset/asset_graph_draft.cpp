@@ -1351,6 +1351,53 @@ TEST(AssetGraphDraft, MaterializeKeysCascadesProviderChangesToDependents)
     EXPECT_NE(new_material_key, old_material_key);
 }
 
+// B1-C2. materialize_asset_graph_draft_keys used to re-verify a stored key
+// against its derivation ONLY when a key factory claimed the node. Nodes keyed
+// by the generic fallback -- 83 of the 143 in the shipped test_mesh_001 graph --
+// were trusted unconditionally, so params that arrived WITHOUT a Created or
+// Modified state kept the old key while the new value still reached the
+// compiler. The same AssetKey then denoted different content, which no disk
+// cache can detect: its path is derived from the key, and its stored_key check
+// compares against that same unchanged key, so every integrity check passes and
+// the stale artifact is served.
+//
+// This is the shape a hand-edited assets.graph.json produces: the loader marks
+// every node Existing and carries its stored key verbatim.
+TEST(AssetGraphDraft, MaterializeKeysRekeysAnExistingNodeWhoseParamsChanged)
+{
+    CompilerRegistry registry = make_draft_test_registry();
+
+    AssetNode authored = make_node(AssetType::Mesh, schema(10));
+    ParamBlock params;
+    params.values["subdivisions"] = int64_t{ 4 };
+    authored.meta = params;
+
+    AssetGraphDraft draft{};
+    const auto mesh = add_asset_graph_draft_node(draft, authored);
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+
+    const AssetKey settled = find_asset_graph_draft_node(draft, mesh)->node.key;
+    ASSERT_NE(settled, AssetKey{});
+
+    // Re-materializing an untouched graph must be a no-op.
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    EXPECT_EQ(find_asset_graph_draft_node(draft, mesh)->node.key, settled)
+        << "a settled key must be stable across repeated materialization";
+
+    // Now edit the param the way the JSON loader would: in place, with the node
+    // still Existing and still carrying its old key. No editor API is involved,
+    // so nothing marks it Modified and nothing invalidates the key.
+    AssetGraphDraftNode* node = find_asset_graph_draft_node(draft, mesh);
+    node->state = AssetGraphDraftNodeState::Existing;
+    std::any_cast<ParamBlock>(&node->node.meta)->values["subdivisions"] =
+        int64_t{ 9 };
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    EXPECT_NE(find_asset_graph_draft_node(draft, mesh)->node.key, settled)
+        << "an authored param change must reach the key even when the node's "
+           "state does not say so";
+}
+
 TEST(AssetGraphDraft, MaterializeKeysTreatsPortOrderAsIdentity)
 {
     CompilerRegistry registry = make_draft_test_registry();
@@ -1363,14 +1410,33 @@ TEST(AssetGraphDraft, MaterializeKeysTreatsPortOrderAsIdentity)
         },
     });
 
+    // The two inputs must differ in CONTENT, not merely carry different
+    // hand-assigned keys. materialize_asset_graph_draft_keys now re-derives an
+    // Existing node's key and rekeys it when the stored key disagrees, so two
+    // nodes with identical schema/stage/params are one asset by content
+    // addressing no matter what keys the fixture stamps on them -- and then
+    // both ports would carry the same key and this test would pass or fail for
+    // reasons having nothing to do with port order. Distinct params keep the
+    // two meshes genuinely distinct assets, which is what makes the port-order
+    // assertion below meaningful.
+    AssetNode mesh_a_node = make_node(AssetType::Mesh, schema(10), 0x10);
+    ParamBlock mesh_a_params;
+    mesh_a_params.values["slot"] = int64_t{ 1 };
+    mesh_a_node.meta = mesh_a_params;
+
+    AssetNode mesh_b_node = make_node(AssetType::Mesh, schema(10), 0x20);
+    ParamBlock mesh_b_params;
+    mesh_b_params.values["slot"] = int64_t{ 2 };
+    mesh_b_node.meta = mesh_b_params;
+
     AssetGraphDraft draft{};
     const auto mesh_a = add_asset_graph_draft_node(
         draft,
-        make_node(AssetType::Mesh, schema(10), 0x10),
+        mesh_a_node,
         AssetGraphDraftNodeState::Existing);
     const auto mesh_b = add_asset_graph_draft_node(
         draft,
-        make_node(AssetType::Mesh, schema(10), 0x20),
+        mesh_b_node,
         AssetGraphDraftNodeState::Existing);
     const auto material_a = add_asset_graph_draft_node(
         draft,
