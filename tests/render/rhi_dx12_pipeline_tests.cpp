@@ -380,3 +380,53 @@ TEST(RhiDx12Pipeline, MultipleRootConstantRangesAreRejectedForStageOne)
     EXPECT_FALSE(
         wz::engine::rendering::plan_dx12_pipeline_layout(program).has_value());
 }
+
+// ── Input-element semantics (#317) ──────────────────────────────────────────
+//
+// D3D12 requires every (SemanticName, SemanticIndex) pair in an input layout to
+// be unique. The mapping used to hardcode SemanticIndex 0, so locations 2 and 4
+// both produced ("TEXCOORD", 0) and CreateInputLayout rejected the entire PSO --
+// which is exactly what InputLayoutKind::GaussianSplatVertex declares
+// (locations 0..4), so BuiltinRenderProgram::GaussianSplatDebug could not
+// create a pipeline at all.
+//
+// This is device-free on purpose: the collision survived because
+// build_input_layout lived in an anonymous namespace where no test could reach
+// it, and the only IA layouts in use (1 and 3 attributes at locations 0..2)
+// happened to dodge it.
+TEST(RhiDx12InputElementSemantic, PairsAreUniqueAcrossEveryLocation)
+{
+    using wz::engine::rendering::dx12_input_element_semantic;
+
+    // 8 covers every location any in-tree VertexLayout declares (the widest is
+    // GaussianSplatVertex at 0..4) with headroom.
+    constexpr uint32_t kLocations = 8;
+    for (uint32_t a = 0; a < kLocations; ++a) {
+        for (uint32_t b = a + 1; b < kLocations; ++b) {
+            const auto sa = dx12_input_element_semantic(a);
+            const auto sb = dx12_input_element_semantic(b);
+            const bool same = std::string_view(sa.name)
+                    == std::string_view(sb.name)
+                && sa.index == sb.index;
+            EXPECT_FALSE(same)
+                << "locations " << a << " and " << b
+                << " both map to " << sa.name << sa.index
+                << " -- D3D12 rejects the whole input layout";
+        }
+    }
+}
+
+// The specific pair that was broken, named so a future simplification of the
+// mapping cannot quietly re-collide them. Location 2 is GaussianSplatVertex's
+// `scale`, location 4 its `color`.
+TEST(RhiDx12InputElementSemantic, GaussianSplatScaleAndColorDoNotCollide)
+{
+    using wz::engine::rendering::dx12_input_element_semantic;
+
+    const auto scale = dx12_input_element_semantic(2);
+    const auto color = dx12_input_element_semantic(4);
+    EXPECT_STREQ(scale.name, "TEXCOORD");
+    EXPECT_EQ(scale.index, 0u);
+    EXPECT_STREQ(color.name, "TEXCOORD");
+    EXPECT_NE(color.index, scale.index);
+}

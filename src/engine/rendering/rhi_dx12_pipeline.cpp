@@ -123,33 +123,33 @@ namespace
         return DXGI_FORMAT_R32G32B32_FLOAT;
     }
 
-    const char* semantic_name(uint32_t location)
-    {
-        switch (location) {
-        case 0: return "POSITION";
-        case 1: return "NORMAL";
-        case 2: return "TEXCOORD";
-        case 3: return "COLOR";
-        default: return "TEXCOORD";
-        }
-    }
-
     std::vector<D3D12_INPUT_ELEMENT_DESC> build_input_layout(
         const wz::rhi::VertexLayout& layout)
     {
         std::vector<D3D12_INPUT_ELEMENT_DESC> out;
         out.reserve(layout.attributes.size());
         for (const wz::rhi::VertexAttribute& attribute : layout.attributes) {
+            const wz::engine::rendering::Dx12InputElementSemantic semantic =
+                wz::engine::rendering::dx12_input_element_semantic(
+                    attribute.location);
+            const bool per_instance =
+                attribute.step != wz::rhi::VertexStepRate::PerVertex;
             out.push_back(D3D12_INPUT_ELEMENT_DESC{
-                semantic_name(attribute.location),
-                0,
+                semantic.name,
+                semantic.index,
                 vertex_format(attribute.format),
                 attribute.buffer_slot,
                 attribute.offset,
-                attribute.step == wz::rhi::VertexStepRate::PerVertex
-                    ? D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA
-                    : D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA,
-                0 });
+                per_instance
+                    ? D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
+                    : D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+                // InstanceDataStepRate must be 0 for per-vertex data and >= 1
+                // for per-instance data -- 0 with PER_INSTANCE_DATA means the
+                // attribute never advances. It was hardcoded 0 for both, which
+                // the legacy factory (dx12_pipeline_factory.cpp) gets right
+                // with 1; the duplicate-semantic failure below hid it, because
+                // the PSO never got far enough to draw. See #317.
+                per_instance ? 1u : 0u });
         }
         return out;
     }

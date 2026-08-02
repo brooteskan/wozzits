@@ -24,6 +24,42 @@ namespace wz { struct Logger; }
 
 namespace wz::engine::rendering
 {
+    // The HLSL input-element semantic a rhi VertexAttribute::location maps to.
+    //
+    // D3D12 requires every (name, index) pair in an input layout to be UNIQUE,
+    // and the mapping used to return a bare name with SemanticIndex hardcoded
+    // 0 -- so locations 2 and 4 both became ("TEXCOORD", 0) and
+    // CreateInputLayout rejected the whole PSO with "All Semantics in the Input
+    // Layout must be unique". That is exactly what InputLayoutKind::
+    // GaussianSplatVertex declares (locations 0..4), so the shipped
+    // BuiltinRenderProgram::GaussianSplatDebug preset could not create a
+    // pipeline at all (#317).
+    //
+    // The mapping is now INJECTIVE by construction: 0..3 keep the conventional
+    // names at index 0, and every location past 3 is TEXCOORD(location - 3),
+    // which cannot collide with location 2's TEXCOORD0. Exposed (rather than
+    // living in the .cpp's anonymous namespace) so the uniqueness property is
+    // testable without a device -- being untestable is why the collision
+    // survived.
+    struct Dx12InputElementSemantic
+    {
+        const char* name  = "TEXCOORD";
+        uint32_t    index = 0;
+    };
+
+    [[nodiscard]] constexpr Dx12InputElementSemantic
+    dx12_input_element_semantic(uint32_t location) noexcept
+    {
+        switch (location) {
+        case 0: return { "POSITION", 0 };
+        case 1: return { "NORMAL",   0 };
+        case 2: return { "TEXCOORD", 0 };
+        case 3: return { "COLOR",    0 };
+        default: break;
+        }
+        return { "TEXCOORD", location - 3u };
+    }
+
     struct RhiDx12DescriptorTableParam
     {
         uint32_t binding_slot = 0;
