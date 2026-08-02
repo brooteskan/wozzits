@@ -302,3 +302,64 @@ TEST(Mat4, RigidPoseFromMatrixDegenerateColumnFallsBackToIdentityRotation)
     EXPECT_NEAR(pose.rotation.w, 1.0f, EPS);
 }
 
+
+// ── Hostile-matrix table for decompose_trs (issue #314, C1-C1) ───────────────
+//
+// decompose_trs is the engine's designated "reject a matrix that must not be
+// used" gate: twelve call sites are written as
+//     if (!decompose_trs(...)) { keep the authored value; return; }
+// Every one of its gates is a comparison, and every comparison against NaN is
+// false -- the ACCEPT branch -- so before the finiteness check it returned TRUE
+// for an all-NaN matrix with scale = (nan, 1, 1).
+//
+// Drive decompose_trs DIRECTLY, not a caller: the callers are the twelve places
+// that trust it, and testing one of those tests the caller's guard instead.
+TEST(Mat4, DecomposeTrsRejectsNonFiniteMatrices)
+{
+    const float nan_value = std::nanf("");
+    const float inf_value = INFINITY;
+
+    // Control: the same matrix with finite entries decomposes cleanly, so a
+    // failure below means the finiteness check fired and nothing else.
+    {
+        Transform t;
+        t.position = { 1.0f, 2.0f, 3.0f };
+        t.rotation = Quaternion::identity();
+        t.scale = { 2.0f, 3.0f, 4.0f };
+        Transform decomposed{};
+        ASSERT_TRUE(decompose_trs(transform(t), decomposed));
+        EXPECT_NEAR(decomposed.scale.x, 2.0f, EPS);
+    }
+
+    // A non-finite entry in ANY cell must be refused -- basis, translation and
+    // the projective row alike.
+    for (int cell = 0; cell < 16; ++cell) {
+        for (const float hostile : { nan_value, inf_value, -inf_value }) {
+            Mat4 m = Mat4::identity();
+            m.m[cell] = hostile;
+            Transform decomposed{};
+            EXPECT_FALSE(decompose_trs(m, decomposed))
+                << "cell " << cell << " admitted a non-finite value";
+        }
+    }
+}
+
+// rigid_pose_from_matrix is deliberately the LENIENT twin -- it has no validity
+// gates by design, so that a camera under a slightly non-orthonormal parent
+// keeps its orientation instead of snapping to the origin. Pin what it actually
+// does with a NaN basis so the behaviour is a decision and not an accident: it
+// folds to identity rotation, because from_rotation_matrix's fallback branch
+// computes sqrt(std::max(0.0f, NaN)) and std::max returns the FIRST argument
+// there. Swap those two arguments and NaN propagates instead.
+TEST(Mat4, RigidPoseFromMatrixFoldsNonFiniteBasisToIdentityRotation)
+{
+    Mat4 m = Mat4::identity();
+    m.m[0] = std::nanf("");
+
+    const Transform pose = rigid_pose_from_matrix(m);
+
+    EXPECT_FLOAT_EQ(pose.rotation.x, 0.0f);
+    EXPECT_FLOAT_EQ(pose.rotation.y, 0.0f);
+    EXPECT_FLOAT_EQ(pose.rotation.z, 0.0f);
+    EXPECT_FLOAT_EQ(pose.rotation.w, 1.0f);
+}

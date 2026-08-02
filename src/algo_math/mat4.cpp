@@ -248,6 +248,25 @@ namespace wz::math
             epsilon = 1e-6f;
         }
 
+        // Every gate below is a comparison, and every comparison against NaN is
+        // FALSE -- which is the accept branch in all five of them. So the
+        // strictest decomposition in the engine used to return true for an
+        // all-NaN matrix and hand back a NaN scale (#314, C1-C1). That matters
+        // because twelve call sites are written as
+        //     if (!decompose_trs(...)) { keep the authored value; return; }
+        // and depend on this refusing a matrix that must not be used -- among
+        // them the save path (wozzits_app_v1.cpp authored_transform_from_local),
+        // where a NaN reaches AuthoredTransform, is written to scene.json as
+        // `null`, and is then refused by the reader on the next load.
+        //
+        // Check finiteness ONCE, up front, over the whole matrix: it is the only
+        // form that cannot be written in the admitting direction by accident.
+        for (const float value : m.m) {
+            if (!std::isfinite(value)) {
+                return false;
+            }
+        }
+
         if (std::abs(m.m[3]) > epsilon
             || std::abs(m.m[7]) > epsilon
             || std::abs(m.m[11]) > epsilon
