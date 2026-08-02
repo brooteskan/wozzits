@@ -14,6 +14,7 @@
 #include <engine/assets/render_program/render_program.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/scene/scene_asset_data.h>
+#include <engine/assets/scene/scene_instance.h>
 
 #include <engine/rendering/clipmap_view.h>
 #include <engine/rendering/rhi_mesh_bridge.h>
@@ -488,40 +489,28 @@ namespace wz::engine::rendering
 
         // Compose an authored TRS into a column-major world matrix (translation
         // in m[12..14]), matching the MVP convention the pull program expects.
+        // ONE authored-TRS -> matrix implementation, shared with the polytree.
+        //
+        // This used to inline the quaternion-to-matrix expansion, and the inlined
+        // copy did NOT normalize -- while wz::math::rotation(), which
+        // compose_scene_transform reaches, does. The 1 - 2(y*y + z*z) form is a
+        // rotation only for a unit quaternion, so one authored transform became
+        // two different world matrices depending on which composition ran, and
+        // the renderer's was the one that draws (#314, C1-C4).
+        //
+        // Measured: |q| = 2 produced basis columns of length 5, 5 and 1 -- not
+        // even a uniform scale, and the rotation angle wrong with it. Reachable
+        // because nothing normalizes on the way in: read_float4 checks
+        // finiteness only, and the glTF importer's TRS branch copies the node
+        // quaternion verbatim (its MATRIX branch, ten lines below, runs
+        // decompose_trs and does not have the problem).
+        //
+        // Delegating rather than adding a normalize() call here is deliberate:
+        // it leaves the engine with a single place where this formula exists, so
+        // the two cannot drift apart again.
         wz::math::Mat4 world_from_transform(const ea::AuthoredTransform& t)
         {
-            const float x = t.rotation_quat[0];
-            const float y = t.rotation_quat[1];
-            const float z = t.rotation_quat[2];
-            const float w = t.rotation_quat[3];
-            const float r00 = 1.0f - 2.0f * (y * y + z * z);
-            const float r01 = 2.0f * (x * y - w * z);
-            const float r02 = 2.0f * (x * z + w * y);
-            const float r10 = 2.0f * (x * y + w * z);
-            const float r11 = 1.0f - 2.0f * (x * x + z * z);
-            const float r12 = 2.0f * (y * z - w * x);
-            const float r20 = 2.0f * (x * z - w * y);
-            const float r21 = 2.0f * (y * z + w * x);
-            const float r22 = 1.0f - 2.0f * (x * x + y * y);
-
-            wz::math::Mat4 m{};
-            m.m[0] = r00 * t.scale[0];
-            m.m[1] = r10 * t.scale[0];
-            m.m[2] = r20 * t.scale[0];
-            m.m[3] = 0.0f;
-            m.m[4] = r01 * t.scale[1];
-            m.m[5] = r11 * t.scale[1];
-            m.m[6] = r21 * t.scale[1];
-            m.m[7] = 0.0f;
-            m.m[8] = r02 * t.scale[2];
-            m.m[9] = r12 * t.scale[2];
-            m.m[10] = r22 * t.scale[2];
-            m.m[11] = 0.0f;
-            m.m[12] = t.translation[0];
-            m.m[13] = t.translation[1];
-            m.m[14] = t.translation[2];
-            m.m[15] = 1.0f;
-            return m;
+            return ea::compose_scene_transform(t);
         }
 
         // Per-draw root constants for a clipmap-landscape renderable. Packed to

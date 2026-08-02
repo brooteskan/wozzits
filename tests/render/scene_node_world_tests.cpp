@@ -15,9 +15,11 @@
 
 #include <engine/assets/atmosphere/atmosphere.h>
 #include <engine/assets/scene/scene_asset_data.h>
+#include <engine/assets/scene/scene_instance.h>
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -329,4 +331,74 @@ TEST(ViewConstants, AuthoredButDisabledAtmosphereKeepsItsDialsAndStaysOff)
     EXPECT_FLOAT_EQ(v.fog_color[0], 0.9f);    // but not erased
     EXPECT_FLOAT_EQ(v.fog_color[3], 0.5f);
     EXPECT_FLOAT_EQ(v.fog_params[0], 10.0f);
+}
+
+// ── One quat->matrix, not two (issue #314, C1-C4) ───────────────────────────
+//
+// The renderer's composition used to inline the quaternion-to-matrix expansion
+// WITHOUT normalizing, while wz::math::rotation() -- which the polytree path
+// reaches through compose_scene_transform -- normalizes first. The
+// 1 - 2(y*y + z*z) form is a rotation only for a unit quaternion, so one
+// authored transform became two different world matrices depending on which
+// composition ran, and the renderer's is the one that draws.
+//
+// Measured before the fix: |q| = 2 gave basis columns of length 5, 5 and 1 --
+// not even a uniform scale.
+//
+// Non-unit quaternions are reachable because nothing normalizes on the way in:
+// read_float4 checks finiteness only, and the glTF importer's TRS branch copies
+// the node rotation verbatim.
+TEST(SceneNodeWorld, NonUnitQuaternionComposesAsARotation)
+{
+    // |q| = 2 about Z. A rotation must leave every basis column unit length.
+    const float half = std::sqrt(0.5f) * 2.0f;
+    ea::SceneNodeAsset n{};
+    n.id = "a";
+    n.local.rotation_quat[2] = half;
+    n.local.rotation_quat[3] = half;
+    n.local.scale[0] = 1.0f;
+    n.local.scale[1] = 1.0f;
+    n.local.scale[2] = 1.0f;
+
+    const auto world = er::compute_scene_node_world_transforms(
+        std::vector<ea::SceneNodeAsset>{ n });
+    ASSERT_EQ(world.size(), 1u);
+
+    const auto column_length = [&](int c) {
+        return std::sqrt(
+            world[0].m[c * 4 + 0] * world[0].m[c * 4 + 0]
+            + world[0].m[c * 4 + 1] * world[0].m[c * 4 + 1]
+            + world[0].m[c * 4 + 2] * world[0].m[c * 4 + 2]);
+    };
+    EXPECT_NEAR(column_length(0), 1.0f, 1e-4f);
+    EXPECT_NEAR(column_length(1), 1.0f, 1e-4f);
+    EXPECT_NEAR(column_length(2), 1.0f, 1e-4f);
+}
+
+// The renderer's composition and the polytree's must agree matrix-for-matrix on
+// the SAME authored transform -- that equivalence is the invariant, and pinning
+// it is what stops the two implementations drifting apart again.
+TEST(SceneNodeWorld, RendererCompositionMatchesTheScenePolytree)
+{
+    ea::SceneNodeAsset n{};
+    n.id = "a";
+    n.local.translation[0] = 3.0f;
+    n.local.translation[1] = -2.0f;
+    n.local.translation[2] = 8.0f;
+    n.local.rotation_quat[0] = 0.2f;   // deliberately NOT unit
+    n.local.rotation_quat[1] = 0.5f;
+    n.local.rotation_quat[2] = -0.1f;
+    n.local.rotation_quat[3] = 0.8f;
+    n.local.scale[0] = 2.0f;
+    n.local.scale[1] = 0.5f;
+    n.local.scale[2] = 1.5f;
+
+    const auto world = er::compute_scene_node_world_transforms(
+        std::vector<ea::SceneNodeAsset>{ n });
+    const wz::math::Mat4 polytree = ea::compose_scene_transform(n.local);
+
+    ASSERT_EQ(world.size(), 1u);
+    for (int i = 0; i < 16; ++i) {
+        EXPECT_NEAR(world[0].m[i], polytree.m[i], 1e-5f) << "element " << i;
+    }
 }
