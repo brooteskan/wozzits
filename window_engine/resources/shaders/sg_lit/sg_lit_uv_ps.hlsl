@@ -30,7 +30,11 @@ float4 main(PSInput input) : SV_TARGET
     // The program rasterizes with CullNone, so the back hemisphere also draws
     // and z-fights the front at the silhouette. Drop back-facing fragments here,
     // winding-independently, so only the front face shades.
-    if (dot(n, v) <= 0.0f) {
+    // Reject direction. This discard is the ONLY thing stopping the back
+    // hemisphere z-fighting the front under CullNone, and a degenerate mesh
+    // normal makes normalize() return NaN -- which the accept spelling let
+    // through, shading a NaN fragment (issue #316, C3-C3).
+    if (!(dot(n, v) > 0.0f)) {
         discard;
     }
 

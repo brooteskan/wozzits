@@ -34,7 +34,10 @@ float4 safe_normalize_quat(float4 q)
 {
     float len_sq = dot(q, q);
 
-    if (len_sq <= 0.0000001f)
+    // Reject direction: every comparison with NaN is false, so the accept
+    // spelling (len_sq <= eps) let a non-finite quaternion straight through
+    // the guard and returned NaN from a function named "safe" (issue #316).
+    if (!isfinite(len_sq) || !(len_sq > 0.0000001f))
     {
         return float4(0.0f, 0.0f, 0.0f, 1.0f);
     }

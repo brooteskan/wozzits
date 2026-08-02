@@ -39,7 +39,8 @@ struct VSOutput
 float3 safe_normalize_or_up(float3 value)
 {
     float len_sq = dot(value, value);
-    if (len_sq <= 1.0e-8f) {
+    // Reject direction -- see issue #316: NaN skips an accept-direction gate.
+    if (!isfinite(len_sq) || !(len_sq > 1.0e-8f)) {
         return float3(0.0f, 1.0f, 0.0f);
     }
     return value * rsqrt(len_sq);
@@ -50,7 +51,7 @@ float4 alpha_over(float4 dst, float4 src)
     float src_a = saturate(src.a);
     float dst_a = saturate(dst.a);
     float out_a = src_a + dst_a * (1.0f - src_a);
-    if (out_a <= 0.0001f) {
+    if (!(out_a > 0.0001f)) {
         return float4(0.0f, 0.0f, 0.0f, 0.0f);
     }
 

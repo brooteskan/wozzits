@@ -157,7 +157,7 @@ float3 sg_shade(
         SkyPoint p = sky_gaussian_points[j];
         const float3 l = p.direction;
         const float  n_dot_l = dot(n, l);
-        if (n_dot_l <= 0.0f) {
+        if (!(n_dot_l > 0.0f)) {
             continue;
         }
 

@@ -83,7 +83,7 @@ PSOutput main(PSInput input)
         kernel_mode, r2_uv, r_norm,
         gaussian_falloff, inner_radius, outer_radius);
 
-    if (coverage <= 0.0f)
+    if (!(coverage > 0.0f))
         discard;
 
     // Weight = kernel coverage * splat opacity * user-tunable density scale.

@@ -40,7 +40,7 @@ float4 main(PSInput input) : SV_TARGET
     const float sum_w = accum_c.a;
 
     // No coverage — keep background.
-    if (sum_w <= 1e-6f)
+    if (!(sum_w > 1e-6f))
         discard;
 
     const float3 color  = accum_c.rgb / sum_w;

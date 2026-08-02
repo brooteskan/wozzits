@@ -110,7 +110,7 @@ float4 main(PSInput input) : SV_TARGET
         gaussian_falloff, inner_radius, outer_radius);
 
     // Zero-coverage early-out (works for all kernels uniformly).
-    if (coverage <= 0.0f)
+    if (!(coverage > 0.0f))
         discard;
 
     // ── Coverage mode decides pass/fail and final alpha ──
