@@ -87,6 +87,29 @@ namespace wz::engine::rendering
             uint32_t binding_slot) const noexcept;
     };
 
+    // A D3D12 root signature may total at most 64 DWORDs. This is a hardware
+    // constant, not a tunable -- it is here rather than in wozzits-rhi because
+    // it is a D3D12 property and rhi is device-free.
+    inline constexpr uint32_t kDx12MaxRootSignatureDwords = 64;
+
+    // What a planned layout costs against that budget: one DWORD per 32-bit
+    // root constant, one per descriptor table (a table is a single root
+    // parameter regardless of how many descriptors it points at). Pure, so a
+    // test can walk the boundary without a device -- which matters because
+    // D3D12SerializeRootSignature returns S_OK for an over-budget signature
+    // and only CreateRootSignature rejects it, with a bare E_INVALIDARG and no
+    // error blob. See #317.
+    [[nodiscard]] constexpr uint32_t dx12_root_signature_dword_cost(
+        const RhiDx12PipelineLayout& layout) noexcept
+    {
+        uint32_t dwords =
+            static_cast<uint32_t>(layout.descriptor_tables.size());
+        if (layout.root_constants.valid) {
+            dwords += layout.root_constants.dword_count;
+        }
+        return dwords;
+    }
+
     struct RhiDx12RealizedPipeline
     {
         ID3D12RootSignature* root_signature = nullptr;

@@ -430,3 +430,89 @@ TEST(RhiDx12InputElementSemantic, GaussianSplatScaleAndColorDoNotCollide)
     EXPECT_STREQ(color.name, "TEXCOORD");
     EXPECT_NE(color.index, scale.index);
 }
+
+// -- Root-signature DWORD budget (#317) --------------------------------------
+//
+// A D3D12 root signature may total at most 64 DWORDs: one per 32-bit root
+// constant, one per descriptor table. Nothing bounded this anywhere --
+// constants_dwords is an authored integer with only a LOWER bound -- so an
+// over-budget layout reached CreateRootSignature and came back E_INVALIDARG
+// with no attribution.
+//
+// Measured on WARP before the fix: 60 constants + 1 table -> S_OK with 3
+// DWORDs to spare (that is the shipped GaussianSplatTerrainCoverageDebug
+// preset); 64 constants + 1 table -> E_INVALIDARG. And
+// D3D12SerializeRootSignature returned S_OK for ALL of them, so the one place
+// we capture a D3D error blob never fired.
+//
+// Device-free on purpose: the boundary is arithmetic, and the whole point is
+// to reject at PLAN time while the program is still identifiable.
+namespace
+{
+    wz::rhi::RenderProgramDesc program_with_constant_dwords(
+        wz::rhi::Tag semantic, uint32_t dwords)
+    {
+        wz::rhi::RenderProgramDesc program;
+        program.name = "budget_probe";
+        program.vertex_shader = "vs";
+        program.pixel_shader = "ps";
+
+        wz::rhi::ShaderResourceGroupLayout slot_2;
+        slot_2.binding_slot = 2;
+        slot_2.constants_binding = wz::rhi::RootConstantsBinding{
+            wz::rhi::ShaderStage::All, 0, 2 };
+        // One descriptor => one descriptor table => 1 DWORD of the budget.
+        slot_2.descriptors.push_back(wz::rhi::DescriptorBinding{
+            wz::rhi::DescriptorKind::StructuredBufferSRV,
+            wz::rhi::ShaderStage::Vertex,
+            semantic,
+            /*shader_register*/ 0,
+            /*register_space*/ 2,
+            /*descriptor_count*/ 1 });
+        EXPECT_TRUE(slot_2.constants.append(
+            semantic, dwords * sizeof(uint32_t)));
+        program.shader_resource_groups = { slot_2 };
+        return program;
+    }
+}
+
+TEST(RhiDx12Pipeline, RootSignatureBudgetIsCheckedAtPlanTime)
+{
+    wz::rhi::TagRegistry<8> tags;
+    const wz::rhi::Tag a = tags.acquire("a");
+    ASSERT_TRUE(a.valid());
+
+    // 63 constants + 1 table = 64 DWORDs exactly: the last legal layout.
+    const auto at_budget =
+        wz::engine::rendering::plan_dx12_pipeline_layout(
+            program_with_constant_dwords(a, 63));
+    ASSERT_TRUE(at_budget.has_value())
+        << "a layout costing exactly 64 DWORDs is legal and must plan";
+    EXPECT_EQ(
+        wz::engine::rendering::dx12_root_signature_dword_cost(*at_budget),
+        wz::engine::rendering::kDx12MaxRootSignatureDwords);
+
+    // 64 constants + 1 table = 65: one DWORD over, and CreateRootSignature
+    // would return a bare E_INVALIDARG naming nothing.
+    EXPECT_FALSE(
+        wz::engine::rendering::plan_dx12_pipeline_layout(
+            program_with_constant_dwords(a, 64)).has_value())
+        << "an over-budget layout must be refused while the program is still "
+           "identifiable, not at CreateRootSignature";
+}
+
+// The shipped preset that sits closest to the ceiling, so shrinking the budget
+// (or adding a second descriptor table to this shape) fails here rather than
+// in a user's project. 60 constants + 1 table, measured S_OK with 3 to spare.
+TEST(RhiDx12Pipeline, WidestShippedPresetStillFitsTheBudget)
+{
+    wz::rhi::TagRegistry<8> tags;
+    const wz::rhi::Tag a = tags.acquire("a");
+
+    const auto planned =
+        wz::engine::rendering::plan_dx12_pipeline_layout(
+            program_with_constant_dwords(a, 60));
+    ASSERT_TRUE(planned.has_value());
+    EXPECT_EQ(
+        wz::engine::rendering::dx12_root_signature_dword_cost(*planned), 61u);
+}

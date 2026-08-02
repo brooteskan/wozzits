@@ -528,6 +528,28 @@ namespace wz::engine::rendering
                 srg->constants_binding.visibility };
         }
 
+        // A D3D12 root signature may total at most 64 DWORDs: one per 32-bit
+        // root constant, one per descriptor table. Nothing bounded this
+        // anywhere -- constants_dwords is an authored integer with only a LOWER
+        // bound ("smaller than head + declared fields") -- so an over-budget
+        // layout reached CreateRootSignature and came back E_INVALIDARG with no
+        // attribution. Worse, D3D12SerializeRootSignature succeeds for these,
+        // so the one place we capture a D3D error blob never fires and the
+        // failure arrives as a bare hr. Measured: 60 constants + 1 table is
+        // S_OK with 3 DWORDs to spare (that is the shipped
+        // GaussianSplatTerrainCoverageDebug preset); 64 + 1 table is
+        // E_INVALIDARG. See #317.
+        //
+        // Checked HERE rather than in wozzits-rhi because 64 is a D3D12 limit,
+        // not a property of the device-free contract -- but the cost model is
+        // simple enough to state at plan time, which is the last point where
+        // the program is still identifiable.
+        if (dx12_root_signature_dword_cost(layout)
+            > kDx12MaxRootSignatureDwords)
+        {
+            return std::nullopt;
+        }
+
         return layout;
     }
 
