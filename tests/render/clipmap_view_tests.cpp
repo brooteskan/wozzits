@@ -417,3 +417,36 @@ TEST(ClipmapPlacement, DegenerateMeshWidthFallsBackToUnitCell)
     EXPECT_FLOAT_EQ(placement.world_size[0], 32.0f);  // 1.0 * 32
     EXPECT_FLOAT_EQ(placement.world_size[1], 32.0f);
 }
+
+// ── level_count must be clamped at BOTH ends (issue #314, C1-H1) ────────────
+//
+// clipmap_lattice_grid_extent computes `1u << (level_count - 1u)`, which is
+// UNDEFINED for level_count >= 33 and overflows uint32 well before that, while
+// sanitize_clipmap_lattice_params clamped only the low end. Measured with
+// base_resolution 64: level_count 31 and 32 gave a grid extent of 0, and 33
+// wrapped to 64 -- indistinguishable from level_count 1, which is the failure
+// mode worth naming, because a silently-tiny lattice looks like an authoring
+// mistake rather than a bug.
+//
+// The clamp lives in the sanitizer because BOTH authoring paths pass through
+// it: the physical-parameter resolver (which already searched only to 24) and
+// the explicit typed-desc path, which is the one that could reach 33.
+TEST(ClipmapView, GridExtentIsBoundedForAnyAuthoredLevelCount)
+{
+    uint32_t previous = 0u;
+    for (uint32_t level_count = 1u; level_count <= 64u; ++level_count) {
+        ClipmapLatticeParams params{};
+        params.level_count = level_count;
+        params.base_resolution = 64u;
+        params.cell_size = 1.0f;
+
+        const uint32_t extent = clipmap_lattice_grid_extent(params);
+
+        EXPECT_GT(extent, 0u)
+            << "level_count " << level_count << " produced an EMPTY lattice";
+        EXPECT_GE(extent, previous)
+            << "level_count " << level_count << " went BACKWARDS -- the shift "
+            << "wrapped";
+        previous = extent;
+    }
+}

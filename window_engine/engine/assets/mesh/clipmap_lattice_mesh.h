@@ -53,8 +53,15 @@ namespace wz::engine::assets
         float cell_size = 1.0f;
     };
 
+    // Upper bound on the LOD level count, shared by the sanitizer and the
+    // physical-parameter resolver so the two paths cannot disagree about what a
+    // legal lattice is. Consumers shift by level_count - 1 (see
+    // clipmap_lattice_grid_extent), which is undefined at 33 and overflows
+    // uint32 well before that; the resolver never searched past 24 anyway.
+    inline constexpr uint32_t kMaxClipmapLatticeLevelCount = 24u;
+
     // Clamp an authored parameter set into a valid lattice description:
-    //   level_count    >= 1
+    //   level_count    in [1, kMaxClipmapLatticeLevelCount]
     //   base_resolution >= 1 (no divisibility constraint: the generator tiles
     //                   gap-free for ANY resolution — see make_clipmap_lattice_mesh
     //                   and the .cpp's hole-snapping note)

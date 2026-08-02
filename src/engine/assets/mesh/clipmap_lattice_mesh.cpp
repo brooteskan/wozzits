@@ -6,6 +6,7 @@
 // forward-declares it so the render layer does not inherit this include.
 #include <asset/compiler.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -213,7 +214,19 @@ namespace wz::engine::assets
         float cell_size) noexcept
     {
         ClipmapLatticeParams params{};
-        params.level_count = level_count < 1u ? 1u : level_count;
+        // Clamped at BOTH ends. The low end was always here; the high end was
+        // not, and consumers shift by level_count - 1: clipmap_lattice_grid_extent
+        // computes `1u << (params.level_count - 1u)`, which is UNDEFINED for
+        // level_count >= 33 and overflows uint32 well before that. Measured
+        // (#314, C1-H1) with base_resolution 64: level_count 31 and 32 give a
+        // grid extent of 0, and 33 wraps to 64 -- indistinguishable from
+        // level_count 1.
+        //
+        // kMaxLevelCount is the same bound resolve_clipmap_lattice already
+        // searches to, so the derived (physical-parameter) path is unchanged and
+        // only the explicit typed-desc path is newly constrained.
+        params.level_count =
+            (std::clamp)(level_count, 1u, kMaxClipmapLatticeLevelCount);
 
         // Any base resolution >= 1 is valid: completeness is a structural
         // property of the generator (each coarse level's hole is the finer
@@ -274,7 +287,7 @@ namespace wz::engine::assets
             ? static_cast<double>(horizon_metres)
             : static_cast<double>(std::numeric_limits<float>::min());
 
-        constexpr uint32_t kLmax = 24u;
+        constexpr uint32_t kLmax = kMaxClipmapLatticeLevelCount;
 
         // Minimal base resolution whose FLOORED half-extent reaches the horizon.
         // The generator's per-side reach is floor(m/2) * 2^(L-1) * c (an integer
