@@ -28,7 +28,14 @@ namespace wz::engine::motion
             float& current, float target, float& velocity,
             float smoothing_time, float dt)
         {
-            if (smoothing_time <= 0.0f || dt <= 0.0f) {
+            // Written as !(x > 0), not (x <= 0). The two differ for NaN: every
+            // comparison against NaN is false, so `smoothing_time <= 0.0f` took
+            // the SMOOTHING branch for a NaN parameter and drove the state to
+            // NaN, while the translation caller's own `smoothing_time > 0.0f`
+            // test forty lines below snapped safely. Two guards over one
+            // parameter with opposite NaN behaviour (#314, C1-C2); this is the
+            // safe one, so both now snap.
+            if (!(smoothing_time > 0.0f) || !(dt > 0.0f)) {
                 current = target;
                 velocity = 0.0f;
                 return;
@@ -124,6 +131,17 @@ namespace wz::engine::motion
             return wz::math::from_axis_angle(axis, angle);
         }
 
+        bool all_finite(const Vec3& v)
+        {
+            return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+        }
+
+        bool all_finite(const Quaternion& q)
+        {
+            return std::isfinite(q.x) && std::isfinite(q.y)
+                && std::isfinite(q.z) && std::isfinite(q.w);
+        }
+
         // Shape one axis of the ABSOLUTE target angle: level pins it to the world
         // horizon (0), limit clamps it. Smoothing is NOT done here -- it is
         // applied later, gimbal-free, to the whole orientation.
@@ -181,8 +199,39 @@ namespace wz::engine::motion
             return Transform{ target_pos, pose.rotation, scale };
         }
 
+        // A single non-finite frame used to poison this filter FOREVER. The state
+        // is persistent per node id (it survives scene rebuilds, by design), and
+        // smooth_damp reads `current` back out every frame, so once NaN is in
+        // there no amount of clean input recovers it -- measured: one NaN frame,
+        // then 109 clean frames, still NaN (#314, C1-C2). The only cure was
+        // toggling the component off and on.
+        //
+        // A transient fault must stay transient, so:
+        //   * a non-finite TARGET is not folded in -- hold the last good filtered
+        //     pose for that frame (and if there is no good pose yet, pass the
+        //     target through exactly as a disabled filter does, leaving the state
+        //     uninitialised so the next finite frame seeds cleanly);
+        //   * a state that is non-finite anyway re-seeds, which is what the
+        //     !initialized path below already does correctly on first sight.
+        const bool target_is_finite =
+            all_finite(target_pos) && all_finite(target_rot);
+        if (!target_is_finite) {
+            if (!state.initialized) {
+                return Transform{ target_pos, pose.rotation, scale };
+            }
+            return Transform{ state.position, state.rotation, scale };
+        }
+
+        const bool state_is_finite =
+            all_finite(state.position)
+            && all_finite(state.position_velocity)
+            && all_finite(state.rotation)
+            && std::isfinite(state.rotation_velocity[0])
+            && std::isfinite(state.rotation_velocity[1])
+            && std::isfinite(state.rotation_velocity[2]);
+
         // Seed to the target on first sight so a filtered node starts in place.
-        if (!state.initialized) {
+        if (!state.initialized || !state_is_finite) {
             state.position = target_pos;
             state.position_velocity = { 0.0f, 0.0f, 0.0f };
             state.rotation = target_rot;

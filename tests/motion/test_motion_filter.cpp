@@ -305,3 +305,88 @@ TEST(MotionFilter, Deterministic)
     EXPECT_FLOAT_EQ(a.rotation.x, b.rotation.x);
     EXPECT_FLOAT_EQ(a.rotation.w, b.rotation.w);
 }
+
+// ── Non-finite input must not LATCH (issue #314, C1-C2) ─────────────────────
+//
+// MotionFilterState is persistent per node id and survives scene rebuilds, and
+// smooth_damp reads `current` back out every frame -- so a single NaN frame used
+// to kill the node for the whole session. Measured before the fix: one NaN
+// frame, then 109 clean frames, still NaN; the only cure was toggling the
+// component off and on.
+//
+// LOAD-BEARING: the NaN must arrive MID-RUN, after the state is initialised.
+// A NaN on the very first frame takes the uninitialised path, which was never
+// the broken one.
+TEST(MotionFilter, RecoversAfterOneNonFiniteFrame)
+{
+    SceneMotionFilterAsset f{};
+    f.translation_smoothing[0] = 0.2f;
+    f.translation_smoothing[1] = 0.2f;
+    f.translation_smoothing[2] = 0.2f;
+    f.roll.smoothing_time = 0.2f;
+    f.pitch.smoothing_time = 0.2f;
+    f.yaw.smoothing_time = 0.2f;
+
+    MotionFilterState state{};
+    Transform out{};
+    for (int frame = 0; frame < 120; ++frame) {
+        const float x = (frame == 10)
+            ? std::nanf("")
+            : static_cast<float>(frame);
+        out = apply_motion_filter(
+            make_target({ x, 0.0f, 0.0f }, 0, 0, 0), f, state, kDt);
+    }
+
+    EXPECT_TRUE(std::isfinite(out.position.x));
+    EXPECT_TRUE(std::isfinite(out.rotation.w));
+    // And it must have tracked the clean input, not merely stayed finite.
+    EXPECT_GT(out.position.x, 50.0f);
+}
+
+// The bad frame itself holds the last good pose rather than emitting the fault.
+TEST(MotionFilter, NonFiniteTargetHoldsTheLastGoodPose)
+{
+    SceneMotionFilterAsset f{};
+    f.translation_smoothing[0] = 0.2f;
+
+    MotionFilterState state{};
+    for (int frame = 0; frame < 30; ++frame) {
+        apply_motion_filter(
+            make_target({ 5.0f, 0.0f, 0.0f }, 0, 0, 0), f, state, kDt);
+    }
+    const Transform good = apply_motion_filter(
+        make_target({ 5.0f, 0.0f, 0.0f }, 0, 0, 0), f, state, kDt);
+
+    const Transform held = apply_motion_filter(
+        make_target({ std::nanf(""), 0.0f, 0.0f }, 0, 0, 0), f, state, kDt);
+
+    EXPECT_FLOAT_EQ(held.position.x, good.position.x);
+}
+
+// smooth_damp's guard and its translation-side caller both have to treat a NaN
+// smoothing_time the same way. They did not: `smoothing_time <= 0.0f` took the
+// smoothing branch for NaN (driving the ROTATION state to NaN) while the
+// caller's `smoothing_time > 0.0f` snapped. Rotation is the half that broke.
+TEST(MotionFilter, NonFiniteSmoothingTimeSnapsInsteadOfPoisoningRotation)
+{
+    SceneMotionFilterAsset f{};
+    const float nan_value = std::nanf("");
+    f.translation_smoothing[0] = nan_value;
+    f.roll.smoothing_time = nan_value;
+    f.pitch.smoothing_time = nan_value;
+    f.yaw.smoothing_time = nan_value;
+
+    MotionFilterState state{};
+    Transform out{};
+    for (int frame = 0; frame < 60; ++frame) {
+        out = apply_motion_filter(
+            make_target({ static_cast<float>(frame), 0.0f, 0.0f }, 0, 30, 0),
+            f, state, kDt);
+    }
+
+    EXPECT_TRUE(std::isfinite(out.rotation.x));
+    EXPECT_TRUE(std::isfinite(out.rotation.y));
+    EXPECT_TRUE(std::isfinite(out.rotation.z));
+    EXPECT_TRUE(std::isfinite(out.rotation.w));
+    EXPECT_TRUE(std::isfinite(out.position.x));
+}
