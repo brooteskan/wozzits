@@ -9,6 +9,7 @@
 
 #include <engine/assets/inochi/puppet_deform.h>
 
+#include <cmath>
 #include <cstddef>
 #include <unordered_map>
 
@@ -18,11 +19,43 @@ namespace wz::engine::assets::inochi
     {
         // Clamp without assuming lo <= hi (authored min/max could be inverted):
         // returns lo when v < lo, hi when v > hi, else v.
+        //
+        // Written in the REJECT direction (`!(v >= lo)` rather than `v < lo`) so
+        // a NaN lands on `lo` instead of sailing through: every comparison with
+        // NaN is false, so the accept spelling returned NaN unchanged and stored
+        // it as a parameter value outside the authored range (issue #316,
+        // C3-C15). Finite out-of-range values were always clamped correctly;
+        // only NaN escaped.
         float clampf(float v, float lo, float hi) noexcept
         {
-            if (v < lo) return lo;
-            if (v > hi) return hi;
+            if (!(v >= lo)) return lo;   // v < lo, or v is NaN
+            if (!(v <= hi)) return hi;
             return v;
+        }
+
+        // Map an authored parameter value from its [min, max] range onto the
+        // [0, 1] axis the keys live in.
+        //
+        // Parameter::axis_points are NORMALIZED positions along the axis -- every
+        // axis in a real puppet runs 0..1 -- while Parameter::min/max give the
+        // range the VALUE is authored and clamped in. Feeding the raw value to
+        // locate_axis compared the two spaces directly, so any parameter whose
+        // range was not already [0, 1] sampled the wrong cell: for Inochi's
+        // standard bidirectional [-1, 1] the neutral value 0 hit `v <= keys
+        // .front()` and collapsed onto the FIRST cell, taking the whole negative
+        // half of the parameter with it. 28 of Aka's 34 parameters are in that
+        // shape, including Head/Body Yaw-Pitch and Roll (issue #316, C3-C7).
+        //
+        // A degenerate range (min == max, or non-finite authored bounds) has no
+        // meaningful fraction; 0 keeps such a parameter pinned at its first key
+        // rather than dividing by zero.
+        float normalized_on_axis(float v, float lo, float hi) noexcept
+        {
+            const float span = hi - lo;
+            if (!(span > 0.0f) && !(span < 0.0f)) {
+                return 0.0f;   // min == max, or either bound non-finite
+            }
+            return clampf((v - lo) / span, 0.0f, 1.0f);
         }
 
         // Locate a value on a sorted axis: the bracketing key indices + the [0,1]
@@ -168,6 +201,15 @@ namespace wz::engine::assets::inochi
             if (index >= puppet.parameters.size()) {
                 return false;
             }
+            // A non-finite request is refused outright rather than clamped: the
+            // caller learns its input was rejected, and the parameter keeps the
+            // value it already had instead of snapping to a range endpoint.
+            // clampf below is NaN-safe as a second line of defence, but landing
+            // a bidirectional parameter on `min` is a visible pose change, and a
+            // driver feeding NaN should not get one silently (issue #316).
+            if (!std::isfinite(x) || !std::isfinite(y)) {
+                return false;
+            }
             if (params.values.size() != puppet.parameters.size()) {
                 params.values.resize(puppet.parameters.size());
             }
@@ -228,9 +270,16 @@ namespace wz::engine::assets::inochi
                 pi < params.values.size() ? params.values[pi] : p.defaults;
 
             const std::size_t ny = p.ny() == 0 ? 1 : p.ny();
-            const AxisLoc xloc = locate_axis(p.axis_points[0], value[0]);
+            // Both axes are located in NORMALIZED [0,1] space -- see
+            // normalized_on_axis. The value arrives in the parameter's authored
+            // [min,max] range and the keys do not.
+            const AxisLoc xloc = locate_axis(
+                p.axis_points[0], normalized_on_axis(value[0], p.min[0], p.max[0]));
             const AxisLoc yloc =
-                p.ny() >= 2 ? locate_axis(p.axis_points[1], value[1]) : AxisLoc{};
+                p.ny() >= 2
+                    ? locate_axis(p.axis_points[1],
+                          normalized_on_axis(value[1], p.min[1], p.max[1]))
+                    : AxisLoc{};
 
             for (const Binding& b : p.bindings) {
                 const auto it = node_by_uuid.find(b.node_uuid);

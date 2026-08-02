@@ -10,7 +10,9 @@
 #include <engine/assets/inochi/puppet_deform.h>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace
@@ -223,4 +225,81 @@ TEST(PuppetDeform, ValueOutsideAxisClampsToEdge)
     params.values = { { 9.0f, 0.0f } };
     const ino::PuppetDeform d = ino::evaluate_puppet_deform(puppet, params);
     EXPECT_NEAR(d.transform_deltas[0].trans[0], 7.0f, 1e-5f);
+}
+
+// --- issue #316 C3-C7: axis keys are NORMALIZED, values are in [min,max] ------
+//
+// Every test above uses min=0,max=1 with axis keys {0,1}, which makes the two
+// spaces coincide -- which is exactly why the whole suite passed while 28 of
+// Aka.inp's 34 parameters sampled the wrong cell. The parameter below is the
+// shape a real puppet uses: a symmetric bidirectional range whose axis keys run
+// 0..1 and whose neutral value sits at the CENTRE of the grid.
+TEST(PuppetDeform, BidirectionalParameterCentresOnItsNeutralValue)
+{
+    ino::Puppet puppet;
+    puppet.nodes.push_back(make_part(10, 1));
+
+    // Head::Yaw-Pitch in miniature: value in [-1,1], keys normalized 0..1.
+    ino::Parameter p;
+    p.uuid = 1;
+    p.name = "yaw";
+    p.is_vec2 = false;
+    p.min = { -1.0f, 0.0f };
+    p.max = { 1.0f, 0.0f };
+    p.defaults = { 0.0f, 0.0f };
+    p.axis_points[0] = { 0.0f, 0.5f, 1.0f };
+    p.axis_points[1] = { 0.0f };
+    p.bindings.push_back(
+        scalar_binding(10, ino::BindTarget::TransTX, { 0.0f, 10.0f, 20.0f }));
+    puppet.parameters.push_back(std::move(p));
+
+    ino::PuppetParams params = ino::make_default_params(puppet);
+
+    // The neutral value is the MIDDLE key, not the first one. Before the fix
+    // this returned 0: the raw -1..1 value was compared against 0..1 keys, so
+    // everything at or below 0 collapsed onto keys.front().
+    EXPECT_NEAR(ino::evaluate_puppet_deform(puppet, params)
+                    .transform_deltas[0].trans[0], 10.0f, 1e-5f);
+
+    // The negative half must be live, not folded onto the first cell.
+    ino::set_param(puppet, params, "yaw", -1.0f);
+    EXPECT_NEAR(ino::evaluate_puppet_deform(puppet, params)
+                    .transform_deltas[0].trans[0], 0.0f, 1e-5f);
+    ino::set_param(puppet, params, "yaw", -0.5f);
+    EXPECT_NEAR(ino::evaluate_puppet_deform(puppet, params)
+                    .transform_deltas[0].trans[0], 5.0f, 1e-5f);
+    ino::set_param(puppet, params, "yaw", 0.5f);
+    EXPECT_NEAR(ino::evaluate_puppet_deform(puppet, params)
+                    .transform_deltas[0].trans[0], 15.0f, 1e-5f);
+    ino::set_param(puppet, params, "yaw", 1.0f);
+    EXPECT_NEAR(ino::evaluate_puppet_deform(puppet, params)
+                    .transform_deltas[0].trans[0], 20.0f, 1e-5f);
+}
+
+// --- issue #316 C3-C15: a non-finite parameter must not be storable ----------
+TEST(PuppetDeform, SetParamRefusesNonFinite)
+{
+    ino::Puppet puppet;
+    puppet.nodes.push_back(make_part(10, 1));
+    puppet.parameters.push_back(make_1d_param(
+        1, "tx", { 0.0f, 1.0f },
+        scalar_binding(10, ino::BindTarget::TransTX, { 0.0f, 10.0f })));
+
+    ino::PuppetParams params = ino::make_default_params(puppet);
+    ASSERT_TRUE(ino::set_param(puppet, params, "tx", 0.5f));
+    const float kept = params.values[0][0];
+
+    // Refused, and the previous value survives. clampf's guard would otherwise
+    // land the parameter on `min`, which for a bidirectional range is a visible
+    // pose change rather than "nothing happened".
+    EXPECT_FALSE(ino::set_param(
+        puppet, params, "tx", std::numeric_limits<float>::quiet_NaN()));
+    EXPECT_FLOAT_EQ(params.values[0][0], kept);
+    EXPECT_FALSE(ino::set_param(
+        puppet, params, "tx", std::numeric_limits<float>::infinity()));
+    EXPECT_FLOAT_EQ(params.values[0][0], kept);
+
+    // And the deform stays finite.
+    const ino::PuppetDeform d = ino::evaluate_puppet_deform(puppet, params);
+    EXPECT_TRUE(std::isfinite(d.transform_deltas[0].trans[0]));
 }
