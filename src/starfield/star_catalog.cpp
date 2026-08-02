@@ -116,7 +116,18 @@ namespace wz::engine::starfield
         //   T = 4600 * ( 1/(0.92*bv + 1.7) + 1/(0.92*bv + 0.62) ) [Kelvin]
         // Valid across the main sequence; both denominators stay positive for
         // realistic B-V (roughly -0.4 .. +2.0).
-        const double a = 0.92 * bv;
+        // Clamped to the validity range the comment above already states.
+        // Both denominators have a POLE inside the domain a catalogue can
+        // actually deliver -- 1/(0.92bv + 0.62) blows up at bv = -0.674, which
+        // is only just past the bluest main-sequence stars and well inside
+        // Tycho-2's noise. Unclamped, T crosses +/-inf and changes SIGN there,
+        // and tint_from_temperature's own clamp is applied to the OUTPUT, so it
+        // faithfully turned a negative temperature into the reddest tint
+        // available: measured, bv = -0.67391 gave (0.64, 1.00, 2.05) and
+        // bv = -0.67392 gave (3.94, 0.23, 0.00). The bluest stars in the sky
+        // rendered as the reddest, which is the maximum possible inversion of
+        // the intended colour (issue #316, C3-C17).
+        const double a = 0.92 * std::clamp(bv, -0.4, 2.0);
         return 4600.0 * (1.0 / (a + 1.7) + 1.0 / (a + 0.62));
     }
 
@@ -212,8 +223,20 @@ namespace wz::engine::starfield
         std::vector<Star> stars;
         stars.reserve(records.size());
         for (const CatalogRecord& record : records) {
-            if (record.vmag < params.magnitude_min
-                || record.vmag > params.magnitude_max) {
+            // Reject direction. The accept spelling let a NaN magnitude through
+            // BOTH comparisons and into the catalogue as a star with NaN
+            // radiance -- the same defect the PLY importer's own comment
+            // identifies as #310, and this was the last of the three sibling
+            // culls still written the unsafe way (issue #316, C3-H17). The
+            // position fields matter for the same reason: a NaN ra/dec becomes
+            // a star with a NaN direction.
+            if (!std::isfinite(record.vmag)
+                || !std::isfinite(record.ra_hours)
+                || !std::isfinite(record.dec_deg)) {
+                continue;
+            }
+            if (!(record.vmag >= params.magnitude_min)
+                || !(record.vmag <= params.magnitude_max)) {
                 continue;
             }
             stars.push_back(star_from_record(record, params));

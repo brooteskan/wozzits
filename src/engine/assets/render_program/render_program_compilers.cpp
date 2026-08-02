@@ -380,11 +380,9 @@ namespace wz::engine::assets::internal
                 // (space2) RhiSceneRenderer binds -- but the StructuredBuffer is
                 // the resident star point buffer at the StarCatalog semantic, so
                 // the star render branch resolves rhi_asset_identity(key,
-                // "star_catalog"). One 36-float root-constant block (world[16] +
-                // view_proj[16] + camera_and_diameter[4], SplatCloudDrawConstants
-                // reused verbatim, mirrored by the StarView cbuffer in
-                // star_field_vs.hlsl); no index/position pull buffers -- the draw
-                // is a non-indexed vertex-id expansion of 6 * star_count vertices.
+                // "star_catalog"). No index/position pull buffers -- the draw is
+                // a non-indexed vertex-id expansion of 6 * star_count vertices.
+                //
                 // 40 dwords: world[16] + view_proj[16] + camera_and_size[4]
                 // (xyz cam, w star_size) + star_params[4] (x intensity, rest
                 // spare) -- StarFieldDrawConstants, mirrored by the StarView
