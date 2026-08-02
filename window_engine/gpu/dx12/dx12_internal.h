@@ -33,6 +33,31 @@ namespace wz::gpu::dx12::internal
     ID3D12Device* get_device(Device& d);
     ID3D12GraphicsCommandList* get_command_list(Device& d);
 
+    // THE mapping from wz::rhi::BlendMode to DX12 render-target blend state.
+    //
+    // There used to be two, and they disagreed. #272 unified the ENUM (the
+    // engine consumes wz::rhi::BlendMode directly) but never unified the
+    // TRANSLATION, so the legacy factory in dx12_pipeline_factory.cpp kept its
+    // own if/else chain -- and was then left behind by BOTH commits that added
+    // members: e74167af (Additive, #266) and f45720b2 (SourceAtop +
+    // SliceFromDestination, #299) each touched only render_program_compilers.cpp
+    // and rhi_dx12_pipeline.cpp. Those three modes rendered fully OPAQUE
+    // wherever the legacy factory realized the PSO, while rendering correctly
+    // through the rhi path (#317).
+    //
+    // Both PSO factories now call this. It is a switch with NO default and a
+    // static_assert on the enum's last member beside its definition, so adding
+    // a BlendMode in the wozzits-rhi repo fails the ENGINE build instead of
+    // silently falling through to D3D12_DEFAULT (= BlendEnable FALSE = opaque).
+    // The previous if/else chains could not produce a diagnostic at all: an
+    // if/else chain has no exhaustiveness check, and the build is /W3 with no
+    // /WX, so even a switch would only have warned.
+    //
+    // Returns the RenderTarget[0] state; callers keep starting from
+    // CD3DX12_BLEND_DESC(D3D12_DEFAULT) for the remaining seven slots.
+    [[nodiscard]] D3D12_RENDER_TARGET_BLEND_DESC
+    render_target_blend_desc(wz::rhi::BlendMode mode) noexcept;
+
     // Drain the D3D12 debug layer's stored messages (CORRUPTION/ERROR/WARNING
     // only), oldest first, and clear the queue.
     //

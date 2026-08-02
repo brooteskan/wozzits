@@ -16,6 +16,124 @@
 
 namespace wz::gpu::dx12::internal
 {
+    // ── Blend state (THE single translation; see dx12_internal.h) ─────────────
+
+    // Adding a member to wz::rhi::BlendMode -- which lives in the SEPARATE
+    // wozzits-rhi repo -- must fail this build rather than silently render
+    // opaque. The switch below has no default:, and this pins the enum's
+    // extent so an appended member is caught even though the build is /W3
+    // with no /WX. If you are reading this because it fired: add the case
+    // below and bump the expected ordinal.
+    static_assert(
+        static_cast<int>(wz::rhi::BlendMode::SliceFromDestination) == 7,
+        "wz::rhi::BlendMode gained or lost a member -- add its case to "
+        "render_target_blend_desc() before updating this assert. Both PSO "
+        "factories go through that function; an unhandled mode falls back to "
+        "D3D12_DEFAULT, which is BlendEnable FALSE, i.e. fully opaque.");
+
+    D3D12_RENDER_TARGET_BLEND_DESC
+    render_target_blend_desc(wz::rhi::BlendMode mode) noexcept
+    {
+        D3D12_RENDER_TARGET_BLEND_DESC rt =
+            CD3DX12_BLEND_DESC(D3D12_DEFAULT).RenderTarget[0];
+        rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+        const auto set = [&rt](D3D12_BLEND src,
+                               D3D12_BLEND dst,
+                               D3D12_BLEND_OP op,
+                               D3D12_BLEND src_a,
+                               D3D12_BLEND dst_a,
+                               D3D12_BLEND_OP op_a) noexcept {
+            rt.BlendEnable    = TRUE;
+            rt.LogicOpEnable  = FALSE;
+            rt.SrcBlend       = src;
+            rt.DestBlend      = dst;
+            rt.BlendOp        = op;
+            rt.SrcBlendAlpha  = src_a;
+            rt.DestBlendAlpha = dst_a;
+            rt.BlendOpAlpha   = op_a;
+        };
+
+        switch (mode) {
+        case wz::rhi::BlendMode::Opaque:
+            // D3D12_DEFAULT already is BlendEnable FALSE.
+            break;
+        case wz::rhi::BlendMode::AlphaBlend:
+            set(D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_ADD,
+                D3D12_BLEND_ONE, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_ADD);
+            break;
+        case wz::rhi::BlendMode::Additive:
+            // Glow accumulation: src*ONE + dst*ONE. The star PS pre-weights its
+            // colour by the sprite falloff, so ONE/ONE simply sums light onto
+            // the sky (overlapping stars brighten, nothing occludes).
+            set(D3D12_BLEND_ONE, D3D12_BLEND_ONE, D3D12_BLEND_OP_ADD,
+                D3D12_BLEND_ONE, D3D12_BLEND_ONE, D3D12_BLEND_OP_ADD);
+            break;
+        case wz::rhi::BlendMode::Multiply:
+            // src*DstColor + dst*InvSrcAlpha. Darkens the destination by the
+            // source -- exactly Src x Dst for an OPAQUE source. The InvSrcAlpha
+            // dest factor is what makes it usable on a partially-covering
+            // source: a transparent premultiplied texel has rgb 0, so a ZERO
+            // dest factor would multiply the destination to BLACK there instead
+            // of leaving it alone. Alpha accumulates coverage as a normal
+            // "over", so a puppet rendered into an RTT still ends with
+            // alpha = coverage whatever its Parts' modes.
+            set(D3D12_BLEND_DEST_COLOR, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_ADD,
+                D3D12_BLEND_ONE, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_ADD);
+            break;
+        case wz::rhi::BlendMode::Screen:
+            // src*ONE + dst*InvSrcColor = Src + Dst - Src x Dst. The complement
+            // of Multiply; lightens (highlight / glow compositing).
+            set(D3D12_BLEND_ONE, D3D12_BLEND_INV_SRC_COLOR, D3D12_BLEND_OP_ADD,
+                D3D12_BLEND_ONE, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_ADD);
+            break;
+        case wz::rhi::BlendMode::PremultipliedAlpha:
+            // src*ONE + dst*InvSrcAlpha. "Over" for a PS that already
+            // multiplied rgb by alpha, so a texel at alpha 0.5 no longer
+            // contributes only half its colour on top of a full-weight
+            // AlphaBlend fade -- which is what darkened transparent Part
+            // borders (#277). Identical to AlphaBlend in the alpha channel.
+            set(D3D12_BLEND_ONE, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_OP_ADD,
+                D3D12_BLEND_ONE, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_ADD);
+            break;
+        case wz::rhi::BlendMode::SourceAtop:
+            // src*DstAlpha + dst*InvSrcAlpha. Porter-Duff "source atop": the
+            // source shows only where the destination is already covered, so it
+            // paints ONTO what is beneath without extending it. Inochi's
+            // ClipToLower (#299). Unlike Multiply/Screen, alpha uses the SAME
+            // factors as colour rather than accumulating coverage -- both
+            // scaled by DstAlpha keeps the result premultiplied-consistent, and
+            // alpha growing where colour was clipped to zero would leave a dark
+            // fringe once the target is composited.
+            set(D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_ADD,
+                D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_ADD);
+            break;
+        case wz::rhi::BlendMode::SliceFromDestination:
+            // src*InvDstAlpha - dst*InvSrcAlpha. The cutting counterpart of
+            // SourceAtop: where the source covers, the destination is removed.
+            // Inochi's SliceFromLower (#299).
+            //
+            // OPERATOR DIRECTION IS THE TRAP. The GL reference uses
+            // FUNC_SUBTRACT, which is src-dst. D3D12's _SUBTRACT is dst-src;
+            // src-dst is _REV_SUBTRACT. Getting it backwards inverts the
+            // operator into something that still renders, just wrongly.
+            set(D3D12_BLEND_INV_DEST_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_REV_SUBTRACT,
+                D3D12_BLEND_INV_DEST_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_OP_REV_SUBTRACT);
+            break;
+        }
+        return rt;
+    }
+
     // ── Root signatures ───────────────────────────────────────────────────────
 
     static ID3D12RootSignature* create_mesh_wireframe_root_sig(ID3D12Device* device)
@@ -1210,64 +1328,12 @@ namespace wz::gpu::dx12::internal
         }
 
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-        if (data.blend_mode == BM::AlphaBlend)
-        {
-            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
-            rt.BlendEnable           = TRUE;
-            rt.LogicOpEnable         = FALSE;
-            rt.SrcBlend              = D3D12_BLEND_SRC_ALPHA;
-            rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
-            rt.BlendOp               = D3D12_BLEND_OP_ADD;
-            rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
-            rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
-            rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
-            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-        }
-        else if (data.blend_mode == BM::Multiply)
-        {
-            // src*DstColor + dst*InvSrcAlpha — 2D-puppet / overlay multiply,
-            // coverage-aware (= Src×Dst for an opaque source; leaves the
-            // destination alone where the source is transparent).
-            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
-            rt.BlendEnable           = TRUE;
-            rt.LogicOpEnable         = FALSE;
-            rt.SrcBlend              = D3D12_BLEND_DEST_COLOR;
-            rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
-            rt.BlendOp               = D3D12_BLEND_OP_ADD;
-            rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
-            rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
-            rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
-            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-        }
-        else if (data.blend_mode == BM::Screen)
-        {
-            // src*ONE + dst*InvSrcColor = Src + Dst − Src×Dst — screen.
-            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
-            rt.BlendEnable           = TRUE;
-            rt.LogicOpEnable         = FALSE;
-            rt.SrcBlend              = D3D12_BLEND_ONE;
-            rt.DestBlend             = D3D12_BLEND_INV_SRC_COLOR;
-            rt.BlendOp               = D3D12_BLEND_OP_ADD;
-            rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
-            rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
-            rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
-            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-        }
-        else if (data.blend_mode == BM::PremultipliedAlpha)
-        {
-            // src*ONE + dst*InvSrcAlpha — "over" for a PS that already
-            // multiplied rgb by alpha (#277).
-            D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
-            rt.BlendEnable           = TRUE;
-            rt.LogicOpEnable         = FALSE;
-            rt.SrcBlend              = D3D12_BLEND_ONE;
-            rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
-            rt.BlendOp               = D3D12_BLEND_OP_ADD;
-            rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
-            rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
-            rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
-            rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-        }
+        // ONE translation, shared with the rhi PSO path. This chain used
+        // to be a private copy missing Additive / SourceAtop /
+        // SliceFromDestination, so those three rendered opaque here and
+        // correctly there (#317).
+        desc.BlendState.RenderTarget[0] =
+            render_target_blend_desc(data.blend_mode);
 
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
         switch (data.depth_mode)
