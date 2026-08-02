@@ -54,7 +54,10 @@ namespace wz::engine::assets::inochi
         float dt,
         PuppetParams& params)
     {
-        if (dt <= 0.0f) {
+        // Reject direction (`!(dt > 0)`, not `dt <= 0`): every comparison with
+        // NaN is false, so the accept spelling let a NaN dt through and NaNed
+        // every pendulum on the first call (issue #316, C3-H13).
+        if (!(dt > 0.0f)) {
             return;
         }
 
@@ -86,25 +89,58 @@ namespace wz::engine::assets::inochi
             // Spring toward the rest length (stiffness from the authored frequency)
             // plus gravity. For a rigid Pendulum we also reproject below; the spring
             // keeps the pre-projection integration well-behaved.
-            const float omega = 2.0f * kPi * std::max(sp.frequency, 0.0f);
+            // std::max(0.0f, x) not std::max(x, 0.0f): the standard returns the
+            // FIRST argument when the comparison is false, so with a NaN authored
+            // field the value-first spelling returns NaN and the zero-first
+            // spelling returns 0. Three of the four guards here were value-first;
+            // `rest` above was already written safely (issue #316, C3-H14).
+            //
+            // The stiffness is additionally capped at the stability limit of the
+            // semi-implicit Euler step below. That integrator is stable only
+            // while omega*dt < 2; past it the bob's velocity grows without bound,
+            // reaches inf, and the state then LATCHES NaN forever because every
+            // subsequent update is NaN-in/NaN-out. Measured at the shipped
+            // breathing anchor and dt = 1/60: frequency 19 Hz is stable and
+            // self-heals, 20 Hz goes non-finite at step 117 and never recovers
+            // (issue #316, C3-C14) -- 2/(2*pi*dt) is 19.1 Hz, so the cap lands
+            // exactly where the measurement did. Nothing bounds `frequency` in
+            // the .inp format, the loader, or the editor.
+            const float omega_max = 2.0f / dt;
+            const float omega =
+                std::min(2.0f * kPi * std::max(0.0f, sp.frequency), omega_max);
             const float k = omega * omega;
             std::array<float, 2> force = {
                 -dir[0] * (dist - rest) * k,
                 -dir[1] * (dist - rest) * k,
             };
-            force[1] += kGravityAccel * std::max(sp.gravity, 0.0f);
+            force[1] += kGravityAccel * std::max(0.0f, sp.gravity);
 
             s.velocity[0] += force[0] * dt;
             s.velocity[1] += force[1] * dt;
 
             const float damp = std::clamp(
-                1.0f - std::max(sp.angle_damping, 0.0f) * dt * kDampRate,
+                1.0f - std::max(0.0f, sp.angle_damping) * dt * kDampRate,
                 0.0f, 1.0f);
             s.velocity[0] *= damp;
             s.velocity[1] *= damp;
 
             s.bob[0] += s.velocity[0] * dt;
             s.bob[1] += s.velocity[1] * dt;
+
+            // A transient fault must stay transient. The guards above stop the
+            // known routes to a non-finite state, but this integrator feeds its
+            // own output back in, so ANY non-finite value that reaches it -- an
+            // anchor from a NaN transform, a hostile authored field this file
+            // does not own -- would otherwise persist for the lifetime of the
+            // puppet with no way back. Re-seeding costs one pendulum one frame
+            // of motion; latching costs the puppet the rest of the session.
+            // Same ruling as the motion filter's (commit 7551bd40).
+            if (!std::isfinite(s.bob[0]) || !std::isfinite(s.bob[1])
+                || !std::isfinite(s.velocity[0]) || !std::isfinite(s.velocity[1]))
+            {
+                s.bob = { anchor[0], anchor[1] + rest };
+                s.velocity = { 0.0f, 0.0f };
+            }
 
             // "SpringPendulum" lets the rod stretch; anything else ("Pendulum")
             // is rigid -- reproject the bob to the rest length and drop the radial
