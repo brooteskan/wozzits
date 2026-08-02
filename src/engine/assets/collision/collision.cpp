@@ -2,6 +2,7 @@
 
 #include <engine/assets/collision/collision.h>
 
+#include <cmath>
 #include <utility>
 
 namespace wz::engine::assets
@@ -13,6 +14,30 @@ namespace wz::engine::assets
             return min[0] <= max[0]
                 && min[1] <= max[1]
                 && min[2] <= max[2];
+        }
+
+        // A heightfield's own numbers were never checked for finiteness, so a
+        // NaN sample or vertical_scale reached the runtime sampler, which
+        // returned hit=true with position=(nan,nan,nan) -- and the terrain-stick
+        // consumer writes that straight into a node transform while its
+        // `std::abs(nan - y) > 1e-6f` test reports "nothing changed" (#314,
+        // C1-C3). Two sibling compilers already do exactly this check
+        // (audio_clip_compilers.cpp validate_finite, scalar_field_compilers.cpp);
+        // collision was the one that never got it.
+        //
+        // It lives in valid() rather than in the compiler because valid() is the
+        // choke point BOTH the compile path and the disk-cache load path pass
+        // through -- a poisoned cache blob would bypass a compiler-side check.
+        // valid() is only ever called at compile/load boundaries, never per
+        // frame, so the O(n) scan is paid once per asset.
+        bool all_finite(const float* values, size_t count) noexcept
+        {
+            for (size_t i = 0; i < count; ++i) {
+                if (!std::isfinite(values[i])) {
+                    return false;
+                }
+            }
+            return true;
         }
     }
 
@@ -40,7 +65,12 @@ namespace wz::engine::assets
                 && size[0] > 0.0f
                 && size[1] > 0.0f
                 && height_samples.size()
-                    == static_cast<size_t>(resolution_x) * resolution_y;
+                    == static_cast<size_t>(resolution_x) * resolution_y
+                && std::isfinite(vertical_scale)
+                && std::isfinite(base_height)
+                && all_finite(origin, 2u)
+                && all_finite(size, 2u)
+                && all_finite(height_samples.data(), height_samples.size());
 
         case CollisionShapeKind::TerrainMeshSurface:
             if (mesh == wz::asset::AssetKey{} || source_triangle_count == 0) {

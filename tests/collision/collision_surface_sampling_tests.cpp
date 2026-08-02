@@ -824,3 +824,56 @@ TEST(CollisionSurfaceSampling, RayMarchTerminatesFarFromTheColliderOrigin)
     EXPECT_FALSE(march_across_field(0.1f, 4.0e6f));
     EXPECT_FALSE(march_across_field(0.1f, 8.0e6f));
 }
+
+// ── Hostile FIELD data, not hostile queries (issue #314, C1-C3) ─────────────
+//
+// The query side of every entry point was already finiteness-checked; the
+// asset's own numbers were trusted. A NaN height sample or vertical_scale
+// therefore produced `hit = true` with position = (nan, nan, nan) -- and the
+// terrain-stick consumer (behavior_command_apply.cpp) writes that straight into
+// a node's world translation, while its own `std::abs(nan - y) > 1e-6f` test
+// reports "nothing changed".
+//
+// CollisionAssetData::valid() now refuses to build such an asset; this pins the
+// runtime half, which is what protects a field that reached memory some other
+// way. It hands the sampler a poisoned asset DIRECTLY for exactly that reason.
+TEST(CollisionSurfaceSampling, NonFiniteFieldDataReportsNoHitRatherThanANaNHit)
+{
+    // Control: the same field with finite data answers normally.
+    {
+        const auto healthy = flat_field_for_march(1.0f);
+        wz::engine::collision::CollisionSurfaceSample sample{};
+        ASSERT_TRUE(wz::engine::collision::sample_terrain_surface(
+            surface_entry(healthy), 2.0f, 2.0f, sample));
+        EXPECT_TRUE(std::isfinite(sample.position.y));
+    }
+
+    {
+        auto poisoned = flat_field_for_march(1.0f);
+        poisoned.vertical_scale = std::nanf("");
+        wz::engine::collision::CollisionSurfaceSample sample{};
+        EXPECT_FALSE(wz::engine::collision::sample_terrain_surface(
+            surface_entry(poisoned), 2.0f, 2.0f, sample));
+        EXPECT_FALSE(sample.hit);
+        EXPECT_TRUE(std::isfinite(sample.position.y));
+    }
+
+    {
+        auto poisoned = flat_field_for_march(1.0f);
+        poisoned.height_samples[12] = std::nanf("");
+        wz::engine::collision::CollisionSurfaceSample sample{};
+        EXPECT_FALSE(wz::engine::collision::sample_terrain_surface(
+            surface_entry(poisoned), 2.0f, 2.0f, sample));
+        EXPECT_FALSE(sample.hit);
+    }
+
+    // The nearest-surface query clamps an off-field probe to the rim, so it
+    // reaches the same reconstruction by a different path -- cover it too.
+    {
+        auto poisoned = flat_field_for_march(1.0f);
+        poisoned.height_samples[12] = INFINITY;
+        wz::engine::collision::CollisionSurfaceSample sample{};
+        EXPECT_FALSE(wz::engine::collision::sample_nearest_terrain_surface(
+            surface_entry(poisoned), 100.0f, 100.0f, sample));
+    }
+}

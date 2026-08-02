@@ -1584,6 +1584,39 @@ namespace wz::engine::collision
         }
     }
 
+    namespace
+    {
+        // The QUERY side of every public entry point below is finiteness-checked;
+        // the ASSET side was trusted, so a NaN in height_samples or
+        // vertical_scale produced hit=true with position=(nan,nan,nan) (#314,
+        // C1-C3). CollisionAssetData::valid() now refuses to build such an asset,
+        // and this is the runtime half of the same guard: whatever the field
+        // holds, a sample that is not finite is not a sample.
+        //
+        // Placed at the public exits rather than at each internal producer so
+        // every path -- exact, nearest, clamped, drawn-surface, ray -- is covered
+        // by one check that a new internal path cannot forget to call.
+        bool finite_sample_or_miss(
+            bool found, CollisionSurfaceSample& out_sample) noexcept
+        {
+            if (!found) {
+                return false;
+            }
+            const bool finite =
+                std::isfinite(out_sample.position.x)
+                && std::isfinite(out_sample.position.y)
+                && std::isfinite(out_sample.position.z)
+                && std::isfinite(out_sample.normal.x)
+                && std::isfinite(out_sample.normal.y)
+                && std::isfinite(out_sample.normal.z);
+            if (finite) {
+                return true;
+            }
+            out_sample = CollisionSurfaceSample{};
+            return false;
+        }
+    }
+
     bool sample_terrain_surface(
         const CollisionWorldEntry& entry,
         float world_x,
@@ -1602,18 +1635,22 @@ namespace wz::engine::collision
 
         switch (entry.resolved->shape_kind) {
         case wz::engine::assets::CollisionShapeKind::TerrainHeightField:
-            return sample_height_field_surface(
-                entry,
-                world_x,
-                world_z,
-                out_sample,
-                observer);
+            return finite_sample_or_miss(
+                sample_height_field_surface(
+                    entry,
+                    world_x,
+                    world_z,
+                    out_sample,
+                    observer),
+                out_sample);
 
         case wz::engine::assets::CollisionShapeKind::TerrainMeshSurface:
-            return sample_mesh_surface(
-                entry,
-                world_x,
-                world_z,
+            return finite_sample_or_miss(
+                sample_mesh_surface(
+                    entry,
+                    world_x,
+                    world_z,
+                    out_sample),
                 out_sample);
 
         default:
@@ -1643,19 +1680,23 @@ namespace wz::engine::collision
             // height so an actor that drove off the heightfield edge sticks to
             // the rim instead of falling through (the exact sampler above does
             // NOT clamp).
-            return sample_height_field_surface(
-                entry,
-                world_x,
-                world_z,
-                out_sample,
-                observer,
-                /*clamp_to_bounds=*/true);
+            return finite_sample_or_miss(
+                sample_height_field_surface(
+                    entry,
+                    world_x,
+                    world_z,
+                    out_sample,
+                    observer,
+                    /*clamp_to_bounds=*/true),
+                out_sample);
 
         case wz::engine::assets::CollisionShapeKind::TerrainMeshSurface:
-            return sample_nearest_mesh_surface(
-                entry,
-                world_x,
-                world_z,
+            return finite_sample_or_miss(
+                sample_nearest_mesh_surface(
+                    entry,
+                    world_x,
+                    world_z,
+                    out_sample),
                 out_sample);
 
         default:
@@ -1689,11 +1730,13 @@ namespace wz::engine::collision
 
         switch (entry.resolved->shape_kind) {
         case wz::engine::assets::CollisionShapeKind::TerrainHeightField:
-            return raycast_height_field_surface(
-                entry,
-                ray_origin,
-                direction,
-                max_distance,
+            return finite_sample_or_miss(
+                raycast_height_field_surface(
+                    entry,
+                    ray_origin,
+                    direction,
+                    max_distance,
+                    out_sample),
                 out_sample);
 
         default:

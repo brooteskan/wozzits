@@ -9,6 +9,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 namespace
 {
     wz::fs::Path test_root(const char* name)
@@ -1391,4 +1393,73 @@ TEST(CollisionAssetModule, ResampleFollowsTheGridConventionOfItsSource)
         1e-5f);
     EXPECT_GT(standalone->height_samples[3], placed->height_samples[3])
         << "the two conventions must actually differ, or this proves nothing";
+}
+
+// ── valid() is the choke point for hostile field data (issue #314, C1-C3) ────
+//
+// A heightfield's own numbers were never checked for finiteness, so a NaN
+// sample reached the runtime sampler, which reported hit=true with a NaN
+// position. Two sibling compilers already validate exactly this
+// (audio_clip_compilers.cpp's validate_finite, scalar_field_compilers.cpp's
+// per-index NaN/inf rejection); collision was the sibling that never got it.
+//
+// The check lives in valid() rather than in the compiler because valid() is the
+// choke point BOTH the compile path and the disk-cache LOAD path pass through,
+// so a poisoned cache blob cannot slip past it.
+TEST(CollisionAssetModule, HeightfieldValidRejectsNonFiniteFieldData)
+{
+    using wz::engine::assets::CollisionAssetData;
+    using wz::engine::assets::CollisionShapeKind;
+
+    const auto make_field = [] {
+        CollisionAssetData data{};
+        data.source_asset = wz::asset::AssetKey{ 1u, 2u };
+        data.shape_kind = CollisionShapeKind::TerrainHeightField;
+        data.bounds_min[0] = 0.0f;
+        data.bounds_min[1] = 0.0f;
+        data.bounds_min[2] = 0.0f;
+        data.bounds_max[0] = 2.0f;
+        data.bounds_max[1] = 1.0f;
+        data.bounds_max[2] = 2.0f;
+        data.origin[0] = 0.0f;
+        data.origin[1] = 0.0f;
+        data.size[0] = 2.0f;
+        data.size[1] = 2.0f;
+        data.resolution_x = 2u;
+        data.resolution_y = 2u;
+        data.vertical_scale = 1.0f;
+        data.base_height = 0.0f;
+        data.height_samples = { 0.0f, 1.0f, 0.0f, 1.0f };
+        return data;
+    };
+
+    // Control: the same field with finite numbers is valid, so every rejection
+    // below is the finiteness check firing and nothing else.
+    ASSERT_TRUE(make_field().valid());
+
+    {
+        auto data = make_field();
+        data.height_samples[2] = std::nanf("");
+        EXPECT_FALSE(data.valid());
+    }
+    {
+        auto data = make_field();
+        data.height_samples[2] = INFINITY;
+        EXPECT_FALSE(data.valid());
+    }
+    {
+        auto data = make_field();
+        data.vertical_scale = std::nanf("");
+        EXPECT_FALSE(data.valid());
+    }
+    {
+        auto data = make_field();
+        data.base_height = -INFINITY;
+        EXPECT_FALSE(data.valid());
+    }
+    {
+        auto data = make_field();
+        data.origin[1] = std::nanf("");
+        EXPECT_FALSE(data.valid());
+    }
 }
