@@ -114,10 +114,23 @@ namespace wz::engine::rendering
 
         [[nodiscard]] wz::gpu::GPUHandle gpu_handle_for(
             wz::rhi::GpuResourceHandle handle) const;
+
+        // Release and forget every cached table that views a resource the rhi
+        // registry no longer has. Called on a cache MISS -- the only moment
+        // the cache grows, and so the only one worth paying a sweep for; a HIT
+        // cannot be stale, because a released handle stops resolving and its
+        // entry is precisely what this drops. See the Entry comment in the .cpp
+        // for why keying on rhi handles is what makes this question askable at
+        // all (#317).
+        void drop_dead_descriptor_tables();
+
+        // `resources` (rhi handles) keys the cache; `gpu_resources` (the
+        // resolved engine handles, index-aligned) builds the table.
         [[nodiscard]] const wz::gpu::dx12::DX12DescriptorTable*
         descriptor_table_for(
             uint32_t slot,
-            std::vector<wz::gpu::GPUHandle> resources,
+            std::vector<wz::rhi::GpuResourceHandle> resources,
+            const std::vector<wz::gpu::GPUHandle>& gpu_resources,
             std::vector<wz::gpu::dx12::internal::DescriptorViewKind> kinds);
 
         wz::gpu::Device* device_ = nullptr;

@@ -71,7 +71,21 @@ namespace wz::engine::rendering
         struct Entry
         {
             uint32_t binding_slot = 0;
-            std::vector<wz::gpu::GPUHandle> resources;
+            // Keyed by the RHI handles, not the resolved engine GPUHandles.
+            //
+            // The engine handle is a snapshot taken at bind time. When the rhi
+            // registry later releases and collects the resource the engine slot
+            // bumps its epoch, so the cached key could never match again --
+            // correct, but it made the entry permanently unmatchable dead
+            // weight holding a real allocation in a 16384-descriptor
+            // shader-visible heap. Nothing in the release path told the
+            // recorder, and the only sweep was scoped to a graph swap.
+            //
+            // Keyed by the rhi handle instead, "the resource died" and "this
+            // table is dead" become the SAME QUESTION -- one the registry can
+            // answer -- which is the invariant the rhi registry exists to make
+            // checkable. See #317.
+            std::vector<wz::rhi::GpuResourceHandle> resources;
             std::vector<wz::gpu::dx12::internal::DescriptorViewKind> kinds;
             wz::gpu::dx12::DX12DescriptorTable table{};
         };
@@ -323,6 +337,11 @@ namespace wz::engine::rendering
             return;
         }
 
+        // Both spellings: the rhi handles key the cache (they are what the
+        // registry can still answer questions about), the resolved engine
+        // handles build the table.
+        std::vector<wz::rhi::GpuResourceHandle> rhi_resources;
+        rhi_resources.reserve(group.resource_count());
         std::vector<wz::gpu::GPUHandle> resources;
         resources.reserve(group.resource_count());
         for (wz::rhi::GpuResourceHandle handle : group.resources()) {
@@ -346,6 +365,7 @@ namespace wz::engine::rendering
                       "registered at render time)";
                 return;
             }
+            rhi_resources.push_back(handle);
             resources.push_back(gpu);
         }
 
@@ -371,7 +391,8 @@ namespace wz::engine::rendering
         const wz::gpu::dx12::DX12DescriptorTable* table =
             descriptor_table_for(
                 slot,
-                std::move(resources),
+                std::move(rhi_resources),
+                resources,
                 std::move(kinds));
         if (!table || !table->valid()) {
             ready_ = false;
@@ -464,10 +485,38 @@ namespace wz::engine::rendering
                         : wz::gpu::GPUHandle{};
     }
 
+    void RhiDx12CommandRecorder::drop_dead_descriptor_tables()
+    {
+        if (!descriptor_tables_ || !device_ || !resources_) {
+            return;
+        }
+
+        const auto is_dead = [this](const DescriptorTableCache::Entry& entry) {
+            for (const wz::rhi::GpuResourceHandle handle : entry.resources) {
+                if (!resources_->get(handle)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        std::erase_if(
+            descriptor_tables_->entries,
+            [this, &is_dead](DescriptorTableCache::Entry& entry) {
+                if (!is_dead(entry)) {
+                    return false;
+                }
+                wz::gpu::dx12::internal::release_compute_buffer_srv_table(
+                    *device_, entry.table);
+                return true;
+            });
+    }
+
     const wz::gpu::dx12::DX12DescriptorTable*
     RhiDx12CommandRecorder::descriptor_table_for(
         uint32_t slot,
-        std::vector<wz::gpu::GPUHandle> resources,
+        std::vector<wz::rhi::GpuResourceHandle> resources,
+        const std::vector<wz::gpu::GPUHandle>& gpu_resources,
         std::vector<wz::gpu::dx12::internal::DescriptorViewKind> kinds)
     {
         if (!descriptor_tables_) {
@@ -486,11 +535,19 @@ namespace wz::engine::rendering
             return &existing->table;
         }
 
+        // MISS, i.e. we are about to grow the cache -- the one moment worth
+        // paying for a sweep. Reaping here rather than per-bind keeps the hot
+        // path (a hit) untouched while still bounding the cache: every entry
+        // added is preceded by a chance to reclaim the dead ones. A hit cannot
+        // be stale, because a released handle stops resolving and its entry is
+        // exactly what this drops.
+        drop_dead_descriptor_tables();
+
         wz::gpu::dx12::DX12DescriptorTable table{};
         if (!device_
             || !wz::gpu::dx12::internal::create_resource_descriptor_table(
                 *device_,
-                resources,
+                gpu_resources,
                 kinds,
                 table))
         {

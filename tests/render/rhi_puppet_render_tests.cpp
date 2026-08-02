@@ -547,6 +547,68 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
             wz::gpu::release_texture(device, s1_rt);
         }
 
+        // ── #317 pin: the descriptor-table cache must not grow with the
+        // number of RETIRED mask sets.
+        //
+        // Mask sets are per target size and LRU-capped at kMaxPuppetMaskSets
+        // (4), so past that cap every new size evicts one set and acquires
+        // another. Each acquire re-points the masked Parts' SRGs at new
+        // textures, and every distinct (atlas, mask-target) pair builds a new
+        // cached descriptor table. The evicted set's textures are released and
+        // collected -- their engine GPUHandles bump epoch and can never match
+        // again -- but nothing told the recorder, so their tables stayed
+        // cached forever: a permanent allocation in a 16384-descriptor
+        // shader-visible heap, plus an O(entries) full-vector scan on EVERY
+        // bind_resource_group. Resizing the editor window is the everyday
+        // trigger; one slow drag emits hundreds of WM_SIZE messages.
+        //
+        // Measured at the LRU cap, so the LIVE table count is already steady:
+        // eight further distinct sizes must not add any.
+        {
+            const auto render_at = [&](std::uint32_t size) {
+                wz::gpu::TextureDesc desc{};
+                desc.width = size;
+                desc.height = size;
+                desc.format = wz::gpu::TextureFormat::RGBA8Unorm;
+                desc.render_target = true;
+                const wz::gpu::GPUHandle rt = wz::gpu::create_texture(device, desc);
+                ASSERT_TRUE(rt.valid());
+                ASSERT_TRUE(wz::gpu::begin_frame(device));
+                wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+                EXPECT_TRUE(renderer.render_scene(
+                    nodes, assets, view_projection, camera_world_pos, {},
+                    nullptr, rt));
+                ASSERT_TRUE(wz::gpu::end_frame(device));
+                wz::gpu::present(device, /*sync_interval*/ 0);
+                wz::gpu::release_texture(device, rt);
+            };
+
+            // Fill the mask-set LRU (4 sets) so the live table count is at its
+            // steady state before we start measuring.
+            for (std::uint32_t i = 0; i < 4; ++i) {
+                render_at(64u + i * 8u);
+            }
+            const std::size_t tables_at_cap =
+                renderer.cached_descriptor_table_count();
+            EXPECT_GT(tables_at_cap, 0u)
+                << "the puppet's Part SRGs built no descriptor tables";
+
+            // Eight more distinct sizes: each evicts one set and acquires
+            // another, so the number of LIVE tables is unchanged.
+            for (std::uint32_t i = 4; i < 12; ++i) {
+                render_at(64u + i * 8u);
+            }
+            const std::size_t tables_after_churn =
+                renderer.cached_descriptor_table_count();
+
+            EXPECT_LE(tables_after_churn, tables_at_cap)
+                << "the descriptor-table cache grew with retired mask sets: "
+                << tables_at_cap << " at the LRU cap -> " << tables_after_churn
+                << " after 8 more sizes. Those extra entries view released "
+                   "resources, can never match again, and are never freed "
+                   "until a graph swap.";
+        }
+
         // Structural wiring proofs:
         //  - the puppet program realized from the asset compiler (no render-time
         //    bridge), like the splat/clipmap tests assert,
