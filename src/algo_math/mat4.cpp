@@ -89,7 +89,14 @@ namespace wz::math
         Mat4 R = rotation(qinv);
         Mat4 T = translation(rotate(qinv, neg_pos));
 
-        return mul(R, T);
+        // mul(T, R), not mul(R, T). The translation is ALREADY rotated by qinv
+        // on the line above, so composing it on the far side of R rotated it a
+        // second time (#314, C1-C7). Measured before the fix: a camera at
+        // (10,0,0) rotated 90 degrees about Y mapped its OWN position to
+        // (10,0,10) instead of to the origin. Every test covering this put the
+        // camera at the origin or at identity rotation -- the two cases where
+        // the two orderings agree.
+        return mul(T, R);
     }
 
     Mat4 view_matrix(const Camera& camera)
@@ -108,7 +115,14 @@ namespace wz::math
         Mat4 R = rotation(qinv);
         Mat4 T = translation(rotate(qinv, neg_pos));
 
-        return mul(R, T);
+        // mul(T, R), not mul(R, T). The translation is ALREADY rotated by qinv
+        // on the line above, so composing it on the far side of R rotated it a
+        // second time (#314, C1-C7). Measured before the fix: a camera at
+        // (10,0,0) rotated 90 degrees about Y mapped its OWN position to
+        // (10,0,10) instead of to the origin. Every test covering this put the
+        // camera at the origin or at identity rotation -- the two cases where
+        // the two orderings agree.
+        return mul(T, R);
     }
 
 
@@ -382,22 +396,4 @@ namespace wz::math
         return std::max(sx, std::max(sy, sz));
     }
 
-    bool intersects(const Frustum& f, const Sphere& s)
-    {
-        for (int i = 0; i < 6; ++i)
-        {
-            const Vec4& p = f.planes[i].asVec4;
-
-            float distance =
-                p.x * s.center.x +
-                p.y * s.center.y +
-                p.z * s.center.z +
-                p.w;
-
-            if (distance < -s.radius)
-                return false;
-        }
-
-        return true;
-    }
 }

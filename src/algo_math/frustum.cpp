@@ -4,28 +4,6 @@
 
 using namespace wz::math;
 
-namespace
-{
-    static Plane extract_plane(const Mat4& m, int row_sign)
-    {
-        // row_sign encodes which plane combination we use
-        // we construct row = m.col3 ± m.colX
-
-        Plane p;
-
-        p.normal.x = m.m[3] + row_sign * m.m[0];
-        p.normal.y = m.m[7] + row_sign * m.m[4];
-        p.normal.z = m.m[11] + row_sign * m.m[8];
-        p.distance = m.m[15] + row_sign * m.m[12];
-
-        float len = length(p.normal);
-        p.normal = p.normal / len;
-        p.distance /= len;
-
-        return p;
-    }
-}
-
 namespace wz::math
 {
     bool intersects_sphere(const Frustum& f, const Vec3& c, float r)
