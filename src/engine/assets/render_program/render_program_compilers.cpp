@@ -832,9 +832,22 @@ namespace wz::engine::assets::internal
                 wz::engine::rendering::to_rhi_render_program_desc(
                     resolved, descriptor_semantics, constant_semantics);
             if (!rhi_desc) {
+                // The old message promised "renderer will bridge at render
+                // time". It cannot: the render-time path calls the same
+                // converter family over the same data, so it fails identically
+                // and logs a generic "program bridge failed" one frame later.
+                // A conversion failure HERE is terminal for the rhi path, and
+                // saying otherwise sent debugging at shaders and bindings when
+                // the cause was one unset string (#317).
+                const std::string reason =
+                    wz::engine::rendering::render_program_bridge_refusal(
+                        resolved.root_constants, resolved.descriptor_bindings);
                 logger.warn(
-                    "rhi render-program: desc conversion failed; "
-                    "renderer will bridge at render time");
+                    "rhi render-program: cannot convert '" + resolved.name
+                    + "' to the rhi contract, so it will NOT render on the rhi "
+                      "path"
+                    + (reason.empty() ? std::string()
+                                      : std::string(" — ") + reason));
                 return;
             }
             rhi_desc->name = wz::engine::rendering::program_ref(program_key);

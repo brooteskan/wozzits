@@ -211,6 +211,56 @@ TEST(RhiRenderProgramBridge, EmptyRootConstantSemanticIsMalformed)
     EXPECT_FALSE(converted.has_value());
 }
 
+// The refusal above is correct and, on its own, undebuggable: "desc conversion
+// failed" and "program bridge failed" were the only two things the engine said,
+// and neither names the field. The cause that actually occurs in shipping code
+// is a root-constant block with no semantic -- one unset string in producers
+// that otherwise look complete (the scene `render_shader` path and all 14
+// fill_builtin_render_program_defaults blocks). Measured: those descs convert
+// to nullopt 100% of the time. See #317.
+//
+// This pins that the reason names the field, not just that a reason exists --
+// an empty-vs-nonempty assertion would pass against any string at all.
+TEST(RhiRenderProgramBridge, RefusalNamesTheUnnamedRootConstantBlock)
+{
+    ea::CustomRenderProgramDesc src = make_mask_style_desc();
+
+    // A well-formed desc has nothing to report.
+    EXPECT_TRUE(
+        wz::engine::rendering::render_program_bridge_refusal(
+            src.root_constants, src.descriptor_bindings).empty());
+
+    src.root_constants[0].semantic.clear();
+    const std::string reason =
+        wz::engine::rendering::render_program_bridge_refusal(
+            src.root_constants, src.descriptor_bindings);
+
+    // The converter and the explanation must agree about this desc.
+    wz::rhi::DescriptorSemanticRegistry descriptors;
+    wz::rhi::ConstantSemanticRegistry constants;
+    EXPECT_FALSE(
+        wz::engine::rendering::to_rhi_render_program_desc(
+            src, descriptors, constants).has_value());
+
+    ASSERT_FALSE(reason.empty())
+        << "the converter refuses this desc but nothing explains why";
+    EXPECT_NE(reason.find("root constant"), std::string::npos) << reason;
+    EXPECT_NE(reason.find("semantic"), std::string::npos) << reason;
+}
+
+TEST(RhiRenderProgramBridge, RefusalNamesAnUnknownDescriptorSemantic)
+{
+    ea::CustomRenderProgramDesc src = make_mask_style_desc();
+    ASSERT_FALSE(src.descriptor_bindings.empty());
+    src.descriptor_bindings[0].semantic = ea::DescriptorSemantic::Unknown;
+
+    const std::string reason =
+        wz::engine::rendering::render_program_bridge_refusal(
+            src.root_constants, src.descriptor_bindings);
+    ASSERT_FALSE(reason.empty());
+    EXPECT_NE(reason.find("descriptor binding"), std::string::npos) << reason;
+}
+
 TEST(RhiRenderProgramBridge, UnknownDescriptorSemanticIsMalformed)
 {
     ea::CustomRenderProgramDesc src = make_mask_style_desc();

@@ -305,6 +305,56 @@ namespace wz::engine::rendering
     // shader compiled last. key_to_dep_hash mixes all four hashes into one 128-
     // bit value, so the ref is 1:1 with the asset key (same 32-hex width as
     // before; refs are runtime-only, nothing persisted depends on the format).
+    std::string render_program_bridge_refusal(
+        std::span<const ea::RootConstantBinding> root_constants,
+        std::span<const ea::DescriptorBinding> descriptor_bindings)
+    {
+        // Kept beside convert_render_program_desc deliberately: it enumerates
+        // the same refusals, so the two drift together or not at all.
+        for (std::size_t i = 0; i < root_constants.size(); ++i) {
+            if (root_constants[i].semantic.empty()) {
+                return "root constant block #" + std::to_string(i)
+                    + " (" + std::to_string(root_constants[i].value_count)
+                    + " dwords at register space "
+                    + std::to_string(root_constants[i].register_space)
+                    + ") has no semantic name; rhi's ConstantsLayout cannot "
+                      "hold an unnamed block";
+            }
+        }
+        for (std::size_t i = 0; i < descriptor_bindings.size(); ++i) {
+            if (descriptor_bindings[i].semantic
+                == ea::DescriptorSemantic::Unknown)
+            {
+                return "descriptor binding #" + std::to_string(i)
+                    + " at register space "
+                    + std::to_string(descriptor_bindings[i].register_space)
+                    + " has semantic Unknown";
+            }
+        }
+
+        // More than one root-constant block in a single register space: rhi
+        // holds exactly one constants binding per SRG.
+        for (std::size_t i = 0; i < root_constants.size(); ++i) {
+            for (std::size_t j = i + 1; j < root_constants.size(); ++j) {
+                if (root_constants[i].register_space
+                    == root_constants[j].register_space
+                    && !(root_constants[i].visibility
+                             == root_constants[j].visibility
+                         && root_constants[i].shader_register
+                             == root_constants[j].shader_register))
+                {
+                    return "root constant blocks #" + std::to_string(i)
+                        + " and #" + std::to_string(j)
+                        + " share register space "
+                        + std::to_string(root_constants[i].register_space)
+                        + " with different bindings; rhi allows one constants "
+                          "binding per resource group";
+                }
+            }
+        }
+        return {};
+    }
+
     std::string shader_ref(const wz::asset::AssetKey& key)
     {
         const wz::asset::Hash id =

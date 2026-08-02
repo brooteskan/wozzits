@@ -1347,7 +1347,16 @@ namespace wz::engine::rendering
             *data, program_key, vertex_key, pixel_key,
             gpu_.descriptor_semantics, gpu_.constant_semantics);
         if (!converted) {
-            logger_.error("RhiSceneRenderer: program bridge failed");
+            // Name the field. "program bridge failed" is true and useless: the
+            // cause that actually occurs is a root-constant block with no
+            // semantic, which looks like nothing at all in the authored data
+            // (#317).
+            const std::string reason =
+                wz::engine::rendering::render_program_bridge_refusal(
+                    data->root_constants, data->descriptor_bindings);
+            logger_.error(
+                "RhiSceneRenderer: program bridge failed"
+                + (reason.empty() ? std::string() : std::string(" — ") + reason));
             return nullptr;
         }
 

@@ -46,6 +46,19 @@ namespace wz::engine::rendering
         const char* target,
         wz::Logger& logger);
 
+    // Why to_rhi_render_program_desc would refuse a program, as a sentence, or
+    // an empty string when nothing here would refuse it.
+    //
+    // Purely diagnostic: the converters still just return nullopt. It exists
+    // because "desc conversion failed" sent debugging at shaders, bindings and
+    // the asset graph when the actual cause was a root-constant block with no
+    // NAME -- one unset string, in producers that otherwise look complete
+    // (#317). Both call sites hold these spans already.
+    std::string render_program_bridge_refusal(
+        std::span<const wz::engine::assets::RootConstantBinding> root_constants,
+        std::span<const wz::engine::assets::DescriptorBinding>
+            descriptor_bindings);
+
     // Convert an authored custom render-program description to the rhi contract.
     // Descriptor semantics are resolved into Tags in the provided rhi registry
     // (the open-identity-enum -> registry conversion). Shader AssetKeys are
