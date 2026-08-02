@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <d3d12.h>
+#include <d3d12shader.h>
 #include <d3dcompiler.h>
 #include <optional>
 #include <span>
@@ -480,6 +481,220 @@ namespace wz::engine::rendering
         return std::nullopt;
     }
 
+    std::vector<std::string> shader_binding_disagreements(
+        std::span<const wz::rhi::ShaderResourceGroupLayout>
+            shader_resource_groups,
+        std::span<const uint8_t> bytecode,
+        std::string_view stage)
+    {
+        std::vector<std::string> out;
+        if (bytecode.empty()) {
+            return out;
+        }
+
+        ID3D12ShaderReflection* reflection = nullptr;
+        if (FAILED(D3DReflect(
+                bytecode.data(),
+                bytecode.size(),
+                IID_PPV_ARGS(&reflection)))
+            || !reflection)
+        {
+            // Reflection data can legitimately be absent (a stripped blob);
+            // that is not a disagreement.
+            return out;
+        }
+
+        D3D12_SHADER_DESC shader{};
+        if (FAILED(reflection->GetDesc(&shader))) {
+            reflection->Release();
+            return out;
+        }
+
+        const std::string prefix = std::string(stage) + " shader: ";
+        const auto at = [](uint32_t reg, uint32_t space) {
+            return "register " + std::to_string(reg) + " space "
+                + std::to_string(space);
+        };
+
+        for (UINT i = 0; i < shader.BoundResources; ++i) {
+            D3D12_SHADER_INPUT_BIND_DESC bind{};
+            if (FAILED(reflection->GetResourceBindingDesc(i, &bind))) {
+                continue;
+            }
+            const std::string name = bind.Name ? bind.Name : "<unnamed>";
+
+            if (bind.Type == D3D_SIT_CBUFFER) {
+                // The one thing D3D12 itself will not check. A root signature
+                // declaring fewer DWORDs than the shader's cbuffer occupies is
+                // ACCEPTED by CreateGraphicsPipelineState; the shader then
+                // reads past what was ever written.
+                const wz::rhi::ShaderResourceGroupLayout* group = nullptr;
+                for (const wz::rhi::ShaderResourceGroupLayout& candidate :
+                     shader_resource_groups)
+                {
+                    if (!candidate.constants.empty()
+                        && candidate.constants_binding.shader_register
+                            == bind.BindPoint
+                        && candidate.constants_binding.register_space
+                            == bind.Space)
+                    {
+                        group = &candidate;
+                        break;
+                    }
+                }
+                if (!group) {
+                    out.push_back(
+                        prefix + "declares cbuffer '" + name + "' at "
+                        + at(bind.BindPoint, bind.Space)
+                        + ", which the layout does not declare");
+                    continue;
+                }
+                ID3D12ShaderReflectionConstantBuffer* cb =
+                    reflection->GetConstantBufferByName(name.c_str());
+                D3D12_SHADER_BUFFER_DESC cb_desc{};
+                if (cb && SUCCEEDED(cb->GetDesc(&cb_desc))) {
+                    // Compare the last DECLARED FIELD, not the buffer's size.
+                    // HLSL pads a cbuffer to a float4 boundary, so a block of
+                    // 39 declared dwords reports Size == 40 -- measured on the
+                    // shipped HutConstants (39 -> 40) and FlashConstants
+                    // (17 -> 20). Comparing sizes flags every well-formed
+                    // program in the tree; comparing field extents flags only a
+                    // field the root signature will not write.
+                    uint32_t last_field_dword = 0;
+                    for (UINT v = 0; v < cb_desc.Variables; ++v) {
+                        ID3D12ShaderReflectionVariable* var =
+                            cb->GetVariableByIndex(v);
+                        D3D12_SHADER_VARIABLE_DESC var_desc{};
+                        if (!var || FAILED(var->GetDesc(&var_desc))) {
+                            continue;
+                        }
+                        const uint32_t end_dword =
+                            (var_desc.StartOffset + var_desc.Size + 3u) / 4u;
+                        last_field_dword =
+                            end_dword > last_field_dword
+                                ? end_dword
+                                : last_field_dword;
+                    }
+                    const uint32_t layout_dwords =
+                        group->constants.dword_count();
+                    if (last_field_dword > layout_dwords) {
+                        out.push_back(
+                            prefix + "cbuffer '" + name + "' at "
+                            + at(bind.BindPoint, bind.Space)
+                            + " declares fields out to dword "
+                            + std::to_string(last_field_dword)
+                            + " but the layout supplies only "
+                            + std::to_string(layout_dwords)
+                            + " — the last "
+                            + std::to_string(last_field_dword - layout_dwords)
+                            + " dword(s) are read but never written");
+                    }
+                }
+                continue;
+            }
+
+            if (bind.Type == D3D_SIT_SAMPLER) {
+                bool declared = false;
+                for (const wz::rhi::ShaderResourceGroupLayout& group :
+                     shader_resource_groups)
+                {
+                    for (const wz::rhi::StaticSamplerBinding& sampler :
+                         group.static_samplers)
+                    {
+                        declared = declared
+                            || (sampler.shader_register == bind.BindPoint
+                                && sampler.register_space == bind.Space);
+                    }
+                    for (const wz::rhi::DescriptorBinding& descriptor :
+                         group.descriptors)
+                    {
+                        declared = declared
+                            || (descriptor.kind
+                                    == wz::rhi::DescriptorKind::Sampler
+                                && descriptor.shader_register == bind.BindPoint
+                                && descriptor.register_space == bind.Space);
+                    }
+                }
+                if (!declared) {
+                    out.push_back(
+                        prefix + "samples '" + name + "' at "
+                        + at(bind.BindPoint, bind.Space)
+                        + ", which the layout does not declare");
+                }
+                continue;
+            }
+
+            // SRV / UAV.
+            const wz::rhi::DescriptorBinding* declared = nullptr;
+            for (const wz::rhi::ShaderResourceGroupLayout& group :
+                 shader_resource_groups)
+            {
+                for (const wz::rhi::DescriptorBinding& descriptor :
+                     group.descriptors)
+                {
+                    if (descriptor.shader_register == bind.BindPoint
+                        && descriptor.register_space == bind.Space
+                        && descriptor.kind != wz::rhi::DescriptorKind::Sampler)
+                    {
+                        declared = &descriptor;
+                        break;
+                    }
+                }
+                if (declared) {
+                    break;
+                }
+            }
+            if (!declared) {
+                out.push_back(
+                    prefix + "binds '" + name + "' at "
+                    + at(bind.BindPoint, bind.Space)
+                    + ", which the layout does not declare");
+                continue;
+            }
+
+            // The layout builds the view; if the shader wants a different
+            // shape at that register it reads the right memory the wrong way.
+            const bool wants_texture =
+                bind.Type == D3D_SIT_TEXTURE;
+            const bool wants_uav =
+                bind.Type == D3D_SIT_UAV_RWTYPED
+                || bind.Type == D3D_SIT_UAV_RWSTRUCTURED
+                || bind.Type == D3D_SIT_UAV_RWBYTEADDRESS
+                || bind.Type == D3D_SIT_UAV_APPEND_STRUCTURED
+                || bind.Type == D3D_SIT_UAV_CONSUME_STRUCTURED
+                || bind.Type == D3D_SIT_UAV_RWSTRUCTURED_WITH_COUNTER;
+            const wz::rhi::DescriptorKind expected =
+                wants_uav      ? wz::rhi::DescriptorKind::UAV
+                : wants_texture ? wz::rhi::DescriptorKind::TextureSRV
+                                : wz::rhi::DescriptorKind::StructuredBufferSRV;
+            if (declared->kind != expected) {
+                const auto kind_name = [](wz::rhi::DescriptorKind kind) {
+                    switch (kind) {
+                    case wz::rhi::DescriptorKind::StructuredBufferSRV:
+                        return "StructuredBufferSRV";
+                    case wz::rhi::DescriptorKind::TextureSRV:
+                        return "TextureSRV";
+                    case wz::rhi::DescriptorKind::Sampler:
+                        return "Sampler";
+                    case wz::rhi::DescriptorKind::UAV:
+                        return "UAV";
+                    }
+                    return "?";
+                };
+                out.push_back(
+                    prefix + "binds '" + name + "' at "
+                    + at(bind.BindPoint, bind.Space) + " as "
+                    + kind_name(expected) + " but the layout declares "
+                    + kind_name(declared->kind)
+                    + " — the descriptor built there views the memory the "
+                      "wrong way");
+            }
+        }
+
+        reflection->Release();
+        return out;
+    }
+
     std::optional<RhiDx12PipelineLayout> plan_dx12_pipeline_layout(
         std::span<const wz::rhi::ShaderResourceGroupLayout>
             shader_resource_groups)
@@ -656,6 +871,49 @@ namespace wz::engine::rendering
                         + std::string(desc->name));
                 }
                 return nullptr;
+            }
+
+            // Does the shader agree with the layout that will be bound to it?
+            // Nothing else asks: not rhi, not the bridge, not the root
+            // signature, and not the D3D12 runtime, which accepts a root
+            // signature declaring 4 constants against a 20-dword cbuffer.
+            //
+            // Fails CLOSED because the alternative is silent: a shader reading
+            // dwords the root signature never writes renders garbage with no
+            // error anywhere. Checked BEFORE the root signature is created so
+            // there is nothing to release on the way out.
+            //
+            // Corpus-checked before landing: zero disagreements across
+            // test_mesh_001 (16 programs), test_rebind_fixture and
+            // glb_scene_source_fixture, so nothing shipping is refused today.
+            // Reflection data can legitimately be absent from a stripped blob,
+            // and then this reports nothing -- it cannot check, so it does not
+            // refuse.
+            {
+                std::vector<std::string> disagreements =
+                    shader_binding_disagreements(
+                        desc->shader_resource_groups,
+                        bytecode->vertex,
+                        "vertex");
+                for (std::string& pixel_disagreement :
+                     shader_binding_disagreements(
+                         desc->shader_resource_groups,
+                         bytecode->pixel,
+                         "pixel"))
+                {
+                    disagreements.push_back(std::move(pixel_disagreement));
+                }
+                if (!disagreements.empty()) {
+                    if (logger_) {
+                        for (const std::string& disagreement : disagreements) {
+                            logger_->error(
+                                std::string("RhiDx12PipelineCache::realize: ")
+                                + std::string(desc->name) + ": "
+                                + disagreement);
+                        }
+                    }
+                    return nullptr;
+                }
             }
 
             ID3D12Device* d3d = wz::gpu::dx12::internal::get_device(*device_);

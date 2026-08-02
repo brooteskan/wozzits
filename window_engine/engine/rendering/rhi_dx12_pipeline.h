@@ -15,6 +15,8 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 struct ID3D12PipelineState;
@@ -123,6 +125,40 @@ namespace wz::engine::rendering
             return root_signature && pipeline_state;
         }
     };
+
+    // Reflect a compiled shader and report every place it disagrees with the
+    // layout that will be bound to it, one line per disagreement. Empty when
+    // they agree.
+    //
+    // The layout is nominally the single source of truth for registers and
+    // cbuffer offsets (#231), and roughly twenty shipped engine shaders
+    // hand-declare theirs anyway -- so one mapping is maintained in several
+    // independent copies with nothing under them. Nothing checked: not rhi, not
+    // the bridge, not the root signature, and NOT the D3D12 runtime, which
+    // accepts a root signature declaring 4 constants against a shader whose
+    // cbuffer occupies 20 DWORDs (measured). See #317.
+    //
+    // WHAT THIS CAN AND CANNOT CATCH, because the difference matters:
+    //   * cbuffer SIZE disagreement -- caught here, caught nowhere else, and
+    //     the failure is silent garbage reads.
+    //   * resource KIND disagreement (the shader declares Texture2D where the
+    //     layout declares a StructuredBuffer at the same register) -- caught
+    //     here; D3D12 builds the wrong view and renders garbage.
+    //   * a register the shader binds and the layout never declares -- caught
+    //     here with names, and by CreateGraphicsPipelineState afterwards with
+    //     an hr.
+    //   * SEMANTIC identity -- NOT caught. Reflection yields the shader's own
+    //     variable name, which is arbitrary, so a layout REORDER that keeps
+    //     every register occupied but repoints them cannot be detected from
+    //     bytecode alone. That half needs the shader to stop restating the
+    //     registers (the #231 prelude), which is a decision about having two
+    //     mechanisms for one contract rather than a check.
+    [[nodiscard]] std::vector<std::string>
+    shader_binding_disagreements(
+        std::span<const wz::rhi::ShaderResourceGroupLayout>
+            shader_resource_groups,
+        std::span<const uint8_t> bytecode,
+        std::string_view stage);
 
     [[nodiscard]] std::optional<RhiDx12PipelineLayout>
     plan_dx12_pipeline_layout(

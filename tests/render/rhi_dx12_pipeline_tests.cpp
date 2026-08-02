@@ -516,3 +516,123 @@ TEST(RhiDx12Pipeline, WidestShippedPresetStillFitsTheBudget)
     EXPECT_EQ(
         wz::engine::rendering::dx12_root_signature_dword_cost(*planned), 61u);
 }
+
+// ── Shader/layout agreement (#317) ──────────────────────────────────────────
+//
+// The layout is nominally the single source of truth for registers and cbuffer
+// offsets, and ~20 shipped engine shaders hand-declare theirs anyway. Nothing
+// checked that they agree -- not rhi, not the bridge, not the root signature,
+// and NOT the D3D12 runtime, which accepts a root signature declaring 4
+// constants against a shader whose cbuffer occupies 20 DWORDs. The failure is
+// a wrong picture with no error anywhere.
+//
+// Device-free: reflection reads bytecode, and D3DCompile needs no device.
+namespace
+{
+    // 16 dwords of matrix + 4 of tint = 20 declared dwords. space2 requires
+    // shader model 5.1.
+    constexpr const char* kProbeShaderHlsl = R"(
+cbuffer Probe : register(b0, space2)
+{
+    float4x4 mvp;
+    float4   tint;
+};
+float4 main(uint vid : SV_VertexID) : SV_Position
+{
+    return mul(mvp, float4(tint.xyz, 1.0f));
+}
+)";
+
+    // 16 + 3 = 19 declared dwords, which HLSL pads to 20. This is the shape
+    // that made a naive size comparison flag every well-formed program in the
+    // tree -- the shipped HutConstants (39 -> 40) and FlashConstants
+    // (17 -> 20) both live here.
+    constexpr const char* kPaddedShaderHlsl = R"(
+cbuffer Probe : register(b0, space2)
+{
+    float4x4 mvp;
+    float3   tint;
+};
+float4 main(uint vid : SV_VertexID) : SV_Position
+{
+    return mul(mvp, float4(tint, 1.0f));
+}
+)";
+
+    std::vector<uint8_t> compile_probe(const char* hlsl, wz::Logger& logger)
+    {
+        const std::string_view source{ hlsl };
+        const auto bytecode = wz::engine::rendering::compile_hlsl_bytecode(
+            std::span<const uint8_t>{
+                reinterpret_cast<const uint8_t*>(source.data()),
+                source.size() },
+            "main",
+            "vs_5_1",
+            logger);
+        EXPECT_TRUE(bytecode.has_value());
+        return bytecode ? *bytecode : std::vector<uint8_t>{};
+    }
+
+    std::vector<wz::rhi::ShaderResourceGroupLayout> layout_with_dwords(
+        wz::rhi::Tag semantic, uint32_t dwords)
+    {
+        wz::rhi::ShaderResourceGroupLayout slot_2;
+        slot_2.binding_slot = 2;
+        slot_2.constants_binding = wz::rhi::RootConstantsBinding{
+            wz::rhi::ShaderStage::All, /*shader_register*/ 0,
+            /*register_space*/ 2 };
+        EXPECT_TRUE(slot_2.constants.append(
+            semantic, dwords * sizeof(uint32_t)));
+        return { slot_2 };
+    }
+}
+
+TEST(RhiDx12ShaderBindings, UndersizedConstantBlockIsReported)
+{
+    wz::Logger logger;
+    const std::vector<uint8_t> bytecode =
+        compile_probe(kProbeShaderHlsl, logger);
+    ASSERT_FALSE(bytecode.empty());
+
+    wz::rhi::TagRegistry<8> tags;
+    const wz::rhi::Tag semantic = tags.acquire("probe_constants");
+
+    // CONTROL: the layout supplies exactly what the shader declares.
+    EXPECT_TRUE(
+        wz::engine::rendering::shader_binding_disagreements(
+            layout_with_dwords(semantic, 20), bytecode, "vertex").empty())
+        << "a layout that matches the shader must report nothing";
+
+    // The shipped failure shape: fewer constants than the shader reads. D3D12
+    // accepts this; the shader reads memory that was never written.
+    const std::vector<std::string> reported =
+        wz::engine::rendering::shader_binding_disagreements(
+            layout_with_dwords(semantic, 17), bytecode, "vertex");
+    ASSERT_EQ(reported.size(), 1u);
+    EXPECT_NE(reported[0].find("Probe"), std::string::npos) << reported[0];
+    EXPECT_NE(reported[0].find("17"), std::string::npos) << reported[0];
+}
+
+// The false positive that a naive check produces, pinned so nobody reintroduces
+// it: HLSL pads a cbuffer to a float4 boundary, so comparing the buffer's SIZE
+// rather than its last declared FIELD flags every well-formed program.
+// Measured on the shipped tree before this was fixed: HutConstants 39 -> 40 and
+// FlashConstants 17 -> 20 both reported as drift.
+TEST(RhiDx12ShaderBindings, Float4PaddingIsNotADisagreement)
+{
+    wz::Logger logger;
+    const std::vector<uint8_t> bytecode =
+        compile_probe(kPaddedShaderHlsl, logger);
+    ASSERT_FALSE(bytecode.empty());
+
+    wz::rhi::TagRegistry<8> tags;
+    const wz::rhi::Tag semantic = tags.acquire("probe_constants");
+
+    // 19 declared dwords; the compiled cbuffer reports 20 because of padding.
+    const std::vector<std::string> reported =
+        wz::engine::rendering::shader_binding_disagreements(
+            layout_with_dwords(semantic, 19), bytecode, "vertex");
+    for (const std::string& line : reported) {
+        ADD_FAILURE() << "padding reported as drift: " << line;
+    }
+}
