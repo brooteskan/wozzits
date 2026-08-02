@@ -868,7 +868,7 @@ TEST(AssetGraphDraft, MaterializeKeysAllowsCreatedNodesToCommit)
         connect_asset_graph_draft_nodes(draft, mesh, material, 0),
         INVALID_ASSET_GRAPH_DRAFT_EDGE);
 
-    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
 
     const AssetGraphDraftNode* mesh_node =
         find_asset_graph_draft_node(draft, mesh);
@@ -946,6 +946,93 @@ TEST(AssetGraphDraft, EngineHookMaterializesFileCarrierKey)
         wz::engine::assets::make_file_key(
             "assets/shaders/test.hlsl",
             wz::engine::assets::kHLSLFileSchema));
+}
+
+// Pins what an ABSENT key factory means now that the derived key is
+// authoritative for every node (B1-C2): "re-derive the whole graph
+// generically", which is a destructive request rather than a conservative one.
+// That is why key_factory has no default argument -- before B1-C2 the two-arg
+// call re-keyed nothing at all, so the default was safe then and is not now.
+//
+// The consequence is visible here rather than only in a comment: two file
+// carriers naming DIFFERENT files collapse onto one key, because the generic
+// derivation hashes a non-ParamBlock meta by TYPE and not by value (B1-H2).
+// Measured over the shipped test_mesh_001 graph, the factory-less call re-keys
+// 109 of 143 nodes and produces 8 such collisions.
+//
+// If this test ever fails because the keys stayed distinct, do NOT restore a
+// "keep the stored key when there is no factory" fallback: that is the branch
+// B1-C2 removed, and it is what let a param edit reach the compiler under the
+// old key.
+TEST(AssetGraphDraft, MaterializeWithoutAKeyFactoryRederivesGenerically)
+{
+    CompilerRegistry registry = make_engine_draft_key_test_registry();
+    const auto key_factory =
+        wz::engine::assets::make_engine_asset_key_factory(registry);
+
+    auto make_source = [](const char* full, const char* canonical)
+    {
+        AssetNode source{};
+        source.type = AssetType::ShaderSource;
+        source.schema = wz::engine::assets::kHLSLFileSchema;
+        source.stage = AssetStage::Source;
+        source.residency = ResidencyIntent::CompileOnly;
+        source.meta =
+            wz::engine::assets::internal::FileSourceDesc{
+                .full_path = full,
+                .canonical_path = canonical,
+            };
+        return source;
+    };
+
+    AssetGraphDraft draft{};
+    const auto first = add_asset_graph_draft_node(
+        draft,
+        make_source(
+            "D:/project/assets/shaders/first.hlsl",
+            "assets/shaders/first.hlsl"));
+    const auto second = add_asset_graph_draft_node(
+        draft,
+        make_source(
+            "D:/project/assets/shaders/second.hlsl",
+            "assets/shaders/second.hlsl"));
+
+    // CONTROL: with the factory that produced them, the two files are two
+    // assets.
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, key_factory));
+    const AssetKey first_key =
+        find_asset_graph_draft_node(draft, first)->node.key;
+    const AssetKey second_key =
+        find_asset_graph_draft_node(draft, second)->node.key;
+    EXPECT_EQ(
+        first_key,
+        wz::engine::assets::make_file_key(
+            "assets/shaders/first.hlsl",
+            wz::engine::assets::kHLSLFileSchema));
+    ASSERT_NE(first_key, second_key);
+
+    // Both nodes are still Created, which forces rematerialization on its own
+    // and would let this test pass without the derived-key comparison ever
+    // running. Settle them the way a committed graph reloaded from JSON
+    // arrives: Existing, carrying the key above. Now the ONLY thing that can
+    // re-key them is derived-vs-stored.
+    find_asset_graph_draft_node(draft, first)->state =
+        AssetGraphDraftNodeState::Existing;
+    find_asset_graph_draft_node(draft, second)->state =
+        AssetGraphDraftNodeState::Existing;
+
+    // Same settled draft, no factory: every stored key is now measured against
+    // the generic derivation and loses.
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
+    const AssetKey first_generic =
+        find_asset_graph_draft_node(draft, first)->node.key;
+    const AssetKey second_generic =
+        find_asset_graph_draft_node(draft, second)->node.key;
+    EXPECT_NE(first_generic, first_key)
+        << "an absent key factory must re-derive, not preserve";
+    EXPECT_EQ(first_generic, second_generic)
+        << "the generic derivation hashes a typed meta by type, so two "
+           "different files become one asset";
 }
 
 TEST(AssetGraphDraft, EngineHookMaterializesParamBlockFileCarrierKey)
@@ -1338,7 +1425,7 @@ TEST(AssetGraphDraft, MaterializeKeysCascadesProviderChangesToDependents)
         mesh,
         std::move(params)));
 
-    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
 
     const AssetKey new_mesh_key =
         find_asset_graph_draft_node(draft, mesh)->node.key;
@@ -1374,13 +1461,13 @@ TEST(AssetGraphDraft, MaterializeKeysRekeysAnExistingNodeWhoseParamsChanged)
 
     AssetGraphDraft draft{};
     const auto mesh = add_asset_graph_draft_node(draft, authored);
-    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
 
     const AssetKey settled = find_asset_graph_draft_node(draft, mesh)->node.key;
     ASSERT_NE(settled, AssetKey{});
 
     // Re-materializing an untouched graph must be a no-op.
-    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
     EXPECT_EQ(find_asset_graph_draft_node(draft, mesh)->node.key, settled)
         << "a settled key must be stable across repeated materialization";
 
@@ -1392,7 +1479,7 @@ TEST(AssetGraphDraft, MaterializeKeysRekeysAnExistingNodeWhoseParamsChanged)
     std::any_cast<ParamBlock>(&node->node.meta)->values["subdivisions"] =
         int64_t{ 9 };
 
-    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
     EXPECT_NE(find_asset_graph_draft_node(draft, mesh)->node.key, settled)
         << "an authored param change must reach the key even when the node's "
            "state does not say so";
@@ -1458,7 +1545,7 @@ TEST(AssetGraphDraft, MaterializeKeysTreatsPortOrderAsIdentity)
         connect_asset_graph_draft_nodes(draft, mesh_b, material_b, 0),
         INVALID_ASSET_GRAPH_DRAFT_EDGE);
 
-    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
 
     const AssetKey key_a =
         find_asset_graph_draft_node(draft, material_a)->node.key;
@@ -1570,7 +1657,7 @@ TEST(AssetGraphDraft, LoadFromAuthoredMaterializesKeysWithoutChangingIds)
     AssetGraphDraft draft{};
     load_asset_graph_draft_from_authored(draft, nodes, edges);
 
-    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
 
     ASSERT_NE(find_asset_graph_draft_node(draft, 5u), nullptr);
     ASSERT_NE(find_asset_graph_draft_node(draft, 9u), nullptr);
@@ -1751,7 +1838,7 @@ TEST(AssetGraphDraftAdversarial, DuplicateSingleArityEdgesAreValidationErrors)
     EXPECT_TRUE(has_validation_code(
         draft,
         AssetGraphDraftValidationCode::DuplicateInputPort));
-    EXPECT_FALSE(materialize_asset_graph_draft_keys(draft, registry));
+    EXPECT_FALSE(materialize_asset_graph_draft_keys(draft, registry, {}));
 }
 
 TEST(AssetGraphDraftAdversarial, ManyPortFollowedByAnotherPortIsInvalid)
@@ -1882,7 +1969,7 @@ TEST(AssetGraphDraftAdversarial, SelfLoopIsInvalidAndSnapshotFails)
         draft,
         AssetGraphDraftValidationCode::SelfDependency));
     EXPECT_FALSE(rebuild_asset_graph_draft_snapshot(draft));
-    EXPECT_FALSE(materialize_asset_graph_draft_keys(draft, registry));
+    EXPECT_FALSE(materialize_asset_graph_draft_keys(draft, registry, {}));
 }
 
 TEST(AssetGraphDraftAdversarial, TypeMismatchIsValidationError)

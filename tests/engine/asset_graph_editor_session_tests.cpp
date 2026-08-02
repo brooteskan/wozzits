@@ -551,7 +551,7 @@ TEST(AssetGraphEditorSession, RewireInvalidatesConsumerKeyForCompile)
         wz::asset::AssetGraphDraftNodeState::Modified);
     EXPECT_EQ(consumer->node.key, wz::asset::AssetKey{});
 
-    ASSERT_TRUE(wz::asset::materialize_asset_graph_draft_keys(draft, registry));
+    ASSERT_TRUE(wz::asset::materialize_asset_graph_draft_keys(draft, registry, {}));
     consumer = wz::asset::find_asset_graph_draft_node(draft, 2u);
     ASSERT_NE(consumer, nullptr);
     EXPECT_NE(consumer->node.key, wz::asset::AssetKey{});

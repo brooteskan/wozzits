@@ -254,7 +254,7 @@ TEST(AssetGraphAuthoring, LiveDraftAddConnectMaterialize)
         connect_asset_graph_draft_nodes(draft, mesh, consumer, /*to_input_port=*/0);
     ASSERT_NE(edge, INVALID_ASSET_GRAPH_DRAFT_EDGE);
 
-    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry));
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
 
     const auto registrations = asset_graph_draft_to_registrations(draft, &registry);
     const auto* mesh_reg = find_registration(registrations, mesh);

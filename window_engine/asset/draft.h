@@ -1121,10 +1121,28 @@ namespace wz::asset {
             });
     }
 
+    // Settle every node's AssetKey against what its current params and deps
+    // derive to.
+    //
+    // key_factory HAS NO DEFAULT, deliberately. It must be the same factory
+    // that produced the draft's stored keys, because the derived key is
+    // authoritative for every node: passing a different factory -- or none --
+    // means "re-derive the whole graph generically", which is a destructive
+    // request, not a conservative one. Measured on the shipped test_mesh_001
+    // graph (143 nodes): with the engine factory, 7 nodes re-key and no two
+    // nodes collide; with no factory, 109 re-key and 8 keys are shared by 27
+    // nodes -- two of those groups being distinct source FILES collapsed onto
+    // one key, because the generic derivation hashes a non-ParamBlock meta by
+    // TYPE and not by value. A duplicate key then fails the commit in
+    // replace_registered_assets(), which cannot say which nodes collided.
+    //
+    // Before the derived key became authoritative this call was merely useless
+    // without a factory (0 nodes re-keyed), so the default argument was safe
+    // then and is not now. Pass {} explicitly to mean the generic derivation.
     inline bool materialize_asset_graph_draft_keys(
         AssetGraphDraft& draft,
         const CompilerRegistry& registry,
-        const AssetKeyFactoryFn& key_factory = {})
+        const AssetKeyFactoryFn& key_factory)
     {
         if (!validate_asset_graph_draft(
                 draft,
