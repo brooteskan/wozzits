@@ -13,6 +13,7 @@
 #include <wozzits/rhi/shader_resource_group.h>
 
 #include <array>
+#include <string>
 
 namespace
 {
@@ -419,4 +420,53 @@ TEST_F(RecorderDeviceFixture, RebindRefreshesLastUseToLatestFrame)
     gpu.resources.collect(/*completed*/ kFrame2);
     EXPECT_EQ(gpu.resources.get(handle), nullptr)
         << "resource not reclaimed after the GPU passed the latest frame";
+}
+
+// ── set_root_constants failure symmetry (#317) ──────────────────────────────
+//
+// Both of these are the SAME user-visible failure: the object is drawn with
+// root constants that are not its own. One of them used to be silent.
+//
+// The size-shape check ("is this a whole number of dwords") sat in the same
+// `if` as the structural preconditions and returned WITHOUT touching ready_,
+// so record_packet went straight on to draw() and the draw issued with
+// whatever the PREVIOUS packet pushed. The dword-COUNT check nine lines below
+// has always set ready_ = false with a reason.
+//
+// Device-free: set_current_for_testing installs the layout, and both paths
+// reject before any command list is needed. The assertion is on the REASON,
+// not just on ready(), because "rejected for some reason" would also pass
+// against the old code once a later guard tripped.
+TEST(RhiDx12CommandRecorder, MalformedRootConstantBlockRejectsWithANamedReason)
+{
+    RecorderHarness harness;
+
+    wz::engine::rendering::RhiDx12RealizedPipeline pipeline{};
+    pipeline.root_signature =
+        reinterpret_cast<ID3D12RootSignature*>(0x1);   // non-null: valid()
+    pipeline.pipeline_state =
+        reinterpret_cast<ID3D12PipelineState*>(0x1);
+    pipeline.layout.root_constants.valid = true;
+    pipeline.layout.root_constants.dword_count = 16;
+
+    // 63 bytes: not a whole number of dwords. Before the fix this returned
+    // silently with ready() still true.
+    harness.recorder.set_current_for_testing(&pipeline);
+    const std::array<uint8_t, 63> ragged{};
+    harness.recorder.set_root_constants(ragged);
+    EXPECT_FALSE(harness.recorder.ready());
+    EXPECT_NE(harness.recorder.last_reject_reason().find("whole number"),
+              std::string::npos)
+        << "a block that is not dword-aligned must say so; got: "
+        << harness.recorder.last_reject_reason();
+
+    // 60 bytes: dword-aligned but the wrong COUNT (15 vs 16). This one has
+    // always rejected; asserted here so the two reasons stay distinguishable.
+    harness.recorder.set_current_for_testing(&pipeline);
+    const std::array<uint8_t, 60> short_block{};
+    harness.recorder.set_root_constants(short_block);
+    EXPECT_FALSE(harness.recorder.ready());
+    EXPECT_NE(harness.recorder.last_reject_reason().find("dword count"),
+              std::string::npos)
+        << harness.recorder.last_reject_reason();
 }

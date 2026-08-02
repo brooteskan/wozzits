@@ -217,11 +217,28 @@ namespace wz::engine::rendering
     void RhiDx12CommandRecorder::set_root_constants(
         std::span<const uint8_t> bytes)
     {
+        // Structural preconditions: nothing to do, and nothing to report.
+        // A program whose root signature has no root-constant parameter is the
+        // normal case for a packet that carries a block anyway.
         if (!ready_ || !device_ || !current_
-            || !current_->layout.root_constants.valid
-            || bytes.empty()
-            || bytes.size() % sizeof(uint32_t) != 0)
+            || !current_->layout.root_constants.valid)
         {
+            return;
+        }
+
+        // A block whose size is not a whole number of DWORDs is malformed, and
+        // it used to be dropped IN SILENCE -- returning without touching
+        // ready_, so record_packet went straight on to draw() and the draw
+        // issued with whatever root constants the PREVIOUS packet pushed. The
+        // dword-count mismatch nine lines below has always rejected loudly.
+        // Two spellings of the same failure -- the object is drawn with someone
+        // else's transform -- one visible and one not, decided by which half of
+        // one `if` the predicate happened to sit in (#317).
+        if (bytes.size() % sizeof(uint32_t) != 0) {
+            ready_ = false;
+            last_reject_reason_ =
+                "set_root_constants: block is not a whole number of dwords ("
+                + std::to_string(bytes.size()) + " bytes)";
             return;
         }
 
