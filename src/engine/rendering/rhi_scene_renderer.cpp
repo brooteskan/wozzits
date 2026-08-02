@@ -1025,6 +1025,51 @@ namespace wz::engine::rendering
         puppet_mask_bound_set = static_cast<std::size_t>(-1);
     }
 
+    void RhiSceneRenderer::on_device_lost()
+    {
+        if (device_lost_handled_) {
+            return;
+        }
+        device_lost_handled_ = true;
+
+        const wz::gpu::DeviceLostInfo* info =
+            wz::gpu::device_lost_info(gpu_.device);
+        logger_.error(
+            std::string("RhiSceneRenderer: GPU device lost")
+            + (info && !info->operation.empty()
+                   ? " during " + info->operation
+                   : std::string())
+            + (info && !info->message.empty()
+                   ? " — " + info->message
+                   : std::string())
+            + "; releasing every GPU resource. Nothing will render until the "
+              "device is recreated.");
+
+        // Order is dependency order, outermost first. No wait_idle and no
+        // collect(): there is no GPU left to wait for, completed_timeline_value
+        // reports 0 on a removed device by design, and on_device_lost is a
+        // single unconditional sweep rather than a reclamation pass.
+        recorder_.release_cached_descriptor_tables();
+        cache_.clear();
+
+        // THE sweep: destroys every backend resource, clears the slot map so
+        // every outstanding handle goes stale, and bumps the device epoch.
+        gpu_.resources.on_device_lost();
+
+        // Everything keyed by those now-dead handles.
+        realized_renderables_.clear();
+        realized_programs_.clear();
+        registered_shaders_.clear();
+        failed_renderables_.clear();
+
+        // Renderer-owned and deliberately graph-INDEPENDENT, so on_graph_changed
+        // keeps them -- but a device loss takes the resources they name, and
+        // ensure_*_constants_buffer must acquire fresh ones rather than hand
+        // back a handle the sweep just invalidated.
+        view_constants_buffer_ = {};
+        screen_constants_buffer_ = {};
+    }
+
     void RhiSceneRenderer::on_graph_changed()
     {
         // The new graph may fix previously-broken renderables; always allow
@@ -2835,6 +2880,16 @@ namespace wz::engine::rendering
         const ea::AtmosphereData* atmosphere,
         wz::gpu::GPUHandle offscreen_target)
     {
+        // FIRST, before the command-list check below — that check returns false
+        // on a lost device and so swallowed the loss entirely, which is how the
+        // registry came to be left holding every resource of a dead device
+        // forever (#317). render_scene is the per-frame choke point: every path
+        // that touches the registry goes through here.
+        if (wz::gpu::device_status(gpu_.device) == wz::gpu::DeviceStatus::Lost) {
+            on_device_lost();
+            return false;
+        }
+
         ID3D12GraphicsCommandList* cmd =
             wz::gpu::dx12::internal::get_command_list(gpu_.device);
         if (!cmd) {

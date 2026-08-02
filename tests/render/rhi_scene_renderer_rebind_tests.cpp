@@ -24,6 +24,7 @@
 #include <external/json/json_parser.h>
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
+#include <src/gpu/dx12/dx12_device_internal.h>
 
 #include <fstream>
 #include <iterator>
@@ -372,4 +373,66 @@ TEST_F(WozzitsAppFixture, RepeatedRebindCyclesHoldEveryCountFlat)
             << "descriptor tables did not return to baseline after recovery "
             << cycle;
     }
+}
+
+// -- #317 D1-C14: the renderer owns the device-lost edge --------------------
+//
+// rhi advertises device loss as one of the four jobs its resource registry
+// owns, and GpuResourceRegistry::on_device_lost() had ZERO production callers
+// while two engine comments were load-bearing on it running -- notably
+// completed_timeline_value(), which reports 0 on a removed device *because*
+// "device-loss cleanup is owned by GpuResourceRegistry::on_device_lost".
+//
+// So after a TDR: collect(0) reclaimed nothing forever, pending_ grew
+// monotonically, and every outstanding handle in every retained packet kept
+// RESOLVING as live against a destroyed ID3D12Resource.
+//
+// The renderer is the owner because it is the only object holding all four
+// things that must die together (the registry, the PSO cache, the recorder's
+// descriptor tables, and the realized caches), and render_scene is the
+// per-frame choke point every registry touch goes through. The check sits
+// ABOVE the command-list null check, which returned false on a lost device
+// and swallowed the loss.
+//
+// dx12_mark_device_lost is the same lever tests/gpu/device_status.cpp already
+// uses to make loss deterministic.
+TEST_F(WozzitsAppFixture, DeviceLossReleasesEveryGpuResourceOnce)
+{
+    wz::app::WozzitsApp_v1 app(ctx);
+
+    const auto project = load_test_project();
+    ASSERT_TRUE(project.ok) << project.error;
+    ASSERT_TRUE(app.load_scene(scene_load_desc(project.manifest)));
+
+    render_one_frame(app);
+    ASSERT_GT(app.resident_gpu_resource_count(), 0u)
+        << "nothing was resident, so the sweep would prove nothing";
+
+    auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(ctx.device.impl);
+    ASSERT_NE(impl, nullptr);
+    wz::gpu::dx12::dx12_mark_device_lost(
+        *impl, DXGI_ERROR_DEVICE_REMOVED, "unit-test forced loss");
+    ASSERT_EQ(wz::gpu::device_status(ctx.device), wz::gpu::DeviceStatus::Lost);
+
+    // The next render is where the renderer notices. It must not draw.
+    EXPECT_FALSE(app.render_scene());
+
+    EXPECT_EQ(app.resident_gpu_resource_count(), 0u)
+        << "the registry still holds resources of a destroyed device; every "
+           "one of those handles still resolves as live";
+    EXPECT_EQ(app.cached_descriptor_table_count(), 0u)
+        << "descriptor tables still view the dead device's resources";
+
+    // Idempotent: a lost device stays lost, so further frames must be a no-op
+    // rather than a repeated sweep.
+    EXPECT_FALSE(app.render_scene());
+    EXPECT_EQ(app.resident_gpu_resource_count(), 0u);
+
+    // The loss was SYNTHETIC -- this device is healthy and the fixture is about
+    // to tear it down for real. Leaving the flag set sends shutdown down the
+    // device-removed paths and it faults. Restored only after every assertion
+    // above has run against the lost state, so nothing here is weakened; the
+    // sweep already released the D3D12 objects (release_compute_buffer_resource
+    // has no device-lost guard), so there is nothing stale left to tear down.
+    impl->status = wz::gpu::DeviceStatus::Ok;
 }

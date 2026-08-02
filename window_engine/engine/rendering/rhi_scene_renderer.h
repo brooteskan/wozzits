@@ -187,6 +187,31 @@ namespace wz::engine::rendering
             // created with ResourceUsage_RenderTarget. Default = the backbuffer.
             wz::gpu::GPUHandle offscreen_target = {});
 
+        // Take ownership of the device-lost edge: destroy every GPU resource in
+        // ONE registry sweep and drop everything that viewed the dead device.
+        //
+        // rhi advertises device loss as one of the four jobs its registry owns
+        // ("a SINGLE sweep invalidates every handle at once, instead of six
+        // tables plus a leaked static"), and GpuResourceRegistry::on_device_lost
+        // had ZERO production callers -- while TWO engine comments were
+        // load-bearing on it running. completed_timeline_value() deliberately
+        // reports 0 on a removed device *because* "device-loss cleanup is owned
+        // by GpuResourceRegistry::on_device_lost" -- an owner nobody invoked. So
+        // after a TDR: collect(0) reclaimed nothing forever, pending_ grew
+        // monotonically, and every retained packet's handle kept resolving as
+        // live against a destroyed ID3D12Resource (#317).
+        //
+        // THE RENDERER IS THE OWNER because it is the only object holding all
+        // four things that must die together -- the resource registry, the PSO
+        // cache, the recorder's descriptor tables, and the realized-renderable
+        // /program/shader caches. The app frame loop could reach the registry
+        // but not the recorder's tables, and there are three frame loops
+        // (WozzitsApp_v1, the editor host, benchmark_app), so ownership there
+        // means three sites that each have to remember.
+        //
+        // Idempotent: a lost device stays lost, and this runs once.
+        void on_device_lost();
+
         // Invalidate every realized cache after a wholesale asset-graph swap.
         // The caches (realized programs/renderables/registered shaders) are
         // keyed by the OUTGOING graph's AssetKeys, so on a swap they go stale —
@@ -632,6 +657,12 @@ namespace wz::engine::rendering
         // node scale, for aligning a terrain-stick collision) logs once, not per
         // frame.
         bool clipmap_placement_logged_ = false;
+
+        // Whether on_device_lost() has already swept for the current loss. A
+        // lost device never returns to Ok in this engine, so this stays set;
+        // it exists so the per-frame check is a no-op rather than a repeated
+        // sweep and a repeated error line.
+        bool device_lost_handled_ = false;
 
         // See render_time_program_bridge_count().
         std::size_t render_time_program_bridges_ = 0;
