@@ -993,6 +993,38 @@ namespace wz::engine::rendering
         }
     }
 
+    void RhiSceneRenderer::RealizedRenderable::release_renderer_owned_resources(
+        wz::rhi::GpuResourceRegistry& resources)
+    {
+        // Pull buffers: renderer-owned only on the CPU-upload fallback path.
+        // Resident asset-published ones belong to the asset library and are
+        // released by its release_unregistered_rhi_resources on the same swap.
+        if (owns_buffers) {
+            for (const wz::rhi::GpuResourceHandle handle :
+                 { positions, indices, normals, uvs })
+            {
+                if (handle.valid()) {
+                    resources.release(handle);
+                }
+            }
+        }
+
+        // Mask render targets: acquired by render_puppet_masks, referenced by
+        // nothing else, and tracked by no compiler -- so the renderer is the
+        // only party that can release them, regardless of owns_buffers.
+        for (PuppetMaskSet& set : puppet_mask_sets) {
+            for (const wz::rhi::GpuResourceHandle handle : set.resources) {
+                if (handle.valid()) {
+                    resources.release(handle);
+                }
+            }
+            set.resources.clear();
+            set.render_targets.clear();
+        }
+        puppet_mask_sets.clear();
+        puppet_mask_bound_set = static_cast<std::size_t>(-1);
+    }
+
     void RhiSceneRenderer::on_graph_changed()
     {
         // The new graph may fix previously-broken renderables; always allow
@@ -1023,25 +1055,7 @@ namespace wz::engine::rendering
 
         for (auto& [key, renderable] : realized_renderables_) {
             (void)key;
-            // Only release renderer-owned (CPU-upload) buffers. Resident
-            // asset-published buffers are owned by the asset library and
-            // released by its release_unregistered_rhi_resources on the same
-            // swap (deferred, before this collect) — never by the renderer.
-            if (!renderable.owns_buffers) {
-                continue;
-            }
-            if (renderable.positions.valid()) {
-                gpu_.resources.release(renderable.positions);
-            }
-            if (renderable.indices.valid()) {
-                gpu_.resources.release(renderable.indices);
-            }
-            if (renderable.normals.valid()) {
-                gpu_.resources.release(renderable.normals);
-            }
-            if (renderable.uvs.valid()) {
-                gpu_.resources.release(renderable.uvs);
-            }
+            renderable.release_renderer_owned_resources(gpu_.resources);
         }
 
         // Reclaim the just-released buffers. The GPU is idle (wait_idle above),

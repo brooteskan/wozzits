@@ -495,6 +495,27 @@ namespace wz::engine::rendering
             // same recipe can carry different override values.
             std::vector<wz::engine::assets::RhiRenderableConstant>
                 custom_fields;
+
+            // Release every GPU resource THIS OBJECT acquired, and only those.
+            //
+            // Lives here, on the object that owns the handles, rather than as a
+            // list of field names inside on_graph_changed -- which is how the
+            // puppet mask render targets came to leak (#317). That loop
+            // released four named fields and only when owns_buffers was true;
+            // the puppet branch sets owns_buffers FALSE because its pull buffers
+            // are asset-owned, so the guard skipped the whole renderable and
+            // took its mask textures with it. realized_renderables_.clear()
+            // then destroyed the last handle to ~133 MB of render targets per
+            // swap for the shipped puppet, unreachable by anything: the
+            // asset-side sweep only walks resources the COMPILERS tracked, and
+            // nothing tracked these.
+            //
+            // owns_buffers gates only the PULL buffers, because resident
+            // asset-published ones are released by the asset library's own
+            // sweep on the same swap. The mask sets are renderer-acquired
+            // unconditionally, so they are released unconditionally.
+            void release_renderer_owned_resources(
+                wz::rhi::GpuResourceRegistry& resources);
         };
 
         const RealizedProgram* realize_program(

@@ -558,6 +558,37 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
         //    Parts, so the puppet records many packets).
         EXPECT_GT(renderer.cached_descriptor_table_count(), 0u)
             << "puppet Part object SRGs did not bind descriptor tables";
+
+        // ── #317 pin: a graph swap must release the puppet's mask render
+        // targets. They are acquired by render_puppet_masks, referenced by
+        // nothing else, and tracked by no compiler -- so if the renderer does
+        // not release them, NOTHING can: on_graph_changed used to release four
+        // named handle fields and only when owns_buffers was true, and the
+        // puppet sets owns_buffers FALSE (its pull buffers are asset-owned),
+        // so the whole renderable was skipped and realized_renderables_.clear()
+        // then destroyed the last handle to them. ~133 MB per swap for Aka.
+        //
+        // The assertion is a strict decrease rather than an exact count because
+        // the number of distinct mask sources is fixture data; before the fix
+        // the count did not move AT ALL, which is what this catches. The
+        // puppet's pull buffers are asset-owned and are NOT released here, so
+        // any drop is the mask targets.
+        const std::size_t resident_before = renderer.resident_gpu_resource_count();
+        EXPECT_GT(resident_before, 0u);
+
+        renderer.on_graph_changed();
+
+        const std::size_t resident_after = renderer.resident_gpu_resource_count();
+        EXPECT_LT(resident_after, resident_before)
+            << "on_graph_changed released nothing for the puppet -- its mask "
+               "render targets are now unreachable and leaked (resident "
+            << resident_before << " -> " << resident_after << ")";
+
+        // Idempotent: the handles were cleared, so a second swap must not
+        // double-release (which would return them to the free list twice).
+        renderer.on_graph_changed();
+        EXPECT_EQ(renderer.resident_gpu_resource_count(), resident_after)
+            << "a second graph swap released the mask targets again";
     }
 
     wz::gpu::destroy_device(device);
