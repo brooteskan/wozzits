@@ -324,6 +324,16 @@ namespace wz::engine::assets::internal
                 return false;
             }
 
+            if (!valid_terrain_representation_kind(representation)
+                || !valid_terrain_mesh_surface_height_policy(mesh_height_policy)
+                || !valid_terrain_normal_source(normal_source)
+                || !valid_terrain_uv_source(uv_source)
+                || !valid_terrain_render_mode(render_mode)
+                || !valid_terrain_collision_mode(collision_mode))
+            {
+                return false;
+            }
+
             data.representation =
                 static_cast<TerrainRepresentationKind>(representation);
             data.mesh_height_policy =

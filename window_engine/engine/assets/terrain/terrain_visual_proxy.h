@@ -25,6 +25,28 @@ namespace wz::engine::assets
         SurfelCloud,
     };
 
+    // ─── Descriptor range check ───────────────────────────────────────────────────
+    //
+    // Stored in the visual-proxy disk cache as raw uint8 -- once for the proxy
+    // and once per chunk -- and static_cast straight back with no range check,
+    // so a flipped byte produced an out-of-range enum that every other check in
+    // the loader missed (magic, format version, compiler version and the stored
+    // key all cover different byte regions). It selects which of a chunk's
+    // payloads is meaningful. Same shape as the scalar-field descriptors
+    // (B1-C4).
+    //
+    // WHEN YOU APPEND AN ENUMERATOR, UPDATE THIS PREDICATE. It lives beside the
+    // enum so the pairing is visible at the point of change. Under-accepting is
+    // the safe direction: an entry carrying an enumerator this build does not
+    // know is rejected, and the asset recompiles.
+
+    [[nodiscard]] constexpr bool valid_terrain_visual_representation_kind(
+        uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(
+            TerrainVisualRepresentationKind::SurfelCloud);
+    }
+
     struct TerrainProxyId
     {
         wz::asset::AssetKey key{};

@@ -2144,6 +2144,9 @@ namespace wz::engine::assets::internal
             if (chunk_count == 0u || chunk_count > 100000u) {
                 return false;
             }
+            if (!valid_terrain_visual_representation_kind(primary_kind)) {
+                return false;
+            }
             data.primary_representation_kind =
                 static_cast<TerrainVisualRepresentationKind>(primary_kind);
             data.chunks.resize(static_cast<size_t>(chunk_count));
@@ -2211,6 +2214,9 @@ namespace wz::engine::assets::internal
                     {
                         return false;
                     }
+                }
+                if (!valid_terrain_visual_representation_kind(chunk_kind)) {
+                    return false;
                 }
                 chunk.representation_kind =
                     static_cast<TerrainVisualRepresentationKind>(chunk_kind);

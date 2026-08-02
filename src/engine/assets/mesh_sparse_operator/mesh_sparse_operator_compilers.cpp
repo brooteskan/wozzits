@@ -234,6 +234,13 @@ namespace wz::engine::assets::internal
             {
                 return false;
             }
+            if (!valid_mesh_sparse_operator_kind(kind)
+                || !valid_mesh_derived_field_domain(domain)
+                || !valid_mesh_sparse_operator_value_convention(
+                    value_convention))
+            {
+                return false;
+            }
             data.kind = static_cast<MeshSparseOperatorKind>(kind);
             data.domain = static_cast<MeshOperatorDomain>(domain);
             data.value_convention =

@@ -179,6 +179,9 @@ namespace wz::engine::assets::internal
             {
                 return false;
             }
+            if (!valid_collision_occupancy_kind(kind)) {
+                return false;
+            }
             occupancy.kind = static_cast<CollisionOccupancyKind>(kind);
             occupancy.blocks_movement = blocks != 0u;
             occupancy.queryable = queryable != 0u;
@@ -346,6 +349,11 @@ namespace wz::engine::assets::internal
                 || !read_asset_key(bytes, offset, data.geometry_asset)
                 || !read_float_array(bytes, offset, data.bounds_min, 3)
                 || !read_float_array(bytes, offset, data.bounds_max, 3))
+            {
+                return false;
+            }
+            if (!valid_collision_source_kind(source_kind)
+                || !valid_collision_shape_kind(shape_kind))
             {
                 return false;
             }

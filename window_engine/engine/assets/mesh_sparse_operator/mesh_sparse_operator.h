@@ -53,6 +53,39 @@ namespace wz::engine::assets
         FullMatrixEntries,
     };
 
+    // ─── Descriptor range checks ──────────────────────────────────────────────────
+    //
+    // kind, domain and value_convention are stored in the sparse-operator disk
+    // cache as raw uint8 and were static_cast straight back with no range
+    // check, so a flipped byte produced an out-of-range enum that every other
+    // check in the loader missed -- magic, format version, compiler version and
+    // the stored key all cover different byte regions. value_convention decides
+    // how a consumer APPLIES the weights, which is the whole point of storing
+    // it. Same shape as the scalar-field descriptors (B1-C4). The domain
+    // predicate lives with MeshDerivedFieldDomain, whose vocabulary
+    // MeshOperatorDomain aliases.
+    //
+    // WHEN YOU APPEND AN ENUMERATOR, UPDATE THE MATCHING PREDICATE. They live
+    // beside the enums so the pairing is visible at the point of change.
+    // Under-accepting is the safe direction: an entry carrying an enumerator
+    // this build does not know is rejected, and the asset recompiles.
+
+    [[nodiscard]] constexpr bool valid_mesh_sparse_operator_kind(
+        uint8_t v) noexcept
+    {
+        // Both enumerators name ordinal 0; UniformAdjacency is the current
+        // spelling and UniformVertexLaplacian the back-compat one.
+        return v <= static_cast<uint8_t>(
+            MeshSparseOperatorKind::UniformAdjacency);
+    }
+
+    [[nodiscard]] constexpr bool valid_mesh_sparse_operator_value_convention(
+        uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(
+            MeshSparseOperatorValueConvention::FullMatrixEntries);
+    }
+
     struct MeshSparseOperatorData
     {
         wz::asset::AssetKey source_mesh_key{};

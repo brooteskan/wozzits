@@ -205,6 +205,12 @@ namespace wz::engine::assets::internal
                 return false;
             }
 
+            if (!valid_mesh_primitive_topology(topology)
+                || !valid_mesh_index_format(index_format))
+            {
+                return false;
+            }
+
             mesh.topology = static_cast<MeshPrimitiveTopology>(topology);
             mesh.index_format = static_cast<MeshIndexFormat>(index_format);
             mesh.has_normals = has_normals != 0u;

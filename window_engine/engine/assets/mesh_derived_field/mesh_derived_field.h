@@ -49,6 +49,38 @@ namespace wz::engine::assets
         UInt1,
     };
 
+    // ─── Descriptor range checks ──────────────────────────────────────────────────
+    //
+    // Both are stored in the mesh-derived-field disk cache as raw uint8 (the
+    // second once per channel) and were static_cast straight back with no range
+    // check, so a flipped byte produced an out-of-range enum that magic, format
+    // version, compiler version and the stored key all miss -- each covers a
+    // different byte region. Same shape as the scalar-field descriptors
+    // (B1-C4).
+    //
+    // Measured: `domain` was genuinely reachable, `value_type` was not --
+    // mesh_derived_field_value_stride returns 0 for an unknown ordinal and
+    // valid() refuses stride 0, so it was already rejected, incidentally. The
+    // value_type check here makes that local and explicit instead of a
+    // consequence of arithmetic three files away.
+    //
+    // WHEN YOU APPEND AN ENUMERATOR, UPDATE THE MATCHING PREDICATE. They live
+    // beside the enums so the pairing is visible at the point of change.
+    // Under-accepting is the safe direction: an entry carrying an enumerator
+    // this build does not know is rejected, and the asset recompiles.
+
+    [[nodiscard]] constexpr bool valid_mesh_derived_field_domain(
+        uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(MeshDerivedFieldDomain::Corner);
+    }
+
+    [[nodiscard]] constexpr bool valid_mesh_derived_field_value_type(
+        uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(MeshDerivedFieldValueType::UInt1);
+    }
+
     struct MeshDerivedFieldChannel
     {
         uint32_t channel_id = 0;

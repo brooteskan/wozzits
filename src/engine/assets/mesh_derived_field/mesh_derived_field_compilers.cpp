@@ -737,6 +737,9 @@ namespace wz::engine::assets::internal
             {
                 return false;
             }
+            if (!valid_mesh_derived_field_domain(domain)) {
+                return false;
+            }
             field.domain = static_cast<MeshDerivedFieldDomain>(domain);
 
             uint64_t channel_count = 0;
@@ -757,6 +760,9 @@ namespace wz::engine::assets::internal
                     || !read_scalar(bytes, offset, channel.byte_offset)
                     || !read_scalar(bytes, offset, channel.byte_count))
                 {
+                    return false;
+                }
+                if (!valid_mesh_derived_field_value_type(value_type)) {
                     return false;
                 }
                 channel.value_type =

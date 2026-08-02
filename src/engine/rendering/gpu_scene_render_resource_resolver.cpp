@@ -424,6 +424,11 @@ namespace wz::engine::rendering
             {
                 return false;
             }
+            if (!wz::engine::assets::valid_mesh_primitive_topology(topology)
+                || !wz::engine::assets::valid_mesh_index_format(index_format))
+            {
+                return false;
+            }
             mesh.topology =
                 static_cast<wz::engine::assets::MeshPrimitiveTopology>(topology);
             mesh.index_format =

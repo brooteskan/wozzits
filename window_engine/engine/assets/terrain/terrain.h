@@ -50,6 +50,62 @@ namespace wz::engine::assets
         ImportedField,
     };
 
+    // ─── Descriptor range checks ──────────────────────────────────────────────────
+    //
+    // All six are stored in the mesh-terrain disk cache as raw uint8 and were
+    // static_cast straight back with no range check, so a flipped byte produced
+    // an out-of-range enum that every other check in the loader missed -- magic,
+    // format version, compiler version and the stored key all cover different
+    // byte regions. Same shape as the scalar-field descriptors (B1-C4).
+    //
+    // Measured, by neutering these checks and seeing which cases in
+    // TerrainLoadRejectsOutOfRangeDescriptorOrdinals stop failing: five of the
+    // six were genuinely reachable. `representation` was not, on this path
+    // only -- load_cached_mesh_terrain separately requires it to equal
+    // MeshSurface. TerrainAssetData::valid() would NOT have caught it: it
+    // branches on HeightField and returns true for everything else, including
+    // a value that is neither enumerator. So the representation check here is
+    // defence in depth for a second cache path that does not repeat that
+    // equality test.
+    //
+    // WHEN YOU APPEND AN ENUMERATOR, UPDATE THE MATCHING PREDICATE. They live
+    // beside the enums so the pairing is visible at the point of change.
+    // Under-accepting is the safe direction: an entry carrying an enumerator
+    // this build does not know is rejected, and the asset recompiles.
+
+    [[nodiscard]] constexpr bool valid_terrain_representation_kind(
+        uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(TerrainRepresentationKind::MeshSurface);
+    }
+
+    [[nodiscard]] constexpr bool valid_terrain_render_mode(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(TerrainRenderMode::DebugMesh);
+    }
+
+    [[nodiscard]] constexpr bool valid_terrain_collision_mode(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(TerrainCollisionMode::MeshSurface);
+    }
+
+    [[nodiscard]] constexpr bool valid_terrain_mesh_surface_height_policy(
+        uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(
+            TerrainMeshSurfaceHeightPolicy::HighestAcceptedSurface);
+    }
+
+    [[nodiscard]] constexpr bool valid_terrain_normal_source(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(TerrainNormalSource::ImportedField);
+    }
+
+    [[nodiscard]] constexpr bool valid_terrain_uv_source(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(TerrainUVSource::ImportedField);
+    }
+
     struct TerrainVisualChunkAggregate
     {
         float mean_height = 0.0f;

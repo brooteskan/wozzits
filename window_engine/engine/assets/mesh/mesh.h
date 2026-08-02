@@ -20,6 +20,31 @@ namespace wz::engine::assets
         TriangleList,
     };
 
+    // ─── Descriptor range checks ──────────────────────────────────────────────────
+    //
+    // Both descriptors are stored in the GLB mesh disk cache as raw uint8 and
+    // were static_cast straight back, so a flipped byte produced an
+    // out-of-range enum that every other check in the loader missed -- magic,
+    // format version, compiler version and the stored key all cover different
+    // byte regions. index_format then selects the index stride, which is read
+    // by consumers. Same shape as the scalar-field descriptors (B1-C4).
+    //
+    // WHEN YOU APPEND AN ENUMERATOR, UPDATE THE MATCHING PREDICATE. They live
+    // beside the enums so the pairing is visible at the point of change.
+    // Under-accepting is the safe direction: a cache entry carrying an
+    // enumerator this build does not know is rejected, and the asset
+    // recompiles.
+
+    [[nodiscard]] constexpr bool valid_mesh_index_format(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(MeshIndexFormat::UInt32);
+    }
+
+    [[nodiscard]] constexpr bool valid_mesh_primitive_topology(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(MeshPrimitiveTopology::TriangleList);
+    }
+
     struct MeshVertex
     {
         float position[3] = {};

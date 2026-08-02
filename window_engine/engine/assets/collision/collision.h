@@ -31,6 +31,45 @@ namespace wz::engine::assets
         TerrainMeshSurface,
     };
 
+    // ─── Descriptor range checks ──────────────────────────────────────────────────
+    //
+    // These three are stored in the collision disk cache as raw uint8 and were
+    // static_cast straight back with no range check, so a flipped byte produced
+    // an out-of-range enum that magic, format version, compiler version and the
+    // stored key all miss -- each covers a different byte region. Same shape as
+    // the scalar-field descriptors (B1-C4).
+    //
+    // source_kind and occupancy.kind are inspected by nothing else.
+    // shape_kind is the exception: CollisionAssetData::valid() switches on it
+    // and falls through to `return false`, so an unknown ordinal was already
+    // rejected there. Its check here is defence in depth, and it keeps the
+    // three reading the same way at the point of decode.
+    //
+    // Unlike the other formats fixed alongside this one, these guards have no
+    // byte-level test: the collision entry is ~45 fields, and a mirror of it in
+    // the test would rot faster than it would catch anything. Said out loud
+    // rather than left to be inferred.
+    //
+    // WHEN YOU APPEND AN ENUMERATOR, UPDATE THE MATCHING PREDICATE. They live
+    // beside the enums so the pairing is visible at the point of change.
+    // Under-accepting is the safe direction: an entry carrying an enumerator
+    // this build does not know is rejected, and the asset recompiles.
+
+    [[nodiscard]] constexpr bool valid_collision_source_kind(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(CollisionSourceKind::Terrain);
+    }
+
+    [[nodiscard]] constexpr bool valid_collision_occupancy_kind(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(CollisionOccupancyKind::Sensor);
+    }
+
+    [[nodiscard]] constexpr bool valid_collision_shape_kind(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(CollisionShapeKind::TerrainMeshSurface);
+    }
+
     enum class CollisionBuildMethod : uint8_t
     {
         Bounds,
