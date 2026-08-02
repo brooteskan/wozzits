@@ -10,9 +10,24 @@ namespace wz::engine::assets {
     // logic changes in a way that would produce different output from identical
     // inputs. This invalidates stale cache entries automatically.
     //
-    // Version tokens are embedded in compiler_hash. They do NOT need to be
-    // globally unique across recipe types — they only need to be monotone within
-    // each (schema, output_type) pair.
+    // Version tokens are embedded in compiler_hash BY THE EXPLICIT KEY FACTORIES
+    // in key_factories/ — and ONLY by those. They do NOT need to be globally
+    // unique across recipe types; they only need to be monotone within each
+    // (schema, output_type) pair.
+    //
+    // ── What this does NOT cover ─────────────────────────────────────────────
+    //
+    // A node whose key comes from the generic fallback (wz::asset::make_asset_key
+    // in asset/draft.h, used for every draft node no key factory claims) gets
+    // compiler_hash = mix64(type, 1) — the AssetType and nothing else. Measured
+    // on a real project graph: 83 of 143 nodes, spanning 33 schemas. For those,
+    // bumping a token here does NOT change the AssetKey.
+    //
+    // Stale on-disk artifacts are invalidated anyway, because every disk cache
+    // WRITES ITS TOKEN INTO THE ENTRY and re-checks it on load (see
+    // deserialize_*_asset in the *_compilers.cpp files) — that check, not the
+    // key, is what actually does the work. So: if you add a new disk cache, put
+    // the token in the file. Do not rely on it reaching the key.
     //
     // When to bump:
     //   • Output data layout changes (struct layout, field order, byte representation).
