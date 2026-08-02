@@ -750,3 +750,77 @@ TEST(CollisionSurfaceSampling, DrawnSurfaceLeavesTheNormalOnTheSmoothField)
     EXPECT_FLOAT_EQ(drawn_sample.normal.y, truth_sample.normal.y);
     EXPECT_FLOAT_EQ(drawn_sample.normal.z, truth_sample.normal.z);
 }
+
+// ── Ray-march termination (issue #314, C1-C6) ────────────────────────────────
+//
+// The march advances by `t += step_t` and its ONLY exit is `t >= t1`. Float
+// addition stops advancing once step_t falls below half an ULP of t, so a
+// shooter far enough away in the collider's LOCAL frame spun forever. The
+// stall is a BAND, not a threshold: it opens when ULP(t) > 2*step_t and closes
+// again when ULP(t) > span (the span then collapses to a single float and the
+// loop exits on its first iteration). Measured before the fix: with 1 m cells
+// the hang starts at ~9e6, and with 10 cm cells at ~4e6 -- a FINER field hangs
+// CLOSER IN, because step_t = 0.5 * cell.
+//
+// LOAD-BEARING SETUP, do not "simplify" it: the ray must travel HORIZONTALLY
+// through the bounds box ABOVE the surface. A ray that hits exits the loop
+// early and proves nothing, which is exactly how the first version of this
+// probe passed against the unfixed code.
+namespace
+{
+    wz::engine::assets::CollisionAssetData flat_field_for_march(float cell)
+    {
+        const uint32_t resolution = 5u;
+        const float extent = 4.0f * cell;
+
+        wz::engine::assets::CollisionAssetData surface{};
+        surface.shape_kind =
+            wz::engine::assets::CollisionShapeKind::TerrainHeightField;
+        surface.occupancy.queryable = true;
+        surface.bounds_min[0] = 0.0f;
+        surface.bounds_min[1] = -1.0f;
+        surface.bounds_min[2] = 0.0f;
+        surface.bounds_max[0] = extent;
+        surface.bounds_max[1] = 3.0f;
+        surface.bounds_max[2] = extent;
+        surface.origin[0] = 0.0f;
+        surface.origin[1] = 0.0f;
+        surface.size[0] = extent;
+        surface.size[1] = extent;
+        surface.resolution_x = resolution;
+        surface.resolution_y = resolution;
+        surface.vertical_scale = 1.0f;
+        surface.height_samples.assign(
+            static_cast<size_t>(resolution) * resolution, 0.0f);
+        return surface;
+    }
+
+    bool march_across_field(float cell, float shooter_distance)
+    {
+        const auto surface = flat_field_for_march(cell);
+        const float extent = 4.0f * cell;
+        wz::engine::collision::CollisionSurfaceSample sample{};
+        return wz::engine::collision::raycast_terrain_surface(
+            surface_entry(surface),
+            { extent * 0.5f + shooter_distance, 2.5f, extent * 0.5f },
+            { -1.0f, 0.0f, 0.0f },
+            shooter_distance * 2.0f + 100.0f,
+            sample);
+    }
+}
+
+// Without the iteration bound this test does not FAIL -- it HANGS, and ctest's
+// per-test timeout is what turns it red. That is the regression it guards.
+TEST(CollisionSurfaceSampling, RayMarchTerminatesFarFromTheColliderOrigin)
+{
+    // Control: near the field the step advances normally and the miss returns.
+    EXPECT_FALSE(march_across_field(1.0f, 10.0f));
+
+    // Inside the measured stall band for 1 m cells.
+    EXPECT_FALSE(march_across_field(1.0f, 9.0e6f));
+    EXPECT_FALSE(march_across_field(1.0f, 1.7e7f));
+
+    // A finer field stalls closer in, so cover its band too.
+    EXPECT_FALSE(march_across_field(0.1f, 4.0e6f));
+    EXPECT_FALSE(march_across_field(0.1f, 8.0e6f));
+}

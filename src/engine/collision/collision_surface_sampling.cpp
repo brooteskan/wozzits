@@ -1543,8 +1543,20 @@ namespace wz::engine::collision
                 span / static_cast<float>(k_max_steps),
                 (std::max)(span, 1e-6f));
 
+            // `t += step_t` is a NO-OP once step_t falls below half an ULP of t,
+            // and `t >= t1` is this loop's only exit -- so a far-away shooter
+            // (large t) with a small step spins forever. Measured (#314, C1-C6):
+            // with 1 m cells the stall opens at ~9e6 local units, and with 10 cm
+            // cells at ~4e6, because a finer field makes step_t smaller. Bound
+            // the ITERATION COUNT, which is what k_max_steps was always for --
+            // it previously only clamped the step SIZE, so the comment above
+            // ("Step count is bounded so a grazing ray can't spin") was false.
             float t_prev = t0;
+            uint32_t steps = 0u;
             for (float t = t0 + step_t; ; t += step_t) {
+                if (++steps > k_max_steps) {
+                    return false;  // no hit found within the step budget
+                }
                 const bool last = t >= t1;
                 const float tc = last ? t1 : t;
                 if (signed_height(tc) <= 0.0f) {
