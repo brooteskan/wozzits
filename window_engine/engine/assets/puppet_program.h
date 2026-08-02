@@ -74,8 +74,16 @@ namespace wz::engine::assets
         // ColorBurn, ...) are genuinely shader-emulated work.
         ClipToLower = 3,
         SliceFromLower = 4,
+        // Inochi's AddGlow / LinearDodge. Pure src*ONE + dst*ONE: no backdrop
+        // sample needed, so a PSO expresses it directly and rhi::BlendMode
+        // already has the member. Both used to fall into the `default:` of
+        // puppet_program_blend_for_part alongside the modes that genuinely need
+        // destination COLOUR, and drew as plain "over" -- a glow layer
+        // rendering flat (issue #316, C3-C6). APPENDED, never reordered: these
+        // ordinals are baked into variant content keys.
+        Additive = 5,
     };
-    inline constexpr std::size_t kPuppetProgramBlendCount = 5;
+    inline constexpr std::size_t kPuppetProgramBlendCount = 6;
 
     // The kPuppetProgramSchema parameter carrying PuppetProgramBlend. The
     // compiler MUST declare it in .parameters or authored nodes never get a

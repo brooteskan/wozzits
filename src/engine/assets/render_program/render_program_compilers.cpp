@@ -98,6 +98,7 @@ namespace wz::engine::assets::internal
                 "Screen",
                 "Clip to lower",
                 "Slice from lower",
+                "Additive",
             };
 
         constexpr std::array<std::string_view, 3> kDepthModeOptions = {

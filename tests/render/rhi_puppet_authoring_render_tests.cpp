@@ -39,6 +39,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <numeric>
 #include <vector>
 
 namespace
@@ -163,7 +164,13 @@ TEST(RhiPuppetAuthoring, SharedProgramSubgraphCommitsAndResolves)
                 ea::kPuppetProgramBlendParam, -1));
         }
         std::ranges::sort(blends);
-        EXPECT_EQ(blends, (std::vector<int64_t>{ 0, 1, 2, 3, 4 }));
+        // Derived from kPuppetProgramBlendCount, not hand-listed: authoring
+        // emits exactly one variant per PuppetProgramBlend, so a member added
+        // to that enum must show up here rather than requiring this literal to
+        // be edited (it was { 0, 1, 2, 3, 4 } until Additive landed, #316).
+        std::vector<int64_t> expected(ea::kPuppetProgramBlendCount);
+        std::iota(expected.begin(), expected.end(), 0);
+        EXPECT_EQ(blends, expected);
     }
 
     const auto commit = assets.commit_asset_graph_draft(draft);

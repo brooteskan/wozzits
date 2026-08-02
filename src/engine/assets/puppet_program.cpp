@@ -190,6 +190,7 @@ float4 main(PSIn input) : SV_TARGET
             return wz::rhi::BlendMode::SourceAtop;
         case PuppetProgramBlend::SliceFromLower:
             return wz::rhi::BlendMode::SliceFromDestination;
+        case PuppetProgramBlend::Additive: return wz::rhi::BlendMode::Additive;
         case PuppetProgramBlend::Normal:   break;
         }
         return wz::rhi::BlendMode::PremultipliedAlpha;
@@ -204,6 +205,13 @@ float4 main(PSIn input) : SV_TARGET
             return PuppetProgramBlend::ClipToLower;
         case inochi::BlendMode::SliceFromLower:
             return PuppetProgramBlend::SliceFromLower;
+        // Pure additive: src*ONE + dst*ONE. These need no backdrop sample, so
+        // they do NOT belong with the shader-emulated modes below -- the
+        // comment there covers the neighbourhood of the decision and these two
+        // sat just outside it, drawing a glow layer flat (issue #316, C3-C6).
+        case inochi::BlendMode::AddGlow:
+        case inochi::BlendMode::LinearDodge:
+            return PuppetProgramBlend::Additive;
         default: break;
         }
         // What is left needs the destination COLOUR (Overlay, SoftLight,
