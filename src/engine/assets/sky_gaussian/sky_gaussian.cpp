@@ -29,8 +29,12 @@ namespace wz::engine::assets::sky
     Vec3 lobe_energy(const SkyGaussianLobe& g)
     {
         const float lambda = g.sharpness > 1e-8f ? g.sharpness : 1e-8f;
-        const float scale =
-            (kTwoPi / lambda) * (1.0f - std::exp(-2.0f * lambda));
+        // -expm1(-2L), not 1 - exp(-2L): in float32 the latter cancels to
+        // exactly 0 below the epsilon at 1.0, so a very broad lobe reported
+        // ZERO energy at precisely the floor that exists to keep this finite.
+        // The correct value there is 4*pi * amplitude. Same defect and same fix
+        // as sg_lighting.cpp's integral() (issue #316, C3-C1).
+        const float scale = (kTwoPi / lambda) * -std::expm1(-2.0f * lambda);
         return g.amplitude * scale;
     }
 

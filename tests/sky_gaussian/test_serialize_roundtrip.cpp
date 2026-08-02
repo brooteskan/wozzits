@@ -87,3 +87,91 @@ TEST(SkyGaussianSerialize, RoundTripPreservesFields)
             in.point_sources[i].solid_angle, 1e-8f);
     }
 }
+
+// --- issue #316: the loader is the one choke point, so it must validate ------
+//
+// sky_gaussian_from_json feeds the resident buffers the shaders read raw. It
+// range-checked direction and amplitude (via read_float3) and NOT sharpness or
+// solid_angle, on adjacent lines of the same function, so an authored 1e39
+// loaded as +inf. Hand-authored .sky_gaussian.json is a real production path --
+// night_sky.sky_gaussian.json is wired into the live project graph.
+namespace
+{
+    bool load_from_text(const char* text, wz::engine::assets::sky::SkyGaussianSet& out,
+                        std::string& error)
+    {
+        wz::json::JSONParseResult parsed =
+            wz::json::parse_json_string(std::string(text));
+        if (!parsed.ok || !parsed.document.root) {
+            error = parsed.error.message;
+            return false;
+        }
+        return wz::engine::assets::sky::sky_gaussian_from_json(
+            *parsed.document.root, out, error);
+    }
+}
+
+TEST(SkyGaussianSerialize, RejectsNonFiniteAndDegenerateFields)
+{
+    wz::engine::assets::sky::SkyGaussianSet set;
+    std::string err;
+
+    // A control that must still load.
+    EXPECT_TRUE(load_from_text(
+        R"({"lobes":[{"direction":[0,0,1],"sharpness":4,"amplitude":[1,1,1]}]})",
+        set, err)) << err;
+
+    // sharpness: non-finite, zero, and negative. A negative sharpness inverts
+    // the lobe into an unbounded anti-lobe growing toward its own antipode.
+    for (const char* doc : {
+             R"({"lobes":[{"direction":[0,0,1],"sharpness":1e39,"amplitude":[1,1,1]}]})",
+             R"({"lobes":[{"direction":[0,0,1],"sharpness":0,"amplitude":[1,1,1]}]})",
+             R"({"lobes":[{"direction":[0,0,1],"sharpness":-1.1,"amplitude":[1,1,1]}]})" })
+    {
+        EXPECT_FALSE(load_from_text(doc, set, err)) << doc;
+    }
+
+    // a degenerate direction has no direction to recover
+    EXPECT_FALSE(load_from_text(
+        R"({"lobes":[{"direction":[0,0,0],"sharpness":4,"amplitude":[1,1,1]}]})",
+        set, err));
+
+    // solid_angle outside (0, 4*pi] is not a cone on the sphere
+    for (const char* doc : {
+             R"({"point_sources":[{"direction":[0,0,1],"radiance":[1,1,1],"solid_angle":0}]})",
+             R"({"point_sources":[{"direction":[0,0,1],"radiance":[1,1,1],"solid_angle":1e39}]})",
+             R"({"point_sources":[{"direction":[0,0,1],"radiance":[1,1,1],"solid_angle":100}]})" })
+    {
+        EXPECT_FALSE(load_from_text(doc, set, err)) << doc;
+    }
+}
+
+// A merely NON-UNIT direction is repaired, not rejected: the fitter always emits
+// unit axes, so a 0.99-length direction in a hand-written file means the
+// direction and not a scaled one. Left unnormalized it broke the closed-form SG
+// bound (measured: axis x1.05 at sharpness 20000 evaluates to +inf), and for a
+// point source it silently made the emitter invisible -- the repo already ships
+// one, tests/render/fixtures/test_rebind_fixture/fixture_sky.sky_gaussian.json,
+// whose |direction| of 0.98995 is below its own cos_r of 0.99999, so no view
+// direction could ever be inside the cone.
+TEST(SkyGaussianSerialize, NonUnitDirectionIsNormalizedNotRejected)
+{
+    wz::engine::assets::sky::SkyGaussianSet set;
+    std::string err;
+
+    ASSERT_TRUE(load_from_text(
+        R"({"lobes":[{"direction":[0,2,0],"sharpness":4,"amplitude":[1,1,1]}],
+            "point_sources":[{"direction":[0.3,0.8,0.5],"radiance":[1,1,1],
+                              "solid_angle":6e-05}]})",
+        set, err)) << err;
+
+    ASSERT_EQ(set.lobes.size(), 1u);
+    EXPECT_NEAR(wz::math::length(set.lobes[0].direction), 1.0f, 1e-6f);
+
+    ASSERT_EQ(set.point_sources.size(), 1u);
+    const float len = wz::math::length(set.point_sources[0].direction);
+    EXPECT_NEAR(len, 1.0f, 1e-6f);
+    // the fixture's own cone: a unit direction is now reachable by a view ray
+    const float cos_r = 1.0f - 6e-05f / (2.0f * 3.14159265358979323846f);
+    EXPECT_GE(len, cos_r);
+}
