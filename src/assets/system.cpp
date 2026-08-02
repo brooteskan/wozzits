@@ -176,11 +176,21 @@ namespace wz::asset
                 auto it = registered_index_.find(dep_key);
                 if (it == registered_index_.end()) return false;  // missing dep
 
-                // add_edge(from=prerequisite, to=dependent)
-                wz::core::graph::add_edge(
-                    builder,
-                    static_cast<NodeHandle>(it->second),   // prerequisite
-                    static_cast<NodeHandle>(i));            // dependent
+                // add_edge(from=prerequisite, to=dependent).
+                // Its return value is load-bearing: it refuses from == to, so a
+                // node naming ITSELF as a prerequisite used to have that edge
+                // silently dropped -- commit() then succeeded, the compiler saw
+                // one fewer dep than the registration declared, and the node's
+                // deps_hash folded a prerequisite the committed DAG did not
+                // have. A declared dependency that produces no edge is a
+                // rejected graph, not a quietly reduced one.
+                if (!wz::core::graph::add_edge(
+                        builder,
+                        static_cast<NodeHandle>(it->second),   // prerequisite
+                        static_cast<NodeHandle>(i)))           // dependent
+                {
+                    return false;
+                }
             }
         }
 
@@ -237,10 +247,16 @@ namespace wz::asset
                     return false;
                 }
 
-                wz::core::graph::add_edge(
-                    builder,
-                    static_cast<NodeHandle>(it->second),
-                    static_cast<NodeHandle>(i));
+                // Same contract as commit(): a declared dependency that yields
+                // no edge (self-dependency) rejects the replacement rather than
+                // committing a graph that is quietly missing it.
+                if (!wz::core::graph::add_edge(
+                        builder,
+                        static_cast<NodeHandle>(it->second),
+                        static_cast<NodeHandle>(i)))
+                {
+                    return false;
+                }
             }
         }
 
@@ -474,7 +490,19 @@ namespace wz::asset
     uint32_t AssetSystem::resolve_all(
         std::vector<std::pair<AssetKey, ResolveError>>* errors)
     {
-        assert(committed_);
+        // Was assert(committed_) alone: a release no-op, and storage_ is an
+        // empty optional before the first commit, so a pre-commit call
+        // dereferenced it and was UB in exactly the build that ships.
+        //
+        // Returning 0 rather than keeping the assert makes this agree with both
+        // siblings -- resolve() reports NodeNotFound ("resolving before commit
+        // is not a crash"), resolve_roots() returns 0 and records NodeNotFound
+        // per root. resolve_all() was the only one of the three that treated an
+        // uncommitted system as a programming error, and it did so only in
+        // debug.
+        if (!committed_) {
+            return 0;
+        }
 
         uint32_t ok = 0;
         for (NodeHandle nh : compilation_order(storage_->dag())) {

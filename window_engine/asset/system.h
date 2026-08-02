@@ -139,9 +139,15 @@ namespace wz::asset {
         //           not create DAG edges. Every non-empty listed key must
         //           itself be registered before commit().
         //
-        // Returns false (and does nothing) if the node's key is already registered.
+        // Returns false (and does nothing) if the node's key is already
+        // registered, or if the node's key is empty. The empty key is the
+        // "unwired optional port" sentinel in dep_keys above, so a node
+        // actually registered under it can never be depended upon and would
+        // make that sentinel ambiguous. replace_registered_assets() has always
+        // rejected it; these two entry points now agree.
 
         inline bool register_asset(AssetNode node, std::vector<AssetKey> dep_keys = {}) {
+            if (node.key == AssetKey{}) return false;
             if (registered_index_.count(node.key)) return false;
 
             const uint32_t slot = static_cast<uint32_t>(registered_.size());
