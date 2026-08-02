@@ -515,6 +515,64 @@ namespace wz::engine::assets::test {
         EXPECT_NE(h2.id, 0u);
     }
 
+    // B1-C3. count() returned uint32_t, so width*height*depth wrapped modulo
+    // 2^32 and valid() accepted a field declaring four billion samples while
+    // holding none -- at() then indexed an empty vector. A hostile or corrupted
+    // disk-cache entry is the vector: the loader restores these three extents
+    // verbatim and leans on valid() as its last check.
+    TEST(ScalarFieldData, CountDoesNotOverflowItsExtents)
+    {
+        ScalarFieldData field;
+        field.width = 65536;
+        field.height = 65536;
+        field.depth = 1;
+        field.values.clear();
+
+        EXPECT_EQ(field.count(), uint64_t{ 65536 } * 65536u)
+            << "the product must be computed at 64 bits";
+        EXPECT_FALSE(field.valid())
+            << "dimensions whose product overflows uint32 must not validate "
+               "against an empty sample array";
+
+        // The honest small case still validates.
+        ScalarFieldData ok;
+        ok.width = 2;
+        ok.height = 2;
+        ok.depth = 1;
+        ok.values = { 1.0f, 2.0f, 3.0f, 4.0f };
+        EXPECT_EQ(ok.count(), 4u);
+        EXPECT_TRUE(ok.valid());
+    }
+
+    // B1-C4. The disk cache stores these four descriptors as raw uint8 and used
+    // to static_cast them straight back. Measured during the B1 audit: a single
+    // flipped bit in the format byte produced a field reporting format == 1
+    // when Float32 == 0 is the only member, and every other check in the loader
+    // (magic, format version, compiler version, stored key, sample-count bound)
+    // covers a different byte region, so nothing caught it.
+    TEST(ScalarFieldData, DescriptorRangeChecksRejectOutOfRangeOrdinals)
+    {
+        EXPECT_TRUE(valid_scalar_field_format(
+            static_cast<uint8_t>(ScalarFieldFormat::Float32)));
+        EXPECT_FALSE(valid_scalar_field_format(1));
+        EXPECT_FALSE(valid_scalar_field_format(255));
+
+        EXPECT_TRUE(valid_scalar_field_domain_kind(
+            static_cast<uint8_t>(ScalarFieldDomainKind::Unknown)));
+        EXPECT_TRUE(valid_scalar_field_domain_kind(
+            static_cast<uint8_t>(ScalarFieldDomainKind::BakedComputation)));
+        EXPECT_FALSE(valid_scalar_field_domain_kind(
+            static_cast<uint8_t>(ScalarFieldDomainKind::BakedComputation) + 1));
+
+        EXPECT_TRUE(valid_scalar_field_sample_layout(
+            static_cast<uint8_t>(ScalarFieldSampleLayout::TexelCentered)));
+        EXPECT_FALSE(valid_scalar_field_sample_layout(1));
+
+        EXPECT_TRUE(valid_scalar_field_origin(
+            static_cast<uint8_t>(ScalarFieldOrigin::TopLeft)));
+        EXPECT_FALSE(valid_scalar_field_origin(1));
+    }
+
 
 } // namespace wz::engine::assets::test
 

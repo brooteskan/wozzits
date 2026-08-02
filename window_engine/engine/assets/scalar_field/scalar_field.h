@@ -54,6 +54,42 @@ namespace wz::engine::assets {
         TopLeft,
     };
 
+    // ─── Descriptor range checks ──────────────────────────────────────────────────
+    //
+    // The disk cache stores these four descriptors as raw uint8 and used to
+    // static_cast them straight back with no range check, so a single flipped
+    // byte produced an out-of-range enum that passed every other validation in
+    // the loader (magic, format version, compiler version, stored key, and the
+    // sample-count bound all cover other regions) and then reached the switch
+    // statements downstream. Measured: a flip of the format byte loaded a field
+    // reporting format == 1 when Float32 == 0 is the only member.
+    //
+    // WHEN YOU APPEND AN ENUMERATOR, UPDATE THE MATCHING PREDICATE HERE. They
+    // live beside the enums rather than in the deserializer so the pairing is
+    // visible at the point of change. Under-accepting is the safe direction: a
+    // cache entry carrying an enumerator this build does not know is rejected,
+    // and the asset simply recompiles.
+
+    [[nodiscard]] constexpr bool valid_scalar_field_format(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(ScalarFieldFormat::Float32);
+    }
+
+    [[nodiscard]] constexpr bool valid_scalar_field_domain_kind(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(ScalarFieldDomainKind::BakedComputation);
+    }
+
+    [[nodiscard]] constexpr bool valid_scalar_field_sample_layout(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(ScalarFieldSampleLayout::TexelCentered);
+    }
+
+    [[nodiscard]] constexpr bool valid_scalar_field_origin(uint8_t v) noexcept
+    {
+        return v <= static_cast<uint8_t>(ScalarFieldOrigin::TopLeft);
+    }
+
     // ─── ScalarFieldGenerator ─────────────────────────────────────────────────────
     //
     // Identifies the procedural generation algorithm for a procedural scalar field
@@ -92,9 +128,17 @@ namespace wz::engine::assets {
 
         std::vector<float> values;
 
-        uint32_t count() const noexcept
+        // 64-bit deliberately: the three extents are each uint32, so their
+        // product overflows a uint32 long before it stops being expressible.
+        // When this returned uint32, `65536 x 65536 x 1` wrapped to 0 and
+        // valid() accepted a field declaring four billion samples while
+        // holding none -- at() then indexed an empty vector. Every caller
+        // must compare against values.size() (a size_t) at this width.
+        uint64_t count() const noexcept
         {
-            return width * height * depth;
+            return static_cast<uint64_t>(width)
+                * static_cast<uint64_t>(height)
+                * static_cast<uint64_t>(depth);
         }
 
         bool valid() const noexcept
@@ -102,7 +146,7 @@ namespace wz::engine::assets {
             return width > 0
                 && height > 0
                 && depth > 0
-                && values.size() == static_cast<size_t>(count());
+                && static_cast<uint64_t>(values.size()) == count();
         }
 
         float at(uint32_t x, uint32_t y = 0, uint32_t z = 0) const

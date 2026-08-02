@@ -423,6 +423,14 @@ namespace wz::engine::assets::internal
                 return false;
             }
 
+            if (!valid_scalar_field_format(format)
+                || !valid_scalar_field_domain_kind(domain_kind)
+                || !valid_scalar_field_sample_layout(layout)
+                || !valid_scalar_field_origin(origin))
+            {
+                return false;
+            }
+
             field.format = static_cast<ScalarFieldFormat>(format);
             field.domain_kind =
                 static_cast<ScalarFieldDomainKind>(domain_kind);
