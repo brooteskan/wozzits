@@ -606,7 +606,40 @@ static void read_write_reject_invalid_inputs()
     WZ_CHECK(position_of(g, producer) < position_of(g, consumer));
 }
 
+// mark_output was the ONE builder verb that returned void, so an out-of-range
+// resource was accepted in silence -- and it is the most expensive one to lose,
+// because output marking is the sole input to dead-pass culling. A stale or
+// mistyped resource did not degrade the frame, it DELETED it: measured on this
+// exact graph, marking FrameGraphResource{999} instead of `out` compiled to
+// acyclic=1 with ZERO surviving passes and execute() returning true. Had the
+// same typo gone to read() or write() it would have returned false. See #317.
+static void mark_output_rejects_invalid_resources()
+{
+    FrameGraph fg;
+    const FrameGraphResource color = fg.create_transient("color", transient_target());
+    const FrameGraphResource out = fg.create_transient("out", transient_target());
+
+    WZ_CHECK(fg.mark_output(out));
+    // Default-constructed (invalid) and past-the-end resources are rejected,
+    // matching read()/write()/set_execute().
+    WZ_CHECK_FALSE(fg.mark_output(FrameGraphResource{}));
+    WZ_CHECK_FALSE(fg.mark_output(FrameGraphResource{ 999 }));
+
+    const uint32_t producer = fg.add_pass("producer");
+    WZ_CHECK(fg.write(producer, color, ResourceState::RenderTarget));
+    const uint32_t consumer = fg.add_pass("consumer");
+    WZ_CHECK(fg.read(consumer, color, ResourceState::ShaderRead));
+    WZ_CHECK(fg.write(consumer, out, ResourceState::RenderTarget));
+
+    // The rejected calls marked nothing, so the real output still drives
+    // culling and both passes survive -- the graph is not silently deleted.
+    const CompiledFrameGraph g = fg.compile();
+    WZ_CHECK(g.acyclic);
+    WZ_CHECK_EQ(g.pass_count(), static_cast<size_t>(2));
+}
+
 int main()
+
 {
     WZ_RUN(chain_orders_and_derives_barriers);
     WZ_RUN(topo_order_follows_resource_version_timeline);
@@ -625,5 +658,6 @@ int main()
     WZ_RUN(uav_write_after_write_gets_barrier);
     WZ_RUN(uav_transition_away_and_back_clears_pending);
     WZ_RUN(read_write_reject_invalid_inputs);
+    WZ_RUN(mark_output_rejects_invalid_resources);
     WZ_TEST_RETURN();
 }

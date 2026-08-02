@@ -194,12 +194,28 @@ namespace wz::rhi
 
         // Mark a resource as an external output that must be produced. Passes
         // that do not contribute to any output are culled.
-        void mark_output(FrameGraphResource resource)
+        //
+        // Same checkable rejection contract as read()/write()/set_execute():
+        // false for an out-of-range resource, and nothing is recorded. It used
+        // to return void, which made it the ONE verb here that could fail
+        // silently -- and the most expensive one to lose, because output
+        // marking is the sole input to dead-pass culling: a mistyped or stale
+        // resource did not degrade the frame, it DELETED it. Measured on the
+        // canonical two-pass RTT graph, marking a stale FrameGraphResource
+        // instead of the real output gave acyclic=1, surviving passes=0,
+        // transients=0 and execute() returning TRUE with zero barriers -- a
+        // well-formed render graph compiling to nothing and reporting success.
+        // Had the same typo gone to read() or write() it would have returned
+        // false. (Not [[nodiscard]], matching its siblings: existing call
+        // sites ignore the return.) See #317.
+        bool mark_output(FrameGraphResource resource)
         {
-            if (resource.index < resources_.size()) {
-                resources_[resource.index].is_output = true;
-                ++revision_;
+            if (!resource.valid() || resource.index >= resources_.size()) {
+                return false;
             }
+            resources_[resource.index].is_output = true;
+            ++revision_;
+            return true;
         }
 
         uint32_t add_pass(std::string name)

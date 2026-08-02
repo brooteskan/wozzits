@@ -16,7 +16,17 @@ namespace wz::rhi
     [[nodiscard]] inline DrawArgs make_draw_args(const GeometryView& geometry)
     {
         DrawArgs args;
-        args.indexed       = geometry.indexed();
+        // An index buffer being BOUND is what makes this an indexed draw; the
+        // count says how much work there is. Those are different questions, and
+        // conflating them (args.indexed = geometry.indexed(), which is
+        // `index_buffer.valid() && index_count != 0`) meant a bound index
+        // buffer with zero indices silently became a NON-indexed draw of
+        // vertex_count instead. Measured: a cube with index_count zeroed drew
+        // 8 vertices instead of 36, recorder ready() still true, no
+        // diagnostic -- a different, wrong draw rather than a refusal. Asking
+        // only about the buffer sends it to the backend's existing zero-count
+        // rejection ("draw: index_count is 0") instead. See #317.
+        args.indexed       = geometry.index_buffer.valid();
         args.index_count   = geometry.index_count;
         args.vertex_count  = geometry.vertex_count;
         args.first_index   = geometry.first_index;

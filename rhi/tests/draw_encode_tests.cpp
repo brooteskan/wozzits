@@ -301,12 +301,54 @@ static void non_indexed_geometry_draw_args()
     }
 }
 
+// An index buffer BOUND with zero indices is an indexed draw with nothing in
+// it -- not a non-indexed draw. make_draw_args used to ask geometry.indexed(),
+// which is `index_buffer.valid() && index_count != 0`, so this shape silently
+// became a DrawInstanced of vertex_count: a different, wrong draw that the
+// backend had no reason to refuse. Measured through the DX12 recorder before
+// the fix: a cube with index_count zeroed drew 8 vertices instead of 36 with
+// ready() still true. Now it stays indexed with count 0 and hits the backend's
+// existing zero-count rejection. See #317.
+static void bound_index_buffer_with_zero_indices_stays_indexed()
+{
+    DrawListTagRegistry passes;
+    const DrawListTag forward = passes.acquire("forward");
+
+    TagRegistry<16> programs;
+    const Tag program = programs.acquire("mesh_forward");
+
+    GeometryView geometry = make_indexed_geometry();
+    WZ_CHECK(geometry.index_buffer.valid());
+    const uint32_t real_vertex_count = geometry.vertex_count;
+    WZ_CHECK(real_vertex_count != 0u);
+    geometry.index_count = 0;
+
+    const DrawPacket packet = make_single_pass_packet(
+        forward,
+        program,
+        nullptr,
+        nullptr,
+        std::span<const uint8_t>{},
+        geometry);
+
+    Recorder recorder;
+    record_packet(packet, forward, recorder);
+
+    WZ_CHECK(recorder.args.has_value());
+    if (recorder.args) {
+        WZ_CHECK(recorder.args->indexed);
+        WZ_CHECK_EQ(recorder.args->index_count, 0u);
+    }
+}
+
 int main()
+
 {
     WZ_RUN(scene_packet_records_verbs_in_order);
     WZ_RUN(pass_not_in_packet_records_nothing);
     WZ_RUN(multi_pass_selects_per_pass_item);
     WZ_RUN(empty_root_constants_skips_set);
     WZ_RUN(non_indexed_geometry_draw_args);
+    WZ_RUN(bound_index_buffer_with_zero_indices_stays_indexed);
     WZ_TEST_RETURN();
 }
