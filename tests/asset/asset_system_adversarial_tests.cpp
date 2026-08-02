@@ -367,6 +367,86 @@ TEST(AssetSystemAdversarial, EmptyKeyIsRejectedByBothRegistrationPaths)
     EXPECT_FALSE(sys.replace_registered_assets(entries));
 }
 
+// B1-H4. register_asset() had no counterpart, so a node naming a dependency
+// that is never registered wedged the system: commit() failed, the bad
+// registration stayed in registered_, and every later commit() failed too. The
+// only escape was rebuilding the whole authoring set.
+TEST(AssetSystemAdversarial, DeregisterWithdrawsANodeThatWedgedCommit)
+{
+    AssetSystem sys(make_registry());
+    ASSERT_TRUE(sys.register_asset(source(1)));
+    ASSERT_TRUE(sys.commit());
+    ASSERT_TRUE(resolved(sys.resolve(key_n(1))));
+
+    // A node whose declared dependency does not exist.
+    ASSERT_TRUE(sys.register_asset(source(2), { key_n(4242) }));
+    ASSERT_FALSE(sys.commit());
+    ASSERT_FALSE(sys.commit()) << "and it stays broken";
+
+    EXPECT_FALSE(sys.deregister_asset(key_n(999))) << "never registered";
+    ASSERT_TRUE(sys.deregister_asset(key_n(2)));
+    EXPECT_FALSE(sys.is_registered(key_n(2)));
+
+    EXPECT_TRUE(sys.commit());
+    EXPECT_TRUE(resolved(sys.resolve(key_n(1))));
+}
+
+// The erased slot shifts every later index down, so the index must be rebuilt.
+// A stale slot number would wire the next commit()'s edges to the wrong node --
+// which resolves successfully and silently compiles against the wrong input.
+TEST(AssetSystemAdversarial, DeregisterKeepsRemainingEdgesPointingAtTheRightNodes)
+{
+    AssetSystem sys(make_registry());
+    ASSERT_TRUE(sys.register_asset(source(1)));
+    ASSERT_TRUE(sys.register_asset(source(2)));   // erased below
+    ASSERT_TRUE(sys.register_asset(source(3)));
+    ASSERT_TRUE(sys.register_asset(source(4), { key_n(3) }));
+    ASSERT_TRUE(sys.commit());
+
+    ASSERT_TRUE(sys.deregister_asset(key_n(2)));
+    ASSERT_TRUE(sys.commit());
+
+    for (const AssetSystem::RegistrationEntry& e : sys.registered_assets()) {
+        EXPECT_TRUE(sys.is_registered(e.node.key));
+    }
+    ASSERT_TRUE(resolved(sys.resolve(key_n(4))));
+
+    // Node 4's single prerequisite must still be node 3.
+    const AssetGraph* g = sys.graph();
+    ASSERT_NE(g, nullptr);
+    const NodeHandle nh = find_asset_node(sys.index(), key_n(4));
+    ASSERT_NE(nh, INVALID_ASSET_NODE);
+    const auto prereqs = prerequisites(*g, nh);
+    ASSERT_EQ(prereqs.size(), 1u);
+    EXPECT_EQ(wz::core::graph::node_data(*g, prereqs[0]).key, key_n(3));
+}
+
+// B1-H5. AssetCache::invalidate() marks only the cache slot stale, but
+// compiled_nodes_ is documented as parallel to it -- so contains() reported
+// absent while find_compiled()/query() still handed out the stale handle.
+TEST(AssetSystemAdversarial, InvalidateKeepsBothQuerySurfacesInStep)
+{
+    AssetSystem sys(make_registry());
+    ASSERT_TRUE(sys.register_asset(source(1)));
+    ASSERT_TRUE(sys.commit());
+    ASSERT_TRUE(resolved(sys.resolve(key_n(1))));
+    ASSERT_NE(sys.find_compiled(key_n(1)), nullptr);
+    ASSERT_EQ(sys.query(kType).size(), 1u);
+
+    sys.invalidate(key_n(1));
+
+    EXPECT_FALSE(sys.cache().contains(key_n(1)));
+    EXPECT_EQ(sys.find_compiled(key_n(1)), nullptr);
+    EXPECT_TRUE(sys.query(kType).empty());
+
+    // ...and the point of a soft invalidate: the next resolve recompiles.
+    const int before = g_behave.compiles;
+    EXPECT_TRUE(resolved(sys.resolve(key_n(1))));
+    EXPECT_EQ(g_behave.compiles, before + 1);
+    EXPECT_NE(sys.find_compiled(key_n(1)), nullptr);
+    EXPECT_EQ(sys.query(kType).size(), 1u);
+}
+
 // B1-H6. The committed_ guard was assert-only, so a pre-commit call
 // dereferenced an empty optional in release — UB in exactly the build that
 // ships. resolve() has always treated "not committed" as a clean miss.

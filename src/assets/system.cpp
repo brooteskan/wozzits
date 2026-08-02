@@ -218,6 +218,29 @@ namespace wz::asset
         return true;
     }
 
+    bool AssetSystem::deregister_asset(const AssetKey& key)
+    {
+        const auto it = registered_index_.find(key);
+        if (it == registered_index_.end()) {
+            return false;
+        }
+
+        registered_.erase(registered_.begin() + it->second);
+
+        // Every slot after the erased one shifts down, so the index is rebuilt
+        // rather than patched -- registration is not a hot path, and a stale
+        // slot number here would silently wire an edge to the wrong node in the
+        // next commit().
+        registered_index_.clear();
+        registered_index_.reserve(registered_.size());
+        for (uint32_t i = 0; i < static_cast<uint32_t>(registered_.size()); ++i) {
+            registered_index_.emplace(registered_[i].node.key, i);
+        }
+
+        ++registration_epoch_;
+        return true;
+    }
+
     bool AssetSystem::replace_registered_assets(
         std::vector<RegistrationEntry> entries)
     {

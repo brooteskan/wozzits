@@ -157,6 +157,23 @@ namespace wz::asset {
             return true;
         }
 
+        // Withdraw a previously registered node. Returns false if the key was
+        // never registered.
+        //
+        // register_asset() had no counterpart, which made one failure mode
+        // unrecoverable: a node naming a dependency that is never registered
+        // makes commit() return false, and because the bad registration stays
+        // in registered_, EVERY later commit() fails too. The only escape was
+        // to rebuild the whole authoring set through
+        // replace_registered_assets().
+        //
+        // Does NOT touch the committed graph — call commit() to rebuild — and
+        // does NOT evict the key's cache or compiled-node entries, because a
+        // deregistration is usually one step of a larger edit. evict_unregistered()
+        // is the sweep that reconciles both against the registered set, and the
+        // bind path already runs it for exactly this reason.
+        bool deregister_asset(const AssetKey& key);
+
         // Atomically replace the registered authoring DAG and rebuild the
         // committed graph. On failure, the previous registrations and committed
         // graph remain active.
@@ -372,6 +389,22 @@ namespace wz::asset {
         // resolve assets or touch runtime tables; it only reports graph shape
         // plus current resident/cache state.
         [[nodiscard]] std::string debug_graph_dot() const;
+
+        // Soft-invalidate a key so the next resolve() recompiles it, keeping
+        // BOTH halves of the cache/compiled-node pair in step.
+        //
+        // AssetCache::invalidate() alone only marks the cache slot stale;
+        // compiled_nodes_ is documented as "parallel to the cache" but is
+        // private and knows nothing about it, so between the invalidate and the
+        // next resolve() the two query surfaces disagreed: cache().contains()
+        // reported absent while find_compiled() and query() still handed out
+        // the stale handle. resolve() itself was always correct (it recompiles
+        // on a cache miss); it was readers that could be misled.
+        void invalidate(const AssetKey& key)
+        {
+            cache_.invalidate(key);
+            compiled_nodes_.erase(key);
+        }
 
         const AssetIndex& index()    const { return index_; }
         AssetCache& cache() { return cache_; }

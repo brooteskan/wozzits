@@ -41,6 +41,13 @@ public:
     // Soft-invalidate an entry: marks it stale without removing it.
     // Useful for hot-reload: invalidate → recompile → store. The slot is reused
     // so the hash table does not grow during repeated invalidation cycles.
+    //
+    // PREFER AssetSystem::invalidate() when the cache belongs to one. This is
+    // the cache half only: an AssetSystem also keeps a compiled-node record per
+    // key that is documented as parallel to this table, and calling THIS
+    // directly leaves the two disagreeing — contains() reports absent while the
+    // system's find_compiled() and query() still return the stale handle, until
+    // something re-resolves the key.
     void invalidate(const AssetKey& key) {
         auto it = entries_.find(key);
         if (it != entries_.end()) it->second.valid = false;
