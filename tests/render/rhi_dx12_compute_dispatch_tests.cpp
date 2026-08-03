@@ -7,6 +7,7 @@
 #include <engine/rendering/rhi_gpu_backend.h>
 
 #include <gpu/compute.h>
+#include <gpu/shader.h>
 #include <gpu/gpu.h>
 #include <window/window2.h>
 
@@ -15,6 +16,9 @@
 #include <wozzits/rhi/shader_resource_group.h>
 
 #define WIN32_LEAN_AND_MEAN
+#include <cstring>
+#include <string>
+
 #include <d3dcompiler.h>
 #include <wrl/client.h>
 
@@ -193,4 +197,86 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
 
     gpu.resources.release(output);
     gpu.resources.collect(UINT64_MAX);
+}
+
+// ── The shader-warning channel (#316, C3-C2) ─────────────────────────────
+//
+// compile_hlsl read FXC's diagnostic blob on FAILURE and released it unread on
+// SUCCESS, so every warning the corpus emits was discarded at the one place
+// that could see it. `out_warnings` is that channel; these two tests are what
+// stop it from being a no-op nobody notices.
+//
+// The positive case matters more than it looks: the shipping corpus is
+// currently warning-FREE at the sites the render tests exercise, so a test that
+// only ran real shaders would pass identically with the channel removed. This
+// provokes a diagnostic on purpose.
+
+namespace
+{
+    // Returning a value that was never fully written. FXC: X3578, "Output
+    // value 'main' is not completely initialized". Chosen because it is a
+    // WARNING -- the shader still compiles, which is the whole case under
+    // test. (Asserting the exact code rather than just "non-empty" earned
+    // its keep immediately: it caught that I had guessed X4000.)
+    constexpr const char* kWarnsButCompiles =
+        "float4 main() : SV_TARGET\n"
+        "{\n"
+        "    float4 c;\n"
+        "    c.x = 1.0f;\n"
+        "    return c;\n"
+        "}\n";
+
+    constexpr const char* kClean =
+        "float4 main() : SV_TARGET\n"
+        "{\n"
+        "    return float4(1.0f, 0.0f, 0.0f, 1.0f);\n"
+        "}\n";
+
+    std::span<const uint8_t> as_bytes(const char* text)
+    {
+        return { reinterpret_cast<const uint8_t*>(text), std::strlen(text) };
+    }
+}
+
+TEST_F(RhiComputeDeviceFixture, ShaderWarningsReachTheCallerOnASuccessfulCompile)
+{
+    wz::gpu::HLSLCompileDesc desc{};
+    desc.stage  = wz::gpu::ShaderStage::Pixel;
+    desc.entry  = "main";
+    desc.target = "ps_5_1";
+
+    const std::span<const uint8_t> source = as_bytes(kWarnsButCompiles);
+    std::string error;
+    std::string warnings;
+    const wz::gpu::GPUHandle handle = wz::gpu::compile_hlsl(
+        device, { &source, 1 }, desc, &error, &warnings);
+
+    // It COMPILED -- this is not the failure path.
+    EXPECT_TRUE(handle.valid()) << error;
+    EXPECT_TRUE(error.empty());
+
+    EXPECT_FALSE(warnings.empty())
+        << "a shader that compiles with a diagnostic reported nothing; the "
+           "success path is dropping FXC's blob again";
+    EXPECT_NE(warnings.find("X3578"), std::string::npos)
+        << "got a diagnostic, but not the expected one: " << warnings;
+}
+
+TEST_F(RhiComputeDeviceFixture, ACleanShaderReportsNoWarnings)
+{
+    wz::gpu::HLSLCompileDesc desc{};
+    desc.stage  = wz::gpu::ShaderStage::Pixel;
+    desc.entry  = "main";
+    desc.target = "ps_5_1";
+
+    const std::span<const uint8_t> source = as_bytes(kClean);
+    std::string error;
+    std::string warnings;
+    const wz::gpu::GPUHandle handle = wz::gpu::compile_hlsl(
+        device, { &source, 1 }, desc, &error, &warnings);
+
+    EXPECT_TRUE(handle.valid()) << error;
+    // Without this, the test above passes for a channel that reports
+    // unconditionally.
+    EXPECT_TRUE(warnings.empty()) << "unexpected diagnostic: " << warnings;
 }

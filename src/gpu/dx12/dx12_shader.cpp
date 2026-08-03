@@ -25,7 +25,8 @@ namespace wz::gpu
         wz::gpu::Device& device,
         std::span<const std::span<const uint8_t>> sources,
         const HLSLCompileDesc& desc,
-        std::string* out_error)
+        std::string* out_error,
+        std::string* out_warnings)
     {
         // Not needed by D3DCompile itself, but this verifies the GPU device is valid
         // and keeps the function shaped correctly for the later blob table.
@@ -90,8 +91,20 @@ namespace wz::gpu
             return INVALID_GPU_HANDLE;
         }
 
+        // Compiled, but FXC may still have filled the blob -- warnings. Hand
+        // them up rather than releasing them unread, which is what this did
+        // and why the corpus's diagnostics were invisible (#316, C3-C2).
         if (error_blob)
         {
+            if (out_warnings)
+            {
+                const char* text =
+                    static_cast<const char*>(error_blob->GetBufferPointer());
+                if (text && *text)
+                {
+                    *out_warnings = text;
+                }
+            }
             error_blob->Release();
             error_blob = nullptr;
         }

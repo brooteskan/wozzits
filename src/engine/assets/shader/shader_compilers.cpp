@@ -247,8 +247,21 @@ namespace wz::engine::assets::internal
                 }
 
                 std::string compile_error;
-                wz::gpu::GPUHandle gpu_handle =
-                    wz::gpu::compile_hlsl(device, sources, *desc, &compile_error);
+                std::string compile_warnings;
+                wz::gpu::GPUHandle gpu_handle = wz::gpu::compile_hlsl(
+                    device, sources, *desc, &compile_error, &compile_warnings);
+
+                // A shader that compiled but had something said about it. This
+                // is the only place in the engine that can see FXC's warnings,
+                // and it used to release them unread (#316, C3-C2). Warn rather
+                // than fail: whether a warning should be an error is C3-Q3 and
+                // is not settled here.
+                if (!compile_warnings.empty()) {
+                    logger.warn(
+                        "shader compiled with diagnostics (target="
+                        + desc->target + " entry=" + desc->entry + "): "
+                        + compile_warnings);
+                }
 
                 if (!gpu_handle.valid()) {
                     std::string reason =
