@@ -324,10 +324,28 @@ namespace wz::engine::cognition::qstate
                         V[base + q] = xs * vp + c * vq;
                     }
                     // The rotation diagonalizes the pair's 2x2 Gram matrix, so the
-                    // new squared norms are its eigenvalues.
+                    // new squared norms are its eigenvalues. Both are eigenvalues
+                    // of a POSITIVE SEMI-DEFINITE matrix, so both are >= 0
+                    // mathematically -- but on a near-rank-deficient pair (a column
+                    // that is nearly a multiple of another, which is exactly what a
+                    // chi-truncated bond produces) the subtraction rounds to a small
+                    // NEGATIVE value. That fed `scale = alpha * beta` above, whose
+                    // `std::sqrt(scale)` then raised FE_INVALID and returned NaN, so
+                    // the "already orthogonal" shortcut compared false and the pair
+                    // was rotated needlessly. Harmless to the RESULT -- the rotation
+                    // is norm-preserving and the reconstruction error stays at 1e-15
+                    // -- but it manufactured a NaN on an ordinary healthy input,
+                    // which is noise in a channel that should only fire on real
+                    // trouble. Clamping here rather than at the sqrt fixes it where
+                    // the invariant lives: a squared norm is never negative.
+                    //
+                    // Argument order is deliberate: std::max(0.0, NaN) returns 0.0
+                    // while std::max(NaN, 0.0) returns NaN, so the constant goes
+                    // first. (Neither operand can be NaN here; the order is a habit
+                    // this codebase has been bitten by -- see the C1 audit.)
                     const Real shift = t * absg;
-                    norms[p] = alpha - shift;
-                    norms[q] = beta + shift;
+                    norms[p] = std::max(Real{ 0 }, alpha - shift);
+                    norms[q] = std::max(Real{ 0 }, beta + shift);
                 }
             }
             if (off <= kTol * kTol * diag) {

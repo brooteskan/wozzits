@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cfenv>
 #include <cmath>
 #include <utility>
 #include <vector>
@@ -513,6 +514,58 @@ TEST(QState, SvdScratchOverloadMatchesTheAllocatingOne)
         }
         for (std::size_t i = 0; i < out.vh.size(); ++i) {
             EXPECT_LT(std::abs(out.vh[i] - expected.vh[i]), 1e-15);
+        }
+    }
+}
+
+// A near-rank-deficient input must not manufacture a NaN inside the Jacobi
+// sweep. `norms[p] = alpha - shift` is an eigenvalue of a positive semi-definite
+// 2x2 Gram matrix, so it is non-negative mathematically -- but it rounds NEGATIVE
+// when one column is nearly a multiple of another, which then made
+// `std::sqrt(alpha * beta)` in the orthogonality shortcut raise FE_INVALID and
+// return NaN.
+//
+// LOAD-BEARING SETUP, do not "simplify" it: the last column must be a NEAR
+// multiple of the first, not an exact one. An EXACTLY rank-deficient input does
+// NOT reproduce this -- measured, duplicate columns are clean at every count --
+// because the pair orthogonalizes in one rotation and the subtraction never
+// accumulates the rounding. The 1e-6 perturbation is the whole test.
+//
+// The result was always correct (the needless rotation is norm-preserving), so
+// asserting only on the singular values would pass against the unfixed code.
+// The assertion that fails without the clamp is the FE_INVALID one.
+TEST(QState, NearRankDeficientSvdRaisesNoFloatingPointException)
+{
+    constexpr uint32_t kRows = 16;
+    constexpr uint32_t kCols = 8;
+    std::vector<Complex> a(static_cast<std::size_t>(kRows) * kCols);
+    for (uint32_t i = 0; i < kRows; ++i) {
+        for (uint32_t j = 0; j < kCols; ++j) {
+            a[static_cast<std::size_t>(i) * kCols + j] = Complex{
+                0.5 + 0.25 * static_cast<double>((i * 7 + j * 3) % 5),
+                0.1 * static_cast<double>((i + 2 * j) % 4) };
+        }
+    }
+    for (uint32_t i = 0; i < kRows; ++i) {
+        a[static_cast<std::size_t>(i) * kCols + (kCols - 1)] =
+            a[static_cast<std::size_t>(i) * kCols] * Complex{ 1.0 + 1e-6, 0.0 };
+    }
+
+    std::feclearexcept(FE_ALL_EXCEPT);
+    const Svd out = wz::engine::cognition::qstate::svd(a, kRows, kCols, 0u);
+    const int raised = std::fetestexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW);
+    std::feclearexcept(FE_ALL_EXCEPT);
+
+    EXPECT_EQ(raised, 0) << "the Jacobi sweep manufactured a NaN or an infinity";
+
+    // And it is still a correct decomposition: every singular value real,
+    // non-negative and descending.
+    ASSERT_EQ(out.rank, kCols);
+    for (uint32_t r = 0; r < out.rank; ++r) {
+        EXPECT_TRUE(std::isfinite(out.s[r]));
+        EXPECT_GE(out.s[r], 0.0);
+        if (r > 0) {
+            EXPECT_LE(out.s[r], out.s[r - 1] + 1e-15);
         }
     }
 }
