@@ -2,7 +2,14 @@
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/key_factories/render_program.h>
+#include <engine/assets/mesh_asset_module.h>
 #include <engine/assets/render_program/render_program_asset_module.h>
+#include <engine/assets/renderable_asset_module.h>
+#include <engine/assets/scene/scene_asset_data.h>
+#include <engine/rendering/engine_gpu_context.h>
+#include <engine/rendering/rhi_scene_renderer.h>
+#include <math/mat4.h>
+#include <math/math_types.h>
 #include <engine/assets/renderable/renderable.h>
 #include <engine/assets/type_extensions.h>
 #include <engine/rendering/builtin_render_programs.h>
@@ -854,4 +861,92 @@ TEST_F(RenderProgramGpuFixture, EveryBuiltinConvertsToTheRhiContract)
     // otherwise make this pass green having checked nothing.
     ASSERT_GT(considered, 8u) << "the census stopped seeing builtins";
     EXPECT_EQ(convertible, considered);
+}
+
+// ── The render-time fallback, end to end ─────────────────────────────────
+//
+// The census above proves a builtin CONVERTS. This proves the renderer
+// actually takes it through the path it converts for.
+//
+// A builtin never gets an rhi program from the compiler: publication is the
+// CUSTOM path only (publish_custom_rhi_render_program), and the builtin's
+// route is RhiSceneRenderer::realize_program's find-then-fallback arm, which
+// bridges at render time and registers the result. Nothing tested that arm
+// with a builtin, which is how all 14 stayed unrenderable on rhi without a
+// red test anywhere (#317 D1-C11).
+//
+// SkySurface is the builtin to drive it with: Fullscreen -> VertexSource::None,
+// so the pipeline needs no vertex input and does not meet the InputAssembler
+// refusal that the other nine mesh builtins would (#317 D1-Q1). What is under
+// test is the BRIDGE, not the draw -- so the assertions are that the fallback
+// ran exactly once and that it produced a registered program, which only
+// happens after to_rhi_render_program_desc has accepted the builtin.
+TEST_F(RenderProgramGpuFixture, RendererBridgesABuiltinAtRenderTime)
+{
+    using namespace wz::engine::assets;
+
+    wz::engine::rendering::EngineGpuContext gpu(device);
+    EngineAssetLibrary assets(gpu, logger, resources.wz_root());
+
+    const auto shaders = assets.shaders().create_shader_pair({
+        .name        = "stub/sky_surface",
+        .vertex_path = "shaders/stub/stub_vs.hlsl",
+        .pixel_path  = "shaders/stub/stub_ps.hlsl",
+        });
+    ASSERT_TRUE(shaders.valid());
+
+    const auto program = assets.render_programs().create_builtin({
+        .name          = "program/sky_surface",
+        .program       = BuiltinRenderProgram::SkySurface,
+        .vertex_shader = shaders.vertex_shader,
+        .pixel_shader  = shaders.pixel_shader,
+        });
+    ASSERT_TRUE(program.valid());
+
+    const auto mesh = assets.meshes().create_procedural_mesh({
+        .name = "mesh/sky_carrier",
+        .kind = ProceduralMeshKind::Cube,
+        });
+    ASSERT_TRUE(mesh.valid());
+
+    const auto renderable = assets.renderables().create_rhi_pull_mesh({
+        .name    = "renderable/sky_surface",
+        .mesh    = mesh,
+        .program = program,
+        });
+    ASSERT_TRUE(renderable.valid());
+
+    ASSERT_TRUE(assets.commit());
+    ASSERT_TRUE(assets.resolve_all().ok());
+
+    wz::engine::rendering::RhiSceneRenderer renderer(gpu, logger);
+
+    // The compiler published nothing for a builtin -- that is the premise.
+    const std::size_t before = renderer.registered_program_count();
+    EXPECT_EQ(renderer.render_time_program_bridge_count(), 0u);
+
+    SceneNodeAsset node{};
+    node.id = wz::scene::AuthoredEntityId{ "sky" };
+    node.name = "sky";
+    node.visible = true;
+    node.renderable_asset = renderable.output;
+    const std::vector<SceneNodeAsset> nodes{ node };
+
+    ASSERT_TRUE(wz::gpu::begin_frame(device));
+    wz::gpu::clear(device, 0.0f, 0.0f, 0.0f, 1.0f);
+    (void)renderer.render_scene(
+        nodes, assets, wz::math::Mat4::identity(), wz::math::Vec3{});
+    ASSERT_TRUE(wz::gpu::end_frame(device));
+    wz::gpu::present(device, /*sync_interval*/ 0);
+
+    // The fallback ran, exactly once, because the builtin had no published
+    // program to find.
+    EXPECT_EQ(renderer.render_time_program_bridge_count(), 1u);
+
+    // And it SUCCEEDED. register_program happens only after the conversion is
+    // accepted, so a refused builtin leaves this flat -- which is what it did
+    // for all 14 before their root-constant blocks were named.
+    EXPECT_GT(renderer.registered_program_count(), before)
+        << "the render-time bridge refused the builtin, so it cannot render "
+           "on the rhi path at all";
 }
