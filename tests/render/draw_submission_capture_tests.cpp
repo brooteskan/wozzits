@@ -9,7 +9,7 @@
 // four of its claims into measurements by recording, at the two places that
 // can answer, what a real device frame actually does:
 //
-//   * RhiSceneRenderer::last_submitted_draws() -- WHAT the renderer handed to
+//   * RhiSceneRenderer::captured_submissions() -- WHAT the renderer handed to
 //     record_packet, in submission order, with the node each came from.
 //   * RhiDx12CommandRecorder::CapturedDraw -- the arguments of every
 //     ID3D12GraphicsCommandList::DrawInstanced call, taken at the call site.
@@ -17,7 +17,12 @@
 // Neither alone is enough. The first is the renderer's intent and could be a
 // lie about the command list; the second is ground truth but anonymous. Read
 // together, one is the control for the other, and the first test here is that
-// cross-check rather than any claim about rungs.
+// cross-check rather than any claim about rungs. It has already earned that
+// place once: a census over a real project came back 23 packets against 112
+// draws, because the two logs had different lifetimes (the renderer cleared
+// per render_scene while the recorder accumulated over a whole host frame,
+// which is several passes). Hence begin_frame_capture / end_frame_capture,
+// which scope both to the same span.
 //
 // The scene is alpha_order.scene.json: three MUTUALLY OVERLAPPING,
 // ALPHA-BLENDED cubes strung along the view axis, authored near-first. If
@@ -119,12 +124,14 @@ namespace
             const wz::math::Mat4& view_projection,
             const wz::math::Vec3& camera_world_pos)
         {
+            app.renderer_for_testing().begin_frame_capture();
             ASSERT_TRUE(wz::gpu::begin_frame(ctx.device));
             wz::gpu::clear(ctx.device, 0.10f, 0.10f, 0.12f, 1.0f);
             EXPECT_TRUE(app.renderer_for_testing().render_scene(
                 nodes, *ctx.assets, view_projection, camera_world_pos));
             ASSERT_TRUE(wz::gpu::end_frame(ctx.device));
             wz::gpu::present(ctx.device, /*sync_interval*/ 0);
+            app.renderer_for_testing().end_frame_capture();
         }
 
         // The scene's drawable nodes, in authored array order — the order the
@@ -148,7 +155,7 @@ namespace
             const er::RhiSceneRenderer& renderer)
         {
             std::vector<std::size_t> out;
-            for (const auto& submitted : renderer.last_submitted_draws()) {
+            for (const auto& submitted : renderer.captured_submissions()) {
                 out.push_back(submitted.node_index);
             }
             return out;
@@ -170,11 +177,12 @@ namespace
         render_one_app_frame(app);
 
         std::vector<CapturedDraw> captured;
-        app.renderer_for_testing().set_draw_capture(&captured);
+        app.renderer_for_testing().begin_frame_capture(&captured);
         render_one_app_frame(app);
-        app.renderer_for_testing().set_draw_capture(nullptr);
+        app.renderer_for_testing().end_frame_capture();
 
-        const auto submitted = app.renderer_for_testing().last_submitted_draws();
+        const auto submitted =
+            app.renderer_for_testing().captured_submissions();
         ASSERT_FALSE(submitted.empty())
             << "the scene recorded no draws at all";
         for (const auto& entry : submitted) {
@@ -201,9 +209,9 @@ namespace
         render_one_app_frame(app);
 
         std::vector<CapturedDraw> captured;
-        app.renderer_for_testing().set_draw_capture(&captured);
+        app.renderer_for_testing().begin_frame_capture(&captured);
         render_one_app_frame(app);
-        app.renderer_for_testing().set_draw_capture(nullptr);
+        app.renderer_for_testing().end_frame_capture();
 
         const std::vector<ea::SceneNodeAsset> visible =
             drawables(app.authored_scene_nodes());

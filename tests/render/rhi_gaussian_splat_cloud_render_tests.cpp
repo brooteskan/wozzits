@@ -309,7 +309,7 @@ TEST(RhiGaussianSplatCloudRender, RealizesAndRecordsADraw)
         std::vector<
             wz::engine::rendering::RhiDx12CommandRecorder::CapturedDraw>
             captured;
-        renderer.set_draw_capture(&captured);
+        renderer.begin_frame_capture(&captured);
 
         ASSERT_TRUE(wz::gpu::begin_frame(device));
         wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
@@ -320,7 +320,7 @@ TEST(RhiGaussianSplatCloudRender, RealizesAndRecordsADraw)
                "the draw";
         ASSERT_TRUE(wz::gpu::end_frame(device));
         wz::gpu::present(device, /*sync_interval*/ 0);
-        renderer.set_draw_capture(nullptr);
+        renderer.end_frame_capture();
 
         // The batching claim, measured. A whole cloud is ONE draw -- the
         // Draw-submission ladder's R2 batching, reached here and nowhere else

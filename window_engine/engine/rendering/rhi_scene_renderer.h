@@ -29,6 +29,7 @@
 #include <math/math_types.h>
 
 #include <asset/types.h>
+#include <scene/scene_ecs.h>   // AuthoredEntityId, for the frame-capture record
 
 #include <wozzits/rhi/draw_list_tag.h>
 #include <wozzits/rhi/draw_packet.h>
@@ -281,31 +282,77 @@ namespace wz::engine::rendering
         // actually became. Comparing them is the point -- neither alone can
         // tell you the renderer's intent matched the command list.
 
+        // Which realize branch produced the packet. A census over a real
+        // project is mostly a question about paths, not nodes: one clipmap and
+        // one splat cloud say more about a frame's cost than fifty meshes do.
+        enum class SubmittedKind : std::uint8_t
+        {
+            Mesh,        // pull mesh / gpu_sparse
+            Custom,      // authored custom renderable (0x70A), incl. clipmap heads
+            SplatCloud,
+            StarField,
+            PuppetPart,
+            PuppetMask,  // the #275 mask prepass: a Part re-drawn into its target
+        };
+
         // One entry per packet handed to record_packet during the last
         // render_scene(), in submission order.
         struct SubmittedDraw
         {
-            // Index into the `nodes` span render_scene was given.
+            // Index into the `nodes` span render_scene was given, and the id of
+            // that node. The id is carried because a caller cannot always
+            // reconstruct the span the app rendered -- document_.nodes() holds
+            // grafted and spawned nodes that authored_scene_nodes() drops, so
+            // index alignment is not something a test can assume.
             std::size_t node_index = 0;
+            wz::scene::AuthoredEntityId node_id;
+            SubmittedKind kind = SubmittedKind::Mesh;
             wz::engine::assets::DrawLayer draw_layer =
                 wz::engine::assets::DrawLayer::World;
             // Which Part of a multi-packet (puppet) renderable; 0 otherwise.
             std::uint32_t part_index = 0;
+            // Which render_scene call within the capture. A HOST frame is not
+            // one pass: every authored render-to-texture target gets its own,
+            // and the main pass is last. Counting draws without this reads a
+            // whole frame's cost as if it were the main pass's.
+            std::uint32_t pass_index = 0;
             // The recorder refused this one, so it issued no draw.
             bool rejected = false;
         };
 
-        [[nodiscard]] std::span<const SubmittedDraw>
-        last_submitted_draws() const
+        // Start capturing, clearing both logs. `sink` (may be null) receives the
+        // recorder's DrawInstanced arguments for the same span of time.
+        //
+        // Scoped by the CALLER, deliberately: the renderer cannot see a host
+        // frame boundary -- render_scene runs once per authored render target
+        // plus once for the main pass. An earlier version cleared the
+        // submission log at the top of every render_scene while the recorder
+        // sink accumulated, so a census over a real project reported 23
+        // packets against 112 draws. The cross-check caught it; matching the
+        // two lifetimes is the fix.
+        void begin_frame_capture(
+            std::vector<RhiDx12CommandRecorder::CapturedDraw>* sink = nullptr)
         {
-            return submitted_draws_;
+            submitted_draws_.clear();
+            capture_pass_ = 0;
+            capturing_ = true;
+            if (sink) {
+                sink->clear();
+            }
+            recorder_.set_draw_capture(sink);
         }
 
-        // Forwarded to the recorder; see RhiDx12CommandRecorder::CapturedDraw.
-        void set_draw_capture(
-            std::vector<RhiDx12CommandRecorder::CapturedDraw>* sink) noexcept
+        void end_frame_capture() noexcept
         {
-            recorder_.set_draw_capture(sink);
+            capturing_ = false;
+            recorder_.set_draw_capture(nullptr);
+        }
+
+        // Everything submitted since begin_frame_capture, in submission order.
+        [[nodiscard]] std::span<const SubmittedDraw>
+        captured_submissions() const
+        {
+            return submitted_draws_;
         }
 #endif
 
@@ -669,8 +716,11 @@ namespace wz::engine::rendering
             uint64_t size);
 
 #ifdef WZ_ENABLE_TESTING
-        // Cleared at the top of every render_scene (see last_submitted_draws).
+        // See begin_frame_capture. Appended to only while capturing_, so a
+        // frame's worth of passes accumulates into one ordered log.
         std::vector<SubmittedDraw> submitted_draws_;
+        std::uint32_t capture_pass_ = 0;
+        bool capturing_ = false;
 #endif
 
         EngineGpuContext&           gpu_;

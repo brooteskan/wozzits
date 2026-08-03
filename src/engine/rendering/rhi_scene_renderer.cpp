@@ -2616,6 +2616,21 @@ namespace wz::engine::rendering
             }
             wz::rhi::record_packet(
                 realized.puppet_packets[mask.source_packet], forward_, recorder_);
+#ifdef WZ_ENABLE_TESTING
+            if (capturing_) {
+                submitted_draws_.push_back(SubmittedDraw{
+                    .node_index = 0,   // the mask prepass is per RENDERABLE
+                    .node_id    = {},
+                    .kind       = SubmittedKind::PuppetMask,
+                    .draw_layer = realized.draw_layer,
+                    .part_index = static_cast<std::uint32_t>(
+                        mask.source_packet),
+                    .pass_index = capture_pass_,
+                    .rejected   = !recorder_.ready(),
+                });
+                ++capture_pass_;   // each mask is its own offscreen pass
+            }
+#endif
             if (!recorder_.ready()) {
                 logger_.error(
                     "RhiSceneRenderer: puppet mask draw rejected — "
@@ -2957,9 +2972,6 @@ namespace wz::engine::rendering
             wz::gpu::frame_timeline_value(gpu_.device));
 
         uint32_t recorded = 0;
-#ifdef WZ_ENABLE_TESTING
-        submitted_draws_.clear();
-#endif
 
         // Hierarchical world transforms: each node's local TRS composed with its
         // parent chain, so a renderable child follows its parent. The RHI path
@@ -3061,6 +3073,11 @@ namespace wz::engine::rendering
         // a pass open), so the next frame rebuilds them — one dark frame, then
         // healed — instead of erroring every frame until a graph swap.
         std::vector<wz::asset::AssetKey> stale_rejected;
+
+#ifdef WZ_ENABLE_TESTING
+        // This render_scene's own pass, after any mask prepasses it just ran.
+        const std::uint32_t this_pass = capture_pass_++;
+#endif
 
         for (const std::size_t node_index : draw_order) {
             const ea::SceneNodeAsset& node = nodes[node_index];
@@ -3208,12 +3225,17 @@ namespace wz::engine::rendering
                     wz::rhi::record_packet(pkt, forward_, recorder_);
                     ++recorded;
 #ifdef WZ_ENABLE_TESTING
-                    submitted_draws_.push_back(SubmittedDraw{
-                        .node_index = node_index,
-                        .draw_layer = realized->draw_layer,
-                        .part_index = part_index,
-                        .rejected   = !recorder_.ready(),
-                    });
+                    if (capturing_) {
+                        submitted_draws_.push_back(SubmittedDraw{
+                            .node_index = node_index,
+                            .node_id    = node.id,
+                            .kind       = SubmittedKind::PuppetPart,
+                            .draw_layer = realized->draw_layer,
+                            .part_index = part_index,
+                            .pass_index = this_pass,
+                            .rejected   = !recorder_.ready(),
+                        });
+                    }
 #endif
                     if (!recorder_.ready()) {
                         logger_.error(
@@ -3231,11 +3253,22 @@ namespace wz::engine::rendering
                 wz::rhi::record_packet(realized->packet, forward_, recorder_);
                 ++recorded;
 #ifdef WZ_ENABLE_TESTING
-                submitted_draws_.push_back(SubmittedDraw{
-                    .node_index = node_index,
-                    .draw_layer = realized->draw_layer,
-                    .rejected   = !recorder_.ready(),
-                });
+                if (capturing_) {
+                    submitted_draws_.push_back(SubmittedDraw{
+                        .node_index = node_index,
+                        .node_id    = node.id,
+                        .kind       = realized->is_splat_cloud
+                                          ? SubmittedKind::SplatCloud
+                                      : realized->is_star_field
+                                          ? SubmittedKind::StarField
+                                      : realized->is_custom
+                                          ? SubmittedKind::Custom
+                                          : SubmittedKind::Mesh,
+                        .draw_layer = realized->draw_layer,
+                        .pass_index = this_pass,
+                        .rejected   = !recorder_.ready(),
+                    });
+                }
 #endif
                 if (!recorder_.ready()) {
                     logger_.error(
