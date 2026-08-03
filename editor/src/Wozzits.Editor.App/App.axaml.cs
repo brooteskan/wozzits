@@ -17,6 +17,28 @@ public partial class App : Application
 {
     public override void Initialize()
     {
+        // The half of the crash guard that needs a dispatcher, and the half that
+        // actually keeps the window alive (D3-Q1: log and continue). Marking the
+        // exception Handled is what stops Avalonia tearing the process down.
+        //
+        // This is the hook that covers the six `async void`-shaped handlers --
+        // an exception in one is posted to the UI dispatcher, and four of them
+        // live in Views/EditorPanes/ with no route to the editor log at all, so
+        // until now they were silent AND fatal.
+        //
+        // Handled means the operation that threw was abandoned partway and the
+        // editor may be inconsistent. That is the accepted trade: a live window
+        // the user can save from beats a dead one, and CrashGuard writes down
+        // what happened so the state is not a mystery.
+        Dispatcher.UIThread.UnhandledException += (_, args) =>
+        {
+            CrashGuard.Report(
+                "Dispatcher.UIThread.UnhandledException",
+                args.Exception,
+                survived: true);
+            args.Handled = true;
+        };
+
         AvaloniaXamlLoader.Load(this);
     }
 
@@ -82,6 +104,12 @@ public partial class App : Application
         WozzitsEngineNativeClient engine)
     {
         var editorLog = new EditorLogBuffer();
+        // Point the crash guard at the console now that one exists. It is mirrored
+        // to FileLogSink, so a report lands both where the user can see it and
+        // where it survives -- in order with everything around it, which is worth
+        // more than a separate crash file. Before this, reports go to the log
+        // directory directly (the folder picker runs before any of it).
+        CrashGuard.SetSink(editorLog.AppendLine);
         editorLog.AppendLine($"[editor] Opening project: {projectDirectory.FullPath}");
         // Name the engine DLL actually loaded (path + build time + abi version) so a
         // stale / wrong-config wozzits_abi.dll is obvious here rather than as a
