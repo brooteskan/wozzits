@@ -808,6 +808,19 @@ namespace wz::app
         // compiler-produced path is taken (#192). Cumulative since construction.
         [[nodiscard]] std::size_t render_time_program_bridge_count() const;
 
+#ifdef WZ_ENABLE_TESTING
+        // The app's renderer, so a test can drive render_scene with a node span
+        // it composed itself -- the same warm renderer that just drew the loaded
+        // scene, rather than a second one on the same device. What the #327
+        // frame capture needs: re-render the SAME renderables from a different
+        // viewpoint without going through scene authoring to move them.
+        [[nodiscard]] wz::engine::rendering::RhiSceneRenderer&
+        renderer_for_testing() noexcept
+        {
+            return renderer_;
+        }
+#endif
+
         // Number of behavior bindings instantiated for the loaded scene (sum of
         // every node's `behavior`/`behaviors`). 0 when no scene is loaded or the
         // scene has no behaviors. Diagnostics + the behavior dispatch test read

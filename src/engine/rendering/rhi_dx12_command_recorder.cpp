@@ -448,6 +448,18 @@ namespace wz::engine::rendering
                              : "draw: vertex_count is 0";
             return;
         }
+#ifdef WZ_ENABLE_TESTING
+        if (draw_capture_) {
+            draw_capture_->push_back(CapturedDraw{
+                .vertex_count_per_instance = vertex_count,
+                .instance_count            = args.instance_count,
+                .start_vertex_location     = args.first_index,
+                .indexed                   = args.indexed,
+                .index_count               = args.index_count,
+                .source_vertex_count       = args.vertex_count,
+            });
+        }
+#endif
         cmd->DrawInstanced(
             vertex_count,
             args.instance_count,

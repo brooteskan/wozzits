@@ -192,8 +192,12 @@ namespace wz::engine::rendering
         // binds the resident decoded splat StructuredBuffer (published by the
         // splat compiler under rhi_asset_identity(key, "splat_cloud")) at the
         // SplatCloud semantic and records a non-indexed DrawInstanced of
-        // 4 * splat_count vertices. Carried alongside the (empty) pull source so
-        // ensure_renderable takes the splat branch.
+        // 6 * splat_count vertices -- SIX, not four: the program is a
+        // TriangleList, so each splat needs two self-contained triangles or
+        // they span adjacent splats and shatter (see the record site, which has
+        // always said 6). Measured at the DrawInstanced call: a 64-splat cloud
+        // draws 384 vertices with instance count 1 (#327). Carried alongside
+        // the (empty) pull source so ensure_renderable takes the splat branch.
         struct SplatCloudBinding
         {
             wz::asset::AssetKey splat_cloud_key{};
@@ -2953,6 +2957,9 @@ namespace wz::engine::rendering
             wz::gpu::frame_timeline_value(gpu_.device));
 
         uint32_t recorded = 0;
+#ifdef WZ_ENABLE_TESTING
+        submitted_draws_.clear();
+#endif
 
         // Hierarchical world transforms: each node's local TRS composed with its
         // parent chain, so a renderable child follows its parent. The RHI path
@@ -3200,6 +3207,14 @@ namespace wz::engine::rendering
                 for (const wz::rhi::DrawPacket& pkt : realized->puppet_packets) {
                     wz::rhi::record_packet(pkt, forward_, recorder_);
                     ++recorded;
+#ifdef WZ_ENABLE_TESTING
+                    submitted_draws_.push_back(SubmittedDraw{
+                        .node_index = node_index,
+                        .draw_layer = realized->draw_layer,
+                        .part_index = part_index,
+                        .rejected   = !recorder_.ready(),
+                    });
+#endif
                     if (!recorder_.ready()) {
                         logger_.error(
                             "RhiSceneRenderer: puppet part "
@@ -3215,6 +3230,13 @@ namespace wz::engine::rendering
             else {
                 wz::rhi::record_packet(realized->packet, forward_, recorder_);
                 ++recorded;
+#ifdef WZ_ENABLE_TESTING
+                submitted_draws_.push_back(SubmittedDraw{
+                    .node_index = node_index,
+                    .draw_layer = realized->draw_layer,
+                    .rejected   = !recorder_.ready(),
+                });
+#endif
                 if (!recorder_.ready()) {
                     logger_.error(
                         "RhiSceneRenderer: renderable packet rejected — "

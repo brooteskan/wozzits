@@ -1,0 +1,72 @@
+{
+  "schema": "wozzits.scene.v0",
+  "name": "alpha_order_scene",
+  "note": "#327 frame capture: three MUTUALLY OVERLAPPING, ALPHA-BLENDED cubes strung out along the view axis, authored NEAR first and FAR last -- the order a back-to-front transparency sort would have to reverse. All three bind graph node 44 (the cube geometry through the alpha_program, blend_mode = AlphaBlend, depth TestNoWrite), so nothing here distinguishes them except where they are. The draw-submission capture test renders this, then re-renders with the depths swapped, and reports which order the recorder actually saw.",
+  "nodes": [
+    {
+      "id": "root",
+      "parent": null,
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true
+    },
+    {
+      "id": "camera_01",
+      "parent": "root",
+      "transform": {
+        "translation": [0, 0, -60],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "camera": {
+        "fov_y": 1.0471999645233154,
+        "near": 0.10000000149011612,
+        "far": 1000,
+        "aspect": 1.7777777910232544
+      }
+    },
+    {
+      "id": "alpha_near",
+      "parent": "root",
+      "name": "alpha_near",
+      "transform": {
+        "translation": [0, 0, 0],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [10, 10, 10]
+      },
+      "visible": true,
+      "renderable": { "asset_graph_node_id": 44 }
+    },
+    {
+      "id": "alpha_mid",
+      "parent": "root",
+      "name": "alpha_mid",
+      "transform": {
+        "translation": [0, 0, 40],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [10, 10, 10]
+      },
+      "visible": true,
+      "renderable": { "asset_graph_node_id": 44 }
+    },
+    {
+      "id": "alpha_far",
+      "parent": "root",
+      "name": "alpha_far",
+      "transform": {
+        "translation": [0, 0, 80],
+        "rotation_quat": [0, 0, 0, 1],
+        "scale": [10, 10, 10]
+      },
+      "visible": true,
+      "renderable": { "asset_graph_node_id": 44 }
+    }
+  ],
+  "defaults": {
+    "active_camera": "camera_01"
+  }
+}

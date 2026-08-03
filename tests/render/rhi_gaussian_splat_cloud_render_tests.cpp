@@ -305,6 +305,12 @@ TEST(RhiGaussianSplatCloudRender, RealizesAndRecordsADraw)
         const wz::math::Mat4 view_projection = wz::math::Mat4::identity();
         const wz::math::Vec3 camera_world_pos{ 0.0f, 0.0f, 0.0f };
 
+        // #327 frame capture: watch what the whole cloud actually costs.
+        std::vector<
+            wz::engine::rendering::RhiDx12CommandRecorder::CapturedDraw>
+            captured;
+        renderer.set_draw_capture(&captured);
+
         ASSERT_TRUE(wz::gpu::begin_frame(device));
         wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
         const bool recorded = renderer.render_scene(
@@ -314,6 +320,30 @@ TEST(RhiGaussianSplatCloudRender, RealizesAndRecordsADraw)
                "the draw";
         ASSERT_TRUE(wz::gpu::end_frame(device));
         wz::gpu::present(device, /*sync_interval*/ 0);
+        renderer.set_draw_capture(nullptr);
+
+        // The batching claim, measured. A whole cloud is ONE draw -- the
+        // Draw-submission ladder's R2 batching, reached here and nowhere else
+        // in the engine. But it reaches it by VERTEX AMPLIFICATION, not by
+        // hardware instancing: DrawInstanced is D3D12's name for a non-indexed
+        // draw, and the instance count is 1 (nothing in the engine ever sets
+        // DrawArgs::instance_count -- rhi's make_draw_args leaves the default).
+        // The #327 register said "a single instanced draw", which read the API
+        // name as the mechanism. Six vertices per splat: two self-contained
+        // triangles, because the program is a TriangleList and a 4-vertex quad
+        // would span adjacent splats.
+        ASSERT_EQ(captured.size(), static_cast<std::size_t>(1))
+            << "the cloud did not collapse to one draw";
+        std::printf(
+            "[ CAPTURE  ] splat cloud: DrawInstanced(vertices=%u, "
+            "instances=%u) = %u splats x 6 verts\n",
+            captured[0].vertex_count_per_instance,
+            captured[0].instance_count,
+            captured[0].vertex_count_per_instance / 6u);
+        EXPECT_EQ(captured[0].instance_count, 1u);
+        EXPECT_FALSE(captured[0].indexed);
+        EXPECT_EQ(captured[0].vertex_count_per_instance % 6u, 0u)
+            << "vertex count is not a whole number of 6-vertex splat quads";
 
         // Structural wiring proofs:
         //  - the splat program realized from the asset compiler (zero render-

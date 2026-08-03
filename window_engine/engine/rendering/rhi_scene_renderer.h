@@ -272,6 +272,43 @@ namespace wz::engine::rendering
             return puppet_mask_set_builds_;
         }
 
+#ifdef WZ_ENABLE_TESTING
+        // ── Frame capture (#327) ──────────────────────────────────────────
+        // The register's Draw-submission and Transparency rows rested on
+        // reading the submit loop rather than watching it run. These two
+        // sinks are what let a test watch it: one names WHAT was submitted
+        // and in what order, the other records the D3D12 draw each one
+        // actually became. Comparing them is the point -- neither alone can
+        // tell you the renderer's intent matched the command list.
+
+        // One entry per packet handed to record_packet during the last
+        // render_scene(), in submission order.
+        struct SubmittedDraw
+        {
+            // Index into the `nodes` span render_scene was given.
+            std::size_t node_index = 0;
+            wz::engine::assets::DrawLayer draw_layer =
+                wz::engine::assets::DrawLayer::World;
+            // Which Part of a multi-packet (puppet) renderable; 0 otherwise.
+            std::uint32_t part_index = 0;
+            // The recorder refused this one, so it issued no draw.
+            bool rejected = false;
+        };
+
+        [[nodiscard]] std::span<const SubmittedDraw>
+        last_submitted_draws() const
+        {
+            return submitted_draws_;
+        }
+
+        // Forwarded to the recorder; see RhiDx12CommandRecorder::CapturedDraw.
+        void set_draw_capture(
+            std::vector<RhiDx12CommandRecorder::CapturedDraw>* sink) noexcept
+        {
+            recorder_.set_draw_capture(sink);
+        }
+#endif
+
     private:
         struct RealizedProgram
         {
@@ -630,6 +667,11 @@ namespace wz::engine::rendering
             wz::rhi::GpuResourceHandle handle,
             const void* data,
             uint64_t size);
+
+#ifdef WZ_ENABLE_TESTING
+        // Cleared at the top of every render_scene (see last_submitted_draws).
+        std::vector<SubmittedDraw> submitted_draws_;
+#endif
 
         EngineGpuContext&           gpu_;
         wz::Logger&                 logger_;

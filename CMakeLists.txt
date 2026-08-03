@@ -414,6 +414,16 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/lit_uv_surface.scene.json"
     COPYONLY)
 
+# Issue #327: three overlapping ALPHA-BLENDED cubes along the view axis for the
+# test_rebind_fixture graph (all binding node 44, the alpha_program renderable),
+# authored near-to-far. The draw-submission capture test renders it and reports
+# what order the recorder saw -- the measurement the ladder register's
+# Transparency row was missing.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/alpha_order_scene.json"
+    "${WZ_REBIND_FIXTURE_DST}/alpha_order.scene.json"
+    COPYONLY)
+
 # Issue #216/#217: a scene for the test_rebind_fixture graph that drives the
 # collision-by-reference + motion terrain-stick authoring verbs (a landscape
 # node + a tank node, both authored live by the test).
@@ -1277,6 +1287,13 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
         wozzits_app_behavior_test_plugin wz_stage_resources)
     rs_add_test_group(render wozzits_app_render_binding_tests)
     add_dependencies(render_wozzits_app_render_binding_tests wz_stage_resources)
+
+    # The #327 frame capture: watches a real device frame's DrawInstanced calls
+    # and the renderer's submission order, so the ladder register's Draw
+    # submission and Transparency rows rest on a measurement. Loads
+    # test_rebind_fixture's graph paired with alpha_order.scene.json.
+    rs_add_test_group(render draw_submission_capture_tests)
+    add_dependencies(render_draw_submission_capture_tests wz_stage_resources)
 
     # WozzitsApp_v1 authored render-to-texture test (issue #287). On-device:
     # loads test_rebind_fixture's graph paired with render_to_texture.scene.json;

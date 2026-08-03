@@ -107,6 +107,33 @@ namespace wz::engine::rendering
             current_ = pipeline;
             ready_ = pipeline != nullptr;
         }
+
+        // The arguments of one ID3D12GraphicsCommandList::DrawInstanced call,
+        // recorded at the call site itself. Ground truth for "how many draws
+        // does a frame issue, and with what instance count" -- questions the
+        // #327 ladder register could previously only answer by reading code.
+        struct CapturedDraw
+        {
+            // As handed to DrawInstanced, in its argument order.
+            uint32_t vertex_count_per_instance = 0;
+            uint32_t instance_count = 0;
+            uint32_t start_vertex_location = 0;
+            // The DrawArgs that produced them, so a capture can tell an
+            // indexed draw of index_count from a non-indexed one of the same
+            // width (the DX12 path draws both with DrawInstanced -- the pull
+            // vertex shader indexes for itself).
+            bool     indexed = false;
+            uint32_t index_count = 0;
+            uint32_t source_vertex_count = 0;
+        };
+
+        // Point the recorder at a sink to append to, or nullptr to stop. The
+        // sink is never cleared here -- the caller owns when a capture starts,
+        // so one vector can span several frames or one.
+        void set_draw_capture(std::vector<CapturedDraw>* sink) noexcept
+        {
+            draw_capture_ = sink;
+        }
 #endif
 
     private:
@@ -149,5 +176,9 @@ namespace wz::engine::rendering
         // and barrier) so precise reclamation keeps them until the GPU passes it.
         uint64_t frame_timeline_ = 0;
         std::unique_ptr<DescriptorTableCache> descriptor_tables_;
+#ifdef WZ_ENABLE_TESTING
+        // See set_draw_capture. Null in every build that has not asked.
+        std::vector<CapturedDraw>* draw_capture_ = nullptr;
+#endif
     };
 }

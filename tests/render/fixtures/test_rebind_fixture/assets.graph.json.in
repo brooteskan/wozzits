@@ -925,6 +925,48 @@
           { "name": "color_space", "type": "int", "value": 0 }
         ]
       }
+    },
+    {
+      "_note": "#327 frame capture: node 10 with blend_mode = AlphaBlend(1), so the draw-order capture has genuinely TRANSPARENT renderables to ask about. Every other param matches node 10 -- the pair differs in exactly the thing the Transparency ladder row is about.",
+      "node_id": 43,
+      "type": 1049,
+      "schema": "0xf11eca55e7000103",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        { "from_node_id": 4, "to_input_port": 0 },
+        { "from_node_id": 5, "to_input_port": 1 }
+      ],
+      "meta": {
+        "params": [
+          { "name": "binding_layout", "type": "int", "value": 1 },
+          { "name": "binding_model", "type": "int", "value": 3 },
+          { "name": "blend_mode", "type": "int", "value": 1 },
+          { "name": "default_domain", "type": "int", "value": 2 },
+          { "name": "default_policy_flags", "type": "int", "value": 14 },
+          { "name": "depth_mode", "type": "int", "value": 1 },
+          { "name": "input_layout", "type": "int", "value": 0 },
+          { "name": "name", "type": "string", "value": "alpha_program" },
+          { "name": "raster_mode", "type": "int", "value": 2 },
+          { "name": "topology", "type": "int", "value": 0 }
+        ]
+      }
+    },
+    {
+      "_note": "#327: the pull-mesh renderable binding the cube geometry (9) to the alpha program (43). Mirrors node 8, which binds the same geometry to the OPAQUE program (10).",
+      "node_id": 44,
+      "type": 1048,
+      "schema": "0xf11eca55e7000707",
+      "stage": 0,
+      "residency": 1,
+      "kind": 0,
+      "demand_root": 0,
+      "deps": [
+        { "from_node_id": 9, "to_input_port": 0 },
+        { "from_node_id": 43, "to_input_port": 1 }
+      ]
     }
   ],
   "layout": {
@@ -958,7 +1000,9 @@
       { "node_id": 32, "x": 370, "y": 960 },
       { "node_id": 35, "x": 110, "y": 1160 },
       { "node_id": 41, "x": 890, "y": 1160 },
-      { "node_id": 42, "x": 1150, "y": 1160 }
+      { "node_id": 42, "x": 1150, "y": 1160 },
+      { "node_id": 43, "x": 370, "y": 1360 },
+      { "node_id": 44, "x": 630, "y": 1360 }
     ],
     "zoom": 0.6
   }
