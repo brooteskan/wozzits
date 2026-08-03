@@ -147,10 +147,21 @@ namespace wz::gpu::dx12::internal
             out.rotation[3] = qw;
 
             // Color: SH DC coefficient → linear display/debug RGB.
-            // Clamp to [0, 1] to guard against out-of-range SH values.
-            //out.color[0] = std::clamp(0.5f + SH_C0 * splat.color_dc[0], 0.0f, 1.0f);
-            //out.color[1] = std::clamp(0.5f + SH_C0 * splat.color_dc[1], 0.0f, 1.0f);
-            //out.color[2] = std::clamp(0.5f + SH_C0 * splat.color_dc[2], 0.0f, 1.0f);
+            //
+            // NOT clamped, and the comment that used to sit here said it was.
+            // The clamped lines were commented out in `6efca33b` ("Get ready
+            // for issue #46") with no reason recorded, and the claim was left
+            // behind — which is how the divergence stayed invisible. Stating
+            // what the code does instead of what someone meant it to do.
+            //
+            // The canonical `decode_splat` DOES clamp to [0,1], and
+            // `GaussianSplatDecode.ColorClampedToUnitRange` pins both
+            // endpoints. So the two disagree, deliberately or not; #316 C3-Q2
+            // is the open question of which is right. Do not "restore" the
+            // clamp here alone — the LIVE path is `ResidentSplat` in
+            // gaussian_splat_compilers.cpp, which replicated this decode
+            // AFTER the clamp was already disabled and so does not clamp
+            // either. Fixing only this file changes nothing that renders.
             out.color[0] = 0.5f + SH_C0 * splat.color_dc[0];
             out.color[1] = 0.5f + SH_C0 * splat.color_dc[1];
             out.color[2] = 0.5f + SH_C0 * splat.color_dc[2];

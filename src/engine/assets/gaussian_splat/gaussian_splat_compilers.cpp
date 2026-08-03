@@ -367,6 +367,18 @@ namespace wz::engine::assets::internal
             out.rotation[3] = qw;
 
             // Color: SH DC coefficient -> linear display RGB.
+            //
+            // NOT clamped to [0,1], and this is the LIVE path -- the resident
+            // buffer the SplatPull VS reads. The canonical `decode_splat`
+            // clamps and pins both endpoints in a test; this decode was
+            // replicated from the legacy `make_gpu_splat_vertex` after ITS
+            // clamp had already been commented out (`6efca33b`, no reason
+            // recorded), so the omission propagated rather than being chosen.
+            // Whether the live path should clamp is #316 C3-Q2 -- it changes
+            // what renders, so it is not a comment fix. Note there is no
+            // tonemap in the engine either (#327 puts post-processing below
+            // its own R1), so an out-of-range colour is not headroom for
+            // anything downstream today; it clips at the backbuffer.
             out.color[0] = 0.5f + SH_C0 * splat.color_dc[0];
             out.color[1] = 0.5f + SH_C0 * splat.color_dc[1];
             out.color[2] = 0.5f + SH_C0 * splat.color_dc[2];
