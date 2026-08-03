@@ -1,3 +1,4 @@
+#include <cmath>
 #include <gtest/gtest.h>
 
 #include <math/frustum.h>
@@ -212,4 +213,42 @@ TEST(ScreenSpaceMetrics, LodPriorityBalancesBenefitAndCost)
     EXPECT_FLOAT_EQ(cheap, 800.0f);
     EXPECT_FLOAT_EQ(expensive, 160.0f);
     EXPECT_GT(cheap, expensive);
+}
+
+// A zero view-projection must not produce NaN planes, and the frustum it yields
+// must not accept everything.
+//
+// This is the state every scene runtime starts in: ViewData::view_projection is
+// `Mat4 view_projection{}` -- value-initialised to zeros, NOT identity -- so all
+// six planes are built as col3 +/- colN = (0,0,0). Dividing by that zero length
+// gave 0/0 in every component.
+//
+// LOAD-BEARING: the isfinite assertions alone would PASS against the unfixed
+// code on some inputs, and more importantly they do not describe the damage. The
+// assertion that matters is the last one: a NaN plane makes intersects_sphere's
+// `if (d < -r) return false;` compare false, so the frustum accepts every sphere
+// and culling silently becomes a no-op. Deleting the behavioural assertion turns
+// this back into decoration.
+TEST(Frustum, ZeroViewProjectionYieldsFinitePlanesAndDoesNotAcceptEverything)
+{
+    Mat4 zero{};
+    for (float& v : zero.m) {
+        v = 0.0f;
+    }
+
+    const Frustum f = frustum_from_view_projection(zero);
+
+    for (const auto& p : f.planes) {
+        EXPECT_TRUE(std::isfinite(p.normal.x));
+        EXPECT_TRUE(std::isfinite(p.normal.y));
+        EXPECT_TRUE(std::isfinite(p.normal.z));
+        EXPECT_TRUE(std::isfinite(p.distance));
+    }
+
+    // A well-formed frustum rejects a sphere far outside it; the NaN one accepted
+    // every sphere ever offered, which is what made the bug invisible.
+    const Frustum real = frustum_from_view_projection(
+        projection_perspective_dx(Pi / 3.0f, 16.0f / 9.0f, 0.1f, 100.0f));
+    EXPECT_FALSE(intersects_sphere(real, Vec3{ 0.0f, 0.0f, -1000.0f }, 1.0f))
+        << "control: a real frustum must reject a sphere well behind it";
 }

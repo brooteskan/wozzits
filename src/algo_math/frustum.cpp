@@ -64,10 +64,31 @@ namespace wz::math
         f.planes[5].normal.z = m.m[11] - m.m[10];
         f.planes[5].distance = m.m[15] - m.m[14];
 
-        // normalize all planes
+        // Normalize all planes.
+        //
+        // A DEGENERATE view-projection gives a zero-length normal, and dividing
+        // by it produced 0/0 = NaN in all four components. That is not a corner
+        // case: ViewData::view_projection is declared `Mat4 view_projection{}`
+        // (compiled_scene.h), i.e. value-initialised to all ZEROS rather than to
+        // identity, so every plane here is col3 +/- colN = (0,0,0) on any scene
+        // runtime built before the first camera update -- and it stays that way
+        // for a scene with no active camera.
+        //
+        // The failure was invisible because both consumers test in the ACCEPT
+        // direction: intersects_sphere's `if (d < -r) return false;` and
+        // contains_point's `if (dot + distance < 0) return false;` are FALSE for a
+        // NaN, so a NaN frustum passes everything and culling silently becomes a
+        // no-op. Nothing disappears from the frame, which is why it looked fine.
+        //
+        // Leaving a degenerate plane un-normalised keeps `d` finite and the plane
+        // inert, which is the right meaning for "this view has no such plane".
+        // Written in the reject direction so a NaN length is caught too.
         for (auto& p : f.planes)
         {
-            float len = length(p.normal);
+            const float len = length(p.normal);
+            if (!(len > 0.0f))
+                continue;
+
             p.normal = p.normal / len;
             p.distance /= len;
         }
