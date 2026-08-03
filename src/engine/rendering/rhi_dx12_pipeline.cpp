@@ -849,6 +849,41 @@ namespace wz::engine::rendering
         }
 
         if (const wz::rhi::RenderProgramDesc* desc = programs_->get(program)) {
+            // The backend does not implement the input-assembler vertex path:
+            // RhiDx12CommandRecorder::set_geometry binds nothing, so a program
+            // declaring it realizes a pipeline with a real input layout, records
+            // a packet, reports ready() == true, and draws from vertex buffers
+            // that were never bound. Silent, and the wrong kind of silent -- a
+            // blank mesh with no diagnostic anywhere (#317 D1-Q1).
+            //
+            // The declaration STAYS: VertexSource::InputAssembler and the vertex
+            // layout vocabulary around it are kept design surface for planned
+            // work, not dead code. What is refused is USING it, until
+            // set_geometry is implemented -- which is the same shape the recorder
+            // already applies to DescriptorKind::Sampler.
+            //
+            // Refusing here rather than at the packet is deliberate: this is the
+            // moment the program is still identifiable by name.
+            //
+            // It is REACHABLE BY ACCIDENT rather than by choice, which is why it
+            // needs to be loud: InputAssembler is RenderProgramDesc's DEFAULT
+            // (render_program.h), so a program that never mentions vertex_source
+            // gets it. Corpus: 0 of 16 registered programs in test_mesh_001 use
+            // it, and 0 of 90 real packets name a vertex stream, so nothing
+            // shipping is refused by this.
+            if (desc->vertex_source == wz::rhi::VertexSource::InputAssembler) {
+                if (logger_) {
+                    logger_->error(
+                        std::string("RhiDx12PipelineCache::realize: this backend "
+                            "does not implement VertexSource::InputAssembler "
+                            "(set_geometry binds no buffers), so the draw would "
+                            "read unbound vertex data — declare a pull vertex "
+                            "source instead. program=")
+                        + std::string(desc->name));
+                }
+                return nullptr;
+            }
+
             const std::optional<wz::rhi::ProgramBytecode> bytecode =
                 wz::rhi::resolve_program_bytecode(*desc, *shaders_);
             if (!bytecode) {
