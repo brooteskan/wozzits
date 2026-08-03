@@ -36,7 +36,6 @@ target_sources(window_engine PRIVATE
     collision/collision_frame.cpp
     collision/collision_surface_sampling.cpp
     input_events.cpp
-    render_backends/dx12/dx12_submit.cpp
     assets/engine_asset_library.cpp
     assets/engine_asset_key_factory.cpp
     assets/engine_asset_library_compiler_registry.cpp

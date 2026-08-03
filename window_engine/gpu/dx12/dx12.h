@@ -6,7 +6,6 @@
 #include <render/frame/render_frame.h>
 
 #include <gpu/dx12/dx12_mesh_wireframe_debug.h>
-#include <gpu/dx12/dx12_gaussian_splat_debug.h>
 
 // Resolver and pipeline-cache types are only taken by reference in the
 // submit_render_frame declarations below; callers that pass them already
@@ -58,54 +57,6 @@ namespace wz::gpu::dx12
 
     // ── Debug opaque object path ─────────────────────────────────────────
 
-
-    struct DebugOpaqueContextDesc
-    {
-        wz::gpu::GPUHandle vertex_shader{};
-        wz::gpu::GPUHandle pixel_shader{};
-
-        bool valid() const noexcept
-        {
-            return vertex_shader.valid() && pixel_shader.valid();
-        }
-    };
-
-    void create_debug_opaque_context(
-        wz::gpu::Device& device,
-        const DebugOpaqueContextDesc& desc
-    );
-
-    void submit_render_frame(
-        wz::gpu::Device& device,
-        const wz::render::RenderFrameView& frame
-    );
-
-    // Transitional resolver overload: uses legacy device-singleton debug pipelines.
-    // Prefer the overload that takes RenderablePipelineCache.
-    void submit_render_frame(
-        wz::gpu::Device& device,
-        const wz::render::RenderFrameView& frame,
-        const wz::engine::rendering::RenderResourceResolver& resolver
-    );
-
-    // Production resolver overload: resolves both resources and pipelines through
-    // the supplied caches.  Does not touch any device-singleton debug context.
-    void submit_render_frame(
-        wz::gpu::Device& device,
-        const wz::render::RenderFrameView& frame,
-        const wz::engine::rendering::RenderResourceResolver& resolver,
-        const wz::engine::rendering::RenderablePipelineCache& pipeline_cache
-    );
-
-    // Extended production overload: also consults RenderProgramPipelineCache.
-    // Prefer this overload when resources carry a valid render_program handle.
-    void submit_render_frame(
-        wz::gpu::Device& device,
-        const wz::render::RenderFrameView& frame,
-        const wz::engine::rendering::RenderResourceResolver& resolver,
-        const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
-        const wz::engine::rendering::RenderProgramPipelineCache& render_program_cache
-    );
 
     // ── Scalar field debug path ──────────────────────────────────────────
 

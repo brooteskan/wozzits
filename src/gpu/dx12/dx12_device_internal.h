@@ -13,16 +13,9 @@
 #include <gpu/dx12/dx12_shader.h>
 #include <gpu/dx12/dx12_descriptor_allocator.h>
 #include <gpu/dx12/dx12_internal.h>
-#include <gpu/gaussian_splat_color_lod_settings.h>
 #include <gpu/gaussian_splat_coverage_settings.h>
 
 #include <vector>
-
-// The engine-layer submit context is only stored by pointer; the full type
-// lives in engine/render_backends/dx12/dx12_submit.h, included by the TUs
-// that actually call into the submit path.
-namespace wz::engine::render_backend::dx12 { struct Context; }
-
 
 namespace wz::gpu::dx12
 {
@@ -178,14 +171,12 @@ namespace wz::gpu::dx12
         BlitContext* blit_ctx = nullptr;
         TexturedQuadContext* textured_quad_ctx = nullptr;
         MeshWireframeDebugContext* mesh_wire_debug_ctx = nullptr;
-        GaussianSplatDebugContext* gaussian_splat_debug_ctx = nullptr;
 
         wz::gpu::dx12::DX12ShaderTable shaders;
         wz::gpu::dx12::internal::DX12TextureTable textures;
         wz::gpu::dx12::internal::DX12ScalarFieldTextureTable scalar_field_textures;
         wz::gpu::dx12::internal::DX12MeshTable meshes;
         wz::gpu::dx12::internal::DX12MeshFieldVisualizationTable mesh_field_visualizations;
-        wz::gpu::dx12::internal::DX12GaussianSplatCloudTable gaussian_splat_clouds;
         wz::gpu::dx12::internal::DX12GraphicsPipelineTable graphics_pipelines;
         wz::gpu::dx12::internal::DX12ComputeBufferTable compute_buffers;
         wz::gpu::dx12::internal::DX12ComputePipelineTable compute_pipelines;
@@ -194,12 +185,6 @@ namespace wz::gpu::dx12
         // Used for SRV descriptor tables (e.g., SplatPull StructuredBuffer).
         wz::gpu::dx12::DX12DescriptorAllocator srv_cbv_uav_allocator;
 
-        wz::engine::render_backend::dx12::Context* ctx = nullptr;
-
-        // Scene-wide splat color LOD settings.  Pushed per-frame by the
-        // toolhost via wz::gpu::set_splat_color_lod_settings(); consumed
-        // by the dx12 submit path when binding NeighborhoodColorBlend.
-        wz::gpu::SplatColorLODSettings splat_color_lod_settings{};
 
         // Scene-wide splat coverage settings.  Pushed per-frame by the
         // toolhost via wz::gpu::set_splat_coverage_settings(); consumed

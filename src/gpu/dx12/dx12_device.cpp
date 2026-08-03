@@ -11,7 +11,6 @@
 
 #include <gpu/gpu.h>
 #include <gpu/dx12/dx12.h>
-#include <engine/render_backends/dx12/dx12_submit.h>
 #include <window/window2.h>
 #include <cassert>
 #include <cstdio>
@@ -344,92 +343,7 @@ namespace wz::gpu::dx12
         // ────── return ───────────────────────────────────────────────────────
         Device out{};
         out.impl = impl;
-        impl->ctx = nullptr;
         return out;
-    }
-
-    void submit_render_frame(
-        wz::gpu::Device& device,
-        const wz::render::RenderFrameView& frame)
-    {
-        auto* impl = static_cast<DX12Device*>(device.impl);
-        assert(impl);
-        if (dx12_device_lost(*impl)) {
-            return;
-        }
-        assert(impl->ctx && "render context was not created");
-
-        wz::engine::render_backend::dx12::submit(
-            impl->ctx,
-            frame
-        );
-    }
-
-    void submit_render_frame(
-        wz::gpu::Device& device,
-        const wz::render::RenderFrameView& frame,
-        const wz::engine::rendering::RenderResourceResolver& resolver)
-    {
-        auto* impl = static_cast<DX12Device*>(device.impl);
-        if (!impl || dx12_device_lost(*impl)) {
-            return;
-        }
-        wz::engine::render_backend::dx12::submit(device, frame, resolver);
-    }
-
-    void submit_render_frame(
-        wz::gpu::Device& device,
-        const wz::render::RenderFrameView& frame,
-        const wz::engine::rendering::RenderResourceResolver& resolver,
-        const wz::engine::rendering::RenderablePipelineCache& pipeline_cache)
-    {
-        auto* impl = static_cast<DX12Device*>(device.impl);
-        if (!impl || dx12_device_lost(*impl)) {
-            return;
-        }
-        wz::engine::render_backend::dx12::submit(device, frame, resolver, pipeline_cache);
-    }
-
-    void submit_render_frame(
-        wz::gpu::Device& device,
-        const wz::render::RenderFrameView& frame,
-        const wz::engine::rendering::RenderResourceResolver& resolver,
-        const wz::engine::rendering::RenderablePipelineCache& pipeline_cache,
-        const wz::engine::rendering::RenderProgramPipelineCache& render_program_cache)
-    {
-        auto* impl = static_cast<DX12Device*>(device.impl);
-        if (!impl || dx12_device_lost(*impl)) {
-            return;
-        }
-        wz::engine::render_backend::dx12::submit(
-            device, frame, resolver, pipeline_cache, render_program_cache);
-    }
-
-    void create_debug_opaque_context(
-        wz::gpu::Device& device,
-        const DebugOpaqueContextDesc& desc)
-    {
-        assert(desc.valid());
-
-        auto* impl = (DX12Device*)device.impl;
-        assert(impl);
-        if (dx12_device_lost(*impl)) {
-            return;
-        }
-        assert(!impl->ctx);
-
-        wz::engine::render_backend::dx12::TrianglePipelineDesc pipeline_desc{
-            .vertex_shader = desc.vertex_shader,
-            .pixel_shader = desc.pixel_shader,
-        };
-
-        impl->ctx = wz::engine::render_backend::dx12::create(
-            device,
-            pipeline_desc
-        );
-
-        assert(impl->ctx);
-
     }
 
     void create_debug_triangle_opaque_context(
@@ -778,14 +692,7 @@ namespace wz::gpu::dx12
         }
         impl->frame_upload_staging.clear();
 
-        // 1. Destroy renderer/backend context first.
-        if (impl->ctx)
-        {
-            wz::engine::render_backend::dx12::destroy(impl->ctx);
-            impl->ctx = nullptr;
-        }
-
-        // 2. Destroy GPU resource tables.
+        // 1. Destroy GPU resource tables.
         impl->compute_pipelines.destroy();
         impl->compute_buffers.destroy();
         impl->textures.destroy();
@@ -793,8 +700,6 @@ namespace wz::gpu::dx12
         impl->shaders.destroy();
         impl->meshes.destroy();
         impl->mesh_field_visualizations.destroy(
-            impl->srv_cbv_uav_allocator);
-        impl->gaussian_splat_clouds.destroy(
             impl->srv_cbv_uav_allocator);
         impl->srv_cbv_uav_allocator.destroy();
 
@@ -870,24 +775,6 @@ namespace wz::gpu::dx12
 
             delete impl->mesh_wire_debug_ctx;
             impl->mesh_wire_debug_ctx = nullptr;
-        }
-
-        if (impl->gaussian_splat_debug_ctx)
-        {
-            if (impl->gaussian_splat_debug_ctx->pso)
-            {
-                impl->gaussian_splat_debug_ctx->pso->Release();
-                impl->gaussian_splat_debug_ctx->pso = nullptr;
-            }
-
-            if (impl->gaussian_splat_debug_ctx->root_sig)
-            {
-                impl->gaussian_splat_debug_ctx->root_sig->Release();
-                impl->gaussian_splat_debug_ctx->root_sig = nullptr;
-            }
-
-            delete impl->gaussian_splat_debug_ctx;
-            impl->gaussian_splat_debug_ctx = nullptr;
         }
 
         // 3. Release swapchain/backbuffer resources.

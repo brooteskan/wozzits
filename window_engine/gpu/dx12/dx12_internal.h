@@ -13,7 +13,6 @@
 #include <gpu/dx12/dx12_descriptor_allocator.h>
 #include <gpu/gpu_types.h>
 #include <gpu/shader.h>
-#include <gpu/gaussian_splat_color_lod_settings.h>
 #include <gpu/gaussian_splat_coverage_settings.h>
 #include <d3dcompiler.h>
 #include <d3d12.h>
@@ -516,121 +515,9 @@ namespace wz::gpu::dx12::internal {
     static_assert(offsetof(DX12GaussianSplatVertex, color)    == 48);
     static_assert(offsetof(DX12GaussianSplatVertex, lod_color_confidence_rgba8) == 60);
 
-    struct DX12GaussianSplatCloudResource
-    {
-        ID3D12Resource* vertex_buffer       = nullptr;  // StructuredBuffer<Splat> (t0)
-        ID3D12Resource* sorted_index_buffer = nullptr;  // StructuredBuffer<uint>  (t1)
-
-        // Persistently mapped write pointer for sorted_index_buffer.
-        // The sort follow-on writes new index orders here before DrawInstanced.
-        // Null until sorted_index_buffer is successfully created.
-        uint32_t* sorted_index_map = nullptr;
-
-        D3D12_VERTEX_BUFFER_VIEW vertex_view{};
-
-        uint32_t splat_count = 0;
-
-        // Descriptor table covering both SRV slots:
-        //   slot 0 → StructuredBuffer<Splat>  (t0, SplatCloud)
-        //   slot 1 → StructuredBuffer<uint>   (t1, SortedSplatIndices)
-        // Valid only when the device's srv_cbv_uav_allocator had capacity at
-        // upload time and both buffers were created successfully.
-        wz::gpu::dx12::DX12DescriptorTable srv_table{};
-
-        // Binding-model-specific validity checks.
-        // Use these instead of a generic `valid()` so submit paths cannot
-        // accidentally treat a partially-initialized resource as fully ready.
-        bool valid_for_vertex_instanced() const noexcept
-        {
-            return vertex_buffer != nullptr && splat_count > 0;
-        }
-
-        bool valid_for_splat_pull() const noexcept
-        {
-            return vertex_buffer       != nullptr
-                && sorted_index_buffer != nullptr
-                && splat_count          > 0
-                && srv_table.valid();
-        }
-    };
-
-    class DX12GaussianSplatCloudTable
-    {
-    public:
-        DX12GaussianSplatCloudTable();
-
-        GPUHandle add(DX12GaussianSplatCloudResource cloud);
-        const DX12GaussianSplatCloudResource* get(GPUHandle handle) const;
-        bool release(
-            GPUHandle handle,
-            wz::gpu::dx12::DX12DescriptorAllocator& allocator);
-        void destroy(wz::gpu::dx12::DX12DescriptorAllocator& allocator);
-
-    private:
-        struct Slot
-        {
-            uint32_t epoch = 0;
-            bool occupied = false;
-            DX12GaussianSplatCloudResource cloud{};
-        };
-
-        std::vector<Slot> slots_;
-    };
-
-    GPUHandle upload_gaussian_splat_cloud_dx12(
-        Device& device,
-        const wz::engine::assets::GaussianSplatCloudData& cloud,
-        const wz::engine::assets::GaussianSplatColorLODData* lod = nullptr);
-
-    const DX12GaussianSplatCloudResource* get_gaussian_splat_cloud(
-        Device& device,
-        GPUHandle handle);
-
-    bool release_gaussian_splat_cloud_dx12(
-        Device& device,
-        GPUHandle handle);
-
-    // Scene-wide splat color LOD settings, last pushed by
-    // wz::gpu::set_splat_color_lod_settings().  Default is Natural mode.
-    const wz::gpu::SplatColorLODSettings& get_lod_settings(Device& device);
-
     // Scene-wide splat coverage settings, last pushed by
     // wz::gpu::set_splat_coverage_settings().  Default is TransparentBlend.
     const wz::gpu::SplatCoverageSettings& get_coverage_settings(Device& device);
-
-    // Write externally-computed sorted indices into a cloud's persistently-mapped
-    // t1 SortedIndices upload buffer.
-    //
-    // sorted_indices must have the same size as cloud.splat_count; mismatches are
-    // rejected with a log message and the existing identity buffer is preserved.
-    // No-op if sorted_indices is empty (caller signals "use identity t1 buffer").
-    //
-    // Thread safety: caller is responsible for ensuring the GPU is not reading
-    // sorted_index_buffer when this is called (i.e. call before DrawInstanced).
-    void update_sorted_indices(
-        const DX12GaussianSplatCloudResource& cloud,
-        std::span<const uint32_t>             sorted_indices);
-}
-
-
-// ── Gaussian splat debug pipeline ref ────────────────────────────
-//
-// Non-owning view of the PSO and root signature created by
-// create_gaussian_splat_debug_context().  The resolver-based submit
-// path uses this to bind the splat pipeline without reaching into
-// device internals.
-
-namespace wz::gpu::dx12::internal {
-
-    struct GaussianSplatDebugPipelineRef
-    {
-        ID3D12RootSignature* root_sig = nullptr;
-        ID3D12PipelineState* pso      = nullptr;
-
-        bool valid() const noexcept { return root_sig && pso; }
-    };
-
-    GaussianSplatDebugPipelineRef get_gaussian_splat_debug_pipeline(Device& d);
 }
 
 

@@ -4,7 +4,6 @@
 
 #include <gpu/mesh.h>
 #include <gpu/mesh_field_visualization.h>
-#include <gpu/gaussian_splat.h>
 #include <gpu/compute.h>
 #include <gpu/gpu_resource_types.h>
 #include <asset/types.h>
@@ -19,9 +18,6 @@ namespace wz::gpu
         switch (handle.type) {
         case GPUResourceType::Mesh:
             return release_mesh(device, handle);
-
-        case GPUResourceType::GaussianSplatCloud:
-            return release_gaussian_splat_cloud(device, handle);
 
         case kGPUMeshFieldBufferResourceType:
             return release_mesh_field_visualization(device, handle);
