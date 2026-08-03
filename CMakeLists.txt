@@ -574,7 +574,11 @@ function(rs_add_test_group category name)
     set(target "${category}_${name}")
 
     add_executable(${target}
-        tests/${category}/${name}.cpp)
+        tests/${category}/${name}.cpp
+        # Reports the IEEE-754 exception flags each test raises. Compiled into
+        # every test executable rather than linked from a static library, so the
+        # linker cannot drop its static initializer. Debug-only, see the file.
+        tests/support/fp_status_listener.cpp)
 
     target_include_directories(${target}
         PRIVATE
@@ -628,7 +632,8 @@ function(rs_add_abi_test_group category name)
     set(target "${category}_${name}")
 
     add_executable(${target}
-        tests/${category}/${name}.cpp)
+        tests/${category}/${name}.cpp
+        tests/support/fp_status_listener.cpp)   # see rs_add_test_group
 
     set_target_properties(${target}
         PROPERTIES FOLDER "tests/${category}"
