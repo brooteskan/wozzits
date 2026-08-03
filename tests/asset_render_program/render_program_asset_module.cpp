@@ -7,6 +7,8 @@
 #include <engine/assets/type_extensions.h>
 #include <engine/rendering/builtin_render_programs.h>
 #include <engine/rendering/render_program_pipeline_cache.h>
+#include <engine/rendering/rhi_render_program_bridge.h>
+#include <wozzits/rhi/tag_registry.h>
 
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
@@ -16,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -763,4 +766,92 @@ TEST_F(RenderProgramGpuFixture, ResolvesCustomMeshSurface)
     EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));
     EXPECT_TRUE(pipeline_cache.get(handle).valid());
     EXPECT_TRUE(pipeline_cache.realize(device, assets.render_programs().table(), handle));
+}
+
+// ── Every builtin must be convertible to the rhi contract ────────────────
+//
+// A builtin render program reaches the rhi path through the renderer's
+// render-time bridge, not through compiler publication -- the compiler only
+// publishes CUSTOM programs (publish_custom_rhi_render_program). So the ONE
+// thing that decides whether a builtin can render on rhi at all is whether
+// to_rhi_render_program_desc accepts it, and a refusal there is terminal:
+// the render-time path calls the same converter over the same data and fails
+// identically, one frame later, with a generic message.
+//
+// Measured before this test existed: ALL 14 builtins were refused, every one
+// for the same reason -- a root-constant block with no semantic. That is
+// #317's D1-C11 open half, and it means no builtin could render through rhi.
+// This is the census that keeps it closed: a new builtin that forgets its
+// semantic fails HERE, naming itself, rather than silently declining to draw.
+TEST_F(RenderProgramGpuFixture, EveryBuiltinConvertsToTheRhiContract)
+{
+    using namespace wz::engine::assets;
+
+    EngineAssetLibrary assets(device, logger, resources.wz_root());
+
+    const auto shaders = assets.shaders().create_shader_pair({
+        .name        = "stub/builtin_census",
+        .vertex_path = "shaders/stub/stub_vs.hlsl",
+        .pixel_path  = "shaders/stub/stub_ps.hlsl",
+        });
+    ASSERT_TRUE(shaders.valid());
+
+    struct Made { BuiltinRenderProgram which; RenderProgramAsset asset; };
+    std::vector<Made> made;
+    for (size_t i = 0; i < kBuiltinRenderProgramCount; ++i) {
+        const auto which = static_cast<BuiltinRenderProgram>(i);
+        const auto program = assets.render_programs().create_builtin({
+            .name          = "census/" + std::to_string(i),
+            .program       = which,
+            .vertex_shader = shaders.vertex_shader,
+            .pixel_shader  = shaders.pixel_shader,
+            });
+        if (program.valid()) {
+            made.push_back({ which, program });
+        }
+    }
+    ASSERT_FALSE(made.empty());
+    ASSERT_TRUE(assets.commit());
+    (void)assets.resolve_all();
+
+    wz::rhi::DescriptorSemanticRegistry descriptors;
+    wz::rhi::ConstantSemanticRegistry   constants;
+
+    size_t convertible = 0;
+    size_t considered  = 0;
+    for (const auto& m : made) {
+        const auto handle =
+            assets.render_programs().get_render_program(m.asset);
+        if (!handle.valid()) {
+            continue;  // the builtin declines to define itself (fill == false)
+        }
+        const auto* data =
+            assets.render_programs().get_render_program_data(handle);
+        if (!data) {
+            continue;
+        }
+        ++considered;
+
+        const auto desc = wz::engine::rendering::to_rhi_render_program_desc(
+            *data,
+            m.asset.key,
+            shaders.vertex_shader,
+            shaders.pixel_shader,
+            descriptors,
+            constants);
+
+        EXPECT_TRUE(desc.has_value())
+            << "builtin #" << static_cast<int>(m.which)
+            << " cannot render on the rhi path — "
+            << wz::engine::rendering::render_program_bridge_refusal(
+                   data->root_constants, data->descriptor_bindings);
+        if (desc) {
+            ++convertible;
+        }
+    }
+
+    // Non-vacuity: a glob/enum change that stopped producing programs would
+    // otherwise make this pass green having checked nothing.
+    ASSERT_GT(considered, 8u) << "the census stopped seeing builtins";
+    EXPECT_EQ(convertible, considered);
 }

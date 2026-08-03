@@ -429,6 +429,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 32,  // world[16] + view_proj[16]
+                    .semantic       = "mesh_transform",
                 }};
                 return true;
 
@@ -449,6 +450,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 40,
+                    .semantic       = "mesh_surface",
                 }};
                 return true;
 
@@ -469,6 +471,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 40,
+                    .semantic       = "mesh_surface",
                 }};
                 return true;
 
@@ -486,6 +489,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 40,
+                    .semantic       = "mesh_surface",
                 }};
                 return true;
 
@@ -505,6 +509,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 40,
+                    .semantic       = "mesh_surface",
                 }};
                 return true;
 
@@ -524,6 +529,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 40,
+                    .semantic       = "mesh_surface",
                 }};
                 return true;
 
@@ -543,6 +549,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 40,
+                    .semantic       = "mesh_surface",
                 }};
                 out.descriptor_bindings = {{
                     .kind             = DescriptorKind::StructuredBufferSRV,
@@ -571,6 +578,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 48,
+                    .semantic       = "mesh_mask_style",
                 }};
                 out.descriptor_bindings = {
                     {
@@ -609,6 +617,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 32,  // world[16] + view_proj[16]
+                    .semantic       = "mesh_transform",
                 }};
                 return true;
 
@@ -630,6 +639,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 36,  // world[16] + view_proj[16] + viewport_and_size[4]
+                    .semantic        = "splat_view",
                 }};
                 return true;
 
@@ -663,6 +673,7 @@ namespace wz::engine::assets::internal
                     .shader_register = 0,
                     .register_space  = 0,
                     .value_count     = 36,  // world[16] + view_proj[16] + viewport_and_size[4]
+                    .semantic       = "splat_view",
                 }};
                 out.descriptor_bindings = {
                     {
@@ -703,6 +714,7 @@ namespace wz::engine::assets::internal
                     // world[16] + view_proj[16] + viewport_and_size[4]
                     // + lod_params0[4] + lod_params1[4] + lod_pad[4] = 48
                     .value_count     = 48,
+                    .semantic       = "splat_view_lod",
                 }};
                 out.descriptor_bindings = {
                     {
@@ -749,6 +761,7 @@ namespace wz::engine::assets::internal
                     // + coverage_params0[4] + coverage_params1[4]
                     // + coverage_params2[4] = 60 dwords total
                     .value_count     = 60,
+                    .semantic       = "splat_view_coverage",
                 }};
                 out.descriptor_bindings = {
                     {
@@ -792,6 +805,7 @@ namespace wz::engine::assets::internal
                     // gradient top/bottom, mode/rotation, rotation/right, up,
                     // and forward.
                     .value_count     = 28,
+                    .semantic       = "sky_view",
                 }};
                 return true;
 
