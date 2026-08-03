@@ -209,8 +209,24 @@ namespace wz::engine::behavior
         // before then only [0] is read (agent_count starts at 1), so [0] alone needs the
         // deliberating sentinel here (the rest zero-fill and are never read pre-build).
         int8_t committed[kQuantumAgentMaxDecisions] = { -1 };
+        // Have we already logged that this agent's state became unreadable? The
+        // store latches `wrecked` until a rebuild, so without this the tick handler
+        // would log it every think_interval forever.
+        //
+        // Placed HERE, between the int8 array and the float array, deliberately:
+        // `marginal` needs 4-byte alignment, so two padding bytes already sat at
+        // this offset and the flag costs no size. Instance state is preserved as
+        // raw bytes across reloads, so a layout change would misread a live blob --
+        // the static_assert below pins that this stayed free.
+        uint8_t reported_wrecked = 0;
         float marginal[kQuantumAgentMaxDecisions] = {};
     };
+
+    // 8 handle + 4 interval + 1 started + 1 agent_count + 32 committed
+    // + 1 reported_wrecked + 1 pad + 128 marginal.
+    static_assert(sizeof(QuantumAgentState) == 176,
+        "QuantumAgentState is preserved as raw bytes across reloads; a size change "
+        "silently misreads live instance state. Fit new fields in the padding.");
 
     uint8_t register_quantum_agent_behaviors(WzBehaviorPluginApi* api);
 }

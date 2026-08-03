@@ -315,6 +315,30 @@ namespace wz::engine::behavior
                 // One self-paced deliberation step, then cache EVERY qubit's
                 // decision for the frame-path readers and schedule the next wake.
                 quantum_agent_store().think(state->handle, wz_sim_time(facts));
+
+                // A wrecked coordination carries no readable state, so the agent
+                // has stopped committing and its marginals read NaN. Say so, ONCE
+                // per occurrence: without this the only symptom is an NPC that
+                // quietly never decides again, which is exactly the failure mode
+                // that made this class of bug survive so long. Loud here rather
+                // than in the store because this is the layer that owns a logger
+                // and can name the binding.
+                if (quantum_agent_store().wrecked(state->handle)) {
+                    if (!state->reported_wrecked) {
+                        state->reported_wrecked = 1u;
+                        wz_log_errorf(
+                            facts,
+                            "[quantum_agent] agent %llu has an UNREADABLE state "
+                            "(non-finite marginal) and has stopped deciding. A "
+                            "goal, bond or clock value drove the relaxation out of "
+                            "range. It does not recover on its own -- rearm or "
+                            "rebuild it.",
+                            static_cast<unsigned long long>(state->handle));
+                    }
+                } else {
+                    state->reported_wrecked = 0u;   // a rebuild re-arms the report
+                }
+
                 const uint32_t count =
                     state->agent_count < kQuantumAgentMaxDecisions
                         ? state->agent_count

@@ -189,6 +189,33 @@ namespace wz::engine::cognition
             return kInvalidAgent;
         }
 
+        // Refuse a spec carrying a non-finite number anywhere. Finiteness only --
+        // no magnitude is rejected, because every finite one now relaxes correctly.
+        // Fails CLOSED at build time, where the quantum_agent module already logs
+        // "build FAILED ... unbuildable spec" and the author can act on it; the
+        // alternative is an agent that builds and then never relaxes, which reads
+        // as an NPC that simply does not think.
+        const auto finite_spec = [&spec] {
+            for (const Goal& g : spec.goals) {
+                if (!std::isfinite(g.field)) return false;
+            }
+            for (const ExactBond& b : spec.bonds) {
+                if (!std::isfinite(b.j)) return false;
+            }
+            for (const double s : spec.one_hot_strength) {
+                if (!std::isfinite(s)) return false;
+            }
+            const CognitionClock& c = spec.clock;
+            return std::isfinite(c.gamma_start) && std::isfinite(c.gamma_end)
+                && std::isfinite(c.anneal_seconds) && std::isfinite(c.relax_rate)
+                && std::isfinite(c.max_substep)
+                && std::isfinite(spec.commit.confidence)
+                && std::isfinite(spec.commit.decoherence_rate);
+        }();
+        if (!finite_spec) {
+            return kInvalidAgent;
+        }
+
         // Multi-disposition layout, if the mind declares one. Fail CLOSED on a
         // layout that disagrees with agent_count rather than picking a winner: the
         // two would silently address different qubits, and a layout wider than the
@@ -299,6 +326,27 @@ namespace wz::engine::cognition
         // One bulk BP read; re-read after any NEW commit so a later decision this
         // tick sees the conditioned state.
         std::vector<double> z = decisions(a->coordination);
+
+        // A non-finite marginal means the backend's state carries no answer -- the
+        // read surface now says NaN rather than returning a plausible number (see
+        // qstate::marginal). Record it and stop: a wrecked agent must not latch a
+        // decision, and the caller needs to be able to find out rather than reading
+        // a confident-looking marginal. Latched by design -- the state does not
+        // heal, and only rearm()/reshape() rebuild the coordination -- so the flag
+        // survives until one of them clears it.
+        for (uint32_t i = 0; i < a->agent_count && i < z.size(); ++i) {
+            if (!std::isfinite(z[i])) {
+                a->wrecked = true;
+                break;
+            }
+        }
+        if (a->wrecked) {
+            for (uint32_t i = 0; i < a->agent_count && i < z.size(); ++i) {
+                a->marginal_cache[i] = z[i];   // NaN, honestly
+            }
+            return dtau;
+        }
+
         for (uint32_t i = 0; i < a->agent_count && i < z.size(); ++i) {
             if (a->latched[i].has_value()) {
                 continue;
@@ -331,7 +379,17 @@ namespace wz::engine::cognition
         AgentHandle h, uint32_t agent, double field)
     {
         Agent* a = find(h);
-        if (!a || agent >= a->agent_count) {
+        // A non-finite field is REFUSED, not stored. The relaxation gates now
+        // reject one rather than letting it destroy the register (see
+        // qstate::apply_imag_time_field), but a silently inert agent that never
+        // relaxes again is barely better than a wrong one -- and the caller has a
+        // bool it already checks. `wz_agent_set_goal` returns it straight through,
+        // so a behavior computing 1/distance at distance 0 finds out.
+        //
+        // This is finiteness only. It says nothing about how LARGE a goal may be:
+        // any finite magnitude now relaxes correctly (measured to 1e300), so there
+        // is no range here to declare.
+        if (!a || agent >= a->agent_count || !std::isfinite(field)) {
             return false;
         }
         a->goal_fields[agent] = field;
@@ -360,7 +418,12 @@ namespace wz::engine::cognition
         AgentHandle h, uint32_t memory_bit, bool value, double strength)
     {
         Agent* a = find(h);
-        if (!a || memory_bit >= a->learned.bits) {
+        // A non-finite strength poisons the WHOLE table, not just this bit: reward
+        // adds it into one log-weight, max_weight then returns inf/NaN, and
+        // exp(log_w - max_w) is NaN for EVERY entry, so every bit's preference
+        // reads NaN permanently. learning.cpp says "No clamp, and none needed",
+        // which is true of every finite magnitude and false of these two.
+        if (!a || memory_bit >= a->learned.bits || !std::isfinite(strength)) {
             return false;
         }
         // Reinforce the branch of this fact named by `value`: mask picks the bit,
@@ -390,8 +453,9 @@ namespace wz::engine::cognition
         double strength)
     {
         Agent* a = find(h);
-        if (!a || ctx_bit >= a->learned.bits || dec_bit >= a->learned.bits) {
-            return false;
+        if (!a || ctx_bit >= a->learned.bits || dec_bit >= a->learned.bits
+            || !std::isfinite(strength)) {
+            return false;   // as reward(): a non-finite strength kills the table
         }
         wz::engine::cognition::reward_pair(
             a->learned, ctx_bit, ctx_value ? 1u : 0u,
@@ -415,7 +479,13 @@ namespace wz::engine::cognition
     bool AgentCognitionStore::set_decoherence(AgentHandle h, double rate)
     {
         Agent* a = find(h);
-        if (!a) {
+        // `rate < 0.0` is an accept-direction test, so a NaN passed it and was
+        // stored -- after which poisson_fire_probability returned NaN, the caller's
+        // `p > 0.0` compared false, and the decoherence half of the commit policy
+        // was silently switched off for the life of the agent. Refuse it instead;
+        // the negative clamp stays, since "no pressure" is a meaningful reading of
+        // a negative rate but there is none for NaN.
+        if (!a || !std::isfinite(rate)) {
             return false;
         }
         a->commit.decoherence_rate = rate < 0.0 ? 0.0 : rate;
@@ -426,7 +496,11 @@ namespace wz::engine::cognition
         AgentHandle h, uint32_t agent, double theta)
     {
         Agent* a = find(h);
-        if (!a || agent >= a->agent_count) {
+        // A non-finite axis has no rotation to apply: cos/sin of it are NaN, and
+        // apply_1q would smear that across the JOINT register, taking every
+        // entangled partner with it. The statechart `measure_at` effect takes its
+        // angle from a runtime value Ref, so this is reachable from authored data.
+        if (!a || agent >= a->agent_count || !std::isfinite(theta)) {
             return std::nullopt;
         }
         // Fully qualify so the member name does not hide the free Coordination
@@ -479,6 +553,7 @@ namespace wz::engine::cognition
         }
         a->coordination = std::move(*coordination);
         a->effective_chi = chi_used;
+        a->wrecked = false;   // a fresh coordination is the only way back
 
         std::fill(a->latched.begin(), a->latched.end(), std::nullopt);
         // Reset the marginal cache too (as reshape does): rearm re-opens every decision
@@ -548,6 +623,7 @@ namespace wz::engine::cognition
         a->coordination = std::move(*coordination);
         a->effective_chi = chi_used;
         a->agent_count = agent_count;
+        a->wrecked = false;   // as rearm: the rebuild is the recovery
         wz::engine::cognition::start(a->clock, now);
         return true;
     }
@@ -637,6 +713,12 @@ namespace wz::engine::cognition
             return std::nullopt;
         }
         return a->effective_chi;
+    }
+
+    bool AgentCognitionStore::wrecked(AgentHandle h) const
+    {
+        const Agent* a = find(h);
+        return a != nullptr && a->wrecked;
     }
 
     uint32_t AgentCognitionStore::agent_count(AgentHandle h) const

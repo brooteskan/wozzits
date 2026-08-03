@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -1166,4 +1167,130 @@ TEST(AgentCognition, RejectsAnAbsurdlyLargeMemoryTable)
         EXPECT_TRUE(store.reward(h, 5, /*value=*/true, 1.0));
         EXPECT_FALSE(store.reward(h, 6, /*value=*/true, 1.0));   // out of range
     }
+}
+
+// An agent with an enormous goal must decide in the goal's DIRECTION.
+//
+// Finding C2-C1 at the level a mind author sees it. Before the propagator was
+// written in its total form, a field past ~1.4e4 destroyed the coordination and
+// marginal() reported the wreck as +1.0 -- so a goal of -1e5, which says "choose
+// |1> and mean it", committed confidently to |0>. Reachable from an authored
+// field, from a hub whose neighbours' couplings sum past ~7.2e3, or from any
+// inf a behavior computed.
+//
+// LOAD-BEARING: assert the committed BRANCH. The wrecked agent produced a
+// perfectly finite, perfectly confident marginal, so isfinite proves nothing.
+TEST(AgentCognition, EnormousGoalStillDecidesInTheGoalsDirection)
+{
+    for (const double field : { -1.0e2, -1.0e4, -1.0e5, -1.0e9, -1.0e300 }) {
+        AgentCognitionStore store;
+        AgentSpec spec;
+        spec.agent_count = 1;
+        spec.clock = anneal_clock();
+        spec.commit = CommitPolicy{ .confidence = 0.9, .decoherence_rate = 0.0 };
+        spec.goals.push_back(Goal{ .agent = 0, .field = field });
+
+        const AgentHandle h = store.create(spec);
+        ASSERT_NE(h, kInvalidAgent) << "field = " << field;
+        store.start(h, 0.0);
+        for (int i = 1; i <= 24; ++i) {
+            store.think(h, 0.25 * i);
+        }
+
+        EXPECT_FALSE(store.wrecked(h)) << "field = " << field;
+        EXPECT_LT(store.marginal(h, 0), -0.9) << "field = " << field;
+        EXPECT_EQ(store.committed(h, 0), std::optional<bool>(true))
+            << "field = " << field << " asked for |1> and got |0>";
+    }
+}
+
+// The h_eff route, which needs no absurd authored number at all: a hub's
+// effective field is the SUM over its neighbours, so an ordinary coupling on a
+// large village reaches the same place. Measured before the fix: the hub died at
+// (n-1)*j of about 7.2e3, i.e. j = 1.76 at the documented 4096-agent ceiling.
+TEST(AgentCognition, LargeVillageHubFollowsItsNeighboursRatherThanInverting)
+{
+    constexpr uint32_t kAgents = 512;
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = kAgents;
+    spec.chi = 1;                       // the linear backend a village uses
+    spec.clock = anneal_clock();
+    spec.commit = CommitPolicy{ .confidence = 2.0, .decoherence_rate = 0.0 };
+    for (uint32_t i = 1; i < kAgents; ++i) {
+        spec.bonds.push_back(ExactBond{ 0u, i, 32.0 });   // (n-1)*j ~ 1.6e4
+        spec.goals.push_back(Goal{ .agent = i, .field = -1.0 });
+    }
+    spec.goals.push_back(Goal{ .agent = 0, .field = 0.2 });   // hub leans the other way
+
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    store.start(h, 0.0);
+    for (int i = 1; i <= 12; ++i) {
+        store.think(h, 0.25 * i);
+    }
+
+    EXPECT_FALSE(store.wrecked(h));
+    EXPECT_LT(store.marginal(h, 1), -0.9) << "the leaves should follow their goals";
+    EXPECT_LT(store.marginal(h, 0), -0.9)
+        << "the hub inverted: 511 neighbours pulling to |1> read as a confident |0>";
+}
+
+// Every scalar door into the store refuses a non-finite value, and says so.
+//
+// The gates now reject one rather than letting it destroy the register, but an
+// agent that silently never relaxes again is barely better than a wrong one --
+// and each of these already returns a bool the caller checks. Finiteness only:
+// no magnitude is rejected anywhere, which the tests above rely on.
+TEST(AgentCognition, NonFiniteInputsAreRefusedRatherThanAbsorbed)
+{
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+
+    // create() fails CLOSED, where the quantum_agent module logs "build FAILED".
+    for (const double bad : { nan, inf, -inf }) {
+        AgentCognitionStore store;
+        AgentSpec spec;
+        spec.agent_count = 1;
+        spec.clock = anneal_clock();
+        spec.goals.push_back(Goal{ .agent = 0, .field = bad });
+        EXPECT_EQ(store.create(spec), kInvalidAgent) << "goal " << bad;
+
+        AgentSpec clock_spec;
+        clock_spec.agent_count = 1;
+        clock_spec.clock = anneal_clock();
+        clock_spec.clock.relax_rate = bad;
+        EXPECT_EQ(store.create(clock_spec), kInvalidAgent) << "relax_rate " << bad;
+    }
+
+    // ...and the live setters refuse without disturbing a healthy agent.
+    AgentCognitionStore store;
+    AgentSpec spec;
+    spec.agent_count = 2;
+    spec.clock = anneal_clock();
+    spec.memory_bits = 2;
+    spec.commit = CommitPolicy{ .confidence = 0.9, .decoherence_rate = 0.0 };
+    spec.goals.push_back(Goal{ .agent = 0, .field = -0.6 });
+    const AgentHandle h = store.create(spec);
+    ASSERT_NE(h, kInvalidAgent);
+    store.start(h, 0.0);
+    for (int i = 1; i <= 24; ++i) {
+        store.think(h, 0.25 * i);
+    }
+    ASSERT_EQ(store.committed(h, 0), std::optional<bool>(true));
+
+    for (const double bad : { nan, inf, -inf }) {
+        EXPECT_FALSE(store.set_goal(h, 0, bad)) << bad;
+        EXPECT_FALSE(store.set_decoherence(h, bad)) << bad;
+        EXPECT_FALSE(store.reward(h, 0, true, bad)) << bad;
+        EXPECT_FALSE(store.reward_pair(h, 0, true, 1, true, bad)) << bad;
+        EXPECT_FALSE(store.measure_in_basis(h, 0, bad).has_value()) << bad;
+    }
+
+    // The refusals changed nothing: the decision stands, the memory is readable,
+    // and the agent is not wrecked.
+    EXPECT_FALSE(store.wrecked(h));
+    EXPECT_EQ(store.committed(h, 0), std::optional<bool>(true));
+    EXPECT_LT(store.marginal(h, 0), -0.9);
+    EXPECT_FALSE(std::isnan(store.memory_preference(h, 0)));
 }

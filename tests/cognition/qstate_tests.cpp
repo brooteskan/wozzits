@@ -1,9 +1,12 @@
 #include <cognition/qstate/qstate.h>
 
+#include <cognition/commit.h>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cfenv>
+#include <limits>
 #include <cmath>
 #include <utility>
 #include <vector>
@@ -568,4 +571,79 @@ TEST(QState, NearRankDeficientSvdRaisesNoFloatingPointException)
             EXPECT_LE(out.s[r], out.s[r - 1] + 1e-15);
         }
     }
+}
+
+// A field far past the point where cosh(E dtau) leaves double range must still
+// relax toward the goal, not away from it.
+//
+// This is finding C2-C1. The literal cosh/sinh form of e^{-H dtau} overflowed --
+// the matrix at E dtau > ~710, and the amplitudes it produced at ~355 because
+// norm() SQUARES them -- leaving the register all-NaN or all-zero. marginal()
+// then reported the wreck as +1.0, so an agent whose goal said |1> committed
+// confidently to |0>. The tanh form has no overflow to reach.
+//
+// LOAD-BEARING: assert the DIRECTION, not just isfinite. The destroyed register
+// read as a perfectly finite +1.0 -- that is the entire trap, and a test that
+// only checks isfinite passes against the unfixed code.
+TEST(QState, LargeFieldRelaxesTowardTheGoalRatherThanAwayFromIt)
+{
+    for (const Real h : { -1.0e3, -1.0e4, -1.5e4, -1.0e5, -1.0e9, -1.0e300 }) {
+        Register r = uniform(1);
+        apply_imag_time_field(r, 0u, /*gamma=*/0.5, h, /*dtau=*/0.05);
+
+        EXPECT_NEAR(norm(r), 1.0, 1e-12) << "h = " << h;
+        // h < 0 favours |1>, i.e. <sigma_z> -> -1. The bug delivered +1.
+        EXPECT_LT(expectation_z(r, 0u), -0.99) << "h = " << h;
+    }
+
+    // ...and the mirror, so a fix that merely flipped a sign cannot pass.
+    for (const Real h : { 1.0e4, 1.0e5, 1.0e300 }) {
+        Register r = uniform(1);
+        apply_imag_time_field(r, 0u, 0.5, h, 0.05);
+        EXPECT_GT(expectation_z(r, 0u), 0.99) << "h = " << h;
+    }
+}
+
+// The two-body gate has the same overflow shape (exp(j dtau) rather than cosh)
+// and the same fix.
+TEST(QState, LargeCouplingRelaxesTowardAgreementRatherThanBreaking)
+{
+    for (const Real j : { 1.0e3, 1.0e4, 1.0e5, 1.0e300 }) {
+        Register r = uniform(2);
+        apply_imag_time_field(r, 0u, 0.0, -1.0, 0.05);   // bias qubit 0 to |1>
+        apply_imag_time_zz(r, 0u, 1u, j, 0.05);          // ferro: drag qubit 1 along
+        EXPECT_NEAR(norm(r), 1.0, 1e-12) << "j = " << j;
+        EXPECT_GT(expectation_zz(r, 0u, 1u), 0.99) << "j = " << j;
+    }
+}
+
+// An unreadable register must read as NO ANSWER, never as a confident one.
+//
+// Finding C2-C2, and it is what made every other numeric failure in the
+// subsystem invisible: `total > 0 ? set/total : 0` returned a plausible number
+// for a destroyed state, so expectation_z read +1.0 and confident() returned
+// TRUE. Both wreck shapes are covered -- all-zero (an overflowed norm divided
+// every amplitude by infinity) and all-NaN.
+TEST(QState, UnusableRegisterReadsNoAnswerRatherThanConfidence)
+{
+    const Real nan = std::numeric_limits<Real>::quiet_NaN();
+
+    for (const bool nan_shape : { false, true }) {
+        Register r = uniform(2);
+        for (auto& a : r.amp) {
+            a = nan_shape ? Complex{ nan, nan } : Complex{ 0, 0 };
+        }
+
+        EXPECT_FALSE(usable(r)) << "nan_shape = " << nan_shape;
+        EXPECT_TRUE(std::isnan(marginal(r, 0u))) << "nan_shape = " << nan_shape;
+        EXPECT_TRUE(std::isnan(expectation_z(r, 0u))) << "nan_shape = " << nan_shape;
+        EXPECT_TRUE(std::isnan(expectation_zz(r, 0u, 1u))) << "nan_shape = " << nan_shape;
+        // The one that matters: it must not read as a decision.
+        EXPECT_FALSE(wz::engine::cognition::confident(r, 0u, 0.9)) << "nan_shape = " << nan_shape;
+    }
+
+    // Control: a healthy register is usable and reads normally.
+    const Register healthy = uniform(2);
+    EXPECT_TRUE(usable(healthy));
+    EXPECT_FALSE(std::isnan(marginal(healthy, 0u)));
 }

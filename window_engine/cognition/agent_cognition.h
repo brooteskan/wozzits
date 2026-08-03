@@ -297,6 +297,20 @@ namespace wz::engine::cognition
         // 0 again.
         std::optional<uint32_t> backend_chi(AgentHandle h) const;
 
+        // Has this agent's coordination stopped carrying a readable state?
+        //
+        // Set by think() when a backend's marginal comes back non-finite, which is
+        // what a numerically destroyed state now reports (qstate::marginal returns
+        // NaN rather than a plausible number for one). A wrecked agent STOPS
+        // COMMITTING -- it will not latch a decision from a state that has no
+        // decision in it -- and marginal() reads NaN, so a caller cannot mistake
+        // the wreck for confidence.
+        //
+        // It does not heal: the flag stays until rearm() or reshape() builds a
+        // fresh coordination. Poll it wherever an agent's silence needs
+        // explaining; the quantum_agent module logs it once per occurrence.
+        bool wrecked(AgentHandle h) const;
+
     private:
         struct Agent
         {
@@ -318,6 +332,9 @@ namespace wz::engine::cognition
             std::vector<double> one_hot_strength;
             uint32_t chi = 0;            // AUTHORED chi -- what rebuilds start from
             uint32_t effective_chi = 0;  // what build_coordination actually built
+            // Latched by think() when the backend stops carrying a readable state;
+            // cleared only by a rebuild (rearm / reshape). See wrecked().
+            bool wrecked = false;
             uint64_t seed = 0;
             uint32_t agent_count = 0;
             // Learning memory: a classical log-weight table held outside the
