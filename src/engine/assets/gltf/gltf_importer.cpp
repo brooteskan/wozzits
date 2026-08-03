@@ -38,12 +38,17 @@ namespace wz::engine::assets
         // `expected_type`, or return nullptr (issue #310, A4-C15/C16/C17/C20/C21).
         //
         // None of this is done for us. fastgltf deliberately defers ALL of it to
-        // fastgltf::validate(), which this importer does not call -- its own
-        // source says the keys "are only validated in the validate() method" --
-        // and even validate() does not check that an accessor's byte range fits
-        // its bufferView, or that the bufferView fits its buffer. The container
-        // framing IS checked by fastgltf; every number below comes from the
-        // JSON, where nothing was checking it.
+        // fastgltf::validate() -- its own source says the keys "are only
+        // validated in the validate() method".
+        //
+        // The importer DOES call validate() now (A4-Q5), and that changes
+        // nothing here, which is the point worth keeping: validate() is
+        // ADVISORY, its verdict never rejects a file, and it does not check
+        // that an accessor's byte range fits its bufferView or that the
+        // bufferView fits its buffer. So every check below is still the only
+        // thing standing between a hostile file and an out-of-bounds read.
+        // The container framing IS checked by fastgltf; every number below
+        // comes from the JSON, where nothing was checking it.
         //
         // The four things that could go wrong, all of which end in an
         // out-of-bounds read of attacker-chosen length:
@@ -281,7 +286,8 @@ namespace wz::engine::assets
             const std::uint8_t* bytes,
             std::size_t byte_count,
             fastgltf::Options options,
-            fastgltf::Asset& out)
+            fastgltf::Asset& out,
+            std::string* validation_note)
         {
             if (bytes == nullptr || byte_count == 0)
                 return false;
@@ -303,6 +309,22 @@ namespace wz::engine::assets
                 return false;
 
             out = std::move(asset.get());
+
+            // Advisory only -- see the ruling in gltf_importer.h. This runs
+            // AFTER `out` is populated and its result is deliberately dropped
+            // into a string rather than tested, so there is no branch here for
+            // a future edit to turn into a rejection. Skipped entirely when the
+            // caller has nowhere to put it.
+            if (validation_note != nullptr) {
+                const fastgltf::Error verdict = fastgltf::validate(out);
+                if (verdict != fastgltf::Error::None) {
+                    *validation_note =
+                        std::string(fastgltf::getErrorName(verdict))
+                        + ": "
+                        + std::string(fastgltf::getErrorMessage(verdict));
+                }
+            }
+
             return true;
         }
 
@@ -408,7 +430,8 @@ namespace wz::engine::assets
         const std::uint8_t* bytes,
         std::size_t byte_count,
         const GLTFImportOptions& options,
-        ImportedGLTFMeshSet& out)
+        ImportedGLTFMeshSet& out,
+        std::string* validation_note)
     {
         out.meshes.clear();
 
@@ -417,7 +440,8 @@ namespace wz::engine::assets
                 bytes,
                 byte_count,
                 make_fastgltf_options(options),
-                asset))
+                asset,
+                validation_note))
         {
             return false;
         }
@@ -455,7 +479,8 @@ namespace wz::engine::assets
         std::size_t byte_count,
         const GLTFSceneImportOptions& options,
         ImportedGLTFScene& out,
-        std::string* error)
+        std::string* error,
+        std::string* validation_note)
     {
         out = {};
 
@@ -472,7 +497,8 @@ namespace wz::engine::assets
                 bytes,
                 byte_count,
                 fastgltf::Options::None,
-                asset))
+                asset,
+                validation_note))
         {
             return fail("failed to parse glTF scene");
         }

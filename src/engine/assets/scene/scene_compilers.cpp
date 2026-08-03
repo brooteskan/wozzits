@@ -5670,17 +5670,28 @@ namespace wz::engine::assets::internal
 
                 ImportedGLTFScene imported{};
                 std::string import_error;
+                std::string gltf_validation;
                 if (!import_gltf_scene(
                         bytes->data(),
                         bytes->size(),
                         GLTFSceneImportOptions{ .scene_index = desc->scene_index },
                         imported,
-                        &import_error))
+                        &import_error,
+                        &gltf_validation))
                 {
                     const std::string reason =
                         "failed to import GLB scene: " + import_error;
                     logger.error(reason);
                     return compile_failed_node(input, reason);
+                }
+
+                // Advisory (A4-Q5): reported, never a rejection. Real-world
+                // GLB files vary widely and validate() is stricter than the
+                // corpus honours, so this names what it saw and moves on.
+                if (!gltf_validation.empty()) {
+                    logger.warn(
+                        "glTF validation note for GLB scene: " + gltf_validation
+                        + " (advisory -- the scene imported and is being used)");
                 }
 
                 // Also import the per-mesh geometry from the same bytes so the

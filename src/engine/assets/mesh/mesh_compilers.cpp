@@ -499,13 +499,21 @@ namespace wz::engine::assets::internal
             ImportedGLTFMeshSet imported{};
 
             const auto import_started = std::chrono::steady_clock::now();
+            std::string gltf_validation;
             if (!import_glb_meshes(
                 bytes->data(),
                 bytes->size(),
                 options,
-                imported)) {
+                imported,
+                &gltf_validation)) {
                 logger.error("failed to import GLB mesh");
                 return compile_failed_node(input);
+            }
+            // Advisory (A4-Q5): reported, never a rejection.
+            if (!gltf_validation.empty()) {
+                logger.warn(
+                    "glTF validation note for GLB mesh: " + gltf_validation
+                    + " (advisory -- the mesh imported and is being used)");
             }
             const auto import_elapsed =
                 std::chrono::duration_cast<std::chrono::milliseconds>(

@@ -569,6 +569,79 @@ TEST(GLTFImporter, ImportsHandBuiltTriangleGLB)
     EXPECT_EQ(out.meshes[0].mesh.index_count(), 3u);
 }
 
+// A4-Q5, ruled 2026-08-03: fastgltf::validate() is ADVISORY. It applies the
+// spec more strictly than the real-world GLB corpus honours, so its verdict is
+// reported and never rejects a file.
+//
+// This pins the ruling, and it is the test that stops the tempting wrong
+// change -- `if (!note.empty()) return false;` -- from passing. The trigger is
+// an animation declaring an empty "channels" array: validate rejects that
+// outright, fastgltf's PARSER accepts it, and this importer does not read
+// animations at all, so the geometry is provably untouched. The file is
+// simultaneously invalid by the spec and perfectly usable by us, which is
+// exactly the class the ruling is about.
+//
+// My first attempt used a 2-element "max" on a VEC3 accessor. That is a real
+// validate() check, but the parser rejects it before validate ever runs -- so
+// the test failed for a harness reason and proved nothing. Worth recording:
+// a trigger has to be something loadGltf ACCEPTS.
+//
+// The control is the shipped low_poly_rock.glb rather than a hand-built clean
+// file, and finding that out is the best evidence for the ruling this test
+// has: real exported art validates CLEAN, while **this file's own minimal
+// hand-built triangle GLB does not** -- the one ImportsHandBuiltTriangleGLB
+// above calls well-formed, and which imports and renders perfectly. Had we
+// gated on validate(), that fixture and its test would have broken. A spec
+// checker strict enough to reject our own control case is exactly the thing
+// that must not be allowed to reject a user's art.
+//
+// The clean control in the same test is load-bearing: without it this would
+// pass identically for a channel that reported unconditionally.
+TEST(GLTFImporter, ValidationObjectionIsReportedAndDoesNotRejectTheFile)
+{
+    const char* objectionable = R"({"asset":{"version":"2.0"},
+"buffers":[{"byteLength":48}],
+"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},
+               {"buffer":0,"byteOffset":36,"byteLength":12}],
+"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"},
+             {"bufferView":1,"componentType":5125,"count":3,"type":"SCALAR"}],
+"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}],
+"animations":[{"channels":[],"samplers":[]}]})";
+
+    const auto glb = make_glb(objectionable, triangle_bin());
+
+    wz::engine::assets::ImportedGLTFMeshSet out;
+    std::string note;
+    ASSERT_TRUE(wz::engine::assets::import_glb_meshes(
+        glb.data(), glb.size(),
+        wz::engine::assets::GLTFImportOptions{},
+        out,
+        &note))
+        << "a validation objection must not reject the file";
+
+    // The import is not merely "not rejected" -- the geometry is intact.
+    ASSERT_EQ(out.meshes.size(), 1u);
+    EXPECT_EQ(out.meshes[0].mesh.vertex_count(), 3u);
+    EXPECT_EQ(out.meshes[0].mesh.index_count(), 3u);
+
+    EXPECT_FALSE(note.empty())
+        << "validate() objected but the note was not reported";
+
+    // Control: real shipped art, to prove the channel is not reporting
+    // unconditionally.
+    const auto rock = read_binary_file(fixture_path("gltf/low_poly_rock.glb"));
+    ASSERT_FALSE(rock.empty());
+    wz::engine::assets::ImportedGLTFMeshSet clean_out;
+    std::string clean_note;
+    ASSERT_TRUE(wz::engine::assets::import_glb_meshes(
+        rock.data(), rock.size(),
+        wz::engine::assets::GLTFImportOptions{},
+        clean_out,
+        &clean_note));
+    EXPECT_TRUE(clean_note.empty())
+        << "real fixture produced a validation note: " << clean_note;
+}
+
 TEST(GLTFImporter, RejectsAccessorCountLargerThanItsBufferView)
 {
     // 12 real bytes; the accessor claims 10,000,000 VEC3 elements. Before the
