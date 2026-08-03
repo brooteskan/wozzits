@@ -1395,20 +1395,11 @@ namespace wz::gpu::dx12::internal
         return pso;
     }
 
-    ID3D12CommandQueue* get_command_queue(Device& d)
-    {
-        auto* impl = static_cast<DX12Device*>(d.impl);
-        assert(impl);
-        return impl->queue;
-    }
-
+    // The one backbuffer fact the engine still needs: every PSO that targets
+    // the swapchain declares this format. NOT _SRGB -- see #327, which puts
+    // post-processing below its own R1 for exactly this reason.
     DXGI_FORMAT get_backbuffer_format()
     {
         return DXGI_FORMAT_R8G8B8A8_UNORM;
-    }
-
-    UINT get_backbuffer_count()
-    {
-        return 2;
     }
 }

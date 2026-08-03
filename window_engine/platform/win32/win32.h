@@ -45,10 +45,4 @@ namespace wz::platform::win32
      * @brief Pumps the Win32 message queue.
      */
     void w32_pump_messages();
-
-    // for imgui tooling
-    void w32_set_native_message_hook(
-        wz::window::WindowHandle window,
-        wz::window::NativeMessageHook hook,
-        void* user);
 }

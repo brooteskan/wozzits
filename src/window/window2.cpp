@@ -37,15 +37,4 @@ namespace wz::window
         wz::platform::win32::w32_pump_messages();
     }
 
-    void set_native_message_hook(
-        WindowHandle window,
-        NativeMessageHook hook,
-        void* user)
-    {
-        wz::platform::win32::w32_set_native_message_hook(
-            window,
-            hook,
-            user);
-    }
-
 }

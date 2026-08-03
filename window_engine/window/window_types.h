@@ -4,14 +4,6 @@
 
 namespace wz::window
 {
-    using NativeMessageHook =
-        bool (*)(void* hwnd,
-            unsigned int msg,
-            uintptr_t wparam,
-            intptr_t lparam,
-            void* user);
-
-
     struct WindowHandle
     {
         void *native = nullptr; // platform window object

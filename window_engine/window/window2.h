@@ -40,10 +40,4 @@ namespace wz::window
     void pump_messages();
 
     void* get_native_handle(WindowHandle window);
-
-    // for imgui tooling
-    void set_native_message_hook(
-        WindowHandle window,
-        NativeMessageHook hook,
-        void* user);
 }

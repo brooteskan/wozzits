@@ -205,7 +205,7 @@ the authored signal that a mesh field visualization buffer should exist.
 
 ## Scene Editor Render Shader UI
 
-In the sibling `wozzits-imgui` scene editor:
+In the scene editor (wozzits-editor; this used to name the retired wozzits-imgui editor):
 
 1. Load `test_mesh.project.json`.
 2. Select the mesh node (`empty_1`, named `mesh`).
@@ -401,7 +401,7 @@ The render-related scene functions are current as follows:
 
 ## Scene Editor UI
 
-The sibling `wozzits-imgui` scene editor exposes the same controls:
+The scene editor exposes the same controls (this used to name the retired wozzits-imgui editor):
 
 1. Select a mesh node.
 2. Add or expand **Mesh Wavelet Analysis**.

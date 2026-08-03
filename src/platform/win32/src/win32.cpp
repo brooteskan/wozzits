@@ -35,8 +35,6 @@ namespace wz::platform::win32
         HWND hwnd = nullptr;
         bool should_close = false;
 
-        wz::window::NativeMessageHook message_hook = nullptr;
-        void* message_hook_user = nullptr;
 
         static constexpr size_t QUEUE_SIZE = 1024;
         PlatformEventQueue event_queue =
@@ -46,20 +44,6 @@ namespace wz::platform::win32
     static NativeWindow *unwrap(wz::window::WindowHandle h)
     {
         return static_cast<NativeWindow *>(h.native);
-    }
-
-    void w32_set_native_message_hook(
-        wz::window::WindowHandle window,
-        wz::window::NativeMessageHook hook,
-        void* user)
-    {
-        auto* data = unwrap(window);
-
-        if (!data)
-            return;
-
-        data->message_hook = hook;
-        data->message_hook_user = user;
     }
 
     wz::gpu::Device create_dx12_device(const wz::window::WindowHandle& window)
@@ -152,32 +136,6 @@ namespace wz::platform::win32
         }
 
         auto* data = GetWindowData(hwnd);
-
-        if (data && data->message_hook)
-        {
-            const bool handled =
-                data->message_hook(
-                    hwnd,
-                    msg,
-                    static_cast<uintptr_t>(wParam),
-                    static_cast<intptr_t>(lParam),
-                    data->message_hook_user);
-
-            switch (msg)
-            {
-            case WM_CLOSE:
-            case WM_DESTROY:
-            case WM_NCDESTROY:
-            case WM_SIZE:
-                // Always let the engine/window backend process lifecycle messages.
-                break;
-
-            default:
-                if (handled)
-                    return 0;
-                break;
-            }
-        }
 
         switch (msg)
         {

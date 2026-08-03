@@ -9,8 +9,10 @@
 //   - the thin runtime main (src/app/wozzits_app_v1) loops { sim_tick;
 //     begin_frame; clear; render_scene; end_frame; present } -> the
 //     compile-once / exported app.
-//   - the editor (wozzits-imgui) owns its imgui loop, HAS-A WozzitsApp_v1, and
-//     calls bind_asset_graph(draft) on edit + render_scene() per frame.
+//   - the editor (wozzits-editor, Avalonia/C#) drives one in-process engine
+//     through the C ABI, HAS-A WozzitsApp_v1, and calls bind_asset_graph(draft)
+//     on edit + render_scene() per frame. It used to say wozzits-imgui here;
+//     that editor is retired and its repo is gone.
 //
 // It lives in the window_engine LIBRARY (not the wozzits_app_v1 executable) so
 // both the executable and the editor — which link window_engine — can compose
