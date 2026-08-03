@@ -263,10 +263,15 @@ namespace wz::platform::win32
             // -----------------------------------
             // 3. Push event
             // -----------------------------------
-            bool pushed = wz::event::event_queue.try_push(e);
-            // optional debug hook (later useful)
-            // if (!pushed) { drop counter / telemetry }
-
+            if (!wz::event::event_queue.try_push(e)) {
+                // Same stuck-latch hazard as the mouse path above: a dropped
+                // KeyPressUp leaves that key held in input.cpp until another UP
+                // arrives. #313 (B4-S4) added the counter and wired the mouse
+                // side; this one kept the hook commented out, so
+                // ri_dropped_input_events() silently under-reported every lost
+                // keystroke.
+                ++g_dropped_input_events;
+            }
         }
 
         // wz::event::event_queue.try_push(e);

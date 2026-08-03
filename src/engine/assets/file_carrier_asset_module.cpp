@@ -12,10 +12,8 @@ namespace wz::engine::assets
 
     FileCarrierAssetModule::FileCarrierAssetModule(
         wz::asset::AssetSystem& system,
-        wz::Logger&             logger,
         wz::fs::Path            resource_root)
         : system_(system)
-        , logger_(logger)
         , resource_root_(std::move(resource_root))
     {
     }

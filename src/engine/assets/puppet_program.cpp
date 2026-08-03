@@ -387,6 +387,7 @@ float4 main(PSIn input) : SV_TARGET
             return "puppet/program/clip_to_lower";
         case PuppetProgramBlend::SliceFromLower:
             return "puppet/program/slice_from_lower";
+        case PuppetProgramBlend::Additive: return "puppet/program/additive";
         case PuppetProgramBlend::Normal:   break;
         }
         return "puppet/program";

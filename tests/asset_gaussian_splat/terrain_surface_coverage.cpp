@@ -62,17 +62,6 @@ namespace wz::engine::assets::test
             return m.col0.x*c.x + m.col0.y*c.y + m.col0.z*c.z;
         }
 
-        float dot(Vec3 a, Vec3 b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
-
-        float length(Vec3 a) { return std::sqrt(dot(a, a)); }
-
-        Vec3 normalize(Vec3 a)
-        {
-            const float len = length(a);
-            if (len < 1e-12f) return { 0, 1, 0 };
-            return { a.x/len, a.y/len, a.z/len };
-        }
-
         // ─── Fixture factory ────────────────────────────────────────────
 
         constexpr uint32_t kFixtureSize = 32;
@@ -514,7 +503,6 @@ namespace wz::engine::assets::test
         // surface faces outward (away from peak).  Normal tilts toward -X.
         // Right of peak (ix > center): same logic, normal tilts toward +X.
         const uint32_t W = field.width;
-        const uint32_t center = W / 2;
         const uint32_t iz_mid = field.height / 2;
 
         // Left side: surface faces outward (toward -X).

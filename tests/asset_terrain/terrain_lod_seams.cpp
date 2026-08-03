@@ -92,9 +92,9 @@ namespace wz::engine::assets
 
             TerrainVisualProxyData proxy{};
             proxy.compiler_version = 1u;
-            proxy.source_asset_key = wz::asset::AssetKey{ 10u, 20u };
+            proxy.source_asset_key = wz::asset::AssetKey{ { 10u, 20u } };
             proxy.terrain_proxy_id =
-                TerrainProxyId{ .key = wz::asset::AssetKey{ 30u, 40u } };
+                TerrainProxyId{ .key = wz::asset::AssetKey{ { 30u, 40u } } };
             proxy.bounds = bounds(0.0f, 0.0f, 0.0f, 2.0f, 0.0f, 1.0f);
 
             proxy.chunks.push_back(make_chunk(

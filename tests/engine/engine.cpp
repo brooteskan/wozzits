@@ -128,7 +128,6 @@ TEST(InputIntegrationTest, KeyDownBecomesInputState)
     EngineTest::EngineTestHarness h;
     h.max_frames = 1;
 
-    wz::input::InputState captured_input{};
     bool captured = false;
 
     h.per_frame = [&](engine::Context&, engine::FrameContext&)

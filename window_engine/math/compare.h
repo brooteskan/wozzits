@@ -4,7 +4,7 @@
 
 namespace wz::math
 {
-    const struct Eps
+    struct Eps
     {
         const float abs = 1e-6f;   // absolute tolerance
         const float rel = 1e-5f;   // relative tolerance

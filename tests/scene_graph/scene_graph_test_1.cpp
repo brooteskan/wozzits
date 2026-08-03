@@ -113,7 +113,6 @@ TEST(SceneGraphSpec, AllNodesDirtyAfterBuild)
 {
     auto storage = make_scene();
     auto& g = storage.polytree;
-    const uint32_t frame = 1u;
 
     for (uint32_t i = 0; i < node_count(g); ++i)
         EXPECT_TRUE(is_dirty(node_data(g, i)));

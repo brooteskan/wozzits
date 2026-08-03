@@ -285,8 +285,6 @@ TEST_F(MPSCQueueTest, DISABLED_FrameDrivenStress)
     std::vector<int> frame_events;
     frame_events.reserve(1024);
 
-    std::atomic<bool> running{true};
-
     // -------------------------
     // PRODUCERS
     // -------------------------

@@ -1413,7 +1413,7 @@ TEST(CollisionAssetModule, HeightfieldValidRejectsNonFiniteFieldData)
 
     const auto make_field = [] {
         CollisionAssetData data{};
-        data.source_asset = wz::asset::AssetKey{ 1u, 2u };
+        data.source_asset = wz::asset::AssetKey{ { 1u, 2u } };
         data.shape_kind = CollisionShapeKind::TerrainHeightField;
         data.bounds_min[0] = 0.0f;
         data.bounds_min[1] = 0.0f;

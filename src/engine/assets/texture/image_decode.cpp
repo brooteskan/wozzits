@@ -12,6 +12,66 @@
 #define STBI_NO_STDIO
 #include <stb_image.h>
 
+// The stb entry points this TU deliberately does not call.
+//
+// STB_IMAGE_STATIC gives every stb symbol internal linkage, so each entry point
+// we never call is a -Wunused-function. Naming them here rather than switching
+// the warning off for the whole header keeps two properties worth having: you
+// delete a line the day you start using one, and a new stb version that adds an
+// entry point warns until someone decides which side of this list it lands on.
+//
+// The engine calls exactly two of them -- stbi_info_from_memory to bound the
+// dimensions from the header, and stbi_load_from_memory to decode. Everything
+// below is API surface that comes with the implementation, not capability we
+// have given up: the codecs are all still compiled in, because decode_image_rgba8
+// is fed arbitrary authored bytes (texture RawFile deps, Inochi embedded
+// textures) and must keep sniffing whatever format those turn out to be. If we
+// ever want the binary smaller, the lever is STBI_NO_* above, and that is a
+// decision about what the engine can load -- not a warning cleanup.
+//
+// Taking the address is what marks a function used; the enclosing function is
+// [[maybe_unused]] so it does not become the next unused-function warning
+// itself. Nothing here is referenced, so the linker still drops all of it.
+[[maybe_unused]] static void stb_entry_points_this_tu_does_not_call()
+{
+    // Orientation and premultiply options -- we decode as authored.
+    (void)&stbi_set_flip_vertically_on_load;
+    (void)&stbi_set_flip_vertically_on_load_thread;
+    (void)&stbi_set_unpremultiply_on_load;
+    (void)&stbi_set_unpremultiply_on_load_thread;
+    (void)&stbi_convert_iphone_png_to_rgb;
+    (void)&stbi_convert_iphone_png_to_rgb_thread;
+
+    // Callback-driven input. Assets always arrive as one contiguous span.
+    (void)&stbi_load_from_callbacks;
+    (void)&stbi_load_16_from_callbacks;
+    (void)&stbi_loadf_from_callbacks;
+    (void)&stbi_info_from_callbacks;
+    (void)&stbi_is_16_bit_from_callbacks;
+    (void)&stbi_is_hdr_from_callbacks;
+
+    // Non-RGBA8 results. decode_image_rgba8's contract is 8 bits per channel;
+    // 16-bit and float paths would need a different DecodedImage.
+    (void)&stbi_load_16_from_memory;
+    (void)&stbi_is_16_bit_from_memory;
+    (void)&stbi_loadf_from_memory;
+    (void)&stbi_is_hdr_from_memory;
+    (void)&stbi_ldr_to_hdr_gamma;
+    (void)&stbi_ldr_to_hdr_scale;
+    (void)&stbi_hdr_to_ldr_gamma;
+    (void)&stbi_hdr_to_ldr_scale;
+
+    // Multi-frame GIF. Nothing authors animated textures.
+    (void)&stbi_load_gif_from_memory;
+
+    // stb's zlib helpers, exposed because the PNG decoder needs zlib. We have
+    // no standalone zlib caller.
+    (void)&stbi_zlib_decode_malloc;
+    (void)&stbi_zlib_decode_buffer;
+    (void)&stbi_zlib_decode_noheader_malloc;
+    (void)&stbi_zlib_decode_noheader_buffer;
+}
+
 #include <climits>
 #include <cstddef>
 #include <cstdint>

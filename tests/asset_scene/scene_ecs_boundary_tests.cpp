@@ -1719,9 +1719,15 @@ TEST(SceneECSBoundary, DisabledFrameComponentsStillReportAndInstantiate)
 namespace {
     struct AnyFieldInit
     {
-        // Declared, never defined -- only ever used unevaluated.
+        // Only ever used unevaluated, inside the `requires` below -- so this is
+        // never odr-used and the body is never instantiated. It carries one
+        // anyway: a declared-but-undefined conversion operator is
+        // -Wundefined-internal here (or -Wundefined-inline if you move it to a
+        // named namespace), once per probed field, which is 50-odd warnings for
+        // a construct that is correct by design. Defining it costs nothing and
+        // says the same thing without the noise.
         template <class T>
-        constexpr operator T() const;
+        constexpr operator T() const { return T{}; }
     };
 
     template <class T, class... Probes>

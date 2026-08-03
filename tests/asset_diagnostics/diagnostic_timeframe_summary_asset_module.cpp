@@ -31,12 +31,6 @@ namespace
         return table;
     }
 
-    wz::engine::assets::EngineAssetLibrary make_library(const wz::fs::Path& root)
-    {
-        wz::Logger logger;
-        wz::gpu::Device device{};
-        return wz::engine::assets::EngineAssetLibrary{ device, logger, root };
-    }
 }
 
 // ─── Frame filtering ──────────────────────────────────────────────────────────

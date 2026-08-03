@@ -339,7 +339,7 @@ namespace wz::engine::assets
                 // field's comment in engine_asset_library_internal.h).
                 .asset_system = &system_,
             }))
-        , files_(system_, logger_, resource_root_)
+        , files_(system_, resource_root_)
         , shaders_(system_, logger_, files_)
         , scalar_fields_(system_, logger_, files_, scalar_fields_table_)
         , vector_fields_(system_, logger_, files_, vector_fields_table_)

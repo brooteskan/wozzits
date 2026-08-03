@@ -5,21 +5,6 @@
 
 #include <external/json/json_parser.h>
 
-namespace
-{
-    wz::engine::assets::JSONData make_json_data(std::string_view text)
-    {
-        const auto parsed = wz::json::parse_json_string(std::string(text));
-        EXPECT_TRUE(parsed.ok);
-
-        wz::engine::assets::JSONData data;
-        data.document = std::move(
-            const_cast<wz::json::JSONParseResult&>(parsed).document
-        );
-        return data;
-    }
-}
-
 TEST(JSONTable, AddReturnsValidHandle)
 {
     wz::engine::assets::JSONTable table;

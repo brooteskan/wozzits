@@ -54,13 +54,6 @@ namespace {
             exec.bind(static_cast<NodeHandle>(i), &out);
     }
 
-    Mat4 translation(float x, float y, float z)
-    {
-        Mat4 m = Mat4::identity();
-        m.m[12] = x; m.m[13] = y; m.m[14] = z;
-        return m;
-    }
-
     // Build a minimal scene for instantiation tests.
     wz::engine::assets::SceneAssetData make_asset_scene(
         int node_count,

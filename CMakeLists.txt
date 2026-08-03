@@ -152,6 +152,14 @@ set(RTAUDIO_API_ASIO OFF CACHE BOOL "" FORCE)
 
 wz_add_subdirectory_quiet(external/audio/rtaudio)
 
+# rtaudio_c.cpp calls strncpy, which the MSVC CRT deprecates. Third-party code
+# we do not patch, so silence the deprecation on rtaudio's own target only --
+# same policy as the pmp `-w` above. Kept off window_engine deliberately: a
+# target-wide _CRT_SECURE_NO_WARNINGS would hide real deprecations in our code.
+if(TARGET rtaudio)
+    target_compile_definitions(rtaudio PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 # ----------------------------
 # Core library target
 # ----------------------------
@@ -200,6 +208,29 @@ target_sources(window_engine PRIVATE
     $<TARGET_OBJECTS:wz_external_ply>
  )
 
+# libyaml is compiled straight into window_engine, so a target-wide define would
+# leak onto our own code and could mask a real deprecation in first-party source.
+# Scope it to the vendored files. The warning is strdup -- the POSIX-NAME
+# deprecation, which is _CRT_NONSTDC_NO_DEPRECATE, a different macro from
+# _CRT_SECURE_NO_WARNINGS. Applied to all eight .c files though only api.c warns
+# today, so a libyaml update does not reopen this.
+#
+# Unused vendored FUNCTIONS are deliberately not handled here -- see the named
+# allow-lists in image_decode.cpp and tinyexr_impl.cpp. A build-system
+# -Wno-unused-function would silence the next one too, and the point is that the
+# next one should have to be looked at.
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/api.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/dumper.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/emitter.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/loader.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/parser.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/reader.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/scanner.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/yaml/libyaml/src/writer.c"
+    PROPERTIES COMPILE_DEFINITIONS "_CRT_NONSTDC_NO_DEPRECATE"
+)
+
 target_include_directories(window_engine
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -226,6 +257,16 @@ PRIVATE
     dxguid
     windowsapp
     xinput)
+
+# The Windows SDK's xinput.lib exports a DllMain thunk. lld-link (unlike
+# link.exe) diagnoses that and skips it -- correct behaviour, nothing fixable on
+# our side, one warning on every consumer's link line. INTERFACE because
+# window_engine is a static lib and does not link itself. Pinned to this single
+# diagnostic id rather than a blanket ignore list, so a future genuine linker
+# warning still surfaces.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_link_options(window_engine INTERFACE "/ignore:importeddllmain")
+endif()
 
 # New renderer (wozzits-rhi) — the engine depends on it (bridge topology A).
 # Header-only INTERFACE library at a sibling path; disable its tests in this
@@ -595,6 +636,17 @@ configure_file(
 # ----------------------------
 # Test helpers
 # ----------------------------
+
+# fp_status_listener.cpp reads two env flags with std::getenv, which the MSVC CRT
+# deprecates in favour of the non-standard _dupenv_s. std::getenv is the correct
+# call, so the deprecation is suppressed rather than obeyed -- but ONLY on this
+# file, so it cannot mask a real deprecation anywhere else. It is compiled into
+# every test executable (see rs_add_test_group below), so one un-suppressed line
+# here printed 314 times across a full test build.
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/fp_status_listener.cpp"
+    PROPERTIES COMPILE_DEFINITIONS "_CRT_SECURE_NO_WARNINGS"
+)
 
 function(rs_add_test_group category name)
     set(target "${category}_${name}")

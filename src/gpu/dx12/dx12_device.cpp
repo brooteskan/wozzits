@@ -609,7 +609,7 @@ namespace wz::gpu::dx12
         wait_for_gpu(impl);
     }
 
-    bool dx12::copy_queue_wait(dx12::DX12Device* impl)
+    bool copy_queue_wait(dx12::DX12Device* impl)
     {
         if (!impl || !impl->queue || !impl->copy_fence
             || !impl->copy_fence_event)
@@ -1196,16 +1196,6 @@ namespace wz::gpu::dx12::internal
 
     extern const BYTE g_PS[];
     extern const SIZE_T g_PS_size;
-
-
-    auto release_blob = [](ID3DBlob*& blob)
-        {
-            if (blob)
-            {
-                blob->Release();
-                blob = nullptr;
-            }
-        };
 
 
     ID3D12PipelineState* create_triangle_pso(

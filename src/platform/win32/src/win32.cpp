@@ -135,8 +135,6 @@ namespace wz::platform::win32
             return TRUE;
         }
 
-        auto* data = GetWindowData(hwnd);
-
         switch (msg)
         {
         case WM_ERASEBKGND:
@@ -288,7 +286,20 @@ namespace wz::platform::win32
         wc.hInstance = hInstance;
         wc.lpszClassName = "WozzitsWindowClass";
 
-        RegisterClassA(&wc);
+        // Register the class once per process. RegisterClassA fails with
+        // ERROR_CLASS_ALREADY_EXISTS on every call after the first, so calling
+        // it unconditionally -- as this did -- makes a GENUINE registration
+        // failure indistinguishable from the expected one. g_registered has
+        // been sitting here unused since the file was written; this is what it
+        // was for.
+        if (!g_registered)
+        {
+            if (RegisterClassA(&wc) == 0)
+            {
+                return {};
+            }
+            g_registered = true;
+        }
 
         auto *data = new NativeWindow();
 

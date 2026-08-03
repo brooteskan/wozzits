@@ -12,20 +12,6 @@
 
 namespace
 {
-    std::vector<std::byte> float_bytes(std::initializer_list<float> values)
-    {
-        std::vector<std::byte> bytes(values.size() * sizeof(float));
-        std::memcpy(bytes.data(), values.begin(), bytes.size());
-        return bytes;
-    }
-
-    std::vector<std::byte> uint_bytes(std::initializer_list<uint32_t> values)
-    {
-        std::vector<std::byte> bytes(values.size() * sizeof(uint32_t));
-        std::memcpy(bytes.data(), values.begin(), bytes.size());
-        return bytes;
-    }
-
     constexpr wz::asset::SchemaID kRhiRenderableTestMeshSchema{
         0x7111'0000'0000'0001ull
     };

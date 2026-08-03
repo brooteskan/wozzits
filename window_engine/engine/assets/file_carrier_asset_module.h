@@ -37,9 +37,13 @@ namespace wz::engine::assets
     class FileCarrierAssetModule
     {
     public:
+        // No Logger: this module has nothing to report. register_file_node's
+        // only "failure" is a duplicate key, which is expected (several asset
+        // nodes may share one file carrier), and resolve_path is total. It took
+        // a Logger& for symmetry with its sibling modules and never read it,
+        // which pinned a lifetime requirement on every caller for nothing.
         FileCarrierAssetModule(
             wz::asset::AssetSystem& system,
-            wz::Logger&             logger,
             wz::fs::Path            resource_root
         );
 
@@ -58,7 +62,6 @@ namespace wz::engine::assets
 
     private:
         wz::asset::AssetSystem& system_;
-        wz::Logger&             logger_;
         wz::fs::Path            resource_root_;
     };
 

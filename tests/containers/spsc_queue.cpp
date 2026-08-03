@@ -81,8 +81,9 @@ TEST_F(SPSCQueueTest, SingleProducerSingleConsumer_FifoIntegrity)
         else
         {
             // CONSUMER (only reader)
+            // No running `expected` counter here: ordering is checked far more
+            // strongly after join_all(), against the whole recorded sequence.
             uint64_t value;
-            uint64_t expected = 0;
 
             while (!producer_done.load(std::memory_order_acquire) || !queue.empty())
             {
@@ -170,6 +171,7 @@ TEST_P(SPSCQueueBench, Throughput)
     ThreadTestHarness harness;
 
     std::atomic<bool> producer_done = false;
+    std::atomic<uint64_t> consumed{ 0 };
 
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -189,19 +191,25 @@ TEST_P(SPSCQueueBench, Throughput)
         {
             // CONSUMER
             uint64_t value;
-            uint64_t consumed = 0;
 
             while (!producer_done.load(std::memory_order_acquire) || !queue.empty())
             {
                 if (queue.try_pop(value))
                 {
-                    ++consumed;
+                    consumed.fetch_add(1, std::memory_order_relaxed);
                 }
             }
         } });
 
     harness.start();
     harness.join_all();
+
+    // The producer spins until every item is pushed and the consumer drains
+    // until the queue is empty AND the producer is done, so this is exact. The
+    // count used to be a thread-local that nothing read -- a throughput number
+    // computed from item_count is meaningless if the queue silently lost or
+    // duplicated items, and nothing here would have noticed.
+    EXPECT_EQ(consumed.load(std::memory_order_relaxed), param.item_count);
 
     auto end = std::chrono::high_resolution_clock::now();
 
