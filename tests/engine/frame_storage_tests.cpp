@@ -2,21 +2,13 @@
 
 #include <type_traits>
 
-#include <bench/benchmark_app.h>
 #include <engine/frame_storage.h>
+#include <engine/frame_types.h>   // was reached transitively via benchmark_app.h
 
-TEST(FrameStorageTypes, BenchAliasesUseSharedEngineStorage)
-{
-    static_assert(std::is_same_v<
-        wz::bench::RenderPrepPath,
-        wz::engine::RenderPrepPath>);
-    static_assert(std::is_same_v<
-        wz::bench::FrameDirtyState,
-        wz::engine::FrameDirtyState>);
-    static_assert(std::is_same_v<
-        wz::bench::BenchFrameStorage,
-        wz::engine::FrameStorage>);
-}
+// The `wz::bench::` alias-identity test that used to live here went with
+// BenchmarkApp: it asserted that benchmark_app.h's RenderPrepPath /
+// FrameDirtyState / BenchFrameStorage typedefs were the engine's own types.
+// With no second definition left to drift from, there is nothing to pin.
 
 TEST(FrameDirtyState, DefaultsToFullCompile)
 {
@@ -68,20 +60,16 @@ TEST(FrameDirtyState, NamesRenderPrepPaths)
         "TransformAndView");
 }
 
-TEST(FrameStorageTypes, BenchmarkFrameUsesSharedStorageAndDirtyState)
+// Kept from the BenchmarkApp version of this test, minus the host. What it
+// actually covered was FrameDirtyState's mark -> render_prep_path mapping; the
+// app was only the thing that happened to own one.
+TEST(FrameStorageTypes, MarkingTransformAndViewSelectsThatPrepPath)
 {
-    wz::bench::BenchmarkApp bench{};
+    wz::engine::FrameDirtyState dirty{};
 
-    static_assert(std::is_same_v<
-        decltype(bench.frame),
-        wz::engine::FrameStorage>);
-    static_assert(std::is_same_v<
-        decltype(bench.frame_dirty),
-        wz::engine::FrameDirtyState>);
-
-    bench.frame_dirty.mark_render_transform_and_view();
+    dirty.mark_render_transform_and_view();
 
     EXPECT_EQ(
-        bench.frame_dirty.render_prep_path(),
+        dirty.render_prep_path(),
         wz::engine::RenderPrepPath::TransformAndView);
 }

@@ -1356,30 +1356,4 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(scene_compile scene_adversarial_test_2)
     rs_add_test_group(scene_compile scene_adversarial_test_3)
 
-    # ── BenchmarkApp ──────────────────────────────────────────────────────────
-    # Standalone interactive app — no gtest dependency, resources required.
-
-    set(BENCHMARK_APP_TARGET benchmark_app_benchmark_app_main)
-
-    add_executable(${BENCHMARK_APP_TARGET}
-        tests/benchmark_app/benchmark_app_main.cpp
-        "src/event/event.cpp"
-    )
-
-    target_include_directories(${BENCHMARK_APP_TARGET}
-        PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/external/ply/wz_ply"
-    )
-
-    set_target_properties(${BENCHMARK_APP_TARGET}
-        PROPERTIES FOLDER "tests/benchmark_app"
-    )
-
-    target_link_libraries(${BENCHMARK_APP_TARGET}
-        PRIVATE
-            window_engine
-    )
-
-    add_dependencies(${BENCHMARK_APP_TARGET} wz_stage_resources)
-
 endif()
