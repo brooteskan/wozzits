@@ -583,6 +583,8 @@ function(rs_add_test_group category name)
     target_include_directories(${target}
         PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/external/ply/wz_ply"
+            # so a test can say #include <support/fp_expectations.h>
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests"
     )
 
     set_target_properties(${target}

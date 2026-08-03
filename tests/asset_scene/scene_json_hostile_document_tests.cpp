@@ -1,3 +1,5 @@
+#include <support/fp_expectations.h>
+
 #include <gtest/gtest.h>
 
 // A3-T2 / A3-T4 (issue #77 / umbrella #320): the malformed-document corpus this
@@ -97,6 +99,10 @@ namespace
 
     TEST(SceneJsonHostileDocument, TransformThatCannotNarrowToFloatIsRejected)
     {
+        // The document carries a value no float can hold, so narrowing it raises
+        // FE_OVERFLOW -- the guard under test working, not engine noise.
+        wz::testing::ExpectFpException expected_fp{ FE_OVERFLOW };
+
         // Was accepted, yielding translation = [inf, 0, 0] all the way into the
         // world matrices.
         EXPECT_FALSE(parse_scene(scene_with_nodes(

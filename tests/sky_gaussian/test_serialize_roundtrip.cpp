@@ -1,3 +1,5 @@
+#include <support/fp_expectations.h>
+
 #include <gtest/gtest.h>
 
 #include <engine/assets/sky_gaussian/sky_gaussian.h>
@@ -113,6 +115,10 @@ namespace
 
 TEST(SkyGaussianSerialize, RejectsNonFiniteAndDegenerateFields)
 {
+    // Non-finite and out-of-float-range fields are the subject of this test, so
+    // the narrowing raises FE_OVERFLOW by design.
+    wz::testing::ExpectFpException expected_fp{ FE_OVERFLOW };
+
     wz::engine::assets::sky::SkyGaussianSet set;
     std::string err;
 

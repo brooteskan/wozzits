@@ -1,3 +1,5 @@
+#include <support/fp_expectations.h>
+
 #include <gtest/gtest.h>
 
 #include <engine/assets/inochi/inochi_puppet.h>
@@ -320,6 +322,10 @@ TEST(InochiLoad, RejectsBogusTextureCount)
 // ---------------------------------------------------------------------------
 TEST(InochiLoad, OutOfFloatRangeNumbersNeverReachThePuppet)
 {
+    // 1e308 is a finite double and an infinite float, so narrowing it raises
+    // FE_OVERFLOW -- which is the guard under test working, not engine noise.
+    wz::testing::ExpectFpException expected_fp{ FE_OVERFLOW };
+
     const std::string json =
         "{\"meta\":{\"name\":\"probe\"},"
         "\"nodes\":{"

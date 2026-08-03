@@ -1,3 +1,5 @@
+#include <support/fp_expectations.h>
+
 #include <gtest/gtest.h>
 
 #include <external/json/json_parser.h>
@@ -254,6 +256,10 @@ TEST(JSONWriter, EscapesStrings)
 // UB (or a silently wrong id/slot/layer) into the engine.
 TEST(JSONReadHelpers, NarrowNumberRejectsWhatTheTargetCannotHold)
 {
+    // Narrowing values the target cannot hold is the whole subject of this test,
+    // so the out-of-range conversions raise FE_INVALID by design.
+    wz::testing::ExpectFpException expected_fp{ FE_INVALID };
+
     using wz::json::narrow_number;
 
     // Exact bounds are accepted; one past them is not.

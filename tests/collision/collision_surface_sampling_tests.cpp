@@ -5,6 +5,8 @@
 #include <cmath>
 #include <vector>
 
+#include <support/fp_expectations.h>
+
 #include <gtest/gtest.h>
 
 namespace
@@ -839,6 +841,11 @@ TEST(CollisionSurfaceSampling, RayMarchTerminatesFarFromTheColliderOrigin)
 // way. It hands the sampler a poisoned asset DIRECTLY for exactly that reason.
 TEST(CollisionSurfaceSampling, NonFiniteFieldDataReportsNoHitRatherThanANaNHit)
 {
+    // This test feeds NaN field data on purpose, so the arithmetic that consumes
+    // it raises FE_INVALID while doing exactly its job. Declared, so the FP
+    // status listener does not report it as engine noise.
+    wz::testing::ExpectFpException expected_fp{ FE_INVALID };
+
     // Control: the same field with finite data answers normally.
     {
         const auto healthy = flat_field_for_march(1.0f);
