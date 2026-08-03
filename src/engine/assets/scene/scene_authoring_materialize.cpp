@@ -556,38 +556,6 @@ namespace wz::engine::assets
                 + ":constant:" + std::to_string(source->constant_value);
         }
 
-        std::string render_shader_cache_key(
-            const SceneRenderShaderAsset* shader)
-        {
-            if (!shader) {
-                return ":render_shader_default";
-            }
-            std::string key = std::string(":render_shader:")
-                + shader->program_id
-                + ":vs:" + shader->vertex_hlsl_path
-                + ":" + shader->vertex_entry
-                + ":" + shader->vertex_target
-                + ":ps:" + shader->pixel_hlsl_path
-                + ":" + shader->pixel_entry
-                + ":" + shader->pixel_target
-                + ":binding:" + shader->binding_model
-                + ":layout:" + shader->input_layout
-                + ":blend:" + shader->blend
-                + ":depth:" + shader->depth
-                + ":raster:" + shader->raster;
-            key += ":descriptors:"
-                + std::to_string(shader->descriptor_bindings.size());
-            for (const auto& binding : shader->descriptor_bindings) {
-                key += ":" + binding.kind
-                    + ":" + binding.visibility
-                    + ":" + binding.semantic
-                    + ":t" + std::to_string(binding.shader_register)
-                    + ":space" + std::to_string(binding.register_space)
-                    + ":count" + std::to_string(binding.descriptor_count);
-            }
-            return key;
-        }
-
         ComputePipelineAsset create_builtin_mesh_wavelet_pipeline(
             EngineAssetLibrary& assets)
         {
@@ -2208,277 +2176,17 @@ namespace wz::engine::assets
             }
         }
 
-        bool validate_render_shader_token(
-            std::string_view actual,
-            std::string_view expected,
-            std::string_view field,
-            const std::string& node_name,
-            std::string& error)
-        {
-            if (actual == expected) {
-                return true;
-            }
-            error = "render shader " + std::string(field)
-                + " unsupported for " + node_name
-                + ": expected '" + std::string(expected)
-                + "', got '" + std::string(actual) + "'";
-            return false;
-        }
-
-        std::optional<DescriptorKind> parse_render_descriptor_kind(
-            std::string_view value) noexcept
-        {
-            if (value == "structured_buffer_srv") {
-                return DescriptorKind::StructuredBufferSRV;
-            }
-            return std::nullopt;
-        }
-
-        std::optional<ShaderVisibility> parse_render_descriptor_visibility(
-            std::string_view value) noexcept
-        {
-            if (value == "all") {
-                return ShaderVisibility::All;
-            }
-            if (value == "vertex") {
-                return ShaderVisibility::Vertex;
-            }
-            if (value == "pixel") {
-                return ShaderVisibility::Pixel;
-            }
-            return std::nullopt;
-        }
-
-        std::optional<DescriptorSemantic> parse_render_descriptor_semantic(
-            std::string_view value) noexcept
-        {
-            if (value == "mesh_field_visualization") {
-                return DescriptorSemantic::MeshFieldVisualization;
-            }
-            return std::nullopt;
-        }
-
-        bool render_shader_requests_mesh_field(const SceneNodeAsset& node)
-        {
-            if (!node.render_shader) {
-                return false;
-            }
-            return std::any_of(
-                node.render_shader->descriptor_bindings.begin(),
-                node.render_shader->descriptor_bindings.end(),
-                [](const SceneDescriptorBindingAsset& binding)
-                {
-                    return binding.semantic == "mesh_field_visualization";
-                });
-        }
-
         // A node is a behavior mesh-field source when a compute kernel is
-        // present and the author signalled field-visualization intent: either
-        // the render shader binds the mesh_field_visualization semantic or the
-        // authored render style enables field visualization. Compute kernels
-        // without that intent must not grow render styles or field assets.
+        // present and the authored render style enables field visualization.
+        // Compute kernels without that intent must not grow render styles or
+        // field assets.
         bool node_has_behavior_field_source(const SceneNodeAsset& node)
         {
             if (!node.compute_kernel) {
                 return false;
             }
-            return render_shader_requests_mesh_field(node)
-                || (node.mesh_render_style
-                    && node.mesh_render_style->field_visualization_enabled);
-        }
-
-        bool convert_render_shader_descriptor_bindings(
-            const SceneRenderShaderAsset& shader,
-            const SceneNodeAsset& node,
-            const std::string& node_name,
-            std::vector<DescriptorBinding>& out,
-            std::string& error)
-        {
-            out.clear();
-            out.reserve(shader.descriptor_bindings.size());
-
-            for (const auto& binding : shader.descriptor_bindings) {
-                const auto kind =
-                    parse_render_descriptor_kind(binding.kind);
-                if (!kind.has_value()) {
-                    error = "render shader descriptor kind unsupported for "
-                        + node_name + ": " + binding.kind;
-                    return false;
-                }
-
-                const auto visibility =
-                    parse_render_descriptor_visibility(binding.visibility);
-                if (!visibility.has_value()) {
-                    error =
-                        "render shader descriptor visibility unsupported for "
-                        + node_name + ": " + binding.visibility;
-                    return false;
-                }
-
-                const auto semantic =
-                    parse_render_descriptor_semantic(binding.semantic);
-                if (!semantic.has_value()) {
-                    error =
-                        "render shader descriptor semantic unsupported for "
-                        + node_name + ": " + binding.semantic;
-                    return false;
-                }
-
-                if (binding.descriptor_count != 1u) {
-                    error =
-                        "render shader descriptor_count unsupported for "
-                        + node_name + ": expected 1";
-                    return false;
-                }
-
-                if (*semantic == DescriptorSemantic::MeshFieldVisualization) {
-                    const bool has_field_viz =
-                        node.mesh_render_style
-                        && node.mesh_render_style
-                            ->field_visualization_enabled;
-                    const bool has_behavior_field =
-                        node.compute_kernel.has_value();
-                    if (!has_field_viz && !has_behavior_field) {
-                        error =
-                            "render shader descriptor semantic requires "
-                            "mesh_render_style field visualization or "
-                            "compute_kernel for "
-                            + node_name + ": " + binding.semantic;
-                        return false;
-                    }
-                }
-
-                out.push_back(DescriptorBinding{
-                    .kind = *kind,
-                    .visibility = *visibility,
-                    .semantic = *semantic,
-                    .shader_register = binding.shader_register,
-                    .register_space = binding.register_space,
-                    .descriptor_count = binding.descriptor_count,
-                });
-            }
-
-            return true;
-        }
-
-        bool materialize_render_shader(
-            EngineAssetLibrary& assets,
-            SceneNodeAsset& node,
-            std::string& error)
-        {
-            if (!node.render_shader) {
-                return true;
-            }
-
-            SceneRenderShaderAsset& shader = *node.render_shader;
-            const std::string node_name =
-                !node.id.empty() ? node.id : node.name;
-
-            if (shader.program_id.empty()) {
-                error = "render shader missing program_id for " + node_name;
-                return false;
-            }
-            if (shader.vertex_hlsl_path.empty()) {
-                error =
-                    "render shader missing vertex_hlsl_path for "
-                    + node_name;
-                return false;
-            }
-            if (shader.pixel_hlsl_path.empty()) {
-                error =
-                    "render shader missing pixel_hlsl_path for " + node_name;
-                return false;
-            }
-
-            if (!validate_render_shader_token(
-                    shader.binding_model,
-                    "mesh_ia",
-                    "binding_model",
-                    node_name,
-                    error)
-                || !validate_render_shader_token(
-                    shader.input_layout,
-                    "mesh_position_normal_uv",
-                    "input_layout",
-                    node_name,
-                    error)
-                || !validate_render_shader_token(
-                    shader.blend,
-                    "opaque",
-                    "blend",
-                    node_name,
-                    error)
-                || !validate_render_shader_token(
-                    shader.depth,
-                    "test_write",
-                    "depth",
-                    node_name,
-                    error)
-                || !validate_render_shader_token(
-                    shader.raster,
-                    "solid_cull_none",
-                    "raster",
-                    node_name,
-                    error))
-            {
-                return false;
-            }
-
-            std::vector<DescriptorBinding> descriptor_bindings;
-            if (!convert_render_shader_descriptor_bindings(
-                    shader,
-                    node,
-                    node_name,
-                    descriptor_bindings,
-                    error))
-            {
-                return false;
-            }
-
-            const ShaderPairAsset shader_pair =
-                assets.shaders().create_shader_pair({
-                    .name = shader.program_id,
-                    .vertex_path = shader.vertex_hlsl_path,
-                    .pixel_path = shader.pixel_hlsl_path,
-                    .vertex_entry = shader.vertex_entry,
-                    .pixel_entry = shader.pixel_entry,
-                    .vertex_target = shader.vertex_target,
-                    .pixel_target = shader.pixel_target,
-                });
-            if (!shader_pair.valid()) {
-                error = "render shader pair unavailable for " + node_name;
-                return false;
-            }
-
-            const RenderProgramAsset program =
-                assets.render_programs().create_custom({
-                    .name = shader.program_id,
-                    .vertex_shader = shader_pair.vertex_shader,
-                    .pixel_shader = shader_pair.pixel_shader,
-                    .binding_model = RenderBindingModel::MeshIA,
-                    .topology = RenderPrimitiveTopology::TriangleList,
-                    .default_domain = RenderDomain::Opaque,
-                    .default_policy_flags =
-                        RenderPolicy_DepthTest | RenderPolicy_DepthWrite,
-                    .input_layout = InputLayoutKind::MeshPositionNormalUV,
-                    .blend_mode = wz::rhi::BlendMode::Opaque,
-                    .depth_mode = DepthMode::TestWrite,
-                    .raster_mode = RasterMode::SolidCullNone,
-                    .root_constants = {{
-                        .visibility = ShaderVisibility::All,
-                        .shader_register = 0,
-                        .register_space = 0,
-                        .value_count = 40,
-                    }},
-                    .descriptor_bindings = std::move(descriptor_bindings),
-                });
-            if (!program.valid()) {
-                error = "render program unavailable for " + node_name;
-                return false;
-            }
-
-            shader.render_program_asset = program.key;
-            return true;
+            return node.mesh_render_style
+                && node.mesh_render_style->field_visualization_enabled;
         }
 
         uint32_t policy_flags_for_terrain_render_style(
@@ -3344,7 +3052,6 @@ namespace wz::engine::assets
             MeshAsset mesh,
             SceneMeshRenderStyleAsset& style,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
-            SceneRenderShaderAsset* render_shader,
             wz::asset::AssetKey render_program_asset_override,
             bool has_behavior_field_source,
             bool has_compute_field_source,
@@ -3440,9 +3147,9 @@ namespace wz::engine::assets
             // Issue #195: the legacy 0x705 styled renderable is gone; a styled
             // mesh node is an RHI pull-mesh renderable (0x706) = mesh + program
             // + the style as data. Program precedence is unchanged from the
-            // 0x705 path: an authored render_shader program wins, then the
-            // mesh_vertex_pull override, else a provisioned mesh_style program
-            // whose raster/depth/blend derive from the style. The style's
+            // 0x705 path: the mesh_vertex_pull override wins, else a
+            // provisioned mesh_style program whose raster/depth/blend derive
+            // from the style. The style's
             // geometry-generating parts (field_visualization, mask) are NOT
             // renderable inputs any more — the field/wavelet assets above are
             // still created and registered exactly as before (they feed the
@@ -3454,9 +3161,7 @@ namespace wz::engine::assets
             // program does not draw. That is a success, not an error: `out`
             // stays invalid and the caller skips the attach.
             const wz::asset::AssetKey authored_program =
-                render_shader
-                    ? render_shader->render_program_asset
-                    : render_program_asset_override;
+                render_program_asset_override;
 
             RenderableAsset renderable{};
             if (!(authored_program == wz::asset::AssetKey{})) {
@@ -3834,7 +3539,6 @@ namespace wz::engine::assets
             const SceneMeshDerivedFieldSourceAsset* field_source,
             SceneMeshWaveletAnalysisAsset* wavelet_analysis,
             const SceneMeshComputeFieldAsset* compute_field,
-            SceneRenderShaderAsset* render_shader,
             bool has_behavior_field_source,
             SceneMeshRenderStyleAsset& style,
             RenderableCache& renderables,
@@ -3850,8 +3554,7 @@ namespace wz::engine::assets
                 style.mask.enabled
                 && style.mask.domain == MeshMaskDomain::Face;
             const bool use_mesh_vertex_pull_program =
-                !render_shader
-                && !style.field_visualization_enabled
+                !style.field_visualization_enabled
                 && (!style.mask.enabled || use_mesh_vertex_pull_mask_program)
                 && processing
                 && processing->enabled
@@ -3878,7 +3581,6 @@ namespace wz::engine::assets
                 + mesh_derived_field_source_cache_key(field_source)
                 + mesh_compute_field_cache_key(
                     has_compute_field_source ? compute_field : nullptr)
-                + render_shader_cache_key(render_shader)
                 + (use_mesh_vertex_pull_program
                     ? use_mesh_vertex_pull_mask_program
                         ? ":mesh_vertex_pull_mask"
@@ -3927,7 +3629,6 @@ namespace wz::engine::assets
                     out_mesh,
                     style,
                     wavelet_analysis,
-                    render_shader,
                     render_program_asset_override,
                     has_behavior_field_source,
                     has_compute_field_source,
@@ -4221,21 +3922,6 @@ namespace wz::engine::assets
             "compute_kernels",
             elapsed_ms_since(compute_kernels_started));
 
-        const auto render_shaders_started = std::chrono::steady_clock::now();
-        for (auto& node : scene.nodes) {
-            if (!materialize_render_shader(assets, node, report.error)) {
-                if (report.error.empty()) {
-                    report.error =
-                        "render shader materialization failed for "
-                        + node_log_name(node);
-                }
-                return report;
-            }
-        }
-        log_phase(
-            "render_shaders",
-            elapsed_ms_since(render_shaders_started));
-
         const auto event_triggers_started = std::chrono::steady_clock::now();
         for (auto& node : scene.nodes) {
             materialize_event_trigger(node);
@@ -4519,12 +4205,6 @@ namespace wz::engine::assets
             }
             if (node.mesh_region_set) {
                 node.mesh_region_set->source_field_asset = {};
-            }
-            if (node.render_shader) {
-                render_style.surface.enabled = true;
-                render_style.wireframe.enabled = false;
-                render_style.depth_test = true;
-                render_style.depth_write = true;
             }
             const bool behavior_field_source =
                 node_has_behavior_field_source(node);
@@ -4821,9 +4501,6 @@ namespace wz::engine::assets
                             ? &*node.mesh_wavelet_analysis
                             : nullptr,
                         active_compute_field,
-                        node.render_shader
-                            ? &*node.render_shader
-                            : nullptr,
                         behavior_field_source,
                         render_style,
                         renderables,

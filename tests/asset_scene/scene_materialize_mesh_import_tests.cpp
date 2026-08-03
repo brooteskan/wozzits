@@ -94,8 +94,7 @@ TEST(SceneAuthoringMaterialize, MeshSourceCreatesRenderableAsset)
     // replacement needs a provisioned render program, whose shaders cannot
     // compile without a GPU device. The style ASSET is still authored and
     // registered; the with-device renderable flow (recipe + baked shading +
-    // style-derived program state) is covered by
-    // scene_materialize_render_shader_tests and the RenderableAssetModule
+    // style-derived program state) is covered by the RenderableAssetModule
     // mesh-style suites.
     EXPECT_FALSE(scene.nodes[0].renderable_asset.has_value());
     ASSERT_TRUE(scene.nodes[0].mesh_render_style.has_value());

@@ -530,7 +530,6 @@ namespace wz::engine::assets
         std::vector<SceneComponentRecord<SceneMotionFilterAsset>> motion_filters;
         std::vector<SceneComponentRecord<BehaviorComponent>> behaviors;
         uint32_t compute_kernels = 0;
-        uint32_t render_shaders = 0;
         BehaviorStateStorage behavior_state;
         std::vector<SceneComponentRecord<AuxiliaryVisualComponent>> auxiliary_visuals;
         std::vector<SceneComponentRecord<EditorHandleComponent>> editor_handles;

@@ -243,7 +243,7 @@ namespace wz::engine::editor
     //     SceneAssetData::glb_meshes), imported_node, mesh_processing.
     //  3. Components with no editor verb yet -- roughly thirty kinds (lights,
     //     mesh_*/terrain_*/field_* sources, event_listener/_trigger, sky_*,
-    //     input_receiver, controllers, compute_kernel, render_shader, ...). These
+    //     input_receiver, controllers, compute_kernel, ...). These
     //     appear when an authoring verb does, which is the render_to_texture
     //     precedent: Kind first, then token, then UI.
     //  4. Authored fields on components that ARE surfaced -- the sharp category,

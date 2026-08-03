@@ -102,7 +102,6 @@ namespace wz::scene
         MotionFilter,
         Behavior,
         ComputeKernel,
-        RenderShader,
         // A node that sources a sub-scene to graft as its children (issue #213):
         // scene_source_node_id (asset-graph "Scene from GLB" ref), the resolved
         // scene_source key, or the inline glb_scene_source descriptor. Grafts live
@@ -125,7 +124,7 @@ namespace wz::scene
     // BUMP THIS when adding a kind. The authored-component binding table in
     // scene_asset_data.h static_asserts that it covers exactly this many kinds,
     // so a stale count fails the build and points at the table.
-    inline constexpr std::size_t kSceneAuthoredComponentKindCount = 51;
+    inline constexpr std::size_t kSceneAuthoredComponentKindCount = 50;
 
     constexpr SceneComponentDomain scene_component_domain(
         SceneAuthoredComponentKind kind) noexcept
@@ -149,7 +148,6 @@ namespace wz::scene
         case SceneAuthoredComponentKind::RenderToTexture:
         case SceneAuthoredComponentKind::AuxiliaryVisual:
         case SceneAuthoredComponentKind::ComputeKernel:
-        case SceneAuthoredComponentKind::RenderShader:
             return SceneComponentDomain::Exportable;
 
         case SceneAuthoredComponentKind::AssetReference:
@@ -288,7 +286,6 @@ namespace wz::scene
         uint32_t motion_filters = 0;
         uint32_t behaviors = 0;
         uint32_t compute_kernels = 0;
-        uint32_t render_shaders = 0;
         uint32_t auxiliary_visuals = 0;
         uint32_t editor_handles = 0;
         uint32_t scene_sources = 0;
@@ -320,7 +317,6 @@ namespace wz::scene
         uint32_t motion_filters = 0;
         uint32_t behaviors = 0;
         uint32_t compute_kernels = 0;
-        uint32_t render_shaders = 0;
         uint32_t auxiliary_visuals = 0;
     };
 

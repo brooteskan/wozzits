@@ -175,7 +175,6 @@ namespace wz::engine::assets
             const bool has_behavior = node.behavior.has_value();
             const bool has_behaviors = !node.behaviors.empty();
             const bool has_compute_kernel = node.compute_kernel.has_value();
-            const bool has_render_shader = node.render_shader.has_value();
             const bool has_debug_visual = node.debug_visual.has_value();
             const bool has_editor_handle = node.editor_handle.has_value();
             fp.mix_value(has_inline_renderable);
@@ -219,7 +218,6 @@ namespace wz::engine::assets
             fp.mix_value(has_behavior);
             fp.mix_value(has_behaviors);
             fp.mix_value(has_compute_kernel);
-            fp.mix_value(has_render_shader);
             fp.mix_value(has_debug_visual);
             fp.mix_value(has_editor_handle);
 
@@ -923,31 +921,6 @@ namespace wz::engine::assets
                     fp.mix_value(port.stride_bytes);
                     fp.mix_value(port.root_constant_offset);
                     fp.mix_value(port.root_constant_dwords);
-                }
-            }
-
-            if (node.render_shader) {
-                const auto& shader = *node.render_shader;
-                fp.mix_string(shader.program_id);
-                fp.mix_string(shader.vertex_hlsl_path);
-                fp.mix_string(shader.pixel_hlsl_path);
-                fp.mix_string(shader.vertex_entry);
-                fp.mix_string(shader.pixel_entry);
-                fp.mix_string(shader.vertex_target);
-                fp.mix_string(shader.pixel_target);
-                fp.mix_string(shader.binding_model);
-                fp.mix_string(shader.input_layout);
-                fp.mix_string(shader.blend);
-                fp.mix_string(shader.depth);
-                fp.mix_string(shader.raster);
-                fp.mix_value(shader.descriptor_bindings.size());
-                for (const auto& binding : shader.descriptor_bindings) {
-                    fp.mix_string(binding.kind);
-                    fp.mix_string(binding.visibility);
-                    fp.mix_string(binding.semantic);
-                    fp.mix_value(binding.shader_register);
-                    fp.mix_value(binding.register_space);
-                    fp.mix_value(binding.descriptor_count);
                 }
             }
 

@@ -215,9 +215,9 @@ TEST(RhiRenderProgramBridge, EmptyRootConstantSemanticIsMalformed)
 // failed" and "program bridge failed" were the only two things the engine said,
 // and neither names the field. The cause that actually occurs in shipping code
 // is a root-constant block with no semantic -- one unset string in producers
-// that otherwise look complete (the scene `render_shader` path and all 14
-// fill_builtin_render_program_defaults blocks). Measured: those descs convert
-// to nullopt 100% of the time. See #317.
+// that otherwise look complete (all 14 fill_builtin_render_program_defaults
+// blocks, and the scene `render_shader` path before it was deleted). Measured:
+// those descs convert to nullopt 100% of the time. See #317.
 //
 // This pins that the reason names the field, not just that a reason exists --
 // an empty-vs-nonempty assertion would pass against any string at all.

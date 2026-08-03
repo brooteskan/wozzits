@@ -1034,34 +1034,6 @@ namespace wz::engine::assets
         wz::asset::AssetKey compute_pipeline_asset{};
     };
 
-    struct SceneDescriptorBindingAsset
-    {
-        std::string kind;
-        std::string visibility;
-        std::string semantic;
-        uint32_t shader_register = 0;
-        uint32_t register_space = 0;
-        uint32_t descriptor_count = 1;
-    };
-
-    struct SceneRenderShaderAsset
-    {
-        std::string program_id;
-        std::string vertex_hlsl_path;
-        std::string pixel_hlsl_path;
-        std::string vertex_entry = "main";
-        std::string pixel_entry = "main";
-        std::string vertex_target = "vs_5_0";
-        std::string pixel_target = "ps_5_0";
-        std::string binding_model = "mesh_ia";
-        std::string input_layout = "mesh_position_normal_uv";
-        std::string blend = "opaque";
-        std::string depth = "test_write";
-        std::string raster = "solid_cull_none";
-        std::vector<SceneDescriptorBindingAsset> descriptor_bindings;
-        wz::asset::AssetKey render_program_asset{};
-    };
-
     // ─────────────────────────────────────────────────────────────────────
 
     // How a node consumes a referenced Scene asset (issue #213):
@@ -1356,7 +1328,6 @@ namespace wz::engine::assets
         std::optional<SceneBehaviorAsset> behavior;
         std::vector<SceneBehaviorAsset> behaviors;
         std::optional<SceneComputeKernelAsset> compute_kernel;
-        std::optional<SceneRenderShaderAsset> render_shader;
 
         std::optional<SceneAuxiliaryVisualAsset> debug_visual;
         std::optional<SceneEditorHandleAsset> editor_handle;
@@ -1453,7 +1424,6 @@ namespace wz::engine::assets
         uint32_t terrain_height_field_sources = 0;
         uint32_t event_triggers = 0;
         uint32_t compute_kernels = 0;
-        uint32_t render_shaders = 0;
     };
 
     inline SceneNodeAsset make_scene_node(
@@ -2294,9 +2264,6 @@ namespace wz::engine::assets
         { SceneComponentKind::ComputeKernel,
           [](const SceneNodeAsset& n) { return n.compute_kernel.has_value(); },
           &SceneComponentCounts::compute_kernels },
-        { SceneComponentKind::RenderShader,
-          [](const SceneNodeAsset& n) { return n.render_shader.has_value(); },
-          &SceneComponentCounts::render_shaders },
         // The authored field is debug_visual; the boundary kind is the broader
         // AuxiliaryVisual.
         { SceneComponentKind::AuxiliaryVisual,
@@ -3428,8 +3395,7 @@ namespace wz::engine::assets
             || node.terrain_mesh_source.has_value()
             || node.terrain_height_field_source.has_value()
             || node.event_trigger.has_value()
-            || node.compute_kernel.has_value()
-            || node.render_shader.has_value();
+            || node.compute_kernel.has_value();
     }
 
     // Derived from the binding table and the DOMAIN classification rather than a
@@ -3559,10 +3525,6 @@ namespace wz::engine::assets
             }
             if (node.compute_kernel) {
                 ++out.compute_kernels;
-                ++out.total_recipes;
-            }
-            if (node.render_shader) {
-                ++out.render_shaders;
                 ++out.total_recipes;
             }
         }

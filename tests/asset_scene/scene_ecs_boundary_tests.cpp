@@ -1761,7 +1761,7 @@ namespace {
 // SceneAssetData::glb_meshes, not a component), imported_node (GLB import
 // provenance) and mesh_processing (carried as an authoring recipe instead).
 static_assert(
-    aggregate_field_count<wz::engine::assets::SceneNodeAsset>() == 71,
+    aggregate_field_count<wz::engine::assets::SceneNodeAsset>() == 70,
     "SceneNodeAsset gained or lost a field. If it is a component, add it to "
     "kAuthoredComponentBindings in scene_asset_data.h; if it is not, record it "
     "in the accepted-exceptions comment above. Then update this count.");

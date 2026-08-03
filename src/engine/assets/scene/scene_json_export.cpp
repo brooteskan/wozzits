@@ -1637,69 +1637,6 @@ namespace wz::engine::assets
             return obj;
         }
 
-        JSONValuePtr render_shader_value(
-            const SceneRenderShaderAsset& shader)
-        {
-            auto obj = object_value();
-            add_member(*obj, "program_id", string_value(shader.program_id));
-            add_member(*obj, "vertex_hlsl_path",
-                string_value(shader.vertex_hlsl_path));
-            add_member(*obj, "pixel_hlsl_path",
-                string_value(shader.pixel_hlsl_path));
-            add_member(*obj, "vertex_entry",
-                string_value(shader.vertex_entry));
-            add_member(*obj, "pixel_entry",
-                string_value(shader.pixel_entry));
-            add_member(*obj, "vertex_target",
-                string_value(shader.vertex_target));
-            add_member(*obj, "pixel_target",
-                string_value(shader.pixel_target));
-            add_member(*obj, "binding_model",
-                string_value(shader.binding_model));
-            add_member(*obj, "input_layout",
-                string_value(shader.input_layout));
-            add_member(*obj, "blend", string_value(shader.blend));
-            add_member(*obj, "depth", string_value(shader.depth));
-            add_member(*obj, "raster", string_value(shader.raster));
-            if (!shader.descriptor_bindings.empty()) {
-                auto descriptor_bindings = array_value();
-                for (const auto& binding : shader.descriptor_bindings) {
-                    auto binding_obj = object_value();
-                    add_member(
-                        *binding_obj,
-                        "kind",
-                        string_value(binding.kind));
-                    add_member(
-                        *binding_obj,
-                        "visibility",
-                        string_value(binding.visibility));
-                    add_member(
-                        *binding_obj,
-                        "semantic",
-                        string_value(binding.semantic));
-                    add_member(
-                        *binding_obj,
-                        "shader_register",
-                        number_value(binding.shader_register));
-                    add_member(
-                        *binding_obj,
-                        "register_space",
-                        number_value(binding.register_space));
-                    add_member(
-                        *binding_obj,
-                        "descriptor_count",
-                        number_value(binding.descriptor_count));
-                    descriptor_bindings->array_values.push_back(
-                        std::move(binding_obj));
-                }
-                add_member(
-                    *obj,
-                    "descriptor_bindings",
-                    std::move(descriptor_bindings));
-            }
-            return obj;
-        }
-
         JSONValuePtr terrain_value(const SceneTerrainAsset& terrain)
         {
             auto obj = object_value();
@@ -2420,10 +2357,6 @@ namespace wz::engine::assets
             if (node.compute_kernel) {
                 add_member(*obj, "compute_kernel",
                     compute_kernel_value(*node.compute_kernel));
-            }
-            if (node.render_shader) {
-                add_member(*obj, "render_shader",
-                    render_shader_value(*node.render_shader));
             }
             if (node.debug_visual
                 && node.debug_visual->kind != SceneDebugVisualKind::None)
