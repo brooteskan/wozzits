@@ -390,7 +390,8 @@ namespace wz::engine::rendering
 
         const HRESULT hr = D3DCompile(
             source.data(), source.size(), nullptr, nullptr, nullptr,
-            entry_text.c_str(), target, 0, 0, &shader_blob, &error_blob);
+            entry_text.c_str(), target,
+            D3DCOMPILE_ENABLE_STRICTNESS, 0, &shader_blob, &error_blob);
 
         if (FAILED(hr)) {
             std::string detail;

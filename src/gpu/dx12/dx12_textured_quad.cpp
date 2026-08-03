@@ -74,7 +74,8 @@ namespace
         ID3DBlob* err = nullptr;
         HRESULT hr = D3DCompile(
             kQuadShader, sizeof(kQuadShader) - 1, "textured_quad", nullptr,
-            nullptr, entry, target, 0, 0, &blob, &err);
+            nullptr, entry, target,
+            D3DCOMPILE_ENABLE_STRICTNESS, 0, &blob, &err);
         // Released before the FAILED() test, so a compile failure produced no
         // diagnostic at all -- see dx12_blit.cpp (issue #316, C3-C2).
         if (err) {

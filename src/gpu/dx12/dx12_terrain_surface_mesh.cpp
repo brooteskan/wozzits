@@ -59,7 +59,7 @@ static bool compile_shader(
     HRESULT r = D3DCompile(
         bytes.value.data(), bytes.value.size(),
         debug_name, nullptr, nullptr,
-        "main", target, 0, 0, out_blob, &err);
+        "main", target, D3DCOMPILE_ENABLE_STRICTNESS, 0, out_blob, &err);
     if (FAILED(r))
     {
         if (err) {

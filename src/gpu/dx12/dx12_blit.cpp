@@ -45,7 +45,7 @@ namespace
         ID3DBlob* err = nullptr;
         HRESULT hr = D3DCompile(
             kBlitShader, sizeof(kBlitShader) - 1, "blit", nullptr, nullptr,
-            entry, target, 0, 0, &blob, &err);
+            entry, target, D3DCOMPILE_ENABLE_STRICTNESS, 0, &blob, &err);
         // The blob was released BEFORE the FAILED() test, so a compile failure
         // returned nullptr with no diagnostic anywhere -- the message naming the
         // broken line was destroyed one statement before anyone could ask

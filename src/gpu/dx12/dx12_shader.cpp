@@ -60,7 +60,12 @@ namespace wz::gpu
             nullptr,
             desc.entry.c_str(),
             desc.target.c_str(),
-            0,
+            // C3-Q3, ruled 2026-08-03: strictness ON, warnings LOGGED, build
+            // NOT failed. Rejects the legacy-permissive syntax FXC would
+            // otherwise wave through. Warnings reach the caller through
+            // out_warnings and are logged at warn level; nothing here
+            // treats one as an error.
+            D3DCOMPILE_ENABLE_STRICTNESS,
             0,
             &shader_blob,
             &error_blob
