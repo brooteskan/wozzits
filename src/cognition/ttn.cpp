@@ -21,18 +21,32 @@ namespace wz::engine::cognition
         // Single-site imaginary-time gate e^{-H dtau}, H = -gamma sigma_x - h sigma_z.
         // H^2 = E^2 I (E = sqrt(h^2+gamma^2)), so e^{-H dtau} =
         //   cosh(E dtau) I + (sinh(E dtau)/E)(gamma sigma_x + h sigma_z).
+        // TANH FORM, matching qstate::apply_imag_time_field exactly -- see the long
+        // note there. cosh(E dtau) overflows at ~710 and its SQUARE at ~355, and
+        // the sites are renormalized after, so dividing the gate through by
+        // cosh(E dtau) leaves the state identical and bounds every entry in
+        // [-2, 2] for any finite input.
         std::vector<Complex> site_gate(double gamma, double h, double dtau)
         {
-            const double e = std::sqrt(h * h + gamma * gamma);
-            if (e <= 0) {
-                return { Complex{ 1, 0 }, Complex{ 0, 0 },
-                    Complex{ 0, 0 }, Complex{ 1, 0 } };
+            const std::vector<Complex> identity = {
+                Complex{ 1, 0 }, Complex{ 0, 0 },
+                Complex{ 0, 0 }, Complex{ 1, 0 }
+            };
+            // Guard the INPUTS, not the result: testing isfinite afterwards would
+            // raise a spurious FE_OVERFLOW on the way to deciding not to trust it.
+            constexpr double kSquareSafe = 1e150;
+            const double e =
+                (std::abs(h) < kSquareSafe && std::abs(gamma) < kSquareSafe)
+                    ? std::sqrt(h * h + gamma * gamma)
+                    : std::hypot(h, gamma);
+            // Reject direction: `e <= 0` admitted a NaN field.
+            if (!(e > 0) || !std::isfinite(e) || !std::isfinite(dtau)) {
+                return identity;
             }
-            const double ch = std::cosh(e * dtau);
-            const double she = std::sinh(e * dtau) / e;
+            const double th = std::tanh(e * dtau);
             return {
-                Complex{ ch + she * h, 0 }, Complex{ she * gamma, 0 },
-                Complex{ she * gamma, 0 }, Complex{ ch - she * h, 0 },
+                Complex{ 1.0 + th * (h / e), 0 }, Complex{ th * (gamma / e), 0 },
+                Complex{ th * (gamma / e), 0 }, Complex{ 1.0 - th * (h / e), 0 },
             };
         }
 
@@ -40,8 +54,14 @@ namespace wz::engine::cognition
         // diagonal, e^{+j dtau} when the two spins agree, e^{-j dtau} when they differ.
         std::vector<Complex> coupling_gate(double j, double dtau)
         {
-            const double agree = std::exp(j * dtau);
-            const double differ = std::exp(-j * dtau);
+            // Scaled by e^{-|j dtau|} so both eigenvalues land in (0, 1] instead of
+            // overflowing past |j dtau| ~ 709; the renormalization after makes the
+            // common factor immaterial. Matches qstate::apply_imag_time_zz.
+            const double x = j * dtau;
+            const double sane = std::isfinite(x) ? x : 0.0;
+            const double decay = std::exp(-2.0 * std::abs(sane));
+            const double agree = sane >= 0 ? 1.0 : decay;
+            const double differ = sane >= 0 ? decay : 1.0;
             std::vector<Complex> g(16, Complex{ 0, 0 });
             g[0 * 4 + 0] = Complex{ agree, 0 };   // 00
             g[1 * 4 + 1] = Complex{ differ, 0 };  // 01

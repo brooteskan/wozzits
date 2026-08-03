@@ -103,19 +103,30 @@ namespace wz::engine::cognition
             // H = -h sigma_z - gamma sigma_x = [[-h, -gamma], [-gamma, +h]].
             // H^2 = (h^2 + gamma^2) I = E^2 I, so
             //   e^{-H dtau} = cosh(E dtau) I - (sinh(E dtau)/E) H.
-            const double e = std::sqrt(h * h + gamma * gamma);
+            // TANH FORM -- see the long note in qstate::apply_imag_time_field.
+            // cosh(E dtau) overflows at ~710 and its SQUARE at ~355; the gate is
+            // renormalized after, so dividing through by cosh(E dtau) gives
+            // I - tanh(E dtau) H/E, whose entries are in [-2, 2] for any finite
+            // input and whose limit is the same ground-state projector.
+            // Guard the INPUTS, not the result: testing isfinite afterwards would
+            // raise a spurious FE_OVERFLOW on the way to deciding not to trust it.
+            constexpr double kSquareSafe = 1e150;
+            const double e =
+                (std::abs(h) < kSquareSafe && std::abs(gamma) < kSquareSafe)
+                    ? std::sqrt(h * h + gamma * gamma)
+                    : std::hypot(h, gamma);
             std::vector<Complex> m(4, Complex{ 0, 0 });
-            if (e <= 0.0) {
-                m[0] = Complex{ 1, 0 };  // H == 0 -> identity
+            // Reject direction: `e <= 0.0` admitted a NaN field.
+            if (!(e > 0.0) || !std::isfinite(e) || !std::isfinite(dtau)) {
+                m[0] = Complex{ 1, 0 };  // H == 0, or no defined evolution
                 m[3] = Complex{ 1, 0 };
                 return m;
             }
-            const double ch = std::cosh(e * dtau);
-            const double sh_over_e = std::sinh(e * dtau) / e;
-            m[0] = Complex{ ch + sh_over_e * h, 0 };      // -(sinh/E)(-h)
-            m[1] = Complex{ sh_over_e * gamma, 0 };       // -(sinh/E)(-gamma)
-            m[2] = Complex{ sh_over_e * gamma, 0 };
-            m[3] = Complex{ ch - sh_over_e * h, 0 };
+            const double th = std::tanh(e * dtau);
+            m[0] = Complex{ 1.0 + th * (h / e), 0 };
+            m[1] = Complex{ th * (gamma / e), 0 };
+            m[2] = Complex{ th * (gamma / e), 0 };
+            m[3] = Complex{ 1.0 - th * (h / e), 0 };
             return m;
         }
 
@@ -127,8 +138,14 @@ namespace wz::engine::cognition
         // time_zz's per-basis weighting.
         std::vector<Complex> zz_gate(double j, double dtau)
         {
-            const double agree = std::exp(j * dtau);
-            const double differ = std::exp(-j * dtau);
+            // Scaled by e^{-|j dtau|} so both eigenvalues land in (0, 1] rather
+            // than overflowing past |j dtau| ~ 709; renormalization after makes
+            // the common factor immaterial. Matches qstate::apply_imag_time_zz.
+            const double x = j * dtau;
+            const double sane = std::isfinite(x) ? x : 0.0;
+            const double decay = std::exp(-2.0 * std::abs(sane));
+            const double agree = sane >= 0 ? 1.0 : decay;
+            const double differ = sane >= 0 ? decay : 1.0;
             std::vector<Complex> g(16, Complex{ 0, 0 });
             for (uint32_t s0 = 0; s0 < 2; ++s0) {
                 for (uint32_t s1 = 0; s1 < 2; ++s1) {

@@ -134,6 +134,15 @@ namespace wz::engine::cognition::qstate
         }
     }
 
+    bool usable(const Register& reg)
+    {
+        Real total = 0;
+        for (const Complex& a : reg.amp) {
+            total += std::norm(a);
+        }
+        return total > 0 && std::isfinite(total);
+    }
+
     Real marginal(const Register& reg, uint32_t q)
     {
         const uint64_t stride = uint64_t{ 1 } << q;
@@ -147,7 +156,23 @@ namespace wz::engine::cognition::qstate
                 set += p;
             }
         }
-        return total > 0 ? set / total : 0;
+        // NaN, NOT 0, when there is no answer -- and that distinction is the whole
+        // of finding C2-C2. The old `total > 0 ? set/total : 0` returned a
+        // PLAUSIBLE NUMBER for a destroyed register: an all-zero or all-NaN state
+        // reported marginal 0, so expectation_z read +1.0 and confident() returned
+        // TRUE. Every numeric failure in the subsystem was laundered into a
+        // maximally confident decision for |0> instead of being detectable, which
+        // is also why the shipping long-tick test passed over an all-NaN register
+        // -- it asserted isfinite on a value this guard had already made finite.
+        //
+        // NaN propagates the right way through the commit policy: confident_marginal
+        // compares false, try_commit_marginal returns nullopt, and the agent stops
+        // deciding rather than deciding wrongly. The store turns that into a report
+        // (see AgentCognitionStore::wrecked).
+        if (!(total > 0) || !std::isfinite(total)) {
+            return std::numeric_limits<Real>::quiet_NaN();
+        }
+        return set / total;
     }
 
     Real expectation_z(const Register& reg, uint32_t q)
@@ -162,17 +187,47 @@ namespace wz::engine::cognition::qstate
         // H = -h*sigma_z - gamma*sigma_x = [[-h, -gamma], [-gamma, +h]].
         // sigma_z and sigma_x anticommute, so H^2 = (h^2 + gamma^2) I = E^2 I, and
         //   e^{-H dtau} = cosh(E dtau) I - (sinh(E dtau)/E) H.
-        const Real e = std::sqrt(h * h + gamma * gamma);
-        if (e <= 0) {
-            return;  // H == 0: e^{-H dtau} = I, nothing to relax toward
+        //
+        // WRITTEN IN THE TANH FORM, and that is what makes it total. The literal
+        // cosh/sinh reading of the formula above overflows: cosh(E dtau) leaves
+        // double range at E dtau ~ 710, and the amplitudes it produces leave range
+        // at ~355 because norm() SQUARES them. Past the first the matrix is
+        // inf + (-inf) = NaN; past the second normalize() multiplies by 1/inf = 0.
+        // Either way the register is destroyed, and marginal() then reported the
+        // wreck as <sigma_z> = +1.0 with full confidence -- an agent committing to
+        // |0> exactly when its goal said |1>. Reachable from an authored field of
+        // ~1.4e4, from a hub whose neighbours sum to ~7.2e3, or from any inf/NaN a
+        // behavior computes.
+        //
+        // The gate is applied and then RENORMALIZED, so any positive scalar
+        // multiple of M gives an identical state. Dividing through by cosh(E dtau):
+        //
+        //   M / cosh = I - tanh(E dtau) * H/E
+        //
+        // tanh saturates to +/-1 instead of overflowing and |h|,|gamma| <= E, so
+        // every entry lies in [-2, 2] for EVERY finite input. The limit is also the
+        // physically right one: at large E dtau this is the projector onto H's
+        // ground state, which is what infinite imaginary time means.
+        // sqrt(h^2 + gamma^2), computed so the SQUARE cannot overflow either.
+        // hypot is the correct primitive but measurably slower, and this is a
+        // per-qubit per-substep hot path -- so guard the INPUTS rather than
+        // testing the result, which would raise a spurious FE_OVERFLOW on the way
+        // to deciding not to trust it.
+        constexpr Real kSquareSafe = 1e150;   // |x|^2 leaves double range past ~1.3e154
+        const Real e =
+            (std::abs(h) < kSquareSafe && std::abs(gamma) < kSquareSafe)
+                ? std::sqrt(h * h + gamma * gamma)
+                : std::hypot(h, gamma);
+        // Reject direction, so a NaN field or step is rejected rather than
+        // propagated: `e <= 0` would have let NaN straight through.
+        if (!(e > 0) || !std::isfinite(e) || !std::isfinite(dtau)) {
+            return;  // H == 0 (nothing to relax toward), or no defined evolution
         }
-        const Real ch = std::cosh(e * dtau);
-        const Real sh_over_e = std::sinh(e * dtau) / e;
 
-        // M = cosh I - (sinh/E) H. Real-valued for this Hamiltonian.
-        const Complex m00{ ch + sh_over_e * h, 0 };   // cosh - (sinh/E)(-h)
-        const Complex off{ sh_over_e * gamma, 0 };     // -(sinh/E)(-gamma)
-        const Complex m11{ ch - sh_over_e * h, 0 };
+        const Real th = std::tanh(e * dtau);
+        const Complex m00{ 1.0 + th * (h / e), 0 };
+        const Complex off{ th * (gamma / e), 0 };
+        const Complex m11{ 1.0 - th * (h / e), 0 };
         const Complex m[4] = { m00, off, off, m11 };
         apply_1q(reg, q, m);
         normalize(reg);  // e^{-H dtau} is not unitary
@@ -183,8 +238,21 @@ namespace wz::engine::cognition::qstate
     {
         // H = -j sigma_z^a sigma_z^b ; e^{-H dtau} = e^{+j dtau sigma_z sigma_z}.
         // sigma_z^a sigma_z^b is +1 when bits a,b agree, -1 when they differ.
-        const Real agree = std::exp(j * dtau);
-        const Real differ = std::exp(-j * dtau);
+        //
+        // Same total form as apply_imag_time_field, for the same reason: the
+        // literal e^{+j dtau} overflows at j dtau ~ 709 (and its square at ~355),
+        // which a bond of |j| >= 1e4 reaches at the shipped step size. The gate is
+        // renormalized after, so scaling both eigenvalues by e^{-|j dtau|} leaves
+        // the state identical and puts both in (0, 1] for every finite input --
+        // exp of a negative cannot overflow, and underflowing to 0 is the correct
+        // limit (an infinitely strong bond).
+        const Real x = j * dtau;
+        if (!std::isfinite(x)) {
+            return;   // no defined evolution; leave the register alone
+        }
+        const Real decay = std::exp(-2.0 * std::abs(x));
+        const Real agree = x >= 0 ? Real{ 1 } : decay;
+        const Real differ = x >= 0 ? decay : Real{ 1 };
         const uint64_t dim = reg.dim();
         for (uint64_t k = 0; k < dim; ++k) {
             const uint64_t ba = (k >> a) & 1u;
@@ -206,7 +274,13 @@ namespace wz::engine::cognition::qstate
             const uint64_t bb = (k >> b) & 1u;
             corr += (ba == bb) ? p : -p;
         }
-        return total > 0 ? corr / total : 0;
+        // NaN for an unusable register, as marginal() does: returning 0 here would
+        // report "these two agents are uncorrelated", which is a real and
+        // believable answer, for a state that has no answer at all.
+        if (!(total > 0) || !std::isfinite(total)) {
+            return std::numeric_limits<Real>::quiet_NaN();
+        }
+        return corr / total;
     }
 
     void svd(

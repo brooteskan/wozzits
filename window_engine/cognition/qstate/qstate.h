@@ -85,8 +85,26 @@ namespace wz::engine::cognition::qstate
     // ---- readout ----
     Real norm(const Register& reg);            // sqrt(sum |amp|^2)
     void normalize(Register& reg);
-    Real marginal(const Register& reg, uint32_t q);  // P(qubit q == 1)
-    Real expectation_z(const Register& reg, uint32_t q);  // <sigma_z> = P0 - P1, in [-1,1]
+
+    // Does this register carry a state that can be read at all? False for the two
+    // shapes a numerically destroyed register takes -- all-zero (an overflowed
+    // norm divided every amplitude by infinity) and all-NaN -- both of which have
+    // no total probability to normalize against.
+    //
+    // The reads below return NaN rather than a plausible number for such a
+    // register; this is the predicate that says so without computing a marginal.
+    bool usable(const Register& reg);
+
+    // P(qubit q == 1), or NaN when the register is not usable().
+    //
+    // NaN is deliberate and load-bearing: returning 0 for a destroyed register
+    // made expectation_z read +1.0 and confident() return TRUE, so every numeric
+    // failure in the subsystem became a maximally confident decision for |0>
+    // instead of a detectable one. A caller that cannot handle NaN should ask
+    // usable() first rather than expecting a stand-in value.
+    Real marginal(const Register& reg, uint32_t q);
+    // <sigma_z> = P0 - P1, in [-1,1] -- or NaN, inheriting marginal's contract.
+    Real expectation_z(const Register& reg, uint32_t q);
 
     // ---- imaginary-time relaxation (NON-unitary; ground-state finding) ----
     // Apply e^{-H dtau} with H = -h*sigma_z - gamma*sigma_x on qubit q, then
