@@ -95,6 +95,28 @@ endif()
 # ----------------------
 wz_add_subdirectory_quiet(external/gltf/fastgltf)
 
+# fastgltf's cmake/compilers.cmake branches on `if (MSVC)`, and CMake sets MSVC
+# TRUE for clang-cl as well -- it targets the MSVC ABI. So a clang-cl build takes
+# the MSVC arm and is handed `/external:W0 /external:anglebrackets`. clang-cl
+# accepts the first and does not implement the second, so every fastgltf TU
+# reported it as an argument it never acted on: 4 lines, the only warnings left
+# in a clean build.
+#
+# Dropped here rather than by editing the vendored compilers.cmake, matching the
+# pmp treatment below -- a patch to third-party source is lost on the next
+# update, and this list edit is a no-op if fastgltf ever fixes the branch or
+# stops passing the flag. `/external:W0` is deliberately left in place: clang-cl
+# takes it without complaint and it is what keeps simdjson's headers quiet.
+if(TARGET fastgltf AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    get_target_property(WZ_FASTGLTF_OPTS fastgltf COMPILE_OPTIONS)
+    if(WZ_FASTGLTF_OPTS)
+        list(REMOVE_ITEM WZ_FASTGLTF_OPTS "/external:anglebrackets")
+        set_target_properties(fastgltf
+            PROPERTIES COMPILE_OPTIONS "${WZ_FASTGLTF_OPTS}")
+    endif()
+    unset(WZ_FASTGLTF_OPTS)
+endif()
+
 # ----------------------
 # dependency: tinyply
 # ----------------------
