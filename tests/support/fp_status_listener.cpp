@@ -13,14 +13,20 @@
 // after, so a test that manufactures a NaN or an infinity says so by name even
 // when its assertions pass.
 //
-// REPORTING, NOT FAILING, deliberately. Installing the diagnostic and gating on
-// it are separate decisions, and doing both at once means the gate arrives with
-// a red tree nobody can read. Set WZ_FP_STRICT=1 in the environment to promote
-// the report to a test failure once a suite is clean.
+// GATED UNDER ctest, reporting elsewhere. The listener landed reporting-only, on
+// the principle that installing a diagnostic and gating on it are separate
+// decisions and doing both at once means the gate arrives with a red tree nobody
+// can read. That sweep found 32 tests raising hard IEEE exceptions -- among them
+// a live culling bug (#326) -- and with all 32 closed the gate went on.
+//
+// CMake sets WZ_FP_STRICT=1 as a test property (option WZ_FP_STRICT_TESTS, ON),
+// so `ctest` is strict and running a test executable DIRECTLY is not -- which is
+// what you want while debugging one. This repo has no CI; ctest is the
+// authoritative run, so that is where the gate lives.
 //
 // Three modes, and the third is the one that finds the bug:
-//   (default)      report the flags a test raised, do not fail it;
-//   WZ_FP_STRICT=1 promote the report to a test failure (the eventual gate);
+//   (bare run)     report the flags a test raised, do not fail it;
+//   WZ_FP_STRICT=1 fail the test -- what ctest sets;
 //   WZ_FP_TRAP=1   UNMASK the exceptions, so the offending operation faults at
 //                  its own instruction instead of being discovered N frames
 //                  later. Run one test exe under a debugger with this set and
@@ -125,7 +131,14 @@ namespace
                 ADD_FAILURE()
                     << "floating-point exception raised during "
                     << info.test_suite_name() << "." << info.name() << ": " << what
-                    << "\n(set WZ_FP_STRICT=0 to downgrade this to a report)";
+                    << "\nSomething manufactured a NaN or an infinity. If that is"
+                       " the point of this test, declare it:"
+                       " wz::testing::ExpectFpException{" << what << "}"
+                       " (tests/support/fp_expectations.h). To locate the"
+                       " operation, run this test under a debugger with"
+                       " WZ_FP_TRAP=1 --gtest_catch_exceptions=0 and it will fault"
+                       " at its own instruction. To turn the gate off entirely,"
+                       " configure with -DWZ_FP_STRICT_TESTS=OFF.";
             } else {
                 // Not a gtest failure, so it does not redden the tree; printed on
                 // the same stream as the test output so it is attributable.

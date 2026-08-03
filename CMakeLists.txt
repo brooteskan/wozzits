@@ -27,6 +27,22 @@ option(WINDOW_ENGINE_ENABLE_TESTS "Enable tests" ${WINDOW_ENGINE_DEFAULT_STANDAL
 option(WINDOW_ENGINE_BUILD_EXAMPLES "Build standalone examples" ${WINDOW_ENGINE_DEFAULT_STANDALONE_TARGETS})
 option(WOZZITS_ENABLE_V8_SCRIPTING "Build optional V8 scripting examples" OFF)
 
+# Fail a test that manufactures a NaN or an infinity, rather than only reporting
+# it (tests/support/fp_status_listener.cpp). ON because the tree is clean: the
+# listener landed reporting-only, found 32 tests raising hard IEEE exceptions --
+# one of them a live culling bug -- and all 32 are closed.
+#
+# This repo has no CI, so `ctest` IS the automated path and the gate lives on the
+# test property rather than in a pipeline file. Running a test executable
+# DIRECTLY is unaffected, which is what you want while debugging one; the gate
+# applies to the run that is supposed to be authoritative.
+#
+# Turn it off for a bisect or a spike with -DWZ_FP_STRICT_TESTS=OFF. If it starts
+# failing, the honest fixes are to repair the arithmetic or -- when the test feeds
+# hostile input on purpose -- to declare it with wz::testing::ExpectFpException.
+option(WZ_FP_STRICT_TESTS
+    "ctest fails a test that raises FE_INVALID / FE_DIVBYZERO / FE_OVERFLOW" ON)
+
 
 include(FetchContent)
 
@@ -617,6 +633,11 @@ function(rs_add_test_group category name)
 
     add_test(NAME ${target} COMMAND ${target})
 
+    # The floating-point gate, applied to the ctest run only -- see the option.
+    if(WZ_FP_STRICT_TESTS)
+        set_tests_properties(${target} PROPERTIES ENVIRONMENT "WZ_FP_STRICT=1")
+    endif()
+
 endfunction()
 
 # A test that calls the C ABI's EXPORTS, not just its structs. Distinct from
@@ -662,6 +683,11 @@ function(rs_add_abi_test_group category name)
     )
 
     add_test(NAME ${target} COMMAND ${target})
+
+    # The floating-point gate, applied to the ctest run only -- see the option.
+    if(WZ_FP_STRICT_TESTS)
+        set_tests_properties(${target} PROPERTIES ENVIRONMENT "WZ_FP_STRICT=1")
+    endif()
 
 endfunction()
 
