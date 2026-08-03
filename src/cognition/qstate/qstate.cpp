@@ -366,15 +366,40 @@ namespace wz::engine::cognition::qstate
                     const Real scale = alpha * beta;
                     off += absg * absg;
                     diag += scale;
-                    if (absg == 0 || absg <= eps * std::sqrt(scale)) {
+                    // `scale <= 0` means one of the two columns carries no weight
+                    // at all, and a zero column is orthogonal to everything -- so
+                    // there is nothing to rotate. It has to be said explicitly,
+                    // because the RELATIVE test beside it degenerates exactly
+                    // there: with scale 0 the threshold `eps * sqrt(scale)` is 0,
+                    // and the rounding noise left in absg (measured at 2.2e-157
+                    // against a mathematically zero inner product) fails it. A
+                    // fully committed group reaches this on every bond -- each
+                    // clamp zeroes a physical component, so half of every two-site
+                    // theta's columns go to zero.
+                    if (absg == 0 || scale <= 0 || absg <= eps * std::sqrt(scale)) {
                         continue;  // columns p, q already orthogonal
                     }
 
                     // Real Jacobi angle + complex phase that diagonalize the 2x2
                     // Hermitian Gram matrix [[alpha, conj(gamma)], [gamma, beta]].
                     const Real zeta = (beta - alpha) / (2.0 * absg);
-                    const Real t = (zeta >= 0 ? 1.0 : -1.0)
-                        / (std::abs(zeta) + std::sqrt(zeta * zeta + 1.0));
+                    // A large |zeta| is an almost-diagonal pair. The closed form
+                    // below SQUARES zeta, which leaves double range past ~1.3e154 --
+                    // and the guard above is not enough on its own, since a tiny
+                    // but nonzero `scale` gets there too. Past the crossover,
+                    // sqrt(1 + zeta^2) IS |zeta| in double precision, so the whole
+                    // expression collapses to 1/(2 zeta): not an approximation, the
+                    // same number.
+                    //
+                    // The crossover is where 1 stops changing zeta^2 at all --
+                    // relative weight 1/(2 zeta^2), which drops below half an ulp
+                    // at |zeta| = 1e8. Anchored there rather than just under the
+                    // overflow, so the branch is taken while both forms still agree.
+                    constexpr Real kZetaAsymptote = 1e8;
+                    const Real t = std::abs(zeta) > kZetaAsymptote
+                        ? 1.0 / (2.0 * zeta)
+                        : (zeta >= 0 ? 1.0 : -1.0)
+                            / (std::abs(zeta) + std::sqrt(zeta * zeta + 1.0));
                     const Real c = 1.0 / std::sqrt(t * t + 1.0);
                     const Real s = c * t;
                     const Complex xi = gamma / absg;  // unit phase

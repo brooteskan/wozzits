@@ -647,3 +647,46 @@ TEST(QState, UnusableRegisterReadsNoAnswerRatherThanConfidence)
     EXPECT_TRUE(usable(healthy));
     EXPECT_FALSE(std::isnan(marginal(healthy, 0u)));
 }
+
+// A fully committed coordination drives the Jacobi sweep into its degenerate
+// corner, and the closed-form rotation angle overflows there.
+//
+// The shape, measured off a promoted chi=2 TTN at the exact think where every
+// qubit had committed: one column's maintained squared norm is 0 (each clamp
+// zeroes a physical component, so half of every two-site theta's columns go to
+// zero) while the column itself still holds ~1e-157 of rounding noise. `scale`
+// is then 0, the relative orthogonality test `absg <= eps * sqrt(scale)` cannot
+// fire for any nonzero absg, and zeta = (beta - alpha) / (2 absg) reaches
+// -2.3e156 -- whose square is 5.5e312.
+//
+// The old code got the right ANSWER anyway (t underflows to -0, so the rotation
+// is the identity, which is correct for a zero column), which is exactly why it
+// went unnoticed. The assertion that matters is therefore the FP one; the
+// decomposition assertions are here so a fix cannot buy silence by breaking it.
+TEST(QState, DegenerateJacobiPairRaisesNoFloatingPointException)
+{
+    constexpr uint32_t kDim = 4;
+    std::vector<Complex> a(kDim * kDim, Complex{ 0, 0 });
+    // Column 0 carries real weight; column 1 is zero apart from noise far below
+    // anything the decomposition can represent; 2 and 3 are ordinary.
+    for (uint32_t i = 0; i < kDim; ++i) {
+        a[i * kDim + 0] = Complex{ 0.5 + 0.1 * i, 0.05 * i };
+        a[i * kDim + 1] = Complex{ 1e-160, 0.0 };
+        a[i * kDim + 2] = Complex{ 0.2 * (i + 1), -0.1 };
+        a[i * kDim + 3] = Complex{ -0.3, 0.15 * i };
+    }
+
+    std::feclearexcept(FE_ALL_EXCEPT);
+    const Svd out = wz::engine::cognition::qstate::svd(a, kDim, kDim, 2u);
+    const int raised = std::fetestexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW);
+    std::feclearexcept(FE_ALL_EXCEPT);
+
+    EXPECT_EQ(raised, 0) << "the Jacobi rotation angle overflowed";
+
+    ASSERT_EQ(out.rank, 2u);
+    for (uint32_t r = 0; r < out.rank; ++r) {
+        EXPECT_TRUE(std::isfinite(out.s[r]));
+        EXPECT_GE(out.s[r], 0.0);
+    }
+    EXPECT_GT(out.s[0], 0.0) << "the decomposition still has to find the weight";
+}
