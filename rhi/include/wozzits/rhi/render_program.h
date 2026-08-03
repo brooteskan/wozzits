@@ -139,6 +139,21 @@ namespace wz::rhi
         std::string vertex_shader;
         std::string pixel_shader;
 
+        // NOTE THE DEFAULT, and that the DX12 backend REFUSES it at realize:
+        // RhiDx12CommandRecorder::set_geometry binds no vertex buffers, so a
+        // program declaring InputAssembler would draw from buffers that were
+        // never bound. The pipeline cache logs and returns null rather than
+        // realizing one (#317 D1-Q1) -- the same fail-closed shape the recorder
+        // applies to DescriptorKind::Sampler.
+        //
+        // The declaration is kept design surface, not dead code: the IA path is
+        // the classical vertex ladder rung, and the vocabulary below (VertexLayout
+        // / VertexAttribute / VertexFormat / VertexStepRate) is what implementing
+        // it will need. Only USING it is refused, until set_geometry exists.
+        //
+        // The default stays InputAssembler so the refusal is what a caller meets
+        // rather than a silent wrong draw; a program that means the working path
+        // says so. 0 of 16 registered programs in test_mesh_001 leave it here.
         VertexSource      vertex_source = VertexSource::InputAssembler;
         VertexLayout      vertex_layout{};   // data; empty for Pull / None
         PrimitiveTopology topology      = PrimitiveTopology::TriangleList;

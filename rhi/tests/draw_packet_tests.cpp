@@ -113,6 +113,12 @@ static void builder_splits_packet_shared_state_from_pass_items()
         return;
     }
 
+    // NOTE what the sort_key and stencil_ref assertions here do and do NOT mean.
+    // They pin that the builder COPIES those fields through -- nothing more.
+    // Neither field is read by any backend: the engine orders by a DrawLayer
+    // partition that never looks at sort_key, and no recorder issues
+    // OMSetStencilRef. Read as coverage of a working feature they are misleading,
+    // which is exactly how #317 D1-Q3/Q6 came to be filed. See draw_item.h.
     WZ_CHECK(depth_item->program == depth_program);
     WZ_CHECK(depth_item->unique_srg == nullptr);
     WZ_CHECK_EQ(depth_item->streams.indices.size(), static_cast<size_t>(1));

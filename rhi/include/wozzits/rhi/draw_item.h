@@ -53,13 +53,33 @@ namespace wz::rhi
         // SRGs live on DrawPacket; only the unique per-pass SRG pointer is here.
         StreamBufferIndices streams;
         const ShaderResourceGroup* unique_srg = nullptr;
+
+        // DECLARED, NOT READ. Every DrawRequest in every repo passes 0 here, and
+        // nothing computes or consumes it: the engine's actual ordering is a
+        // stable two-pass partition by DrawLayer preserving authored node index
+        // (rhi_scene_renderer.cpp), which never looks at this field.
+        //
+        // Kept as the seam for Draw submission R2 (batching + state sort) and
+        // for Transparency R2 (sorted alpha) -- the first time two overlapping
+        // alpha-blended renderables need depth-sorted transparency, the submit
+        // loop has nowhere to hook, and this is the hook. #317 D1-Q6.
         DrawItemSortKey sort_key = 0;
+
         DrawListMask filter_mask{};
+
+        // DECLARED, NOT READ -- and not implementable as it stands: the depth
+        // format is D32_FLOAT, which has no stencil plane, and RenderProgramDesc
+        // has no way to declare stencil state. Finishing it is a DSV format
+        // migration, not a recorder change. #317 D1-Q3.
         uint32_t stencil_ref = 0;
     };
 
-    // The sortable view over a DrawItem. Build an array of these, sort by
-    // sort_key, then submit — the item itself never moves.
+    // The sortable view over a DrawItem -- the intended shape being: build an
+    // array of these, sort by sort_key, then submit, so the item itself never
+    // moves.
+    //
+    // NO SUCH ARRAY IS EVER BUILT. This type has no non-test reference in any
+    // repo. It is kept with sort_key above, as the same seam; see that comment.
     struct DrawItemProperties
     {
         const DrawItem* item = nullptr;

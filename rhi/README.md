@@ -58,6 +58,18 @@ tests/                      zero-dependency unit tests
 
 ## FrameGraph
 
+> **STATUS: designed, not wired. No production consumer.** The engine includes
+> the header and never builds a graph; its render-to-texture runs outside rhi
+> through `wz::gpu::begin_offscreen_pass`. `CommandRecorder` has no
+> render-target verb at all, so a backend cannot execute a graph's passes even
+> in principle until one is added — that is the first step, not `compile()`.
+>
+> Kept deliberately rather than deleted: it is the seam every multi-pass
+> rendering rung needs — screen-space GI/AO, SSR, TAA, bloom and the rest of the
+> post chain, froxel volumetrics — none of which the engine can reach while
+> passes are issued by hand. See #235 for the wire-or-delete decision and #317
+> (D1-Q2) for the measured defects to fix on the way.
+
 The per-frame render graph — a **different DAG** from window-engine's asset
 DAG, sharing nothing with it. The asset DAG is content-addressed and persistent
 (*"what is this, is it current?"*); the frame graph is ephemeral, rebuilt every
@@ -158,8 +170,11 @@ landed in `wozzits-window-engine/engine/rendering/`:
 - `rhi_render_program_bridge.*` / `rhi_shader_bridge.*` — the engine -> rhi
   adapters that map `RenderProgramData` (and the `DescriptorSemantic` enum ->
   registered Tag) into the `render_program.h` contract.
-- `rhi_scene_renderer.*` — drives a `FrameGraph` over the backend; this is the
-  path `wozzits_app_v1` renders through today.
+- `rhi_scene_renderer.*` — the path `wozzits_app_v1` renders through today. It
+  does **not** drive a `FrameGraph`, though it includes the header: its passes
+  are issued directly, and the engine's render-to-texture goes through
+  `wz::gpu::begin_offscreen_pass`, outside rhi entirely. `FrameGraph` is kept
+  design surface with no production consumer — see the note on its own section.
 
 ## Roadmap (next)
 
