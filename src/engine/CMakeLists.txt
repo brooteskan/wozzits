@@ -225,7 +225,6 @@ target_sources(window_engine PRIVATE
     assets/scene/scene_authoring_materialize.cpp
     assets/scene/scene_fingerprint.cpp
     assets/scene/scene_instance.cpp
-    assets/scene/scene_runtime_build.cpp
     assets/scene/scene_json_export.cpp
     assets/scene/scene_subtree_export.cpp
     assets/scene/scenelet_authoring.cpp
@@ -241,14 +240,12 @@ target_sources(window_engine PRIVATE
     rendering/authored_render_targets.cpp
     rendering/clipmap_drawn_surface.cpp
     rendering/clipmap_view.cpp
-    rendering/renderable_gpu_cache.cpp
     rendering/renderable_pipeline_cache.cpp
     rendering/render_program_pipeline_cache.cpp
     rendering/builtin_render_programs.cpp
     rendering/render_resource_resolver.cpp
     rendering/scene_terrain_visual_proxy_bridge.cpp
     rendering/scene_render_resource_resolver.cpp
-    rendering/gpu_scene_render_resource_resolver.cpp
     rendering/rhi_dx12_command_recorder.cpp
     rendering/rhi_dx12_pipeline.cpp
     rendering/rhi_render_program_bridge.cpp
