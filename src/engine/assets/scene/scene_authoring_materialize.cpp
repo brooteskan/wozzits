@@ -2189,65 +2189,6 @@ namespace wz::engine::assets
                 && node.mesh_render_style->field_visualization_enabled;
         }
 
-        uint32_t policy_flags_for_terrain_render_style(
-            const SceneTerrainRenderStyleAsset& style,
-            bool wireframe)
-        {
-            uint32_t flags = wireframe ? RenderPolicy_Wireframe : RenderPolicy_None;
-            if (style.depth_test) {
-                flags |= RenderPolicy_DepthTest;
-            }
-            if (style.depth_write) {
-                flags |= RenderPolicy_DepthWrite;
-            }
-            return flags;
-        }
-
-        std::string terrain_render_style_cache_key(
-            const SceneTerrainRenderStyleAsset& style)
-        {
-            std::string out = "terrain_render:";
-            switch (style.path) {
-            case SceneTerrainRenderPath::Auto:
-                out += "auto";
-                break;
-            case SceneTerrainRenderPath::Surface:
-                out += "surface";
-                break;
-            case SceneTerrainRenderPath::DebugWireframe:
-                out += "debug_wireframe";
-                break;
-            case SceneTerrainRenderPath::None:
-                out += "none";
-                break;
-            }
-            out += style.depth_test ? ":depth_test" : ":no_depth_test";
-            out += style.depth_write ? ":depth_write" : ":no_depth_write";
-            out += ":lighting:";
-            out += std::to_string(static_cast<int>(style.lighting_source));
-            out += ":env:" + style.environment_node;
-            out += ":dir:" + style.directional_light_node;
-            out += ":amb:" + style.ambient_light_node;
-            out += ":ambient_strength:" + std::to_string(style.ambient_strength);
-            out += ":sky_visibility:" + std::to_string(style.sky_visibility_strength);
-            out += ":normal_lighting:" + std::to_string(style.normal_lighting_strength);
-            out += ":terrain_bounce:" + std::to_string(style.terrain_bounce_strength);
-            out += ":target_pixels_per_triangle:"
-                + std::to_string(style.target_pixels_per_triangle);
-            out += style.enable_surfel_lods
-                ? ":surfel_lods"
-                : ":no_surfel_lods";
-            out += ":surfel_target_px:"
-                + std::to_string(style.surfel_target_coverage_px);
-            out += ":max_asset_density:"
-                + std::to_string(style.max_asset_triangle_density);
-            out += ":max_screen_density:"
-                + std::to_string(style.max_screen_triangle_density);
-            out += ":visual_chunk_count:"
-                + std::to_string(style.visual_chunk_count);
-            return out;
-        }
-
         std::string terrain_constraint_surface_cache_key(
             const wz::asset::AssetKey& terrain_asset)
         {
@@ -2482,75 +2423,7 @@ namespace wz::engine::assets
                 metadata.dominant_light_confidence;
         }
 
-        const SceneHDRIEnvironmentAsset* find_hdri_environment_for_style(
-            const SceneAssetData& scene,
-            const SceneTerrainRenderStyleAsset& style)
-        {
-            if (!style.environment_node.empty()) {
-                const SceneNodeAsset* node =
-                    find_scene_node(scene, style.environment_node);
-                return node && node->hdri_environment
-                    ? &*node->hdri_environment
-                    : nullptr;
-            }
 
-            const auto it = std::find_if(
-                scene.nodes.begin(), scene.nodes.end(),
-                [](const SceneNodeAsset& node) {
-                    return node.hdri_environment.has_value();
-                });
-            return it != scene.nodes.end() ? &*it->hdri_environment : nullptr;
-        }
-
-        TerrainLightingData terrain_lighting_for_style(
-            const SceneAssetData& scene,
-            const SceneTerrainRenderStyleAsset& style)
-        {
-            TerrainLightingData out{};
-            const bool use_environment =
-                style.lighting_source == SceneTerrainLightingSource::EnvironmentNode
-                || style.lighting_source == SceneTerrainLightingSource::Hybrid;
-            if (!use_environment) {
-                return out;
-            }
-
-            const SceneHDRIEnvironmentAsset* environment =
-                find_hdri_environment_for_style(scene, style);
-            if (!environment) {
-                return out;
-            }
-
-            out.mode = TerrainLightingMode::HDRIEnvironment;
-            const bool has_environment_light =
-                environment->environment_light_intensity > 0.0f;
-            for (int i = 0; i < 3; ++i) {
-                out.environment_color[i] =
-                    has_environment_light
-                        ? environment->environment_light_color[i]
-                        : environment->dominant_light_color[i];
-                out.dominant_light_direction[i] =
-                    environment->dominant_light_direction[i];
-                out.dominant_light_color[i] =
-                    environment->dominant_light_color[i];
-            }
-            out.environment_intensity =
-                (environment->environment_light_intensity > 0.0f
-                    ? (std::max)(0.0f, environment->environment_light_intensity)
-                        * (std::max)(0.0f, environment->lighting_intensity)
-                    : (std::max)(0.0f, environment->lighting_intensity))
-                * (std::max)(0.0f, style.ambient_strength);
-            out.dominant_light_intensity =
-                (std::max)(0.0f, environment->dominant_light_intensity)
-                * (std::max)(0.0f, environment->lighting_intensity)
-                * (std::max)(0.0f, style.normal_lighting_strength);
-            out.sky_visibility_strength =
-                (std::max)(0.0f, style.sky_visibility_strength);
-            out.normal_lighting_strength =
-                (std::max)(0.0f, style.normal_lighting_strength);
-            out.terrain_bounce_strength =
-                (std::max)(0.0f, style.terrain_bounce_strength);
-            return out;
-        }
 
         wz::scene::LightRecord scene_light_record_for_node(
             const SceneNodeAsset& node,
@@ -3201,85 +3074,7 @@ namespace wz::engine::assets
             renderables.emplace(key, renderable);
             out = renderable;
             return true;
-        }
-
-        bool ensure_debug_renderable_for_terrain_asset(
-            EngineAssetLibrary& assets,
-            const std::string& key,
-            const std::string& name,
-            TerrainAsset terrain,
-            const SceneTerrainRenderStyleAsset& style,
-            RenderableCache& renderables,
-            RenderableAsset& out)
-        {
-            if (const auto found = renderables.find(key);
-                found != renderables.end())
-            {
-                out = found->second;
-                return true;
-            }
-
-            RenderableAsset renderable =
-                assets.renderables().create_terrain_debug({
-                    .name = name,
-                    .terrain = terrain,
-                    .mesh_program =
-                        (style.depth_test || style.depth_write)
-                            ? BuiltinRenderProgram::MeshWireframeDepthDebug
-                            : BuiltinRenderProgram::MeshWireframeDebug,
-                    .mesh_policy_flags =
-                        policy_flags_for_terrain_render_style(style, true),
-                });
-
-            if (!renderable.valid()) {
-                return false;
-            }
-
-            renderables.emplace(key, renderable);
-            out = renderable;
-            return true;
-        }
-
-        bool ensure_surface_renderable_for_terrain_asset(
-            EngineAssetLibrary& assets,
-            const SceneAssetData& scene,
-            const std::string& key,
-            const std::string& name,
-            TerrainAsset terrain,
-            TerrainVisualProxyAsset visual_proxy,
-            const SceneTerrainRenderStyleAsset& style,
-            RenderableCache& renderables,
-            RenderableAsset& out)
-        {
-            if (const auto found = renderables.find(key);
-                found != renderables.end())
-            {
-                out = found->second;
-                return true;
-            }
-
-            RenderableAsset renderable =
-                assets.renderables().create_terrain_surface({
-                    .name = name,
-                    .terrain = terrain,
-                    .visual_proxy = visual_proxy,
-                    .mesh_policy_flags =
-                        policy_flags_for_terrain_render_style(style, false),
-                    .lighting = terrain_lighting_for_style(scene, style),
-                    .target_pixels_per_triangle =
-                        style.target_pixels_per_triangle,
-                });
-
-            if (!renderable.valid()) {
-                return false;
-            }
-
-            renderables.emplace(key, renderable);
-            out = renderable;
-            return true;
-        }
-
-        TerrainMeshSurfaceHeightPolicy terrain_height_policy_for_source(
+        }        TerrainMeshSurfaceHeightPolicy terrain_height_policy_for_source(
             SceneTerrainMeshHeightPolicy policy)
         {
             switch (policy) {
@@ -4797,79 +4592,13 @@ namespace wz::engine::assets
                 terrain.constraint_surface_asset = collision.output;
             }
 
-            if (!terrain.visible) {
-                node.renderable_asset.reset();
-                continue;
-            }
-
-            RenderableAsset renderable{};
-            bool use_surface = false;
-            bool use_debug = false;
-
-            switch (render_style.path) {
-            case SceneTerrainRenderPath::Auto:
-                use_surface =
-                    is_mesh_terrain
-                    && options.create_terrain_surface_renderables;
-                use_debug =
-                    !use_surface && options.create_terrain_debug_renderables;
-                break;
-            case SceneTerrainRenderPath::Surface:
-                if (!is_mesh_terrain) {
-                    report.error =
-                        "terrain surface render path requires mesh terrain for "
-                        + node_log_name(node);
-                    return report;
-                }
-                use_surface = options.create_terrain_surface_renderables;
-                break;
-            case SceneTerrainRenderPath::DebugWireframe:
-                use_debug = options.create_terrain_debug_renderables;
-                break;
-            case SceneTerrainRenderPath::None:
-                break;
-            }
-
-            if (!use_surface && !use_debug) {
-                node.renderable_asset.reset();
-                continue;
-            }
-
-            const std::string key = "terrain:" + node.id
-                + (use_surface ? ":surface:" : ":debug:")
-                + terrain_render_style_cache_key(render_style);
-            const std::string name = "scene_editor/terrain/" + node.id
-                + (use_surface ? "_surface" : "_debug");
-            const bool renderable_ok = use_surface
-                ? ensure_surface_renderable_for_terrain_asset(
-                    assets,
-                    scene,
-                    key,
-                    name,
-                    terrain_asset,
-                    visual_proxy,
-                    render_style,
-                    renderables,
-                    renderable)
-                : ensure_debug_renderable_for_terrain_asset(
-                    assets,
-                    key,
-                    name,
-                    terrain_asset,
-                    render_style,
-                    renderables,
-                    renderable);
-
-            if (!renderable_ok)
-            {
-                report.error =
-                    "terrain renderable unavailable for "
-                    + node_log_name(node);
-                return report;
-            }
-
-            node.renderable_asset = renderable.output;
-            append_unique_renderable(report, renderable.output);
+            // A terrain node no longer produces a renderable of its own. The
+            // 0x703 debug and 0x704 surface recipes died with the nine MeshIA
+            // builtin programs they drew through; terrain renders as a 0x70A
+            // CameraSnappedTerrain custom renderable (#234). Everything above
+            // still runs -- the terrain, visual-proxy and constraint-collision
+            // assets feed collision and the authoring/inspector paths.
+            node.renderable_asset.reset();
         }
         log_phase("terrain_assets", elapsed_ms_since(terrain_started));
 

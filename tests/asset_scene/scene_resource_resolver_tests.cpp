@@ -296,152 +296,6 @@ TEST(SceneInstantiate, DelaysResourceRealizationUntilDescriptorsArePopulated)
     EXPECT_TRUE(resource_resolver.saw_next_descriptor_populated);
 }
 
-TEST(SceneInstantiate, TerrainSurfaceRenderableCompilesToTerrainDrawRefs)
-{
-    using namespace wz::engine::assets;
-
-    wz::asset::AssetKey renderable_key{};
-    renderable_key.content_hash = { 0xAAu, 0xBBu };
-
-    wz::asset::AssetKey proxy_key{};
-    proxy_key.content_hash = { 0xCCu, 0xDDu };
-
-    class SingleRenderableResolver final : public SceneRenderableResolver
-    {
-    public:
-        explicit SingleRenderableResolver(RenderableAssetData data)
-            : data_(std::move(data))
-        {
-        }
-
-        const RenderableAssetData* get(wz::asset::AssetKey) const override
-        {
-            return &data_;
-        }
-
-    private:
-        RenderableAssetData data_{};
-    };
-
-    class TerrainResourceResolver final : public SceneRenderResourceResolver
-    {
-    public:
-        explicit TerrainResourceResolver(wz::asset::AssetKey proxy_key)
-            : proxy_key_(proxy_key)
-        {
-            proxy_.compiler_version = 1u;
-            proxy_.source_asset_key = proxy_key_;
-            proxy_.terrain_proxy_id = TerrainProxyId{ proxy_key_ };
-            proxy_.bounds.min[0] = -1.0f;
-            proxy_.bounds.min[1] = -1.0f;
-            proxy_.bounds.min[2] = 1.0f;
-            proxy_.bounds.max[0] = 1.0f;
-            proxy_.bounds.max[1] = 1.0f;
-            proxy_.bounds.max[2] = 3.0f;
-            for (uint32_t i = 0u; i < 2u; ++i) {
-                TerrainVisualProxyChunkRecord chunk{};
-                chunk.chunk_id = TerrainChunkId{ i };
-                chunk.representation_id = TerrainRepresentationId{ i };
-                chunk.bounds.min[0] = i == 0u ? -1.0f : 0.0f;
-                chunk.bounds.min[1] = -1.0f;
-                chunk.bounds.min[2] = 1.0f;
-                chunk.bounds.max[0] = i == 0u ? 0.0f : 1.0f;
-                chunk.bounds.max[1] = 1.0f;
-                chunk.bounds.max[2] = 3.0f;
-                chunk.triangle_count = 2u;
-                chunk.vertex_count = 4u;
-                TerrainVisualProxyLodRecord lod{};
-                lod.lod_id = TerrainLodId{ 0u };
-                lod.representation_id = chunk.representation_id;
-                lod.bounds = chunk.bounds;
-                lod.triangle_count = 2u;
-                lod.vertex_count = 4u;
-                chunk.lods.push_back(lod);
-                proxy_.chunks.push_back(std::move(chunk));
-            }
-        }
-
-        bool realize_renderable_descriptor(
-            const RenderableAssetData&,
-            wz::scene::RenderableDescriptor& descriptor) const override
-        {
-            descriptor.terrain_visual_proxy_asset = proxy_key_;
-            descriptor.terrain_proxy_id =
-                wz::scene::TerrainProxyId{ proxy_key_ };
-            descriptor.terrain_visual_proxy_data = &proxy_;
-            descriptor.terrain_visual_chunk_count = 2u;
-            return true;
-        }
-
-    private:
-        wz::asset::AssetKey proxy_key_{};
-        TerrainVisualProxyData proxy_{};
-    };
-
-    RenderableAssetData renderable{};
-    renderable.kind = RenderableKind::Mesh;
-    renderable.program = BuiltinRenderProgram::TerrainMeshSurface;
-    renderable.domain = RenderDomain::Opaque;
-    renderable.bounds_min[0] = -1.0f;
-    renderable.bounds_min[1] = -1.0f;
-    renderable.bounds_min[2] = 1.0f;
-    renderable.bounds_max[0] = 1.0f;
-    renderable.bounds_max[1] = 1.0f;
-    renderable.bounds_max[2] = 3.0f;
-
-    SceneAssetData scene{};
-    scene.name = "terrain_surface";
-
-    SceneNodeAsset node{};
-    node.id = "terrain";
-    node.renderable_asset = renderable_key;
-    scene.nodes.push_back(std::move(node));
-
-    SingleRenderableResolver renderable_resolver{ renderable };
-    TerrainResourceResolver resource_resolver{ proxy_key };
-    SceneInstantiateContext context{
-        .renderable_resolver = &renderable_resolver,
-        .resource_resolver = &resource_resolver,
-    };
-
-    auto result = instantiate_scene(scene, context);
-    ASSERT_TRUE(result.ok()) << result.error_detail;
-
-    const auto node_handle = result.instance.authored_to_runtime["terrain"];
-    const auto& desc = result.instance.renderables[node_handle];
-    EXPECT_EQ(
-        desc.node_class.producer,
-        wz::scene::ProducerKind::TerrainPatch);
-    EXPECT_EQ(desc.terrain_visual_chunk_count, 2u);
-
-    wz::scene::ViewData view{};
-    view.camera_position = { 0.0f, 0.0f, -2.0f };
-    view.view = wz::math::Mat4::identity();
-    constexpr float Pi = 3.14159265358979323846f;
-    view.projection = wz::math::projection_perspective_dx(
-        70.0f * Pi / 180.0f,
-        16.0f / 9.0f,
-        0.1f,
-        100.0f);
-    view.view_projection = wz::math::mul(view.projection, view.view);
-
-    wz::scene::CompiledSceneStorage compiled{};
-    wz::scene::compile(
-        compiled,
-        result.instance.storage.polytree,
-        result.instance.renderables,
-        result.instance.lights,
-        view);
-
-    ASSERT_EQ(compiled.scene.terrain_instances.size(), 1u);
-    ASSERT_EQ(compiled.scene.terrain_lod_choices.size(), 2u);
-
-    wz::render::RenderIRStorage ir_storage;
-    const wz::render::RenderIRView ir =
-        wz::render::build_render_ir(ir_storage, compiled.scene);
-    EXPECT_EQ(ir.terrain.size(), 2u);
-}
-
 TEST(SceneInstantiate, RejectsFailedRealization)
 {
     const wz::fs::Path root =
@@ -943,7 +797,7 @@ TEST(RenderResourceResolver, LiveMeshStyleUpdateMutatesSnapshotOnly)
     };
     const auto mesh_handle = resolver.register_mesh(
         gpu_mesh,
-        BuiltinRenderProgram::MeshMaskStyle,
+        BuiltinRenderProgram::TerrainSurfelSurface,
         {},
         {},
         0.0f,
@@ -1009,7 +863,7 @@ TEST(RenderResourceResolver, LiveTerrainProxyStyleUpdateMutatesSnapshotOnly)
     ASSERT_TRUE(resolver.register_terrain_proxy(
         proxy_id,
         gpu_mesh,
-        BuiltinRenderProgram::MeshMaskStyle,
+        BuiltinRenderProgram::TerrainSurfelSurface,
         {},
         {},
         0.0f,
@@ -1082,7 +936,7 @@ TEST(RenderResourceResolver, CarriesTerrainChunksAndAccumulatesStats)
 
     const auto mesh_handle = resolver.register_mesh(
         gpu_mesh,
-        BuiltinRenderProgram::TerrainMeshSurface,
+        BuiltinRenderProgram::TerrainSurfelSurface,
         {},
         {},
         4.0f,
@@ -1282,7 +1136,7 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
     ASSERT_TRUE(resolver.register_terrain_proxy(
         proxy_id,
         gpu_mesh,
-        BuiltinRenderProgram::TerrainMeshSurface,
+        BuiltinRenderProgram::TerrainSurfelSurface,
         {},
         {},
         8.0f,
@@ -1378,7 +1232,7 @@ TEST(RenderResourceResolver, ResolvesTerrainProxyResources)
     ASSERT_TRUE(resolver.register_terrain_proxy(
         proxy_id,
         gpu_mesh,
-        BuiltinRenderProgram::TerrainMeshSurface,
+        BuiltinRenderProgram::TerrainSurfelSurface,
         {},
         {},
         2.0f,

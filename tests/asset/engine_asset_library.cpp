@@ -230,8 +230,6 @@ float4 main(PSIn input) : SV_TARGET
             // schema rows removed by the issue #195 scrap-and-rebuild (the
             // 0x706 RHI pull mesh + 0x709 rhi splat cloud are the replacements).
             { kScalarFieldDebugRenderableSchema, kAssetTypeRenderable },
-            { kTerrainDebugRenderableSchema, kAssetTypeRenderable },
-            { kTerrainSurfaceRenderableSchema, kAssetTypeRenderable },
             { kRhiPullMeshRenderableSchema, kAssetTypeRenderable },
             { kGpuSparseMeshRenderableSchema, kAssetTypeRenderable },
             // 0x708 clipmap landscape retired (#234) -> 0x70A custom renderable.

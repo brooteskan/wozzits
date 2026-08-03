@@ -673,40 +673,44 @@ namespace
         wz::engine::assets::RenderableAssetModule& module_;
     };
 
-    // Issue #195: the legacy 0x700 mesh-wireframe renderable — the old
-    // universal "some renderable asset" test stand-in — was deleted (the 0x706
-    // RHI pull mesh replaced it, but it requires a render program whose
-    // shaders cannot compile deviceless). Tests that need a REGISTERED,
-    // deviceless-RESOLVABLE, MESH-KIND renderable asset (instantiate_scene
-    // without a resource resolver only placeholders mesh-kind renderables) use
-    // the terrain debug renderable (0x703) — the surviving deviceless producer
-    // of Mesh-kind RenderableAssetData. It rides the #222 TerrainAsset
-    // deprecation; when it goes, these stand-ins move to the rhi path (#179).
+    // The universal "some renderable asset" test stand-in.
+    //
+    // Its previous two bodies both died with the schema they stood on: the
+    // legacy 0x700 mesh-wireframe renderable went with #195, and the 0x703
+    // terrain debug renderable went with the nine MeshIA builtin programs it
+    // drew through. What survives is the scalar-field debug renderable
+    // (0x702) — now the ONLY registered schema that compiles to
+    // RenderableAssetData without a GPU device. Every other renderable
+    // (0x706 pull mesh, gpu_sparse_mesh, splat, puppet, star, 0x70A custom)
+    // compiles to an RhiRenderableRecipe in a different table, which
+    // instantiate_scene's resolver path does not read.
+    //
+    // CONSEQUENCE FOR CALLERS: the stand-in is ScalarField-kind, and
+    // instantiate_scene refuses a non-Mesh kind unless a resource_resolver is
+    // supplied. Pass TestRenderResourceResolver. The runtime descriptor is
+    // otherwise unchanged from the old Mesh-kind stand-in — ScalarField still
+    // maps to ProducerKind::Mesh, and RenderDomain::Debug still maps to
+    // SurfaceClass::Opaque — so assertions about role/producer/surface hold.
+    // Only SpatialKind differs (Box rather than MeshBounds).
     inline wz::engine::assets::RenderableAsset create_test_preview_renderable(
         wz::engine::assets::EngineAssetLibrary& assets,
         const std::string& name)
     {
-        // A MESH-representation terrain: its debug renderable compiles to
-        // RenderableKind::Mesh (a heightfield terrain would compile to
-        // ScalarField-kind, which instantiate_scene only accepts with a
-        // resource resolver).
-        const auto mesh = assets.meshes().create_procedural_mesh({
-            .name = name + "_standin_mesh",
-            .kind = wz::engine::assets::ProceduralMeshKind::Cube,
-        });
-        if (!mesh.valid()) {
+        // Procedural rather than file-backed: no .rawf32 to write, so the
+        // stand-in needs nothing but the library.
+        const auto field =
+            assets.scalar_fields().create_procedural_scalar_field({
+                .name = name + "_standin_field",
+                .width = 4,
+                .height = 4,
+                .depth = 1,
+            });
+        if (!field.valid()) {
             return {};
         }
-        const auto terrain = assets.terrains().create_from_mesh({
-            .name = name + "_terrain",
-            .mesh = mesh,
-        });
-        if (!terrain.valid()) {
-            return {};
-        }
-        return assets.renderables().create_terrain_debug({
+        return assets.renderables().create_scalar_field_debug({
             .name = name,
-            .terrain = terrain,
+            .scalar_field = field,
         });
     }
 
@@ -781,13 +785,15 @@ namespace
             wz::scene::MaterialHandle material)
             : mesh_(mesh), material_(material) {}
 
+        // Realizes ANY kind. It used to reject non-Mesh, which was fine while
+        // the stand-in renderable was Mesh-kind; create_test_preview_renderable
+        // is now ScalarField-kind, and a resolver that refuses it would fail
+        // every caller. Tests that want a realize FAILURE declare their own
+        // always-false resolver (see AssetReferenceRenderableRealizeFailure...).
         bool realize_renderable_descriptor(
-            const wz::engine::assets::RenderableAssetData& renderable,
+            const wz::engine::assets::RenderableAssetData&,
             wz::scene::RenderableDescriptor& descriptor) const override
         {
-            if (renderable.kind != wz::engine::assets::RenderableKind::Mesh)
-                return false;
-
             descriptor.mesh = mesh_;
             descriptor.material = material_;
             return true;

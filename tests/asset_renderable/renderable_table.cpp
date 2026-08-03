@@ -10,7 +10,7 @@ TEST(RenderableAssetTable, StoresAndRetrievesRenderable)
     wz::engine::assets::RenderableAssetData data;
     data.kind = wz::engine::assets::RenderableKind::Mesh;
     data.source_asset.content_hash = { 1, 0 };
-    data.program = wz::engine::assets::BuiltinRenderProgram::MeshWireframeDebug;
+    data.program = wz::engine::assets::BuiltinRenderProgram::ScalarFieldDebug;
     data.domain = wz::engine::assets::RenderDomain::Debug;
     data.policy_flags = wz::engine::assets::RenderPolicy_Wireframe;
 

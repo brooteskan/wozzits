@@ -31,34 +31,6 @@ namespace wz::engine::assets
         ScalarFieldAsset scalar_field{};
     };
 
-    struct TerrainDebugRenderableDesc
-    {
-        std::string name;
-        TerrainAsset terrain{};
-        BuiltinRenderProgram mesh_program =
-            BuiltinRenderProgram::MeshWireframeDepthDebug;
-        RenderDomain domain = RenderDomain::Debug;
-        uint32_t mesh_policy_flags =
-            RenderPolicy_Wireframe
-            | RenderPolicy_DepthTest
-            | RenderPolicy_DepthWrite;
-    };
-
-    struct TerrainSurfaceRenderableDesc
-    {
-        std::string name;
-        TerrainAsset terrain{};
-        TerrainVisualProxyAsset visual_proxy{};
-        BuiltinRenderProgram mesh_program =
-            BuiltinRenderProgram::TerrainMeshSurface;
-        RenderDomain domain = RenderDomain::Opaque;
-        uint32_t mesh_policy_flags =
-            RenderPolicy_DepthTest
-            | RenderPolicy_DepthWrite;
-        TerrainLightingData lighting{};
-        float target_pixels_per_triangle = 0.0f;
-    };
-
     struct RhiPullMeshRenderableDesc
     {
         std::string name;
@@ -156,12 +128,6 @@ namespace wz::engine::assets
 
         RenderableAsset create_scalar_field_debug(
             const ScalarFieldDebugRenderableDesc& desc);
-
-        RenderableAsset create_terrain_debug(
-            const TerrainDebugRenderableDesc& desc);
-
-        RenderableAsset create_terrain_surface(
-            const TerrainSurfaceRenderableDesc& desc);
 
         RenderableAsset create_rhi_pull_mesh(
             const RhiPullMeshRenderableDesc& desc);

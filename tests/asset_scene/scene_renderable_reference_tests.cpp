@@ -70,7 +70,11 @@ TEST(SceneAssetModule, RenderableAssetReferenceRoundTripsThroughSceneJSON)
     EXPECT_EQ(summary.renderables, 1u);
 
     TestRenderableResolver resolver(assets.renderables());
-    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+    TestRenderResourceResolver resource_resolver(41, 7);
+    SceneInstantiateContext context{
+        .renderable_resolver = &resolver,
+        .resource_resolver = &resource_resolver,
+    };
 
     auto result = instantiate_scene(*scene_data, context);
     ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
@@ -157,7 +161,11 @@ TEST(SceneAssetModule, SymbolicRenderableReferenceResolvesDuringSceneCompile)
     EXPECT_EQ(*parsed_node.renderable_asset, renderable.output);
 
     TestRenderableResolver resolver(assets.renderables());
-    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+    TestRenderResourceResolver resource_resolver(41, 7);
+    SceneInstantiateContext context{
+        .renderable_resolver = &resolver,
+        .resource_resolver = &resource_resolver,
+    };
 
     auto result = instantiate_scene(*scene_data, context);
     ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
@@ -238,7 +246,11 @@ TEST(SceneAssetModule, SceneCanReferenceRenderableRegisteredAfterInitialCommit)
     ASSERT_NE(scene_data, nullptr);
 
     TestRenderableResolver resolver(assets.renderables());
-    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+    TestRenderResourceResolver resource_resolver(41, 7);
+    SceneInstantiateContext context{
+        .renderable_resolver = &resolver,
+        .resource_resolver = &resource_resolver,
+    };
     auto result = instantiate_scene(*scene_data, context);
     ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
     ASSERT_TRUE(result.instance.authored_to_runtime.contains("cube"));
@@ -599,7 +611,7 @@ TEST(SceneAssetModule, ExportedSceneJSONReloadsEditedTransforms)
         SceneEditorHandleKind::Transform);
 }
 
-TEST(SceneAssetModule, MeshWireframeRenderableInScene)
+TEST(SceneAssetModule, RenderableAssetDrivesTheSceneCompilePipeline)
 {
     const wz::fs::Path root =
         wz::fs::join(
@@ -635,7 +647,7 @@ TEST(SceneAssetModule, MeshWireframeRenderableInScene)
     ASSERT_TRUE(rhandle.valid());
     const auto* rdata = assets.renderables().get_renderable_data(rhandle);
     ASSERT_NE(rdata, nullptr);
-    EXPECT_EQ(rdata->kind, RenderableKind::Mesh);
+    EXPECT_EQ(rdata->kind, RenderableKind::ScalarField);
 
     // Build a SceneAssetData in memory that references the renderable
     SceneAssetData scene{};
@@ -651,7 +663,11 @@ TEST(SceneAssetModule, MeshWireframeRenderableInScene)
 
     // Instantiate with resolver
     TestRenderableResolver resolver(assets.renderables());
-    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+    TestRenderResourceResolver resource_resolver(41, 7);
+    SceneInstantiateContext context{
+        .renderable_resolver = &resolver,
+        .resource_resolver = &resource_resolver,
+    };
 
     auto result = instantiate_scene(scene, context);
     ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;
@@ -730,7 +746,9 @@ TEST(SceneAssetModule, RenderableAssetWithNonRenderableNode)
 
     using namespace wz::engine::assets;
 
-    const auto mesh = assets.meshes().create_procedural_mesh({
+    // Registered for the side effect -- create_test_preview_renderable reaches
+    // it by name -- so unlike the other tests here the handle is unused.
+    (void)assets.meshes().create_procedural_mesh({
         .name = "debug/cube",
         .kind = ProceduralMeshKind::Cube,
     });
@@ -760,7 +778,11 @@ TEST(SceneAssetModule, RenderableAssetWithNonRenderableNode)
     scene.nodes.push_back(std::move(camera_node));
 
     TestRenderableResolver resolver(assets.renderables());
-    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+    TestRenderResourceResolver resource_resolver(41, 7);
+    SceneInstantiateContext context{
+        .renderable_resolver = &resolver,
+        .resource_resolver = &resource_resolver,
+    };
 
     auto result = instantiate_scene(scene, context);
     ASSERT_TRUE(result.ok());

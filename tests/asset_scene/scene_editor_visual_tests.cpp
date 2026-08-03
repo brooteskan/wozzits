@@ -661,7 +661,11 @@ TEST(SceneAssetModule, RenderableNodeWithEditorHandle)
     scene.nodes.push_back(std::move(node));
 
     TestRenderableResolver resolver(assets.renderables());
-    SceneInstantiateContext context{ .renderable_resolver = &resolver };
+    TestRenderResourceResolver resource_resolver(41, 7);
+    SceneInstantiateContext context{
+        .renderable_resolver = &resolver,
+        .resource_resolver = &resource_resolver,
+    };
 
     auto result = instantiate_scene(scene, context);
     ASSERT_TRUE(result.ok()) << "error: " << result.error_detail;

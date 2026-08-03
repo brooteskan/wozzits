@@ -85,8 +85,6 @@ namespace wz::engine::assets {
     inline constexpr uint64_t kPuppetRhiRenderableCompilerVersion = 1;
     inline constexpr uint64_t kStarFieldRhiRenderableCompilerVersion = 1;
     inline constexpr uint64_t kScalarFieldDebugRenderableCompilerVersion = 1;
-    inline constexpr uint64_t kTerrainDebugRenderableCompilerVersion = 1;
-    inline constexpr uint64_t kTerrainSurfaceRenderableCompilerVersion = 6;
     inline constexpr uint64_t kDiagnosticResampledTimeSeriesToDataTableCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTimeframeSummaryCompilerVersion = 1;
     inline constexpr uint64_t kDiagnosticTimeframeSummaryToDataTableCompilerVersion = 1;

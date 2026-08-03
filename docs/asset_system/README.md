@@ -295,23 +295,13 @@ source triangle count and the number of triangles accepted by
 `min_surface_normal_y` / `include_backfaces`, using geometric triangle normals
 for terrain policy rather than smoothed/imported vertex normals.
 
-Terrain visibility is expressed through a renderable asset, not editor preview
-state. `RenderableAssetModule::create_terrain_debug()` registers a renderable
-that depends on a compiled `TerrainAsset`. The compiler adapts mesh terrain to
-the mesh debug path and keeps the terrain key as
-`RenderableAssetData::companion_asset`. Height-field terrain renderables keep
-the height field as their source asset and are realized by the GPU scene
-resolver as a bounded wireframe preview mesh until a terrain-specific renderer
-is available.
-
-Mesh-backed terrain can also register a surface renderable through
-`RenderableAssetModule::create_terrain_surface()`. This remains a
-`kAssetTypeRenderable` recipe: the renderable source is the terrain mesh, the
-terrain asset is preserved in `RenderableAssetData::companion_asset`, and the
-selected program is `BuiltinRenderProgram::TerrainMeshSurface`. V1 consumes
-mesh normals and UV0 when present on the mesh asset. Height-field terrain still
-uses the existing debug/preview path until a generated surface mesh path is
-introduced.
+A terrain node no longer registers a renderable of its own. The 0x703 debug
+and 0x704 surface recipes were deleted along with the nine MeshIA builtin
+programs they drew through; terrain renders as a 0x70A `CameraSnappedTerrain`
+custom renderable (#234). Terrain, visual-proxy and constraint-collision
+assets are still materialized -- they feed collision and the
+authoring/inspector paths -- but `SceneNodeAsset::renderable_asset` is left
+empty for a terrain node.
 
 ---
 
@@ -519,8 +509,10 @@ field preview and the deprecated terrain path — retirement tracked by #222/#17
 | Capability | Schema constant | Schema value | Output AssetType | Module / API |
 |---|---|---|---|---|
 | Scalar field preview | `kScalarFieldDebugRenderableSchema` | `0x000702` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_scalar_field_debug()` |
-| Terrain debug (deprecated, #222) | `kTerrainDebugRenderableSchema` | `0x000703` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_debug()` |
-| Terrain mesh surface (deprecated, #222) | `kTerrainSurfaceRenderableSchema` | `0x000704` | `kAssetTypeRenderable` (1048) | `RenderableAssetModule::create_terrain_surface()` |
+
+Schemas `0x000703` (terrain debug) and `0x000704` (terrain mesh surface) were
+deleted with the nine MeshIA builtin programs they drew through; terrain is a
+0x70A `CameraSnappedTerrain` custom renderable (#234).
 
 Schemas `0x000700` (mesh wireframe), `0x000701` (gaussian splat debug), and
 `0x000705` (mesh styled) were deleted by issue #195: a mesh renderable is one
@@ -531,10 +523,6 @@ Splat color-LOD attachment (`companion_asset` + `color_lod`) was a `0x000701`
 feature and currently has no RHI-path equivalent.
 
 `BuiltinRenderProgram` is an enum in `engine/assets/renderable/renderable.h`:
-- `MeshWireframeDebug` -> `RenderDomain::Debug`
-- `MeshWireframeDepthDebug` -> depth-tested/depth-writing mesh wireframe debug
-- `MeshDepthPrepassDebug` -> depth-only mesh prepass debug
-- `TerrainMeshSurface` -> opaque mesh terrain surface path consuming position/normal/UV
 - `GaussianSplatDebug` -> `RenderDomain::Splat`
 - `ScalarFieldDebug` -> `RenderDomain::Debug`
 - `GaussianSplatPullDebug` -> pull-based splat path (no IA, t0 SRV)

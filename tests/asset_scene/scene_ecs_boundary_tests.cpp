@@ -609,8 +609,10 @@ TEST(SceneECSBoundary, RuntimeReadySceneUsesAssetReferencesWithoutRecipes)
     EXPECT_EQ(authored_summary.terrain_height_field_sources, 0u);
 
     TestRenderableResolver renderable_resolver(assets.renderables());
+    TestRenderResourceResolver resource_resolver(41, 7);
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
     };
     auto result = instantiate_scene(scene, context);
     ASSERT_TRUE(result.ok()) << result.error_detail;
@@ -664,8 +666,10 @@ TEST(SceneECSBoundary, AssetReferenceResolvesAssignedRenderableWhenAvailable)
     scene.nodes.push_back(std::move(visual));
 
     TestRenderableResolver renderable_resolver(assets.renderables());
+    TestRenderResourceResolver resource_resolver(41, 7);
     SceneInstantiateContext context{
         .renderable_resolver = &renderable_resolver,
+        .resource_resolver = &resource_resolver,
     };
 
     auto result = instantiate_scene(scene, context);

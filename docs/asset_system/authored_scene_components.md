@@ -953,15 +953,17 @@ Before preview/runtime instantiation, the editor must resolve this draft into a
 store that key on the `Terrain` component. `TerrainHeightFieldSource` does not
 instantiate into `SceneInstance` runtime component tables.
 
-When a terrain node is visible, the editor should also register a terrain
-renderable and attach the resulting `RenderableAsset` to the node.
-`TerrainRenderStyle` controls that materialization choice per node:
-`auto`, `surface`, `debug_wireframe`, or `none`. Mesh-backed terrain uses
-`RenderableAssetModule::create_terrain_surface()` under `auto`; height-field
-terrain uses `RenderableAssetModule::create_terrain_debug()` under `auto` and
-adapts the height field to a bounded wireframe preview mesh in the GPU scene
-resolver until a generated surface mesh path is available. Explicit `none`
-leaves the terrain role/query data without attaching a renderable.
+A terrain node no longer registers a renderable of its own. The 0x703 debug and
+0x704 surface recipes were deleted along with the nine MeshIA builtin programs
+they drew through, so materialization leaves `renderable_asset` empty and
+terrain draws as a 0x70A `CameraSnappedTerrain` custom renderable (#234). The
+terrain, visual-proxy and constraint-collision assets are still built — they
+feed collision and the authoring/inspector paths.
+
+`TerrainRenderStyle.path` (`auto`, `surface`, `debug_wireframe`, `none`) is
+still read and written by the scene JSON round-trip, but nothing consumes it:
+it selected between the two deleted recipes. Treat it as inert until it is
+either removed or repointed at the clipmap.
 
 `TerrainRenderStyle` can also declare a lighting consumption policy. The style
 does not own HDRI/environment work; it points at scene lighting inputs that a

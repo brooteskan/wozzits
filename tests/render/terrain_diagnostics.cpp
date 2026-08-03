@@ -224,7 +224,7 @@ TEST(TerrainDiagnostics, ResolverExposesProxyWideDiagnostics)
     ASSERT_TRUE(resolver.register_terrain_proxy(
         proxy_id,
         gpu_mesh,
-        BuiltinRenderProgram::TerrainMeshSurface,
+        BuiltinRenderProgram::TerrainSurfelSurface,
         {},
         {},
         0.0f,

@@ -32,15 +32,6 @@ namespace wz::engine::assets
 
     enum class BuiltinRenderProgram : uint8_t
     {
-        MeshWireframeDebug,
-        MeshWireframeDepthDebug,
-        MeshDepthPrepassDebug,
-        MeshWireframeAlpha,
-        MeshSurface,
-        MeshSurfaceAlpha,
-        MeshFieldHeatmap,
-        MeshMaskStyle,
-        TerrainMeshSurface,
         GaussianSplatDebug,
         TerrainSurfelSurface,    // IA-based splat with depth R/W for terrain
         ScalarFieldDebug,
@@ -373,32 +364,6 @@ namespace wz::engine::assets
     struct ScalarFieldDebugRenderableCompileDesc
     {
         wz::asset::AssetKey scalar_field_asset{};
-    };
-
-    struct TerrainDebugRenderableCompileDesc
-    {
-        wz::asset::AssetKey terrain_asset{};
-        BuiltinRenderProgram mesh_program =
-            BuiltinRenderProgram::MeshWireframeDepthDebug;
-        RenderDomain domain = RenderDomain::Debug;
-        uint32_t mesh_policy_flags =
-            RenderPolicy_Wireframe
-            | RenderPolicy_DepthTest
-            | RenderPolicy_DepthWrite;
-    };
-
-    struct TerrainSurfaceRenderableCompileDesc
-    {
-        wz::asset::AssetKey terrain_asset{};
-        wz::asset::AssetKey visual_proxy_asset{};
-        BuiltinRenderProgram mesh_program =
-            BuiltinRenderProgram::TerrainMeshSurface;
-        RenderDomain domain = RenderDomain::Opaque;
-        uint32_t mesh_policy_flags =
-            RenderPolicy_DepthTest
-            | RenderPolicy_DepthWrite;
-        TerrainLightingData lighting{};
-        float target_pixels_per_triangle = 0.0f;
     };
 
     struct RhiPullMeshRenderableCompileDesc

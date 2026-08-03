@@ -561,8 +561,6 @@ namespace wz::engine::assets
             WZ_ADD_SCHEMA(
                 kScalarFieldDebugRenderableSchema,
                 "Scalar field preview renderable");
-            WZ_ADD_SCHEMA(kTerrainDebugRenderableSchema, "Terrain debug renderable");
-            WZ_ADD_SCHEMA(kTerrainSurfaceRenderableSchema, "Terrain surface renderable");
             WZ_ADD_SCHEMA(kSceneFromJSONSchema, "Scene from JSON");
             WZ_ADD_SCHEMA(kSceneFromGLBSchema, "Scene from GLB");
             WZ_ADD_SCHEMA(kDirectLightSchema, "Direct light");

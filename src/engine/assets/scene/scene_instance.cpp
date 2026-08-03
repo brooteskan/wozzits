@@ -53,11 +53,7 @@ namespace wz::engine::assets
 
             switch (data.kind) {
             case RenderableKind::Mesh:
-                if (data.program == BuiltinRenderProgram::TerrainMeshSurface) {
-                    nc.producer = sc::ProducerKind::TerrainPatch;
-                    nc.spatial  = sc::SpatialKind::Box;
-                }
-                else {
+                {
                     nc.producer = sc::ProducerKind::Mesh;
                     nc.spatial  = sc::SpatialKind::MeshBounds;
                 }

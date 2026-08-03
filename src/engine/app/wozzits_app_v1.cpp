@@ -469,8 +469,6 @@ namespace wz::app
                         *ctx_.assets,
                         wz::engine::assets::SceneAuthoringMaterializeOptions{
                             .create_preview_renderables = false,
-                            .create_terrain_surface_renderables = false,
-                            .create_terrain_debug_renderables = false,
                         });
             if (!materialize.ok) {
                 ctx_.logger.warn(

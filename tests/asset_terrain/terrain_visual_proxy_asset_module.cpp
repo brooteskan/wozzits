@@ -1058,7 +1058,9 @@ TEST(TerrainVisualProxyAssetModule, RegistersCompiledProxyWithRenderResolver)
     ASSERT_TRUE(resolver.register_terrain_proxy(
         proxy.terrain_proxy_id,
         gpu_mesh,
-        BuiltinRenderProgram::TerrainMeshSurface,
+        // The program value is opaque to the resolver here -- the assertions
+        // below are about proxy chunk diagnostics, not about the program.
+        BuiltinRenderProgram::TerrainSurfelSurface,
         {},
         {},
         0.0f,
