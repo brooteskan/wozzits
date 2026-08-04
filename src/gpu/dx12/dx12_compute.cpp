@@ -521,14 +521,25 @@ namespace wz::gpu::dx12::internal
         const D3D12_RESOURCE_STATES resting_state = allow_unordered_access
             ? D3D12_RESOURCE_STATE_UNORDERED_ACCESS
             : D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        D3D12_RESOURCE_STATES initial_state = desc.initial_data
+        // The state this buffer reaches on first GPU use: COPY_DEST while an
+        // upload copies into it (the copy below then transitions it to the
+        // resting state), otherwise the resting SRV/UAV state by implicit
+        // promotion. This is what buffer.state tracks so transition_buffer emits
+        // correct before-states -- NOT the state passed to CreateCommittedResource.
+        const D3D12_RESOURCE_STATES tracked_state = desc.initial_data
             ? D3D12_RESOURCE_STATE_COPY_DEST
             : resting_state;
+        // Create in COMMON. D3D12 IGNORES the initial state of a buffer -- buffers
+        // are always created in COMMON and reach a usage state by implicit
+        // promotion -- so passing tracked_state changes nothing about the runtime
+        // state (the buffer is COMMON either way, then promoted on first use /
+        // by the copy) but trips a per-creation WARNING #1328 ("Ignoring
+        // InitialState ...") that floods the debug layer every buffer (#317 D1-H35).
         HRESULT hr = impl->device->CreateCommittedResource(
             &default_heap,
             D3D12_HEAP_FLAG_NONE,
             &resource_desc,
-            initial_state,
+            D3D12_RESOURCE_STATE_COMMON,
             nullptr,
             IID_PPV_ARGS(&resource));
         if (FAILED(hr)) {
@@ -539,7 +550,7 @@ namespace wz::gpu::dx12::internal
             .resource = resource,
             .element_count = desc.element_count,
             .stride_bytes = desc.stride_bytes,
-            .state = initial_state,
+            .state = tracked_state,
         };
 
         if (desc.initial_data) {
