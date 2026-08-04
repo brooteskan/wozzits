@@ -1485,6 +1485,114 @@ TEST(AssetGraphDraft, MaterializeKeysRekeysAnExistingNodeWhoseParamsChanged)
            "state does not say so";
 }
 
+// B1-T1. StoredKeysAgreeWithTheirDerivation -- the whole-graph invariant that
+// v1's shipped-project drift check (probe 3) asserted and that never landed as a
+// test: after materialization EVERY node's stored key EQUALS the key its own
+// params and resolved dependencies derive to, and re-materializing changes
+// nothing. This is the property that lets a committed assets.graph.json load
+// without silently re-keying, and it is the regression net for the B1-C2 class,
+// where a stale generic key on an Existing node denoted changed content while
+// every disk-cache integrity check still passed against that same stale key.
+//
+// Built as an in-memory fixture rather than over the shipped test_mesh_001: that
+// project is a scratchpad whose keys self-heal on save (so it loads dirty), and
+// committed tests must not depend on it. The fixture stamps keys that DISAGREE
+// with their derivation the way the JSON loader delivers a hand-edited graph
+// (every node Existing, carrying its stored key verbatim), so the first
+// materialize must correct them -- which is exactly what the B1-C2 comparison in
+// materialize_asset_graph_draft_keys does, and the revert-check confirms this
+// test reddens the moment that comparison is neutered.
+TEST(AssetGraphDraft, StoredKeysAgreeWithTheirDerivation)
+{
+    CompilerRegistry registry = make_draft_test_registry();
+
+    // A three-node graph the way the JSON loader delivers one: nodes are
+    // Existing and carry stored keys that were stamped by hand and do NOT match
+    // what their params + deps derive to. mesh -> material <- texture, with the
+    // mesh carrying an authored param so its content hash is non-trivial.
+    AssetNode mesh_node = make_node(AssetType::Mesh, schema(10), 0x10);
+    {
+        ParamBlock params;
+        params.values["subdivisions"] = int64_t{ 4 };
+        mesh_node.meta = params;
+    }
+    AssetNode texture_node = make_node(AssetType::Texture, schema(11), 0x11);
+    AssetNode material_node = make_node(AssetType::Material, schema(20), 0x20);
+
+    AssetGraphDraft draft{};
+    const auto mesh = add_asset_graph_draft_node(
+        draft, mesh_node, AssetGraphDraftNodeState::Existing);
+    const auto texture = add_asset_graph_draft_node(
+        draft, texture_node, AssetGraphDraftNodeState::Existing);
+    const auto material = add_asset_graph_draft_node(
+        draft, material_node, AssetGraphDraftNodeState::Existing);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft, mesh, material, 0),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+    ASSERT_NE(
+        connect_asset_graph_draft_nodes(draft, texture, material, 1),
+        INVALID_ASSET_GRAPH_DRAFT_EDGE);
+
+    // With no key factory every node keys generically, so the derivation each
+    // stored key must equal is make_asset_key(node, its resolved dep keys).
+    const auto expect_agrees = [&](const char* when)
+    {
+        const std::vector<AssetGraphDraftRegistration> registrations =
+            asset_graph_draft_to_registrations(draft, &registry, {});
+        for (const AssetGraphDraftNode& node : draft.nodes) {
+            if (node.state == AssetGraphDraftNodeState::Deleted) {
+                continue;
+            }
+            const AssetGraphDraftRegistration* reg =
+                find_registration(registrations, node.id);
+            ASSERT_NE(reg, nullptr)
+                << when << ": node " << node.id << " has no registration";
+            EXPECT_EQ(make_asset_key(node.node, reg->dep_keys), node.node.key)
+                << when << ": node " << node.id
+                << " stored key disagrees with its live derivation";
+        }
+    };
+
+    // First materialize settles every key from its derivation, correcting the
+    // hand-stamped keys. INVARIANT 1: whole-graph stored == derived.
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
+    expect_agrees("after first materialize");
+
+    // INVARIANT 2: a second full-graph materialize re-keys nothing.
+    std::vector<std::pair<AssetGraphDraftNodeId, AssetKey>> settled;
+    for (const AssetGraphDraftNode& node : draft.nodes) {
+        settled.emplace_back(node.id, node.node.key);
+    }
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
+    for (const auto& [id, key] : settled) {
+        EXPECT_EQ(find_asset_graph_draft_node(draft, id)->node.key, key)
+            << "node " << id << " re-keyed on an idempotent materialize";
+    }
+
+    // INVARIANT 3 (the B1-C2 cascade): a stale upstream generic key -- the shape
+    // a hand-edited assets.graph.json produces, Existing with an out-of-date key
+    // -- must be corrected AND propagate through deps_hash to its dependent,
+    // restoring the whole-graph invariant. Corrupt only the mesh's stored key.
+    const AssetKey good_mesh_key =
+        find_asset_graph_draft_node(draft, mesh)->node.key;
+    const AssetKey good_material_key =
+        find_asset_graph_draft_node(draft, material)->node.key;
+    {
+        AssetGraphDraftNode* node = find_asset_graph_draft_node(draft, mesh);
+        node->state = AssetGraphDraftNodeState::Existing;
+        node->node.key = make_key(0xdead);  // a key no derivation produces
+    }
+
+    ASSERT_TRUE(materialize_asset_graph_draft_keys(draft, registry, {}));
+
+    EXPECT_EQ(find_asset_graph_draft_node(draft, mesh)->node.key, good_mesh_key)
+        << "a stale generic key on an Existing node was not corrected";
+    EXPECT_EQ(
+        find_asset_graph_draft_node(draft, material)->node.key, good_material_key)
+        << "the correction did not settle the dependent consistently";
+    expect_agrees("after correcting a stale upstream key");
+}
+
 TEST(AssetGraphDraft, MaterializeKeysTreatsPortOrderAsIdentity)
 {
     CompilerRegistry registry = make_draft_test_registry();
