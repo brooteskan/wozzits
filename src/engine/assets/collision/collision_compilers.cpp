@@ -1,6 +1,7 @@
 // src/engine/assets/collision/collision_compilers.cpp
 
 #include <engine/assets/collision/collision_compilers.h>
+#include <engine/assets/disk_cache_checksum.h>
 
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/engine_asset_library_internal.h>
@@ -31,7 +32,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kCollisionTerrainDiskCacheMagic = 0x43435a57u;
-        constexpr uint32_t kCollisionTerrainDiskCacheVersion = 4u;
+        constexpr uint32_t kCollisionTerrainDiskCacheVersion = 5u;  // #75 B1-C4: +checksum
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -311,14 +312,20 @@ namespace wz::engine::assets::internal
             append_scalar(out, data.render_lod_cell_size);
             append_scalar(out, static_cast<uint8_t>(
                 data.constrain_to_drawn_surface));
+            wz::engine::assets::append_disk_cache_checksum(out);
             return out;
         }
 
         bool deserialize_collision_asset(
-            const std::vector<uint8_t>& bytes,
+            const std::vector<uint8_t>& bytes_in,
             const wz::asset::AssetKey& expected_key,
             CollisionAssetData& data)
         {
+            std::vector<uint8_t> bytes;
+            if (!wz::engine::assets::verify_and_strip_disk_cache_checksum(
+                    bytes_in, bytes)) {
+                return false;
+            }
             size_t offset = 0;
             uint32_t magic = 0;
             uint32_t version = 0;

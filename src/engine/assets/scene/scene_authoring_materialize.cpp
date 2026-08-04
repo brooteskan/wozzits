@@ -1,5 +1,6 @@
 #include <engine/assets/scene/scene_authoring_materialize.h>
 
+#include <engine/assets/disk_cache_checksum.h>
 #include <engine/assets/engine_asset_library.h>
 #include <engine/assets/compute_pipeline/hlsl_binding_extract.h>
 #include <engine/assets/gltf/gltf_importer.h>
@@ -224,7 +225,7 @@ namespace wz::engine::assets
         {
             std::vector<uint8_t> bytes;
             bytes.reserve(sizeof(uint32_t) + sizeof(float) * 14u);
-            append_u32(bytes, 1u);
+            append_u32(bytes, 2u);  // #75 B1-C4: +checksum
             for (float value : metadata.environment_light_color) {
                 append_f32(bytes, value);
             }
@@ -237,16 +238,22 @@ namespace wz::engine::assets
             }
             append_f32(bytes, metadata.dominant_light_intensity);
             append_f32(bytes, metadata.dominant_light_confidence);
+            wz::engine::assets::append_disk_cache_checksum(bytes);
             return bytes;
         }
 
         bool deserialize_hdri_lighting_metadata(
-            const std::vector<uint8_t>& bytes,
+            const std::vector<uint8_t>& bytes_in,
             HDRILightingMetadata& metadata)
         {
+            std::vector<uint8_t> bytes;
+            if (!wz::engine::assets::verify_and_strip_disk_cache_checksum(
+                    bytes_in, bytes)) {
+                return false;
+            }
             size_t offset = 0;
             uint32_t version = 0;
-            if (!read_u32(bytes, offset, version) || version != 1u) {
+            if (!read_u32(bytes, offset, version) || version != 2u) {
                 return false;
             }
             HDRILightingMetadata out{};

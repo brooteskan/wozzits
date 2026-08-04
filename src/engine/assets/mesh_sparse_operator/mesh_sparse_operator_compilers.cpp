@@ -1,6 +1,7 @@
 // src/engine/assets/mesh_sparse_operator/mesh_sparse_operator_compilers.cpp
 
 #include <engine/assets/mesh_sparse_operator/mesh_sparse_operator_compilers.h>
+#include <engine/assets/disk_cache_checksum.h>
 
 #include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/disk_cache_keys.h>
@@ -25,7 +26,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kMeshSparseOperatorDiskCacheMagic = 0x4f535a57u;
-        constexpr uint32_t kMeshSparseOperatorDiskCacheVersion = 1u;
+        constexpr uint32_t kMeshSparseOperatorDiskCacheVersion = 2u;  // #75 B1-C4: +checksum
 
         constexpr std::array<std::string_view, 1> kOperatorKindOptions = {
             "Uniform adjacency",
@@ -191,14 +192,20 @@ namespace wz::engine::assets::internal
             append_vector(out, data.col_indices);
             append_vector(out, data.weights);
             append_vector(out, data.vertex_mass);
+            wz::engine::assets::append_disk_cache_checksum(out);
             return out;
         }
 
         bool deserialize_mesh_sparse_operator(
-            const std::vector<uint8_t>& bytes,
+            const std::vector<uint8_t>& bytes_in,
             const wz::asset::AssetKey& expected_key,
             MeshSparseOperatorData& data)
         {
+            std::vector<uint8_t> bytes;
+            if (!wz::engine::assets::verify_and_strip_disk_cache_checksum(
+                    bytes_in, bytes)) {
+                return false;
+            }
             size_t offset = 0;
             uint32_t magic = 0;
             uint32_t version = 0;

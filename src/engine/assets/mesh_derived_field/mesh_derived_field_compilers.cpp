@@ -1,6 +1,7 @@
 // src/engine/assets/mesh_derived_field/mesh_derived_field_compilers.cpp
 
 #include <engine/assets/mesh_derived_field/mesh_derived_field_compilers.h>
+#include <engine/assets/disk_cache_checksum.h>
 
 #include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/disk_cache_keys.h>
@@ -31,7 +32,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kMeshDerivedFieldDiskCacheMagic = 0x4d445a57u;
-        constexpr uint32_t kMeshDerivedFieldDiskCacheVersion = 1u;
+        constexpr uint32_t kMeshDerivedFieldDiskCacheVersion = 2u;  // #75 B1-C4: +checksum
         constexpr uint32_t kWaveletGpuThreadGroupSize = 128u;
 
         constexpr std::array<std::string_view, 4> kDomainOptions = {
@@ -703,15 +704,21 @@ namespace wz::engine::assets::internal
             }
             append_scalar(out, static_cast<uint64_t>(field.values.size()));
             append_raw_bytes(out, field.values.data(), field.values.size());
+            wz::engine::assets::append_disk_cache_checksum(out);
             return out;
         }
 
         bool deserialize_mesh_derived_field_asset(
-            const std::vector<uint8_t>& bytes,
+            const std::vector<uint8_t>& bytes_in,
             const wz::asset::AssetKey& expected_key,
             uint64_t expected_compiler_version,
             MeshDerivedFieldData& field)
         {
+            std::vector<uint8_t> bytes;
+            if (!wz::engine::assets::verify_and_strip_disk_cache_checksum(
+                    bytes_in, bytes)) {
+                return false;
+            }
             size_t offset = 0;
             uint32_t magic = 0;
             uint32_t version = 0;

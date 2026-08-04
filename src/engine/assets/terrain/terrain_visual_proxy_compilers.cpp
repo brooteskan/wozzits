@@ -1,4 +1,5 @@
 #include <engine/assets/terrain/terrain_visual_proxy_compilers.h>
+#include <engine/assets/disk_cache_checksum.h>
 
 #include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/disk_cache_keys.h>
@@ -24,7 +25,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kTerrainVisualProxyDiskCacheMagic = 0x56505a57u;
-        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 5u;
+        constexpr uint32_t kTerrainVisualProxyDiskCacheVersion = 6u;  // #75 B1-C4: +checksum
         constexpr uint32_t kTerrainVisualProxyTargetLodCount = 4u;
         constexpr float kTerrainVisualProxyEdgeEpsilon = 1e-5f;
 
@@ -2107,14 +2108,20 @@ namespace wz::engine::assets::internal
                     append_transition_strip(out, strip);
                 }
             }
+            wz::engine::assets::append_disk_cache_checksum(out);
             return out;
         }
 
         bool deserialize_terrain_visual_proxy(
-            const std::vector<uint8_t>& bytes,
+            const std::vector<uint8_t>& bytes_in,
             const wz::asset::AssetKey& expected_key,
             TerrainVisualProxyData& data)
         {
+            std::vector<uint8_t> bytes;
+            if (!wz::engine::assets::verify_and_strip_disk_cache_checksum(
+                    bytes_in, bytes)) {
+                return false;
+            }
             size_t offset = 0u;
             uint32_t magic = 0u;
             uint32_t version = 0u;

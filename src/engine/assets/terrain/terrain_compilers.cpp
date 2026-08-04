@@ -1,6 +1,7 @@
 // src/engine/assets/terrain/terrain_compilers.cpp
 
 #include <engine/assets/terrain/terrain_compilers.h>
+#include <engine/assets/disk_cache_checksum.h>
 
 #include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/disk_cache_keys.h>
@@ -28,7 +29,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kMeshTerrainDiskCacheMagic = 0x54435a57u;
-        constexpr uint32_t kMeshTerrainDiskCacheVersion = 1u;
+        constexpr uint32_t kMeshTerrainDiskCacheVersion = 2u;  // #75 B1-C4: +checksum
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -251,14 +252,20 @@ namespace wz::engine::assets::internal
                 data.mesh_visual_chunks.data(),
                 data.mesh_visual_chunks.size() * sizeof(TerrainVisualChunk));
 
+            wz::engine::assets::append_disk_cache_checksum(out);
             return out;
         }
 
         bool deserialize_mesh_terrain_asset(
-            const std::vector<uint8_t>& bytes,
+            const std::vector<uint8_t>& bytes_in,
             const wz::asset::AssetKey& expected_key,
             TerrainAssetData& data)
         {
+            std::vector<uint8_t> bytes;
+            if (!wz::engine::assets::verify_and_strip_disk_cache_checksum(
+                    bytes_in, bytes)) {
+                return false;
+            }
             size_t offset = 0;
             uint32_t magic = 0;
             uint32_t version = 0;

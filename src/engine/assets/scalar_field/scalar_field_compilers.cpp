@@ -1,6 +1,7 @@
 // src/engine/assets/scalar_field/scalar_field_compilers.cpp
 
 #include <engine/assets/scalar_field/scalar_field_compilers.h>
+#include <engine/assets/disk_cache_checksum.h>
 #include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/disk_cache_keys.h>
 #include <engine/assets/disk_cache_paths.h>
@@ -29,7 +30,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kScalarFieldDiskCacheMagic = 0x53465a57u;
-        constexpr uint32_t kScalarFieldDiskCacheVersion = 1u;
+        constexpr uint32_t kScalarFieldDiskCacheVersion = 2u;  // #75 B1-C4: +checksum
 
         constexpr std::array<std::string_view, 6>
             kScalarFieldDomainOptions = {
@@ -381,14 +382,20 @@ namespace wz::engine::assets::internal
                 out,
                 field.values.data(),
                 field.values.size() * sizeof(float));
+            wz::engine::assets::append_disk_cache_checksum(out);
             return out;
         }
 
         bool deserialize_scalar_field_asset(
-            const std::vector<uint8_t>& bytes,
+            const std::vector<uint8_t>& bytes_in,
             const wz::asset::AssetKey& expected_key,
             ScalarFieldData& field)
         {
+            std::vector<uint8_t> bytes;
+            if (!wz::engine::assets::verify_and_strip_disk_cache_checksum(
+                    bytes_in, bytes)) {
+                return false;
+            }
             size_t offset = 0;
             uint32_t magic = 0;
             uint32_t version = 0;

@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <engine/assets/compiler_version_tokens.h>
+#include <engine/assets/disk_cache_checksum.h>
 #include <engine/assets/disk_cache_keys.h>
 #include <engine/assets/disk_cache_paths.h>
 #include <engine/assets/engine_disk_cache_provider.h>
@@ -18,6 +19,7 @@
 #include <logging/logger.h>
 
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 namespace
@@ -80,7 +82,7 @@ namespace
     // bumped, AcceptsWellFormedScalarFieldEntry below fails first and loudly:
     // that is the signal to re-cut this corpus, not to paper over it.
     constexpr uint32_t kScalarFieldMagic = 0x53465a57u;
-    constexpr uint32_t kScalarFieldFormatVersion = 1u;
+    constexpr uint32_t kScalarFieldFormatVersion = 2u;
 
     template<typename T>
     void put(std::vector<uint8_t>& out, const T& value)
@@ -133,6 +135,7 @@ namespace
         for (const float v : f.values) {
             put(out, v);
         }
+        append_disk_cache_checksum(out);
         return out;
     }
 
@@ -207,7 +210,7 @@ namespace
 
     // ── GLB mesh ──────────────────────────────────────────────────────────────
     constexpr uint32_t kMeshMagic = 0x4d435a57u;
-    constexpr uint32_t kMeshFormatVersion = 1u;
+    constexpr uint32_t kMeshFormatVersion = 2u;
 
     struct MeshEntryFields
     {
@@ -242,12 +245,13 @@ namespace
         for (const uint32_t i : indices) {
             put(out, i);
         }
+        append_disk_cache_checksum(out);
         return out;
     }
 
     // ── Mesh terrain ──────────────────────────────────────────────────────────
     constexpr uint32_t kTerrainMagic = 0x54435a57u;
-    constexpr uint32_t kTerrainFormatVersion = 1u;
+    constexpr uint32_t kTerrainFormatVersion = 2u;
 
     struct TerrainEntryFields
     {
@@ -311,12 +315,13 @@ namespace
         put(out, static_cast<uint64_t>(0));           // mesh_surface_indices
         put(out, static_cast<uint64_t>(0));           // mesh_visual_indices
         put(out, static_cast<uint64_t>(0));           // mesh_visual_chunks
+        append_disk_cache_checksum(out);
         return out;
     }
 
     // ── Mesh sparse operator ──────────────────────────────────────────────────
     constexpr uint32_t kSparseOperatorMagic = 0x4f535a57u;
-    constexpr uint32_t kSparseOperatorFormatVersion = 1u;
+    constexpr uint32_t kSparseOperatorFormatVersion = 2u;
 
     struct SparseOperatorEntryFields
     {
@@ -356,12 +361,13 @@ namespace
         put(out, 1.0f);
         put(out, static_cast<uint64_t>(1));           // vertex_mass
         put(out, 1.0f);
+        append_disk_cache_checksum(out);
         return out;
     }
 
     // ── Mesh derived field ────────────────────────────────────────────────────
     constexpr uint32_t kDerivedFieldMagic = 0x4d445a57u;
-    constexpr uint32_t kDerivedFieldFormatVersion = 1u;
+    constexpr uint32_t kDerivedFieldFormatVersion = 2u;
 
     struct DerivedFieldEntryFields
     {
@@ -397,6 +403,7 @@ namespace
         put(out, static_cast<uint64_t>(8));           // values
         put(out, 0.0f);
         put(out, 0.0f);
+        append_disk_cache_checksum(out);
         return out;
     }
 }
@@ -585,6 +592,98 @@ TEST(EngineDiskCacheProvider, LoadRejectsOutOfRangeDescriptorOrdinals)
             kScalarFieldProceduralSchema, kAssetTypeScalarField, key)
                 .has_value());
     }
+}
+
+// B1-C4 (the payload half). Magic, the versions, the stored key and the
+// descriptor range checks all cover byte regions OTHER than the sample data,
+// the min/max bounds, and the extents-as-written -- so a flip in any of those
+// loaded silently, serving the wrong bytes under a key that still matched. The
+// trailing blob checksum (#75 B1-C4) closes it. AcceptsWellFormedScalarFieldEntry
+// is the control; these damage exactly the regions no other check inspects.
+TEST(EngineDiskCacheProvider, ChecksumRejectsAFlippedPayloadByte)
+{
+    // Offsets measured from the end of the blob, for the 4-sample fixture:
+    //   [ ... min(4) max(4) count(8) values(16) checksum(8) ]
+    struct Case { const char* name; std::size_t from_end; };
+    const Case cases[] = {
+        { "last sample float", kDiskCacheChecksumSize + 1u },
+        { "max_value",         kDiskCacheChecksumSize + 16u + 8u + 1u },
+        { "min_value",         kDiskCacheChecksumSize + 16u + 8u + 4u + 1u },
+    };
+
+    for (const Case& c : cases) {
+        SCOPED_TRACE(c.name);
+        EngineAssetCacheSettings settings{};
+        settings.root = make_cache_root("wz_disk_cache_flip_payload_test");
+        settings.enabled = true;
+
+        const wz::asset::AssetKey key = make_key(91u, 92u);
+        std::vector<uint8_t> blob = make_scalar_field_entry(key);
+        ASSERT_GT(blob.size(), c.from_end);
+        blob[blob.size() - c.from_end] ^= 0x01u;   // one bit, in a region no
+                                                   // other check would notice
+        write_scalar_field_entry(settings, key, blob);
+
+        ProviderFixture fx(settings);
+        ASSERT_TRUE(fx.provider.can_load(
+            kScalarFieldProceduralSchema, kAssetTypeScalarField, key));
+        EXPECT_FALSE(fx.provider.load(
+            kScalarFieldProceduralSchema, kAssetTypeScalarField, key)
+                .has_value());
+    }
+}
+
+// B1-C4. The extents pass their own overflow/count check whenever the product
+// still matches the sample count, so a reshape that preserves the total --
+// 2x2x1 -> 4x1x1 -- changed what the field means while every extent check kept
+// passing. Only a checksum over the header notices the edited dimension bytes.
+TEST(EngineDiskCacheProvider, ChecksumRejectsADimsReshapePreservingTheTotal)
+{
+    EngineAssetCacheSettings settings{};
+    settings.root = make_cache_root("wz_disk_cache_reshape_test");
+    settings.enabled = true;
+
+    const wz::asset::AssetKey key = make_key(93u, 94u);
+    std::vector<uint8_t> blob = make_scalar_field_entry(key);  // 2 x 2 x 1
+
+    // width/height sit right after the header:
+    //   magic(4) version(4) compiler_version(8) key(64) = 80, then width(4).
+    constexpr std::size_t kWidthOffset = 4u + 4u + 8u + 64u;
+    const uint32_t new_width = 4u;
+    const uint32_t new_height = 1u;
+    std::memcpy(blob.data() + kWidthOffset, &new_width, sizeof(new_width));
+    std::memcpy(
+        blob.data() + kWidthOffset + 4u, &new_height, sizeof(new_height));
+    write_scalar_field_entry(settings, key, blob);
+
+    ProviderFixture fx(settings);
+    ASSERT_TRUE(fx.provider.can_load(
+        kScalarFieldProceduralSchema, kAssetTypeScalarField, key));
+    EXPECT_FALSE(fx.provider.load(
+        kScalarFieldProceduralSchema, kAssetTypeScalarField, key).has_value());
+}
+
+// An entry missing its trailing checksum -- a torn write, or an entry written
+// by the pre-checksum format -- is a miss, not a read of whatever remains. This
+// is also how the version bump's old entries are refused: they carry no
+// checksum, so verification fails before the version word is even read.
+TEST(EngineDiskCacheProvider, ChecksumRejectsAnEntryWithoutATrailingChecksum)
+{
+    EngineAssetCacheSettings settings{};
+    settings.root = make_cache_root("wz_disk_cache_no_checksum_test");
+    settings.enabled = true;
+
+    const wz::asset::AssetKey key = make_key(95u, 96u);
+    std::vector<uint8_t> blob = make_scalar_field_entry(key);
+    ASSERT_GT(blob.size(), kDiskCacheChecksumSize);
+    blob.resize(blob.size() - kDiskCacheChecksumSize);   // drop the checksum
+    write_scalar_field_entry(settings, key, blob);
+
+    ProviderFixture fx(settings);
+    ASSERT_TRUE(fx.provider.can_load(
+        kScalarFieldProceduralSchema, kAssetTypeScalarField, key));
+    EXPECT_FALSE(fx.provider.load(
+        kScalarFieldProceduralSchema, kAssetTypeScalarField, key).has_value());
 }
 
 // B1-C3. Extents whose product overflows uint32 wrapped to zero, so an entry

@@ -1,6 +1,7 @@
 // src/engine/assets/mesh/mesh_compilers.cpp
 
 #include <engine/assets/mesh/mesh_compilers.h>
+#include <engine/assets/disk_cache_checksum.h>
 #include <engine/assets/compiler_version_tokens.h>
 #include <engine/assets/disk_cache_keys.h>
 #include <engine/assets/disk_cache_paths.h>
@@ -25,7 +26,7 @@ namespace wz::engine::assets::internal
     namespace
     {
         constexpr uint32_t kGLBMeshDiskCacheMagic = 0x4d435a57u;
-        constexpr uint32_t kGLBMeshDiskCacheVersion = 1u;
+        constexpr uint32_t kGLBMeshDiskCacheVersion = 2u;  // #75 B1-C4: +checksum
 
         template<typename T>
         void append_scalar(std::vector<uint8_t>& out, const T& value)
@@ -168,14 +169,20 @@ namespace wz::engine::assets::internal
                 out,
                 mesh.indices.data(),
                 mesh.indices.size() * sizeof(uint32_t));
+            wz::engine::assets::append_disk_cache_checksum(out);
             return out;
         }
 
         bool deserialize_mesh_asset(
-            const std::vector<uint8_t>& bytes,
+            const std::vector<uint8_t>& bytes_in,
             const wz::asset::AssetKey& expected_key,
             MeshData& mesh)
         {
+            std::vector<uint8_t> bytes;
+            if (!wz::engine::assets::verify_and_strip_disk_cache_checksum(
+                    bytes_in, bytes)) {
+                return false;
+            }
             size_t offset = 0;
             uint32_t magic = 0;
             uint32_t version = 0;
