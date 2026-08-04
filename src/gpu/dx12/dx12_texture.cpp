@@ -271,12 +271,17 @@ namespace wz::gpu::dx12::internal
         const D3D12_RESOURCE_DESC resource_desc =
             make_texture_desc(tex, desc.dimension, desc.render_target);
 
-        // A renderable resource takes an optimized clear value matching its format
-        // (transparent black); a plain texture takes none.
+        // A renderable resource takes an optimized clear value (default
+        // transparent black; a target cleared to a fixed non-zero colour sets
+        // desc.optimized_clear to match so ClearRenderTargetView stays on the
+        // fast path and D3D12 does not warn #820 -- #317 D1-H39). A plain texture
+        // takes none.
         D3D12_CLEAR_VALUE clear_value{};
         clear_value.Format = format;
-        clear_value.Color[0] = clear_value.Color[1] =
-            clear_value.Color[2] = clear_value.Color[3] = 0.0f;
+        clear_value.Color[0] = desc.optimized_clear[0];
+        clear_value.Color[1] = desc.optimized_clear[1];
+        clear_value.Color[2] = desc.optimized_clear[2];
+        clear_value.Color[3] = desc.optimized_clear[3];
 
         D3D12_HEAP_PROPERTIES default_heap{};
         default_heap.Type = D3D12_HEAP_TYPE_DEFAULT;

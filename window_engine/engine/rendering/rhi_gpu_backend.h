@@ -112,6 +112,9 @@ namespace wz::engine::rendering
         // Offscreen render-to-texture (S6): a texture the renderer draws into.
         out.render_target =
             (desc.usage & wz::rhi::ResourceUsage_RenderTarget) != 0u;
+        for (int i = 0; i < 4; ++i) {
+            out.optimized_clear[i] = desc.optimized_clear[i];
+        }
         return true;
     }
 

@@ -71,6 +71,11 @@ namespace wz::gpu
         // render-to-texture (S6). mip_levels must be 1 for a render target.
         bool             render_target = false;
 
+        // Optimized clear colour for a render target (from rhi optimized_clear).
+        // Used as the D3D12 pOptimizedClearValue; clearing to any other colour is
+        // slower and warns. Default transparent black. #317 D1-H39.
+        float            optimized_clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
         bool valid() const noexcept
         {
             if (width == 0u || height == 0u || depth == 0u) {

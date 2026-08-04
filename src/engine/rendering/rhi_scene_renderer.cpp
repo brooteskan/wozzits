@@ -2886,6 +2886,16 @@ namespace wz::engine::rendering
         }
     }
 
+    // The LINEAR background the scene-colour target clears to. Its sRGB encoding
+    // is the editor's (0.10,0.10,0.12) clear, so the encode round-trips the
+    // background to the same pixels the direct path shows. Used BOTH as the
+    // target's optimized clear value (so ClearRenderTargetView takes the fast
+    // path and D3D12 does not warn #820 -- #317 D1-H39) and as the actual pass
+    // clear below; they MUST match or the warning returns.
+    static constexpr float kSceneColorLinearClear[4] = {
+        0.01002f, 0.01002f, 0.01340f, 1.0f
+    };
+
     bool RhiSceneRenderer::ensure_scene_color_target(std::uint32_t width,
                                                      std::uint32_t height)
     {
@@ -2913,6 +2923,11 @@ namespace wz::engine::rendering
             width, height,
             wz::rhi::TextureFormat::RGBA16Float,
             wz::rhi::ResourceUsage_Sampled | wz::rhi::ResourceUsage_RenderTarget);
+        // Match the pass clear so the per-frame ClearRenderTargetView is a fast
+        // clear rather than a diagnosed mismatch (#317 D1-H39).
+        for (int i = 0; i < 4; ++i) {
+            desc.optimized_clear[i] = kSceneColorLinearClear[i];
+        }
 
         const wz::rhi::GpuResourceHandle resource = gpu_.resources.acquire(desc);
         const wz::rhi::GpuResource* res = gpu_.resources.get(resource);
@@ -3121,9 +3136,8 @@ namespace wz::engine::rendering
             // Clear to the LINEAR background whose sRGB encoding is the editor's
             // (0.10,0.10,0.12) clear -- so the background round-trips the encode
             // to the same pixels the direct path shows, rather than brightening.
-            const float clear[4] = { 0.01002f, 0.01002f, 0.01340f, 1.0f };
             if (!wz::gpu::dx12::internal::begin_primary_color_pass(
-                    gpu_.device, scene_color_target_, clear)) {
+                    gpu_.device, scene_color_target_, kSceneColorLinearClear)) {
                 logger_.error(
                     "RhiSceneRenderer: begin_primary_color_pass failed");
                 return false;
@@ -3177,10 +3191,18 @@ namespace wz::engine::rendering
 
             if (encode_to_scene_color && !encoded_srgb
                 && realized->draw_layer == ea::DrawLayer::Overlay) {
-                wz::gpu::dx12::internal::end_primary_color_pass(
-                    gpu_.device, scene_color_target_);
-                wz::gpu::dx12::internal::encode_srgb_to_backbuffer_dx12(
-                    gpu_.device, scene_color_target_);
+                const bool ok =
+                    wz::gpu::dx12::internal::end_primary_color_pass(
+                        gpu_.device, scene_color_target_)
+                    && wz::gpu::dx12::internal::encode_srgb_to_backbuffer_dx12(
+                        gpu_.device, scene_color_target_);
+                if (!ok) {
+                    logger_.error(
+                        "RhiSceneRenderer: sRGB encode of the linear scene-colour "
+                        "target to the backbuffer failed (blit SRV ring exhausted "
+                        "or encode PSO unavailable) — the frame may present blank "
+                        "instead of the scene");
+                }
                 encoded_srgb = true;
             }
 
@@ -3379,10 +3401,18 @@ namespace wz::engine::rendering
         // loop, so encode now -- close the linear pass and resolve it to the
         // sRGB backbuffer. Mutually exclusive with to_offscreen below.
         if (encode_to_scene_color && !encoded_srgb) {
-            wz::gpu::dx12::internal::end_primary_color_pass(
-                gpu_.device, scene_color_target_);
-            wz::gpu::dx12::internal::encode_srgb_to_backbuffer_dx12(
-                gpu_.device, scene_color_target_);
+            const bool ok =
+                wz::gpu::dx12::internal::end_primary_color_pass(
+                    gpu_.device, scene_color_target_)
+                && wz::gpu::dx12::internal::encode_srgb_to_backbuffer_dx12(
+                    gpu_.device, scene_color_target_);
+            if (!ok) {
+                logger_.error(
+                    "RhiSceneRenderer: sRGB encode of the linear scene-colour "
+                    "target to the backbuffer failed (blit SRV ring exhausted or "
+                    "encode PSO unavailable) — the frame may present blank "
+                    "instead of the scene");
+            }
             encoded_srgb = true;
         }
 
