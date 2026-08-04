@@ -36,6 +36,49 @@ namespace
     }
 
 
+    // Install the debug layer's storage filter: keep only the three severities
+    // take_debug_messages reports, and deny every ID that has already repeated
+    // past its limit.
+    //
+    // It is ONE filter carrying both lists, replaced wholesale, rather than a
+    // severity filter with deny filters stacked on top. D3D12 applies every
+    // filter on the stack, so appending would work -- but the stack would then
+    // grow once per suppressed ID for the life of the process, and popping to
+    // trim it would take the severity filter with it. One filter, re-pushed, has
+    // neither problem.
+    void install_debug_storage_filter(wz::gpu::dx12::DX12Device* impl)
+    {
+        if (!impl || !impl->info_queue) {
+            return;
+        }
+
+        D3D12_MESSAGE_SEVERITY kept[] = {
+            D3D12_MESSAGE_SEVERITY_CORRUPTION,
+            D3D12_MESSAGE_SEVERITY_ERROR,
+            D3D12_MESSAGE_SEVERITY_WARNING,
+        };
+
+        D3D12_INFO_QUEUE_FILTER filter{};
+        filter.AllowList.NumSeverities = _countof(kept);
+        filter.AllowList.pSeverityList = kept;
+        if (!impl->debug_suppressed_ids.empty()) {
+            filter.DenyList.NumIDs =
+                static_cast<UINT>(impl->debug_suppressed_ids.size());
+            filter.DenyList.pIDList = impl->debug_suppressed_ids.data();
+        }
+
+        if (impl->debug_filter_pushed) {
+            impl->info_queue->PopStorageFilter();
+        }
+        if (SUCCEEDED(impl->info_queue->PushStorageFilter(&filter))) {
+            impl->debug_filter_pushed = true;
+        }
+        else {
+            // Pushed nothing, so there is nothing to pop next time.
+            impl->debug_filter_pushed = false;
+        }
+    }
+
     // Create the device-shared depth buffer + DSV.  Caller must release the
     // previous resources before calling (this function only creates).
     // Returns false on failure without leaving a null depth buffer bound to
@@ -268,6 +311,10 @@ namespace wz::gpu::dx12
         DX12Device* impl = new DX12Device{};
         impl->device = device;
         impl->info_queue = info_queue;
+        // Deny INFO/MESSAGE at the source. Without this the layer stores the
+        // per-resource-creation chatter too, and the drain allocated a buffer
+        // and a string for each one before throwing it away.
+        install_debug_storage_filter(impl);
         impl->swapchain = swapchain;
         impl->queue = queue;
         impl->allocator = allocator;
@@ -1086,13 +1133,27 @@ namespace wz::gpu::dx12::internal
 
         ID3D12InfoQueue* q = impl->info_queue;
         const UINT64 count = q->GetNumStoredMessages();
+
+        // The steady-state fast path. Once every repeating ID is suppressed
+        // this is the ONLY thing a frame does: one call, no allocation, no
+        // string, no logger. Anything below runs solely when the layer has
+        // something it has not said too often already.
+        if (count == 0) {
+            return out;
+        }
+
+        bool suppression_changed = false;
+
         for (UINT64 i = 0; i < count; ++i) {
             SIZE_T length = 0;
             if (FAILED(q->GetMessage(i, nullptr, &length)) || length == 0) {
                 continue;
             }
-            std::vector<char> storage(length);
-            auto* message = reinterpret_cast<D3D12_MESSAGE*>(storage.data());
+            if (impl->debug_scratch.size() < length) {
+                impl->debug_scratch.resize(length);
+            }
+            auto* message =
+                reinterpret_cast<D3D12_MESSAGE*>(impl->debug_scratch.data());
             if (FAILED(q->GetMessage(i, message, &length))) {
                 continue;
             }
@@ -1109,6 +1170,60 @@ namespace wz::gpu::dx12::internal
             if (!severity) {
                 continue;
             }
+
+            // Tally this ID. Linear scan over a list bounded by how many
+            // DISTINCT things the layer has to say, which is small -- a handful
+            // in practice -- so this is cheaper than a map and never allocates
+            // once the list has settled.
+            DX12Device::DebugMessageTally* tally = nullptr;
+            for (auto& entry : impl->debug_tally) {
+                if (entry.id == message->ID) {
+                    tally = &entry;
+                    break;
+                }
+            }
+            if (!tally) {
+                if (impl->debug_tally.size()
+                    >= DX12Device::kDebugMessageTallyCapacity)
+                {
+                    // More distinct messages than we budgeted for. Report it
+                    // rather than silently stopping the tally, because that
+                    // would look identical to "the layer went quiet".
+                    out.push_back(
+                        std::string("D3D12 WARNING #0: debug message tally is "
+                                    "full at ")
+                        + std::to_string(DX12Device::kDebugMessageTallyCapacity)
+                        + " distinct IDs; further IDs are reported without "
+                          "repeat suppression");
+                }
+                else {
+                    impl->debug_tally.push_back({ message->ID, 0, false });
+                    tally = &impl->debug_tally.back();
+                }
+            }
+
+            if (tally) {
+                ++tally->count;
+
+                if (tally->suppressed) {
+                    continue;
+                }
+
+                if (tally->count > DX12Device::kDebugMessageRepeatLimit) {
+                    tally->suppressed = true;
+                    suppression_changed = true;
+                    impl->debug_suppressed_ids.push_back(message->ID);
+                    out.push_back(
+                        std::string("D3D12 ") + severity + " #"
+                        + std::to_string(static_cast<int>(message->ID))
+                        + ": repeated "
+                        + std::to_string(tally->count)
+                        + " times; suppressing it at the source from here on "
+                          "(see #330 for keeping the true count)");
+                    continue;
+                }
+            }
+
             out.push_back(
                 std::string("D3D12 ") + severity + " #"
                 + std::to_string(static_cast<int>(message->ID)) + ": "
@@ -1116,6 +1231,13 @@ namespace wz::gpu::dx12::internal
                     message->pDescription,
                     message->pDescription + message->DescriptionByteLength));
         }
+
+        // Re-push the whole deny list rather than appending, so the filter
+        // stack cannot grow once per suppressed ID over a long session.
+        if (suppression_changed) {
+            install_debug_storage_filter(impl);
+        }
+
         q->ClearStoredMessages();
         return out;
     }

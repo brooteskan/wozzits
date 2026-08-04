@@ -127,6 +127,38 @@ namespace wz::gpu::dx12
         // invisible outside a debugger.
         ID3D12InfoQueue* info_queue = nullptr;
 
+        // Per-ID tally behind take_debug_messages' suppression (#317 follow-up).
+        //
+        // The debug layer will repeat a benign message every frame forever --
+        // measured 1584 ClearRenderTargetView #820 in a 27-second session, 57%
+        // of the whole log. A channel that is mostly one line does not get read,
+        // which defeats the reason the InfoQueue was installed at all.
+        //
+        // So an ID that repeats past kDebugMessageRepeatLimit is added to a
+        // DENY storage filter and D3D12 stops storing it. The steady state is
+        // then GetNumStoredMessages() == 0: no allocation, no string building
+        // and no logger call anywhere in the frame loop, which is the rule.
+        // The trade is the exact count -- you get "suppressed after N" rather
+        // than the true total. Keeping the count needs the diagnostics thread
+        // in #330.
+        struct DebugMessageTally
+        {
+            D3D12_MESSAGE_ID id{};
+            uint32_t count = 0;
+            bool suppressed = false;
+        };
+        static constexpr uint32_t kDebugMessageRepeatLimit = 8;
+        static constexpr size_t kDebugMessageTallyCapacity = 64;
+
+        std::vector<DebugMessageTally> debug_tally;
+        std::vector<D3D12_MESSAGE_ID> debug_suppressed_ids;
+        // Whether install_debug_storage_filter has a filter on the stack to pop
+        // before pushing a replacement. Tracked rather than assumed, because
+        // popping a stack we never pushed to is not harmless.
+        bool debug_filter_pushed = false;
+        // Reused by GetMessage so a drain does not allocate per message.
+        std::vector<char> debug_scratch;
+
         // frame
         ID3D12CommandAllocator* allocator = nullptr;
         ID3D12GraphicsCommandList* cmd = nullptr;
