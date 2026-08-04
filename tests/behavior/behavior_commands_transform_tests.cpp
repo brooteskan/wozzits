@@ -539,3 +539,55 @@ TEST(BehaviorCommands, FiniteTransformCommandStillApplies)
     EXPECT_FLOAT_EQ(actor_node.local.m[13], 4.0f);
     EXPECT_FLOAT_EQ(actor_node.local.m[14], 5.0f);
 }
+
+// C1-C27 (#314): inverse_affine_point's determinant gate was an ABSOLUTE 1e-8 on
+// a scale-CUBED quantity, so SetWorldTranslation silently no-opped under any
+// parent whose composed world scale was below ~0.002 (det <= 1e-8). The gate is
+// now scale-relative -- det/(cx*cy*cz), the determinant of the normalized basis,
+// which is decompose_trs's own convention -- so a validly small collider is
+// accepted. LOAD-BEARING / revert-checked: with the absolute gate restored this
+// returns false and applied == 0.
+TEST(BehaviorCommands, SetWorldTranslationUnderTinyParentScaleApplies)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_tiny_scale_scene";
+
+    wz::engine::assets::SceneNodeAsset parent{};
+    parent.id = "parent";
+    parent.local.scale[0] = 0.001f;  // world det = 1e-9, below the old 1e-8 floor
+    parent.local.scale[1] = 0.001f;
+    parent.local.scale[2] = 0.001f;
+    asset.nodes.push_back(std::move(parent));
+
+    wz::engine::assets::SceneNodeAsset child{};
+    child.id = "child";
+    child.parent_id = "parent";
+    asset.nodes.push_back(std::move(child));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    const RuntimeEntityId child_id =
+        result.instance.authored_to_runtime["child"];
+
+    BehaviorCommandBuffer commands{};
+    commands.set_world_translation(child_id, 1.0f, 2.0f, 3.0f);
+    std::vector<RuntimeEntityId> changed;
+    const uint32_t applied = apply_behavior_commands(
+        result.instance,
+        commands.commands,
+        &changed);
+
+    // The command applied (silently dropped under the absolute gate); the local
+    // is the world offset divided by the 0.001 parent scale (1000x), and the
+    // world round-trips back to what we asked for.
+    EXPECT_EQ(applied, 1u);
+    const auto& child_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        child_id);
+    EXPECT_NEAR(child_node.local.m[12], 1000.0f, 1.0f);
+    EXPECT_NEAR(child_node.local.m[13], 2000.0f, 1.0f);
+    EXPECT_NEAR(child_node.local.m[14], 3000.0f, 1.0f);
+    EXPECT_NEAR(child_node.world.m[12], 1.0f, 1e-3f);
+    EXPECT_NEAR(child_node.world.m[13], 2.0f, 1e-3f);
+    EXPECT_NEAR(child_node.world.m[14], 3.0f, 1e-3f);
+}

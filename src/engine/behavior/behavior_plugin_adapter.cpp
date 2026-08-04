@@ -343,7 +343,16 @@ namespace wz::engine::behavior
                 a00 * (a11 * a22 - a12 * a21)
                 - a01 * (a10 * a22 - a12 * a20)
                 + a02 * (a10 * a21 - a11 * a20);
-            if (std::abs(det) <= 1e-8f) {
+            const float cx = std::sqrt(a00 * a00 + a10 * a10 + a20 * a20);
+            const float cy = std::sqrt(a01 * a01 + a11 * a11 + a21 * a21);
+            const float cz = std::sqrt(a02 * a02 + a12 * a12 + a22 * a22);
+            // Scale-free conditioning test: det/(cx*cy*cz) is the determinant of
+            // the NORMALIZED basis -- the scale-invariant check decompose_trs
+            // uses. An ABSOLUTE 1e-8 on a scale-CUBED determinant rejected valid
+            // small colliders (uniform scale < ~0.002) and accepted ill-
+            // conditioned large ones; the NaN also slipped the bare gate.
+            // (C1-C27/29/34/42/49, #314)
+            if (!std::isfinite(det) || std::abs(det) <= 1e-6f * cx * cy * cz) {
                 return false;
             }
 
