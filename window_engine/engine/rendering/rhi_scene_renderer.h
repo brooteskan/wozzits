@@ -186,7 +186,13 @@ namespace wz::engine::rendering
             // this render-target texture (at its own dimensions), leaving it
             // sampleable, instead of the backbuffer. The texture must have been
             // created with ResourceUsage_RenderTarget. Default = the backbuffer.
-            wz::gpu::GPUHandle offscreen_target = {});
+            wz::gpu::GPUHandle offscreen_target = {},
+            // sRGB output (#324): when true (and not offscreen), the main pass
+            // renders into a LINEAR RGBA16F scene-colour target and a fullscreen
+            // pass encodes it to the sRGB backbuffer; overlays composite after
+            // the encode, in display-referred space. Default false leaves the
+            // legacy direct-to-backbuffer path (no encode) untouched.
+            bool encode_srgb_output = false);
 
         // Take ownership of the device-lost edge: destroy every GPU resource in
         // ONE registry sweep and drop everything that viewed the dead device.
@@ -686,6 +692,14 @@ namespace wz::engine::rendering
         // view SRG, refreshed in place each frame from the viewport size.
         wz::rhi::GpuResourceHandle ensure_screen_constants_buffer();
 
+        // (Re)create the linear RGBA16F scene-colour target at (width,height)
+        // for sRGB output (#324), rebuilt when the size changes (the same
+        // key-by-size discipline the puppet-mask sets use). Returns true when
+        // scene_color_target_ is valid at that size. A device-level frame
+        // resource, not an asset -- anonymous identity, self-managed lifetime.
+        bool ensure_scene_color_target(std::uint32_t width,
+                                       std::uint32_t height);
+
         // Point `realized`'s view SRG at that buffer, against the program's
         // slot-0 layout. Binds only where that layout declares the
         // view_constants row; a null slot0_layout, or one without the row, is
@@ -794,6 +808,17 @@ namespace wz::engine::rendering
 
         // The screen-constants twin buffer (see ensure_screen_constants_buffer).
         wz::rhi::GpuResourceHandle screen_constants_buffer_{};
+
+        // Linear scene-colour target for sRGB output (#324): the main pass
+        // renders here (RGBA16F, depth-tested) instead of the backbuffer, then a
+        // fullscreen pass encodes it to the sRGB backbuffer. A full-screen frame
+        // resource (sibling of the depth buffer), rebuilt when the size changes.
+        // scene_color_resource_ owns it in the rhi registry; scene_color_target_
+        // is the bindable gpu handle; the dims guard the rebuild.
+        wz::rhi::GpuResourceHandle scene_color_resource_{};
+        wz::gpu::GPUHandle         scene_color_target_{};
+        std::uint32_t              scene_color_w_ = 0;
+        std::uint32_t              scene_color_h_ = 0;
     };
 
     // Compose each scene node's world transform from its local TRS and its

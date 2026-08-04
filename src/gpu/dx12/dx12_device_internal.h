@@ -57,11 +57,15 @@ namespace wz::gpu::dx12
     {
         static constexpr uint32_t kSrvCapacity = 16;
 
-        ID3D12RootSignature*  root_sig   = nullptr;
-        ID3D12PipelineState*  pso        = nullptr;
-        ID3D12DescriptorHeap* srv_heap   = nullptr;
-        UINT                  srv_stride = 0;
-        uint32_t              srv_cursor = 0;
+        ID3D12RootSignature*  root_sig        = nullptr;
+        ID3D12PipelineState*  pso             = nullptr;
+        // Second PSO sharing root_sig + srv_heap: same fullscreen sample, but the
+        // pixel shader applies the linear->sRGB transfer. Used by the #324 encode
+        // pass that resolves the RGBA16F scene target to the sRGB backbuffer.
+        ID3D12PipelineState*  pso_srgb_encode = nullptr;
+        ID3D12DescriptorHeap* srv_heap        = nullptr;
+        UINT                  srv_stride      = 0;
+        uint32_t              srv_cursor      = 0;
     };
 
     // Textured 3D mesh (S6 3D-mesh consumer): draw a textured quad transformed by a
@@ -186,6 +190,15 @@ namespace wz::gpu::dx12
         // INVARIANT: every OMSetRenderTargets in this layer must set it.
         // `grep -n OMSetRenderTargets src/gpu/dx12/*.cpp` is the whole list.
         bool depth_target_bound = false;
+
+        // The DXGI format of the CURRENTLY BOUND colour target. The PSO builder
+        // keys on it exactly like depth_target_bound above: a program drawn into
+        // the RGBA16F scene target and into the RGBA8 backbuffer needs two PSOs,
+        // because a PSO's RTVFormats[0] must match the bound RTV's format. Read
+        // from the device, not plumbed, so it cannot disagree with the last
+        // OMSetRenderTargets. INVARIANT: every OMSetRenderTargets in this layer
+        // must set it (same grep as depth_target_bound). #324 (H18 on #316).
+        DXGI_FORMAT bound_color_format = DXGI_FORMAT_R8G8B8A8_UNORM;
 
         UINT frame_index = 0;
 

@@ -477,6 +477,7 @@ namespace wz::gpu::dx12
             dsv_ptr
         );
         impl->depth_target_bound = dsv_ptr != nullptr;
+        impl->bound_color_format = BACKBUFFER_FORMAT;
 
 
         // ────── viewport + scissor ───────────────────────────────────────────────────────
@@ -771,6 +772,9 @@ namespace wz::gpu::dx12
             if (impl->blit_ctx->pso) {
                 impl->blit_ctx->pso->Release();
             }
+            if (impl->blit_ctx->pso_srgb_encode) {
+                impl->blit_ctx->pso_srgb_encode->Release();
+            }
             if (impl->blit_ctx->root_sig) {
                 impl->blit_ctx->root_sig->Release();
             }
@@ -1032,6 +1036,7 @@ namespace wz::gpu::dx12::internal
         // offscreen depth buffer is a follow-up for depth-tested content.
         impl->cmd->OMSetRenderTargets(1, &tex->rtv, FALSE, nullptr);
         impl->depth_target_bound = false;
+        impl->bound_color_format = tex->format;
         D3D12_VIEWPORT vp{};
         vp.TopLeftX = 0.0f;
         vp.TopLeftY = 0.0f;
@@ -1065,6 +1070,7 @@ namespace wz::gpu::dx12::internal
         D3D12_CPU_DESCRIPTOR_HANDLE dsv = get_dsv(d);
         impl->cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
         impl->depth_target_bound = true;
+        impl->bound_color_format = BACKBUFFER_FORMAT;
         D3D12_VIEWPORT vp{};
         vp.TopLeftX = 0.0f;
         vp.TopLeftY = 0.0f;
@@ -1072,6 +1078,81 @@ namespace wz::gpu::dx12::internal
         vp.Height = static_cast<float>(get_height(d));
         vp.MinDepth = 0.0f;
         vp.MaxDepth = 1.0f;
+        D3D12_RECT sc{ 0, 0,
+            static_cast<LONG>(get_width(d)), static_cast<LONG>(get_height(d)) };
+        impl->cmd->RSSetViewports(1, &vp);
+        impl->cmd->RSSetScissorRects(1, &sc);
+        return true;
+    }
+
+    // Bind a full-screen colour target as the primary pass's RTV WITH the shared
+    // depth buffer -- unlike begin_offscreen_pass, which binds no depth for the
+    // mask/overlay path. The scene renders depth-tested into this (an RGBA16F
+    // linear target) instead of the backbuffer, so lighting accumulates in
+    // linear space; a later encode resolves it to the sRGB backbuffer (#324).
+    // Transitions the target to RENDER_TARGET, binds target+DSV, records the
+    // bound colour format for the PSO key, viewport = target dims, clears both.
+    bool begin_primary_color_pass(Device& d, GPUHandle color_target,
+                                  const float clear_color[4])
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        if (!impl || !impl->cmd) {
+            return false;
+        }
+        DX12Texture* tex = impl->textures.get(color_target);
+        if (!tex || !tex->valid() || !tex->is_render_target || !tex->rtv_heap) {
+            return false;
+        }
+        if (!transition_texture_to_render_target_dx12(d, color_target)) {
+            return false;
+        }
+        D3D12_CPU_DESCRIPTOR_HANDLE dsv{};
+        D3D12_CPU_DESCRIPTOR_HANDLE* dsv_ptr = nullptr;
+        if (impl->dsv_heap) {
+            dsv = impl->dsv_heap->GetCPUDescriptorHandleForHeapStart();
+            dsv_ptr = &dsv;
+        }
+        impl->cmd->OMSetRenderTargets(1, &tex->rtv, FALSE, dsv_ptr);
+        impl->depth_target_bound = dsv_ptr != nullptr;
+        impl->bound_color_format = tex->format;
+        D3D12_VIEWPORT vp{ 0.0f, 0.0f,
+            static_cast<float>(tex->width), static_cast<float>(tex->height),
+            0.0f, 1.0f };
+        D3D12_RECT sc{ 0, 0,
+            static_cast<LONG>(tex->width), static_cast<LONG>(tex->height) };
+        impl->cmd->RSSetViewports(1, &vp);
+        impl->cmd->RSSetScissorRects(1, &sc);
+        if (clear_color) {
+            impl->cmd->ClearRenderTargetView(tex->rtv, clear_color, 0, nullptr);
+        }
+        if (dsv_ptr) {
+            impl->cmd->ClearDepthStencilView(
+                *dsv_ptr, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+        }
+        return true;
+    }
+
+    // Close a begin_primary_color_pass: transition the colour target to
+    // shader-read (so the encode pass can sample it) and rebind the backbuffer +
+    // its viewport for the rest of the frame (encode, overlays, present). Mirror
+    // of end_offscreen_pass, kept separate so its intent reads at the call site.
+    bool end_primary_color_pass(Device& d, GPUHandle color_target)
+    {
+        auto* impl = static_cast<DX12Device*>(d.impl);
+        if (!impl || !impl->cmd) {
+            return false;
+        }
+        if (!transition_texture_to_shader_read_dx12(d, color_target)) {
+            return false;
+        }
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv = get_current_rtv(d);
+        D3D12_CPU_DESCRIPTOR_HANDLE dsv = get_dsv(d);
+        impl->cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+        impl->depth_target_bound = true;
+        impl->bound_color_format = BACKBUFFER_FORMAT;
+        D3D12_VIEWPORT vp{ 0.0f, 0.0f,
+            static_cast<float>(get_width(d)), static_cast<float>(get_height(d)),
+            0.0f, 1.0f };
         D3D12_RECT sc{ 0, 0,
             static_cast<LONG>(get_width(d)), static_cast<LONG>(get_height(d)) };
         impl->cmd->RSSetViewports(1, &vp);
@@ -1120,6 +1201,19 @@ namespace wz::gpu::dx12::internal
     {
         if (auto* impl = (DX12Device*)d.impl) {
             impl->depth_target_bound = bound;
+        }
+    }
+
+    DXGI_FORMAT bound_color_format(Device& d)
+    {
+        auto* impl = (DX12Device*)d.impl;
+        return impl ? impl->bound_color_format : DXGI_FORMAT_R8G8B8A8_UNORM;
+    }
+
+    void set_bound_color_format(Device& d, DXGI_FORMAT format)
+    {
+        if (auto* impl = (DX12Device*)d.impl) {
+            impl->bound_color_format = format;
         }
     }
 

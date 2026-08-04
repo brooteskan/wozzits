@@ -71,10 +71,23 @@ namespace wz::engine::rendering
         case wz::rhi::TextureFormat::RGBA32Float:
             out = wz::gpu::TextureFormat::RGBA32Float;
             return true;
+        case wz::rhi::TextureFormat::RGBA8UnormSrgb:
+            out = wz::gpu::TextureFormat::RGBA8UnormSrgb;
+            return true;
         default:
             return false;
         }
     }
+
+    // The switch above keeps a default: (Undefined + the depth formats reject
+    // cleanly), so an appended wz::rhi::TextureFormat would silently fall to
+    // `return false` instead of being routed -- exactly the append-blindness
+    // #324 (C3-H5 on #316) calls out. Count pins the extent so a new format
+    // trips here at build time first. Bump only after adding the case above.
+    static_assert(
+        static_cast<int>(wz::rhi::TextureFormat::Count) == 8,
+        "wz::rhi::TextureFormat changed -- route the new format in "
+        "to_gpu_texture_format() before bumping this expected count.");
 
     // Map an rhi texture desc onto the engine's TextureDesc (dims + dimension +
     // format). Returns false for an unsupported format. The dx12 layer stays

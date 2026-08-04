@@ -34,6 +34,15 @@ namespace
 {
     constexpr const char* kProjectRoot = "projects/test_rebind_fixture";
 
+    // #324: with sRGB output on (WozzitsApp_v1 enables it for the main present
+    // pass), the renderer holds ONE extra resident resource -- the linear
+    // RGBA16F scene-colour target the encode pass samples. It is a
+    // renderer-lifetime frame resource (sibling of the depth buffer), created
+    // lazily on the first render and NOT released on a graph swap, so it offsets
+    // every POST-RENDER residency count below -- and is why an "empty graph"
+    // holds 1 resident resource here, not 0.
+    constexpr std::size_t kSrgbSceneColorTargets = 1u;
+
     std::string read_text_file(const wz::fs::Path& path)
     {
         std::ifstream file(path, std::ios::binary);
@@ -170,10 +179,11 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     // None but the pull buffers are referenced by THIS scene; they are resident
     // because they resolved.
     constexpr std::size_t kFixtureResidentAssets = 9u;
-    EXPECT_EQ(resident_after_first, kFixtureResidentAssets)
+    EXPECT_EQ(resident_after_first,
+              kFixtureResidentAssets + kSrgbSceneColorTargets)
         << "renderer should bind the resident pull buffers rather than "
            "re-uploading them, and the fixture's other resident assets should "
-           "appear exactly once";
+           "appear exactly once (+1 for the #324 sRGB scene-colour target)";
     EXPECT_GT(programs_after_first, 0u);
     // #192: the fixture's custom render program (schema 0x103) must come from the
     // asset compiler — which registers the rhi program under program_ref during
@@ -199,8 +209,10 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     // Renderer-owned upload buffers were released + collected; the rebound
     // graph has already re-resolved every asset-published resource enumerated
     // above, so those remain resident before render consumes them.
-    EXPECT_EQ(app.resident_gpu_resource_count(), kFixtureResidentAssets)
-        << "rebind should retain only the resolved asset-published resources";
+    EXPECT_EQ(app.resident_gpu_resource_count(),
+              kFixtureResidentAssets + kSrgbSceneColorTargets)
+        << "rebind should retain only the resolved asset-published resources "
+           "(plus the renderer's own #324 sRGB scene-colour target)";
 
     // Render the rebound graph: it re-realizes against the new keys.
     render_one_frame(app);
@@ -263,8 +275,9 @@ TEST_F(WozzitsAppFixture, RebindToGraphWithoutRenderableClearsStaleKey)
         << "recorder SRV descriptor tables were not released on graph swap";
 
     render_one_frame(app);
-    EXPECT_EQ(app.resident_gpu_resource_count(), 0u)
-        << "nothing should be realized/drawn for the empty graph";
+    EXPECT_EQ(app.resident_gpu_resource_count(), kSrgbSceneColorTargets)
+        << "an empty graph should realize/draw nothing -- only the renderer's "
+           "own #324 sRGB scene-colour target remains resident";
 }
 
 // B2-T1 (#311): the leak-cycle harness. The editor's commit loop is
@@ -345,8 +358,9 @@ TEST_F(WozzitsAppFixture, RepeatedRebindCyclesHoldEveryCountFlat)
         EXPECT_EQ(app.cached_descriptor_table_count(), 0u)
             << "descriptor tables not released on empty commit " << cycle;
         render_one_frame(app);
-        EXPECT_EQ(app.resident_gpu_resource_count(), 0u)
-            << "residency not fully reclaimed on empty commit " << cycle;
+        EXPECT_EQ(app.resident_gpu_resource_count(), kSrgbSceneColorTargets)
+            << "residency not fully reclaimed on empty commit (only the #324 "
+               "sRGB scene-colour target should remain) " << cycle;
 
         wz::asset::AssetGraphDraft draft;
         ASSERT_TRUE(load_graph_draft(draft))

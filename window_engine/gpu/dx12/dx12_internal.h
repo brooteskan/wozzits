@@ -48,6 +48,13 @@ namespace wz::gpu::dx12::internal
     // OMSetRenderTargets src/gpu/dx12/*.cpp` is the whole list.
     void set_depth_target_bound(Device& d, bool bound);
 
+    // The DXGI format of the currently-bound colour target. Twin of
+    // depth_target_bound: the PSO cache keys on it so a program drawn into the
+    // RGBA16F scene target and into the RGBA8 backbuffer gets one pipeline each.
+    // Same bind-site invariant as set_depth_target_bound. #324 (H18 on #316).
+    [[nodiscard]] DXGI_FORMAT bound_color_format(Device& d);
+    void set_bound_color_format(Device& d, DXGI_FORMAT format);
+
     // THE mapping from wz::rhi::BlendMode to DX12 render-target blend state.
     //
     // There used to be two, and they disagreed. #272 unified the ENUM (the
@@ -119,6 +126,14 @@ namespace wz::gpu::dx12::internal
     // (begin/end pass) and dx12_texture.cpp (transitions + readback).
     bool begin_offscreen_pass(Device& d, GPUHandle rt, const float clear_color[4]);
     bool end_offscreen_pass(Device& d, GPUHandle rt);
+    // Like begin_offscreen_pass, but binds the shared depth buffer alongside the
+    // colour target (the offscreen path is depth-less, for the mask/overlay use).
+    // The scene's main pass uses this to render depth-tested into a full-screen
+    // RGBA16F target; end_ transitions it to shader-read and rebinds the
+    // backbuffer so the encode + overlays + present land on screen. #324.
+    bool begin_primary_color_pass(Device& d, GPUHandle color_target,
+                                  const float clear_color[4]);
+    bool end_primary_color_pass(Device& d, GPUHandle color_target);
     bool transition_texture_to_render_target_dx12(Device& device, GPUHandle handle);
     bool transition_texture_to_shader_read_dx12(Device& device, GPUHandle handle);
     bool read_texture_rgba8_dx12(
@@ -127,6 +142,11 @@ namespace wz::gpu::dx12::internal
     // Draw a texture onto the currently-bound render target as a fullscreen quad
     // (S6 "2D surface" consumer). See dx12_blit.cpp.
     bool blit_texture_dx12(Device& device, GPUHandle texture);
+    // Fullscreen pass that samples a LINEAR texture, applies the linear->sRGB
+    // transfer, and writes the currently-bound (sRGB-less UNORM) backbuffer --
+    // the #324 encode that turns the RGBA16F scene target into display-referred
+    // pixels. The ONE place gamma is applied; anything drawn after is untouched.
+    bool encode_srgb_to_backbuffer_dx12(Device& device, GPUHandle linear_texture);
     // How a textured quad draws. See dx12_textured_quad.cpp.
     enum class TexturedQuadMode : std::uint8_t
     {

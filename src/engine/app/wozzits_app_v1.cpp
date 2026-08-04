@@ -3305,12 +3305,24 @@ namespace wz::app
             any_skipped = any_skipped || skipped;
         }
 
+        // Colour-management track: the sRGB output ENCODE is GATED OFF for now.
+        // The float-intermediate + encode + H18 format-key infra (#324) stays
+        // wired behind this flag as the output substrate, but encoding the frame
+        // while the engine's non-texture colour inputs (material / vertex /
+        // light constants, e.g. sg_lit_ps's hardcoded albedo) are still authored
+        // display-referred and fed RAW into the linear BRDF over-brightens the
+        // whole image. It returns to true only WITH the input-linearisation
+        // seams -- see the colour-management umbrella issue.
+        constexpr bool kEncodeSrgbOutput = false;
+
         if (!any_skipped) {
             return renderer_.render_scene(
                 document_.nodes(), *ctx_.assets,
                 view_.active_view().view_projection,
                 view_.active_view().world_position, world_transforms,
-                resolve_frame_atmosphere());
+                resolve_frame_atmosphere(),
+                /*offscreen_target*/ {},
+                /*encode_srgb_output*/ kEncodeSrgbOutput);
         }
 
         std::vector<wz::engine::assets::SceneNodeAsset> main_nodes;
@@ -3329,7 +3341,9 @@ namespace wz::app
         return renderer_.render_scene(
             main_nodes, *ctx_.assets, view_.active_view().view_projection,
             view_.active_view().world_position, main_transforms,
-            resolve_frame_atmosphere());
+            resolve_frame_atmosphere(),
+            /*offscreen_target*/ {},
+            /*encode_srgb_output*/ kEncodeSrgbOutput);
     }
 
     bool WozzitsApp_v1::render_puppet_showcase()

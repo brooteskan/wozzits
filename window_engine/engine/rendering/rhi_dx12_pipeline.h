@@ -197,17 +197,20 @@ namespace wz::engine::rendering
         RhiDx12PipelineCache& operator=(const RhiDx12PipelineCache&) = delete;
 
         // Realize (or find) the pipeline for `program` AS THE CURRENTLY BOUND
-        // PASS needs it. Whether that pass has a depth-stencil view is part of
-        // the key: D3D12 refuses a non-UNKNOWN DSVFormat against a null DSV, so
-        // a program drawn both into the backbuffer and into an authored render
-        // target needs two pipelines. The flag is read from the device, not
-        // passed in, so it cannot disagree with what OMSetRenderTargets did.
+        // PASS needs it. Two pass-shape facts are part of the key, both read
+        // from the device so they cannot disagree with what OMSetRenderTargets
+        // did: (1) whether the pass bound a depth-stencil view -- D3D12 refuses
+        // a non-UNKNOWN DSVFormat against a null DSV; (2) the bound colour
+        // target's DXGI format -- RTVFormats[0] must match the bound RTV, so a
+        // program drawn into the RGBA16F scene target and into the RGBA8
+        // backbuffer needs one pipeline each (#324, H18 on #316).
         [[nodiscard]] const RhiDx12RealizedPipeline* realize(
             wz::rhi::Tag program);
         [[nodiscard]] const RhiDx12RealizedPipeline* get(
             wz::rhi::Tag program) const noexcept;
         [[nodiscard]] const RhiDx12RealizedPipeline* get(
-            wz::rhi::Tag program, bool depth_target_bound) const noexcept;
+            wz::rhi::Tag program, bool depth_target_bound,
+            std::uint32_t color_target_format) const noexcept;
 
         void clear() noexcept;
 
@@ -215,10 +218,13 @@ namespace wz::engine::rendering
         struct Entry
         {
             wz::rhi::Tag program{};
-            // See realize(). Half of the cache key, not a property of the
-            // program -- the same program yields a different pipeline
-            // depending on what the pass bound.
+            // See realize(). Part of the cache key, not a property of the
+            // program -- the same program yields a different pipeline depending
+            // on what the pass bound: whether a depth-stencil view was bound,
+            // and the bound colour target's DXGI format (stored as its integer
+            // value so this header stays free of the DXGI headers). #324.
             bool depth_target_bound = false;
+            std::uint32_t color_target_format = 0;
             RhiDx12RealizedPipeline realized{};
         };
 

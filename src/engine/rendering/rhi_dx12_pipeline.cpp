@@ -372,6 +372,7 @@ namespace
         const wz::rhi::RenderProgramDesc& program,
         const wz::rhi::ProgramBytecode& bytecode,
         bool depth_target_bound,
+        DXGI_FORMAT color_target_format,
         wz::Logger* logger)
     {
         if (!root_signature) {
@@ -445,7 +446,11 @@ namespace
         }
 
         desc.NumRenderTargets = 1;
-        desc.RTVFormats[0] = wz::gpu::dx12::internal::get_backbuffer_format();
+        // The bound colour target's format, threaded from the pass state rather
+        // than hardcoded to the backbuffer -- so this same builder serves the
+        // RGBA16F scene target and the RGBA8 backbuffer without a format
+        // mismatch against the bound RTV (#324, fixes C3-H18 on #316).
+        desc.RTVFormats[0] = color_target_format;
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
 
@@ -808,18 +813,24 @@ namespace wz::engine::rendering
     {
         return device_ ? get(program,
                              wz::gpu::dx12::internal::depth_target_bound(
-                                 *device_))
+                                 *device_),
+                             static_cast<std::uint32_t>(
+                                 wz::gpu::dx12::internal::bound_color_format(
+                                     *device_)))
                        : nullptr;
     }
 
     const RhiDx12RealizedPipeline* RhiDx12PipelineCache::get(
-        wz::rhi::Tag program, bool depth_target_bound) const noexcept
+        wz::rhi::Tag program, bool depth_target_bound,
+        std::uint32_t color_target_format) const noexcept
     {
         const auto entry = std::ranges::find_if(
             entries_,
-            [program, depth_target_bound](const Entry& candidate) {
+            [program, depth_target_bound, color_target_format](
+                const Entry& candidate) {
                 return candidate.program == program
-                    && candidate.depth_target_bound == depth_target_bound;
+                    && candidate.depth_target_bound == depth_target_bound
+                    && candidate.color_target_format == color_target_format;
             });
         if (entry != entries_.end()) {
             return &entry->realized;
@@ -842,9 +853,15 @@ namespace wz::engine::rendering
         // cannot disagree with what OMSetRenderTargets actually did (#317).
         const bool depth_bound =
             wz::gpu::dx12::internal::depth_target_bound(*device_);
+        // The other half of the pass-shape key (#324, H18): the bound colour
+        // target's format. Same source discipline as depth_bound -- read from
+        // the device, never plumbed -- so it matches the live OMSetRenderTargets.
+        const DXGI_FORMAT color_fmt =
+            wz::gpu::dx12::internal::bound_color_format(*device_);
 
         if (const RhiDx12RealizedPipeline* existing =
-                get(program, depth_bound)) {
+                get(program, depth_bound,
+                    static_cast<std::uint32_t>(color_fmt))) {
             return existing;
         }
 
@@ -970,6 +987,7 @@ namespace wz::engine::rendering
                 *desc,
                 *bytecode,
                 depth_bound,
+                color_fmt,
                 logger_);
             if (!pso) {
                 root_signature->Release();
@@ -979,6 +997,7 @@ namespace wz::engine::rendering
             entries_.push_back(Entry{
                 program,
                 depth_bound,
+                static_cast<std::uint32_t>(color_fmt),
                 RhiDx12RealizedPipeline{
                     root_signature,
                     pso,
@@ -1037,9 +1056,11 @@ namespace wz::engine::rendering
 
         entries_.push_back(Entry{
             program,
-            // A compute pipeline has no render targets, so the depth key is
-            // irrelevant to it; false keeps one entry per compute program.
+            // A compute pipeline has no render targets, so the depth and colour
+            // keys are irrelevant to it; false/0 keeps one entry per compute
+            // program (0 == DXGI_FORMAT_UNKNOWN, a format no bound RTV carries).
             /*depth_target_bound*/ false,
+            /*color_target_format*/ 0u,
             RhiDx12RealizedPipeline{
                 root_signature,
                 pso,

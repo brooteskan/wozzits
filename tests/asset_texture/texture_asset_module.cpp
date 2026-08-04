@@ -220,7 +220,11 @@ TEST(TextureAssetModule, ImportPublishesTexture2DIntoRhiRegistry)
         ASSERT_NE(resource, nullptr);
         EXPECT_EQ(resource->desc.dimension,
             wz::rhi::ResourceDimension::Texture2D);
-        EXPECT_EQ(resource->desc.format, wz::rhi::TextureFormat::RGBA8Unorm);
+        // #324: a UI/Color texture resolves to sRGB, so it now uploads as the
+        // _SRGB format variant -- the sampler decodes gamma -> linear on read.
+        // A Linear-authored texture (normal/mask/LUT) would stay RGBA8Unorm.
+        EXPECT_EQ(resource->desc.format,
+            wz::rhi::TextureFormat::RGBA8UnormSrgb);
         EXPECT_EQ(resource->desc.width, 8u);
         EXPECT_EQ(resource->desc.height, 4u);
         EXPECT_NE(resource->desc.usage & wz::rhi::ResourceUsage_Sampled, 0u);

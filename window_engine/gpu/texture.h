@@ -32,6 +32,12 @@ namespace wz::gpu
         RGBA8Unorm,
         RGBA16Float,
         RGBA32Float,
+        // Same bytes as RGBA8Unorm; the sampler decodes sRGB -> linear on read.
+        // Appended to keep prior ordinals stable. Pairs with a DXGI _SRGB format
+        // in dx12_texture.cpp. Honours the authored TextureColorSpace (#324).
+        RGBA8UnormSrgb,
+        // Keep last: pins the enum extent for the to_dxgi_format guard. #324.
+        Count,
     };
 
     // Full mip count for a texture of the given 2D dimensions:

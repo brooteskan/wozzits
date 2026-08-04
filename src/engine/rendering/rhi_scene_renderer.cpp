@@ -1061,6 +1061,13 @@ namespace wz::engine::rendering
         // back a handle the sweep just invalidated.
         view_constants_buffer_ = {};
         screen_constants_buffer_ = {};
+        // #324 scene-colour target: its backend resource died in the sweep;
+        // reset (dims too) so ensure_scene_color_target rebuilds fresh rather
+        // than binding a handle the sweep just invalidated.
+        scene_color_resource_ = {};
+        scene_color_target_ = {};
+        scene_color_w_ = 0;
+        scene_color_h_ = 0;
     }
 
     void RhiSceneRenderer::on_graph_changed()
@@ -2879,6 +2886,54 @@ namespace wz::engine::rendering
         }
     }
 
+    bool RhiSceneRenderer::ensure_scene_color_target(std::uint32_t width,
+                                                     std::uint32_t height)
+    {
+        if (width == 0u || height == 0u) {
+            return false;
+        }
+        // Reuse while the size is unchanged; rebuild (releasing the old one) on a
+        // resize -- the same key-by-size discipline the puppet-mask sets use.
+        if (scene_color_target_.valid()
+            && scene_color_w_ == width && scene_color_h_ == height) {
+            return true;
+        }
+        if (scene_color_resource_.valid()) {
+            gpu_.resources.release(scene_color_resource_);
+            scene_color_resource_ = {};
+            scene_color_target_ = {};
+        }
+
+        // RGBA16F so lighting accumulates in linear HDR without the banding an
+        // 8-bit linear target would show in the darks. Sampled so the encode
+        // pass can read it; RenderTarget so the scene draws into it. Anonymous
+        // identity: renderer-owned frame resource, not an asset (cf. the view /
+        // screen constants buffers) -- nothing should find it by key.
+        wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::texture_2d(
+            width, height,
+            wz::rhi::TextureFormat::RGBA16Float,
+            wz::rhi::ResourceUsage_Sampled | wz::rhi::ResourceUsage_RenderTarget);
+
+        const wz::rhi::GpuResourceHandle resource = gpu_.resources.acquire(desc);
+        const wz::rhi::GpuResource* res = gpu_.resources.get(resource);
+        const wz::gpu::GPUHandle target =
+            res ? gpu_.backend.gpu_handle_for(res->backend)
+                : wz::gpu::GPUHandle{};
+        if (!resource.valid() || !target.valid()) {
+            if (resource.valid()) {
+                gpu_.resources.release(resource);
+            }
+            logger_.error(
+                "RhiSceneRenderer: scene-colour target acquire failed");
+            return false;
+        }
+        scene_color_resource_ = resource;
+        scene_color_target_ = target;
+        scene_color_w_ = width;
+        scene_color_h_ = height;
+        return true;
+    }
+
     bool RhiSceneRenderer::render_scene(
         std::span<const ea::SceneNodeAsset> nodes,
         ea::EngineAssetLibrary& assets,
@@ -2886,7 +2941,8 @@ namespace wz::engine::rendering
         const wz::math::Vec3& camera_world_pos,
         std::span<const wz::math::Mat4> world_transforms,
         const ea::AtmosphereData* atmosphere,
-        wz::gpu::GPUHandle offscreen_target)
+        wz::gpu::GPUHandle offscreen_target,
+        bool encode_srgb_output)
     {
         // FIRST, before the command-list check below — that check returns false
         // on a lost device and so swallowed the loss entirely, which is how the
@@ -3041,6 +3097,15 @@ namespace wz::engine::rendering
             (void)render_puppet_masks(*realized, target_w, target_h);
         }
 
+        // #324: render the main pass into a LINEAR scene-colour target (with the
+        // shared depth) instead of the backbuffer, so a fullscreen pass can then
+        // encode it to the sRGB backbuffer. Mutually exclusive with the
+        // depth-less offscreen (mask) path. A target-acquire failure falls back
+        // to the direct backbuffer path rather than dropping the frame.
+        const bool encode_to_scene_color =
+            encode_srgb_output && !to_offscreen
+            && ensure_scene_color_target(target_w, target_h);
+
         // The frame's pass. Opened here, after every prepass has closed its own.
         if (to_offscreen) {
             // Bind the render-target texture (transitions it to RENDER_TARGET, sets
@@ -3049,6 +3114,18 @@ namespace wz::engine::rendering
             if (!wz::gpu::dx12::internal::begin_offscreen_pass(
                     gpu_.device, offscreen_target, clear)) {
                 logger_.error("RhiSceneRenderer: begin_offscreen_pass failed");
+                return false;
+            }
+        }
+        else if (encode_to_scene_color) {
+            // Clear to the LINEAR background whose sRGB encoding is the editor's
+            // (0.10,0.10,0.12) clear -- so the background round-trips the encode
+            // to the same pixels the direct path shows, rather than brightening.
+            const float clear[4] = { 0.01002f, 0.01002f, 0.01340f, 1.0f };
+            if (!wz::gpu::dx12::internal::begin_primary_color_pass(
+                    gpu_.device, scene_color_target_, clear)) {
+                logger_.error(
+                    "RhiSceneRenderer: begin_primary_color_pass failed");
                 return false;
             }
         }
@@ -3079,6 +3156,14 @@ namespace wz::engine::rendering
         const std::uint32_t this_pass = capture_pass_++;
 #endif
 
+        // #324 seam 4: draw_order is world-first then overlay (see the partition
+        // above), so the first overlay-layer draw is the seam. In encode mode we
+        // close the linear scene pass there, encode it to the sRGB backbuffer,
+        // and let overlays draw into the backbuffer AFTER -- so display-referred
+        // 2D art (the HUD art-direction rule) never passes through the linear->
+        // sRGB curve. encoded_srgb guards the one-time transition.
+        bool encoded_srgb = false;
+
         for (const std::size_t node_index : draw_order) {
             const ea::SceneNodeAsset& node = nodes[node_index];
             if (!node_effective_visible[node_index] || !node.renderable_asset) {
@@ -3088,6 +3173,15 @@ namespace wz::engine::rendering
                 ensure_renderable(assets, *node.renderable_asset);
             if (!realized) {
                 continue;
+            }
+
+            if (encode_to_scene_color && !encoded_srgb
+                && realized->draw_layer == ea::DrawLayer::Overlay) {
+                wz::gpu::dx12::internal::end_primary_color_pass(
+                    gpu_.device, scene_color_target_);
+                wz::gpu::dx12::internal::encode_srgb_to_backbuffer_dx12(
+                    gpu_.device, scene_color_target_);
+                encoded_srgb = true;
             }
 
             if (realized->is_splat_cloud) {
@@ -3279,6 +3373,17 @@ namespace wz::engine::rendering
                     }
                 }
             }
+        }
+
+        // #324: an all-world scene (no overlay layer) never hit the seam in the
+        // loop, so encode now -- close the linear pass and resolve it to the
+        // sRGB backbuffer. Mutually exclusive with to_offscreen below.
+        if (encode_to_scene_color && !encoded_srgb) {
+            wz::gpu::dx12::internal::end_primary_color_pass(
+                gpu_.device, scene_color_target_);
+            wz::gpu::dx12::internal::encode_srgb_to_backbuffer_dx12(
+                gpu_.device, scene_color_target_);
+            encoded_srgb = true;
         }
 
         // Offscreen render-to-texture (S6): close the pass so the target lands in a

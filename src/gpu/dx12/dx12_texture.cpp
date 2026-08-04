@@ -28,13 +28,28 @@ namespace wz::gpu::dx12::internal
                 return DXGI_FORMAT_R32_FLOAT;
             case wz::gpu::TextureFormat::RGBA8Unorm:
                 return DXGI_FORMAT_R8G8B8A8_UNORM;
+            case wz::gpu::TextureFormat::RGBA8UnormSrgb:
+                // Same 32bpp layout as UNORM; the _SRGB view is what makes the
+                // sampler decode to linear (and filter in linear). #324.
+                return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
             case wz::gpu::TextureFormat::RGBA16Float:
                 return DXGI_FORMAT_R16G16B16A16_FLOAT;
             case wz::gpu::TextureFormat::RGBA32Float:
                 return DXGI_FORMAT_R32G32B32A32_FLOAT;
+            case wz::gpu::TextureFormat::Count:
+                break;  // not a real format; fall through to UNKNOWN
             }
             return DXGI_FORMAT_UNKNOWN;
         }
+
+        // Count is always last and equals the member total, so appending a
+        // wz::gpu::TextureFormat trips this even under /W3 with no /WX (pinning a
+        // named member's ordinal would not -- an append leaves it unchanged).
+        // If this fired: add the case above (and to texel_bytes if the new
+        // format has an upload path) before bumping the expected count. #324.
+        static_assert(
+            static_cast<int>(wz::gpu::TextureFormat::Count) == 5,
+            "wz::gpu::TextureFormat changed -- update to_dxgi_format() first.");
 
         uint32_t texel_bytes(DXGI_FORMAT format) noexcept
         {
@@ -42,6 +57,7 @@ namespace wz::gpu::dx12::internal
             case DXGI_FORMAT_R32_FLOAT:
                 return 4u;
             case DXGI_FORMAT_R8G8B8A8_UNORM:
+            case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
                 return 4u;
             case DXGI_FORMAT_R16G16B16A16_FLOAT:
                 return 8u;

@@ -39,12 +39,34 @@ namespace
         "    return gTex.Sample(gSmp, i.uv);\n"
         "}\n";
 
-    ID3DBlob* compile_blit(const char* entry, const char* target)
+    // Fullscreen encode (#324): same triangle + sampler as the blit, but the
+    // pixel shader applies the IEC 61966-2-1 linear->sRGB transfer so a linear
+    // RGBA16F source lands display-referred in the UNORM backbuffer. The branch
+    // is the exact piecewise sRGB curve (not a bare 2.2 pow), so darks match
+    // hardware sRGB decode and a texel round-trips decode->encode to itself.
+    constexpr char kSrgbEncodeShader[] =
+        "Texture2D    gTex : register(t0);\n"
+        "SamplerState gSmp : register(s0);\n"
+        "struct VSOut { float4 pos : SV_Position; float2 uv : TEXCOORD0; };\n"
+        "float3 linear_to_srgb(float3 c) {\n"
+        "    c = max(c, 0.0);\n"
+        "    float3 lo = c * 12.92;\n"
+        "    float3 hi = 1.055 * pow(c, 1.0 / 2.4) - 0.055;\n"
+        "    float3 use_lo = step(c, 0.0031308);\n"
+        "    return lerp(hi, lo, use_lo);\n"
+        "}\n"
+        "float4 ps_main(VSOut i) : SV_Target {\n"
+        "    float4 c = gTex.Sample(gSmp, i.uv);\n"
+        "    return float4(linear_to_srgb(c.rgb), c.a);\n"
+        "}\n";
+
+    ID3DBlob* compile_blit(const char* src, size_t src_len, const char* name,
+                           const char* entry, const char* target)
     {
         ID3DBlob* blob = nullptr;
         ID3DBlob* err = nullptr;
         HRESULT hr = D3DCompile(
-            kBlitShader, sizeof(kBlitShader) - 1, "blit", nullptr, nullptr,
+            src, src_len, name, nullptr, nullptr,
             entry, target, D3DCOMPILE_ENABLE_STRICTNESS, 0, &blob, &err);
         // The blob was released BEFORE the FAILED() test, so a compile failure
         // returned nullptr with no diagnostic anywhere -- the message naming the
@@ -151,12 +173,24 @@ namespace
                 && impl->blit_ctx->srv_heap;
         }
         auto* ctx = new wz::gpu::dx12::BlitContext{};
-        ID3DBlob* vs = compile_blit("vs_main", "vs_5_0");
-        ID3DBlob* ps = compile_blit("ps_main", "ps_5_0");
+        ID3DBlob* vs = compile_blit(
+            kBlitShader, sizeof(kBlitShader) - 1, "blit", "vs_main", "vs_5_0");
+        ID3DBlob* ps = compile_blit(
+            kBlitShader, sizeof(kBlitShader) - 1, "blit", "ps_main", "ps_5_0");
+        // The #324 encode reuses the fullscreen VS + root sig; only its pixel
+        // shader differs, so it is a second PSO on this context (the same
+        // one-root-sig-many-PSOs shape TexturedQuadContext already uses).
+        ID3DBlob* encode_ps = compile_blit(
+            kSrgbEncodeShader, sizeof(kSrgbEncodeShader) - 1, "srgb_encode",
+            "ps_main", "ps_5_0");
         if (vs && ps) {
             ctx->root_sig = create_blit_root_signature(impl->device);
             if (ctx->root_sig) {
                 ctx->pso = create_blit_pso(impl->device, ctx->root_sig, vs, ps);
+                if (encode_ps) {
+                    ctx->pso_srgb_encode = create_blit_pso(
+                        impl->device, ctx->root_sig, vs, encode_ps);
+                }
             }
         }
         if (vs) {
@@ -164,6 +198,9 @@ namespace
         }
         if (ps) {
             ps->Release();
+        }
+        if (encode_ps) {
+            encode_ps->Release();
         }
         D3D12_DESCRIPTOR_HEAP_DESC hd{};
         hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -225,6 +262,60 @@ namespace wz::gpu::dx12::internal
         impl->cmd->SetDescriptorHeaps(1, heaps);
         impl->cmd->SetGraphicsRootSignature(ctx->root_sig);
         impl->cmd->SetPipelineState(ctx->pso);
+        impl->cmd->SetGraphicsRootDescriptorTable(0, slot_gpu);
+        impl->cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        impl->cmd->DrawInstanced(3, 1, 0, 0);
+        return true;
+    }
+
+    // Fullscreen linear->sRGB encode of `linear_texture` onto the currently-bound
+    // backbuffer (#324). Identical plumbing to blit_texture_dx12 -- shared root
+    // sig, SRV ring slot, fullscreen triangle -- differing only in the PSO, whose
+    // pixel shader applies the sRGB transfer. Must be inside a begin/end_frame
+    // bracket with the (UNORM) backbuffer bound; `linear_texture` must rest
+    // shader-readable (end_primary_color_pass leaves the scene target so).
+    bool encode_srgb_to_backbuffer_dx12(Device& device, GPUHandle linear_texture)
+    {
+        auto* impl = static_cast<DX12Device*>(device.impl);
+        if (!impl || !impl->cmd || !impl->device) {
+            return false;
+        }
+        DX12Texture* tex = impl->textures.get(linear_texture);
+        if (!tex || !tex->valid()) {
+            return false;
+        }
+        if (!ensure_blit_ctx(impl) || !impl->blit_ctx->pso_srgb_encode) {
+            return false;
+        }
+        BlitContext* ctx = impl->blit_ctx;
+
+        // Same per-frame SRV ring discipline as the blit: never rewrite a slot
+        // within a frame (the GPU reads it at execute time); cursor resets in
+        // begin_frame.
+        if (ctx->srv_cursor >= BlitContext::kSrvCapacity) {
+            return false;
+        }
+        const uint32_t slot = ctx->srv_cursor++;
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+        srv.Format = tex->format;
+        srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv.Texture2D.MostDetailedMip = 0;
+        srv.Texture2D.MipLevels = 1;
+        D3D12_CPU_DESCRIPTOR_HANDLE slot_cpu =
+            ctx->srv_heap->GetCPUDescriptorHandleForHeapStart();
+        slot_cpu.ptr += static_cast<SIZE_T>(slot) * ctx->srv_stride;
+        impl->device->CreateShaderResourceView(tex->texture, &srv, slot_cpu);
+
+        D3D12_GPU_DESCRIPTOR_HANDLE slot_gpu =
+            ctx->srv_heap->GetGPUDescriptorHandleForHeapStart();
+        slot_gpu.ptr += static_cast<UINT64>(slot) * ctx->srv_stride;
+
+        ID3D12DescriptorHeap* heaps[] = { ctx->srv_heap };
+        impl->cmd->SetDescriptorHeaps(1, heaps);
+        impl->cmd->SetGraphicsRootSignature(ctx->root_sig);
+        impl->cmd->SetPipelineState(ctx->pso_srgb_encode);
         impl->cmd->SetGraphicsRootDescriptorTable(0, slot_gpu);
         impl->cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         impl->cmd->DrawInstanced(3, 1, 0, 0);

@@ -223,14 +223,25 @@ namespace wz::engine::assets::internal
         void publish_resident_texture(
             const wz::asset::AssetKey& key,
             const DecodedImage& image,
+            TextureColorSpace color_space,
             wz::rhi::GpuResourceRegistry& gpu_resources,
             const RhiResourceTracker& rhi_resource_tracker,
             wz::Logger& logger)
         {
+            // The read side of the resolved TextureColorSpace (#324). An
+            // authored-sRGB texture uploads as the _SRGB variant so the sampler
+            // decodes gamma -> linear (and filters in linear) on read; Linear
+            // data (normal / mask / LUT) stays UNORM and samples raw. Same bytes
+            // either way -- only the sampler's interpretation differs, which is
+            // why hardware sRGB is the mechanism rather than a shader decode.
+            const wz::rhi::TextureFormat format =
+                color_space == TextureColorSpace::Srgb
+                    ? wz::rhi::TextureFormat::RGBA8UnormSrgb
+                    : wz::rhi::TextureFormat::RGBA8Unorm;
             wz::rhi::GpuResourceDesc desc = wz::rhi::GpuResourceDesc::texture_2d(
                 image.width,
                 image.height,
-                wz::rhi::TextureFormat::RGBA8Unorm,
+                format,
                 wz::rhi::ResourceUsage_Sampled);
             // texture_2d leaves cpu_access None; update_mip needs a writable
             // resource. WriteOnce: uploaded once at compile, never refreshed.
@@ -254,7 +265,8 @@ namespace wz::engine::assets::internal
             logger.info(
                 "asset compile: texture RHI resident upload "
                 + std::to_string(image.width) + "x"
-                + std::to_string(image.height));
+                + std::to_string(image.height)
+                + (color_space == TextureColorSpace::Srgb ? " sRGB" : " linear"));
 
             if (rhi_resource_tracker) {
                 std::vector<wz::rhi::ResourceIdentity> tracked{ desc.identity };
@@ -380,7 +392,7 @@ namespace wz::engine::assets::internal
                 // Publish residency BEFORE the store, mirroring the star path.
                 if (gpu_resources) {
                     publish_resident_texture(
-                        input.key, image, *gpu_resources,
+                        input.key, image, data.color_space, *gpu_resources,
                         rhi_resource_tracker, logger);
                 }
 
