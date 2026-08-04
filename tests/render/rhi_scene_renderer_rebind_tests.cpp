@@ -34,14 +34,18 @@ namespace
 {
     constexpr const char* kProjectRoot = "projects/test_rebind_fixture";
 
-    // #324: with sRGB output on (WozzitsApp_v1 enables it for the main present
-    // pass), the renderer holds ONE extra resident resource -- the linear
-    // RGBA16F scene-colour target the encode pass samples. It is a
-    // renderer-lifetime frame resource (sibling of the depth buffer), created
-    // lazily on the first render and NOT released on a graph swap, so it offsets
-    // every POST-RENDER residency count below -- and is why an "empty graph"
-    // holds 1 resident resource here, not 0.
-    constexpr std::size_t kSrgbSceneColorTargets = 1u;
+    // #324: WozzitsApp_v1 currently GATES the sRGB output encode OFF
+    // (kEncodeSrgbOutput = false in wozzits_app_v1.cpp -- it returns to true only
+    // with the input-linearisation seams), so render_scene never acquires the
+    // linear RGBA16F scene-colour target the encode pass would sample; that
+    // target is created lazily ONLY when encoding. With the gate off the renderer
+    // holds NO extra resident resource, so this offset is 0. When the gate flips
+    // on, set this to 1: the target then becomes a renderer-lifetime frame
+    // resource (sibling of the depth buffer), created on the first render and NOT
+    // released on a graph swap, so it would offset every POST-RENDER count below.
+    // (#317 D1-C21: the offset was 1 while the gate shipped off, so this suite
+    // was red -- the test asserted a resource the gated-off renderer never made.)
+    constexpr std::size_t kSrgbSceneColorTargets = 0u;
 
     std::string read_text_file(const wz::fs::Path& path)
     {
