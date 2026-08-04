@@ -21,7 +21,10 @@
 
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -187,6 +190,57 @@ namespace
             {
                 .kind = StaticSamplerKind::LinearClamp,
                 .visibility = ShaderVisibility::Pixel,
+            },
+        };
+        return layout;
+    }
+
+    // sg_lit_uv: the lit-textured SRG plus the mesh's own UV pull stream. The
+    // shader (sg_lit_uv_vs.hlsl) appends uvs at t6 so t0..t5 stay identical to
+    // sg_lit_textured; the layout must produce the same. Authored LAST here, but
+    // the register is a property of the canonical semantic order, not row order.
+    RenderBindingLayoutData lit_uv_layout()
+    {
+        RenderBindingLayoutData layout = lit_textured_layout();
+        layout.bindings.push_back({
+            .semantic = "pulled_mesh_uvs",
+            .kind = RenderBindingKind::StructuredSrv,
+            .visibility = ShaderVisibility::Vertex,
+        });
+        return layout;
+    }
+
+    // sky_gaussian: the SG-sky program's SRG -- mesh pull (positions, indices)
+    // then the two sky rows, no normals and no material. The two sky rows are the
+    // same semantic as sg_lit's but land at t2/t3 here (dense per program), which
+    // is the point of asserting the built register rather than a fixed one.
+    RenderBindingLayoutData sky_gaussian_layout()
+    {
+        RenderBindingLayoutData layout{};
+        layout.constants_semantic = "sky";
+        layout.constants_visibility = ShaderVisibility::All;
+        layout.constants_head =
+            RenderBindingConstantsHead::WorldViewProjCamera36;
+        layout.bindings = {
+            {
+                .semantic = "pulled_mesh_positions",
+                .kind = RenderBindingKind::StructuredSrv,
+                .visibility = ShaderVisibility::Vertex,
+            },
+            {
+                .semantic = "pulled_mesh_indices",
+                .kind = RenderBindingKind::StructuredSrv,
+                .visibility = ShaderVisibility::Vertex,
+            },
+            {
+                .semantic = "sky_gaussian",
+                .kind = RenderBindingKind::StructuredSrv,
+                .visibility = ShaderVisibility::All,
+            },
+            {
+                .semantic = "sky_gaussian_points",
+                .kind = RenderBindingKind::StructuredSrv,
+                .visibility = ShaderVisibility::All,
             },
         };
         return layout;
@@ -661,4 +715,93 @@ TEST(RenderBindingLayoutKey, ViewHeadChangesTheKey)
     // existed, so adding this did not repoint any existing typed layout.
     layout.view_head = RenderBindingViewHead::None;
     EXPECT_TRUE(without_view == make_render_binding_layout_key("layout/lit", layout));
+}
+
+// #317 D1-T11: the D3DReflect check (D1-C13) compares a shader's bytecode against
+// its layout by register + KIND, but it cannot see SEMANTIC identity -- two
+// same-kind resources (e.g. two StructuredBuffers) at swapped registers pass it.
+// That is the SILENT half of the D1-C20 class: #322's canonical order repointed
+// sky_gaussian / sky_gaussian_points / material_albedo / uvs, and only the two
+// slots where the KIND also flipped (material_albedo <-> uvs) were caught by
+// reflection; t3/t4 were silently mis-bound.
+//
+// This closes that gap at the source of truth: for each shipping object-SRG
+// program it builds the SRG the same way the 0x103 compiler does and asserts
+// every semantic lands at the register its shader hand-declares. Expected
+// registers are transcribed from the .hlsl named on each case. Revert the D1-C20
+// fix (PulledMeshUvs back among the mesh streams) and the sg_lit_uv case fails on
+// t3..t6. Device-free -- no GPU, no compiled bytecode; it exercises the pure
+// register-assignment derivation.
+TEST(RenderBindingLayoutRegisters, EveryShippingLayoutMatchesItsShaderRegisters)
+{
+    struct Case
+    {
+        const char* name;
+        RenderBindingLayoutData layout;
+        // semantic -> the t-register the shader hand-declares in space2.
+        std::vector<std::pair<std::string, uint32_t>> expected;
+    };
+
+    std::vector<Case> cases;
+    // clipmap/clipmap_vs.hlsl:59-61 (positions t0, indices t1, heightTex t2).
+    cases.push_back({ "clipmap", clipmap_layout(), {
+        { "pulled_mesh_positions", 0u },
+        { "pulled_mesh_indices", 1u },
+        { "scalar_field_texture", 2u },
+    } });
+    // sg_lit_textured_vs.hlsl (t0..t2) + sg_lighting_common.hlsl:45-46 (sky t3/t4)
+    // + sg_lit_textured_ps.hlsl:13 (material_albedo t5).
+    cases.push_back({ "sg_lit_textured", lit_textured_layout(), {
+        { "pulled_mesh_positions", 0u },
+        { "pulled_mesh_indices", 1u },
+        { "pulled_mesh_normals", 2u },
+        { "sky_gaussian", 3u },
+        { "sky_gaussian_points", 4u },
+        { "material_albedo", 5u },
+    } });
+    // sg_lit_uv_ps.hlsl:15 (material_albedo t5) + sg_lit_uv_vs.hlsl:26 (uvs t6) --
+    // the D1-C20 case: uvs MUST sort after material_albedo, not among the mesh
+    // streams, or t3..t6 shift out from under the shader.
+    cases.push_back({ "sg_lit_uv", lit_uv_layout(), {
+        { "pulled_mesh_positions", 0u },
+        { "pulled_mesh_indices", 1u },
+        { "pulled_mesh_normals", 2u },
+        { "sky_gaussian", 3u },
+        { "sky_gaussian_points", 4u },
+        { "material_albedo", 5u },
+        { "pulled_mesh_uvs", 6u },
+    } });
+    // sky_gaussian_sky_vs.hlsl:25-26 (positions t0, indices t1) +
+    // sky_gaussian_sky_ps.hlsl:36-37 (sky_gaussian t2, sky_gaussian_points t3).
+    cases.push_back({ "sky_gaussian", sky_gaussian_layout(), {
+        { "pulled_mesh_positions", 0u },
+        { "pulled_mesh_indices", 1u },
+        { "sky_gaussian", 2u },
+        { "sky_gaussian_points", 3u },
+    } });
+
+    for (const Case& c : cases) {
+        RenderBindingLayoutSrg srg;
+        std::string error;
+        ASSERT_TRUE(build_render_binding_layout_srg(c.layout, srg, error))
+            << c.name << ": " << error;
+        ASSERT_EQ(srg.descriptor_bindings.size(), c.expected.size())
+            << c.name << ": binding count";
+
+        std::map<std::string, uint32_t> got;
+        for (const DescriptorBinding& b : srg.descriptor_bindings) {
+            const std::string semantic{ descriptor_semantic_name(b.semantic) };
+            got[semantic] = b.shader_register;
+            EXPECT_EQ(b.register_space, kRenderBindingLayoutRegisterSpace)
+                << c.name << ": " << semantic << " must be in space2";
+        }
+        for (const auto& [semantic, reg] : c.expected) {
+            const auto it = got.find(semantic);
+            ASSERT_NE(it, got.end())
+                << c.name << ": layout is missing " << semantic;
+            EXPECT_EQ(it->second, reg)
+                << c.name << ": " << semantic << " landed at t" << it->second
+                << " but its shader declares register(t" << reg << ", space2)";
+        }
+    }
 }
