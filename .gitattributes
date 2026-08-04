@@ -4,6 +4,14 @@
 * text=auto
 
 ###############################################################################
+# Shell scripts and git hooks MUST stay LF, overriding the CRLF conversion above.
+# Git-for-Windows bash chokes on a CRLF shebang ("bad interpreter"), which would
+# silently disable the pre-push CI hook on a fresh clone.
+###############################################################################
+*.sh          text eol=lf
+.githooks/**  text eol=lf
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by
