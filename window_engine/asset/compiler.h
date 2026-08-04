@@ -13,6 +13,7 @@
 
 #include "types.h"
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
@@ -165,7 +166,12 @@ struct ParamBlock {
         }
         else if constexpr (std::is_floating_point_v<T>) {
             if (const auto* value = std::get_if<double>(&it->second)) {
-                return static_cast<T>(*value);
+                // Last gate before a param leaves the block. A hostile authored
+                // double (1e308 -> +inf as a float, or a NaN) must not reach a
+                // consumer that divides by it or feeds it to the GPU; fall back
+                // to the caller's own declared default. (C1-C64, #314)
+                const T narrowed = static_cast<T>(*value);
+                return std::isfinite(narrowed) ? narrowed : fallback;
             }
             if (const auto* value = std::get_if<int64_t>(&it->second)) {
                 return static_cast<T>(*value);

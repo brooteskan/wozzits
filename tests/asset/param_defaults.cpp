@@ -1,8 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <support/fp_expectations.h>
+
+#include <asset/compiler.h>
 #include <asset/param_defaults.h>
 
 #include <array>
+#include <cfenv>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -88,4 +93,32 @@ TEST(ParamDefaults, EnsureBlockFillsRepairsAndPreserves)
     EXPECT_DOUBLE_EQ(std::get<double>(block.values.at("present_wrong_type")), 9.0);   // repaired
     EXPECT_EQ(std::get<std::string>(block.values.at("missing")), "def");             // filled
     EXPECT_EQ(std::get<std::string>(block.values.at("extra")), "keep");              // untouched
+}
+
+// C1-C64 (#314): ParamBlock::get<float> is the last gate before an authored
+// param leaves the block. A hostile double (1e308 -> +inf as a float, or a NaN)
+// stored in the variant must not reach a consumer that divides by it or feeds it
+// to the GPU; get<> returns the caller's own declared default instead.
+//
+// LOAD-BEARING: revert-checked -- without the isfinite gate in get<>'s float
+// branch the overflow/nan EXPECTs see +inf / NaN and fail.
+TEST(ParamBlockGet, NonFiniteAuthoredFloatFallsBackToDefault)
+{
+    ParamBlock pb;
+    pb.values["nan"] = std::numeric_limits<double>::quiet_NaN();
+    pb.values["ok"] = 2.5;
+
+    EXPECT_FLOAT_EQ(pb.get<float>("nan", 60.0f), 60.0f);   // NaN -> default
+    EXPECT_FLOAT_EQ(pb.get<float>("ok", 60.0f), 2.5f);     // real value passes
+    EXPECT_FLOAT_EQ(pb.get<float>("missing", 7.0f), 7.0f); // absent -> default
+
+    // Narrowing 1e308 to a float overflows to +inf and raises FE_OVERFLOW at the
+    // cast (the same as narrow_float does; harmless in production where flags are
+    // unchecked). Declare it so the FP-exception listener stays quiet AND so the
+    // test asserts the overflow really happens.
+    pb.values["overflow"] = 1e308;
+    {
+        wz::testing::ExpectFpException overflow_expected{ FE_OVERFLOW };
+        EXPECT_FLOAT_EQ(pb.get<float>("overflow", 60.0f), 60.0f);  // fell back
+    }
 }

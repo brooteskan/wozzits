@@ -22,6 +22,7 @@
 #include <atomic>
 #include <cctype>
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -1668,6 +1669,28 @@ extern "C"
             return result(
                 WZ_RESULT_INVALID_ARGUMENT,
                 "node_id_utf8 must not be empty");
+        }
+        // Reject a non-finite transform at the C boundary -- narrow to float
+        // first, because a finite double like 1e308 becomes +inf as a float. A
+        // NaN/inf on a camera ancestor silently disables frustum culling for the
+        // frame (the C1(v2)-C20 class), and the only guard was in the C# client,
+        // not here. (C1-C13 / C1-S2, #314)
+        {
+            const auto finite_as_float = [](double d) noexcept {
+                return std::isfinite(static_cast<float>(d));
+            };
+            if (!finite_as_float(translation_x) || !finite_as_float(translation_y)
+                || !finite_as_float(translation_z)
+                || !finite_as_float(rotation_x_degrees)
+                || !finite_as_float(rotation_y_degrees)
+                || !finite_as_float(rotation_z_degrees)
+                || !finite_as_float(scale_x) || !finite_as_float(scale_y)
+                || !finite_as_float(scale_z))
+            {
+                return result(
+                    WZ_RESULT_INVALID_ARGUMENT,
+                    "transform components must be finite as float");
+            }
         }
 
         try {

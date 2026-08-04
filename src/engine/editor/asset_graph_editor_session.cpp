@@ -446,9 +446,16 @@ namespace wz::engine::editor
                     && text[end] != ' ' && text[end] != '\t') {
                     ++end;
                 }
-                out[index] = static_cast<float>(
-                    std::strtod(std::string(text.substr(pos, end - pos)).c_str(),
-                        nullptr));
+                {
+                    // Reject a non-finite strtod result ("nan"/overflow): a NaN
+                    // stored here round-trips to JSON null and makes the whole
+                    // graph unloadable. (C1-C55, #314)
+                    const float f = static_cast<float>(
+                        std::strtod(
+                            std::string(text.substr(pos, end - pos)).c_str(),
+                            nullptr));
+                    out[index] = std::isfinite(f) ? f : 0.0f;
+                }
                 ++index;
                 pos = end;
             }
@@ -467,8 +474,16 @@ namespace wz::engine::editor
             case wz::asset::ParamType::Int:
                 return static_cast<int64_t>(std::strtoll(
                     text.c_str(), nullptr, 10));
-            case wz::asset::ParamType::Float:
-                return std::strtod(text.c_str(), nullptr);
+            case wz::asset::ParamType::Float: {
+                // A "nan"/inf authored string must not be stored -- it round-trips
+                // to JSON null and makes the graph unloadable. Keep a finite value;
+                // otherwise fall back to the decl default. (C1-C55, #314)
+                const double d = std::strtod(text.c_str(), nullptr);
+                if (std::isfinite(d)) {
+                    return d;
+                }
+                return decl != nullptr ? decl->default_num : 0.0;
+            }
             case wz::asset::ParamType::Float3:
             case wz::asset::ParamType::Color:
                 return parse_float3(value);

@@ -176,11 +176,26 @@ namespace wz::engine::assets
                 if (raw->kind != wz::json::JSONValueKind::Number) {
                     return false;
                 }
-                out = static_cast<int64_t>(raw->number_value);
+                // Reject a double that cannot become an int64 -- a raw
+                // static_cast of an out-of-range double is UB. (C1-C22, #314)
+                const double v = raw->number_value;
+                if (!std::isfinite(v)
+                    || v < -9.2233720368547758e18
+                    || v > 9.2233720368547758e18)
+                {
+                    return false;
+                }
+                out = static_cast<int64_t>(v);
                 return true;
             }
             if (type == "float") {
                 if (raw->kind != wz::json::JSONValueKind::Number) {
+                    return false;
+                }
+                // narrow_float rejects a value that overflows or NaNs a float --
+                // 1e308 is legal JSON but becomes +inf at every consumer, and the
+                // guard already sits at the top of this include. (C1-C21, #314)
+                if (!wz::json::narrow_float(raw->number_value)) {
                     return false;
                 }
                 out = raw->number_value;
@@ -200,7 +215,12 @@ namespace wz::engine::assets
                     {
                         return false;
                     }
-                    components[i] = static_cast<float>(element->number_value);
+                    const auto narrowed =
+                        wz::json::narrow_float(element->number_value);
+                    if (!narrowed) {  // reject 1e308/NaN per element (C1-C22)
+                        return false;
+                    }
+                    components[i] = *narrowed;
                 }
                 out = components;
                 return true;

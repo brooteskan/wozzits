@@ -1815,14 +1815,18 @@ namespace wz::engine::assets::internal
             const auto* cam = find_member(node_val, "camera");
             if (cam && cam->kind == wz::json::JSONValueKind::Object) {
                 SceneCameraAsset camera{};
+                // Finiteness half of C1-C24/C25 (#314): a non-finite fov/near/
+                // far/aspect makes the whole view_projection NaN. Reject the bad
+                // value and keep the asset default. (The finer domain policy --
+                // fov in (0,pi), near>0, far>near -- is register Q on #314.)
                 auto fov = read_number(*cam, "fov_y");
-                if (fov) camera.fov_y = static_cast<float>(*fov);
+                if (fov) if (auto f = wz::json::narrow_float(*fov)) camera.fov_y = *f;
                 auto near_p = read_number(*cam, "near");
-                if (near_p) camera.near_plane = static_cast<float>(*near_p);
+                if (near_p) if (auto f = wz::json::narrow_float(*near_p)) camera.near_plane = *f;
                 auto far_p = read_number(*cam, "far");
-                if (far_p) camera.far_plane = static_cast<float>(*far_p);
+                if (far_p) if (auto f = wz::json::narrow_float(*far_p)) camera.far_plane = *f;
                 auto asp = read_number(*cam, "aspect");
-                if (asp) camera.aspect = static_cast<float>(*asp);
+                if (asp) if (auto f = wz::json::narrow_float(*asp)) camera.aspect = *f;
                 node.camera = camera;
             }
 
@@ -4647,8 +4651,11 @@ namespace wz::engine::assets::internal
                     if (auto offset =
                             read_number(*translation, "terrain_floor_offset"))
                     {
-                        component.terrain_floor_offset =
-                            static_cast<float>(*offset);
+                        // narrow_float rejects 1e308/NaN, matching the float3
+                        // sibling in this same block. (C1-C23, #314)
+                        if (auto f = wz::json::narrow_float(*offset)) {
+                            component.terrain_floor_offset = *f;
+                        }
                     }
                 }
                 if (const auto* rotation =
@@ -4665,8 +4672,12 @@ namespace wz::engine::assets::internal
                             {
                                 return;
                             }
+                            // narrow_float rejects 1e308/NaN on each scalar,
+                            // matching the float3 sibling above. (C1-C23, #314)
                             if (auto s = read_number(*a, "smoothing_time")) {
-                                axis.smoothing_time = static_cast<float>(*s);
+                                if (auto f = wz::json::narrow_float(*s)) {
+                                    axis.smoothing_time = *f;
+                                }
                             }
                             if (auto l = read_bool(*a, "level")) {
                                 axis.level = *l;
@@ -4675,12 +4686,14 @@ namespace wz::engine::assets::internal
                                 axis.limit = *lim;
                             }
                             if (auto mn = read_number(*a, "limit_min_degrees")) {
-                                axis.limit_min_degrees =
-                                    static_cast<float>(*mn);
+                                if (auto f = wz::json::narrow_float(*mn)) {
+                                    axis.limit_min_degrees = *f;
+                                }
                             }
                             if (auto mx = read_number(*a, "limit_max_degrees")) {
-                                axis.limit_max_degrees =
-                                    static_cast<float>(*mx);
+                                if (auto f = wz::json::narrow_float(*mx)) {
+                                    axis.limit_max_degrees = *f;
+                                }
                             }
                         };
                     read_axis("roll", component.roll);

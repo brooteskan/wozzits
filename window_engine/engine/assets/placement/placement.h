@@ -43,9 +43,16 @@ namespace wz::engine::assets
 
         bool valid() const noexcept
         {
+            // origin/base_height were unchecked, so a non-finite Placement
+            // passed the compiler's ONLY gate and reached both consumers with
+            // opposite outcomes. Require the whole datum finite. (C1-C65, #314)
             return std::isfinite(extent[0])
                 && std::isfinite(extent[1])
-                && std::isfinite(extent[2]);
+                && std::isfinite(extent[2])
+                && std::isfinite(origin[0])
+                && std::isfinite(origin[1])
+                && std::isfinite(origin[2])
+                && std::isfinite(base_height);
         }
     };
 

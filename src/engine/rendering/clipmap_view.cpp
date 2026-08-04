@@ -60,8 +60,13 @@ namespace wz::engine::rendering
                 : 1.0f;
 
         out.lattice_world_scale = cell;
-        out.vertical_scale = settings.vertical_scale;
-        out.base_height = settings.base_height;
+        // Guard the passthroughs the way cell/world_size are guarded above: a
+        // Placement can legally carry an infinite base_height/origin, and an
+        // unchecked forward NaNs the lattice. (C1-C61, #314)
+        out.vertical_scale =
+            std::isfinite(settings.vertical_scale) ? settings.vertical_scale : 1.0f;
+        out.base_height =
+            std::isfinite(settings.base_height) ? settings.base_height : 0.0f;
         out.view_snapped = settings.view_snapped;
 
         // ── Per-level view snapping (issue #207) ───────────────────────────
@@ -78,8 +83,10 @@ namespace wz::engine::rendering
         // assert each level L snaps to a multiple of 2^L * snap_step. The single
         // pre-snapped translation the old uniform-snap path emitted is gone — it
         // could not keep both the fine center and the coarse rings stable.
-        out.camera_world_xz[0] = camera_world_x;
-        out.camera_world_xz[1] = camera_world_z;
+        out.camera_world_xz[0] =
+            std::isfinite(camera_world_x) ? camera_world_x : 0.0f;
+        out.camera_world_xz[1] =
+            std::isfinite(camera_world_z) ? camera_world_z : 0.0f;
         out.base_resolution =
             static_cast<float>(lattice_params.base_resolution);
         const float snap_step = 2.0f * cell;
@@ -99,9 +106,12 @@ namespace wz::engine::rendering
                     ? settings.world_size[axis]
                     : 1.0f;
             const float inv_size = 1.0f / size;
+            const float origin =
+                std::isfinite(settings.world_origin[axis])
+                    ? settings.world_origin[axis]
+                    : 0.0f;
             out.world_to_uv_scale[axis] = inv_size;
-            out.world_to_uv_offset[axis] =
-                -settings.world_origin[axis] * inv_size;
+            out.world_to_uv_offset[axis] = -origin * inv_size;
         }
 
         // ── Per-texel world size ────────────────────────────────────────────
