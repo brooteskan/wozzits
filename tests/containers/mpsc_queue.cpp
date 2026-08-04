@@ -221,6 +221,28 @@ TEST_F(MPSCQueueTest, EmptyQueueBehavior)
     EXPECT_FALSE(queue.try_pop(v));
 }
 
+// Defect 3: MPSCQueue is unbounded, MPSCRingBuffer is not, and their names do
+// not say so. Push far past any ring-buffer capacity and assert every element
+// is retrievable in order -- a characterisation test that pins the intended
+// difference so a future reader cannot mistake this container for the bounded
+// one. (MPSCRingBuffer's own tests cap at capacity 1024 and expect try_push to
+// return false when full; here try_push must never refuse for fullness.)
+TEST_F(MPSCQueueTest, PushAllocatesWithoutBound)
+{
+    const uint64_t n = 100000; // >> MPSCRingBuffer capacity (1024)
+
+    for (uint64_t i = 0; i < n; ++i)
+        ASSERT_TRUE(queue.try_push(i)) << "MPSCQueue refused a push at " << i;
+
+    drain_queue();
+
+    auto out = get_output();
+    ASSERT_EQ(out.size(), n);
+
+    for (uint64_t i = 0; i < n; ++i)
+        EXPECT_EQ(out[i], i);
+}
+
 TEST_F(MPSCQueueTest, ConcurrentProducerConsumer)
 {
     const int producers = 2;
