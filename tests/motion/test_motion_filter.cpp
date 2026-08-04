@@ -161,26 +161,27 @@ TEST(MotionFilter, RollDampedWhilePitchYawPass)
     // the un-damped axes are approximate rather than exact -- what holds is that
     // roll lags and everything converges.)
     SceneMotionFilterAsset f{};
-    f.roll.smoothing_time = 0.4f;  // roll damped; pitch/yaw snap
+    f.roll.smoothing_time = 0.4f;  // roll (forward Z) damped; pitch/yaw snap
     MotionFilterState s{};
     apply_motion_filter(make_target({ 0, 0, 0 }, 0, 0, 0), f, s, kDt);  // seed
 
+    // Target: pitch(X)=20, yaw(Y)=30, roll(Z)=60. roll is the Z euler (index 2).
     Transform out;
     for (int i = 0; i < 5; ++i) {
-        out = apply_motion_filter(make_target({ 0, 0, 0 }, 60, 20, 30), f, s, kDt);
+        out = apply_motion_filter(make_target({ 0, 0, 0 }, 20, 30, 60), f, s, kDt);
     }
     float e[3];
     euler_of(out.rotation, e);
-    EXPECT_GT(e[0], 0.0f);   // roll advancing toward 60
-    EXPECT_LT(e[0], 50.0f);  // but the damped axis clearly lags
+    EXPECT_GT(e[2], 0.0f);   // roll (Z) advancing toward 60
+    EXPECT_LT(e[2], 50.0f);  // but the damped axis clearly lags
 
     for (int i = 0; i < 400; ++i) {
-        out = apply_motion_filter(make_target({ 0, 0, 0 }, 60, 20, 30), f, s, kDt);
+        out = apply_motion_filter(make_target({ 0, 0, 0 }, 20, 30, 60), f, s, kDt);
     }
     euler_of(out.rotation, e);   // converges to the exact rigid target
-    EXPECT_NEAR(e[0], 60.0f, 0.5f);
-    EXPECT_NEAR(e[1], 20.0f, 0.5f);
-    EXPECT_NEAR(e[2], 30.0f, 0.5f);
+    EXPECT_NEAR(e[0], 20.0f, 0.5f);
+    EXPECT_NEAR(e[1], 30.0f, 0.5f);
+    EXPECT_NEAR(e[2], 60.0f, 0.5f);
 }
 
 TEST(MotionFilter, TiltedNodeYawSweepDoesNotDipAtTheGimbal)
@@ -236,28 +237,87 @@ TEST(MotionFilter, TiltedNodeYawSweepDoesNotDipAtTheGimbal)
 
 TEST(MotionFilter, RotationLimitClampsPitch)
 {
+    // pitch = about the RIGHT axis (X) = the X euler component (index 0).
     SceneMotionFilterAsset f{};
     f.pitch.limit = true;
     f.pitch.limit_min_degrees = -80.0f;
     f.pitch.limit_max_degrees = 80.0f;
     MotionFilterState s{};
     const Transform out =
-        apply_motion_filter(make_target({ 0, 0, 0 }, 0, 85, 0), f, s, kDt);
+        apply_motion_filter(make_target({ 0, 0, 0 }, 85, 0, 0), f, s, kDt);
     float e[3];
     euler_of(out.rotation, e);
-    EXPECT_NEAR(e[1], 80.0f, 0.5f);  // clamped from 85
+    EXPECT_NEAR(e[0], 80.0f, 0.5f);  // pitch (X) clamped from 85
 }
 
 TEST(MotionFilter, LevelRollTargetsZero)
 {
+    // roll = about the FORWARD axis (Z) = the Z euler component (index 2).
     SceneMotionFilterAsset f{};
     f.roll.level = true;  // no smoothing => snap to level (0)
     MotionFilterState s{};
     const Transform out =
-        apply_motion_filter(make_target({ 0, 0, 0 }, 60, 0, 0), f, s, kDt);
+        apply_motion_filter(make_target({ 0, 0, 0 }, 0, 0, 60), f, s, kDt);
     float e[3];
     euler_of(out.rotation, e);
-    EXPECT_NEAR(e[0], 0.0f, 0.5f);  // leveled despite target roll 60
+    EXPECT_NEAR(e[2], 0.0f, 0.5f);  // roll (Z) leveled despite target 60
+}
+
+TEST(MotionFilter, RotationChannelsMapToDocumentedAxes)
+{
+    // The documented convention (scene_asset_data.h): roll = about local FORWARD
+    // (Z), pitch = about RIGHT (X), yaw = about UP (Y). Prove each channel's
+    // smoothing acts on ITS axis by damping one channel hard and rotating about
+    // each axis with from_axis_angle (no euler ambiguity). (C1-C57, #314)
+    const float d2r = kPi / 180.0f;
+    const auto mat_about = [&](Vec3 axis, float deg) {
+        Transform t;
+        t.position = { 0, 0, 0 };
+        t.scale = { 1, 1, 1 };
+        t.rotation = wz::math::from_axis_angle(axis, deg * d2r);
+        return wz::math::transform(t);
+    };
+    const Vec3 forward{ 0, 0, 1 };  // roll axis
+    const Vec3 right{ 1, 0, 0 };    // pitch axis
+    const Vec3 up{ 0, 1, 0 };       // yaw axis
+
+    // roll's smoothing must damp a FORWARD-Z rotation (Z euler, index 2).
+    {
+        SceneMotionFilterAsset f{}; f.roll.smoothing_time = 100.0f;
+        MotionFilterState s{};
+        apply_motion_filter(mat_about(forward, 0.0f), f, s, kDt);  // seed
+        float e[3]; euler_of(
+            apply_motion_filter(mat_about(forward, 60.0f), f, s, kDt).rotation, e);
+        EXPECT_LT(std::abs(e[2]), 5.0f) << "roll must damp the forward-Z rotation";
+    }
+    // pitch's smoothing must damp a RIGHT-X rotation (X euler, index 0).
+    {
+        SceneMotionFilterAsset f{}; f.pitch.smoothing_time = 100.0f;
+        MotionFilterState s{};
+        apply_motion_filter(mat_about(right, 0.0f), f, s, kDt);
+        float e[3]; euler_of(
+            apply_motion_filter(mat_about(right, 60.0f), f, s, kDt).rotation, e);
+        EXPECT_LT(std::abs(e[0]), 5.0f) << "pitch must damp the right-X rotation";
+    }
+    // yaw's smoothing must damp an UP-Y rotation (Y euler, index 1).
+    {
+        SceneMotionFilterAsset f{}; f.yaw.smoothing_time = 100.0f;
+        MotionFilterState s{};
+        apply_motion_filter(mat_about(up, 0.0f), f, s, kDt);
+        float e[3]; euler_of(
+            apply_motion_filter(mat_about(up, 60.0f), f, s, kDt).rotation, e);
+        EXPECT_LT(std::abs(e[1]), 5.0f) << "yaw must damp the up-Y rotation";
+    }
+    // Cross-check: with ONLY roll damped, a pure PITCH (X) rotation still snaps.
+    {
+        SceneMotionFilterAsset f{}; f.roll.smoothing_time = 100.0f;
+        MotionFilterState s{};
+        apply_motion_filter(mat_about(right, 0.0f), f, s, kDt);
+        float e[3]; euler_of(
+            apply_motion_filter(mat_about(right, 60.0f), f, s, kDt).rotation, e);
+        EXPECT_NEAR(e[0], 60.0f, 1.0f)
+            << "roll damping must not touch the pitch (X) axis";
+    }
 }
 
 TEST(MotionFilter, ScalePassesThrough)

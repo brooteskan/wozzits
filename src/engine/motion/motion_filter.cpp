@@ -185,9 +185,16 @@ namespace wz::engine::motion
         {
             float te[3];
             euler_degrees_from_quat(pose.rotation, te);
-            te[0] = level_and_limit_angle(filter.roll, te[0]);
-            te[1] = level_and_limit_angle(filter.pitch, te[1]);
-            te[2] = level_and_limit_angle(filter.yaw, te[2]);
+            // te[0]/[1]/[2] are rotations about X/Y/Z (quaternion_from_euler_
+            // degrees is qz*qy*qx over x/y/z). This engine is z-forward /
+            // x-right / y-up (DirectX; camera.cpp), and the channels are
+            // documented (scene_asset_data.h) as roll=about-forward,
+            // pitch=about-right, yaw=about-up -- so X=pitch, Y=yaw, Z=roll. The
+            // old {roll,pitch,yaw} order clamped each channel on the WRONG axis
+            // (e.g. a "pitch limit" clamped the heading). (C1-C57, #314)
+            te[0] = level_and_limit_angle(filter.pitch, te[0]);
+            te[1] = level_and_limit_angle(filter.yaw, te[1]);
+            te[2] = level_and_limit_angle(filter.roll, te[2]);
             target_rot =
                 wz::math::quaternion_from_euler_degrees(te[0], te[1], te[2]);
         }
@@ -281,10 +288,15 @@ namespace wz::engine::motion
         // no dip at the two headings 180 deg apart the euler smoother caught on.
         const Vec3 err =
             quat_log(wz::math::mul(conjugate(state.rotation), target_rot));
+        // err.x/y/z are rotations about the node-LOCAL X/Y/Z axes; with
+        // z-forward / x-right / y-up (camera.cpp) and roll=forward / pitch=right /
+        // yaw=up (scene_asset_data.h), roll drives err.z, pitch drives err.x, yaw
+        // drives err.y. The old {roll,pitch,yaw} order put each channel on the
+        // WRONG axis. (C1-C57, #314)
         const float smoothing[3] = {
-            filter.roll.smoothing_time,
-            filter.pitch.smoothing_time,
-            filter.yaw.smoothing_time,
+            filter.pitch.smoothing_time,  // err.x = local X = right = pitch
+            filter.yaw.smoothing_time,    // err.y = local Y = up    = yaw
+            filter.roll.smoothing_time,   // err.z = local Z = fwd   = roll
         };
         const float err_axis[3] = { err.x, err.y, err.z };
         float step[3];
