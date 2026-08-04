@@ -4719,6 +4719,22 @@ namespace wz::engine::assets
         return bridged;
     }
 
+    std::vector<wz::scene::AuthoredEntityId>
+    scene_nodes_with_unresolvable_renderable(
+        std::span<const SceneNodeAsset> nodes,
+        const std::function<bool(const wz::asset::AssetKey&)>&
+            renderable_has_recipe)
+    {
+        std::vector<wz::scene::AuthoredEntityId> out;
+        for (const SceneNodeAsset& node : nodes) {
+            if (node.renderable_asset
+                && !renderable_has_recipe(*node.renderable_asset)) {
+                out.push_back(node.id);
+            }
+        }
+        return out;
+    }
+
     uint32_t bridge_scene_source_keys(
         std::span<SceneNodeAsset> nodes,
         const wz::asset::AssetGraphDraft& draft)

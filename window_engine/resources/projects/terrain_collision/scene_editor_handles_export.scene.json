@@ -48,9 +48,6 @@
         ]
       },
       "visible": true,
-      "renderable": {
-        "asset": "asset-key:e2c7d26101acfd80:0000000000000000:f11eca55e7000704:0000000000000000:0000000000000006:0000000000000000:651743a056d1d1c8:5b11cfee35900216"
-      },
       "terrain": {
         "asset": "asset-key:bb0fb32b9b7a040f:0000000000000000:f11eca55e7000a01:0000000000000000:0000000000000004:0000000000000000:236178699b1b52e3:5578d804d61c780c",
         "visual_proxy": {
@@ -125,9 +122,6 @@
         ]
       },
       "visible": true,
-      "renderable": {
-        "asset": "asset-key:19689c0a0e750b0f:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000003:0000000000000000:ce692d8f161e2297:02f513e3ceac2d8f"
-      },
       "mesh_source": {
         "kind": "glb",
         "path": "C:\\Users\\david\\OneDrive\\Documents\\Gaea\\Builds\\Mountain 3\\003\\Mesher.glb",
@@ -257,9 +251,6 @@
         ]
       },
       "visible": true,
-      "renderable": {
-        "asset": "asset-key:955caae39446c794:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000003:0000000000000000:c98e4e90f0ff6cba:be655e11aac6982c"
-      },
       "imported_node": {
         "anchor_node": "empty_1",
         "import_prefix": "empty_1/tank1",
@@ -333,9 +324,6 @@
         ]
       },
       "visible": true,
-      "renderable": {
-        "asset": "asset-key:b161441c415a5241:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000003:0000000000000000:2bb51d58ca2544be:be655e11aac6982c"
-      },
       "imported_node": {
         "anchor_node": "empty_1",
         "import_prefix": "empty_1/tank1",
@@ -409,9 +397,6 @@
         ]
       },
       "visible": true,
-      "renderable": {
-        "asset": "asset-key:06b5789795750eab:0000000000000000:f11eca55e7000705:0000000000000000:0000000000000003:0000000000000000:b14b21ff4d965074:be655e11aac6982c"
-      },
       "imported_node": {
         "anchor_node": "empty_1",
         "import_prefix": "empty_1/tank1",

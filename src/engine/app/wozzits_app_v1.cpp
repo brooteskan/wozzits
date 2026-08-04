@@ -584,6 +584,26 @@ namespace wz::app
             + std::to_string(authored_scene_node_count)
             + ", renderables bridged=" + std::to_string(bridged) + ")");
 
+        // #317 D1-C23: a node whose renderable resolves to no recipe (e.g. its
+        // schema was deleted from the graph, as a saved terrain project still
+        // referenced) draws nothing, silently, with no diagnostic anywhere.
+        // Report each once at load so a dangling authored reference is loud
+        // rather than an invisible no-op. Log-only: never changes load success.
+        for (const wz::scene::AuthoredEntityId& node_id :
+             wz::engine::assets::scene_nodes_with_unresolvable_renderable(
+                 document_.nodes(),
+                 [this](const wz::asset::AssetKey& key) {
+                     return ctx_.assets->renderables().get_rhi_renderable_recipe(
+                                wz::engine::assets::RenderableAsset{
+                                    .output = key })
+                            != nullptr;
+                 })) {
+            ctx_.logger.warn(
+                "load_scene: node '" + node_id + "' has a renderable whose "
+                "recipe is not registered (its schema may have been deleted); "
+                "the node will not draw");
+        }
+
         // Load the project's behavior-module DLLs (if any) and register their
         // modules, then materialize the scene's behavior runtime. The modules come
         // from the project manifest's behavior_module_folder (the built-ins were

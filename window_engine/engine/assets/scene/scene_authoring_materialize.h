@@ -4,6 +4,7 @@
 #include <engine/assets/scene/scene_asset_data.h>
 
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
 #include <vector>
@@ -49,6 +50,18 @@ namespace wz::engine::assets
     uint32_t bridge_scene_renderable_keys(
         std::span<SceneNodeAsset> nodes,
         const wz::asset::AssetGraphDraft& draft);
+
+    // The ids of nodes whose renderable_asset is set but has NO recipe -- a
+    // renderable that will silently never draw (e.g. its schema was deleted from
+    // the asset graph, leaving a dangling authored reference like the ones
+    // #317 D1-C23 found in a saved project). renderable_has_recipe reports
+    // whether the resolved library holds a recipe for a key. Pure, so a dangling
+    // reference is detectable without a device or a live library.
+    [[nodiscard]] std::vector<wz::scene::AuthoredEntityId>
+    scene_nodes_with_unresolvable_renderable(
+        std::span<const SceneNodeAsset> nodes,
+        const std::function<bool(const wz::asset::AssetKey&)>&
+            renderable_has_recipe);
 
     // Re-point each scene node's authored scene-source graph-node id at the
     // resolved Scene AssetKey for that node in `draft` — the scene-source analogue

@@ -1,5 +1,7 @@
 ﻿#include "scene_asset_module_test_support.h"
 
+#include <engine/assets/scene/scene_authoring_materialize.h>
+
 TEST(SceneAssetModule, RenderableAssetReferenceRoundTripsThroughSceneJSON)
 {
     const wz::fs::Path root =
@@ -901,5 +903,32 @@ TEST(SceneAssetModule, NoSceneSourceEmitsNoMemberAndRoundTrips)
     const std::string exported =
         wz::json::serialize_json(export_scene_to_json_document(authored));
     EXPECT_EQ(exported.find("\"scene_source\""), std::string::npos);
+}
+
+// #317 D1-C23: a renderable reference whose recipe is not registered (e.g. its
+// schema was deleted from the graph, as a saved terrain project still named)
+// must be reported by node id, not silently skipped and drawn as nothing. Pure
+// -- no device, no live library.
+TEST(SceneRenderableReference, UnresolvableRenderableIsFlaggedByNodeId)
+{
+    wz::asset::AssetKey good{};
+    good.schema_hash.lo = 1u;
+    wz::asset::AssetKey dead{};
+    dead.schema_hash.lo = 2u;
+
+    std::vector<wz::engine::assets::SceneNodeAsset> nodes(3);
+    nodes[0].id = "keeps";
+    nodes[0].renderable_asset = good;   // has a recipe -> not flagged
+    nodes[1].id = "dangles";
+    nodes[1].renderable_asset = dead;   // no recipe -> flagged
+    nodes[2].id = "no_renderable";      // no renderable_asset -> ignored
+
+    const std::vector<wz::scene::AuthoredEntityId> flagged =
+        wz::engine::assets::scene_nodes_with_unresolvable_renderable(
+            nodes,
+            [&](const wz::asset::AssetKey& k) { return k == good; });
+
+    ASSERT_EQ(flagged.size(), 1u);
+    EXPECT_EQ(flagged[0], "dangles");
 }
 
