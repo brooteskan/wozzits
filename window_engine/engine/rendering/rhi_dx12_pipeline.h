@@ -214,6 +214,17 @@ namespace wz::engine::rendering
 
         void clear() noexcept;
 
+#ifdef WZ_ENABLE_TESTING
+        // Test seam: how many realized (root signature, PSO) pairs are held. A
+        // program realized twice under the same pass state -- and a compute
+        // program realized twice at all -- must HIT the cache, not grow this
+        // (#317 D1-C22).
+        [[nodiscard]] std::size_t entry_count() const noexcept
+        {
+            return entries_.size();
+        }
+#endif
+
     private:
         struct Entry
         {

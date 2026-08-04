@@ -157,6 +157,21 @@ TEST_F(RhiComputeDeviceFixture, DispatchWritesUavBuffer)
     ASSERT_TRUE(program.valid());
     ASSERT_NE(pipeline_cache.realize(program), nullptr);
 
+    // #317 D1-C22: a compute PSO is stored under a render-target sentinel key
+    // (false, 0), but realize()'s lookup reads the live bound colour format -- so
+    // before the fix a re-realize (in production, every set_pipeline of the same
+    // compute program) MISSED the cache and appended a duplicate root signature +
+    // PSO: an unbounded leak on a per-frame dispatch. Re-realize and assert the
+    // cache stays flat. Revert-check: drop the sentinel lookup in realize()'s
+    // compute branch and entry_count() grows by one here.
+#ifdef WZ_ENABLE_TESTING
+    const std::size_t entries_after_first = pipeline_cache.entry_count();
+    ASSERT_EQ(entries_after_first, 1u);
+    ASSERT_NE(pipeline_cache.realize(program), nullptr);
+    EXPECT_EQ(pipeline_cache.entry_count(), entries_after_first)
+        << "compute realize appended a duplicate cache entry (D1-C22)";
+#endif
+
     const wz::rhi::GpuResourceHandle output =
         gpu.resources.acquire(wz::rhi::GpuResourceDesc::buffer(
             kElementCount * sizeof(uint32_t),

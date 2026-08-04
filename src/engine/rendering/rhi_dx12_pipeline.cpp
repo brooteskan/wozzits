@@ -811,13 +811,24 @@ namespace wz::engine::rendering
     const RhiDx12RealizedPipeline* RhiDx12PipelineCache::get(
         wz::rhi::Tag program) const noexcept
     {
-        return device_ ? get(program,
-                             wz::gpu::dx12::internal::depth_target_bound(
-                                 *device_),
-                             static_cast<std::uint32_t>(
-                                 wz::gpu::dx12::internal::bound_color_format(
-                                     *device_)))
-                       : nullptr;
+        if (!device_) {
+            return nullptr;
+        }
+        // A graphics pipeline is keyed on the live pass state; a compute pipeline
+        // has none and is stored under the (false, 0) sentinel (see realize()).
+        // Try the live key, then the sentinel, so a compute program -- which the
+        // live key can never match -- is still found (#317 D1-C22). A graphics
+        // program is never stored under (false, 0): a real RTV, whose format is
+        // never DXGI_FORMAT_UNKNOWN, is always bound when it realizes -- so the
+        // sentinel probe resolves only compute entries.
+        if (const RhiDx12RealizedPipeline* graphics = get(
+                program,
+                wz::gpu::dx12::internal::depth_target_bound(*device_),
+                static_cast<std::uint32_t>(
+                    wz::gpu::dx12::internal::bound_color_format(*device_)))) {
+            return graphics;
+        }
+        return get(program, false, 0u);
     }
 
     const RhiDx12RealizedPipeline* RhiDx12PipelineCache::get(
@@ -1018,6 +1029,17 @@ namespace wz::engine::rendering
                     "time");
             }
             return nullptr;
+        }
+
+        // The lookup at the top of realize() is keyed on the live render-target
+        // state; a compute pipeline has none and is stored under the (false, 0)
+        // sentinel below, so that lookup can never find an existing compute PSO.
+        // Look it up under the sentinel here -- otherwise every re-realize (every
+        // set_pipeline of the same compute program) rebuilds the root signature +
+        // PSO and appends a duplicate Entry that nothing can ever hit again, an
+        // unbounded leak on a per-frame dispatch (#317 D1-C22).
+        if (const RhiDx12RealizedPipeline* existing = get(program, false, 0u)) {
+            return existing;
         }
 
         const std::optional<std::vector<uint8_t>> compute_bytecode =
