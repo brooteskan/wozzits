@@ -717,6 +717,16 @@ function(rs_add_test_group category name)
 
     add_test(NAME ${target} COMMAND ${target})
 
+    # Make every test addressable by its category as a ctest label, so a gate can
+    # run or skip a whole category. In particular `ctest -L render` then runs
+    # exactly the on-device render suites (the two standalone wozzits_app_v1
+    # render tests below carry the same "render" label) -- see BUILDING.md
+    # "Tests that require GPU / windowing". Before #317 D1-T11 only those two were
+    # labelled, so a
+    # `-L render` gate missed the ~33 rs_add_test_group(render ...) device suites
+    # and render regressions (D1-C20/C21) shipped green.
+    set_tests_properties(${target} PROPERTIES LABELS ${category})
+
     # The floating-point gate, applied to the ctest run only -- see the option.
     if(WZ_FP_STRICT_TESTS)
         set_tests_properties(${target} PROPERTIES ENVIRONMENT "WZ_FP_STRICT=1")
@@ -767,6 +777,16 @@ function(rs_add_abi_test_group category name)
     )
 
     add_test(NAME ${target} COMMAND ${target})
+
+    # Make every test addressable by its category as a ctest label, so a gate can
+    # run or skip a whole category. In particular `ctest -L render` then runs
+    # exactly the on-device render suites (the two standalone wozzits_app_v1
+    # render tests below carry the same "render" label) -- see BUILDING.md
+    # "Tests that require GPU / windowing". Before #317 D1-T11 only those two were
+    # labelled, so a
+    # `-L render` gate missed the ~33 rs_add_test_group(render ...) device suites
+    # and render regressions (D1-C20/C21) shipped green.
+    set_tests_properties(${target} PROPERTIES LABELS ${category})
 
     # The floating-point gate, applied to the ctest run only -- see the option.
     if(WZ_FP_STRICT_TESTS)

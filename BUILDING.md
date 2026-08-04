@@ -66,8 +66,22 @@ ctest -R asset_gaussian_splat --output-on-failure
 
 ### Tests that require GPU / windowing
 
-The `window`, `gpu`, and `game_app` test groups open a real window and require a display.
-They are excluded from headless CI runs. Run them locally after a full build.
+Many render tests open a real window and create a DX12 device, so they need a GPU
+and a display and will not run in a headless pass. Every on-device render suite
+carries the ctest label `render` — the `rs_add_test_group(render ...)` groups and
+the two standalone `wozzits_app_v1` render tests — so you can run exactly them:
+
+```powershell
+cd build/clang-debug
+ctest -L render --output-on-failure
+```
+
+**Run `ctest -L render` after any change to the renderer, the rhi contract,
+shaders, or binding layouts, and before committing such a change.** These suites
+sit outside a quick run, and skipping them is exactly how render regressions
+shipped green (#317 D1-C20 cross-wired a shipping shader's registers; D1-C21 left
+a suite red for two days) — see #320. The `window`, `gpu`, and `game_app` groups
+similarly need a display.
 
 ## V8 scripting (optional)
 
