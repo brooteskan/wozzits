@@ -1,4 +1,6 @@
 #include <cmath>
+#include <limits>
+
 #include <gtest/gtest.h>
 
 #include <math/frustum.h>
@@ -251,4 +253,52 @@ TEST(Frustum, ZeroViewProjectionYieldsFinitePlanesAndDoesNotAcceptEverything)
         projection_perspective_dx(Pi / 3.0f, 16.0f / 9.0f, 0.1f, 100.0f));
     EXPECT_FALSE(intersects_sphere(real, Vec3{ 0.0f, 0.0f, -1000.0f }, 1.0f))
         << "control: a real frustum must reject a sphere well behind it";
+}
+
+// C1(v2)-C20 (#314): #326 handled a ZERO view_projection, but a NaN
+// view_projection -- from a NaN camera transform reaching view_projection =
+// proj * view -- was left producing NaN planes, reproducing the exact silent-cull
+// no-op #326 was written to eliminate (a NaN plane's `d < -r` is false, so it
+// accepts every sphere; and that ordered compare does not even raise FE_INVALID,
+// so no instrument sees it). frustum_from_view_projection now resets a non-finite
+// plane to inert-and-finite.
+//
+// LOAD-BEARING: the finiteness of every plane is the fix -- revert-checked, these
+// fail with the sanitize neutered. The `real` control proves the sanitize did not
+// break ordinary culling.
+TEST(Frustum, NaNViewProjectionYieldsFinitePlanes)
+{
+    const float qnan = std::numeric_limits<float>::quiet_NaN();
+
+    // A NaN in the translation column (a NaN camera world position) -> NaN plane
+    // distances with finite normals.
+    Mat4 nan_translation =
+        projection_perspective_dx(Pi / 3.0f, 16.0f / 9.0f, 0.1f, 100.0f);
+    nan_translation.m[12] = qnan;
+    const Frustum ft = frustum_from_view_projection(nan_translation);
+    for (const auto& p : ft.planes) {
+        EXPECT_TRUE(std::isfinite(p.normal.x));
+        EXPECT_TRUE(std::isfinite(p.normal.y));
+        EXPECT_TRUE(std::isfinite(p.normal.z));
+        EXPECT_TRUE(std::isfinite(p.distance));
+    }
+
+    // A NaN in a BASIS element -> NaN plane normals (the len=NaN skip that a bare
+    // guard leaves in place).
+    Mat4 nan_basis =
+        projection_perspective_dx(Pi / 3.0f, 16.0f / 9.0f, 0.1f, 100.0f);
+    nan_basis.m[0] = qnan;
+    const Frustum fb = frustum_from_view_projection(nan_basis);
+    for (const auto& p : fb.planes) {
+        EXPECT_TRUE(std::isfinite(p.normal.x));
+        EXPECT_TRUE(std::isfinite(p.normal.y));
+        EXPECT_TRUE(std::isfinite(p.normal.z));
+        EXPECT_TRUE(std::isfinite(p.distance));
+    }
+
+    // Control: sanitizing NaN planes must not disturb ordinary culling.
+    const Frustum real = frustum_from_view_projection(
+        projection_perspective_dx(Pi / 3.0f, 16.0f / 9.0f, 0.1f, 100.0f));
+    EXPECT_FALSE(intersects_sphere(real, Vec3{ 0.0f, 0.0f, -1000.0f }, 1.0f))
+        << "control: a real frustum must still reject a sphere well behind it";
 }

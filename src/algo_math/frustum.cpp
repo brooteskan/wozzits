@@ -2,6 +2,8 @@
 #include "math/mat4.h"
 #include "math/vec3.h"
 
+#include <cmath>
+
 using namespace wz::math;
 
 namespace wz::math
@@ -86,6 +88,23 @@ namespace wz::math
         for (auto& p : f.planes)
         {
             const float len = length(p.normal);
+            // #326 skips normalization for a finite zero-length normal (the
+            // all-zero view_projection), which leaves the plane finite and inert.
+            // But a NaN/inf ALREADY present in the vp survives a bare skip: a NaN
+            // normal has len=NaN and `!(NaN > 0)` is true; an inf normal has
+            // len=inf and would normalize to inf/inf=NaN; a finite normal with a
+            // NaN distance normalizes and keeps the NaN. A non-finite plane
+            // accepts every sphere (the consumer's `d < -r` is false for a NaN)
+            // and silently no-ops culling -- invisible, because that ordered
+            // compare does not even raise FE_INVALID (C1(v2)-C20, #314). Reset a
+            // non-finite plane to inert-and-finite; leave the finite zero-length
+            // case exactly as #326 did.
+            if (!std::isfinite(len) || !std::isfinite(p.distance))
+            {
+                p.normal = { 0.0f, 0.0f, 0.0f };
+                p.distance = 0.0f;
+                continue;
+            }
             if (!(len > 0.0f))
                 continue;
 
