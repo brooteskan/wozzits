@@ -44,11 +44,11 @@ namespace wz::engine::assets
         // object rows), and Unknown is rejected before it is ever ranked.
         constexpr std::array<DescriptorSemantic, kDescriptorSemanticNames.size()>
             kDescriptorSemanticRegisterOrder = {
-                // Mesh vertex-pull streams.
+                // Mesh vertex-pull streams. (PulledMeshUvs is NOT here -- it is
+                // an optional stream and sorts last among object rows, below.)
                 DescriptorSemantic::PulledMeshPositions,
                 DescriptorSemantic::PulledMeshIndices,
                 DescriptorSemantic::PulledMeshNormals,
-                DescriptorSemantic::PulledMeshUvs,
                 DescriptorSemantic::PulledMeshSourceVertices,
                 // Resident splat streams.
                 DescriptorSemantic::SplatCloud,
@@ -69,6 +69,16 @@ namespace wz::engine::assets
                 DescriptorSemantic::PuppetMask,
                 // Composited surface material, sampled last.
                 DescriptorSemantic::MaterialAlbedo,
+                // Optional UV pull stream, appended LAST among object rows so it
+                // never displaces the shared t0..t5 sg_lit layout. Both
+                // sg_lit_textured and sg_lit_uv keep positions/indices/normals +
+                // the two SG-sky rows + material_albedo at t0..t5; sg_lit_uv then
+                // lands uvs at t6 (see sg_lit_uv_vs.hlsl's own comment). Ranking
+                // uvs among the mesh-pull streams above repointed
+                // sky_gaussian/points/material_albedo out from under the shipping
+                // shader -- exactly the silent repoint #322 exists to prevent,
+                // caught here by the D3DReflect layout check (#317 D1-C20).
+                DescriptorSemantic::PulledMeshUvs,
                 // Non-rows (see comment above): listed only for completeness.
                 DescriptorSemantic::ViewConstants,
                 DescriptorSemantic::ScreenConstants,
