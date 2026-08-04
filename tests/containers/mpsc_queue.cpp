@@ -7,6 +7,7 @@
 #include <atomic>
 #include <random>
 #include <chrono>
+#include <cstdlib>
 
 #include <containers/mpsc_queue.h>
 
@@ -45,6 +46,36 @@ namespace
             return output;
         }
     };
+
+    // The long concurrency soaks below are enabled (not DISABLED_) so they show
+    // up and can be run, but they are gated behind an env var so the default
+    // ctest run stays fast: absent WZ_RUN_STRESS they GTEST_SKIP (visible), and
+    // they run when it is set. This is the "label" the issue asks for instead of
+    // DISABLED_ -- concurrency defects hid here precisely because the stress
+    // tests were switched off. See issue #328.
+    // getenv_s, not the deprecated getenv: the build avoids a target-wide
+    // _CRT_SECURE_NO_WARNINGS on purpose (CMakeLists.txt) and controller_win32
+    // reads env the same way.
+    bool stress_enabled()
+    {
+        char buf[16] = {};
+        size_t len = 0;
+        if (getenv_s(&len, buf, sizeof(buf), "WZ_RUN_STRESS") != 0 || len == 0)
+            return false;
+        return buf[0] != '\0' && buf[0] != '0';
+    }
+
+    // Soak duration for ChaosStress, overridable so a full soak is available
+    // without editing the test. Defaults to a short run when opted in.
+    int stress_seconds(int fallback)
+    {
+        char buf[16] = {};
+        size_t len = 0;
+        if (getenv_s(&len, buf, sizeof(buf), "WZ_STRESS_SECONDS") != 0 || len == 0)
+            return fallback;
+        int parsed = std::atoi(buf);
+        return parsed > 0 ? parsed : fallback;
+    }
 }
 
 TEST(ThreadTestHarness, NullHarnessTest)
@@ -188,7 +219,9 @@ TEST_F(MPSCQueueTest, FIFOApproximationSingleConsumer)
     }
 }
 
-TEST_F(MPSCQueueTest, DISABLED_HighContentionStress)
+// Fast enough (~200ms) to stay in the default suite ungated, so every run
+// exercises real 16-thread contention rather than switching it off.
+TEST_F(MPSCQueueTest, HighContentionStress)
 {
     ThreadTestHarness harness;
 
@@ -348,8 +381,11 @@ TEST_F(MPSCQueueTest, ConcurrentProducerConsumer)
     EXPECT_EQ(consumed.load(), producers * per_thread);
 }
 
-TEST_F(MPSCQueueTest, DISABLED_FrameDrivenStress)
+TEST_F(MPSCQueueTest, FrameDrivenStress)
 {
+    if (!stress_enabled())
+        GTEST_SKIP() << "stress soak (~4s); set WZ_RUN_STRESS=1 to run";
+
     const int producers = 8;
     const int per_thread = 200000;
     const int total = producers * per_thread;
@@ -439,10 +475,13 @@ TEST_F(MPSCQueueTest, DISABLED_FrameDrivenStress)
     EXPECT_EQ(seen.size(), total);
 }
 
-TEST_F(MPSCQueueTest, DISABLED_ChaosStress)
+TEST_F(MPSCQueueTest, ChaosStress)
 {
+    if (!stress_enabled())
+        GTEST_SKIP() << "stress soak; set WZ_RUN_STRESS=1 to run (WZ_STRESS_SECONDS overrides length)";
+
     const int producers = 128;
-    const int duration_seconds = 180;
+    const int duration_seconds = stress_seconds(20);
 
     std::atomic<bool> running{true};
     std::atomic<uint64_t> produced{0};
