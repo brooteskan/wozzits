@@ -475,6 +475,21 @@ namespace wz::engine::assets
             std::vector<wz::rhi::ResourceIdentity>>> rhi_resource_tracker_;
         wz::Logger&      logger_;
         wz::fs::Path     resource_root_;
+
+        // Per-resolve tallies behind the resolve summary line.
+        //
+        // A cache HIT is the asset system reporting that it did nothing, and
+        // one line per node made that 907 of 1198 lines in a real session --
+        // 76% of the log announcing non-events, which is the same reason the
+        // D3D12 InfoQueue had to stop repeating itself. Counted and summarised
+        // instead. Real compiles still get a line each: there are ~150 of them
+        // and they carry timings, which is the part worth reading.
+        //
+        // Reset by whichever of the two resolve brackets runs -- resolve_all or
+        // resolve_roots_with_report -- so a pass cannot inherit the previous
+        // one's counts.
+        uint32_t resolve_compiled_count_ = 0;
+        uint32_t resolve_cached_count_ = 0;
         EngineAssetCacheSettings cache_settings_;
 
         ScalarFieldTable            scalar_fields_table_;

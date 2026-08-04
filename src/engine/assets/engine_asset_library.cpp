@@ -427,8 +427,10 @@ namespace wz::engine::assets
             }
         }
 
-        // Verbose compiler logging: one line per node visited by resolve()
-        // (every compiler run, cache hit, or failure), with the asset type name.
+        // One line per node COMPILED or FAILED, plus a tally of cache hits
+        // summarised by the resolve bracket. A cache hit is the system saying
+        // it did nothing; 907 such lines in a real session drowned the 156
+        // that carried information.
         system_.set_resolve_logger(
             [this](const wz::asset::ResolveLogEvent& event)
             {
@@ -437,13 +439,13 @@ namespace wz::engine::assets
                 const std::string key = internal::short_asset_key_hex(event.key);
                 switch (event.phase) {
                 case wz::asset::ResolveLogEvent::Phase::Compiled:
+                    ++resolve_compiled_count_;
                     logger_.info(
                         "compile " + name + " key=" + key + " ("
                         + std::to_string(event.duration_us / 1000u) + "ms)");
                     break;
                 case wz::asset::ResolveLogEvent::Phase::CacheHit:
-                    logger_.info(
-                        "compile " + name + " key=" + key + " (cached)");
+                    ++resolve_cached_count_;
                     break;
                 case wz::asset::ResolveLogEvent::Phase::Failed:
                     logger_.error(
@@ -762,6 +764,8 @@ namespace wz::engine::assets
             + " resource_root="
             + (resource_root_.empty() ? "<empty>" : resource_root_));
 
+        resolve_compiled_count_ = 0;
+        resolve_cached_count_ = 0;
         const auto started = std::chrono::steady_clock::now();
         std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>> raw_errors;
         report.resolved_count = system_.resolve_all(&raw_errors);
@@ -771,6 +775,10 @@ namespace wz::engine::assets
         logger_.info(
             "asset resolve_all complete resolved="
             + std::to_string(report.resolved_count)
+            + " compiled="
+            + std::to_string(resolve_compiled_count_)
+            + " cached="
+            + std::to_string(resolve_cached_count_)
             + " failures="
             + std::to_string(raw_errors.size())
             + " ms="
@@ -869,6 +877,8 @@ namespace wz::engine::assets
             + " resource_root="
             + (resource_root_.empty() ? "<empty>" : resource_root_));
 
+        resolve_compiled_count_ = 0;
+        resolve_cached_count_ = 0;
         const auto started = std::chrono::steady_clock::now();
         std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>>
             raw_errors;
@@ -904,6 +914,10 @@ namespace wz::engine::assets
             + std::to_string(roots.size())
             + " resolved="
             + std::to_string(report.resolved_count)
+            + " compiled="
+            + std::to_string(resolve_compiled_count_)
+            + " cached="
+            + std::to_string(resolve_cached_count_)
             + " evicted="
             + std::to_string(report.evicted_count)
             + " failures="
