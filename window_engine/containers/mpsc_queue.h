@@ -4,6 +4,27 @@
 #include <utility>
 #include "./assert.h"
 
+// Test seam. When WZ_MPSC_QUEUE_TEST_HOOKS is defined (only for this container's
+// own test target -- see CMakeLists.txt) MPSCQueue exposes two injectable hooks
+// that fire inside the two-step publish/consume windows, so a concurrency test
+// can park a producer or consumer mid-operation and observe a transient that is
+// otherwise unreachable through the public API. When the macro is undefined the
+// hooks compile to nothing: no members, no branches, no cost in production.
+#ifdef WZ_MPSC_QUEUE_TEST_HOOKS
+#include <functional>
+#define WZ_MPSC_QUEUE_FIRE(hook) \
+    do                           \
+    {                            \
+        if (hook)                \
+            (hook)();            \
+    } while (0)
+#else
+#define WZ_MPSC_QUEUE_FIRE(hook) \
+    do                           \
+    {                            \
+    } while (0)
+#endif
+
 namespace wz::core::containers
 {
     template <typename T>
@@ -21,6 +42,20 @@ namespace wz::core::containers
 
         std::atomic<Node *> head;
         std::atomic<Node *> tail;
+
+#ifdef WZ_MPSC_QUEUE_TEST_HOOKS
+    public:
+        // Fires in try_push between `tail.exchange` (the node becomes the tail)
+        // and `prev->next.store` (the node becomes reachable from head): the
+        // window in which a pushed element is queued but invisible to the
+        // consumer. A test sets this to hold a producer inside that window.
+        std::function<void()> test_hook_push_after_tail_exchange;
+
+        // Fires in try_pop between `head.store` (head advanced off the old node)
+        // and `delete head_node` (the old node is freed): the window in which a
+        // non-consumer reader of the old head holds a pointer about to dangle.
+        std::function<void()> test_hook_pop_after_head_store;
+#endif
 
     public:
         MPSCQueue()
@@ -61,6 +96,7 @@ namespace wz::core::containers
                 return false;
 
             Node *prev = tail.exchange(node, std::memory_order_acq_rel);
+            WZ_MPSC_QUEUE_FIRE(test_hook_push_after_tail_exchange);
             prev->next.store(node, std::memory_order_release);
 
             return true;
@@ -83,6 +119,7 @@ namespace wz::core::containers
 
             out = std::move(next->data);
             head.store(next, std::memory_order_release);
+            WZ_MPSC_QUEUE_FIRE(test_hook_pop_after_head_store);
             delete head_node;
 
             return true;

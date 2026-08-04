@@ -1264,6 +1264,10 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     # Containers
     rs_add_test_group(containers mpsc_queue)
+    # MPSCQueue's concurrency tests park a producer/consumer inside the two-step
+    # publish/consume windows through the header's test seam -- see issue #328
+    # and the WZ_MPSC_QUEUE_TEST_HOOKS block in mpsc_queue.h.
+    target_compile_definitions(containers_mpsc_queue PRIVATE WZ_MPSC_QUEUE_TEST_HOOKS)
     rs_add_test_group(containers mpsc_ring_buffer)
     rs_add_test_group(containers spsc_queue)
     rs_add_test_group(containers buffer)

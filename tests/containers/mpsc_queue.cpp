@@ -243,6 +243,61 @@ TEST_F(MPSCQueueTest, PushAllocatesWithoutBound)
         EXPECT_EQ(out[i], i);
 }
 
+// Defect 2, told as the caller-side mistake it causes (cross-ref #313 B4-S1 on
+// the sibling MPSCRingBuffer): try_push publishes in two steps -- tail.exchange
+// links the node into the tail, then prev->next.store makes it reachable from
+// head. Between those stores the element is genuinely queued but invisible to
+// the consumer, so try_pop returns false. A drain loop that stops the first
+// time try_pop returns false therefore drops a push that is merely in flight.
+//
+// The push seam makes the transient deterministic: the producer of element 2 is
+// parked exactly inside that window while a fully-published element 1 sits ahead
+// of it. The naive drain gets 1 and stops one short; element 2 was there the
+// whole time, proven by releasing the producer and popping it.
+TEST(MPSCQueueInFlight, DrainingUntilTryPopFailsCanLoseElements)
+{
+    MPSCQueue<uint64_t> q;
+
+    q.push(1); // element 1: fully published, visible
+
+    std::atomic<bool> parked{false};
+    std::atomic<bool> release{false};
+
+    // Park the producer of element 2 between tail.exchange and prev->next.store.
+    q.test_hook_push_after_tail_exchange = [&]
+    {
+        parked.store(true, std::memory_order_release);
+        while (!release.load(std::memory_order_acquire))
+            std::this_thread::yield();
+    };
+
+    std::thread producer([&]
+                         { q.push(2); });
+
+    while (!parked.load(std::memory_order_acquire))
+        std::this_thread::yield();
+
+    // The caller mistake: drain until try_pop first returns false.
+    std::vector<uint64_t> drained;
+    uint64_t v;
+    while (q.try_pop(v))
+        drained.push_back(v);
+
+    // Got 1, stopped. Element 2 is in flight and invisible -- lost by this loop
+    // even though it is genuinely queued.
+    ASSERT_EQ(drained.size(), 1u);
+    EXPECT_EQ(drained[0], 1u);
+
+    // It really was queued: release the producer and it pops.
+    release.store(true, std::memory_order_release);
+    producer.join();
+    q.test_hook_push_after_tail_exchange = nullptr;
+
+    ASSERT_TRUE(q.try_pop(v));
+    EXPECT_EQ(v, 2u);
+    EXPECT_FALSE(q.try_pop(v));
+}
+
 TEST_F(MPSCQueueTest, ConcurrentProducerConsumer)
 {
     const int producers = 2;
