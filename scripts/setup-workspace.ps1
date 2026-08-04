@@ -78,6 +78,12 @@ if (-not $SkipSceneRender) {
                 -TargetPath (Join-Path $workspaceRoot "wozzits-scene-render")
 }
 
+# Local pre-push CI: build + test on this machine before every push (no cloud
+# compute). The hook is version-controlled in .githooks; point git at it. Bypass
+# a single push with 'git push --no-verify'. See BUILDING.md.
+git -C $repoRoot config core.hooksPath .githooks
+Write-Host "Configured local pre-push CI (git core.hooksPath -> .githooks)." -ForegroundColor Green
+
 Write-Host ""
 Write-Host "Workspace ready." -ForegroundColor Green
 Write-Host ""

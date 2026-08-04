@@ -83,6 +83,28 @@ shipped green (#317 D1-C20 cross-wired a shipping shader's registers; D1-C21 lef
 a suite red for two days) — see #320. The `window`, `gpu`, and `game_app` groups
 similarly need a display.
 
+### Pre-push CI (local test gate)
+
+A `pre-push` git hook builds and runs the tests **on your machine** before a push
+reaches GitHub — the same idea as CI, but no cloud compute (per the no-cloud-CI
+policy). A push is blocked if the build breaks or any test fails. The hook is
+version-controlled in [`.githooks/`](.githooks/pre-push); enable it once per clone
+by pointing git at it (`scripts/setup-workspace.ps1` does this for you):
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Because it builds, push from a shell with the toolchain on PATH (the VS 2022 x64
+Developer Command Prompt). Knobs:
+
+- **Skip one push:** `git push --no-verify`
+- **Scope the tests** (e.g. the on-device render suites only, the fast high-value
+  subset): `$env:WZ_PREPUSH_CTEST_LABEL="render"; git push`
+- **Different preset:** `$env:WZ_PREPUSH_PRESET="clang-release"; git push`
+
+By default it runs the full `ctest` suite.
+
 ## V8 scripting (optional)
 
 V8 support is off by default. To enable it you need:

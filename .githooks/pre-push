@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# Local pre-push CI. Builds and tests THIS repo on YOUR machine before a push
+# reaches GitHub -- no cloud compute (see #164 / the no-cloud-CI policy). A push
+# is blocked if the build breaks or any test fails.
+#
+#   Bypass a single push:            git push --no-verify
+#   Scope the tests to one label:    WZ_PREPUSH_CTEST_LABEL=render git push
+#   Use a different preset:          WZ_PREPUSH_PRESET=clang-release git push
+#
+# Installed by pointing git at this directory:  git config core.hooksPath .githooks
+# (scripts/setup-workspace.ps1 does this; BUILDING.md documents it.)
+#
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$ROOT" || exit 1
+
+PRESET="${WZ_PREPUSH_PRESET:-clang-debug}"
+BUILD_DIR="build/${PRESET}"
+
+echo "pre-push CI: build + test (${PRESET}) before pushing to GitHub. --no-verify to skip."
+
+if ! command -v cmake >/dev/null 2>&1; then
+    echo "pre-push CI: 'cmake' is not on PATH." >&2
+    echo "  Push from the VS 2022 x64 Developer Command Prompt (clang-cl/lld-link + cmake on" >&2
+    echo "  PATH -- see BUILDING.md), or bypass this push with:  git push --no-verify" >&2
+    exit 1
+fi
+
+if [ ! -d "$BUILD_DIR" ]; then
+    echo "pre-push CI: '$BUILD_DIR' is not configured." >&2
+    echo "  Run 'cmake --preset ${PRESET}' first, or bypass with:  git push --no-verify" >&2
+    exit 1
+fi
+
+# Incremental build. Blocks the push if the build is broken or the toolchain is
+# not on PATH.
+if ! cmake --build --preset "$PRESET"; then
+    echo "pre-push CI: BUILD FAILED -- push blocked. Fix the build, or --no-verify." >&2
+    exit 1
+fi
+
+# Full suite by default; WZ_PREPUSH_CTEST_LABEL scopes it (e.g. 'render' for the
+# on-device render suites -- the fast, high-value subset).
+CTEST_ARGS=(--test-dir "$BUILD_DIR" --output-on-failure)
+if [ -n "${WZ_PREPUSH_CTEST_LABEL:-}" ]; then
+    CTEST_ARGS+=(-L "$WZ_PREPUSH_CTEST_LABEL")
+fi
+
+if ! ctest "${CTEST_ARGS[@]}"; then
+    echo "pre-push CI: TESTS FAILED -- push blocked. Fix the tests, or --no-verify." >&2
+    exit 1
+fi
+
+echo "pre-push CI: build + tests green. Pushing."
+exit 0
