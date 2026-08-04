@@ -87,6 +87,26 @@ namespace wz::gpu::dx12::internal
     // Returns empty when the debug layer is unavailable (release builds), so a
     // per-frame caller costs one null check there.
     std::vector<std::string> take_debug_messages(Device& d);
+
+    // Which severities may be muted once they start repeating.
+    //
+    // WARNING only, and the exclusion is the whole point. A repeating ERROR or
+    // CORRUPTION is a STRONGER signal, not a redundant one: the `#615` above --
+    // the reason this channel exists at all -- is an EXECUTION ERROR that fired
+    // every frame, so a rule that mutes repeats after N would have silenced
+    // precisely the thing the channel was built to catch, and done it eight
+    // frames in. Noise from a benign warning is worth trading away; the ability
+    // to see a persistent error is not.
+    //
+    // Free function in the header rather than a branch inside the drain so it
+    // is testable with no device, the same reason dx12_input_element_semantic
+    // lives out here (#317, D1-C7).
+    [[nodiscard]] inline bool debug_message_is_suppressible(
+        D3D12_MESSAGE_SEVERITY severity) noexcept
+    {
+        return severity == D3D12_MESSAGE_SEVERITY_WARNING;
+    }
+
     ID3D12RootSignature* create_empty_root_signature(ID3D12Device* device);
 
     DXGI_FORMAT get_backbuffer_format();

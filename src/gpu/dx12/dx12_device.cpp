@@ -1171,10 +1171,25 @@ namespace wz::gpu::dx12::internal
                 continue;
             }
 
-            // Tally this ID. Linear scan over a list bounded by how many
-            // DISTINCT things the layer has to say, which is small -- a handful
-            // in practice -- so this is cheaper than a map and never allocates
-            // once the list has settled.
+            // CORRUPTION and ERROR are never muted, however often they repeat --
+            // see debug_message_is_suppressible. They fall straight through to
+            // the report below without touching the tally, so no accumulated
+            // count can ever start hiding one.
+            if (!debug_message_is_suppressible(message->Severity)) {
+                out.push_back(
+                    std::string("D3D12 ") + severity + " #"
+                    + std::to_string(static_cast<int>(message->ID)) + ": "
+                    + std::string(
+                        message->pDescription,
+                        message->pDescription
+                            + message->DescriptionByteLength));
+                continue;
+            }
+
+            // Tally this WARNING id. Linear scan over a list bounded by how
+            // many DISTINCT things the layer has to say, which is small -- a
+            // handful in practice -- so this is cheaper than a map and never
+            // allocates once the list has settled.
             DX12Device::DebugMessageTally* tally = nullptr;
             for (auto& entry : impl->debug_tally) {
                 if (entry.id == message->ID) {

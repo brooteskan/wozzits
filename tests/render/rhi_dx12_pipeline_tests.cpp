@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <engine/rendering/rhi_dx12_pipeline.h>
+#include <gpu/dx12/dx12_internal.h>
 #include <engine/rendering/rhi_render_program_bridge.h>
 
 #include <cstddef>
@@ -635,4 +636,43 @@ TEST(RhiDx12ShaderBindings, Float4PaddingIsNotADisagreement)
     for (const std::string& line : reported) {
         ADD_FAILURE() << "padding reported as drift: " << line;
     }
+}
+
+// ── D3D12 debug-layer suppression: severity policy ───────────────────────────
+//
+// take_debug_messages mutes an ID that repeats past a limit, because a benign
+// warning repeating every frame made 1584 lines of one real session -- 57% of
+// the log -- and a channel nobody reads is not a channel.
+//
+// That mute must never reach ERROR or CORRUPTION. The finding this whole
+// channel was built for (#317 D1-C5) was an EXECUTION ERROR #615 firing every
+// frame: a blanket repeat limit would have hidden it after 8 frames, which is
+// strictly worse than the noise the limit exists to remove. A repeating error
+// is a stronger signal, not a redundant one.
+//
+// Device-free on purpose -- the predicate is a free function in the header for
+// exactly this reason, the same as dx12_input_element_semantic (D1-C7).
+TEST(Dx12DebugMessages, OnlyWarningsAreEverSuppressed)
+{
+    using wz::gpu::dx12::internal::debug_message_is_suppressible;
+
+    EXPECT_TRUE(debug_message_is_suppressible(
+        D3D12_MESSAGE_SEVERITY_WARNING));
+
+    // The two that must survive any amount of repetition.
+    EXPECT_FALSE(debug_message_is_suppressible(
+        D3D12_MESSAGE_SEVERITY_ERROR))
+        << "a repeating ERROR is the signal, not the noise -- #615 fired every "
+           "frame and would have been muted";
+    EXPECT_FALSE(debug_message_is_suppressible(
+        D3D12_MESSAGE_SEVERITY_CORRUPTION));
+
+    // INFO/MESSAGE never reach the tally at all (a storage filter denies them
+    // at the source), so their answer here is moot -- but if that filter is
+    // ever removed they must not become suppressible either, because the
+    // suppression path is what decides whether a message is reported.
+    EXPECT_FALSE(debug_message_is_suppressible(
+        D3D12_MESSAGE_SEVERITY_INFO));
+    EXPECT_FALSE(debug_message_is_suppressible(
+        D3D12_MESSAGE_SEVERITY_MESSAGE));
 }
