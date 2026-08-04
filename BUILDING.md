@@ -96,7 +96,12 @@ git config core.hooksPath .githooks
 ```
 
 Because it builds, push from a shell with the toolchain on PATH (the VS 2022 x64
-Developer Command Prompt). Knobs:
+Developer Command Prompt). Pushing from Visual Studio's built-in git tooling also
+works once the tree is already built (the incremental build is then a no-op): the
+hook points `TMP`/`TEMP` at a writable, gitignored scratch dir under the build
+folder, so the test suite runs even though VS launches hooks with those variables
+unset (otherwise the tests' scratch dirs land in `C:\WINDOWS` and every one fails
+with "Access is denied"). Knobs:
 
 - **Skip one push:** `git push --no-verify`
 - **Scope the tests** (e.g. the on-device render suites only, the fast high-value

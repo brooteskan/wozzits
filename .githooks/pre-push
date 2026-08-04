@@ -34,6 +34,20 @@ if [ ! -d "$BUILD_DIR" ]; then
     exit 1
 fi
 
+# Guarantee a writable temp dir. Visual Studio's git integration launches hooks
+# with TMP/TEMP/USERPROFILE unset, so std::filesystem::temp_directory_path()
+# falls back to C:\WINDOWS and every test that stages a scratch dir there dies
+# with "Access is denied" (~100 false failures). Point TMP/TEMP at a build-local,
+# gitignored scratch dir so the suite runs the same whether launched from a Dev
+# Command Prompt or from VS. $ROOT is a native (D:/...) path git handed us, so
+# the exported value is a Windows path the native test exes can use directly.
+PREPUSH_TMP="${ROOT}/${BUILD_DIR}/_prepush_tmp"
+if ! mkdir -p "$PREPUSH_TMP"; then
+    echo "pre-push CI: could not create scratch temp dir '$PREPUSH_TMP'." >&2
+    exit 1
+fi
+export TMP="$PREPUSH_TMP" TEMP="$PREPUSH_TMP"
+
 # Incremental build. Blocks the push if the build is broken or the toolchain is
 # not on PATH.
 if ! cmake --build --preset "$PRESET"; then
