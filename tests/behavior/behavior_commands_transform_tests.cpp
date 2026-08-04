@@ -1,5 +1,7 @@
 ﻿#include "behavior_test_support.h"
 
+#include <limits>
+
 TEST(BehaviorCommands, ApplyLocalScaleCommandsUpdatesSceneGraph)
 {
     wz::engine::assets::SceneAssetData asset{};
@@ -439,3 +441,101 @@ TEST(BehaviorCommands, SetLocalRotationThenTranslationBothApply)
     EXPECT_FLOAT_EQ(node.local.m[14], 9.0f);
 }
 
+
+// C1(v2)-C20 (#314): a behavior that emits a non-finite transform value must not
+// be able to write NaN/inf into a node. A NaN reaching the active camera (or any
+// ancestor of it) silently disables frustum culling for the whole frame, and
+// nothing downstream notices -- the frustum consumer's ordered compare does not
+// even raise FE_INVALID for a quiet NaN, so no instrument sees it. Every
+// transform/velocity command gates its values (the SetMotionSpace/decompose_trs
+// policy); a rejected command leaves the prior transform.
+//
+// LOAD-BEARING: the point is that the node stays FINITE and UNCHANGED. Revert-
+// checked -- with any of the gates neutered the node goes non-finite and the
+// isfinite/UNCHANGED assertions fail. Deleting them turns this into decoration.
+TEST(BehaviorCommands, NonFiniteTransformCommandsAreRejected)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_nonfinite_reject_scene";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    actor.local.translation[0] = 5.0f;
+    actor.local.translation[1] = 6.0f;
+    actor.local.translation[2] = 7.0f;
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    const RuntimeEntityId actor_id =
+        result.instance.authored_to_runtime["actor"];
+
+    const float qnan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+
+    // One command per gated route, each carrying a non-finite value.
+    BehaviorCommandBuffer commands{};
+    commands.set_world_translation(actor_id, qnan, 0.0f, 0.0f);  // parentless -> direct write
+    commands.set_local_translation(actor_id, 0.0f, inf, 0.0f);
+    commands.add_local_translation(actor_id, qnan, 0.0f, 0.0f);
+    commands.add_world_translation(actor_id, inf, 0.0f, 0.0f);
+    commands.set_local_scale(actor_id, qnan, 1.0f, 1.0f);
+    commands.set_local_rotation(actor_id, 0.0f, 0.0f, 0.0f, qnan);
+    commands.set_linear_velocity(actor_id, qnan, 0.0f, 0.0f);
+    std::vector<RuntimeEntityId> changed;
+
+    const uint32_t applied = apply_behavior_commands(
+        result.instance,
+        commands.commands,
+        &changed);
+
+    // Every command rejected: nothing applied, nothing marked changed.
+    EXPECT_EQ(applied, 0u);
+    EXPECT_TRUE(changed.empty());
+
+    // The node kept its authored, finite transform.
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor_id);
+    for (float v : actor_node.local.m) {
+        EXPECT_TRUE(std::isfinite(v));
+    }
+    EXPECT_FLOAT_EQ(actor_node.local.m[12], 5.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[13], 6.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[14], 7.0f);
+}
+
+// A control alongside the rejection test: a FINITE transform command still
+// applies. Without this, the gate could reject everything and the test above
+// would still pass -- the placebo shape the rotation warns about.
+TEST(BehaviorCommands, FiniteTransformCommandStillApplies)
+{
+    wz::engine::assets::SceneAssetData asset{};
+    asset.name = "behavior_finite_control_scene";
+
+    wz::engine::assets::SceneNodeAsset actor{};
+    actor.id = "actor";
+    asset.nodes.push_back(std::move(actor));
+
+    auto result = wz::engine::assets::instantiate_scene(asset);
+    ASSERT_TRUE(result.ok()) << result.error_detail;
+    const RuntimeEntityId actor_id =
+        result.instance.authored_to_runtime["actor"];
+
+    BehaviorCommandBuffer commands{};
+    commands.set_world_translation(actor_id, 3.0f, 4.0f, 5.0f);
+    std::vector<RuntimeEntityId> changed;
+
+    const uint32_t applied = apply_behavior_commands(
+        result.instance,
+        commands.commands,
+        &changed);
+
+    EXPECT_EQ(applied, 1u);
+    const auto& actor_node = wz::core::graph::node_data(
+        result.instance.storage.polytree,
+        actor_id);
+    EXPECT_FLOAT_EQ(actor_node.local.m[12], 3.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[13], 4.0f);
+    EXPECT_FLOAT_EQ(actor_node.local.m[14], 5.0f);
+}

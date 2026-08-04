@@ -53,6 +53,24 @@ namespace wz::engine::behavior
             matrix.m[i + 2u] = column == 2u ? scale : 0.0f;
         }
 
+        // Reject a transform command whose values are non-finite before it can
+        // write NaN/inf into a node transform. A behavior that computes a NaN (a
+        // divide-by-zero, a normalize of a zero vector) must not be able to
+        // disable the frame's frustum culling through a NaN camera transform, and
+        // nothing downstream would notice because the frustum's accept-direction
+        // compare does not trap a quiet NaN (C1(v2)-C20, #314). Same policy as
+        // SetMotionSpace and decompose_trs: drop the command, keep the prior state.
+        [[nodiscard]] bool command_values_finite(
+            const BehaviorCommand& command, int count) noexcept
+        {
+            for (int i = 0; i < count; ++i) {
+                if (!std::isfinite(command.values[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         void set_local_scale(
             wz::math::Mat4& matrix,
             float x,
@@ -390,6 +408,21 @@ namespace wz::engine::behavior
             wz::scene::RuntimeEntityId entity,
             const wz::math::Vec3& world_position) noexcept
         {
+            // A non-finite world position must never reach node.local. A NaN on
+            // the active camera (or any ancestor of it) silently disables frustum
+            // culling for the whole frame -- and the frustum consumer's ordered
+            // compare does not even raise FE_INVALID, so no instrument sees it
+            // (C1(v2)-C20, #314). This is the shared choke point for every
+            // world-translation writer: the SetWorldTranslation/AddWorldTranslation
+            // commands, the motion integrator, and the terrain constraint. Reject
+            // and keep the prior transform -- the policy decompose_trs already uses.
+            if (!std::isfinite(world_position.x)
+                || !std::isfinite(world_position.y)
+                || !std::isfinite(world_position.z))
+            {
+                return false;
+            }
+
             const auto parent = wz::core::graph::parent(graph, entity);
             if (parent == wz::core::graph::INVALID_NODE) {
                 node.local.m[12] = world_position.x;
@@ -765,6 +798,9 @@ namespace wz::engine::behavior
 
             switch (command.kind) {
             case BehaviorCommandKind::AddLocalTranslation:
+                if (!command_values_finite(command, 3)) {
+                    break;
+                }
                 node.local.m[12] += command.values[0];
                 node.local.m[13] += command.values[1];
                 node.local.m[14] += command.values[2];
@@ -776,6 +812,9 @@ namespace wz::engine::behavior
                 break;
 
             case BehaviorCommandKind::SetLocalTranslation:
+                if (!command_values_finite(command, 3)) {
+                    break;
+                }
                 node.local.m[12] = command.values[0];
                 node.local.m[13] = command.values[1];
                 node.local.m[14] = command.values[2];
@@ -829,6 +868,9 @@ namespace wz::engine::behavior
             }
 
             case BehaviorCommandKind::AddLocalScale:
+                if (!command_values_finite(command, 3)) {
+                    break;
+                }
                 add_local_scale(
                     node.local,
                     command.values[0],
@@ -842,6 +884,9 @@ namespace wz::engine::behavior
                 break;
 
             case BehaviorCommandKind::SetLocalScale:
+                if (!command_values_finite(command, 3)) {
+                    break;
+                }
                 set_local_scale(
                     node.local,
                     command.values[0],
@@ -855,6 +900,9 @@ namespace wz::engine::behavior
                 break;
 
             case BehaviorCommandKind::SetLocalRotation:
+                if (!command_values_finite(command, 4)) {
+                    break;
+                }
                 set_local_rotation(
                     node.local,
                     wz::math::Quaternion{
@@ -871,6 +919,9 @@ namespace wz::engine::behavior
                 break;
 
             case BehaviorCommandKind::SetLinearVelocity: {
+                if (!command_values_finite(command, 3)) {
+                    break;
+                }
                 auto* motion = ensure_motion(scene, command.entity);
                 motion->linear_velocity[0] = command.values[0];
                 motion->linear_velocity[1] = command.values[1];
@@ -881,6 +932,9 @@ namespace wz::engine::behavior
             }
 
             case BehaviorCommandKind::SetAngularVelocity: {
+                if (!command_values_finite(command, 3)) {
+                    break;
+                }
                 auto* motion = ensure_motion(scene, command.entity);
                 motion->angular_velocity[0] = command.values[0];
                 motion->angular_velocity[1] = command.values[1];
