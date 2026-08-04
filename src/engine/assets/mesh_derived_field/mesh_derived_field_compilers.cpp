@@ -92,52 +92,52 @@ namespace wz::engine::assets::internal
         }
 
         MeshAsset mesh_asset_from_dep(
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::size_t index)
         {
             MeshAsset asset{};
             if (dep_nodes.size() > index) {
-                asset.output = dep_nodes[index].key;
+                asset.output = dep_nodes[index]->key;
             }
             return asset;
         }
 
         ComputePipelineAsset compute_pipeline_asset_from_dep(
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::size_t index)
         {
             ComputePipelineAsset asset{};
             if (dep_nodes.size() > index) {
-                asset.key = dep_nodes[index].key;
+                asset.key = dep_nodes[index]->key;
             }
             return asset;
         }
 
         MeshDerivedFieldAsset mesh_field_asset_from_dep(
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::size_t index)
         {
             MeshDerivedFieldAsset asset{};
             if (dep_nodes.size() > index) {
-                asset.output = dep_nodes[index].key;
+                asset.output = dep_nodes[index]->key;
             }
             return asset;
         }
 
         MeshSparseOperatorAsset sparse_operator_asset_from_dep(
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::size_t index)
         {
             MeshSparseOperatorAsset asset{};
             if (dep_nodes.size() > index) {
-                asset.output = dep_nodes[index].key;
+                asset.output = dep_nodes[index]->key;
             }
             return asset;
         }
 
         ExplicitMeshDerivedFieldDesc explicit_field_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             ExplicitMeshDerivedFieldDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -170,7 +170,7 @@ namespace wz::engine::assets::internal
 
         BuiltinMeshDerivedFieldDesc builtin_field_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             BuiltinMeshDerivedFieldDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -206,7 +206,7 @@ namespace wz::engine::assets::internal
 
         MeshSparseApplyFieldDesc sparse_apply_field_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             MeshSparseApplyFieldDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -232,7 +232,7 @@ namespace wz::engine::assets::internal
 
         MeshSparseDiffusionBandsDesc sparse_diffusion_bands_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             MeshSparseDiffusionBandsDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -265,7 +265,7 @@ namespace wz::engine::assets::internal
 
         MeshFieldLevelMaskDesc field_level_mask_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             MeshFieldLevelMaskDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -290,7 +290,7 @@ namespace wz::engine::assets::internal
 
         MeshWaveletAnalysisDesc wavelet_analysis_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             MeshWaveletAnalysisDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -310,7 +310,7 @@ namespace wz::engine::assets::internal
 
         MeshComputeDerivedFieldDesc compute_derived_field_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             MeshComputeDerivedFieldDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -339,7 +339,7 @@ namespace wz::engine::assets::internal
 
         BehaviorFieldPlaceholderDesc behavior_placeholder_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             BehaviorFieldPlaceholderDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -3327,7 +3327,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_compute_derived_field_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshFieldComputeBackend& mesh_field_compute,
@@ -3429,7 +3429,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_explicit_mesh_derived_field_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -3507,7 +3507,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_sparse_apply_field_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -3609,7 +3609,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_sparse_diffusion_bands_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -3715,7 +3715,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_field_level_mask_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -3809,7 +3809,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_builtin_mesh_derived_field_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -3918,7 +3918,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_wavelet_analysis_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshFieldComputeBackend& mesh_field_compute,
@@ -4022,7 +4022,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_behavior_field_placeholder_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -4156,7 +4156,7 @@ namespace wz::engine::assets::internal
                 &mesh_derived_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -4248,7 +4248,7 @@ namespace wz::engine::assets::internal
                 &mesh_derived_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -4309,7 +4309,7 @@ namespace wz::engine::assets::internal
                 &mesh_sparse_operator_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -4395,7 +4395,7 @@ namespace wz::engine::assets::internal
                 &mesh_sparse_operator_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -4467,7 +4467,7 @@ namespace wz::engine::assets::internal
                 &mesh_derived_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -4529,7 +4529,7 @@ namespace wz::engine::assets::internal
                 &gpu_resident_field_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -4596,7 +4596,7 @@ namespace wz::engine::assets::internal
                 &gpu_resident_mesh_data_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -4649,7 +4649,7 @@ namespace wz::engine::assets::internal
                 &mesh_table,
                 &mesh_derived_field_table](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

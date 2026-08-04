@@ -19,12 +19,12 @@ namespace wz::engine::assets::internal
         // (dep ordering is not guaranteed once an optional port exists, the trap
         // issue #218 documents; the renderable compiler uses the same helper).
         wz::asset::AssetKey dep_key_of_type(
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             wz::asset::AssetType type)
         {
-            for (const auto& dep : dep_nodes) {
-                if (dep.type == type) {
-                    return dep.key;
+            for (const wz::asset::AssetNode* dep : dep_nodes) {
+                if (dep->type == type) {
+                    return dep->key;
                 }
             }
             return {};
@@ -78,7 +78,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &environment_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {

@@ -398,7 +398,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

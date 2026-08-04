@@ -5503,7 +5503,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &json_table, &scene_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -5630,7 +5630,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &scene_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {
@@ -5642,7 +5642,7 @@ namespace wz::engine::assets::internal
                 }
 
                 const auto* bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
                 if (!bytes || bytes->empty()) {
                     const std::string reason =
                         "GLB scene file dependency is invalid";
@@ -5760,7 +5760,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &scene_table, &mesh_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

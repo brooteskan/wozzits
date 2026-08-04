@@ -137,7 +137,7 @@ TEST(FoundationCarriers, CustomBinaryFileSchemaFeedsDependentRecipe)
         .output_type = kTestTextConsumerType,
         .compile = [expected_bytes](
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
         {
             if (dep_nodes.size() != 1) {
@@ -145,7 +145,7 @@ TEST(FoundationCarriers, CustomBinaryFileSchemaFeedsDependentRecipe)
             }
 
             const auto* bytes =
-                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
 
             if (!bytes) {
                 return input;
@@ -269,7 +269,7 @@ TEST(FoundationCarriers, ImportedSourceFileSchemaFeedsDependentRecipe)
         .output_type = kTestTextConsumerType,
         .compile = [expected_bytes](
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
         {
             if (dep_nodes.size() != 1) {
@@ -277,7 +277,7 @@ TEST(FoundationCarriers, ImportedSourceFileSchemaFeedsDependentRecipe)
             }
 
             const auto* bytes =
-                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
 
             if (!bytes) {
                 return input;
@@ -397,7 +397,7 @@ TEST(FoundationCarriers, BinaryBlobSchemaFeedsDependentRecipe)
         .output_type = kTestTextConsumerType,
         .compile = [expected_bytes](
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
         {
             if (dep_nodes.size() != 1) {
@@ -405,7 +405,7 @@ TEST(FoundationCarriers, BinaryBlobSchemaFeedsDependentRecipe)
             }
 
             const auto* bytes =
-                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
 
             if (!bytes) {
                 return input;
@@ -524,7 +524,7 @@ TEST(FoundationCarriers, TextFileSchemaFeedsDependentRecipe)
         .output_type = kTestTextConsumerType,
         .compile = [](
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
         {
             if (dep_nodes.size() != 1) {
@@ -532,7 +532,7 @@ TEST(FoundationCarriers, TextFileSchemaFeedsDependentRecipe)
             }
 
             const auto* bytes =
-                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
 
             if (!bytes) {
                 return input;

@@ -55,12 +55,12 @@ namespace wz::engine::assets::internal
 
         MeshSparseOperatorDesc mesh_sparse_operator_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             MeshSparseOperatorDesc desc{};
             desc.name = params.get<std::string>("name", {});
             if (!dep_nodes.empty()) {
-                desc.source_mesh.output = dep_nodes[0].key;
+                desc.source_mesh.output = dep_nodes[0]->key;
             }
             desc.kind =
                 enum_param(
@@ -575,7 +575,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_sparse_operator_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -728,7 +728,7 @@ namespace wz::engine::assets::internal
                 &mesh_sparse_operator_table,
                 cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

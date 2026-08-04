@@ -328,9 +328,11 @@ registry.register_compiler(wz::asset::AssetCompiler{
     .output_type = kAssetTypeTexture,
     .compile = [&logger, &texture_table](
         const wz::asset::AssetNode& input,
-        std::span<const wz::asset::AssetNode> dep_nodes,
+        std::span<const wz::asset::AssetNode* const> dep_nodes,
         std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
     {
+        // dep_nodes: borrowed pointers into live node storage, valid for this
+        // call only (read as dep_nodes[i]->payload). Never null, never retained.
         // validate meta
         // validate deps
         // generate/decode TextureData

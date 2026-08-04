@@ -48,18 +48,18 @@ namespace wz::engine::assets::internal
         }
 
         wz::asset::AssetKey dep_key(
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             size_t index)
         {
             if (index < dep_nodes.size()) {
-                return dep_nodes[index].key;
+                return dep_nodes[index]->key;
             }
             return {};
         }
 
 
         RhiPullMeshRenderableCompileDesc rhi_pull_mesh_renderable_desc_from_deps(
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             RhiPullMeshRenderableCompileDesc desc{};
             desc.mesh_asset = dep_key(dep_nodes, 0);
@@ -95,7 +95,7 @@ namespace wz::engine::assets::internal
 
         GpuSparseMeshRenderableCompileDesc
         gpu_sparse_mesh_renderable_desc_from_deps(
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             GpuSparseMeshRenderableCompileDesc desc{};
             desc.sparse_mesh_asset = dep_key(dep_nodes, 0);
@@ -105,7 +105,7 @@ namespace wz::engine::assets::internal
 
         GaussianSplatCloudRhiRenderableCompileDesc
         gaussian_splat_cloud_rhi_renderable_desc_from_deps(
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             // Dependency order matches the create API + compiler input ports:
             // splat cloud, render program. The splat size is not recoverable
@@ -128,7 +128,7 @@ namespace wz::engine::assets::internal
 
         StarFieldRhiRenderableCompileDesc
         star_field_rhi_renderable_desc_from_deps(
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             // Dependency order matches the create API + compiler input ports:
             // star catalog, render program. The star size arrives via a
@@ -155,7 +155,7 @@ namespace wz::engine::assets::internal
         // the schema (issue #234); the clipmap is a 0x70A custom renderable.
         ScalarFieldDebugRenderableCompileDesc
         scalar_field_debug_renderable_desc_from_deps(
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             ScalarFieldDebugRenderableCompileDesc desc{};
             desc.scalar_field_asset = dep_key(dep_nodes, 0);
@@ -306,7 +306,7 @@ namespace wz::engine::assets::internal
         build_custom_renderable_recipe(
             const CustomRenderableCompileDesc& desc,
             const RenderProgramData& program,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             const ClipmapLandscapeRenderSettings* terrain_footprint,
             RhiRenderableRecipe& out)
         {
@@ -326,9 +326,9 @@ namespace wz::engine::assets::internal
                 [&](const wz::asset::AssetKey& key)
                     -> std::optional<wz::asset::AssetType>
                 {
-                    for (const wz::asset::AssetNode& dep : dep_nodes) {
-                        if (dep.key == key) {
-                            return dep.type;
+                    for (const wz::asset::AssetNode* dep : dep_nodes) {
+                        if (dep->key == key) {
+                            return dep->type;
                         }
                     }
                     return std::nullopt;
@@ -691,7 +691,7 @@ namespace wz::engine::assets::internal
             .compile = [logger, mesh_table, render_program_table,
                         mesh_render_style_table, rhi_renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -802,7 +802,7 @@ namespace wz::engine::assets::internal
             .compile = [logger, gpu_sparse_mesh_table, render_program_table,
                         rhi_renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -829,7 +829,7 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
                 if (dep_nodes.empty()
-                    || dep_nodes[0].key != desc->sparse_mesh_asset)
+                    || dep_nodes[0]->key != desc->sparse_mesh_asset)
                 {
                     logger->error(
                         "GPU sparse mesh renderable source asset key does not match sparse mesh dependency");
@@ -895,7 +895,7 @@ namespace wz::engine::assets::internal
             .compile = [logger, gaussian_splat_cloud_table,
                         render_program_table, rhi_renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -993,7 +993,7 @@ namespace wz::engine::assets::internal
             .compile = [logger, puppet_table,
                         render_program_table, rhi_renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -1088,7 +1088,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [logger, render_program_table, rhi_renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -1165,7 +1165,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [logger, scalar_fields_table, renderable_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -1308,7 +1308,7 @@ namespace wz::engine::assets::internal
                         placement_table, placed_field_table,
                         rhi_renderable_table, asset_system](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -1366,7 +1366,7 @@ namespace wz::engine::assets::internal
                         -> std::optional<size_t>
                     {
                         for (size_t i = 0; i < dep_nodes.size(); ++i) {
-                            if (dep_nodes[i].key == key) {
+                            if (dep_nodes[i]->key == key) {
                                 return i;
                             }
                         }
@@ -1451,10 +1451,19 @@ namespace wz::engine::assets::internal
                 // resolves each binding's source type from these deps. A
                 // PlacedField (below) injects a synthetic binding + dep, so work
                 // from mutable copies; without a PlacedField they equal *desc /
-                // dep_nodes exactly (the legacy path is unchanged).
+                // dep_nodes exactly (the legacy path is unchanged). Copying the
+                // deps is just a pointer copy now — the nodes stay borrowed from
+                // the resolver's storage.
                 CustomRenderableCompileDesc effective_desc = *desc;
-                std::vector<wz::asset::AssetNode> effective_deps(
+                std::vector<const wz::asset::AssetNode*> effective_deps(
                     dep_nodes.begin(), dep_nodes.end());
+
+                // Owns the one synthetic (one-hop) field dep injected below. It
+                // is not a real dep of this node, so it lives here rather than in
+                // compiled_nodes_; declared in this scope so its address stays
+                // valid through build_custom_renderable_recipe. Left default when
+                // no PlacedField is wired (the legacy path pushes nothing).
+                wz::asset::AssetNode synthetic_field_dep{};
 
                 if (!(desc->placed_field_asset == wz::asset::AssetKey{})) {
                     // A connected PlacedField (issue #223) is ONE upstream
@@ -1497,10 +1506,9 @@ namespace wz::engine::assets::internal
                     effective_desc.bindings.push_back(
                         CustomRenderableCompileDesc::Binding{
                             height_semantic, placed->field_key });
-                    wz::asset::AssetNode field_dep{};
-                    field_dep.key = placed->field_key;
-                    field_dep.type = placed->field_type;
-                    effective_deps.push_back(std::move(field_dep));
+                    synthetic_field_dep.key = placed->field_key;
+                    synthetic_field_dep.type = placed->field_type;
+                    effective_deps.push_back(&synthetic_field_dep);
 
                     // The placement drives the footprint. It is a dep of the
                     // PlacedField (one hop away), so resolve it through the asset

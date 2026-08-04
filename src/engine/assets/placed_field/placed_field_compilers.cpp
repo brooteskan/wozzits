@@ -42,7 +42,7 @@ namespace wz::engine::assets::internal
             .parameters = {},
             .compile = [&logger, &placed_field_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {
@@ -52,16 +52,16 @@ namespace wz::engine::assets::internal
                 wz::asset::AssetKey field_key{};
                 wz::asset::AssetType field_type = wz::asset::AssetType::Unknown;
                 wz::asset::AssetKey placement_key{};
-                for (const wz::asset::AssetNode& dep : dep_nodes) {
-                    if (dep.type == kAssetTypeScalarField) {
+                for (const wz::asset::AssetNode* dep : dep_nodes) {
+                    if (dep->type == kAssetTypeScalarField) {
                         if (field_key == wz::asset::AssetKey{}) {
-                            field_key = dep.key;
-                            field_type = dep.type;
+                            field_key = dep->key;
+                            field_type = dep->type;
                         }
                     }
-                    else if (dep.type == kAssetTypePlacement) {
+                    else if (dep->type == kAssetTypePlacement) {
                         if (placement_key == wz::asset::AssetKey{}) {
-                            placement_key = dep.key;
+                            placement_key = dep->key;
                         }
                     }
                 }

@@ -805,7 +805,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &scalar_field_table, cache_settings,
                         gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 // ── 1. Validate metadata ──────────────────────────────────────
@@ -844,7 +844,7 @@ namespace wz::engine::assets::internal
                 }
 
                 const auto* bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
 
                 if (!bytes) {
                     logger.error("scalar field dep node has no byte payload");
@@ -1043,7 +1043,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &scalar_field_table, cache_settings,
                         gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 // ── 1. Validate metadata ──────────────────────────────────────
@@ -1344,7 +1344,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &scalar_field_table, cache_settings,
                         gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 // ── 1. Validate metadata ──────────────────────────────────────
@@ -1573,7 +1573,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &scalar_field_table, cache_settings,
                         gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 // ── 1. Resolve domain_kind (typed desc or ParamBlock) ─────────
@@ -1624,7 +1624,7 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
                 const auto* bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
                 if (!bytes) {
                     logger.error(
                         "Gaea r32 scalar field dep node has no byte payload");

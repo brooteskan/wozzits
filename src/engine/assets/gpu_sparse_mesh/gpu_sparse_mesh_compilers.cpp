@@ -70,11 +70,11 @@ namespace wz::engine::assets::internal
 
         GpuSparseMeshDesc gpu_sparse_mesh_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> deps)
+            std::span<const wz::asset::AssetNode* const> deps)
         {
             GpuSparseMeshDesc desc{};
             if (!deps.empty()) {
-                desc.source_mesh = MeshAsset{ .output = deps[0].key };
+                desc.source_mesh = MeshAsset{ .output = deps[0]->key };
             }
             desc.name = params.get<std::string>("name", {});
             desc.operator_kind =
@@ -408,7 +408,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_gpu_sparse_mesh_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshFieldComputeBackend& compute,
@@ -441,7 +441,7 @@ namespace wz::engine::assets::internal
             const MeshData* source_mesh = nullptr;
             for (size_t i = 0; i < dep_handles.size(); ++i) {
                 if (i < dep_nodes.size()
-                    && dep_nodes[i].type != kAssetTypeMesh)
+                    && dep_nodes[i]->type != kAssetTypeMesh)
                 {
                     continue;
                 }
@@ -550,7 +550,7 @@ namespace wz::engine::assets::internal
                 gpu_resources,
                 rhi_resource_tracker = std::move(rhi_resource_tracker)](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

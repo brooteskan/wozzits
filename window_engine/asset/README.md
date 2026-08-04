@@ -167,9 +167,9 @@ registry.register_compiler(AssetCompiler{
     .input_schema = kAlbedoSchema,
     .output_type  = AssetType::Texture,
     .compile = [&gpu](
-        const AssetNode&           input,
-        std::span<const AssetNode> dep_nodes,
-        std::span<const GPUHandle> dep_handles) -> AssetNode
+        const AssetNode&                 input,
+        std::span<const AssetNode* const> dep_nodes,
+        std::span<const GPUHandle>       dep_handles) -> AssetNode
     {
         // 1. Decode the source bytes into an intermediate format.
         auto& raw  = std::get<std::vector<uint8_t>>(input.payload);
@@ -190,6 +190,8 @@ AssetSystem sys(std::move(registry));
 ```
 
 The compiler receives `dep_nodes` and `dep_handles` in the same order as the node's declared prerequisites. A compiler for a node with no prerequisites can ignore both spans.
+
+`dep_nodes` is a span of **borrowed** pointers into the resolver's live node storage — never null, valid only for the duration of the call, and never to be retained past it. They are not owning copies: a source prerequisite carries the whole file's bytes and an intermediate the whole `AssetIR`, so passing them by pointer avoids copying every prerequisite's payload on every compile. Anything the compiler needs to keep must be copied into the node it returns.
 
 **The compiler contract:**
 - Must be deterministic and side-effect-free.
@@ -296,7 +298,7 @@ void setup_assets(GPUDevice& gpu) {
         .input_schema = kPBRMaterialSchema,
         .output_type  = AssetType::Material,
         .compile = [&](const AssetNode& n,
-                       std::span<const AssetNode> dep_nodes,
+                       std::span<const AssetNode* const> dep_nodes,
                        std::span<const GPUHandle> dep_handles) {
             // dep_handles[0] = albedo texture, dep_handles[1] = mesh
             return compiled_node(n, gpu.create_material(dep_handles));

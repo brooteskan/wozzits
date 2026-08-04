@@ -344,7 +344,7 @@ namespace wz::engine::assets::internal
             .parameters = make_layout_parameters(),
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -431,7 +431,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {
@@ -440,16 +440,16 @@ namespace wz::engine::assets::internal
                 // table handle — unambiguous regardless of dep order.
                 const std::vector<uint8_t>* body = nullptr;
                 const RenderBindingLayoutData* layout = nullptr;
-                for (const wz::asset::AssetNode& dep : dep_nodes) {
+                for (const wz::asset::AssetNode* dep : dep_nodes) {
                     if (const auto* bytes =
-                            std::get_if<std::vector<uint8_t>>(&dep.payload))
+                            std::get_if<std::vector<uint8_t>>(&dep->payload))
                     {
                         body = bytes;
                         continue;
                     }
                     if (const auto* handle =
                             std::get_if<wz::asset::ResourceHandle>(
-                                &dep.payload))
+                                &dep->payload))
                     {
                         layout = table.get(*handle);
                     }

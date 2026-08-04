@@ -139,7 +139,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_ply_gaussian_splat_cloud_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             wz::Logger& logger,
             GaussianSplatCloudTable& table)
         {
@@ -149,7 +149,7 @@ namespace wz::engine::assets::internal
             }
 
             const auto* bytes =
-                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
 
             if (!bytes || bytes->empty()) {
                 logger.error("PLY gaussian splat file dependency has no bytes");
@@ -490,7 +490,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 ProceduralGaussianSplatCloudCompileDesc param_desc{};
@@ -561,7 +561,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 return compile_ply_gaussian_splat_cloud_node(
@@ -648,7 +648,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &table, &scalar_field_table,
                         gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> /*dep_nodes*/,
+                std::span<const wz::asset::AssetNode* const> /*dep_nodes*/,
                 std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
             {
                 GaussianSplatFromScalarFieldCompileDesc param_desc{};

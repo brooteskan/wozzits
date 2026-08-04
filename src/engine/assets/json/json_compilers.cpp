@@ -24,7 +24,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &json_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 if (dep_nodes.empty()) {
@@ -33,7 +33,7 @@ namespace wz::engine::assets::internal
                 }
 
                 const auto* bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
 
                 if (!bytes) {
                     logger.error("JSON file dep node has no byte payload");

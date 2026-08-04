@@ -569,11 +569,11 @@ namespace wz::engine::assets::internal
         TerrainFromHeightFieldCompileDesc
         terrain_from_height_field_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             TerrainFromHeightFieldCompileDesc desc{};
             if (!dep_nodes.empty()) {
-                desc.height_field = dep_nodes[0].key;
+                desc.height_field = dep_nodes[0]->key;
             }
             desc.origin[0] = params.get<float>("origin_x", desc.origin[0]);
             desc.origin[1] = params.get<float>("origin_z", desc.origin[1]);
@@ -600,11 +600,11 @@ namespace wz::engine::assets::internal
 
         TerrainFromMeshCompileDesc terrain_from_mesh_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             TerrainFromMeshCompileDesc desc{};
             if (!dep_nodes.empty()) {
-                desc.mesh = dep_nodes[0].key;
+                desc.mesh = dep_nodes[0]->key;
             }
             desc.height_policy =
                 enum_param(
@@ -1206,7 +1206,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &scalar_fields_table, &terrain_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -1373,7 +1373,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &mesh_table, &terrain_table, cache_settings](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

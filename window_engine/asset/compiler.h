@@ -28,18 +28,38 @@ namespace wz::asset {
 // ─── CompileFn ────────────────────────────────────────────────────────────────
 //
 //   input        — the node being compiled (Source or Intermediate stage)
-//   dep_nodes    — prerequisite AssetNodes as stored in the DAG
+//   dep_nodes    — non-owning pointers to the prerequisites' compiled nodes
 //                  (parallel with dep_handles, same ordering as DAG edges)
 //   dep_handles  — resolved GPUHandles for each prerequisite
 //                  (INVALID_GPU_HANDLE when the prereq is CPU-only)
 //
 // Returns the next-stage AssetNode. If transitioning to AssetStage::Compiled,
 // the returned node's payload must hold a valid GPUHandle.
+//
+// ─── dep_nodes lifetime ───
+//
+// The pointers are borrowed, never null, and valid only for the duration of
+// the call. An AssetNode owns its payload — a Source prerequisite carries the
+// whole file's bytes, an Intermediate the whole AssetIR — so passing them by
+// value copied every prerequisite's payload on every compile. The pointers
+// address the resolver's live compiled-node storage directly.
+//
+// The resolver guarantees the pointed-to nodes are stable across the call:
+//   - it takes the addresses only after every prerequisite has finished
+//     resolving, so no recursive resolve can rehash or re-seat them
+//     afterwards (see AssetSystem::resolve);
+//   - compiled-node storage is a node-based map, so unrelated insertions
+//     never move an existing element;
+//   - a compiler is a pure function with no handle to the AssetSystem, so it
+//     cannot trigger a resolve — and therefore an erase — of its own inputs.
+//
+// A compiler must not retain a dep_nodes pointer past its return. Anything it
+// needs to keep must be copied into the node it returns.
 
 using CompileFn = std::function<AssetNode(
-    const AssetNode&            input,
-    std::span<const AssetNode>  dep_nodes,
-    std::span<const ResourceHandle>  dep_handles
+    const AssetNode&                  input,
+    std::span<const AssetNode* const> dep_nodes,
+    std::span<const ResourceHandle>   dep_handles
 )>;
 
 // ─── AssetCompiler ────────────────────────────────────────────────────────────

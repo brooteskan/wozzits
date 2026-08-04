@@ -348,7 +348,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &direct_light_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {
@@ -421,7 +421,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &ambient_lighting_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {
@@ -575,7 +575,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &hdri_environment_table,
                         gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>)
                     -> wz::asset::AssetNode
             {
@@ -596,7 +596,7 @@ namespace wz::engine::assets::internal
                         param_desc =
                             hdri_environment_desc_from_params(
                                 *params,
-                                dep_nodes[0].key);
+                                dep_nodes[0]->key);
                         desc = &param_desc;
                     }
                 }
@@ -610,13 +610,13 @@ namespace wz::engine::assets::internal
                     logger.error("HDRI environment compile desc is invalid");
                     return compile_failed_node(input);
                 }
-                if (!(dep_nodes[0].key == desc->source_file)) {
+                if (!(dep_nodes[0]->key == desc->source_file)) {
                     logger.error(
                         "HDRI environment source file dependency key mismatch");
                     return compile_failed_node(input);
                 }
                 const auto* bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
                 if (!bytes || bytes->empty()) {
                     logger.error(
                         "HDRI environment source file has no byte payload");

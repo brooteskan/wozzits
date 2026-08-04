@@ -33,7 +33,7 @@ static AssetCompiler make_stub_compiler(SchemaID schema, AssetType type)
         .input_schema = schema,
         .output_type = type,
         .compile = [](const AssetNode& input,
-                      std::span<const AssetNode>,
+                      std::span<const AssetNode* const>,
                       std::span<const ResourceHandle>) -> AssetNode
         {
             AssetNode out = input;
@@ -59,7 +59,7 @@ static AssetCompiler make_failing_compiler(SchemaID schema, AssetType type)
         .input_schema = schema,
         .output_type = type,
         .compile = [](const AssetNode& input,
-                      std::span<const AssetNode>,
+                      std::span<const AssetNode* const>,
                       std::span<const ResourceHandle>) -> AssetNode
         {
             // Returns the node unchanged — still Source stage, no ResourceHandle.
@@ -392,7 +392,7 @@ TEST_F(AssetSystemTest, RecommitPreservesCachedCompiledAssets)
         .input_schema = kMeshSchema,
         .output_type = AssetType::Mesh,
         .compile = [&](const AssetNode& input,
-                       std::span<const AssetNode>,
+                       std::span<const AssetNode* const>,
                        std::span<const ResourceHandle>) -> AssetNode {
             ++compile_count;
             AssetNode out = input;
@@ -636,7 +636,7 @@ TEST_F(AssetSystemTest, FailedNodeCapturesCompilerReasonDetail)
         .input_schema = kMeshSchema,
         .output_type = AssetType::Mesh,
         .compile = [](const AssetNode& input,
-                      std::span<const AssetNode>,
+                      std::span<const AssetNode* const>,
                       std::span<const ResourceHandle>) -> AssetNode {
             AssetNode out = input;
             out.error_detail = "mesh source is invalid";
@@ -684,7 +684,7 @@ TEST_F(AssetSystemTest, SuccessfulReresolveClearsPreviousError)
         .output_type = AssetType::Mesh,
         .compile = [&fail_compile](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode {
             if (fail_compile) {
                 return input;
@@ -739,7 +739,7 @@ TEST_F(AssetSystemTest, CompiledResourceHandleMustBeValid)
         .input_schema = kMeshSchema,
         .output_type = AssetType::Mesh,
         .compile = [](const AssetNode& input,
-                      std::span<const AssetNode>,
+                      std::span<const AssetNode* const>,
                       std::span<const ResourceHandle>) -> AssetNode {
             AssetNode out = input;
             out.stage = AssetStage::Compiled;
@@ -768,7 +768,7 @@ TEST_F(AssetSystemTest, CompiledResourceNodeMustKeepInputIdentity)
         .input_schema = kMeshSchema,
         .output_type = AssetType::Mesh,
         .compile = [](const AssetNode& input,
-                      std::span<const AssetNode>,
+                      std::span<const AssetNode* const>,
                       std::span<const ResourceHandle>) -> AssetNode {
             AssetNode out = input;
             out.key = kKeyB;
@@ -798,7 +798,7 @@ TEST_F(AssetSystemTest, CompiledResourceNodeMustKeepInputType)
         .input_schema = kMeshSchema,
         .output_type = AssetType::Mesh,
         .compile = [](const AssetNode& input,
-                      std::span<const AssetNode>,
+                      std::span<const AssetNode* const>,
                       std::span<const ResourceHandle>) -> AssetNode {
             AssetNode out = input;
             out.type = AssetType::Texture;
@@ -828,7 +828,7 @@ TEST_F(AssetSystemTest, CompiledStageRejectsIntermediatePayload)
         .input_schema = kMeshSchema,
         .output_type = AssetType::Mesh,
         .compile = [](const AssetNode& input,
-                      std::span<const AssetNode>,
+                      std::span<const AssetNode* const>,
                       std::span<const ResourceHandle>) -> AssetNode {
             AssetNode out = input;
             out.stage = AssetStage::Compiled;
@@ -861,7 +861,7 @@ TEST_F(AssetSystemTest, CompiledCarrierPayloadCanSatisfyDependent)
         .input_schema = kCarrierSchema,
         .output_type = kCarrierType,
         .compile = [](const AssetNode& input,
-                      std::span<const AssetNode>,
+                      std::span<const AssetNode* const>,
                       std::span<const ResourceHandle>) -> AssetNode {
             AssetNode out = input;
             out.stage = AssetStage::Compiled;
@@ -873,13 +873,13 @@ TEST_F(AssetSystemTest, CompiledCarrierPayloadCanSatisfyDependent)
         .input_schema = kConsumerSchema,
         .output_type = kConsumerType,
         .compile = [](const AssetNode& input,
-                      std::span<const AssetNode> dep_nodes,
+                      std::span<const AssetNode* const> dep_nodes,
                       std::span<const ResourceHandle> dep_handles) -> AssetNode {
             if (dep_nodes.size() != 1 || dep_handles.size() != 1)
                 return input;
 
             const auto* bytes =
-                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
             if (!bytes || *bytes != std::vector<uint8_t>{ 'o', 'k' })
                 return input;
             if (dep_handles[0].valid())
@@ -917,7 +917,7 @@ TEST_F(AssetSystemTest, RecompileAfterInvalidationUpdatesCompiledNode)
         .input_schema = kMeshSchema,
         .output_type = AssetType::Mesh,
         .compile = [&compile_count](const AssetNode& input,
-                                    std::span<const AssetNode>,
+                                    std::span<const AssetNode* const>,
                                     std::span<const ResourceHandle>) -> AssetNode {
             ++compile_count;
 
@@ -979,7 +979,7 @@ TEST_F(AssetSystemTest, ResolveIgnoresCacheEntryWithoutCompiledNode)
         .input_schema = kMeshSchema,
         .output_type = AssetType::Mesh,
         .compile = [&compile_count](const AssetNode& input,
-                                    std::span<const AssetNode>,
+                                    std::span<const AssetNode* const>,
                                     std::span<const ResourceHandle>) -> AssetNode {
             ++compile_count;
 
@@ -1023,7 +1023,7 @@ TEST_F(AssetSystemTest, FailedRecompileClearsStaleCompiledNode)
         .input_schema = kMeshSchema,
         .output_type = AssetType::Mesh,
         .compile = [&fail_next](const AssetNode& input,
-                                std::span<const AssetNode>,
+                                std::span<const AssetNode* const>,
                                 std::span<const ResourceHandle>) -> AssetNode {
             if (fail_next)
                 return input;
@@ -1231,7 +1231,7 @@ TEST_F(AssetSystemTest, Resolve_SharedDependency_CompiledOnce)
         .input_schema = kTexSchema,
         .output_type = AssetType::Texture,
         .compile = [&](const AssetNode& in,
-                       std::span<const AssetNode>,
+                       std::span<const AssetNode* const>,
                        std::span<const ResourceHandle>) -> AssetNode {
             ++compile_count;
             AssetNode out = in;
@@ -1321,7 +1321,7 @@ TEST_F(AssetSystemTest, ResolveRoots_CacheRequiredMissDoesNotResolvePrerequisite
         .output_type = AssetType::Texture,
         .compile = [&source_compile_count](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode {
             ++source_compile_count;
             AssetNode out = input;
@@ -1408,7 +1408,7 @@ TEST_F(AssetSystemTest, ResolveRoots_CachePreferredMissFallsBackToSource)
         .output_type = AssetType::Texture,
         .compile = [&compile_count](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode {
             ++compile_count;
             AssetNode out = input;
@@ -1422,7 +1422,7 @@ TEST_F(AssetSystemTest, ResolveRoots_CachePreferredMissFallsBackToSource)
         .output_type = AssetType::Mesh,
         .compile = [&compile_count](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode {
             ++compile_count;
             AssetNode out = input;
@@ -1464,7 +1464,7 @@ TEST_F(AssetSystemTest, ResolveRoots_ForceRecompileIgnoresExternalProvider)
         .output_type = AssetType::Mesh,
         .compile = [&compile_count](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode {
             ++compile_count;
             AssetNode out = input;
@@ -1510,7 +1510,7 @@ TEST_F(AssetSystemTest, ResolveRoots_ForceRecompileRefreshesCachedState)
         .output_type = AssetType::Mesh,
         .compile = [&compile_count](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode {
             ++compile_count;
             AssetNode out = input;

@@ -206,7 +206,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &table, &json_table,
                         gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
             {
                 // dep[0] = compiled JSONDocument carrying the baked set.

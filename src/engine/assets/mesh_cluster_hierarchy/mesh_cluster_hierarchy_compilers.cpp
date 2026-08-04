@@ -50,30 +50,30 @@ namespace wz::engine::assets::internal
         }
 
         MeshAsset mesh_asset_from_dep(
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::size_t index)
         {
             MeshAsset asset{};
             if (dep_nodes.size() > index) {
-                asset.output = dep_nodes[index].key;
+                asset.output = dep_nodes[index]->key;
             }
             return asset;
         }
 
         MeshClusterHierarchyAsset hierarchy_asset_from_dep(
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::size_t index)
         {
             MeshClusterHierarchyAsset asset{};
             if (dep_nodes.size() > index) {
-                asset.output = dep_nodes[index].key;
+                asset.output = dep_nodes[index]->key;
             }
             return asset;
         }
 
         MeshClusterHierarchyDesc hierarchy_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             MeshClusterHierarchyDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -93,7 +93,7 @@ namespace wz::engine::assets::internal
 
         MeshClusterHierarchyPreviewMeshDesc preview_mesh_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             MeshClusterHierarchyPreviewMeshDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -2201,7 +2201,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_cluster_hierarchy_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshFieldComputeBackend& mesh_field_compute,
@@ -2392,7 +2392,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_mesh_cluster_hierarchy_preview_mesh_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -2521,7 +2521,7 @@ namespace wz::engine::assets::internal
                 &gpu_resident_mesh_cluster_hierarchy_table,
                 &hierarchy_table](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -2568,7 +2568,7 @@ namespace wz::engine::assets::internal
                 &mesh_table,
                 &hierarchy_table](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

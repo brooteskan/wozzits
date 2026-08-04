@@ -386,7 +386,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_procedural_mesh_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             wz::Logger& logger,
             MeshTable& mesh_table,
             MeshData(*make_mesh)())
@@ -411,7 +411,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_sphere_mesh_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             wz::Logger& logger,
             MeshTable& mesh_table)
         {
@@ -446,7 +446,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_glb_mesh_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             wz::Logger& logger,
             MeshTable& mesh_table,
             const EngineAssetCacheSettings& cache_settings)
@@ -457,7 +457,7 @@ namespace wz::engine::assets::internal
             }
 
             const auto* bytes =
-                std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
 
             if (!bytes || bytes->empty()) {
                 logger.error("GLB mesh dependency did not provide file bytes");
@@ -761,7 +761,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetNode compile_clipmap_lattice_mesh_node(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
             std::span<const wz::asset::ResourceHandle> dep_handles,
             wz::Logger& logger,
             MeshTable& mesh_table,
@@ -811,12 +811,12 @@ namespace wz::engine::assets::internal
                     i < dep_nodes.size() && i < dep_handles.size();
                     ++i)
                 {
-                    if (dep_nodes[i].type == kAssetTypeScalarField) {
+                    if (dep_nodes[i]->type == kAssetTypeScalarField) {
                         if (!field) {
                             field = scalar_field_table.get(dep_handles[i]);
                         }
                     }
-                    else if (dep_nodes[i].type
+                    else if (dep_nodes[i]->type
                         == kAssetTypeClipmapLatticeSchedule)
                     {
                         if (!schedule) {
@@ -943,7 +943,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 return compile_procedural_mesh_node(
@@ -963,7 +963,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 return compile_procedural_mesh_node(
@@ -983,7 +983,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 return compile_procedural_mesh_node(
@@ -1019,7 +1019,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 return compile_sphere_mesh_node(
@@ -1032,7 +1032,7 @@ namespace wz::engine::assets::internal
             .output_type = kAssetTypeMesh,
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 return compile_procedural_mesh_node(
@@ -1092,7 +1092,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &mesh_table, &scalar_field_table,
                         &clipmap_lattice_schedule_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -1125,7 +1125,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &mesh_table, cache_settings](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 return compile_glb_mesh_node(
@@ -1213,7 +1213,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
             {
                 return compile_decimated_mesh_node(
@@ -1247,7 +1247,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
             {
                 return compile_debug_triangle_stride_mesh_node(

@@ -65,7 +65,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &cloud_table, &json_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
             {
                 // ── 1. Validate dependency count ──
@@ -79,7 +79,7 @@ namespace wz::engine::assets::internal
                 }
 
                 const auto* r32_bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
 
                 if (!r32_bytes) {
                     logger.error(

@@ -99,7 +99,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode>,
+                std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 std::string path;
@@ -183,7 +183,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &device, shaders](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 wz::gpu::HLSLCompileDesc param_desc{};
@@ -229,7 +229,7 @@ namespace wz::engine::assets::internal
                 std::vector<std::span<const uint8_t>> sources;
                 sources.reserve(dep_nodes.size());
                 for (std::size_t i = 1; i < dep_nodes.size(); ++i) {
-                    const auto* bytes = source_bytes(dep_nodes[i]);
+                    const auto* bytes = source_bytes(*dep_nodes[i]);
                     if (!bytes) {
                         // An unwired optional shared port projects as an empty
                         // dep; skip it rather than failing the whole shader.
@@ -238,7 +238,7 @@ namespace wz::engine::assets::internal
                     sources.push_back({ bytes->data(), bytes->size() });
                 }
                 {
-                    const auto* bytes = source_bytes(dep_nodes[0]);
+                    const auto* bytes = source_bytes(*dep_nodes[0]);
                     if (!bytes) {
                         logger.error("file dep node has no byte payload");
                         return compile_failed_node(input);

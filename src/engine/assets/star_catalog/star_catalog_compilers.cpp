@@ -167,7 +167,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &table, &json_table,
                         gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles) -> wz::asset::AssetNode
             {
                 // dep[0] = compiled JSONDocument carrying the baked catalog.
@@ -339,7 +339,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &table, gpu_resources, rhi_resource_tracker](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
                 if (dep_nodes.size() != 1) {
@@ -348,7 +348,7 @@ namespace wz::engine::assets::internal
                     return compile_failed_node(input);
                 }
                 const auto* bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
                 if (!bytes || bytes->empty()) {
                     logger.error(
                         "star catalog PLY: file dependency has no bytes");

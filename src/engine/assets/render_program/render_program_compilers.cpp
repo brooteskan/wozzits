@@ -133,7 +133,7 @@ namespace wz::engine::assets::internal
 
         BuiltinRenderProgramDesc builtin_render_program_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             BuiltinRenderProgramDesc desc{};
             desc.name = params.get<std::string>("name", {});
@@ -144,25 +144,25 @@ namespace wz::engine::assets::internal
                     desc.program,
                     kBuiltinProgramOptions);
             if (dep_nodes.size() > 0u) {
-                desc.vertex_shader = dep_nodes[0].key;
+                desc.vertex_shader = dep_nodes[0]->key;
             }
             if (dep_nodes.size() > 1u) {
-                desc.pixel_shader = dep_nodes[1].key;
+                desc.pixel_shader = dep_nodes[1]->key;
             }
             return desc;
         }
 
         CustomRenderProgramDesc custom_render_program_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             CustomRenderProgramDesc desc{};
             desc.name = params.get<std::string>("name", {});
             if (dep_nodes.size() > 0u) {
-                desc.vertex_shader = dep_nodes[0].key;
+                desc.vertex_shader = dep_nodes[0]->key;
             }
             if (dep_nodes.size() > 1u) {
-                desc.pixel_shader = dep_nodes[1].key;
+                desc.pixel_shader = dep_nodes[1]->key;
             }
 
             desc.binding_model =
@@ -690,7 +690,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -848,7 +848,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &table, &binding_layouts, programs,
                         descriptor_semantics, constant_semantics](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -906,7 +906,7 @@ namespace wz::engine::assets::internal
                 CustomRenderProgramDesc effective = *desc;
                 const RenderBindingLayoutData* wired_layout = nullptr;
                 for (size_t i = 0; i < dep_nodes.size(); ++i) {
-                    if (dep_nodes[i].type != kAssetTypeRenderBindingLayout) {
+                    if (dep_nodes[i]->type != kAssetTypeRenderBindingLayout) {
                         continue;
                     }
                     if (i >= dep_handles.size() || !dep_handles[i].valid()) {
@@ -955,8 +955,8 @@ namespace wz::engine::assets::internal
                     publish_custom_rhi_render_program(
                         input.key,
                         effective,
-                        dep_nodes[0].key,
-                        dep_nodes[1].key,
+                        dep_nodes[0]->key,
+                        dep_nodes[1]->key,
                         *programs,
                         *descriptor_semantics,
                         *constant_semantics,
@@ -1035,7 +1035,7 @@ namespace wz::engine::assets::internal
             .compile = [&logger, &table, programs,
                         descriptor_semantics, constant_semantics](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -1088,8 +1088,8 @@ namespace wz::engine::assets::internal
                     publish_custom_rhi_render_program(
                         input.key,
                         desc,
-                        dep_nodes[0].key,
-                        dep_nodes[1].key,
+                        dep_nodes[0]->key,
+                        dep_nodes[1]->key,
                         *programs,
                         *descriptor_semantics,
                         *constant_semantics,

@@ -222,12 +222,14 @@ namespace wz::engine::assets::internal
             .output_type  = kAssetTypeMesh,
             .compile = [&logger, &mesh_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
             {
-                // 1. Read bytes from the file-carrier dependency.
+                // 1. Read bytes from the file-carrier dependency. dep_nodes holds
+                //    borrowed pointers into the resolver's live storage — valid
+                //    for this call only; never null; do not retain past return.
                 const auto* bytes =
-                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0].payload);
+                    std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
                 if (!bytes) return compile_failed_node(input);
 
                 // 2. Parse / validate.

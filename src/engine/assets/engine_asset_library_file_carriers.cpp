@@ -108,7 +108,7 @@ namespace wz::engine::assets::internal
                 },
                 .compile = [&logger, label](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode>,
+                    std::span<const wz::asset::AssetNode* const>,
                     std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
                 {
                     return compile_file_byte_carrier(input, logger, label);

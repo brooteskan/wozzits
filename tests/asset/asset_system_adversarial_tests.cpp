@@ -72,7 +72,7 @@ namespace
         c.output_type = kType;
         c.compile =
             [](const AssetNode& in,
-               std::span<const AssetNode>,
+               std::span<const AssetNode* const>,
                std::span<const ResourceHandle>) -> AssetNode
             {
                 ++g_behave.compiles;

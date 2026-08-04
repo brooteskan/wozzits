@@ -2329,7 +2329,7 @@ namespace wz::engine::assets::internal
 
         wz::asset::AssetKey terrain_visual_proxy_source_key(
             const wz::asset::AssetNode& input,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             if (const auto* terrain_key =
                     std::any_cast<wz::asset::AssetKey>(&input.meta);
@@ -2338,7 +2338,7 @@ namespace wz::engine::assets::internal
                 return *terrain_key;
             }
             if (!dep_nodes.empty()) {
-                return dep_nodes[0].key;
+                return dep_nodes[0]->key;
             }
             return {};
         }
@@ -2359,7 +2359,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &terrain_table, &terrain_visual_proxy_table, cache_settings](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

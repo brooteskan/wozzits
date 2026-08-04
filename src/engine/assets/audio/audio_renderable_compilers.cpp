@@ -105,7 +105,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &audio_renderable_table, &audio_clip_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -215,7 +215,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &audio_renderable_table, &audio_clip_bank_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -355,7 +355,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &audio_renderable_table, &audio_clip_bank_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

@@ -433,7 +433,7 @@ namespace wz::asset
         // before we proceed — no prerequisite is compiled more than once.
         const auto prereqs = prerequisites(g, nh);
 
-        std::vector<AssetNode>  dep_nodes;
+        std::vector<const AssetNode*> dep_nodes;
         std::vector<ResourceHandle> dep_handles;
         dep_nodes.reserve(prereqs.size());
         dep_handles.reserve(prereqs.size());
@@ -449,11 +449,33 @@ namespace wz::asset
                 return fail(ResolveError::DependencyFailed);
             }
 
-            // Use the post-compile node from compiled_nodes_ so compilers
-            // see the live payload (e.g. bytes preserved by a carrier compiler),
-            // not the original source-stage data from the DAG.
-            dep_nodes.push_back(compiled_nodes_.at(dep_key));
             dep_handles.push_back(std::get<ResourceHandle>(dep_result));
+        }
+
+        // Second pass, deliberately separate from the first: the compiler
+        // borrows pointers into compiled_nodes_, so the addresses are taken only
+        // after every prerequisite has finished resolving.
+        //
+        // For an unordered_map, the sole operation that invalidates a live
+        // element's address is erasing that element; inserting or erasing other
+        // keys never does. Taking addresses inside the first loop would expose
+        // one such erase: a later prerequisite's recursive resolve() can, in a
+        // diamond, re-resolve an earlier prerequisite, and the cache-validation
+        // path erases-and-reinserts an entry it finds stale — moving a node
+        // whose address we had already captured. Splitting the loop removes the
+        // need to reason about whether that can fire: once all prerequisites are
+        // resolved, nothing erases them before compile() returns. The only
+        // remaining writer is this call's own insert_or_assign below, which does
+        // not touch other elements, and compile() itself is a pure function with
+        // no handle to the AssetSystem, so it cannot resolve — and thus cannot
+        // erase — its own inputs.
+        //
+        // Nodes come from compiled_nodes_ rather than the DAG so compilers see
+        // the live payload (e.g. bytes preserved by a carrier compiler), not
+        // the original source-stage data.
+        for (NodeHandle ph : prereqs) {
+            const AssetKey& dep_key = wz::core::graph::node_data(g, ph).key;
+            dep_nodes.push_back(&compiled_nodes_.at(dep_key));
         }
 
         // Compile.

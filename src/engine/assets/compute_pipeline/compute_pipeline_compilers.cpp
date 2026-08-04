@@ -13,12 +13,12 @@ namespace wz::engine::assets::internal
     {
         ComputePipelineDesc compute_pipeline_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             ComputePipelineDesc desc{};
             desc.name = params.get<std::string>("name", {});
             if (!dep_nodes.empty()) {
-                desc.compute_shader = dep_nodes[0].key;
+                desc.compute_shader = dep_nodes[0]->key;
             }
             desc.root_constant_dwords =
                 params.get<uint32_t>(
@@ -92,7 +92,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {

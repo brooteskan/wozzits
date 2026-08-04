@@ -736,11 +736,11 @@ namespace wz::engine::assets::internal
 
         CollisionFromMeshCompileDesc collision_from_mesh_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             CollisionFromMeshCompileDesc desc{};
             if (!dep_nodes.empty()) {
-                desc.mesh = dep_nodes[0].key;
+                desc.mesh = dep_nodes[0]->key;
             }
             desc.build_method =
                 build_method_param(
@@ -755,11 +755,11 @@ namespace wz::engine::assets::internal
         CollisionFromTerrainCompileDesc
         collision_from_terrain_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             CollisionFromTerrainCompileDesc desc{};
             if (!dep_nodes.empty()) {
-                desc.terrain = dep_nodes[0].key;
+                desc.terrain = dep_nodes[0]->key;
             }
             desc.build_method =
                 build_method_param(
@@ -782,7 +782,7 @@ namespace wz::engine::assets::internal
         CollisionFromHeightFieldCompileDesc
         collision_from_height_field_desc_from_params(
             const wz::asset::ParamBlock& params,
-            std::span<const wz::asset::AssetNode> dep_nodes)
+            std::span<const wz::asset::AssetNode* const> dep_nodes)
         {
             CollisionFromHeightFieldCompileDesc desc{};
             // Locate the scalar field by TYPE, not positional index: the recipe
@@ -791,9 +791,9 @@ namespace wz::engine::assets::internal
             // recorded as the collision's source_asset/geometry_asset identity,
             // so it must be the scalar field. The common case (field at dep[0])
             // is unchanged.
-            for (const auto& dep : dep_nodes) {
-                if (dep.type == kAssetTypeScalarField) {
-                    desc.height_field = dep.key;
+            for (const wz::asset::AssetNode* dep : dep_nodes) {
+                if (dep->type == kAssetTypeScalarField) {
+                    desc.height_field = dep->key;
                     break;
                 }
             }
@@ -1707,7 +1707,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &mesh_table, &collision_table](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -1817,7 +1817,7 @@ namespace wz::engine::assets::internal
             },
             .compile = [&logger, &terrain_table, &collision_table, cache_settings](
                 const wz::asset::AssetNode& input,
-                std::span<const wz::asset::AssetNode> dep_nodes,
+                std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
                     -> wz::asset::AssetNode
             {
@@ -2053,7 +2053,7 @@ namespace wz::engine::assets::internal
                  &clipmap_lattice_schedule_table, asset_system,
                  cache_settings](
                     const wz::asset::AssetNode& input,
-                    std::span<const wz::asset::AssetNode> dep_nodes,
+                    std::span<const wz::asset::AssetNode* const> dep_nodes,
                     std::span<const wz::asset::ResourceHandle> dep_handles)
                         -> wz::asset::AssetNode
             {
@@ -2092,17 +2092,17 @@ namespace wz::engine::assets::internal
                     i < dep_nodes.size() && i < dep_handles.size();
                     ++i)
                 {
-                    if (dep_nodes[i].type == kAssetTypeScalarField) {
+                    if (dep_nodes[i]->type == kAssetTypeScalarField) {
                         if (!field) {
                             field = scalar_fields_table.get(dep_handles[i]);
                         }
                     }
-                    else if (dep_nodes[i].type == kAssetTypePlacement) {
+                    else if (dep_nodes[i]->type == kAssetTypePlacement) {
                         if (!placement) {
                             placement = placement_table.get(dep_handles[i]);
                         }
                     }
-                    else if (dep_nodes[i].type
+                    else if (dep_nodes[i]->type
                         == kAssetTypeClipmapLatticeSchedule)
                     {
                         if (!schedule) {
@@ -2119,14 +2119,14 @@ namespace wz::engine::assets::internal
                 // field + placement live one hop away (deps of the PlacedField),
                 // so resolve them through the asset system.
                 wz::asset::AssetKey placed_height_field_key{};
-                for (const wz::asset::AssetNode& dep : dep_nodes) {
-                    if (dep.type != kAssetTypePlacedField) {
+                for (const wz::asset::AssetNode* dep : dep_nodes) {
+                    if (dep->type != kAssetTypePlacedField) {
                         continue;
                     }
                     const PlacedFieldData* placed = nullptr;
                     if (asset_system) {
                         if (const auto* compiled =
-                                asset_system->find_compiled(dep.key))
+                                asset_system->find_compiled(dep->key))
                         {
                             placed = placed_field_table.get(compiled->handle);
                         }

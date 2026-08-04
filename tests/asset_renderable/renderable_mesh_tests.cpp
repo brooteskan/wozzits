@@ -188,7 +188,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         .output_type = kAssetTypeMesh,
         .compile = [&mesh_table](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode
         {
             AssetNode out = input;
@@ -202,7 +202,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         .output_type = kAssetTypeRenderProgram,
         .compile = [&render_program_table](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode
         {
             RenderProgramData data{};
@@ -230,7 +230,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableRecipeCarriesMeshAndProgramKeys
         .output_type = kAssetTypeGpuSparseMesh,
         .compile = [&gpu_sparse_mesh_table](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode
         {
             GpuSparseMeshData data{};
@@ -590,7 +590,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
         .output_type = kAssetTypeMesh,
         .compile = [&mesh_table](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode
         {
             AssetNode out = input;
@@ -604,7 +604,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
         .output_type = kAssetTypeRenderProgram,
         .compile = [&render_program_table](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode
         {
             RenderProgramData data{};
@@ -625,7 +625,7 @@ TEST(RenderableAssetModule, RhiPullMeshRenderableBakesOptionalStyleShading)
         .output_type = kAssetTypeMeshRenderStyle,
         .compile = [&mesh_render_style_table, authored_style](
             const AssetNode& input,
-            std::span<const AssetNode>,
+            std::span<const AssetNode* const>,
             std::span<const ResourceHandle>) -> AssetNode
         {
             AssetNode out = input;
