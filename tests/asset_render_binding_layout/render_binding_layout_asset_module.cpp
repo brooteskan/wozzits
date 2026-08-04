@@ -15,7 +15,10 @@
 #include <gpu/gpu.h>
 #include <logging/logger.h>
 
+#include <algorithm>
+#include <map>
 #include <string>
+#include <utility>
 
 namespace
 {
@@ -668,6 +671,129 @@ TEST(RenderBindingLayout, ViewBlockDoesNotDisturbObjectRegisters)
         }
     }
     EXPECT_EQ(before, after);
+}
+
+// ── Registers follow the SEMANTIC, not the row order (#322 option C) ──────────
+// A binding's t-register is a property of its semantic, not of where the author
+// placed the row. Two layouts with the same semantics in DIFFERENT orders must
+// derive the identical SRG, so reordering rows in the editor can no longer
+// silently repoint a binding out from under a shader that names it by register.
+
+namespace
+{
+    RenderBindingRow srv_row(const char* semantic, ShaderVisibility visibility)
+    {
+        return RenderBindingRow{
+            .semantic = semantic,
+            .kind = RenderBindingKind::StructuredSrv,
+            .visibility = visibility,
+        };
+    }
+
+    RenderBindingRow tex_row(const char* semantic, ShaderVisibility visibility)
+    {
+        return RenderBindingRow{
+            .semantic = semantic,
+            .kind = RenderBindingKind::TextureSrv,
+            .visibility = visibility,
+        };
+    }
+
+    // The lit-textured object SRG (#281): the semantic set whose registers the
+    // sg_lit shaders hand-declare, authored in canonical order.
+    RenderBindingLayoutData lit_layout()
+    {
+        RenderBindingLayoutData layout{};
+        layout.constants_semantic = "lit";
+        layout.constants_visibility = ShaderVisibility::All;
+        layout.constants_head =
+            RenderBindingConstantsHead::WorldViewProjCamera36;
+        layout.bindings = {
+            srv_row("pulled_mesh_positions", ShaderVisibility::Vertex),
+            srv_row("pulled_mesh_indices", ShaderVisibility::Vertex),
+            srv_row("pulled_mesh_normals", ShaderVisibility::Vertex),
+            srv_row("sky_gaussian", ShaderVisibility::All),
+            srv_row("sky_gaussian_points", ShaderVisibility::All),
+            tex_row("material_albedo", ShaderVisibility::Pixel),
+        };
+        return layout;
+    }
+
+    // semantic -> object-space (space2) t-register, ignoring the view row.
+    std::map<DescriptorSemantic, uint32_t> object_registers(
+        const RenderBindingLayoutData& layout)
+    {
+        RenderBindingLayoutSrg srg{};
+        std::string error;
+        EXPECT_TRUE(build_render_binding_layout_srg(layout, srg, error))
+            << error;
+        std::map<DescriptorSemantic, uint32_t> registers;
+        for (const DescriptorBinding& row : srg.descriptor_bindings) {
+            if (row.register_space == kRenderBindingLayoutRegisterSpace) {
+                registers[row.semantic] = row.shader_register;
+            }
+        }
+        return registers;
+    }
+}
+
+// The absolute canonical shape: normals (enum value 10, appended) still binds
+// BEFORE sky_gaussian (enum value 9), because registers follow the logical
+// order, not the enum. This is the mapping sg_lighting_common.hlsl declares by
+// hand (sky_gaussian t3 / sky_gaussian_points t4) and the composite target
+// binds material_albedo at (t5).
+TEST(RenderBindingLayout, ObjectRegistersFollowCanonicalSemanticOrder)
+{
+    using namespace wz::engine::assets;
+
+    RenderBindingLayoutSrg srg{};
+    std::string error;
+    ASSERT_TRUE(build_render_binding_layout_srg(lit_layout(), srg, error))
+        << error;
+
+    ASSERT_EQ(srg.descriptor_bindings.size(), 6u);
+    const std::pair<DescriptorSemantic, uint32_t> expected[] = {
+        { DescriptorSemantic::PulledMeshPositions, 0u },
+        { DescriptorSemantic::PulledMeshIndices, 1u },
+        { DescriptorSemantic::PulledMeshNormals, 2u },
+        { DescriptorSemantic::SkyGaussian, 3u },
+        { DescriptorSemantic::SkyGaussianPoints, 4u },
+        { DescriptorSemantic::MaterialAlbedo, 5u },
+    };
+    for (size_t i = 0; i < 6; ++i) {
+        EXPECT_EQ(srg.descriptor_bindings[i].semantic, expected[i].first);
+        EXPECT_EQ(srg.descriptor_bindings[i].shader_register,
+                  expected[i].second);
+    }
+}
+
+TEST(RenderBindingLayout, ReorderingRowsDoesNotRepointRegisters)
+{
+    using namespace wz::engine::assets;
+
+    const RenderBindingLayoutData canonical = lit_layout();
+
+    // The SAME semantics authored in reverse -- the worst case for a positional
+    // scheme, which would have put material_albedo at t0.
+    RenderBindingLayoutData shuffled = canonical;
+    std::reverse(shuffled.bindings.begin(), shuffled.bindings.end());
+
+    EXPECT_EQ(object_registers(canonical), object_registers(shuffled));
+
+    // The derived vector itself is in canonical order regardless of input, so a
+    // consumer that reads it positionally sees the identical shape too.
+    RenderBindingLayoutSrg a{};
+    RenderBindingLayoutSrg b{};
+    std::string error;
+    ASSERT_TRUE(build_render_binding_layout_srg(canonical, a, error)) << error;
+    ASSERT_TRUE(build_render_binding_layout_srg(shuffled, b, error)) << error;
+    ASSERT_EQ(a.descriptor_bindings.size(), b.descriptor_bindings.size());
+    for (size_t i = 0; i < a.descriptor_bindings.size(); ++i) {
+        EXPECT_EQ(a.descriptor_bindings[i].semantic,
+                  b.descriptor_bindings[i].semantic);
+        EXPECT_EQ(a.descriptor_bindings[i].shader_register,
+                  b.descriptor_bindings[i].shader_register);
+    }
 }
 
 // ── The generated prelude must actually COMPILE ──────────────────────────────

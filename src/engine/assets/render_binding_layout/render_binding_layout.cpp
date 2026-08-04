@@ -1,8 +1,11 @@
 #include <engine/assets/render_binding_layout/render_binding_layout.h>
 #include <engine/assets/type_extensions.h>
 
+#include <algorithm>
+#include <array>
 #include <cctype>
 #include <string>
+#include <vector>
 
 namespace wz::engine::assets
 {
@@ -17,6 +20,102 @@ namespace wz::engine::assets
                 return DescriptorKind::StructuredBufferSRV;
             }
             return DescriptorKind::TextureSRV;
+        }
+
+        // The order descriptor SRV registers are handed out in, keyed by the
+        // row's SEMANTIC rather than by its position in the authored list
+        // (#322, option C). Two layouts that share a semantic therefore agree
+        // on its register no matter what order their rows were written in, so
+        // reordering rows in the editor can no longer silently repoint a
+        // binding out from under a shader that names it by register.
+        //
+        // This is deliberately NOT the DescriptorSemantic enum order: the enum
+        // is append-only for hash stability (PulledMeshNormals was appended to
+        // the end of the enum yet binds right after positions/indices), whereas
+        // registers pack in the logical order below. Every layout authored today
+        // is already written in this order, so sorting by it moves no existing
+        // register -- it only pins the mapping against a future reorder. The
+        // numbered presets in render_program_compilers.cpp hard-code the same
+        // order; LayoutProgramMatchesPreset2 locks the two together.
+        //
+        // The three non-row semantics sort last so an accidental authored row
+        // can never displace a real object binding: the two view heads are
+        // emitted from layout.view_head into their own register space (never as
+        // object rows), and Unknown is rejected before it is ever ranked.
+        constexpr std::array<DescriptorSemantic, kDescriptorSemanticNames.size()>
+            kDescriptorSemanticRegisterOrder = {
+                // Mesh vertex-pull streams.
+                DescriptorSemantic::PulledMeshPositions,
+                DescriptorSemantic::PulledMeshIndices,
+                DescriptorSemantic::PulledMeshNormals,
+                DescriptorSemantic::PulledMeshUvs,
+                DescriptorSemantic::PulledMeshSourceVertices,
+                // Resident splat streams.
+                DescriptorSemantic::SplatCloud,
+                DescriptorSemantic::SortedSplatIndices,
+                // Field / mask sampled textures.
+                DescriptorSemantic::ScalarFieldTexture,
+                DescriptorSemantic::MeshFieldVisualization,
+                DescriptorSemantic::MeshMaskRules,
+                // SG sky sources.
+                DescriptorSemantic::SkyGaussian,
+                DescriptorSemantic::SkyGaussianPoints,
+                DescriptorSemantic::StarCatalog,
+                // Screen-space 2D: overlay sprite, then puppet Part streams.
+                DescriptorSemantic::OverlayTexture,
+                DescriptorSemantic::PuppetVertices,
+                DescriptorSemantic::PuppetIndices,
+                DescriptorSemantic::PuppetAtlas,
+                DescriptorSemantic::PuppetMask,
+                // Composited surface material, sampled last.
+                DescriptorSemantic::MaterialAlbedo,
+                // Non-rows (see comment above): listed only for completeness.
+                DescriptorSemantic::ViewConstants,
+                DescriptorSemantic::ScreenConstants,
+                DescriptorSemantic::Unknown,
+            };
+
+        // Every DescriptorSemantic must appear exactly once. A new semantic
+        // added to the enum without a register position here fails the build
+        // rather than silently defaulting to the end of every layout.
+        constexpr bool descriptor_register_order_is_total()
+        {
+            for (size_t value = 0;
+                 value < kDescriptorSemanticNames.size();
+                 ++value)
+            {
+                int count = 0;
+                for (const DescriptorSemantic semantic :
+                     kDescriptorSemanticRegisterOrder)
+                {
+                    if (static_cast<size_t>(semantic) == value) {
+                        ++count;
+                    }
+                }
+                if (count != 1) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        static_assert(
+            descriptor_register_order_is_total(),
+            "kDescriptorSemanticRegisterOrder must list every "
+            "DescriptorSemantic exactly once");
+
+        uint32_t descriptor_semantic_register_rank(
+            DescriptorSemantic semantic) noexcept
+        {
+            for (uint32_t i = 0;
+                 i < kDescriptorSemanticRegisterOrder.size();
+                 ++i)
+            {
+                if (kDescriptorSemanticRegisterOrder[i] == semantic) {
+                    return i;
+                }
+            }
+            return static_cast<uint32_t>(
+                kDescriptorSemanticRegisterOrder.size());
         }
     }
 
@@ -149,7 +248,16 @@ namespace wz::engine::assets
             });
         }
 
-        uint32_t srv_register = 0;
+        // Resolve and validate every row in AUTHORED order, so the error
+        // reporting (unknown / duplicate semantic) is unchanged. Registers are
+        // then assigned by canonical semantic rank below, not by row position.
+        struct ResolvedBinding {
+            DescriptorKind kind;
+            ShaderVisibility visibility;
+            DescriptorSemantic semantic;
+        };
+        std::vector<ResolvedBinding> resolved;
+        resolved.reserve(layout.bindings.size());
         for (size_t i = 0; i < layout.bindings.size(); ++i) {
             const RenderBindingRow& row = layout.bindings[i];
             const std::optional<DescriptorSemantic> semantic =
@@ -166,10 +274,33 @@ namespace wz::engine::assets
                     return false;
                 }
             }
-            out.descriptor_bindings.push_back(DescriptorBinding{
+            resolved.push_back(ResolvedBinding{
                 .kind = descriptor_kind_for(row.kind),
                 .visibility = row.visibility,
                 .semantic = *semantic,
+            });
+        }
+
+        // Assign t-registers by canonical semantic rank rather than authored
+        // position (#322 option C): a stable sort into that order makes the
+        // register a property of the SEMANTIC, so reordering the rows produces
+        // an identical SRG. Duplicate semantics were rejected above, so no two
+        // rows share a rank; the sort is a no-op for a layout already authored
+        // in canonical order, which is every layout today.
+        std::stable_sort(
+            resolved.begin(),
+            resolved.end(),
+            [](const ResolvedBinding& a, const ResolvedBinding& b) {
+                return descriptor_semantic_register_rank(a.semantic)
+                    < descriptor_semantic_register_rank(b.semantic);
+            });
+
+        uint32_t srv_register = 0;
+        for (const ResolvedBinding& binding : resolved) {
+            out.descriptor_bindings.push_back(DescriptorBinding{
+                .kind = binding.kind,
+                .visibility = binding.visibility,
+                .semantic = binding.semantic,
                 .shader_register = srv_register++,
                 .register_space = kRenderBindingLayoutRegisterSpace,
                 .descriptor_count = 1,
