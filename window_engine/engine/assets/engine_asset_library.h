@@ -478,7 +478,16 @@ namespace wz::engine::assets
 
         // Per-resolve tallies behind the resolve summary line.
         //
-        // A cache HIT is the asset system reporting that it did nothing, and
+        // A CacheHit is the IN-MEMORY memo -- cache_.lookup plus a matching
+        // compiled_nodes_ entry -- not the disk cache. A cold start with no
+        // disk cache still produces them, because a node reached twice through
+        // different dependency paths compiles once and is memoized after: the
+        // first real run logged 143 compiled and 153 already_resolved. The
+        // summary says already_resolved= for exactly that reason -- "cached"
+        // on a line that also prints cache_root=<empty> reads as a disk hit
+        // and is not one.
+        //
+        // Either way it is the system reporting that it did nothing, and
         // one line per node made that 907 of 1198 lines in a real session --
         // 76% of the log announcing non-events, which is the same reason the
         // D3D12 InfoQueue had to stop repeating itself. Counted and summarised

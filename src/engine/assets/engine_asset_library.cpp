@@ -777,7 +777,7 @@ namespace wz::engine::assets
             + std::to_string(report.resolved_count)
             + " compiled="
             + std::to_string(resolve_compiled_count_)
-            + " cached="
+            + " already_resolved="
             + std::to_string(resolve_cached_count_)
             + " failures="
             + std::to_string(raw_errors.size())
@@ -916,7 +916,7 @@ namespace wz::engine::assets
             + std::to_string(report.resolved_count)
             + " compiled="
             + std::to_string(resolve_compiled_count_)
-            + " cached="
+            + " already_resolved="
             + std::to_string(resolve_cached_count_)
             + " evicted="
             + std::to_string(report.evicted_count)
