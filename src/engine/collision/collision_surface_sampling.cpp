@@ -58,7 +58,13 @@ namespace wz::engine::collision
                 a00 * (a11 * a22 - a12 * a21)
                 - a01 * (a10 * a22 - a12 * a20)
                 + a02 * (a10 * a21 - a11 * a20);
-            if (std::abs(det) <= 1e-8f) {
+            // A NaN det slips a bare `abs(det) <= eps` gate (any NaN comparison
+            // is false), leaving inv_det = 1/NaN = NaN to propagate through the
+            // outputs. The neighbouring degenerate-guards in this file all carry
+            // the `|| !std::isfinite` companion; these two Moller-Trumbore/inverse
+            // det gates were missed (C1(v2)-H20, #314). Sealed by the public
+            // sampling boundary today, so this is defence-in-depth.
+            if (std::abs(det) <= 1e-8f || !std::isfinite(det)) {
                 return false;
             }
 
@@ -100,7 +106,13 @@ namespace wz::engine::collision
             const wz::math::Vec3 edge2 = c - a;
             const wz::math::Vec3 pvec = wz::math::cross(direction, edge2);
             const float det = wz::math::dot(edge1, pvec);
-            if (std::abs(det) <= 1e-8f) {
+            // A NaN det slips a bare `abs(det) <= eps` gate (any NaN comparison
+            // is false), leaving inv_det = 1/NaN = NaN to propagate through the
+            // outputs. The neighbouring degenerate-guards in this file all carry
+            // the `|| !std::isfinite` companion; these two Moller-Trumbore/inverse
+            // det gates were missed (C1(v2)-H20, #314). Sealed by the public
+            // sampling boundary today, so this is defence-in-depth.
+            if (std::abs(det) <= 1e-8f || !std::isfinite(det)) {
                 return false;
             }
 
