@@ -331,6 +331,94 @@ TEST(MPSCQueueInFlight, DrainingUntilTryPopFailsCanLoseElements)
     EXPECT_FALSE(q.try_pop(v));
 }
 
+// Defect 1: empty() must be safe from a thread that is NOT the sole consumer.
+// The old body loaded head and then dereferenced head->next, racing try_pop's
+// `delete head_node` -- a heap-use-after-free. The head==tail body dereferences
+// no node and is safe from any thread.
+//
+// This exercises that path: a non-consumer thread (this one) hammers empty()
+// while a consumer pops and frees nodes. On a plain build it passes either way,
+// because a use-after-free usually reads still-mapped memory by luck -- the
+// failure is only *reliable* under AddressSanitizer. It was made red first out
+// of tree: under ASan the old body aborts in empty() (memory freed in try_pop)
+// and the head==tail body runs clean (see the commit message for the harness).
+TEST(MPSCQueueEmptyContract, EmptyIsSafeFromAProducerThreadWhileTheConsumerPops)
+{
+    MPSCQueue<uint64_t> q;
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> calls{0};
+
+    std::thread consumer([&]
+                         {
+        uint64_t v;
+        while (!stop.load(std::memory_order_acquire))
+            q.try_pop(v); });
+
+    std::thread producer([&]
+                         {
+        uint64_t i = 0;
+        while (!stop.load(std::memory_order_acquire))
+            q.try_push(i++); });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    while (std::chrono::steady_clock::now() < deadline)
+    {
+        (void)q.empty();
+        calls.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    stop.store(true, std::memory_order_release);
+    producer.join();
+    consumer.join();
+
+    // The real assertion is "reached here without a use-after-free". empty()'s
+    // exact result is a racy snapshot under contention and is not asserted.
+    EXPECT_GT(calls.load(), 0u);
+}
+
+// Defect 2 under the head==tail empty(): while a push is in flight -- tail
+// advanced by exchange, prev->next not yet stored -- the element is invisible
+// to the consumer's try_pop (it cannot be popped yet), but empty() reports the
+// queue as NON-empty, because tail has moved past head. empty() and try_pop
+// deliberately disagree here, and empty() is the one telling the truth about
+// outstanding work -- which is why a drain loops until empty(), not until
+// try_pop first fails.
+TEST(MPSCQueueInFlight, APushInFlightIsInvisibleToTheConsumer)
+{
+    MPSCQueue<uint64_t> q;
+
+    std::atomic<bool> parked{false};
+    std::atomic<bool> release{false};
+
+    q.test_hook_push_after_tail_exchange = [&]
+    {
+        parked.store(true, std::memory_order_release);
+        while (!release.load(std::memory_order_acquire))
+            std::this_thread::yield();
+    };
+
+    std::thread producer([&]
+                         { q.push(42); });
+
+    while (!parked.load(std::memory_order_acquire))
+        std::this_thread::yield();
+
+    // Push in flight: element 42 is queued (tail points at it) but not reachable
+    // from head yet.
+    uint64_t v = 0;
+    EXPECT_FALSE(q.try_pop(v)); // invisible to the consumer's pop
+    EXPECT_FALSE(q.empty());    // but empty() sees it: NOT empty
+
+    release.store(true, std::memory_order_release);
+    producer.join();
+    q.test_hook_push_after_tail_exchange = nullptr;
+
+    EXPECT_FALSE(q.empty());
+    ASSERT_TRUE(q.try_pop(v));
+    EXPECT_EQ(v, 42u);
+    EXPECT_TRUE(q.empty()); // now genuinely empty
+}
+
 TEST_F(MPSCQueueTest, ConcurrentProducerConsumer)
 {
     const int producers = 2;

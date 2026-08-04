@@ -125,11 +125,21 @@ namespace wz::core::containers
             return true;
         }
 
+        // Compares head and tail; it does NOT dereference either node. Reading
+        // head->next (the obvious implementation) dereferences a node the
+        // consumer may be concurrently freeing in try_pop -- a use-after-free
+        // for any caller that is not the consumer. Comparing the two atomic
+        // pointers touches no node, so empty() is safe to call from ANY thread.
+        //
+        // Consequence, and it is the contract: a push in flight -- tail already
+        // advanced by exchange, but prev->next not yet stored -- reads here as
+        // NON-empty, even though try_pop cannot yet return that element. So to
+        // drain, loop until empty() reports empty; never until try_pop() first
+        // returns false, which stops one element short (see the in-flight tests
+        // and #313 B4-S1 on the sibling MPSCRingBuffer).
         bool empty() const
         {
-            Node *head_node = head.load(std::memory_order_acquire);
-            Node *next = head_node->next.load(std::memory_order_acquire);
-            return next == nullptr;
+            return head.load(std::memory_order_acquire) == tail.load(std::memory_order_acquire);
         }
 
         void clear()
