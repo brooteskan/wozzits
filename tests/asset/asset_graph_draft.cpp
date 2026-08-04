@@ -1593,6 +1593,66 @@ TEST(AssetGraphDraft, StoredKeysAgreeWithTheirDerivation)
     expect_agrees("after correcting a stale upstream key");
 }
 
+// B1-H2. param_value_hash folded only the value, so bool(false), int64(0) and
+// double(0.0) -- and bool(true) vs int64(1) -- produced identical param hashes,
+// and a param retyped Bool<->Int at the same number did not re-key. It now
+// folds the variant's type index. (Labelled B1-H3 in the visit-1 report; it is
+// the "ParamValue type index" item of the C1/H1/H2 decision.)
+TEST(AssetGraphDraft, GenericKeyDistinguishesParamValueTypesAtEqualNumbers)
+{
+    const auto key_with = [](ParamValue value)
+    {
+        AssetNode node = make_node(AssetType::Mesh, schema(10));
+        ParamBlock params;
+        params.values["x"] = std::move(value);
+        node.meta = params;
+        return make_asset_key(node, {});
+    };
+
+    // Same number, different declared type -> different key.
+    EXPECT_NE(key_with(ParamValue{ false }), key_with(ParamValue{ int64_t{ 0 } }));
+    EXPECT_NE(key_with(ParamValue{ int64_t{ 0 } }), key_with(ParamValue{ 0.0 }));
+    EXPECT_NE(key_with(ParamValue{ true }), key_with(ParamValue{ int64_t{ 1 } }));
+
+    // Same type and value -> same key (determinism preserved).
+    EXPECT_EQ(
+        key_with(ParamValue{ int64_t{ 5 } }),
+        key_with(ParamValue{ int64_t{ 5 } }));
+    EXPECT_NE(
+        key_with(ParamValue{ int64_t{ 5 } }),
+        key_with(ParamValue{ int64_t{ 6 } }));
+}
+
+// B1-H1. content_hash did not fold node.payload, so two Source nodes differing
+// only in their inline bytes produced the same key, contradicting the
+// "hash of raw input bytes" contract in types.h. It now folds non-empty payload
+// bytes; an empty payload -- which every shipped node carries, since the JSON
+// does not persist payload -- stays a no-op, so nothing transient enters the
+// key of a real project node.
+TEST(AssetGraphDraft, GenericKeyFoldsInlinePayloadBytes)
+{
+    const auto key_with_bytes = [](std::vector<uint8_t> bytes)
+    {
+        AssetNode node = make_node(AssetType::Mesh, schema(10));
+        node.payload = std::move(bytes);
+        return make_asset_key(node, {});
+    };
+
+    // Different inline bytes -> different key.
+    EXPECT_NE(
+        key_with_bytes({ 1, 2, 3, 4 }), key_with_bytes({ 5, 6, 7, 8 }));
+    EXPECT_NE(
+        key_with_bytes({ 1, 2, 3, 4 }), key_with_bytes({ 1, 2, 3, 4, 5 }));
+
+    // Empty payload does not perturb the key -- the shipped-node no-op path.
+    EXPECT_EQ(
+        key_with_bytes({}),
+        make_asset_key(make_node(AssetType::Mesh, schema(10)), {}));
+
+    // Determinism.
+    EXPECT_EQ(key_with_bytes({ 9, 9, 9 }), key_with_bytes({ 9, 9, 9 }));
+}
+
 TEST(AssetGraphDraft, MaterializeKeysTreatsPortOrderAsIdentity)
 {
     CompilerRegistry registry = make_draft_test_registry();

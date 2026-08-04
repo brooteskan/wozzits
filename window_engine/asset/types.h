@@ -30,9 +30,18 @@ namespace wz::asset {
     // combination — changing any component produces a different key.
 
     struct AssetKey {
-        Hash content_hash;    // hash of raw input bytes
+        // Node identity (type/schema/stage/residency/kind/demand_root), its
+        // meta params -- each hashed by value AND variant type, so bool(false),
+        // int64(0) and double(0.0) do not collide (#75 B1-H2) -- and any raw
+        // payload bytes the node carries (#75 B1-H1). A node's persisted input.
+        Hash content_hash;
         Hash schema_hash;     // hash of the interpretation schema
-        Hash compiler_hash;   // hash encoding compiler version / transform logic
+        // Transform-logic identity. The explicit key factories in key_factories/
+        // embed the recipe's compiler-version token here; the generic fallback
+        // (wz::asset::make_asset_key) encodes only AssetType -- see
+        // compiler_version_tokens.h for why that is safe (the disk caches carry
+        // the token in-file and re-check it on load).
+        Hash compiler_hash;
         Hash deps_hash;       // derived from all transitive dependency keys
 
         bool operator==(const AssetKey&) const = default;

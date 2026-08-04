@@ -25,6 +25,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace wz::asset {
@@ -270,10 +271,29 @@ namespace wz::asset {
             return { mix64(a.lo, b.lo), mix64(a.hi, b.hi) };
         }
 
+        // Two independent FNV-1a passes over a byte range -> a full 128-bit
+        // Hash, matching the pattern in engine_asset_key_core.h. Used to fold a
+        // node's raw payload bytes into content_hash (#75 B1-H1).
+        [[nodiscard]] inline Hash hash_byte_span(
+            std::span<const uint8_t> bytes) noexcept
+        {
+            uint64_t lo = 14695981039346656037ull;
+            for (const uint8_t b : bytes) {
+                lo ^= static_cast<uint64_t>(b);
+                lo *= 1099511628211ull;
+            }
+            uint64_t hi = 2166136261ull;
+            for (const uint8_t b : bytes) {
+                hi ^= static_cast<uint64_t>(b);
+                hi *= 16777619ull;
+            }
+            return { lo, hi };
+        }
+
         [[nodiscard]] inline uint64_t param_value_hash(
             const ParamValue& value)
         {
-            return std::visit(
+            const uint64_t raw = std::visit(
                 [](const auto& v) -> uint64_t
                 {
                     using T = std::decay_t<decltype(v)>;
@@ -307,6 +327,11 @@ namespace wz::asset {
                     }
                 },
                 value);
+            // Fold the variant's type index so bool(false), int64(0) and
+            // double(0.0) -- and bool(true) vs int64(1) -- no longer collide,
+            // and a param retyped Bool<->Int at the same numeric value re-keys.
+            // #75 B1-H2 (labelled B1-H3 in the visit-1 report).
+            return mix64(raw, static_cast<uint64_t>(value.index()) + 1u);
         }
 
         [[nodiscard]] inline Hash meta_hash(const std::any& meta)
@@ -379,8 +404,28 @@ namespace wz::asset {
             deps = combine_hashes(deps, key_to_dep_hash(dep_key));
         }
 
+        // Fold the node's raw payload bytes into content_hash, honouring the
+        // "hash of raw input bytes" contract in types.h (#75 B1-H1). The JSON
+        // never persists payload (asset_graph_json sets it empty on load), so a
+        // shipped generic node carries none and this is a no-op that cannot
+        // fingerprint transient state; it only disambiguates a node that
+        // genuinely holds inline bytes. A ResourceHandle is a runtime handle,
+        // never identity, and is skipped.
+        Hash content = combine_hashes(hash_u64(identity), meta);
+        if (const auto* bytes =
+                std::get_if<std::vector<uint8_t>>(&node.payload);
+            bytes && !bytes->empty())
+        {
+            content = combine_hashes(content, hash_byte_span(*bytes));
+        }
+        else if (const auto* ir = std::get_if<AssetIR>(&node.payload);
+                 ir && !ir->data.empty())
+        {
+            content = combine_hashes(content, hash_byte_span(ir->data));
+        }
+
         return AssetKey{
-            .content_hash = combine_hashes(hash_u64(identity), meta),
+            .content_hash = content,
             .schema_hash = hash_u64(node.schema.value),
             .compiler_hash =
                 hash_u64(mix64(static_cast<uint64_t>(node.type), 1ull)),
