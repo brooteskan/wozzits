@@ -302,3 +302,34 @@ TEST(Frustum, NaNViewProjectionYieldsFinitePlanes)
     EXPECT_FALSE(intersects_sphere(real, Vec3{ 0.0f, 0.0f, -1000.0f }, 1.0f))
         << "control: a real frustum must still reject a sphere well behind it";
 }
+
+// C1-C12 (#314): a NaN view_projection must report Degenerate explicitly, not
+// fall through NaN corner arithmetic to FullyOutside (area 0) -- which makes the
+// terrain LOD selector silently drop the chunk. Revert-checked: without the
+// entry guard the status is FullyOutside.
+TEST(ScreenSpaceMetrics, NaNViewProjectionIsDegenerateNotVanished)
+{
+    Mat4 nan_vp = dx_projection();
+    nan_vp.m[0] = std::numeric_limits<float>::quiet_NaN();
+    const ProjectionResult r = project_aabb_to_screen_rect(
+        box({ -1.0f, -1.0f, 2.0f }, { 1.0f, 1.0f, 3.0f }),
+        nan_vp,
+        800.0f,
+        600.0f);
+    EXPECT_EQ(r.status, ProjectionStatus::Degenerate);
+}
+
+// C1-H2 (#314): the near plane must sit at the true near_z (DX clip z in [0,1],
+// near = col2 alone), not at ~near_z/2 (the OpenGL col3+col2 form). A small box
+// entirely in FRONT of near_z=0.1 but beyond the old near/2=0.05 must be OUTSIDE.
+// Revert-checked: with the col3+col2 near plane restored it reads Inside.
+TEST(Frustum, NearPlaneUsesDxConventionNotHalfDistance)
+{
+    const Frustum frustum = frustum_from_view_projection(
+        projection_perspective_dx(Pi * 0.5f, 1.0f, 0.1f, 100.0f));
+    EXPECT_EQ(
+        frustum_test_aabb(
+            frustum,
+            box({ -0.005f, -0.005f, 0.06f }, { 0.005f, 0.005f, 0.08f })),
+        AABBFrustumResult::Outside);
+}

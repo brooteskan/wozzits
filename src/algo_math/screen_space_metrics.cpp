@@ -107,6 +107,20 @@ namespace wz::math
         if (viewport_width <= 0.0f || viewport_height <= 0.0f)
             return {};
 
+        // A non-finite view_projection makes every projected corner NaN -> a
+        // degenerate rect -> FullyOutside -> the terrain LOD selector drops the
+        // chunk, so terrain silently vanishes. Report Degenerate explicitly
+        // rather than let NaN arithmetic decide the classification. (C1-C12, #314)
+        for (float e : view_projection.m) {
+            if (!std::isfinite(e)) {
+                return ProjectionResult{
+                    .status = ProjectionStatus::Degenerate,
+                    .nearest_depth = 0.0f,
+                    .farthest_depth = 0.0f,
+                };
+            }
+        }
+
         if (aabb_is_degenerate(aabb)) {
             return ProjectionResult{
                 .status = ProjectionStatus::Degenerate,

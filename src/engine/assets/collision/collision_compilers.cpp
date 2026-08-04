@@ -768,14 +768,19 @@ namespace wz::engine::assets::internal
                     desc.build_method,
                     kTerrainCollisionBuildMethodValues);
             desc.occupancy = occupancy_param(params, desc.occupancy);
-            desc.projection_resolution_x =
+            // Cap the authored resolution: the declared max was 65536, a ~17 GB
+            // resample allocation. 4096 is a fine collision resolution and bounds
+            // the resample at ~64 MiB. (C1-S4, #314)
+            desc.projection_resolution_x = (std::min)(
                 params.get<uint32_t>(
                     "projection_resolution_x",
-                    desc.projection_resolution_x);
-            desc.projection_resolution_y =
+                    desc.projection_resolution_x),
+                4096u);
+            desc.projection_resolution_y = (std::min)(
                 params.get<uint32_t>(
                     "projection_resolution_y",
-                    desc.projection_resolution_y);
+                    desc.projection_resolution_y),
+                4096u);
             return desc;
         }
 
@@ -812,14 +817,17 @@ namespace wz::engine::assets::internal
                 static_cast<float>(
                     params.get<double>("base_height", desc.base_height));
             desc.occupancy = occupancy_param(params, desc.occupancy);
-            desc.projection_resolution_x =
+            // Cap the authored resolution (C1-S4, #314; see the sibling above).
+            desc.projection_resolution_x = (std::min)(
                 params.get<uint32_t>(
                     "projection_resolution_x",
-                    desc.projection_resolution_x);
-            desc.projection_resolution_y =
+                    desc.projection_resolution_x),
+                4096u);
+            desc.projection_resolution_y = (std::min)(
                 params.get<uint32_t>(
                     "projection_resolution_y",
-                    desc.projection_resolution_y);
+                    desc.projection_resolution_y),
+                4096u);
             desc.render_lod_base_resolution =
                 params.get<uint32_t>(
                     "render_lod_base_resolution",

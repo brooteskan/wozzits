@@ -54,11 +54,17 @@ namespace wz::math
         f.planes[3].normal.z = m.m[11] - m.m[9];
         f.planes[3].distance = m.m[15] - m.m[13];
 
-        // NEAR = col3 + col2
-        f.planes[4].normal.x = m.m[3] + m.m[2];
-        f.planes[4].normal.y = m.m[7] + m.m[6];
-        f.planes[4].normal.z = m.m[11] + m.m[10];
-        f.planes[4].distance = m.m[15] + m.m[14];
+        // NEAR = col2 alone. This engine builds DX projections (clip z in [0,1]),
+        // where a point is inside the near plane when col2.position >= 0. The old
+        // col3+col2 is the OpenGL form (clip z in [-1,1]); against a DX projection
+        // it puts the near plane at ~near_z/2 -- harmless (the frustum is slightly
+        // too large near the camera, never culling anything visible) but wrong
+        // every frame. The GL projection_perspective has no production caller, so
+        // the DX convention is forced. (C1-H2, #314)
+        f.planes[4].normal.x = m.m[2];
+        f.planes[4].normal.y = m.m[6];
+        f.planes[4].normal.z = m.m[10];
+        f.planes[4].distance = m.m[14];
 
         // FAR = col3 - col2
         f.planes[5].normal.x = m.m[3] - m.m[2];
