@@ -57,25 +57,52 @@ namespace
             D3D12_MESSAGE_SEVERITY_ERROR,
             D3D12_MESSAGE_SEVERITY_WARNING,
         };
+        // The deny list mutes only repeating WARNINGs, so scope it to the WARNING
+        // severity. A D3D12 DenyList with an EMPTY severity list matches ANY
+        // severity, so an id suppressed as a warning would be denied AT THE SOURCE
+        // for every severity -- and if a later ERROR or CORRUPTION happens to
+        // carry that same D3D12_MESSAGE_ID it would never be stored, never
+        // drained, never logged: exactly the persistent error this channel exists
+        // to surface. The drain already exempts ERROR/CORRUPTION from muting
+        // (debug_message_is_suppressible), but the storage filter is one layer
+        // beneath the drain, so the exemption has to be restated here (#317
+        // D1-H36).
+        D3D12_MESSAGE_SEVERITY denied_severity[] = {
+            D3D12_MESSAGE_SEVERITY_WARNING,
+        };
 
         D3D12_INFO_QUEUE_FILTER filter{};
         filter.AllowList.NumSeverities = _countof(kept);
         filter.AllowList.pSeverityList = kept;
         if (!impl->debug_suppressed_ids.empty()) {
+            filter.DenyList.NumSeverities = _countof(denied_severity);
+            filter.DenyList.pSeverityList = denied_severity;
             filter.DenyList.NumIDs =
                 static_cast<UINT>(impl->debug_suppressed_ids.size());
             filter.DenyList.pIDList = impl->debug_suppressed_ids.data();
         }
 
+        // Replace the single filter: pop the old before pushing the new so the
+        // stack cannot grow once per suppressed ID (D3D12 applies every filter on
+        // it). If the push FAILS (rare -- OOM or the filter's size limit), do not
+        // leave the queue with no storage filter at all: INFO/MESSAGE would then
+        // re-flood storage and defeat the GetNumStoredMessages()==0 fast path the
+        // whole design rests on. Fall back to a severity-only filter (no deny
+        // list, so it always fits) -- the deny list is a repeat-noise
+        // optimisation, not a correctness requirement (#317 D1-H37).
         if (impl->debug_filter_pushed) {
             impl->info_queue->PopStorageFilter();
+            impl->debug_filter_pushed = false;
         }
         if (SUCCEEDED(impl->info_queue->PushStorageFilter(&filter))) {
             impl->debug_filter_pushed = true;
+            return;
         }
-        else {
-            // Pushed nothing, so there is nothing to pop next time.
-            impl->debug_filter_pushed = false;
+        D3D12_INFO_QUEUE_FILTER severity_only{};
+        severity_only.AllowList.NumSeverities = _countof(kept);
+        severity_only.AllowList.pSeverityList = kept;
+        if (SUCCEEDED(impl->info_queue->PushStorageFilter(&severity_only))) {
+            impl->debug_filter_pushed = true;
         }
     }
 
@@ -1295,20 +1322,38 @@ namespace wz::gpu::dx12::internal
                 if (impl->debug_tally.size()
                     >= DX12Device::kDebugMessageTallyCapacity)
                 {
-                    // More distinct messages than we budgeted for. Report it
-                    // rather than silently stopping the tally, because that
-                    // would look identical to "the layer went quiet".
-                    out.push_back(
-                        std::string("D3D12 WARNING #0: debug message tally is "
-                                    "full at ")
-                        + std::to_string(DX12Device::kDebugMessageTallyCapacity)
-                        + " distinct IDs; further IDs are reported without "
-                          "repeat suppression");
+                    // The tally is full -- more distinct WARNING ids than
+                    // budgeted. We can no longer count this id toward its repeat
+                    // limit, so suppress it at the source now (once) rather than
+                    // reporting every occurrence: a WARNING that recurs every
+                    // frame but is never deny-listed keeps GetNumStoredMessages()
+                    // non-zero forever, so the frame loop never returns to the
+                    // no-op fast path and pays the drain every frame (#317 D1-H38).
+                    // Reported once here; the re-installed deny list stops it
+                    // after. WARNING-only suppression (H36) means a same-id ERROR
+                    // still gets through.
+                    bool already = false;
+                    for (const D3D12_MESSAGE_ID id : impl->debug_suppressed_ids) {
+                        if (id == message->ID) {
+                            already = true;
+                            break;
+                        }
+                    }
+                    if (!already) {
+                        impl->debug_suppressed_ids.push_back(message->ID);
+                        suppression_changed = true;
+                        out.push_back(
+                            std::string("D3D12 ") + severity + " #"
+                            + std::to_string(static_cast<int>(message->ID))
+                            + ": debug message tally is full at "
+                            + std::to_string(
+                                DX12Device::kDebugMessageTallyCapacity)
+                            + " distinct IDs; suppressing this id at the source");
+                    }
+                    continue;
                 }
-                else {
-                    impl->debug_tally.push_back({ message->ID, 0, false });
-                    tally = &impl->debug_tally.back();
-                }
+                impl->debug_tally.push_back({ message->ID, 0, false });
+                tally = &impl->debug_tally.back();
             }
 
             if (tally) {
