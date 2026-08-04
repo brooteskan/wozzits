@@ -196,6 +196,21 @@ namespace wz::engine::collision
                 && tri.min[2] <= bounds.max.z && tri.max[2] >= bounds.min.z;
         }
 
+        // A surface grid is usable only if it is structurally consistent. Each
+        // of these three cases makes the grid query return "no overlap"; the
+        // brute-force fallback must therefore run for ALL of them, not just for
+        // cells_x==0 -- otherwise a corrupt grid (cells_x!=0 but cells_z==0 or a
+        // mismatched cell_offsets size) silently reports no collision and skips
+        // the fallback. (C1-C35, #314)
+        bool surface_grid_is_usable(
+            const wz::engine::assets::CollisionSurfaceGrid& grid) noexcept
+        {
+            return grid.cells_x != 0
+                && grid.cells_z != 0
+                && grid.cell_offsets.size()
+                    == static_cast<size_t>(grid.cells_x) * grid.cells_z + 1u;
+        }
+
         bool query_surface_grid_overlap(
             const wz::engine::assets::CollisionAssetData& data,
             const wz::scene::AABB& local_bounds,
@@ -206,11 +221,7 @@ namespace wz::engine::collision
             uint32_t& early_out_hits)
         {
             const auto& grid = data.surface_grid;
-            if (grid.cells_x == 0
-                || grid.cells_z == 0
-                || grid.cell_offsets.size()
-                    != static_cast<size_t>(grid.cells_x) * grid.cells_z + 1u)
-            {
+            if (!surface_grid_is_usable(grid)) {
                 return false;
             }
 
@@ -344,7 +355,10 @@ namespace wz::engine::collision
                 return true;
             }
 
-            if (data.surface_grid.cells_x != 0) {
+            // Only trust a "no overlap" from the grid when the grid is actually
+            // usable; an unusable grid falls through to the brute-force sweep
+            // below. (C1-C35, #314)
+            if (surface_grid_is_usable(data.surface_grid)) {
                 return false;
             }
 
@@ -638,6 +652,16 @@ namespace wz::engine::collision
             const auto& node = wz::core::graph::node_data(
                 scene.storage.polytree,
                 record.node);
+            // The radius is finiteness-gated above; the CENTER was not. A NaN
+            // world translation yields a NaN center, and proximity_overlap's
+            // `dx*dx+... <= r*r` is false for NaN, so the sensor silently never
+            // fires while the frame counters report it as normal. (C1-C37, #314)
+            if (!std::isfinite(node.world.m[12])
+                || !std::isfinite(node.world.m[13])
+                || !std::isfinite(node.world.m[14]))
+            {
+                continue;
+            }
             storage.proximity_world.push_back(ProximityWorldEntry{
                 .entity = record.node,
                 .center = {

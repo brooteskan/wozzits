@@ -346,10 +346,17 @@ namespace wz::engine::collision
             float sample_x,
             float sample_z) noexcept
         {
+            // Clamp x0/z0 to the last texel exactly as x1/z1 already are. A
+            // placement-driven span equals the resolution (collision.h), so at
+            // the far edge u==1 gives sample_x==resolution_x and an unclamped x0
+            // indexed one row past the end (wrapping into the next row / reading
+            // base_height). (C1-C38, #314)
             const uint32_t x0 =
-                static_cast<uint32_t>(std::floor(sample_x));
+                (std::min)(static_cast<uint32_t>(std::floor(sample_x)),
+                    data.resolution_x - 1u);
             const uint32_t z0 =
-                static_cast<uint32_t>(std::floor(sample_z));
+                (std::min)(static_cast<uint32_t>(std::floor(sample_z)),
+                    data.resolution_y - 1u);
             const uint32_t x1 =
                 (std::min)(x0 + 1u, data.resolution_x - 1u);
             const uint32_t z1 =

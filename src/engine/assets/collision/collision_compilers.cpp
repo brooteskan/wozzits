@@ -949,7 +949,19 @@ namespace wz::engine::assets::internal
                     || ib >= data.points.size()
                     || ic >= data.points.size())
                 {
-                    data.triangle_bounds.push_back({});
+                    // Preserve index alignment but push an INVERTED (never-
+                    // overlap) bound: the all-zero default reads as a real
+                    // degenerate collider at the local origin, which the no-grid
+                    // fallback overlap test then hits for any actor straddling
+                    // (0,0,0). (C1-S9, #314)
+                    CollisionTriangleBounds degenerate{};
+                    degenerate.min[0] = FLT_MAX;
+                    degenerate.min[1] = FLT_MAX;
+                    degenerate.min[2] = FLT_MAX;
+                    degenerate.max[0] = -FLT_MAX;
+                    degenerate.max[1] = -FLT_MAX;
+                    degenerate.max[2] = -FLT_MAX;
+                    data.triangle_bounds.push_back(degenerate);
                     continue;
                 }
 
