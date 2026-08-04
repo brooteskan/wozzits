@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <type_traits>
 #include <utility>
 #include "./assert.h"
 
@@ -30,6 +31,17 @@ namespace wz::core::containers
     template <typename T>
     class MPSCQueue
     {
+        // T must be default-constructible. The dummy node value-initializes a T
+        // (Node()'s data()) and the drain path constructs a temporary T; a
+        // non-default-constructible T fails to compile at both sites, with the
+        // error pointing at this container rather than at the use. This
+        // static_assert says so in one line instead. Wrap a non-default type,
+        // e.g. std::optional<T> or a pointer.
+        static_assert(
+            std::is_default_constructible_v<T>,
+            "MPSCQueue<T> requires T to be default-constructible "
+            "(the dummy node and the drain temporary value-initialize a T).");
+
     private:
         struct Node
         {

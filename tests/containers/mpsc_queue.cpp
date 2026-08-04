@@ -670,3 +670,81 @@ TEST_F(MPSCQueueTest, ChaosStress)
 
     EXPECT_EQ(violations.load(), 0);
 }
+
+// Defect 4: the queue holds a move-only type (no copies), and it drains and
+// destroys the elements it still holds at destruction. MoveOnlyPayload is
+// move-only but default-constructible -- the shape MPSCQueue supports after the
+// static_assert. (A non-default-constructible T is rejected at compile time by
+// that assert with a one-line message; verified out of tree, see the commit.)
+// This test compiled and passed before the fix too; it characterises the
+// supported contract rather than reproducing a defect.
+namespace
+{
+    struct MoveOnlyPayload
+    {
+        static inline std::atomic<int> live{0};
+
+        int value;
+
+        MoveOnlyPayload() : value(0)
+        {
+            live.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        explicit MoveOnlyPayload(int v) : value(v)
+        {
+            live.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        MoveOnlyPayload(MoveOnlyPayload &&other) noexcept : value(other.value)
+        {
+            other.value = -1;
+            live.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        MoveOnlyPayload &operator=(MoveOnlyPayload &&other) noexcept
+        {
+            value = other.value;
+            other.value = -1;
+            return *this;
+        }
+
+        MoveOnlyPayload(const MoveOnlyPayload &) = delete;
+        MoveOnlyPayload &operator=(const MoveOnlyPayload &) = delete;
+
+        ~MoveOnlyPayload()
+        {
+            live.fetch_sub(1, std::memory_order_relaxed);
+        }
+    };
+}
+
+TEST(MPSCQueueMoveOnly, HoldsAMoveOnlyType)
+{
+    MoveOnlyPayload::live.store(0, std::memory_order_relaxed);
+
+    {
+        MPSCQueue<MoveOnlyPayload> q;
+
+        q.push(MoveOnlyPayload(10));
+        q.push(MoveOnlyPayload(20));
+
+        MoveOnlyPayload out; // default-constructible
+
+        ASSERT_TRUE(q.try_pop(out));
+        EXPECT_EQ(out.value, 10);
+
+        ASSERT_TRUE(q.try_pop(out));
+        EXPECT_EQ(out.value, 20);
+
+        EXPECT_FALSE(q.try_pop(out));
+
+        // Leave an element queued so the destructor must drain a non-empty
+        // queue and destroy what it holds.
+        q.push(MoveOnlyPayload(30));
+    }
+
+    // Queue and out-param are gone; every constructed payload must have been
+    // destroyed. A leaked node would show up as a non-zero live count.
+    EXPECT_EQ(MoveOnlyPayload::live.load(std::memory_order_relaxed), 0);
+}
