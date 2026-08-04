@@ -15,7 +15,7 @@ using namespace wz::core::containers;
 namespace
 {
 
-    class MPSCQueueTest : public ::testing::Test
+    class MPSCRingBufferTest : public ::testing::Test
     {
     protected:
         static constexpr size_t Capacity = 1024;
@@ -103,7 +103,7 @@ TEST(ThreadTestHarness, BarrierCorrectness)
     EXPECT_EQ(finished.load(), threads);
 }
 
-TEST_F(MPSCQueueTest, PushPopSingle)
+TEST_F(MPSCRingBufferTest, PushPopSingle)
 {
     push_blocking(1);
     push_blocking(2);
@@ -119,7 +119,7 @@ TEST_F(MPSCQueueTest, PushPopSingle)
     EXPECT_EQ(out[2], 3);
 }
 
-TEST_F(MPSCQueueTest, EmptyQueue)
+TEST_F(MPSCRingBufferTest, EmptyQueue)
 {
     uint64_t value = 0;
 
@@ -127,7 +127,7 @@ TEST_F(MPSCQueueTest, EmptyQueue)
     EXPECT_TRUE(queue.empty());
 }
 
-TEST_F(MPSCQueueTest, FIFOOrderSingleProducer)
+TEST_F(MPSCRingBufferTest, FIFOOrderSingleProducer)
 {
     const int N = 1000;
 
@@ -144,7 +144,7 @@ TEST_F(MPSCQueueTest, FIFOOrderSingleProducer)
         EXPECT_EQ(out[i], i);
 }
 
-TEST_F(MPSCQueueTest, MultiProducer)
+TEST_F(MPSCRingBufferTest, MultiProducer)
 {
     ThreadTestHarness harness;
 
@@ -185,7 +185,7 @@ TEST_F(MPSCQueueTest, MultiProducer)
     EXPECT_EQ(set.size(), out.size());
 }
 
-TEST_F(MPSCQueueTest, ConcurrentProducerConsumer)
+TEST_F(MPSCRingBufferTest, ConcurrentProducerConsumer)
 {
     ThreadTestHarness harness;
 
@@ -226,7 +226,7 @@ TEST_F(MPSCQueueTest, ConcurrentProducerConsumer)
     EXPECT_EQ(set.size(), out.size());
 }
 
-TEST_F(MPSCQueueTest, DISABLED_StressTest)
+TEST_F(MPSCRingBufferTest, DISABLED_StressTest)
 {
     ThreadTestHarness harness;
 
@@ -250,7 +250,7 @@ TEST_F(MPSCQueueTest, DISABLED_StressTest)
     ASSERT_EQ(out.size(), threads * per_thread);
 }
 
-TEST_F(MPSCQueueTest, CapacityLimit)
+TEST_F(MPSCRingBufferTest, CapacityLimit)
 {
     for (size_t i = 0; i < Capacity; ++i)
     {
@@ -260,7 +260,7 @@ TEST_F(MPSCQueueTest, CapacityLimit)
     EXPECT_FALSE(queue.try_push(999));
 }
 
-TEST_F(MPSCQueueTest, PopAfterFull)
+TEST_F(MPSCRingBufferTest, PopAfterFull)
 {
     for (size_t i = 0; i < Capacity; ++i)
     {
@@ -273,7 +273,7 @@ TEST_F(MPSCQueueTest, PopAfterFull)
     EXPECT_TRUE(queue.try_push(42));
 }
 
-TEST_F(MPSCQueueTest, TryPushBasic)
+TEST_F(MPSCRingBufferTest, TryPushBasic)
 {
     EXPECT_TRUE(queue.try_push(42));
 
