@@ -113,6 +113,15 @@ namespace wz::rhi
         uint32_t      mip_levels = 1;
         TextureFormat format     = TextureFormat::Undefined;
 
+        // Optimized clear value for a render-target texture (RGBA). A backend
+        // that fast-clears (D3D12: pOptimizedClearValue) uses it, and clearing a
+        // render target to any OTHER colour is then slower and diagnosed. Default
+        // transparent black, which is what an offscreen/mask target clears to; a
+        // target cleared to a fixed non-zero colour (the linear scene-colour
+        // target) sets this to match, so the clear stays on the fast path.
+        // Ignored for buffers and non-render-target textures. #317 D1-H39.
+        float optimized_clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
         // Named constructors keep the two families consistent at call sites
         // while preserving the single registry door (acquire(GpuResourceDesc)).
         [[nodiscard]] static GpuResourceDesc buffer(
