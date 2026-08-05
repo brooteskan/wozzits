@@ -22,6 +22,11 @@ namespace wz::engine::assets
         {
             return type == kAssetTypeScalarField
                 && (schema == kScalarFieldFromRawF32Schema
+                    // The Gaea .r32 heightfield: its compiler store_cached's the
+                    // field, so the provider must serve it too, or a sealed cache
+                    // with the .r32 stripped can't resolve it (issue #334). The
+                    // store/serve sets must stay in lockstep.
+                    || schema == kScalarFieldFromGaeaR32Schema
                     || schema == kScalarFieldProceduralSchema
                     // Worth caching more than the others: a 2048-square terrain
                     // is 4M samples through six octaves of gradient noise, all
@@ -39,7 +44,9 @@ namespace wz::engine::assets
             MeshSparseOperatorTable& mesh_sparse_operators,
             TerrainAssetTable& terrains,
             TerrainVisualProxyTable& terrain_visual_proxies,
-            CollisionAssetTable& collisions)
+            CollisionAssetTable& collisions,
+            wz::rhi::GpuResourceRegistry* gpu_resources,
+            internal::RhiResourceTracker rhi_resource_tracker)
         : cache_settings_(cache_settings)
         , logger_(logger)
         , scalar_fields_(scalar_fields)
@@ -49,6 +56,8 @@ namespace wz::engine::assets
         , terrains_(terrains)
         , terrain_visual_proxies_(terrain_visual_proxies)
         , collisions_(collisions)
+        , gpu_resources_(gpu_resources)
+        , rhi_resource_tracker_(std::move(rhi_resource_tracker))
     {
     }
 
@@ -164,6 +173,14 @@ namespace wz::engine::assets
                     data))
             {
                 return std::nullopt;
+            }
+            // Re-publish rhi residency (the compiler's finalize side effect) so a
+            // cache-served height field is GPU-resident, not merely CPU-registered
+            // — else the clipmap's scalar_field_texture binding is "not resident"
+            // (issue #334). Uses `data` before the move into the table.
+            if (gpu_resources_) {
+                internal::publish_scalar_field_residency(
+                    key, data, *gpu_resources_, rhi_resource_tracker_, logger_);
             }
             wz::asset::ResourceHandle handle =
                 scalar_fields_.add(std::move(data));

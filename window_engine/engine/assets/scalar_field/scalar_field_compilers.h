@@ -32,6 +32,21 @@ namespace wz::engine::assets::internal {
         wz::Logger& logger,
         ScalarFieldData& field);
 
+    // Publish a scalar field as an rhi texture resource (mip pyramid + the
+    // deterministic "field_texture" identity) — the GPU-residency side effect the
+    // compiler runs in its finalize path. Exposed so the disk-cache provider can
+    // re-publish residency for a field it serves STRAIGHT from cache (bypassing
+    // the compiler), matching a fresh compile — otherwise a cache-served height
+    // field is CPU-only and the clipmap's scalar_field_texture binding renders
+    // "not resident" (issue #334). No-op semantics match the compiler: only a
+    // valid 2D R32F field (depth 1) is uploaded.
+    void publish_scalar_field_residency(
+        const wz::asset::AssetKey& key,
+        const ScalarFieldData& field,
+        wz::rhi::GpuResourceRegistry& gpu_resources,
+        const RhiResourceTracker& rhi_resource_tracker,
+        wz::Logger& logger);
+
     // ── Height mip pyramid (#210) ─────────────────────────────────────────────
     //
     // One level of a CPU-built box-filter mip pyramid for the resident height

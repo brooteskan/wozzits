@@ -754,6 +754,22 @@ namespace wz::engine::assets::internal
     }
 
 
+    void publish_scalar_field_residency(
+        const wz::asset::AssetKey& key,
+        const ScalarFieldData& field,
+        wz::rhi::GpuResourceRegistry& gpu_resources,
+        const RhiResourceTracker& rhi_resource_tracker,
+        wz::Logger& logger)
+    {
+        // Public entry to the compiler's rhi-residency side effect (the height
+        // texture + deterministic identity), so the disk-cache provider can
+        // re-publish residency for a scalar field it serves straight from cache,
+        // bypassing the compiler's finalize path (issue #334).
+        publish_resident_scalar_field(
+            key, field, gpu_resources, rhi_resource_tracker, logger);
+    }
+
+
     void register_scalar_field_compilers(
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,

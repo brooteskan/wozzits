@@ -276,7 +276,16 @@ namespace wz::asset {
             ResolvePolicy policy,
             ExternalCacheProvider* provider = nullptr,
             std::vector<std::pair<AssetKey, ResolveError>>* errors = nullptr);
-        
+
+        // Keys of every graph SINK — an Asset node that no other Asset node
+        // depends on. Passing these to resolve_roots covers every node exactly
+        // as resolve_all does (sinks + their prerequisites = the whole graph),
+        // but demand-driven: a cache-served node prunes its prerequisite subtree,
+        // so a heavy source that only feeds a cached asset is never demanded.
+        // This is what lets the runtime resolve from a sealed cache with the
+        // source stripped (issue #334). Empty before commit.
+        std::vector<AssetKey> terminal_keys() const;
+
 
 
         // ── Queries ───────────────────────────────────────────────────────────────

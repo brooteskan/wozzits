@@ -692,7 +692,7 @@ namespace wz::app
             if (assembled > 0) {
                 ctx_.assets->commit();
                 const wz::engine::assets::ResolveReport resolve =
-                    ctx_.assets->resolve_all();
+                    ctx_.assets->resolve_all_cached();
                 if (!resolve.ok()) {
                     ctx_.logger.warn(
                         "spawn_prefab: resolved with errors="

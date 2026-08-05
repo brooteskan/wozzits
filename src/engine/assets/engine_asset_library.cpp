@@ -806,6 +806,23 @@ namespace wz::engine::assets
         return report;
     }
 
+    ResolveReport EngineAssetLibrary::resolve_all_cached(
+        std::source_location caller)
+    {
+        // Resolve every graph SINK through the disk-cache provider with
+        // CachePreferred. Same coverage as resolve_all (sinks + prerequisites =
+        // every node), but a cache-served node prunes its prerequisite subtree,
+        // so a heavy source that only feeds a cached asset is never demanded —
+        // the runtime can run from a sealed cache with the source stripped.
+        const std::vector<wz::asset::AssetKey> terminals =
+            system_.terminal_keys();
+        return resolve_roots_with_report(
+            terminals,
+            wz::asset::ResolvePolicy::CachePreferred,
+            "resolve_all_cached",
+            caller);
+    }
+
     ResolveReport EngineAssetLibrary::resolve_runtime(
         std::source_location caller)
     {
@@ -897,6 +914,16 @@ namespace wz::engine::assets
             terrain_table_,
             terrain_visual_proxy_table_,
             collision_table_,
+            // GPU-residency hook so a cache-served scalar field re-publishes the
+            // same rhi texture residency a fresh compile would (#334). Mirrors the
+            // tracker the EngineAssetContext gives the compilers.
+            gpu_resources_,
+            [this](
+                const wz::asset::AssetKey& key,
+                std::vector<wz::rhi::ResourceIdentity> identities)
+            {
+                track_rhi_resources(key, std::move(identities));
+            },
         };
         report.resolved_count =
             system_.resolve_roots(

@@ -175,7 +175,7 @@ namespace wz::app
         // ResourceHandles. Failures (missing files, compiler errors) surface here.
         // Through the library so we get its resolve logging + a structured report.
         const wz::engine::assets::ResolveReport resolve_report =
-            ctx_.assets->resolve_all();
+            ctx_.assets->resolve_all_cached();
         if (!resolve_report.ok()) {
             result.ok = false;
             for (const wz::engine::assets::ResolveFailure& failure :
@@ -259,7 +259,7 @@ namespace wz::app
         if (render_bindings_assembled > 0) {
             ctx_.assets->commit();
             const wz::engine::assets::ResolveReport binding_resolve =
-                ctx_.assets->resolve_all();
+                ctx_.assets->resolve_all_cached();
             if (!binding_resolve.ok()) {
                 ctx_.logger.warn(
                     "bind_asset_graph: render-binding asset(s) resolved with "
@@ -412,7 +412,7 @@ namespace wz::app
         // Through the library, matching bind_asset_graph.
         ctx_.assets->commit();
         const wz::engine::assets::ResolveReport scene_resolve =
-            ctx_.assets->resolve_all();
+            ctx_.assets->resolve_all_cached();
 
         const wz::engine::assets::SceneHandle scene_handle =
             ctx_.assets->scenes().get_scene(scene);
@@ -482,7 +482,7 @@ namespace wz::app
             document_.nodes() = std::move(materialize_scene.nodes);
             ctx_.assets->commit();
             const wz::engine::assets::ResolveReport materialize_resolve =
-                ctx_.assets->resolve_all();
+                ctx_.assets->resolve_all_cached();
             if (!materialize_resolve.ok()) {
                 ctx_.logger.warn(
                     "load_scene: materialized authoring asset(s) resolved with "
@@ -514,7 +514,7 @@ namespace wz::app
         if (glb_sources_resolved > 0 || render_bindings_assembled > 0) {
             ctx_.assets->commit();
             const wz::engine::assets::ResolveReport glb_resolve =
-                ctx_.assets->resolve_all();
+                ctx_.assets->resolve_all_cached();
             if (!glb_resolve.ok()) {
                 ctx_.logger.warn(
                     "load_scene: GLB scene-source / render-binding asset(s) "
@@ -2127,7 +2127,7 @@ namespace wz::app
         if (assembled > 0) {
             ctx_.assets->commit();
             const wz::engine::assets::ResolveReport resolve =
-                ctx_.assets->resolve_all();
+                ctx_.assets->resolve_all_cached();
             if (!resolve.ok()) {
                 ctx_.logger.warn(
                     "rematerialize_render_bindings: resolved with errors="
@@ -2151,7 +2151,7 @@ namespace wz::app
         if (assembled > 0) {
             ctx_.assets->commit();
             const wz::engine::assets::ResolveReport resolve =
-                ctx_.assets->resolve_all();
+                ctx_.assets->resolve_all_cached();
             if (!resolve.ok()) {
                 ctx_.logger.warn(
                     "rematerialize_node_render_binding: resolved with errors="
@@ -2203,7 +2203,7 @@ namespace wz::app
         if (resolved > 0) {
             ctx_.assets->commit();
             const wz::engine::assets::ResolveReport glb_resolve =
-                ctx_.assets->resolve_all();
+                ctx_.assets->resolve_all_cached();
             if (!glb_resolve.ok()) {
                 ctx_.logger.warn(
                     "rematerialize_glb_scene_sources: GLB scene-source resolved "

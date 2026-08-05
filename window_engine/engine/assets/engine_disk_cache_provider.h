@@ -7,9 +7,12 @@
 #include <engine/assets/mesh_derived_field/mesh_derived_field.h>
 #include <engine/assets/mesh_sparse_operator/mesh_sparse_operator.h>
 #include <engine/assets/scalar_field/scalar_field.h>
+#include <engine/assets/scalar_field/scalar_field_compilers.h>  // RhiResourceTracker, residency
 #include <engine/assets/terrain/terrain.h>
 #include <engine/assets/terrain/terrain_visual_proxy.h>
 #include <logging/logger.h>
+
+namespace wz::rhi { class GpuResourceRegistry; }
 
 #include <optional>
 
@@ -27,7 +30,12 @@ namespace wz::engine::assets
             MeshSparseOperatorTable& mesh_sparse_operators,
             TerrainAssetTable& terrains,
             TerrainVisualProxyTable& terrain_visual_proxies,
-            CollisionAssetTable& collisions);
+            CollisionAssetTable& collisions,
+            // GPU-residency hook: a cache-served asset must re-publish the same
+            // rhi residency a fresh compile would (issue #334). Null gpu_resources
+            // (device-only library) skips it, matching the compilers.
+            wz::rhi::GpuResourceRegistry* gpu_resources = nullptr,
+            internal::RhiResourceTracker rhi_resource_tracker = {});
 
         bool can_load(
             wz::asset::SchemaID schema,
@@ -49,5 +57,7 @@ namespace wz::engine::assets
         TerrainAssetTable& terrains_;
         TerrainVisualProxyTable& terrain_visual_proxies_;
         CollisionAssetTable& collisions_;
+        wz::rhi::GpuResourceRegistry* gpu_resources_ = nullptr;
+        internal::RhiResourceTracker rhi_resource_tracker_;
     };
 }

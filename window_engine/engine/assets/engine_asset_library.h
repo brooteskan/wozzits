@@ -221,6 +221,14 @@ namespace wz::engine::assets
         ResolveReport resolve_all(
             std::source_location caller =
                 std::source_location::current());
+        // Like resolve_all, but resolves the graph's SINKS as roots through the
+        // disk-cache provider with CachePreferred: a cached heavy asset is served
+        // from the (possibly sealed) cache and its source prerequisites are never
+        // demanded — so the runtime resolves with heavy sources stripped. Coverage
+        // matches resolve_all (sinks + prerequisites = every node). Issue #334.
+        ResolveReport resolve_all_cached(
+            std::source_location caller =
+                std::source_location::current());
         ResolveReport resolve_runtime(
             std::source_location caller =
                 std::source_location::current());

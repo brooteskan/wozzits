@@ -569,6 +569,38 @@ namespace wz::asset
         return ok;
     }
 
+    std::vector<AssetKey> AssetSystem::terminal_keys() const {
+        std::vector<AssetKey> out;
+        if (!committed_) {
+            return out;
+        }
+        const AssetGraph& g = storage_->dag();
+        const uint32_t count = wz::core::graph::node_count(g);
+        for (uint32_t i = 0; i < count; ++i) {
+            const AssetNode& node = wz::core::graph::node_data(g, i);
+            if (node.kind != AssetNodeKind::Asset) {
+                continue;   // skip the synthetic DemandRoot nodes
+            }
+            // Terminal == no ASSET-kind node depends on it (mirrors
+            // compiled_terminals). Its own prerequisites (source carriers etc.)
+            // are reached only THROUGH it during resolve, so a cache hit here
+            // prunes them.
+            bool has_asset_dependent = false;
+            for (const NodeHandle child : dependents(g, i)) {
+                if (wz::core::graph::node_data(g, child).kind
+                    == AssetNodeKind::Asset)
+                {
+                    has_asset_dependent = true;
+                    break;
+                }
+            }
+            if (!has_asset_dependent) {
+                out.push_back(node.key);
+            }
+        }
+        return out;
+    }
+
     uint32_t AssetSystem::evict_unregistered()
     {
         uint32_t evicted = 0;
