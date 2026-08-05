@@ -70,4 +70,15 @@ namespace wz::engine::assets
         wz::rhi::GpuResourceRegistry* gpu_resources_ = nullptr;
         internal::RhiResourceTracker rhi_resource_tracker_;
     };
+
+    // Free predicate: whether the engine disk cache serves (schema, type) when the
+    // entry is present — the type whitelist only, independent of cache settings and
+    // of any key's on-disk existence. Single source of truth (disk_cache_spec)
+    // shared by EngineDiskCacheProvider::is_cacheable AND the bundle closure walker
+    // (issue #334), so "what the sealed cache serves" cannot fork between the
+    // runtime that reads the cache and the exporter that decides which sources a
+    // sealed bundle may strip.
+    [[nodiscard]] bool is_disk_cacheable(
+        wz::asset::SchemaID schema,
+        wz::asset::AssetType type);
 }

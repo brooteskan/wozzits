@@ -10,6 +10,7 @@ target_sources(window_engine PRIVATE
     app/editor_runtime.cpp
     project/project_manifest.cpp
     project/project_runtime_launch.cpp
+    bundle/bundle_closure.cpp
     editor/project_snapshot.cpp
     editor/project_snapshot_abi.cpp
     editor/asset_graph_layout.cpp

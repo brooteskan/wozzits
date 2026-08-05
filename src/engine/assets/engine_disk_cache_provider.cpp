@@ -144,6 +144,13 @@ namespace wz::engine::assets
         // answers "would this type be served from the cache if present", which is
         // what the sealed-miss check needs. can_load layers the settings + entry
         // existence on top.
+        return is_disk_cacheable(schema, type);
+    }
+
+    bool is_disk_cacheable(
+        wz::asset::SchemaID schema,
+        wz::asset::AssetType type)
+    {
         return disk_cache_spec(schema, type) != nullptr;
     }
 
