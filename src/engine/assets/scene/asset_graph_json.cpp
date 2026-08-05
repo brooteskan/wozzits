@@ -178,15 +178,17 @@ namespace wz::engine::assets
                 }
                 // Reject a double that cannot become an int64 -- a raw
                 // static_cast of an out-of-range double is UB. (C1-C22, #314)
-                const double v = raw->number_value;
-                if (!std::isfinite(v)
-                    || v < -9.2233720368547758e18
-                    || v > 9.2233720368547758e18)
-                {
-                    return false;
+                // The hand-rolled bound below was off by one: the literal
+                // 9.2233720368547758e18 rounds to EXACTLY 2^63, and int64 max is
+                // 2^63-1, so `> 2^63` let v == 2^63 through to a UB cast that lands
+                // on INT64_MIN. narrow_number<int64_t> uses `truncated >= 2^63`
+                // and is what the sibling uint64/enum branches already use.
+                // (A3-C4b, #77 visit 2)
+                if (auto n = wz::json::narrow_number<int64_t>(raw->number_value)) {
+                    out = *n;
+                    return true;
                 }
-                out = static_cast<int64_t>(v);
-                return true;
+                return false;
             }
             if (type == "float") {
                 if (raw->kind != wz::json::JSONValueKind::Number) {

@@ -341,7 +341,11 @@ TEST(SceneInstantiate, RejectsParentCycle)
 
     auto result = instantiate_scene(scene);
     EXPECT_FALSE(result.ok());
-    EXPECT_EQ(result.error, SceneInstantiateError::PolytreeBuildFailed);
+    // A3-H3 (#77 visit 2): a >= 2-node cycle now reports ParentCycle with a node
+    // named in error_detail, like the self-parent case, instead of an empty
+    // PolytreeBuildFailed.
+    EXPECT_EQ(result.error, SceneInstantiateError::ParentCycle);
+    EXPECT_FALSE(result.error_detail.empty());
 }
 
 TEST(SceneAssetModule, CameraNodePopulatesDefaultView)

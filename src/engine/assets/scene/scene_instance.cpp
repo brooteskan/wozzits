@@ -152,6 +152,32 @@ namespace wz::engine::assets
             return "node id='" + node.id + "' name='" + node.name + "'";
         }
 
+        // Find a node lying on a parent cycle, for diagnostics. A self-parent is
+        // caught earlier by add_edge (from == to); a cycle of >= 2 nodes clears
+        // add_edge (each child is parented exactly once) and only fails later in
+        // build(), which returns nullopt with no detail. Walking parent links from
+        // each node until an id repeats names a node actually in the cycle, so the
+        // >= 2-node case gets the same ParentCycle + node-naming diagnostic as the
+        // self-parent case instead of an empty PolytreeBuildFailed. (A3-H3, #77)
+        const SceneNodeAsset* find_node_on_parent_cycle(
+            const SceneAssetData& scene)
+        {
+            std::unordered_map<std::string, const SceneNodeAsset*> by_id;
+            for (const auto& node : scene.nodes) by_id[node.id] = &node;
+            for (const auto& start : scene.nodes) {
+                std::unordered_set<std::string> seen;
+                const SceneNodeAsset* cursor = &start;
+                while (cursor && cursor->parent_id) {
+                    if (!seen.insert(cursor->id).second) {
+                        return cursor;   // revisited an id => it is on a cycle
+                    }
+                    auto it = by_id.find(*cursor->parent_id);
+                    cursor = (it == by_id.end()) ? nullptr : it->second;
+                }
+            }
+            return nullptr;
+        }
+
         SceneAssetReferenceResolveRecord resolve_asset_reference(
             const SceneNodeAsset& node,
             const SceneInstantiateContext& context)
@@ -565,7 +591,18 @@ namespace wz::engine::assets
         // Build the polytree
         auto storage_result = build(std::move(builder));
         if (!storage_result.has_value()) {
-            result.error = SceneInstantiateError::PolytreeBuildFailed;
+            // A >= 2-node parent cycle is the common cause and clears the
+            // add_edge guard above; name it as a ParentCycle (like the
+            // self-parent case) rather than an empty PolytreeBuildFailed.
+            // (A3-H3, #77 visit 2)
+            if (const SceneNodeAsset* on_cycle =
+                    find_node_on_parent_cycle(scene)) {
+                result.error = SceneInstantiateError::ParentCycle;
+                result.error_detail =
+                    "parent cycle at " + node_log_name(*on_cycle);
+            } else {
+                result.error = SceneInstantiateError::PolytreeBuildFailed;
+            }
             log_instantiate_failure(result, context);
             return result;
         }

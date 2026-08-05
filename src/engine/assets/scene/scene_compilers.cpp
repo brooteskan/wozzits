@@ -36,6 +36,42 @@ namespace wz::engine::assets::internal
         using wz::json::read_float3;
         using wz::json::read_float4;
 
+        // Narrow an authored index/id/count double to an integer, rejecting
+        // non-finite, negative and out-of-range values. A raw static_cast of an
+        // out-of-range double is UB, and for an INDEX it silently wraps to a
+        // DIFFERENT, valid-looking one (e.g. 2^32+7 -> 7 binds the wrong mesh).
+        // Out-of-range keeps the caller's fallback (the field default) instead.
+        // (A3R-C3, #77 visit 2)
+        inline uint32_t narrow_index_u32(double v, uint32_t fallback = 0)
+        {
+            return wz::json::narrow_number<uint32_t>(v).value_or(fallback);
+        }
+        inline int32_t narrow_index_i32(double v, int32_t fallback = 0)
+        {
+            return wz::json::narrow_number<int32_t>(v).value_or(fallback);
+        }
+
+        // Strict boolean read for the node-identity fields. An ABSENT member keeps
+        // the struct default; a PRESENT-but-wrong-typed member (e.g. "visible": 0,
+        // a number where a bool is expected) is a malformed document and fails the
+        // node loudly rather than being silently indistinguishable from absent --
+        // the same rule a malformed transform already follows. Returns false (the
+        // caller returns nullopt) on the wrong-typed case. (A3-H2, #77 visit 2)
+        inline bool read_bool_field(
+            const wz::json::JSONValue& obj, const char* key, bool& field,
+            const std::string& node_id, wz::Logger& logger)
+        {
+            const auto* member = find_member(obj, key);
+            if (!member) return true;   // absent: keep the default
+            if (member->kind != wz::json::JSONValueKind::Bool) {
+                logger.error("scene node '" + node_id + "' field '"
+                    + std::string(key) + "' must be a boolean");
+                return false;
+            }
+            field = member->bool_value;
+            return true;
+        }
+
         SceneFromGLBCompileDesc scene_from_glb_desc_from_params(
             const wz::asset::ParamBlock& params)
         {
@@ -212,12 +248,12 @@ namespace wz::engine::assets::internal
             auto mesh_val = read_number(*dr, "mesh");
             if (mesh_val)
                 binding.mesh = static_cast<wz::scene::MeshHandle>(
-                    static_cast<uint32_t>(*mesh_val));
+                    narrow_index_u32(*mesh_val));
 
             auto mat_val = read_number(*dr, "material");
             if (mat_val)
                 binding.material = static_cast<wz::scene::MaterialHandle>(
-                    static_cast<uint32_t>(*mat_val));
+                    narrow_index_u32(*mat_val));
 
             const auto* bounds = find_member(*dr, "bounds");
             if (bounds && bounds->kind == wz::json::JSONValueKind::Object) {
@@ -489,20 +525,19 @@ namespace wz::engine::assets::internal
                             read_number(*rule_value, "input_channel_id"))
                     {
                         rule.input_channel_id =
-                            static_cast<uint32_t>(
-                                (std::max)(0.0, *channel));
+                            narrow_index_u32((std::max)(0.0, *channel));
                     }
                     if (auto lo = read_number(*rule_value, "lo")) {
-                        rule.lo = static_cast<float>(*lo);
+                        rule.lo = wz::json::narrow_float(*lo).value_or(rule.lo);
                     }
                     if (auto hi = read_number(*rule_value, "hi")) {
-                        rule.hi = static_cast<float>(*hi);
+                        rule.hi = wz::json::narrow_float(*hi).value_or(rule.hi);
                     }
                     read_float4(*rule_value, "color", rule.color);
                     if (auto priority =
                             read_number(*rule_value, "priority"))
                     {
-                        rule.priority = static_cast<int32_t>(*priority);
+                        rule.priority = narrow_index_i32(*priority);
                     }
                     style.mask.rules.push_back(rule);
                 }
@@ -769,8 +804,7 @@ namespace wz::engine::assets::internal
             auto emissive_strength =
                 read_number(*layer_value, "emissive_strength");
             if (emissive_strength) {
-                layer.emissive_strength =
-                    static_cast<float>(*emissive_strength);
+                layer.emissive_strength = wz::json::narrow_float(*emissive_strength).value_or(layer.emissive_strength);
             }
         }
 
@@ -794,7 +828,7 @@ namespace wz::engine::assets::internal
             }
             read_float4(*layer_value, "color", layer.color);
             if (auto emissive = read_number(*layer_value, "emissive_strength")) {
-                layer.emissive_strength = static_cast<float>(*emissive);
+                layer.emissive_strength = wz::json::narrow_float(*emissive).value_or(layer.emissive_strength);
             }
         }
 
@@ -842,7 +876,8 @@ namespace wz::engine::assets::internal
 
             float emissive_strength = style.wireframe.emissive_strength;
             if (auto value = read_number(obj, "emissive_strength")) {
-                emissive_strength = static_cast<float>(*value);
+                emissive_strength =
+                    wz::json::narrow_float(*value).value_or(emissive_strength);
             }
 
             if (text == "wireframe" || text == "vector_wireframe") {
@@ -1367,6 +1402,15 @@ namespace wz::engine::assets::internal
                 logger.error("scene node missing 'id' field");
                 return std::nullopt;
             }
+            // The empty string parses as a legal id all the way through
+            // instantiate (seen_ids, parent maps and handle maps all key on it
+            // without objection), yielding a node that is unaddressable and
+            // uneditable -- and one keystroke from "no parent" (parent:""). An id
+            // is an identity; an empty one is not. (A3-H4, #77 visit 2)
+            if (id->empty()) {
+                logger.error("scene node has an empty 'id' field");
+                return std::nullopt;
+            }
             // "spawn:" is the prefix instantiate_prefab_nodes mints for runtime
             // spawns, and the save path drops every node carrying it as
             // runtime-only. An AUTHORED node with that prefix therefore loads,
@@ -1406,13 +1450,17 @@ namespace wz::engine::assets::internal
                 node.local = *local;
             }
 
-            auto vis = read_bool(node_val, "visible");
-            if (vis) node.visible = *vis;
+            if (!read_bool_field(node_val, "visible", node.visible,
+                    node.id, logger)) {
+                return std::nullopt;
+            }
 
             // "active" (#252 live axis) — absent keeps the struct default (true),
             // so pre-#252 scenes load fully live (back-compat).
-            auto act = read_bool(node_val, "active");
-            if (act) node.active = *act;
+            if (!read_bool_field(node_val, "active", node.active,
+                    node.id, logger)) {
+                return std::nullopt;
+            }
 
             // Draw-order layer key — absent keeps the default 0 (the "World"
             // layer), so pre-existing scenes render unchanged. Range-guarded
@@ -1655,7 +1703,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     source.scene_index =
-                        static_cast<uint32_t>(*scene_index);
+                        narrow_index_u32(*scene_index);
                 }
                 // consume_mode: "flatten" => persistent bake; anything else
                 // (incl. default/"instance") => live instance graft. Mirrors
@@ -1699,7 +1747,7 @@ namespace wz::engine::assets::internal
                                 return std::nullopt;
                             }
                             ov.mesh_index =
-                                static_cast<uint32_t>(*mesh_index);
+                                narrow_index_u32(*mesh_index);
                         }
                         if (const auto* style = find_member(entry, "style");
                             style
@@ -1858,19 +1906,19 @@ namespace wz::engine::assets::internal
                 read_float3(*dls, "color", light.color);
                 auto intensity = read_number(*dls, "intensity");
                 if (intensity) {
-                    light.intensity = static_cast<float>(*intensity);
+                    light.intensity = wz::json::narrow_float(*intensity).value_or(light.intensity);
                 }
                 auto range = read_number(*dls, "range");
                 if (range) {
-                    light.range = static_cast<float>(*range);
+                    light.range = wz::json::narrow_float(*range).value_or(light.range);
                 }
                 auto inner = read_number(*dls, "inner_cone_radians");
                 if (inner) {
-                    light.inner_cone_radians = static_cast<float>(*inner);
+                    light.inner_cone_radians = wz::json::narrow_float(*inner).value_or(light.inner_cone_radians);
                 }
                 auto outer = read_number(*dls, "outer_cone_radians");
                 if (outer) {
-                    light.outer_cone_radians = static_cast<float>(*outer);
+                    light.outer_cone_radians = wz::json::narrow_float(*outer).value_or(light.outer_cone_radians);
                 }
                 node.direct_light_source = light;
             }
@@ -1903,7 +1951,7 @@ namespace wz::engine::assets::internal
                 read_float3(*ambient, "color", lighting.color);
                 auto intensity = read_number(*ambient, "intensity");
                 if (intensity) {
-                    lighting.intensity = static_cast<float>(*intensity);
+                    lighting.intensity = wz::json::narrow_float(*intensity).value_or(lighting.intensity);
                 }
                 auto intensity_field =
                     read_string(*ambient, "intensity_field");
@@ -2070,50 +2118,43 @@ namespace wz::engine::assets::internal
                 }
                 auto exposure = read_number(*hdri, "exposure");
                 if (exposure) {
-                    environment.exposure = static_cast<float>(*exposure);
+                    environment.exposure = wz::json::narrow_float(*exposure).value_or(environment.exposure);
                 }
                 auto rotation_x =
                     read_number(*hdri, "rotation_x_radians");
                 if (rotation_x) {
-                    environment.rotation_x_radians =
-                        static_cast<float>(*rotation_x);
+                    environment.rotation_x_radians = wz::json::narrow_float(*rotation_x).value_or(environment.rotation_x_radians);
                 }
                 auto rotation_y =
                     read_number(*hdri, "rotation_y_radians");
                 if (rotation_y) {
-                    environment.rotation_y_radians =
-                        static_cast<float>(*rotation_y);
+                    environment.rotation_y_radians = wz::json::narrow_float(*rotation_y).value_or(environment.rotation_y_radians);
                 }
                 auto rotation_z =
                     read_number(*hdri, "rotation_z_radians");
                 if (rotation_z) {
-                    environment.rotation_z_radians =
-                        static_cast<float>(*rotation_z);
+                    environment.rotation_z_radians = wz::json::narrow_float(*rotation_z).value_or(environment.rotation_z_radians);
                 }
                 auto lighting_intensity =
                     read_number(*hdri, "lighting_intensity");
                 if (lighting_intensity) {
-                    environment.lighting_intensity =
-                        static_cast<float>(*lighting_intensity);
+                    environment.lighting_intensity = wz::json::narrow_float(*lighting_intensity).value_or(environment.lighting_intensity);
                 }
                 auto reflection_intensity =
                     read_number(*hdri, "reflection_intensity");
                 if (reflection_intensity) {
-                    environment.reflection_intensity =
-                        static_cast<float>(*reflection_intensity);
+                    environment.reflection_intensity = wz::json::narrow_float(*reflection_intensity).value_or(environment.reflection_intensity);
                 }
                 auto background_intensity =
                     read_number(*hdri, "background_intensity");
                 if (background_intensity) {
-                    environment.background_intensity =
-                        static_cast<float>(*background_intensity);
+                    environment.background_intensity = wz::json::narrow_float(*background_intensity).value_or(environment.background_intensity);
                 }
                 auto lighting_sample_resolution =
                     read_number(*hdri, "lighting_sample_resolution");
                 if (lighting_sample_resolution) {
                     environment.lighting_sample_resolution =
-                        static_cast<uint32_t>(
-                            (std::max)(
+                        narrow_index_u32((std::max)(
                                 1.0,
                                 *lighting_sample_resolution));
                 }
@@ -2124,8 +2165,7 @@ namespace wz::engine::assets::internal
                 auto environment_light_intensity =
                     read_number(*hdri, "environment_light_intensity");
                 if (environment_light_intensity) {
-                    environment.environment_light_intensity =
-                        static_cast<float>(*environment_light_intensity);
+                    environment.environment_light_intensity = wz::json::narrow_float(*environment_light_intensity).value_or(environment.environment_light_intensity);
                 }
                 read_float3(
                     *hdri,
@@ -2138,14 +2178,12 @@ namespace wz::engine::assets::internal
                 auto dominant_light_intensity =
                     read_number(*hdri, "dominant_light_intensity");
                 if (dominant_light_intensity) {
-                    environment.dominant_light_intensity =
-                        static_cast<float>(*dominant_light_intensity);
+                    environment.dominant_light_intensity = wz::json::narrow_float(*dominant_light_intensity).value_or(environment.dominant_light_intensity);
                 }
                 auto dominant_light_confidence =
                     read_number(*hdri, "dominant_light_confidence");
                 if (dominant_light_confidence) {
-                    environment.dominant_light_confidence =
-                        static_cast<float>(*dominant_light_confidence);
+                    environment.dominant_light_confidence = wz::json::narrow_float(*dominant_light_confidence).value_or(environment.dominant_light_confidence);
                 }
                 node.hdri_environment = environment;
             }
@@ -2255,25 +2293,22 @@ namespace wz::engine::assets::internal
 
                 auto exposure = read_number(*sky_visual, "exposure");
                 if (exposure) {
-                    visual.exposure = static_cast<float>(*exposure);
+                    visual.exposure = wz::json::narrow_float(*exposure).value_or(visual.exposure);
                 }
                 auto rotation_x =
                     read_number(*sky_visual, "rotation_x_radians");
                 if (rotation_x) {
-                    visual.rotation_x_radians =
-                        static_cast<float>(*rotation_x);
+                    visual.rotation_x_radians = wz::json::narrow_float(*rotation_x).value_or(visual.rotation_x_radians);
                 }
                 auto rotation_y =
                     read_number(*sky_visual, "rotation_y_radians");
                 if (rotation_y) {
-                    visual.rotation_y_radians =
-                        static_cast<float>(*rotation_y);
+                    visual.rotation_y_radians = wz::json::narrow_float(*rotation_y).value_or(visual.rotation_y_radians);
                 }
                 auto rotation_z =
                     read_number(*sky_visual, "rotation_z_radians");
                 if (rotation_z) {
-                    visual.rotation_z_radians =
-                        static_cast<float>(*rotation_z);
+                    visual.rotation_z_radians = wz::json::narrow_float(*rotation_z).value_or(visual.rotation_z_radians);
                 }
                 node.sky_visual = visual;
             }
@@ -2304,7 +2339,7 @@ namespace wz::engine::assets::internal
 
                 auto radius = read_number(*sky_surface, "radius");
                 if (radius) {
-                    surface.radius = static_cast<float>(*radius);
+                    surface.radius = wz::json::narrow_float(*radius).value_or(surface.radius);
                 }
                 auto visible_to_camera =
                     read_bool(*sky_surface, "visible_to_camera");
@@ -2335,13 +2370,13 @@ namespace wz::engine::assets::internal
             if (fcc && fcc->kind == wz::json::JSONValueKind::Object) {
                 SceneFlyingCameraControllerAsset ctrl{};
                 auto ms = read_number(*fcc, "move_speed");
-                if (ms) ctrl.move_speed = static_cast<float>(*ms);
+                if (ms) ctrl.move_speed = wz::json::narrow_float(*ms).value_or(ctrl.move_speed);
                 auto ls = read_number(*fcc, "look_speed");
-                if (ls) ctrl.look_speed = static_cast<float>(*ls);
+                if (ls) ctrl.look_speed = wz::json::narrow_float(*ls).value_or(ctrl.look_speed);
                 auto bm = read_number(*fcc, "boost_multiplier");
-                if (bm) ctrl.boost_multiplier = static_cast<float>(*bm);
+                if (bm) ctrl.boost_multiplier = wz::json::narrow_float(*bm).value_or(ctrl.boost_multiplier);
                 auto rs = read_number(*fcc, "roll_speed");
-                if (rs) ctrl.roll_speed = static_cast<float>(*rs);
+                if (rs) ctrl.roll_speed = wz::json::narrow_float(*rs).value_or(ctrl.roll_speed);
 
                 if (ctrl.move_speed < 0.0f || ctrl.look_speed < 0.0f
                     || ctrl.boost_multiplier < 0.0f || ctrl.roll_speed < 0.0f)
@@ -2360,9 +2395,9 @@ namespace wz::engine::assets::internal
             if (amc && amc->kind == wz::json::JSONValueKind::Object) {
                 SceneActorMovementControllerAsset ctrl{};
                 auto ms = read_number(*amc, "move_speed");
-                if (ms) ctrl.move_speed = static_cast<float>(*ms);
+                if (ms) ctrl.move_speed = wz::json::narrow_float(*ms).value_or(ctrl.move_speed);
                 auto bm = read_number(*amc, "boost_multiplier");
-                if (bm) ctrl.boost_multiplier = static_cast<float>(*bm);
+                if (bm) ctrl.boost_multiplier = wz::json::narrow_float(*bm).value_or(ctrl.boost_multiplier);
                 auto movement_space = read_string(*amc, "movement_space");
                 if (movement_space) {
                     auto parsed_space =
@@ -2455,7 +2490,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     source.scene_index =
-                        static_cast<uint32_t>(*scene_index);
+                        narrow_index_u32(*scene_index);
                 }
 
                 if (source.kind == SceneImportSourceKind::GLB
@@ -2537,7 +2572,7 @@ namespace wz::engine::assets::internal
                             + "' has invalid mesh_index");
                         return std::nullopt;
                     }
-                    source.mesh_index = static_cast<uint32_t>(*mesh_index);
+                    source.mesh_index = narrow_index_u32(*mesh_index);
                 }
 
                 if (source.kind == SceneMeshSourceKind::GLB
@@ -2586,7 +2621,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     processing.target_vertex_count =
-                        static_cast<uint32_t>(*target_vertex_count);
+                        narrow_index_u32(*target_vertex_count);
                 }
                 if (auto target_triangle_count =
                         read_number(*mp, "target_triangle_count"))
@@ -2599,7 +2634,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     processing.target_triangle_count =
-                        static_cast<uint32_t>(*target_triangle_count);
+                        narrow_index_u32(*target_triangle_count);
                 }
                 if (auto target_ratio = read_number(*mp, "target_ratio")) {
                     if (!std::isfinite(*target_ratio)) {
@@ -2630,7 +2665,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     processing.max_valence =
-                        static_cast<uint32_t>(*max_valence);
+                        narrow_index_u32(*max_valence);
                 }
                 if (auto normal_deviation =
                         read_number(*mp, "normal_deviation"))
@@ -2660,7 +2695,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     processing.preview_level_index =
-                        static_cast<uint32_t>(*preview_level_index);
+                        narrow_index_u32(*preview_level_index);
                 }
                 if (auto asset = read_string(*mp, "source_mesh_asset");
                     asset && !asset->empty())
@@ -2767,8 +2802,7 @@ namespace wz::engine::assets::internal
                 }
                 if (field_channel) {
                     style.field_visualization_channel_id =
-                        static_cast<uint32_t>(
-                            (std::max)(0.0, *field_channel));
+                        narrow_index_u32((std::max)(0.0, *field_channel));
                 }
                 auto field_min =
                     read_number(*mrs, "field_visualization_value_min");
@@ -2779,8 +2813,7 @@ namespace wz::engine::assets::internal
                         || field_min.has_value();
                 }
                 if (field_min) {
-                    style.field_visualization_value_min =
-                        static_cast<float>(*field_min);
+                    style.field_visualization_value_min = wz::json::narrow_float(*field_min).value_or(style.field_visualization_value_min);
                 }
                 auto field_max =
                     read_number(*mrs, "field_visualization_value_max");
@@ -2791,8 +2824,7 @@ namespace wz::engine::assets::internal
                         || field_max.has_value();
                 }
                 if (field_max) {
-                    style.field_visualization_value_max =
-                        static_cast<float>(*field_max);
+                    style.field_visualization_value_max = wz::json::narrow_float(*field_max).value_or(style.field_visualization_value_max);
                 }
                 auto field_gamma =
                     read_number(*mrs, "field_visualization_gamma");
@@ -2925,21 +2957,20 @@ namespace wz::engine::assets::internal
                                         "input_channel_id"))
                             {
                                 rule.input_channel_id =
-                                    static_cast<uint32_t>(
-                                        (std::max)(0.0, *channel));
+                                    narrow_index_u32((std::max)(0.0, *channel));
                             }
                             if (auto lo = read_number(*rule_value, "lo")) {
-                                rule.lo = static_cast<float>(*lo);
+                                rule.lo = wz::json::narrow_float(*lo).value_or(rule.lo);
                             }
                             if (auto hi = read_number(*rule_value, "hi")) {
-                                rule.hi = static_cast<float>(*hi);
+                                rule.hi = wz::json::narrow_float(*hi).value_or(rule.hi);
                             }
                             read_float4(*rule_value, "color", rule.color);
                             if (auto priority =
                                     read_number(*rule_value, "priority"))
                             {
                                 rule.priority =
-                                    static_cast<int32_t>(*priority);
+                                    narrow_index_i32(*priority);
                             }
                             style.mask.rules.push_back(rule);
                         }
@@ -3065,7 +3096,7 @@ namespace wz::engine::assets::internal
                         || *channel_id <= 0.0
                         || *channel_id > 4294967295.0
                         || static_cast<double>(
-                            static_cast<uint32_t>(*channel_id))
+                            narrow_index_u32(*channel_id))
                             != *channel_id)
                     {
                         logger.error("mesh_derived_field_source on node '"
@@ -3073,7 +3104,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     source.channel_id =
-                        static_cast<uint32_t>(*channel_id);
+                        narrow_index_u32(*channel_id);
                 }
 
                 if (auto value_type = read_string(*mdfs, "value_type")) {
@@ -3114,7 +3145,7 @@ namespace wz::engine::assets::internal
                             + node.id + "' has invalid constant_value");
                         return std::nullopt;
                     }
-                    source.constant_value = static_cast<float>(*constant);
+                    source.constant_value = wz::json::narrow_float(*constant).value_or(source.constant_value);
                 }
 
                 node.mesh_derived_field_source = std::move(source);
@@ -3240,7 +3271,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     apply.input_channel_id =
-                        static_cast<uint32_t>(*input_channel_id);
+                        narrow_index_u32(*input_channel_id);
                 }
                 if (apply.input_channel_id == 0u) {
                     logger.error("mesh_sparse_apply_field on node '"
@@ -3259,7 +3290,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     apply.output_channel_id =
-                        static_cast<uint32_t>(*output_channel_id);
+                        narrow_index_u32(*output_channel_id);
                 }
                 if (apply.output_channel_id == 0u) {
                     logger.error("mesh_sparse_apply_field on node '"
@@ -3321,7 +3352,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     bands.input_channel_id =
-                        static_cast<uint32_t>(*input_channel_id);
+                        narrow_index_u32(*input_channel_id);
                 }
                 if (auto output_base_channel_id =
                         read_number(*msdb, "output_base_channel_id"))
@@ -3335,7 +3366,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     bands.output_base_channel_id =
-                        static_cast<uint32_t>(*output_base_channel_id);
+                        narrow_index_u32(*output_base_channel_id);
                 }
                 if (auto band_count =
                         read_number(*msdb, "band_count"))
@@ -3345,7 +3376,7 @@ namespace wz::engine::assets::internal
                             + node.id + "' has invalid band_count");
                         return std::nullopt;
                     }
-                    bands.band_count = static_cast<uint32_t>(*band_count);
+                    bands.band_count = narrow_index_u32(*band_count);
                 }
                 if (auto iterations_per_band =
                         read_number(*msdb, "iterations_per_band"))
@@ -3359,7 +3390,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     bands.iterations_per_band =
-                        static_cast<uint32_t>(*iterations_per_band);
+                        narrow_index_u32(*iterations_per_band);
                 }
                 if (auto mode = read_string(*msdb, "mode")) {
                     auto parsed_mode =
@@ -3378,7 +3409,7 @@ namespace wz::engine::assets::internal
                             + node.id + "' has invalid tau");
                         return std::nullopt;
                     }
-                    bands.tau = static_cast<float>(*tau);
+                    bands.tau = wz::json::narrow_float(*tau).value_or(bands.tau);
                 }
 
                 node.mesh_sparse_diffusion_bands = std::move(bands);
@@ -3461,7 +3492,7 @@ namespace wz::engine::assets::internal
                                 return std::nullopt;
                             }
                             region.input_channel_id =
-                                static_cast<uint32_t>(*input_channel_id);
+                                narrow_index_u32(*input_channel_id);
                         }
                         if (auto output_channel_id =
                                 read_number(
@@ -3478,7 +3509,7 @@ namespace wz::engine::assets::internal
                                 return std::nullopt;
                             }
                             region.output_channel_id =
-                                static_cast<uint32_t>(*output_channel_id);
+                                narrow_index_u32(*output_channel_id);
                         }
 
                         std::optional<double> min_value =
@@ -3497,8 +3528,7 @@ namespace wz::engine::assets::internal
                                     + "' has invalid min_value");
                                 return std::nullopt;
                             }
-                            region.min_value =
-                                static_cast<float>(*min_value);
+                            region.min_value = wz::json::narrow_float(*min_value).value_or(region.min_value);
                         }
 
                         std::optional<double> max_value =
@@ -3517,8 +3547,7 @@ namespace wz::engine::assets::internal
                                     + "' has invalid max_value");
                                 return std::nullopt;
                             }
-                            region.max_value =
-                                static_cast<float>(*max_value);
+                            region.max_value = wz::json::narrow_float(*max_value).value_or(region.max_value);
                         }
 
                         if (region.input_channel_id == 0u
@@ -3640,7 +3669,7 @@ namespace wz::engine::assets::internal
                             || element->number_value <= 0.0
                             || element->number_value > 4294967295.0
                             || static_cast<double>(
-                                static_cast<uint32_t>(element->number_value))
+                                narrow_index_u32(element->number_value))
                                 != element->number_value)
                         {
                             logger.error("mesh_compute_field on node '"
@@ -3649,7 +3678,7 @@ namespace wz::engine::assets::internal
                             return std::nullopt;
                         }
                         *out[i] =
-                            static_cast<uint32_t>(element->number_value);
+                            narrow_index_u32(element->number_value);
                     }
                 }
 
@@ -3708,7 +3737,7 @@ namespace wz::engine::assets::internal
                         || *channel_id <= 0.0
                         || *channel_id > 4294967295.0
                         || static_cast<double>(
-                            static_cast<uint32_t>(*channel_id))
+                            narrow_index_u32(*channel_id))
                             != *channel_id)
                     {
                         logger.error("mesh_compute_field on node '" + node.id
@@ -3716,7 +3745,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     channel.channel_id =
-                        static_cast<uint32_t>(*channel_id);
+                        narrow_index_u32(*channel_id);
 
                     if (auto value_type =
                             read_string(*channel_value, "value_type"))
@@ -3762,8 +3791,7 @@ namespace wz::engine::assets::internal
                             || param_value->number_value < 0.0
                             || param_value->number_value > 4294967295.0
                             || static_cast<double>(
-                                static_cast<uint32_t>(
-                                    param_value->number_value))
+                                narrow_index_u32(param_value->number_value))
                                 != param_value->number_value)
                         {
                             logger.error("mesh_compute_field on node '"
@@ -3771,8 +3799,7 @@ namespace wz::engine::assets::internal
                             return std::nullopt;
                         }
                         component.params.push_back(
-                            static_cast<uint32_t>(
-                                param_value->number_value));
+                            narrow_index_u32(param_value->number_value));
                     }
                 }
 
@@ -3841,7 +3868,7 @@ namespace wz::engine::assets::internal
                             + "' has invalid " + field_name);
                         return false;
                     }
-                    out = static_cast<uint32_t>(*value);
+                    out = narrow_index_u32(*value);
                     return true;
                 };
                 if (!read_dimension("width", source.width)
@@ -3937,7 +3964,7 @@ namespace wz::engine::assets::internal
                             + "' has invalid " + field_name);
                         return false;
                     }
-                    out = static_cast<uint32_t>(*value);
+                    out = narrow_index_u32(*value);
                     return true;
                 };
                 if (!read_dimension("width", source.width)
@@ -3959,7 +3986,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     source.components_per_channel =
-                        static_cast<uint32_t>(*components);
+                        narrow_index_u32(*components);
                 }
 
                 const auto* channels = find_member(*vfs, "channels");
@@ -4053,7 +4080,7 @@ namespace wz::engine::assets::internal
                             + "' has invalid " + std::string(field_name));
                         return false;
                     }
-                    const uint32_t parsed = static_cast<uint32_t>(*value);
+                    const uint32_t parsed = narrow_index_u32(*value);
                     if (static_cast<double>(parsed) != *value
                         || (require_positive && parsed == 0u))
                     {
@@ -4094,7 +4121,7 @@ namespace wz::engine::assets::internal
                             return std::nullopt;
                         }
                         const uint32_t parsed =
-                            static_cast<uint32_t>(element->number_value);
+                            narrow_index_u32(element->number_value);
                         if (static_cast<double>(parsed)
                             != element->number_value)
                         {
@@ -4282,7 +4309,7 @@ namespace wz::engine::assets::internal
                                     return std::nullopt;
                                 }
                                 const uint32_t parsed_offset =
-                                    static_cast<uint32_t>(*offset);
+                                    narrow_index_u32(*offset);
                                 if (static_cast<double>(parsed_offset)
                                     != *offset)
                                 {
@@ -4306,7 +4333,7 @@ namespace wz::engine::assets::internal
                                     return std::nullopt;
                                 }
                                 const uint32_t parsed_dwords =
-                                    static_cast<uint32_t>(*dwords);
+                                    narrow_index_u32(*dwords);
                                 if (static_cast<double>(parsed_dwords)
                                     != *dwords)
                                 {
@@ -4390,7 +4417,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     component.layer_mask =
-                        static_cast<uint32_t>(*layer_mask);
+                        narrow_index_u32(*layer_mask);
                 }
 
                 auto collides_with_mask =
@@ -4405,7 +4432,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     component.collides_with_mask =
-                        static_cast<uint32_t>(*collides_with_mask);
+                        narrow_index_u32(*collides_with_mask);
                 }
 
                 auto is_trigger = read_bool(*collision, "is_trigger");
@@ -4478,26 +4505,24 @@ namespace wz::engine::assets::internal
                     auto vertical_scale =
                         read_number(*height_field_source, "vertical_scale");
                     if (vertical_scale) {
-                        source.vertical_scale =
-                            static_cast<float>(*vertical_scale);
+                        source.vertical_scale = wz::json::narrow_float(*vertical_scale).value_or(source.vertical_scale);
                     }
                     auto base_height =
                         read_number(*height_field_source, "base_height");
                     if (base_height) {
-                        source.base_height =
-                            static_cast<float>(*base_height);
+                        source.base_height = wz::json::narrow_float(*base_height).value_or(source.base_height);
                     }
                     auto resolution_x = read_number(
                         *height_field_source, "projection_resolution_x");
                     if (resolution_x && *resolution_x >= 0.0) {
                         source.projection_resolution_x =
-                            static_cast<uint32_t>(*resolution_x);
+                            narrow_index_u32(*resolution_x);
                     }
                     auto resolution_y = read_number(
                         *height_field_source, "projection_resolution_y");
                     if (resolution_y && *resolution_y >= 0.0) {
                         source.projection_resolution_y =
-                            static_cast<uint32_t>(*resolution_y);
+                            narrow_index_u32(*resolution_y);
                     }
 
                     component.height_field_source = source;
@@ -4519,7 +4544,7 @@ namespace wz::engine::assets::internal
                             + "' has invalid radius");
                         return std::nullopt;
                     }
-                    component.radius = static_cast<float>(*radius);
+                    component.radius = wz::json::narrow_float(*radius).value_or(component.radius);
                 }
 
                 auto layer_mask = read_number(*proximity, "layer_mask");
@@ -4533,7 +4558,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     component.layer_mask =
-                        static_cast<uint32_t>(*layer_mask);
+                        narrow_index_u32(*layer_mask);
                 }
 
                 auto detects_with_mask =
@@ -4548,7 +4573,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     component.detects_with_mask =
-                        static_cast<uint32_t>(*detects_with_mask);
+                        narrow_index_u32(*detects_with_mask);
                 }
 
                 auto enabled = read_bool(*proximity, "enabled");
@@ -4590,16 +4615,14 @@ namespace wz::engine::assets::internal
                 auto terrain_ride_height =
                     read_number(*motion_component, "terrain_ride_height");
                 if (terrain_ride_height) {
-                    component.terrain_ride_height =
-                        static_cast<float>(*terrain_ride_height);
+                    component.terrain_ride_height = wz::json::narrow_float(*terrain_ride_height).value_or(component.terrain_ride_height);
                 }
                 auto terrain_footprint_radius =
                     read_number(
                         *motion_component,
                         "terrain_footprint_radius");
                 if (terrain_footprint_radius) {
-                    component.terrain_footprint_radius =
-                        static_cast<float>(*terrain_footprint_radius);
+                    component.terrain_footprint_radius = wz::json::narrow_float(*terrain_footprint_radius).value_or(component.terrain_footprint_radius);
                 }
                 auto terrain_align_to_surface =
                     read_bool(*motion_component, "terrain_align_to_surface");
@@ -4612,8 +4635,7 @@ namespace wz::engine::assets::internal
                         *motion_component,
                         "terrain_alignment_strength");
                 if (terrain_alignment_strength) {
-                    component.terrain_alignment_strength =
-                        static_cast<float>(*terrain_alignment_strength);
+                    component.terrain_alignment_strength = wz::json::narrow_float(*terrain_alignment_strength).value_or(component.terrain_alignment_strength);
                 }
                 auto enabled = read_bool(*motion_component, "enabled");
                 if (enabled) {
@@ -4839,29 +4861,25 @@ namespace wz::engine::assets::internal
                     *terrain_render_style,
                     "ambient_strength");
                 if (ambient_strength) {
-                    style.ambient_strength =
-                        static_cast<float>(*ambient_strength);
+                    style.ambient_strength = wz::json::narrow_float(*ambient_strength).value_or(style.ambient_strength);
                 }
                 auto sky_visibility_strength = read_number(
                     *terrain_render_style,
                     "sky_visibility_strength");
                 if (sky_visibility_strength) {
-                    style.sky_visibility_strength =
-                        static_cast<float>(*sky_visibility_strength);
+                    style.sky_visibility_strength = wz::json::narrow_float(*sky_visibility_strength).value_or(style.sky_visibility_strength);
                 }
                 auto normal_lighting_strength = read_number(
                     *terrain_render_style,
                     "normal_lighting_strength");
                 if (normal_lighting_strength) {
-                    style.normal_lighting_strength =
-                        static_cast<float>(*normal_lighting_strength);
+                    style.normal_lighting_strength = wz::json::narrow_float(*normal_lighting_strength).value_or(style.normal_lighting_strength);
                 }
                 auto terrain_bounce_strength = read_number(
                     *terrain_render_style,
                     "terrain_bounce_strength");
                 if (terrain_bounce_strength) {
-                    style.terrain_bounce_strength =
-                        static_cast<float>(*terrain_bounce_strength);
+                    style.terrain_bounce_strength = wz::json::narrow_float(*terrain_bounce_strength).value_or(style.terrain_bounce_strength);
                 }
                 auto target_pixels_per_triangle = read_number(
                     *terrain_render_style,
@@ -4875,8 +4893,7 @@ namespace wz::engine::assets::internal
                             + "' has invalid target_pixels_per_triangle");
                         return std::nullopt;
                     }
-                    style.target_pixels_per_triangle =
-                        static_cast<float>(*target_pixels_per_triangle);
+                    style.target_pixels_per_triangle = wz::json::narrow_float(*target_pixels_per_triangle).value_or(style.target_pixels_per_triangle);
                 }
                 auto enable_surfel_lods = read_bool(
                     *terrain_render_style,
@@ -4896,8 +4913,7 @@ namespace wz::engine::assets::internal
                             + "' has invalid surfel_target_coverage_px");
                         return std::nullopt;
                     }
-                    style.surfel_target_coverage_px =
-                        static_cast<float>(*surfel_target_coverage_px);
+                    style.surfel_target_coverage_px = wz::json::narrow_float(*surfel_target_coverage_px).value_or(style.surfel_target_coverage_px);
                 }
                 auto max_asset_triangle_density = read_number(
                     *terrain_render_style,
@@ -4911,8 +4927,7 @@ namespace wz::engine::assets::internal
                             + "' has invalid max_asset_triangle_density");
                         return std::nullopt;
                     }
-                    style.max_asset_triangle_density =
-                        static_cast<float>(*max_asset_triangle_density);
+                    style.max_asset_triangle_density = wz::json::narrow_float(*max_asset_triangle_density).value_or(style.max_asset_triangle_density);
                 }
                 auto max_screen_triangle_density = read_number(
                     *terrain_render_style,
@@ -4926,8 +4941,7 @@ namespace wz::engine::assets::internal
                             + "' has invalid max_screen_triangle_density");
                         return std::nullopt;
                     }
-                    style.max_screen_triangle_density =
-                        static_cast<float>(*max_screen_triangle_density);
+                    style.max_screen_triangle_density = wz::json::narrow_float(*max_screen_triangle_density).value_or(style.max_screen_triangle_density);
                 }
                 auto visual_chunk_count = read_number(
                     *terrain_render_style,
@@ -4941,7 +4955,7 @@ namespace wz::engine::assets::internal
                         return std::nullopt;
                     }
                     const uint32_t chunks =
-                        static_cast<uint32_t>(value);
+                        narrow_index_u32(value);
                     const bool exact_integer =
                         static_cast<double>(chunks) == value;
                     const bool allowed =
@@ -5414,9 +5428,9 @@ namespace wz::engine::assets::internal
                             light.light.type = *parsed_type;
                         }
                         auto intens = read_number(*lr, "intensity");
-                        if (intens) light.light.intensity = static_cast<float>(*intens);
+                        if (intens) light.light.intensity = wz::json::narrow_float(*intens).value_or(light.light.intensity);
                         auto range = read_number(*lr, "range");
-                        if (range) light.light.range = static_cast<float>(*range);
+                        if (range) light.light.range = wz::json::narrow_float(*range).value_or(light.light.range);
                     }
                     scene.lights.push_back(std::move(light));
                 }
