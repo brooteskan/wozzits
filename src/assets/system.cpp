@@ -648,8 +648,15 @@ namespace wz::asset
         std::unordered_set<AssetKey, AssetKeyHash> error_keys;
         uint32_t ok = 0;
 
+        // Accumulate a root's error into the caller's errors list. It must NOT
+        // set the node's resolve STATE: resolve_node already recorded the failure
+        // on the node (with the compiler's reason for a direct compile failure),
+        // and a bare re-mark here would insert_or_assign an EMPTY detail over it —
+        // erasing the reason for any root that fails compile directly as a sink
+        // (e.g. a renderable whose binding lost its source). The one place a root
+        // has no prior state — a key missing from the committed graph — sets it
+        // explicitly below.
         auto record_error = [&](const AssetKey& key, ResolveError error) {
-            set_node_resolve_failed(key, error);
             if (errors && error_keys.insert(key).second) {
                 errors->emplace_back(key, error);
             }
@@ -808,6 +815,9 @@ namespace wz::asset
         for (const AssetKey& root : roots) {
             const NodeHandle root_node = find_asset_node(index_, root);
             if (root_node == INVALID_ASSET_NODE) {
+                // No node in the graph resolved this key, so record its state
+                // here (record_error only accumulates the errors list now).
+                set_node_resolve_failed(root, ResolveError::NodeNotFound);
                 record_error(root, ResolveError::NodeNotFound);
                 continue;
             }
