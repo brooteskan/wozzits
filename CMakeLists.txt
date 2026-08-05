@@ -449,6 +449,42 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/render_to_texture.scene.json"
     COPYONLY)
 
+# Self-contained render fixture for the bundle-export smoke test (#334, Seam 3.6):
+# a RELOCATABLE project (project-relative source paths, all referenced shaders
+# staged locally) so wozzits_export — which requires a self-contained project —
+# can bundle it. The graph + manifest are committed (relative paths); the scene,
+# sky and the LOCAL shaders are staged from test_rebind_fixture, and the SHIPPING
+# sg_lit shaders are staged from the engine (not committed copies, so they cannot
+# drift — matching WZ_ENGINE_SHADER_DIR above).
+set(WZ_BUNDLE_FIXTURE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/fixtures/test_bundle_fixture")
+set(WZ_BUNDLE_FIXTURE_DST
+    "${CMAKE_BINARY_DIR}/resources/projects/test_bundle_fixture")
+configure_file(
+    "${WZ_BUNDLE_FIXTURE_SRC}/assets.graph.json"
+    "${WZ_BUNDLE_FIXTURE_DST}/assets.graph.json" COPYONLY)
+configure_file(
+    "${WZ_BUNDLE_FIXTURE_SRC}/.wozzits/project.json"
+    "${WZ_BUNDLE_FIXTURE_DST}/.wozzits/project.json" COPYONLY)
+configure_file(
+    "${WZ_REBIND_FIXTURE_SRC}/scene.json"
+    "${WZ_BUNDLE_FIXTURE_DST}/scene.json" COPYONLY)
+configure_file(
+    "${WZ_REBIND_FIXTURE_SRC}/fixture_sky.sky_gaussian.json"
+    "${WZ_BUNDLE_FIXTURE_DST}/fixture_sky.sky_gaussian.json" COPYONLY)
+foreach(_wz_bundle_shader
+    pull_cube_vs pull_cube_ps custom_field_vs custom_field_ps
+    material_vs material_shared material_ps)
+    configure_file(
+        "${WZ_FIXTURE_SHADER_DIR}/${_wz_bundle_shader}.hlsl"
+        "${WZ_BUNDLE_FIXTURE_DST}/shaders/${_wz_bundle_shader}.hlsl" COPYONLY)
+endforeach()
+foreach(_wz_bundle_sg_lit sg_lit_uv_vs sg_lit_uv_ps sg_lighting_common)
+    configure_file(
+        "${WZ_ENGINE_SHADER_DIR}/sg_lit/${_wz_bundle_sg_lit}.hlsl"
+        "${WZ_BUNDLE_FIXTURE_DST}/shaders/sg_lit/${_wz_bundle_sg_lit}.hlsl" COPYONLY)
+endforeach()
+
 # Issues #285/#287/#288: a scene for the test_rebind_fixture graph carrying the
 # whole authored chain -- a render-to-texture source filling node 27, a
 # composite material (node 28) placing it over a base colour, and a surface
@@ -1032,6 +1068,46 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             --scene "${WZ_REBIND_FIXTURE_DST}/render_binding.scene.json"
             --frames 5)
     set_tests_properties(wozzits_app_v1_render_binding PROPERTIES
+        SKIP_RETURN_CODE 3
+        LABELS "render")
+
+    # Bundle-export smoke test (#334, Seam 3.6): the headless acceptance guard.
+    # Export the self-contained render fixture into a bundle, then launch the
+    # BUNDLED exe from the bundle dir with NO path args — so it boots from the
+    # co-located wozzits_app.json (Seam 1) and its relative-path closure — and
+    # assert it renders. Two linked tests via a CTest fixture: the export step
+    # (pure CPU, no device) sets up the bundle and always runs; the render step
+    # (GPU) requires it and skips (not fails) on no-GPU (kRuntimeNoDeviceExitCode).
+    add_test(NAME wozzits_export_bundle_setup
+        COMMAND wozzits_export
+            --project "${WZ_BUNDLE_FIXTURE_DST}"
+            --out "${CMAKE_BINARY_DIR}/bundle_smoke"
+            --app-exe "$<TARGET_FILE:wozzits_app_v1>"
+            --no-log)
+    set_tests_properties(wozzits_export_bundle_setup PROPERTIES
+        FIXTURES_SETUP wozzits_bundle
+        LABELS "render")
+
+    add_test(NAME wozzits_export_bundle_render
+        COMMAND "${CMAKE_BINARY_DIR}/bundle_smoke/wozzits_app_v1.exe" --frames 5)
+    set_tests_properties(wozzits_export_bundle_render PROPERTIES
+        FIXTURES_REQUIRED wozzits_bundle
+        SKIP_RETURN_CODE 3
+        LABELS "render")
+
+    # Seam 3.3 guard: the SEALED export end to end. --seal warms the baked cache
+    # (the fixture's procedural scalar field), strips the cache-served sources,
+    # writes cache{sealed:true}, and self-verifies a bounded run from the cache
+    # alone — so exit 0 proves the whole warm→strip→seal→run pipeline. GPU-
+    # dependent; skips (not fails) on no-GPU, where the warm run reports no device
+    # and the tool propagates kRuntimeNoDeviceExitCode (3).
+    add_test(NAME wozzits_export_bundle_sealed
+        COMMAND wozzits_export
+            --project "${WZ_BUNDLE_FIXTURE_DST}"
+            --out "${CMAKE_BINARY_DIR}/bundle_smoke_sealed"
+            --app-exe "$<TARGET_FILE:wozzits_app_v1>"
+            --seal --no-log)
+    set_tests_properties(wozzits_export_bundle_sealed PROPERTIES
         SKIP_RETURN_CODE 3
         LABELS "render")
 

@@ -258,7 +258,9 @@ namespace
     // marked cache-served, rewrite the config sealed, and verify the stripped
     // bundle still runs from the cache alone. GPU-dependent (the warm + verify
     // runs render a frame), matching the issue's local-only bake constraint.
-    bool seal_bundle(
+    // Returns a process-style status: 0 ok, kRuntimeNoDeviceExitCode when no GPU
+    // is available (so a caller/CTest can SKIP rather than fail), 1 on real error.
+    int seal_bundle(
         const Options& o,
         const fs::path& bundle_root,
         const fs::path& project_root,
@@ -277,15 +279,15 @@ namespace
             exe, { "--cache-root", cache_root.string(), "--frames", "1" });
         if (warm_rc == wz::app::kRuntimeNoDeviceExitCode) {
             error = "sealing requires a GPU: the cache-warm run reported no device";
-            return false;
+            return wz::app::kRuntimeNoDeviceExitCode;
         }
         if (warm_rc != 0) {
             error = "cache-warm run failed (exit " + std::to_string(warm_rc) + ")";
-            return false;
+            return 1;
         }
         if (!cache_has_entries(cache_root)) {
             error = "cache-warm produced no entries under " + cache_root.string();
-            return false;
+            return 1;
         }
 
         // 2. Strip the sources whose products the sealed cache now serves.
@@ -312,7 +314,7 @@ namespace
         if (!wz::app::write_app_bootstrap_config(
                 bundle_root.string(), doc, error))
         {
-            return false;
+            return 1;
         }
 
         // 4. Verify: the sealed bundle renders from the cache with sources gone.
@@ -320,15 +322,15 @@ namespace
         const int seal_rc = run_bundled_app(exe, { "--frames", "1" });
         if (seal_rc == wz::app::kRuntimeNoDeviceExitCode) {
             log_line(o, "  (sealed-run verification skipped: no GPU device)");
-            return true;
+            return 0;
         }
         if (seal_rc != 0) {
             error =
                 "sealed bundle failed to run from the cache after stripping (exit "
                 + std::to_string(seal_rc) + ")";
-            return false;
+            return 1;
         }
-        return true;
+        return 0;
     }
 }
 
@@ -456,11 +458,19 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (options.seal
-        && !seal_bundle(options, bundle_root, project_root, closure, doc, error))
-    {
-        std::cerr << "wozzits_export: " << error << '\n';
-        return 1;
+    if (options.seal) {
+        const int seal_status =
+            seal_bundle(options, bundle_root, project_root, closure, doc, error);
+        if (seal_status == wz::app::kRuntimeNoDeviceExitCode) {
+            // No GPU to bake the cache: surface the runtime's no-device code so a
+            // CTest treats it as SKIPPED rather than a real failure.
+            std::cerr << "wozzits_export: " << error << '\n';
+            return wz::app::kRuntimeNoDeviceExitCode;
+        }
+        if (seal_status != 0) {
+            std::cerr << "wozzits_export: " << error << '\n';
+            return 1;
+        }
     }
 
     log_line(options,
