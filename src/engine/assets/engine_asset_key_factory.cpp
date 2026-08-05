@@ -36,20 +36,43 @@ namespace wz::engine::assets
         }
 
 
+        // Resolve the path whose BYTES the key factory reads against the project
+        // resource root, NOT the process CWD (mirrors the asset carriers,
+        // 35fb5a08). Absolute paths pass through; an empty root leaves the path
+        // as-is (the old CWD-relative behavior, for rootless unit-test callers).
+        std::string resolve_read_path(
+            const wz::fs::Path& resource_root,
+            const std::string& source_path)
+        {
+            if (source_path.empty()) {
+                return {};
+            }
+            if (!resource_root.empty() && !wz::fs::is_absolute(source_path)) {
+                return wz::fs::join(resource_root, source_path);
+            }
+            return source_path;
+        }
+
         std::optional<wz::asset::AssetKey> file_carrier_key(
-            const wz::asset::AssetNode& node)
+            const wz::asset::AssetNode& node,
+            const wz::fs::Path& resource_root)
         {
             if (!is_file_carrier_schema(node.schema)) {
                 return std::nullopt;
             }
 
+            // canonical_path is the STABLE identity (the authored path, normalised)
+            // and never depends on resource_root/CWD; full_path is the location the
+            // bytes are read from and IS resolved against resource_root, so which
+            // key SHAPE (content-folded vs path-only) a carrier gets no longer
+            // depends on the process working directory.
             std::string canonical_path;
             std::string full_path;
             if (const auto* file =
                     std::any_cast<internal::FileSourceDesc>(&node.meta))
             {
                 canonical_path = file->canonical_path;
-                full_path = file->full_path;
+                full_path = resolve_read_path(resource_root, file->full_path);
             }
             else if (const auto* params =
                          std::any_cast<wz::asset::ParamBlock>(&node.meta))
@@ -58,11 +81,7 @@ namespace wz::engine::assets
                     params->get<std::string>("source_path", {});
                 canonical_path =
                     detail::canonical_asset_path(source_path);
-                if (wz::fs::is_absolute(source_path)
-                    || wz::fs::exists(source_path))
-                {
-                    full_path = source_path;
-                }
+                full_path = resolve_read_path(resource_root, source_path);
             }
 
             if (canonical_path.empty()) {
@@ -145,15 +164,16 @@ namespace wz::engine::assets
     }
 
     wz::asset::AssetKeyFactoryFn make_engine_asset_key_factory(
-        const wz::asset::CompilerRegistry& registry)
+        const wz::asset::CompilerRegistry& registry,
+        const wz::fs::Path& resource_root)
     {
-        return [&registry](
+        return [&registry, resource_root](
             const wz::asset::AssetNode& node,
             std::span<const wz::asset::AssetKey> deps)
             -> std::optional<wz::asset::AssetKey>
         {
             if (std::optional<wz::asset::AssetKey> key =
-                    file_carrier_key(node))
+                    file_carrier_key(node, resource_root))
             {
                 return key;
             }

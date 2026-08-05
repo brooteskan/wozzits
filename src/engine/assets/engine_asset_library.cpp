@@ -625,7 +625,11 @@ namespace wz::engine::assets
 
     wz::asset::AssetKeyFactoryFn EngineAssetLibrary::draft_key_factory() const
     {
-        return make_engine_asset_key_factory(system_.registry());
+        // Anchor carrier-source reads on the library's resource_root, not the
+        // process CWD, so asset keys (and every disk-cache filename derived from
+        // them) are reproducible regardless of where the runtime was launched.
+        return make_engine_asset_key_factory(
+            system_.registry(), resource_root_);
     }
 
     authoring::GraphAuthoringContext

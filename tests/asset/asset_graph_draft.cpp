@@ -14,10 +14,12 @@
 #include <any>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <span>
 #include <string>
+#include <system_error>
 
 namespace
 {
@@ -946,6 +948,66 @@ TEST(AssetGraphDraft, EngineHookMaterializesFileCarrierKey)
         wz::engine::assets::make_file_key(
             "assets/shaders/test.hlsl",
             wz::engine::assets::kHLSLFileSchema));
+}
+
+// A carrier's key must be reproducible regardless of the process working
+// directory: a RELATIVE source is read against the resource_root, so which key
+// SHAPE (content-folded vs path-only) the carrier gets — and thus its key, and
+// every disk-cache filename derived from it — does not depend on where the
+// runtime was launched. Before the fix exists()/read resolved against the CWD, so
+// the same bundle produced different asset keys from different directories
+// (identity-guard §5 finding on #334).
+TEST(AssetGraphDraft, EngineHookCarrierKeyResolvesReadAgainstResourceRoot)
+{
+    namespace ea = wz::engine::assets;
+
+    const fs::path root = fs::temp_directory_path()
+        / ("wz_keyfactory_" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(root / "sub");
+    const std::string bytes_text = "carrier-bytes-v1";
+    {
+        std::ofstream out(root / "sub" / "data.bin", std::ios::binary);
+        out << bytes_text;
+    }
+
+    CompilerRegistry registry = make_engine_draft_key_test_registry();
+
+    AssetNode node{};
+    node.schema = ea::kRawFileSchema;
+    node.stage = AssetStage::Source;
+    ParamBlock params;
+    params.values["source_path"] = std::string("sub/data.bin");
+    node.meta = params;
+
+    const std::span<const std::uint8_t> bytes{
+        reinterpret_cast<const std::uint8_t*>(bytes_text.data()),
+        bytes_text.size() };
+    const AssetKey content_key =
+        ea::make_file_content_key("sub/data.bin", bytes, ea::kRawFileSchema);
+    const AssetKey path_only_key =
+        ea::make_file_key("sub/data.bin", ea::kRawFileSchema);
+    ASSERT_NE(content_key, path_only_key);
+
+    // WITH the resource_root the bytes are found there (not in the CWD, where
+    // "sub/data.bin" does not resolve), so the carrier is content-keyed and the
+    // key is CWD-independent.
+    const auto rooted =
+        ea::make_engine_asset_key_factory(registry, root.string());
+    const auto rooted_key = rooted(node, {});
+    ASSERT_TRUE(rooted_key.has_value());
+    EXPECT_EQ(*rooted_key, content_key);
+
+    // WITHOUT a resource_root the read falls back to the CWD, where the relative
+    // path is absent, so it degrades to the path-only key — the CWD-dependence
+    // the rooted form removes (rootless is preserved for unit-test callers).
+    const auto rootless = ea::make_engine_asset_key_factory(registry);
+    const auto rootless_key = rootless(node, {});
+    ASSERT_TRUE(rootless_key.has_value());
+    EXPECT_EQ(*rootless_key, path_only_key);
+
+    std::error_code ec;
+    fs::remove_all(root, ec);
 }
 
 // Pins what an ABSENT key factory means now that the derived key is
