@@ -23,6 +23,7 @@
 // in the loop (the authoring litmus). Exit codes: 0 ok, 1 runtime error, 2 usage.
 
 #include <engine/app/app_bootstrap_config.h>
+#include <engine/app/editor_runtime.h>  // kRuntimeNoDeviceExitCode
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/bundle/bundle_closure.h>
 #include <engine/project/project_runtime_launch.h>
@@ -30,12 +31,15 @@
 #include <external/json/json_parser.h>
 #include <file/filesystem.h>
 
+#include <process.h>  // _spawnv / _P_WAIT (spawn the runtime to warm/verify)
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace
 {
@@ -46,6 +50,7 @@ namespace
         std::string project;   // project root (holds .wozzits/project.json)
         std::string out;       // bundle output directory
         std::string app_exe;   // runtime exe to bundle (default: a sibling)
+        bool seal = false;     // bake a sealed cache + strip cache-served sources
         bool log = true;
     };
 
@@ -61,6 +66,9 @@ namespace
             }
             else if (arg == "--app-exe" && i + 1 < argc) {
                 out.app_exe = argv[++i];
+            }
+            else if (arg == "--seal") {
+                out.seal = true;
             }
             else if (arg == "--no-log") {
                 out.log = false;
@@ -207,6 +215,121 @@ namespace
         }
         return true;
     }
+
+    // Run the bundled runtime as a child process; returns its exit code (or -1 on
+    // spawn failure). Args are passed as a vector (no shell), so paths with spaces
+    // are safe. Keeping the GPU run in its own process leaves wozzits_export a pure
+    // CPU orchestrator and reuses the shipped runtime exactly.
+    int run_bundled_app(
+        const std::string& exe,
+        const std::vector<std::string>& args)
+    {
+        std::vector<const char*> argv;
+        argv.reserve(args.size() + 2);
+        argv.push_back(exe.c_str());
+        for (const std::string& arg : args) {
+            argv.push_back(arg.c_str());
+        }
+        argv.push_back(nullptr);
+        const intptr_t rc = _spawnv(_P_WAIT, exe.c_str(), argv.data());
+        return rc < 0 ? -1 : static_cast<int>(rc);
+    }
+
+    bool cache_has_entries(const fs::path& cache_root)
+    {
+        std::error_code ec;
+        const fs::path assets = cache_root / "assets";
+        if (!fs::is_directory(assets, ec)) {
+            return false;
+        }
+        for (auto it = fs::recursive_directory_iterator(assets, ec);
+             !ec && it != fs::recursive_directory_iterator();
+             it.increment(ec))
+        {
+            if (it->is_regular_file(ec)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Seal the bundle: warm the baked cache by running the runtime once (cache on,
+    // so the cacheable compilers store_cached), strip the sources the closure
+    // marked cache-served, rewrite the config sealed, and verify the stripped
+    // bundle still runs from the cache alone. GPU-dependent (the warm + verify
+    // runs render a frame), matching the issue's local-only bake constraint.
+    bool seal_bundle(
+        const Options& o,
+        const fs::path& bundle_root,
+        const fs::path& project_root,
+        const wz::engine::bundle::BundleClosure& closure,
+        wz::app::AppBootstrapConfigDoc& doc,
+        std::string& error)
+    {
+        const std::string exe = (bundle_root / "wozzits_app_v1.exe").string();
+        const fs::path cache_root = bundle_root / "cache";
+
+        // 1. Warm — cache ON, NOT sealed, so a miss still compiles from source and
+        //    the compiler stores the product. Reads the co-located (unsealed)
+        //    config for the graph/scene/resource/behavior paths.
+        log_line(o, "warming baked cache (running the runtime, cache on)…");
+        const int warm_rc = run_bundled_app(
+            exe, { "--cache-root", cache_root.string(), "--frames", "1" });
+        if (warm_rc == wz::app::kRuntimeNoDeviceExitCode) {
+            error = "sealing requires a GPU: the cache-warm run reported no device";
+            return false;
+        }
+        if (warm_rc != 0) {
+            error = "cache-warm run failed (exit " + std::to_string(warm_rc) + ")";
+            return false;
+        }
+        if (!cache_has_entries(cache_root)) {
+            error = "cache-warm produced no entries under " + cache_root.string();
+            return false;
+        }
+
+        // 2. Strip the sources whose products the sealed cache now serves.
+        std::error_code ec;
+        size_t stripped = 0;
+        for (const wz::fs::Path& strip : closure.strip_paths()) {
+            const fs::path relative =
+                fs::relative(fs::path(strip), project_root, ec);
+            if (ec || relative.empty()) {
+                continue;
+            }
+            const fs::path target = bundle_root / relative;
+            if (fs::remove(target, ec)) {
+                ++stripped;
+                log_line(o, "  stripped " + target.string());
+            }
+        }
+        log_line(o,
+            "stripped " + std::to_string(stripped) + " cache-served source(s)");
+
+        // 3. Rewrite the config sealed (cache on + fatal-on-miss).
+        doc.cache_root = "cache";
+        doc.cache_sealed = true;
+        if (!wz::app::write_app_bootstrap_config(
+                bundle_root.string(), doc, error))
+        {
+            return false;
+        }
+
+        // 4. Verify: the sealed bundle renders from the cache with sources gone.
+        log_line(o, "verifying sealed bundle (sources stripped)…");
+        const int seal_rc = run_bundled_app(exe, { "--frames", "1" });
+        if (seal_rc == wz::app::kRuntimeNoDeviceExitCode) {
+            log_line(o, "  (sealed-run verification skipped: no GPU device)");
+            return true;
+        }
+        if (seal_rc != 0) {
+            error =
+                "sealed bundle failed to run from the cache after stripping (exit "
+                + std::to_string(seal_rc) + ")";
+            return false;
+        }
+        return true;
+    }
 }
 
 int main(int argc, char** argv)
@@ -216,7 +339,9 @@ int main(int argc, char** argv)
     if (!parse_options(argc, argv, options, error)) {
         std::cerr
             << "usage: wozzits_export --project <dir> --out <bundle-dir> "
-               "[--app-exe <path>] [--no-log]\n"
+               "[--app-exe <path>] [--seal] [--no-log]\n"
+               "  --seal  bake a read-only cache and strip the cache-served "
+               "sources (needs a GPU locally)\n"
             << error << '\n';
         return 2;
     }
@@ -323,12 +448,23 @@ int main(int argc, char** argv)
                 project_root, ec)
                 .generic_string();
     }
-    // Cache stays OFF this seam (unsealed bundle); the seal + strip is Seam 3.3.
+    // Write the config UNSEALED first: it names the graph/scene/resource/behavior
+    // paths the --seal warm run reads, and is the final config for a plain
+    // (unsealed) export. Sealing rewrites it with the cache block afterwards.
     if (!wz::app::write_app_bootstrap_config(bundle_root.string(), doc, error)) {
         std::cerr << "wozzits_export: " << error << '\n';
         return 1;
     }
 
-    log_line(options, "bundle written to " + bundle_root.string());
+    if (options.seal
+        && !seal_bundle(options, bundle_root, project_root, closure, doc, error))
+    {
+        std::cerr << "wozzits_export: " << error << '\n';
+        return 1;
+    }
+
+    log_line(options,
+        std::string(options.seal ? "sealed bundle" : "bundle")
+        + " written to " + bundle_root.string());
     return 0;
 }
