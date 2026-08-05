@@ -24,6 +24,7 @@
 
 #include <engine/app/app_bootstrap_config.h>
 #include <engine/app/editor_runtime.h>  // kRuntimeNoDeviceExitCode
+#include <engine/assets/engine_asset_library_internal.h>  // internal::FileSourceDesc
 #include <engine/assets/scene/asset_graph_json.h>
 #include <engine/bundle/bundle_closure.h>
 #include <engine/project/project_runtime_launch.h>
@@ -33,10 +34,15 @@
 
 #include <process.h>  // _spawnv / _P_WAIT (spawn the runtime to warm/verify)
 
+#include <any>
+#include <cctype>
+#include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -168,50 +174,176 @@ namespace
         return copied;
     }
 
-    // Report the closure and warn about sources that live OUTSIDE the project
-    // tree (this seam copies only the project tree, so an external reference —
-    // e.g. into the shared resources/ tree — would not be bundled; the general
-    // path-rewriting case is a later remainder). Returns false if any copy source
-    // is outside the tree, which would make the bundle incomplete.
-    bool report_and_check_closure(
+    // Whether `p` resolves to a location inside `root` (i.e. not escaping it).
+    bool path_is_inside(const fs::path& p, const fs::path& root)
+    {
+        std::error_code ec;
+        const fs::path rel = fs::relative(p, root, ec);
+        if (ec || rel.empty()) {
+            return false;
+        }
+        return rel.generic_string().rfind("..", 0) != 0;  // does not escape root
+    }
+
+    // Log the closure: each source's disposition (copy/strip) and whether it is
+    // external (lives outside the project tree, so it will be relocated into the
+    // bundle's resources/ subtree).
+    void report_closure(
         const Options& o,
         const wz::engine::bundle::BundleClosure& closure,
-        const fs::path& project_root,
-        std::string& error)
+        const fs::path& project_root)
     {
         size_t copy = 0;
         size_t strip = 0;
-        bool external = false;
+        size_t external = 0;
         for (const wz::engine::bundle::BundleSourceRef& ref : closure.sources) {
             const bool is_copy =
                 ref.disposition == wz::engine::bundle::BundleFileDisposition::Copy;
             (is_copy ? copy : strip) += 1;
-
-            std::error_code ec;
-            const fs::path rel =
-                fs::relative(fs::path(ref.resolved_path), project_root, ec);
             const bool inside =
-                !ec && !rel.empty() && rel.native().rfind(L"..", 0) != 0;
-            if (o.log) {
-                log_line(o,
-                    std::string(is_copy ? "  copy  " : "  strip ")
-                    + std::string(ref.resolved_path)
-                    + (inside ? "" : "   [OUTSIDE PROJECT]"));
+                path_is_inside(fs::path(ref.resolved_path), project_root);
+            if (!inside) {
+                ++external;
             }
-            if (is_copy && !inside) {
-                external = true;
-            }
+            log_line(o,
+                std::string(is_copy ? "  copy  " : "  strip ")
+                + std::string(ref.resolved_path)
+                + (inside ? "" : "   [external -> resources/]"));
         }
         log_line(o,
             "closure: " + std::to_string(closure.sources.size())
             + " sources (" + std::to_string(copy) + " copy, "
-            + std::to_string(strip) + " strip)");
-        if (external) {
-            error =
-                "the project references copy-sources outside its own tree; "
-                "external-resource bundling (path rewriting) is not yet "
-                "supported — relocate the project to be self-contained first";
-            return false;
+            + std::to_string(strip) + " strip, "
+            + std::to_string(external) + " external)");
+    }
+
+    // Short stable hex tag for a directory path (case-folded, normalized). External
+    // sources from the same source dir share one bundle subdir, so files with the
+    // same basename from different dirs never collide.
+    std::string dir_hash_tag(const fs::path& dir)
+    {
+        const std::string norm = dir.lexically_normal().generic_string();
+        uint64_t h = 14695981039346656037ull;
+        for (const char c : norm) {
+            h ^= static_cast<unsigned char>(
+                std::tolower(static_cast<unsigned char>(c)));
+            h *= 1099511628211ull;
+        }
+        char buf[17];
+        std::snprintf(
+            buf, sizeof(buf), "%016llx", static_cast<unsigned long long>(h));
+        return buf;
+    }
+
+    // Point a source-carrying node at a new (bundle-relative) path, in whichever
+    // meta form it uses (ParamBlock source_path/directory, or FileSourceDesc).
+    void set_node_source_path(
+        wz::asset::AssetGraphDraft& draft,
+        wz::asset::AssetGraphDraftNodeId node_id,
+        bool is_directory,
+        const std::string& new_path)
+    {
+        wz::asset::AssetGraphDraftNode* node =
+            wz::asset::find_asset_graph_draft_node(draft, node_id);
+        if (!node) {
+            return;
+        }
+        if (auto* params =
+                std::any_cast<wz::asset::ParamBlock>(&node->node.meta))
+        {
+            params->values[is_directory ? "directory" : "source_path"] = new_path;
+        }
+        else if (auto* file =
+                     std::any_cast<wz::engine::assets::internal::FileSourceDesc>(
+                         &node->node.meta))
+        {
+            file->full_path = new_path;
+        }
+    }
+
+    // Copy every source the graph references from OUTSIDE the project tree into a
+    // bundle resources/ subtree and rewrite the graph to point at the copies, so a
+    // project that references shared engine shaders (etc.) still bundles into a
+    // self-contained, relocatable folder. Records original->bundle-relative
+    // mappings in `rewrites` (so a sealed strip can find an external source's
+    // bundle location), and re-serializes the graph to `bundle_graph_path` when
+    // anything changed. Local sources are left untouched (already carried by the
+    // project-tree copy).
+    bool relocate_external_sources(
+        const Options& o,
+        wz::asset::AssetGraphDraft& draft,
+        const wz::engine::bundle::BundleClosure& closure,
+        const fs::path& project_root,
+        const fs::path& bundle_root,
+        const fs::path& bundle_graph_path,
+        std::map<std::string, std::string>& rewrites,
+        std::string& error)
+    {
+        std::error_code ec;
+        bool changed = false;
+        for (const wz::engine::bundle::BundleSourceRef& ref : closure.sources) {
+            const fs::path source(ref.resolved_path);
+            if (path_is_inside(source, project_root)) {
+                continue;  // local — copied verbatim with the project tree
+            }
+
+            std::string dest_rel;
+            const auto seen = rewrites.find(ref.resolved_path);
+            if (seen != rewrites.end()) {
+                dest_rel = seen->second;  // same external file already relocated
+            }
+            else {
+                dest_rel = "resources/" + dir_hash_tag(source.parent_path())
+                    + "/" + source.filename().generic_string();
+                const fs::path dest = bundle_root / dest_rel;
+                fs::create_directories(dest.parent_path(), ec);
+                if (ref.is_directory) {
+                    fs::copy(source, dest,
+                        fs::copy_options::recursive
+                            | fs::copy_options::overwrite_existing,
+                        ec);
+                }
+                else {
+                    fs::copy_file(source, dest,
+                        fs::copy_options::overwrite_existing, ec);
+                }
+                if (ec) {
+                    error = "failed to relocate external source "
+                        + source.string() + " -> " + dest.string() + ": "
+                        + ec.message();
+                    return false;
+                }
+                rewrites[ref.resolved_path] = dest_rel;
+                log_line(o,
+                    "  relocated " + source.string() + " -> " + dest_rel);
+            }
+
+            set_node_source_path(draft, ref.node, ref.is_directory, dest_rel);
+            changed = true;
+        }
+
+        if (changed) {
+            // Clear every node key so the runtime re-derives them from the
+            // rewritten params (bind materializes keys; the writer omits empty
+            // keys). The editor-only layout is intentionally dropped.
+            for (wz::asset::AssetGraphDraftNode& node : draft.nodes) {
+                node.node.key = wz::asset::AssetKey{};
+            }
+            std::ofstream out(bundle_graph_path, std::ios::binary);
+            if (!out) {
+                error = "cannot rewrite bundle graph: "
+                    + bundle_graph_path.string();
+                return false;
+            }
+            out << wz::engine::assets::save_asset_graph_draft_to_v2_json(draft);
+            if (!out) {
+                error = "failed writing bundle graph: "
+                    + bundle_graph_path.string();
+                return false;
+            }
+            log_line(o,
+                "rewrote graph for " + std::to_string(rewrites.size())
+                + " external source(s)");
         }
         return true;
     }
@@ -265,6 +397,7 @@ namespace
         const fs::path& bundle_root,
         const fs::path& project_root,
         const wz::engine::bundle::BundleClosure& closure,
+        const std::map<std::string, std::string>& external_rewrites,
         wz::app::AppBootstrapConfigDoc& doc,
         std::string& error)
     {
@@ -290,16 +423,25 @@ namespace
             return 1;
         }
 
-        // 2. Strip the sources whose products the sealed cache now serves.
+        // 2. Strip the sources whose products the sealed cache now serves. An
+        //    external source lives at its relocated bundle path; a local one at
+        //    its project-relative path.
         std::error_code ec;
         size_t stripped = 0;
         for (const wz::fs::Path& strip : closure.strip_paths()) {
-            const fs::path relative =
-                fs::relative(fs::path(strip), project_root, ec);
-            if (ec || relative.empty()) {
-                continue;
+            fs::path target;
+            const auto ext = external_rewrites.find(std::string(strip));
+            if (ext != external_rewrites.end()) {
+                target = bundle_root / ext->second;
             }
-            const fs::path target = bundle_root / relative;
+            else {
+                const fs::path relative =
+                    fs::relative(fs::path(strip), project_root, ec);
+                if (ec || relative.empty()) {
+                    continue;
+                }
+                target = bundle_root / relative;
+            }
             if (fs::remove(target, ec)) {
                 ++stripped;
                 log_line(o, "  stripped " + target.string());
@@ -383,14 +525,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // 3. Run the closure walker on the REAL graph and report copy/strip.
+    // 3. Run the closure walker on the REAL graph and report copy/strip/external.
     const wz::engine::bundle::BundleClosure closure =
         wz::engine::bundle::compute_bundle_closure(
             draft, launch.launch.resource_root);
-    if (!report_and_check_closure(options, closure, project_root, error)) {
-        std::cerr << "wozzits_export: " << error << '\n';
-        return 1;
-    }
+    report_closure(options, closure, project_root);
 
     // 4. Assemble the bundle: authored tree, runtime exe, bootstrap config.
     std::error_code ec;
@@ -410,6 +549,20 @@ int main(int argc, char** argv)
     }
     log_line(options,
         "copied " + std::to_string(copied) + " project files");
+
+    // Relocate any sources the graph references from OUTSIDE the project tree
+    // (e.g. shared engine shaders) into the bundle's resources/ subtree and
+    // rewrite the graph to point at them, so the bundle is self-contained.
+    std::map<std::string, std::string> external_rewrites;
+    const fs::path bundle_graph_path = bundle_root
+        / fs::relative(fs::path(launch.launch.asset_graph_path), project_root, ec);
+    if (!relocate_external_sources(
+            options, draft, closure, project_root, bundle_root,
+            bundle_graph_path, external_rewrites, error))
+    {
+        std::cerr << "wozzits_export: " << error << '\n';
+        return 1;
+    }
 
     // The runtime exe: --app-exe, else a sibling of this tool.
     fs::path app_exe = options.app_exe.empty()
@@ -459,8 +612,9 @@ int main(int argc, char** argv)
     }
 
     if (options.seal) {
-        const int seal_status =
-            seal_bundle(options, bundle_root, project_root, closure, doc, error);
+        const int seal_status = seal_bundle(
+            options, bundle_root, project_root, closure, external_rewrites,
+            doc, error);
         if (seal_status == wz::app::kRuntimeNoDeviceExitCode) {
             // No GPU to bake the cache: surface the runtime's no-device code so a
             // CTest treats it as SKIPPED rather than a real failure.

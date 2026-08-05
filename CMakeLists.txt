@@ -1111,6 +1111,32 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
         SKIP_RETURN_CODE 3
         LABELS "render")
 
+    # External-resource relocation guard (#334): test_rebind_fixture references
+    # shaders OUTSIDE its project dir (its own fixture shaders + the shipping
+    # sg_lit shaders), so exporting it exercises relocate_external_sources —
+    # copying them into the bundle's resources/ subtree and rewriting the graph —
+    # then the bundled exe must render from the relocated copies. Two linked tests:
+    # the export (CPU) sets up the bundle; the render (GPU) requires it, skips on
+    # no-GPU.
+    add_test(NAME wozzits_export_relocate_setup
+        COMMAND wozzits_export
+            --project "${WZ_REBIND_FIXTURE_DST}"
+            --out "${CMAKE_BINARY_DIR}/bundle_smoke_relocate"
+            --app-exe "$<TARGET_FILE:wozzits_app_v1>"
+            --no-log)
+    set_tests_properties(wozzits_export_relocate_setup PROPERTIES
+        FIXTURES_SETUP wozzits_bundle_relocate
+        LABELS "render")
+
+    add_test(NAME wozzits_export_relocate_render
+        COMMAND
+            "${CMAKE_BINARY_DIR}/bundle_smoke_relocate/wozzits_app_v1.exe"
+            --frames 5)
+    set_tests_properties(wozzits_export_relocate_render PROPERTIES
+        FIXTURES_REQUIRED wozzits_bundle_relocate
+        SKIP_RETURN_CODE 3
+        LABELS "render")
+
     rs_add_test_group(behavior behavior_registry_core_tests)
     rs_add_test_group(behavior event_channels)
     rs_add_test_group(behavior behavior_plugin_dynamic_module_tests)
