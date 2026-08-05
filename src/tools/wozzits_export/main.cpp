@@ -26,6 +26,9 @@
 #include <engine/app/editor_runtime.h>  // kRuntimeNoDeviceExitCode
 #include <engine/assets/engine_asset_library_internal.h>  // internal::FileSourceDesc
 #include <engine/assets/scene/asset_graph_json.h>
+#include <engine/behavior/behavior_plugin_abi.h>      // WZ_BEHAVIOR_ABI_VERSION
+#include <engine/behavior/behavior_plugin_adapter.h>  // BehaviorPluginHost (verify)
+#include <engine/behavior/behavior_registry.h>
 #include <engine/bundle/bundle_closure.h>
 #include <engine/project/project_runtime_launch.h>
 
@@ -56,6 +59,9 @@ namespace
         std::string project;   // project root (holds .wozzits/project.json)
         std::string out;       // bundle output directory
         std::string app_exe;   // runtime exe to bundle (default: a sibling)
+        std::string behavior_modules;  // behavior-DLL dir to ship (default: the
+                                       // manifest's; override to point at RELEASE
+                                       // DLLs — the exporter ships, not builds)
         bool seal = false;     // bake a sealed cache + strip cache-served sources
         bool log = true;
     };
@@ -72,6 +78,9 @@ namespace
             }
             else if (arg == "--app-exe" && i + 1 < argc) {
                 out.app_exe = argv[++i];
+            }
+            else if (arg == "--behavior-modules" && i + 1 < argc) {
+                out.behavior_modules = argv[++i];
             }
             else if (arg == "--seal") {
                 out.seal = true;
@@ -109,10 +118,18 @@ namespace
             std::istreambuf_iterator<char>());
     }
 
-    // Editor-only artefacts that must NOT ship in a runtime bundle: the editor
-    // manifest folder (.wozzits) and the graph-layout sidecar (*.editor.json).
-    bool is_excluded(const fs::path& relative)
+    // Artefacts that must NOT ship in a runtime bundle: the editor manifest folder
+    // (.wozzits), the graph-layout sidecar (*.editor.json), and the project's
+    // behavior source/build tree — the runtime needs only the compiled DLLs, which
+    // are shipped separately into a clean bundle/behavior/ (release-capable).
+    bool is_excluded(const fs::path& relative, const std::string& behavior_dir)
     {
+        if (!behavior_dir.empty()
+            && relative.begin() != relative.end()
+            && *relative.begin() == fs::path(behavior_dir))
+        {
+            return true;
+        }
         for (const fs::path& part : relative) {
             if (part == ".wozzits") {
                 return true;
@@ -128,11 +145,13 @@ namespace
     }
 
     // Copy the authored project tree into the bundle, preserving structure and
-    // skipping editor-only cruft. Returns the file count, or -1 on error.
+    // skipping editor-only cruft + the behavior source/build tree. Returns the
+    // file count, or -1 on error.
     long copy_project_tree(
         const Options& o,
         const fs::path& project_root,
         const fs::path& bundle_root,
+        const std::string& behavior_dir,
         std::string& error)
     {
         std::error_code ec;
@@ -147,7 +166,7 @@ namespace
                 error = "cannot relativize: " + src.string();
                 return -1;
             }
-            if (is_excluded(relative)) {
+            if (is_excluded(relative, behavior_dir)) {
                 if (it->is_directory(ec)) {
                     it.disable_recursion_pending();  // skip the whole subtree
                 }
@@ -172,6 +191,109 @@ namespace
             return -1;
         }
         return copied;
+    }
+
+    // Copy just the behavior-module DLLs from `source_dir` into a clean
+    // bundle/behavior/ (a flat dir the config points at), and report the count.
+    // Returns the number shipped, or -1 on error. An empty / missing source_dir
+    // ships nothing (built-in behaviors only).
+    long ship_behavior_modules(
+        const Options& o,
+        const fs::path& source_dir,
+        const fs::path& bundle_root,
+        std::string& error)
+    {
+        std::error_code ec;
+        if (source_dir.empty() || !fs::is_directory(source_dir, ec)) {
+            return 0;
+        }
+        const fs::path dst_dir = bundle_root / "behavior";
+        fs::create_directories(dst_dir, ec);
+        long shipped = 0;
+        for (auto it = fs::directory_iterator(source_dir, ec);
+             !ec && it != fs::directory_iterator();
+             it.increment(ec))
+        {
+            if (!it->is_regular_file(ec) || it->path().extension() != ".dll") {
+                continue;
+            }
+            fs::copy_file(
+                it->path(),
+                dst_dir / it->path().filename(),
+                fs::copy_options::overwrite_existing, ec);
+            if (ec) {
+                error = "failed to ship behavior DLL "
+                    + it->path().string() + ": " + ec.message();
+                return -1;
+            }
+            ++shipped;
+        }
+        log_line(o,
+            "shipped " + std::to_string(shipped) + " behavior DLL(s) from "
+            + source_dir.string());
+        return shipped;
+    }
+
+    const char* load_status_name(
+        wz::engine::behavior::BehaviorPluginHost::DynamicLoadStatus status)
+    {
+        using S = wz::engine::behavior::BehaviorPluginHost::DynamicLoadStatus;
+        switch (status) {
+        case S::Loaded: return "loaded";
+        case S::InvalidPath: return "invalid_path";
+        case S::LoadFailed: return "load_failed";
+        case S::CopyFailed: return "copy_failed";
+        case S::MissingRegisterSymbol: return "missing_register_symbol";
+        case S::RegistrationFailed: return "registration_failed";
+        case S::UnsupportedPlatform: return "unsupported_platform";
+        }
+        return "unknown";
+    }
+
+    // Export-time ABI verify (issue #334, Seam 3.5): dry-run LOAD each shipped
+    // behavior DLL exactly as the runtime will (LoadLibrary + wz_register_behaviors
+    // at the exporter's WZ_BEHAVIOR_ABI_VERSION, which equals the shipped exe's
+    // since both are one build). A DLL built against a different ABI fails to
+    // register (registration_failed) — caught HERE as a hard export error instead
+    // of silently vanishing at runtime. No GPU needed.
+    bool verify_behavior_dlls(
+        const Options& o,
+        const fs::path& behavior_dir,
+        std::string& error)
+    {
+        std::error_code ec;
+        if (!fs::is_directory(behavior_dir, ec)) {
+            return true;  // nothing shipped => nothing to verify
+        }
+        wz::engine::behavior::BehaviorRegistry registry;
+        wz::engine::behavior::BehaviorPluginHost host;
+        long verified = 0;
+        for (auto it = fs::directory_iterator(behavior_dir, ec);
+             !ec && it != fs::directory_iterator();
+             it.increment(ec))
+        {
+            if (!it->is_regular_file(ec) || it->path().extension() != ".dll") {
+                continue;
+            }
+            const auto result =
+                host.load_dynamic_module(registry, it->path(), nullptr);
+            if (!result.ok()) {
+                error = "behavior DLL failed export-time ABI verify: "
+                    + it->path().filename().string() + " (status="
+                    + load_status_name(result.status)
+                    + (result.detail.empty() ? "" : ", " + result.detail)
+                    + ") — it is likely built against a WZ_BEHAVIOR_ABI_VERSION "
+                      "other than the runtime's ("
+                    + std::to_string(WZ_BEHAVIOR_ABI_VERSION) + ")";
+                return false;
+            }
+            ++verified;
+        }
+        log_line(o,
+            "verified " + std::to_string(verified)
+            + " behavior DLL(s) against ABI "
+            + std::to_string(WZ_BEHAVIOR_ABI_VERSION));
+        return true;
     }
 
     // Whether `p` resolves to a location inside `root` (i.e. not escaping it).
@@ -483,7 +605,10 @@ int main(int argc, char** argv)
     if (!parse_options(argc, argv, options, error)) {
         std::cerr
             << "usage: wozzits_export --project <dir> --out <bundle-dir> "
-               "[--app-exe <path>] [--seal] [--no-log]\n"
+               "[--app-exe <path>] [--behavior-modules <dir>] [--seal] "
+               "[--no-log]\n"
+               "  --behavior-modules  dir of behavior DLLs to ship (default: the "
+               "manifest's; point at RELEASE DLLs here)\n"
                "  --seal  bake a read-only cache and strip the cache-served "
                "sources (needs a GPU locally)\n"
             << error << '\n';
@@ -541,14 +666,41 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    const long copied =
-        copy_project_tree(options, project_root, bundle_root, error);
+    // Behavior modules: ship a clean bundle/behavior/ of just the DLLs. The
+    // source is --behavior-modules (point at RELEASE DLLs) or, by default, the
+    // manifest's folder; the project's behavior source/build tree is excluded
+    // from the verbatim copy (only the DLLs are needed at runtime).
+    const fs::path behavior_source = !options.behavior_modules.empty()
+        ? fs::path(options.behavior_modules)
+        : fs::path(launch.launch.manifest.behavior_module_folder);
+    std::string behavior_project_rel;
+    if (!launch.launch.manifest.behavior_project_folder.empty()) {
+        behavior_project_rel = fs::relative(
+            fs::path(launch.launch.manifest.behavior_project_folder),
+            project_root, ec).generic_string();
+    }
+
+    const long copied = copy_project_tree(
+        options, project_root, bundle_root, behavior_project_rel, error);
     if (copied < 0) {
         std::cerr << "wozzits_export: " << error << '\n';
         return 1;
     }
     log_line(options,
         "copied " + std::to_string(copied) + " project files");
+
+    const long behavior_dlls =
+        ship_behavior_modules(options, behavior_source, bundle_root, error);
+    if (behavior_dlls < 0) {
+        std::cerr << "wozzits_export: " << error << '\n';
+        return 1;
+    }
+    if (behavior_dlls > 0
+        && !verify_behavior_dlls(options, bundle_root / "behavior", error))
+    {
+        std::cerr << "wozzits_export: " << error << '\n';
+        return 1;
+    }
 
     // Relocate any sources the graph references from OUTSIDE the project tree
     // (e.g. shared engine shaders) into the bundle's resources/ subtree and
@@ -596,12 +748,11 @@ int main(int argc, char** argv)
     doc.scene =
         fs::relative(fs::path(launch.launch.scene_path), project_root, ec)
             .generic_string();
-    if (!launch.launch.manifest.behavior_module_folder.empty()) {
-        doc.behavior_modules =
-            fs::relative(
-                fs::path(launch.launch.manifest.behavior_module_folder),
-                project_root, ec)
-                .generic_string();
+    if (behavior_dlls > 0) {
+        doc.behavior_modules = "behavior";  // the clean flat dir shipped above
+        // Stamp the ABI the DLLs were just verified against, so the runtime
+        // rejects a mismatched exe at launch (Seam 3.5).
+        doc.behavior_abi_version = WZ_BEHAVIOR_ABI_VERSION;
     }
     // Write the config UNSEALED first: it names the graph/scene/resource/behavior
     // paths the --seal warm run reads, and is the final config for a plain

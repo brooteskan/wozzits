@@ -174,6 +174,12 @@ namespace wz::app
             }
         }
 
+        // Optional behavior-ABI stamp (issue #334, Seam 3.5); absent => 0 (no
+        // check). Read leniently like the other optional fields.
+        if (const auto abi = wz::json::read_uint(root, "behavior_abi_version")) {
+            result.config.behavior_abi_version = *abi;
+        }
+
         result.status = AppBootstrapConfigStatus::Valid;
         return result;
     }
@@ -197,6 +203,11 @@ namespace wz::app
         if (!doc.behavior_modules.empty()) {
             members.push_back(
                 "  \"behavior_modules\": " + json_string(doc.behavior_modules));
+        }
+        if (doc.behavior_abi_version != 0) {
+            members.push_back(
+                "  \"behavior_abi_version\": "
+                + std::to_string(doc.behavior_abi_version));
         }
         if (!doc.cache_root.empty()) {
             members.push_back(

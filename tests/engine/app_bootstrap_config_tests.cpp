@@ -297,7 +297,8 @@ TEST(AppBootstrapConfig, WriterRoundTripsThroughLoader)
     doc.resource_root = ".";
     doc.asset_graph = "assets.graph.json";
     doc.scene = "scene.json";
-    doc.behavior_modules = "behavior/build/clang-release";
+    doc.behavior_modules = "behavior";
+    doc.behavior_abi_version = 39u;
     doc.cache_root = "cache";
     doc.cache_sealed = true;
 
@@ -314,7 +315,8 @@ TEST(AppBootstrapConfig, WriterRoundTripsThroughLoader)
     EXPECT_EQ(result.config.scene, wz::fs::join(bundle.base(), "scene.json"));
     EXPECT_EQ(
         result.config.behavior_modules,
-        wz::fs::join(bundle.base(), "behavior/build/clang-release"));
+        wz::fs::join(bundle.base(), "behavior"));
+    EXPECT_EQ(result.config.behavior_abi_version, 39u);
     EXPECT_EQ(result.config.cache.root, wz::fs::join(bundle.base(), "cache"));
     EXPECT_TRUE(result.config.cache.sealed);
 }
@@ -336,6 +338,7 @@ TEST(AppBootstrapConfig, WriterOmitsEmptyOptionalFields)
     const auto result = wz::app::load_app_bootstrap_config(bundle.base());
     ASSERT_TRUE(result.valid()) << result.error;
     EXPECT_TRUE(result.config.behavior_modules.empty());
+    EXPECT_EQ(result.config.behavior_abi_version, 0u);
     EXPECT_TRUE(result.config.cache.root.empty());
     EXPECT_FALSE(result.config.cache.sealed);
 }

@@ -53,6 +53,12 @@ namespace wz::app
         wz::fs::Path scene;
         wz::fs::Path behavior_modules;
         AppBootstrapCacheConfig cache;
+        // The WZ_BEHAVIOR_ABI_VERSION the bundle's shipped behavior DLLs were
+        // verified against at export (issue #334, Seam 3.5). 0 = unstamped (an
+        // older bundle, or one with no behavior DLLs). When non-zero the runtime
+        // rejects a launch whose own behavior ABI differs, so a bundle can't
+        // silently ship an exe/DLL ABI mismatch.
+        uint32_t behavior_abi_version = 0;
     };
 
     enum class AppBootstrapConfigStatus
@@ -109,6 +115,7 @@ namespace wz::app
         wz::fs::Path behavior_modules; // omitted when empty (=> built-ins only)
         wz::fs::Path cache_root;       // omitted when empty (=> cache off)
         bool cache_sealed = false;     // emitted in the cache block iff cache_root set
+        uint32_t behavior_abi_version = 0;  // omitted when 0 (no behavior stamp)
     };
 
     // Serialize `doc` to wozzits_app.json text (schema + formatVersion + the set

@@ -13,6 +13,7 @@
 
 #include <engine/app/app_bootstrap_config.h>
 #include <engine/app/editor_runtime.h>
+#include <engine/behavior/behavior_plugin_abi.h>  // WZ_BEHAVIOR_ABI_VERSION
 
 #include <file/filesystem.h>
 
@@ -139,6 +140,22 @@ int main(int argc, char** argv)
         options.behavior_modules = boot.config.behavior_modules;
         options.cache_root = boot.config.cache.root;
         options.cache_sealed = boot.config.cache.sealed;
+
+        // ABI lockstep (issue #334, Seam 3.5): a stamped bundle names the
+        // behavior ABI its DLLs were verified against at export. Reject a launch
+        // where this runtime's ABI differs — that means the exe and the behavior
+        // DLLs are from different builds and would fail to register at load.
+        if (boot.config.behavior_abi_version != 0
+            && boot.config.behavior_abi_version != WZ_BEHAVIOR_ABI_VERSION)
+        {
+            std::cerr
+                << "wozzits_app_v1: bundle behavior ABI mismatch — the bundle is "
+                   "stamped for ABI "
+                << boot.config.behavior_abi_version
+                << " but this runtime is ABI " << WZ_BEHAVIOR_ABI_VERSION
+                << "; the exe and behavior DLLs are from different builds\n";
+            return 2;
+        }
     }
     else if (!boot.missing()) {
         std::cerr << "wozzits_app_v1: " << boot.error << '\n';

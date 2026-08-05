@@ -1137,6 +1137,33 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
         SKIP_RETURN_CODE 3
         LABELS "render")
 
+    # Behavior DLL shipping + ABI verify/stamp guard (#334 Seam 3.4/3.5). Export
+    # the rendering bundle fixture but SHIP the behavior test plugin via
+    # --behavior-modules: the export copies just the DLL into a clean
+    # bundle/behavior/, dry-run-loads it to verify its ABI matches the runtime (a
+    # mismatch would fail the export), and stamps behavior_abi_version; the bundled
+    # exe then loads it and renders. Uses the plugin staged by
+    # wozzits_app_behavior_test_plugin's POST_BUILD (built as part of `all`).
+    add_test(NAME wozzits_export_behavior_setup
+        COMMAND wozzits_export
+            --project "${WZ_BUNDLE_FIXTURE_DST}"
+            --out "${CMAKE_BINARY_DIR}/bundle_smoke_behavior"
+            --app-exe "$<TARGET_FILE:wozzits_app_v1>"
+            --behavior-modules "${WZ_BEHAVIOR_FIXTURE_MODULE_DIR}"
+            --no-log)
+    set_tests_properties(wozzits_export_behavior_setup PROPERTIES
+        FIXTURES_SETUP wozzits_bundle_behavior
+        LABELS "render")
+
+    add_test(NAME wozzits_export_behavior_render
+        COMMAND
+            "${CMAKE_BINARY_DIR}/bundle_smoke_behavior/wozzits_app_v1.exe"
+            --frames 5)
+    set_tests_properties(wozzits_export_behavior_render PROPERTIES
+        FIXTURES_REQUIRED wozzits_bundle_behavior
+        SKIP_RETURN_CODE 3
+        LABELS "render")
+
     rs_add_test_group(behavior behavior_registry_core_tests)
     rs_add_test_group(behavior event_channels)
     rs_add_test_group(behavior behavior_plugin_dynamic_module_tests)
