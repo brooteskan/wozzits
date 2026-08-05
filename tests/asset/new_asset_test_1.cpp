@@ -141,6 +141,41 @@ private:
     ResourceHandle handle_{};
 };
 
+// Models a shipped bundle's baked cache (issue #334): the entry is always absent
+// (can_load=false), but the provider still reports whether the type is one it
+// serves (is_cacheable) and whether the cache is sealed. Lets the resolve engine
+// tell a genuinely-missing cacheable asset (sealed => fatal) apart from a type
+// meant to compile at load (recompile from retained source).
+class SealedMissExternalCacheProvider final : public ExternalCacheProvider
+{
+public:
+    SealedMissExternalCacheProvider(bool sealed, bool cacheable)
+        : sealed_(sealed)
+        , cacheable_(cacheable)
+    {
+    }
+
+    bool can_load(SchemaID, AssetType, const AssetKey&) const override
+    {
+        return false;  // the entry is never present
+    }
+
+    std::optional<ResourceHandle> load(
+        SchemaID,
+        AssetType,
+        const AssetKey&) override
+    {
+        return std::nullopt;
+    }
+
+    bool is_cacheable(SchemaID, AssetType) const override { return cacheable_; }
+    bool sealed() const noexcept override { return sealed_; }
+
+private:
+    bool sealed_ = false;
+    bool cacheable_ = false;
+};
+
 class AssetSystemTest : public ::testing::Test {
 protected:
     CompilerRegistry registry;
@@ -1452,6 +1487,96 @@ TEST_F(AssetSystemTest, ResolveRoots_CachePreferredMissFallsBackToSource)
     EXPECT_EQ(compile_count, 2u);
     EXPECT_TRUE(sys2.cache().contains(kKeyA));
     EXPECT_TRUE(sys2.cache().contains(kKeyB));
+}
+
+TEST_F(AssetSystemTest, ResolveRoots_SealedCacheableMissFailsWithoutRecompiling)
+{
+    // Issue #334, Seam 2b: in a sealed bundle a node whose (schema,type) is
+    // cache-backed but has no baked entry must FAIL on that node itself
+    // (ExternalCacheMiss, so the key is named) instead of silently recompiling
+    // from a source the bundle stripped.
+    uint32_t compile_count = 0;
+
+    CompilerRegistry reg2;
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kMeshSchema,
+        .output_type = AssetType::Mesh,
+        .compile = [&compile_count](
+            const AssetNode& input,
+            std::span<const AssetNode* const>,
+            std::span<const ResourceHandle>) -> AssetNode {
+            ++compile_count;
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = ResourceHandle{ 1, 1, AssetType::Mesh };
+            return out;
+        }
+    });
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(
+        sys2.register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys2.commit());
+
+    SealedMissExternalCacheProvider provider{
+        /*sealed=*/true, /*cacheable=*/true };
+    const AssetKey roots[]{ kKeyA };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys2.resolve_roots(
+            roots,
+            ResolvePolicy::CachePreferred,
+            &provider,
+            &errors),
+        0u);
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_EQ(errors[0].first, kKeyA);
+    EXPECT_EQ(errors[0].second, ResolveError::ExternalCacheMiss);
+    // The source compiler was never run, and nothing was cached.
+    EXPECT_EQ(compile_count, 0u);
+    EXPECT_FALSE(sys2.cache().contains(kKeyA));
+}
+
+TEST_F(AssetSystemTest, ResolveRoots_SealedNonCacheableTypeStillCompilesFromSource)
+{
+    // A sealed cache must NOT turn every miss fatal: a type that is not
+    // cache-backed (e.g. a shader compiled at load) still resolves from its
+    // retained source. Only cacheable-but-absent is fatal.
+    uint32_t compile_count = 0;
+
+    CompilerRegistry reg2;
+    reg2.register_compiler(AssetCompiler{
+        .input_schema = kMeshSchema,
+        .output_type = AssetType::Mesh,
+        .compile = [&compile_count](
+            const AssetNode& input,
+            std::span<const AssetNode* const>,
+            std::span<const ResourceHandle>) -> AssetNode {
+            ++compile_count;
+            AssetNode out = input;
+            out.stage = AssetStage::Compiled;
+            out.payload = ResourceHandle{ 1, 1, AssetType::Mesh };
+            return out;
+        }
+    });
+    AssetSystem sys2(std::move(reg2));
+    ASSERT_TRUE(
+        sys2.register_asset(make_node(kKeyA, AssetType::Mesh, kMeshSchema)));
+    ASSERT_TRUE(sys2.commit());
+
+    SealedMissExternalCacheProvider provider{
+        /*sealed=*/true, /*cacheable=*/false };
+    const AssetKey roots[]{ kKeyA };
+    std::vector<std::pair<AssetKey, ResolveError>> errors;
+    EXPECT_EQ(
+        sys2.resolve_roots(
+            roots,
+            ResolvePolicy::CachePreferred,
+            &provider,
+            &errors),
+        1u);
+    EXPECT_TRUE(errors.empty());
+    EXPECT_EQ(compile_count, 1u);
+    EXPECT_TRUE(sys2.cache().contains(kKeyA));
 }
 
 TEST_F(AssetSystemTest, ResolveRoots_ForceRecompileIgnoresExternalProvider)

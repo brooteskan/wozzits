@@ -33,6 +33,60 @@ namespace wz::engine::assets
                     // of it recomputed on every project open otherwise.
                     || schema == kScalarFieldTerrainSchema);
         }
+
+        // The disk-cache key spec (subdirectory + seeds) for a cacheable
+        // (schema, type), or nullptr when the type is not cache-backed. Single
+        // source of truth for BOTH can_load (spec != null && entry on disk) and
+        // is_cacheable (spec != null), so the served-type set can never drift
+        // between the "is this cacheable" and "does the entry exist" questions.
+        // Must stay in lockstep with the compilers' store_cached: a schema stored
+        // but absent here is a sealed-cache miss with no source to fall back on.
+        const internal::DiskCacheKeySpec* disk_cache_spec(
+            wz::asset::SchemaID schema,
+            wz::asset::AssetType type)
+        {
+            if (is_scalar_field_cacheable(schema, type)) {
+                return &internal::kScalarFieldDiskCacheKey;
+            }
+            if (schema == kGLBMeshSchema && type == kAssetTypeMesh) {
+                return &internal::kGLBMeshDiskCacheKey;
+            }
+            if (schema == kTerrainFromMeshSchema && type == kAssetTypeTerrain) {
+                return &internal::kMeshTerrainDiskCacheKey;
+            }
+            if (schema == kMeshDerivedFieldExplicitSchema
+                && type == kAssetTypeMeshDerivedField)
+            {
+                return &internal::kMeshDerivedFieldDiskCacheKey;
+            }
+            if (schema == kMeshWaveletAnalysisSchema
+                && type == kAssetTypeMeshDerivedField)
+            {
+                return &internal::kMeshWaveletAnalysisDiskCacheKey;
+            }
+            if (schema == kMeshComputeDerivedFieldSchema
+                && type == kAssetTypeMeshDerivedField)
+            {
+                return &internal::kMeshComputeDerivedFieldDiskCacheKey;
+            }
+            if (schema == kMeshSparseOperatorSchema
+                && type == kAssetTypeMeshSparseOperator)
+            {
+                return &internal::kMeshSparseOperatorDiskCacheKey;
+            }
+            if (schema == kTerrainVisualProxySchema
+                && type == kAssetTypeTerrainVisualProxy)
+            {
+                return &internal::kTerrainVisualProxyDiskCacheKey;
+            }
+            if ((schema == kCollisionFromTerrainSchema
+                    || schema == kCollisionFromHeightFieldSchema)
+                && type == kAssetTypeCollisionAsset)
+            {
+                return &internal::kCollisionTerrainDiskCacheKey;
+            }
+            return nullptr;
+        }
     }
 
     EngineDiskCacheProvider::EngineDiskCacheProvider(
@@ -70,93 +124,27 @@ namespace wz::engine::assets
             return false;
         }
 
-        if (is_scalar_field_cacheable(schema, type)) {
-            return internal::disk_cache_asset_exists(
-                cache_settings_,
-                internal::kScalarFieldDiskCacheKey.subdirectory,
-                key,
-                internal::kScalarFieldDiskCacheKey.seed_lo,
-                internal::kScalarFieldDiskCacheKey.seed_hi);
+        const internal::DiskCacheKeySpec* spec = disk_cache_spec(schema, type);
+        if (!spec) {
+            return false;
         }
-        if (schema == kGLBMeshSchema && type == kAssetTypeMesh) {
-            return internal::disk_cache_asset_exists(
-                cache_settings_,
-                internal::kGLBMeshDiskCacheKey.subdirectory,
-                key,
-                internal::kGLBMeshDiskCacheKey.seed_lo,
-                internal::kGLBMeshDiskCacheKey.seed_hi);
-        }
-        if (schema == kTerrainFromMeshSchema && type == kAssetTypeTerrain) {
-            return internal::disk_cache_asset_exists(
-                cache_settings_,
-                internal::kMeshTerrainDiskCacheKey.subdirectory,
-                key,
-                internal::kMeshTerrainDiskCacheKey.seed_lo,
-                internal::kMeshTerrainDiskCacheKey.seed_hi);
-        }
-        if (schema == kMeshDerivedFieldExplicitSchema
-            && type == kAssetTypeMeshDerivedField)
-        {
-            return internal::disk_cache_asset_exists(
-                cache_settings_,
-                internal::kMeshDerivedFieldDiskCacheKey.subdirectory,
-                key,
-                internal::kMeshDerivedFieldDiskCacheKey.seed_lo,
-                internal::kMeshDerivedFieldDiskCacheKey.seed_hi);
-        }
-        if (schema == kMeshWaveletAnalysisSchema
-            && type == kAssetTypeMeshDerivedField)
-        {
-            return internal::disk_cache_asset_exists(
-                cache_settings_,
-                internal::kMeshWaveletAnalysisDiskCacheKey.subdirectory,
-                key,
-                internal::kMeshWaveletAnalysisDiskCacheKey.seed_lo,
-                internal::kMeshWaveletAnalysisDiskCacheKey.seed_hi);
-        }
-        if (schema == kMeshComputeDerivedFieldSchema
-            && type == kAssetTypeMeshDerivedField)
-        {
-            return internal::disk_cache_asset_exists(
-                cache_settings_,
-                internal::kMeshComputeDerivedFieldDiskCacheKey.subdirectory,
-                key,
-                internal::kMeshComputeDerivedFieldDiskCacheKey.seed_lo,
-                internal::kMeshComputeDerivedFieldDiskCacheKey.seed_hi);
-        }
-        if (schema == kMeshSparseOperatorSchema
-            && type == kAssetTypeMeshSparseOperator)
-        {
-            return internal::disk_cache_asset_exists(
-                cache_settings_,
-                internal::kMeshSparseOperatorDiskCacheKey.subdirectory,
-                key,
-                internal::kMeshSparseOperatorDiskCacheKey.seed_lo,
-                internal::kMeshSparseOperatorDiskCacheKey.seed_hi);
-        }
-        if (schema == kTerrainVisualProxySchema
-            && type == kAssetTypeTerrainVisualProxy)
-        {
-            return internal::disk_cache_asset_exists(
-                cache_settings_,
-                internal::kTerrainVisualProxyDiskCacheKey.subdirectory,
-                key,
-                internal::kTerrainVisualProxyDiskCacheKey.seed_lo,
-                internal::kTerrainVisualProxyDiskCacheKey.seed_hi);
-        }
-        if ((schema == kCollisionFromTerrainSchema
-                || schema == kCollisionFromHeightFieldSchema)
-            && type == kAssetTypeCollisionAsset)
-        {
-            return internal::disk_cache_asset_exists(
-                cache_settings_,
-                internal::kCollisionTerrainDiskCacheKey.subdirectory,
-                key,
-                internal::kCollisionTerrainDiskCacheKey.seed_lo,
-                internal::kCollisionTerrainDiskCacheKey.seed_hi);
-        }
+        return internal::disk_cache_asset_exists(
+            cache_settings_,
+            spec->subdirectory,
+            key,
+            spec->seed_lo,
+            spec->seed_hi);
+    }
 
-        return false;
+    bool EngineDiskCacheProvider::is_cacheable(
+        wz::asset::SchemaID schema,
+        wz::asset::AssetType type) const
+    {
+        // Deliberately independent of enabled/root and of the on-disk entry: it
+        // answers "would this type be served from the cache if present", which is
+        // what the sealed-miss check needs. can_load layers the settings + entry
+        // existence on top.
+        return disk_cache_spec(schema, type) != nullptr;
     }
 
     std::optional<wz::asset::ResourceHandle> EngineDiskCacheProvider::load(

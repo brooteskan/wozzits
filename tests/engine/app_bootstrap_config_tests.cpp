@@ -127,6 +127,66 @@ TEST(AppBootstrapConfig, DefaultsResourceRootAndOmitsBehaviorModules)
         wz::fs::join(bundle.base(), "resources"));
     // behavior_modules omitted => empty => built-in behaviors only.
     EXPECT_TRUE(result.config.behavior_modules.empty());
+    // No cache block => cache off (root empty), not sealed.
+    EXPECT_TRUE(result.config.cache.root.empty());
+    EXPECT_FALSE(result.config.cache.sealed);
+}
+
+TEST(AppBootstrapConfig, ParsesSealedCacheBlockResolvingRoot)
+{
+    // Seam 2 of issue #334: the bundle's baked-cache block. A relative root
+    // resolves against the bundle dir like every other path, and sealed rides
+    // through as a plain bool.
+    TempBundleDir bundle;
+    write_config(
+        bundle.root,
+        R"json({
+  "schema": "wozzits.app.v1",
+  "formatVersion": 1,
+  "asset_graph": "assets.graph.json",
+  "scene": "scene.json",
+  "cache": {
+    "root": "cache",
+    "sealed": true
+  }
+})json");
+
+    const auto result =
+        wz::app::load_app_bootstrap_config(bundle.base());
+
+    ASSERT_TRUE(result.valid()) << result.error;
+    EXPECT_EQ(
+        result.config.cache.root,
+        wz::fs::join(bundle.base(), "cache"));
+    EXPECT_TRUE(result.config.cache.sealed);
+}
+
+TEST(AppBootstrapConfig, CacheBlockWithoutSealedDefaultsToUnsealed)
+{
+    // A cache block that names a root but omits `sealed` serves from the cache
+    // yet still recompiles from source on a miss (the dev warm-cache case), so
+    // sealed must default false, not inherit the presence of the block.
+    TempBundleDir bundle;
+    write_config(
+        bundle.root,
+        R"json({
+  "schema": "wozzits.app.v1",
+  "formatVersion": 1,
+  "asset_graph": "assets.graph.json",
+  "scene": "scene.json",
+  "cache": {
+    "root": "cache"
+  }
+})json");
+
+    const auto result =
+        wz::app::load_app_bootstrap_config(bundle.base());
+
+    ASSERT_TRUE(result.valid()) << result.error;
+    EXPECT_EQ(
+        result.config.cache.root,
+        wz::fs::join(bundle.base(), "cache"));
+    EXPECT_FALSE(result.config.cache.sealed);
 }
 
 TEST(AppBootstrapConfig, KeepsAbsolutePathsAsAuthored)

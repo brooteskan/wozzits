@@ -47,6 +47,16 @@ namespace wz::engine::assets
             wz::asset::AssetType type,
             const wz::asset::AssetKey& key) override;
 
+        // True for exactly the (schema, type) pairs this provider serves, i.e. the
+        // types the compilers store_cached (kept in lockstep via disk_cache_spec).
+        // Key-independent, so a sealed resolve can flag a cacheable-but-absent
+        // asset without an on-disk probe.
+        bool is_cacheable(
+            wz::asset::SchemaID schema,
+            wz::asset::AssetType type) const override;
+
+        bool sealed() const noexcept override { return cache_settings_.sealed; }
+
     private:
         const EngineAssetCacheSettings& cache_settings_;
         wz::Logger& logger_;

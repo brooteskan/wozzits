@@ -130,6 +130,27 @@ namespace wz::app
                 resolve(base_dir, std::string(*behavior_modules));
         }
 
+        // Optional `cache` block (issue #334, Seam 2): the baked disk-cache the
+        // bundle runs from. Absent block, or a `root` that is missing/empty,
+        // leaves the cache off (root empty). `root` is resolved against base_dir
+        // like every other path so the bundle stays relocatable; `sealed` is a
+        // plain bool defaulting false. A malformed sub-field is treated as absent
+        // (lenient, matching behavior_modules) rather than failing the whole
+        // config.
+        if (const wz::json::JSONValue* cache =
+                wz::json::find_member(root, "cache"))
+        {
+            if (const auto cache_root = wz::json::read_string(*cache, "root");
+                cache_root && !cache_root->empty())
+            {
+                result.config.cache.root =
+                    resolve(base_dir, std::string(*cache_root));
+            }
+            if (const auto sealed = wz::json::read_bool(*cache, "sealed")) {
+                result.config.cache.sealed = *sealed;
+            }
+        }
+
         result.status = AppBootstrapConfigStatus::Valid;
         return result;
     }

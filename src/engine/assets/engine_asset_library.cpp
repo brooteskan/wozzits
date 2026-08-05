@@ -962,6 +962,25 @@ namespace wz::engine::assets
             if (const auto state = system_.node_resolve_state(key)) {
                 detail = state->detail;
             }
+            // In a sealed bundle a cacheable asset that is absent surfaces as
+            // ExternalCacheMiss on the missing node itself; spell out what it
+            // means so the failure reads as "the baked cache is incomplete",
+            // not a bare error code (issue #334, Seam 2b).
+            if (err == wz::asset::ResolveError::ExternalCacheMiss
+                && cache_settings_.sealed)
+            {
+                const std::string sealed_note =
+                    "sealed cache miss: no baked entry for this asset — the "
+                    "bundle is incomplete or was built against a different "
+                    "compiler version; rebuild the sealed cache (cache_root="
+                    + (cache_settings_.root.empty()
+                           ? std::string("<empty>")
+                           : cache_settings_.root)
+                    + ")";
+                detail = detail.empty()
+                    ? sealed_note
+                    : detail + "; " + sealed_note;
+            }
             logger_.error(
                 std::string("asset ")
                 + label

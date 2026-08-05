@@ -1405,6 +1405,13 @@ namespace wz::app
         wz::engine::AppDesc desc;
         desc.window = { window_title.c_str(), 1280, 720, true, false };
         desc.resource_root = resource_root;
+        // Enable the baked disk cache only when a bundle asked for it (issue
+        // #334). An empty cache_root leaves asset_cache default (enabled but with
+        // an empty root => the provider serves nothing), so the editor's resident
+        // engine — which passes a default RuntimeRunOptions — is unaffected.
+        desc.asset_cache.root = run_options.cache_root;
+        desc.asset_cache.enabled = !run_options.cache_root.empty();
+        desc.asset_cache.sealed = run_options.cache_sealed;
 
         if (!wz::engine::init(ctx, desc)) {
             // Bounded (verification) runs distinguish "no GPU device" from a real

@@ -32,6 +32,11 @@ namespace
         // only (the loader early-returns on an empty folder). Resolved against
         // the asset resource root, matching the editor's resident runtime.
         wz::fs::Path behavior_modules;
+        // Baked disk-cache root (issue #334). Empty => cache off (resolve from
+        // source). When set, the runtime serves baked assets from it; `cache_sealed`
+        // makes a cacheable-but-absent asset a fatal miss instead of a recompile.
+        wz::fs::Path cache_root;
+        bool cache_sealed = false;
         // > 0 => render this many frames then exit with a verification exit code
         // (the standalone-render check); 0 => run interactively until closed.
         uint32_t max_frames = 0;
@@ -46,6 +51,8 @@ namespace
         std::optional<wz::fs::Path> asset_graph;
         std::optional<wz::fs::Path> scene;
         std::optional<wz::fs::Path> behavior_modules;
+        std::optional<wz::fs::Path> cache_root;
+        std::optional<bool> cache_sealed;
         uint32_t max_frames = 0;
     };
 
@@ -68,6 +75,12 @@ namespace
             }
             else if (arg == "--behavior-modules" && i + 1 < argc) {
                 out.behavior_modules = argv[++i];
+            }
+            else if (arg == "--cache-root" && i + 1 < argc) {
+                out.cache_root = argv[++i];
+            }
+            else if (arg == "--sealed") {
+                out.cache_sealed = true;
             }
             else if (arg == "--frames" && i + 1 < argc) {
                 const std::string value = argv[++i];
@@ -92,7 +105,7 @@ namespace
         std::cerr
             << "usage: wozzits_app_v1 [--asset-graph <path>] [--scene <path>] "
                "[--resource-root <path>] [--behavior-modules <dir>] "
-               "[--frames <n>]\n"
+               "[--cache-root <dir>] [--sealed] [--frames <n>]\n"
                "  paths default from a co-located wozzits_app.json (a shipped "
                "bundle); CLI args override it.\n"
             << detail << '\n';
@@ -124,6 +137,8 @@ int main(int argc, char** argv)
         options.asset_graph = boot.config.asset_graph;
         options.scene = boot.config.scene;
         options.behavior_modules = boot.config.behavior_modules;
+        options.cache_root = boot.config.cache.root;
+        options.cache_sealed = boot.config.cache.sealed;
     }
     else if (!boot.missing()) {
         std::cerr << "wozzits_app_v1: " << boot.error << '\n';
@@ -143,6 +158,12 @@ int main(int argc, char** argv)
     if (cli.behavior_modules) {
         options.behavior_modules = *cli.behavior_modules;
     }
+    if (cli.cache_root) {
+        options.cache_root = *cli.cache_root;
+    }
+    if (cli.cache_sealed) {
+        options.cache_sealed = *cli.cache_sealed;
+    }
 
     if (options.asset_graph.empty() || options.scene.empty()) {
         print_usage(
@@ -159,5 +180,9 @@ int main(int argc, char** argv)
         nullptr,
         {},  // log sink: none (logs go to stdout)
         options.behavior_modules,  // empty => built-ins only
-        wz::app::RuntimeRunOptions{ .max_frames = options.max_frames });
+        wz::app::RuntimeRunOptions{
+            .max_frames = options.max_frames,
+            .cache_root = options.cache_root,  // empty => cache off
+            .cache_sealed = options.cache_sealed,
+        });
 }

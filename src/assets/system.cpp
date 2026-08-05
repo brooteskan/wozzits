@@ -703,9 +703,22 @@ namespace wz::asset
             if (!provider
                 || !provider->can_load(node.schema, node.type, node.key))
             {
-                return policy == ResolvePolicy::CacheRequired
-                    ? std::optional<ResolveError>{ ResolveError::ExternalCacheMiss }
-                    : std::nullopt;
+                if (policy == ResolvePolicy::CacheRequired) {
+                    return ResolveError::ExternalCacheMiss;
+                }
+                // Sealed bundle (issue #334): a node whose (schema, type) IS
+                // cache-backed but has no entry must fail loudly on THIS node,
+                // naming its key, instead of falling through to recompile from a
+                // source the bundle stripped — which would otherwise surface as a
+                // confusing DependencyFailed on a downstream parent. A type that
+                // is not cacheable (e.g. a shader that compiles at load) is left
+                // to resolve from its retained source as usual.
+                if (provider && provider->sealed()
+                    && provider->is_cacheable(node.schema, node.type))
+                {
+                    return ResolveError::ExternalCacheMiss;
+                }
+                return std::nullopt;
             }
 
             std::optional<ResourceHandle> loaded =

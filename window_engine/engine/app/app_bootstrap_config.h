@@ -27,6 +27,18 @@ namespace wz::app
     inline constexpr const char* kAppBootstrapConfigSchema = "wozzits.app.v1";
     inline constexpr uint32_t kAppBootstrapConfigFormatVersion = 1u;
 
+    // Optional `cache` block: the baked disk-cache the bundle runs from (issue
+    // #334, Seam 2). Absent block => `root` empty => cache off (the runtime
+    // resolves every asset from source, the dev/editor behavior). When `root` is
+    // set the runtime serves baked assets from it; `sealed` additionally makes a
+    // cacheable asset that is ABSENT a fatal miss naming the key, rather than a
+    // silent recompile from a source a shipped bundle has stripped.
+    struct AppBootstrapCacheConfig
+    {
+        wz::fs::Path root;   // empty => cache disabled
+        bool sealed = false; // only meaningful when root is set
+    };
+
     // Runtime paths resolved from a bootstrap config: every path is made absolute
     // against the config's base directory. `behavior_modules` is empty when the
     // config omits it (=> built-in behaviors only, matching the runtime's
@@ -40,6 +52,7 @@ namespace wz::app
         wz::fs::Path asset_graph;
         wz::fs::Path scene;
         wz::fs::Path behavior_modules;
+        AppBootstrapCacheConfig cache;
     };
 
     enum class AppBootstrapConfigStatus

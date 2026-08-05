@@ -1010,6 +1010,19 @@ namespace wz::app
         //      exit code (see run_project_runtime). Used by a separate-process
         //      test that loads a project and asserts it renders.
         uint32_t max_frames = 0;
+
+        // Baked disk-cache root for a shipped bundle (issue #334). Empty (the
+        // default) leaves the cache OFF, so every existing caller — including the
+        // editor's in-process engine, which passes a default RuntimeRunOptions —
+        // resolves from source exactly as before. Only the standalone bundle sets
+        // it (from its wozzits_app.json `cache` block), so the sealed-cache
+        // behavior stays scoped to the shipped app.
+        wz::fs::Path cache_root;
+
+        // Seal the cache (read-only, sources stripped): a cacheable asset absent
+        // from the cache is a fatal miss naming the key, not a recompile from an
+        // absent source. Ignored unless cache_root is set.
+        bool cache_sealed = false;
     };
 
     // Bounded-mode exit code meaning "the GPU device could not be created", so a
