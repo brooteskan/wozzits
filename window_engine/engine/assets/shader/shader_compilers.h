@@ -1,6 +1,7 @@
 #pragma once
 
 #include <asset/compiler.h>
+#include <file/filesystem.h>
 #include <logging/logger.h>
 #include <gpu/shader.h>
 
@@ -19,7 +20,11 @@ namespace wz::engine::assets::internal {
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         wz::gpu::Device& device,
-        wz::rhi::ShaderModuleRegistry* shaders
+        wz::rhi::ShaderModuleRegistry* shaders,
+        // The library resource_root: a RELATIVE HLSL source_path resolves against
+        // it (issue #334), matching the raw/byte file carriers. Empty => path used
+        // as-is (schema-only registries / historical CWD-relative behavior).
+        wz::fs::Path resource_root = {}
     );
 
 }

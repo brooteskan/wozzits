@@ -190,6 +190,14 @@ namespace wz::engine::assets::internal {
         // for schema-only registries (asset_graph_schema_registry) that never
         // invoke compile.
         const wz::asset::AssetSystem*        asset_system = nullptr;
+
+        // The library's resource_root (the project directory at runtime). Threaded
+        // to the file-carrier compilers so a RELATIVE source_path / full_path in
+        // the asset graph resolves against it — letting a relocated project store
+        // project-relative asset paths instead of absolute ones. Empty for
+        // schema-only registries and unit stubs (which never compile), which
+        // preserves the historical read-relative-to-CWD behavior.
+        wz::fs::Path                         resource_root;
     };
 
     wz::asset::AssetNode compile_failed_node(
@@ -210,7 +218,8 @@ namespace wz::engine::assets::internal {
 
     void register_file_carrier_compilers(
         wz::asset::CompilerRegistry& registry,
-        wz::Logger& logger
+        wz::Logger& logger,
+        wz::fs::Path resource_root = {}
     );
 
 }

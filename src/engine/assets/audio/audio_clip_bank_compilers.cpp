@@ -43,7 +43,8 @@ namespace wz::engine::assets::internal
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         AudioClipBankTable& audio_clip_bank_table,
-        AudioClipTable& audio_clip_table)
+        AudioClipTable& audio_clip_table,
+        wz::fs::Path resource_root)
     {
         // Dispatches on kAudioClipBankFromClipsSchema. Expects N ordered
         // kAssetTypeAudioClip dependencies on the "clips" port; pairs each
@@ -173,7 +174,10 @@ namespace wz::engine::assets::internal
                     .default_num = 0.0,
                 },
             },
-            .compile = [&logger, &audio_clip_bank_table, &audio_clip_table](
+            // resource_root captured BY COPY (the EngineAssetContext supplying it
+            // is a temporary at the registration site — see the file carriers).
+            .compile = [&logger, &audio_clip_bank_table, &audio_clip_table,
+                        resource_root](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode* const> dep_nodes,
                 std::span<const wz::asset::ResourceHandle> dep_handles)
@@ -204,6 +208,14 @@ namespace wz::engine::assets::internal
                     logger.error(
                         "audio clip bank from directory missing 'directory'");
                     return compile_failed_node(input);
+                }
+
+                // Resolve a RELATIVE directory against the library resource_root
+                // (the project dir at runtime), matching the file carriers so a
+                // relocated project can store a project-relative wav directory
+                // (issue #334). Absolute stays as-is; empty root => used as-is.
+                if (!resource_root.empty() && !wz::fs::is_absolute(directory)) {
+                    directory = wz::fs::join(resource_root, directory);
                 }
 
                 std::error_code ec;

@@ -3,6 +3,7 @@
 // engine/assets/audio/audio_clip_bank_compilers.h
 
 #include <asset/compiler.h>
+#include <file/filesystem.h>
 #include <logging/logger.h>
 #include <engine/assets/audio/audio_clip.h>
 #include <engine/assets/audio/audio_clip_bank.h>
@@ -41,7 +42,11 @@ namespace wz::engine::assets::internal {
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         AudioClipBankTable& audio_clip_bank_table,
-        AudioClipTable& audio_clip_table
+        AudioClipTable& audio_clip_table,
+        // The library resource_root: a RELATIVE from-directory "directory" param
+        // resolves against it (issue #334), matching the file carriers. Empty =>
+        // used as-is (historical CWD-relative behavior).
+        wz::fs::Path resource_root = {}
     );
 
 }

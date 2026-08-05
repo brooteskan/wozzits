@@ -80,7 +80,8 @@ namespace wz::engine::assets::internal
         wz::asset::CompilerRegistry& registry,
         wz::Logger& logger,
         wz::gpu::Device& device,
-        wz::rhi::ShaderModuleRegistry* shaders)
+        wz::rhi::ShaderModuleRegistry* shaders,
+        wz::fs::Path resource_root)
     {
         // ── HLSL file carrier compiler ────────────────────────────────────────
         //
@@ -97,7 +98,10 @@ namespace wz::engine::assets::internal
                     .label = "Path",
                 },
             },
-            .compile = [&logger](
+            // resource_root captured BY COPY: the EngineAssetContext that supplies
+            // it is a temporary at the registration call site (see the raw/byte
+            // file carriers for the same reasoning).
+            .compile = [&logger, resource_root](
                 const wz::asset::AssetNode& input,
                 std::span<const wz::asset::AssetNode* const>,
                 std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
@@ -121,6 +125,15 @@ namespace wz::engine::assets::internal
                         "HLSL file carrier missing FileSourceDesc or "
                         "source_path parameter");
                     return compile_failed_node(input);
+                }
+
+                // Resolve a RELATIVE HLSL source_path against the library
+                // resource_root (the project dir at runtime), matching the raw/
+                // byte file carriers so a relocated project can store project-
+                // relative shader paths (issue #334). Absolute paths unchanged;
+                // an empty resource_root leaves the path as-is.
+                if (!resource_root.empty() && !wz::fs::is_absolute(path)) {
+                    path = wz::fs::join(resource_root, path);
                 }
 
                 auto file_result = wz::fs::read_file(path);

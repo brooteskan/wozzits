@@ -20,9 +20,10 @@ namespace wz::engine::assets::internal
 
         wz::asset::CompilerRegistry registry;
 
-        register_file_carrier_compilers(registry, ctx.logger);
+        register_file_carrier_compilers(registry, ctx.logger, ctx.resource_root);
         register_shader_compilers(
-            registry, ctx.logger, ctx.device, ctx.shader_module_registry);
+            registry, ctx.logger, ctx.device, ctx.shader_module_registry,
+            ctx.resource_root);
         register_scalar_field_compilers(
             registry,
             ctx.logger,
@@ -100,7 +101,8 @@ namespace wz::engine::assets::internal
             registry, ctx.logger, ctx.environment_table);
         register_audio_clip_compilers(registry, ctx.logger, ctx.audio_clip_table);
         register_audio_clip_bank_compilers(
-            registry, ctx.logger, ctx.audio_clip_bank_table, ctx.audio_clip_table);
+            registry, ctx.logger, ctx.audio_clip_bank_table, ctx.audio_clip_table,
+            ctx.resource_root);
         register_audio_renderable_compilers(
             registry, ctx.logger, ctx.audio_renderable_table, ctx.audio_clip_table,
             ctx.audio_clip_bank_table);

@@ -229,6 +229,115 @@ TEST(FoundationCarriers, CustomBinaryFileSchemaFeedsDependentRecipe)
     EXPECT_EQ(compiled->handle.type, kTestTextConsumerType);
 }
 
+// A RELATIVE source_path resolves against the library resource_root (issue #334:
+// a relocated, self-contained project stores project-relative asset paths, and
+// the runtime's resource_root is the project directory). This mirrors the
+// custom-binary carrier test but stores the path RELATIVE and passes a
+// resource_root, proving the carrier JOINS the two rather than reading the path
+// relative to the process CWD (the historical behavior, still used when
+// resource_root is empty — schema-only registries and the tests above).
+TEST(FoundationCarriers, RelativeSourcePathResolvesAgainstResourceRoot)
+{
+    const wz::fs::Path root =
+        wz::fs::join(wz::fs::temp_directory_path(),
+            "wozzits_foundation_relpath_tests");
+    const wz::fs::Path relative_path = "sub/payload.wzbin";
+    const wz::fs::Path full_path = wz::fs::join(root, relative_path);
+
+    ASSERT_EQ(
+        wz::fs::create_directories(wz::fs::parent_path(full_path)),
+        wz::fs::FileError::None);
+
+    const wz::fs::Buffer expected_bytes{
+        'W', 'Z', 'B', 'N', 0x2A, 0x00, 0x00, 0x00
+    };
+    ASSERT_EQ(
+        wz::fs::write_file(full_path, expected_bytes, true),
+        wz::fs::FileError::None);
+
+    wz::Logger logger;
+    wz::asset::CompilerRegistry registry;
+
+    // resource_root = the temp root; the carrier must join it with the relative
+    // source_path to find the file written under root/sub/.
+    wz::engine::assets::internal::register_file_carrier_compilers(
+        registry, logger, root);
+
+    registry.register_compiler(wz::asset::AssetCompiler{
+        .input_schema = kTestTextConsumerSchema,
+        .output_type = kTestTextConsumerType,
+        .compile = [expected_bytes](
+            const wz::asset::AssetNode& input,
+            std::span<const wz::asset::AssetNode* const> dep_nodes,
+            std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
+        {
+            if (dep_nodes.size() != 1) {
+                return input;
+            }
+            const auto* bytes =
+                std::get_if<std::vector<uint8_t>>(&dep_nodes[0]->payload);
+            if (!bytes || *bytes != expected_bytes) {
+                return input;
+            }
+            wz::asset::AssetNode out = input;
+            out.stage = wz::asset::AssetStage::Compiled;
+            out.payload = wz::asset::ResourceHandle{
+                .id = 1,
+                .epoch = 1,
+                .type = kTestTextConsumerType,
+            };
+            return out;
+        }
+        });
+
+    wz::asset::AssetSystem system(std::move(registry));
+
+    const std::string canonical =
+        wz::engine::assets::detail::canonical_asset_path(relative_path);
+    const wz::asset::AssetKey carrier_key =
+        wz::engine::assets::make_file_key(
+            canonical, wz::engine::assets::kCustomBinaryFileSchema);
+
+    // The node stores the path as a RELATIVE source_path PARAM — the shape a
+    // relocated project's graph uses — not an absolute FileSourceDesc.
+    wz::asset::ParamBlock params;
+    params.values["source_path"] = relative_path;
+
+    wz::asset::AssetNode carrier_node;
+    carrier_node.key = carrier_key;
+    carrier_node.type = wz::engine::assets::kAssetTypeBinaryBlob;
+    carrier_node.schema = wz::engine::assets::kCustomBinaryFileSchema;
+    carrier_node.stage = wz::asset::AssetStage::Source;
+    carrier_node.payload = std::vector<uint8_t>{};
+    carrier_node.meta = std::move(params);
+
+    ASSERT_TRUE(system.register_asset(std::move(carrier_node)));
+
+    const wz::asset::AssetKey consumer_key =
+        make_test_text_consumer_key(carrier_key);
+    wz::asset::AssetNode consumer_node;
+    consumer_node.key = consumer_key;
+    consumer_node.type = kTestTextConsumerType;
+    consumer_node.schema = kTestTextConsumerSchema;
+    consumer_node.stage = wz::asset::AssetStage::Source;
+    consumer_node.payload = std::vector<uint8_t>{};
+    ASSERT_TRUE(system.register_asset(
+        std::move(consumer_node), { carrier_key }));
+
+    ASSERT_TRUE(system.commit());
+    std::vector<std::pair<wz::asset::AssetKey, wz::asset::ResolveError>> errors;
+    const uint32_t resolved = system.resolve_all(&errors);
+
+    // Empty errors + a compiled consumer means the carrier found and read the
+    // file at root/sub/payload.wzbin — i.e. it joined resource_root with the
+    // relative source_path.
+    EXPECT_TRUE(errors.empty());
+    EXPECT_EQ(resolved, 2u);
+    const auto* compiled = system.find_compiled(consumer_key);
+    ASSERT_NE(compiled, nullptr);
+    EXPECT_TRUE(compiled->handle.valid());
+}
+
 TEST(FoundationCarriers, ImportedSourceFileSchemaFeedsDependentRecipe)
 {
     // ── Arrange file ─────────────────────────────────────────────────────────

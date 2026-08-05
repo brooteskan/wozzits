@@ -338,6 +338,11 @@ namespace wz::engine::assets
                 // dereferenced inside compile fns during resolve (see the
                 // field's comment in engine_asset_library_internal.h).
                 .asset_system = &system_,
+                // resource_root_ is declared (and so initialized) before system_,
+                // so it already holds the moved-in value here. Threaded to the
+                // file-carrier compilers so relative graph source paths resolve
+                // against the project dir.
+                .resource_root = resource_root_,
             }))
         , files_(system_, resource_root_)
         , shaders_(system_, logger_, files_)

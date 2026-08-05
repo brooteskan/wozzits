@@ -55,7 +55,8 @@ namespace wz::engine::assets::internal
         wz::asset::AssetNode compile_file_byte_carrier(
             const wz::asset::AssetNode& input,
             wz::Logger& logger,
-            std::string_view label)
+            std::string_view label,
+            const wz::fs::Path& resource_root)
         {
             std::string path;
             const auto* file =
@@ -77,6 +78,16 @@ namespace wz::engine::assets::internal
                 return compile_failed_node(input);
             }
 
+            // Resolve a RELATIVE carrier path against the library resource_root
+            // (the project directory at runtime), so a relocated project's graph
+            // can store project-relative source paths. Absolute paths are used
+            // unchanged; an empty resource_root (schema-only registries, unit
+            // tests) leaves the path as-is, preserving the historical
+            // read-relative-to-CWD behavior.
+            if (!resource_root.empty() && !wz::fs::is_absolute(path)) {
+                path = wz::fs::join(resource_root, path);
+            }
+
             auto file_result = wz::fs::read_file(path);
             if (!file_result) {
                 logger.error("failed to read file: " + path);
@@ -94,8 +105,12 @@ namespace wz::engine::assets::internal
             wz::Logger& logger,
             wz::asset::SchemaID schema,
             wz::asset::AssetType type,
-            std::string_view label)
+            std::string_view label,
+            const wz::fs::Path& resource_root)
         {
+            // resource_root is captured BY COPY: the EngineAssetContext that
+            // supplies it is a temporary at the registration call site, so a
+            // by-reference capture would dangle when the compile fn runs later.
             registry.register_compiler(wz::asset::AssetCompiler{
                 .input_schema = schema,
                 .output_type = type,
@@ -106,12 +121,13 @@ namespace wz::engine::assets::internal
                         .label = "Path",
                     },
                 },
-                .compile = [&logger, label](
+                .compile = [&logger, label, resource_root](
                     const wz::asset::AssetNode& input,
                     std::span<const wz::asset::AssetNode* const>,
                     std::span<const wz::asset::ResourceHandle>) -> wz::asset::AssetNode
                 {
-                    return compile_file_byte_carrier(input, logger, label);
+                    return compile_file_byte_carrier(
+                        input, logger, label, resource_root);
                 }
                 });
         }
@@ -119,14 +135,16 @@ namespace wz::engine::assets::internal
 
     void register_file_carrier_compilers(
         wz::asset::CompilerRegistry& registry,
-        wz::Logger& logger)
+        wz::Logger& logger,
+        wz::fs::Path resource_root)
     {
         register_byte_file_carrier(
             registry,
             logger,
             kRawFileSchema,
             kAssetTypeRawFile,
-            "raw file carrier"
+            "raw file carrier",
+            resource_root
         );
 
         register_byte_file_carrier(
@@ -134,7 +152,8 @@ namespace wz::engine::assets::internal
             logger,
             kTextFileSchema,
             kAssetTypeTextFile,
-            "text file carrier"
+            "text file carrier",
+            resource_root
         );
 
         register_byte_file_carrier(
@@ -142,7 +161,8 @@ namespace wz::engine::assets::internal
             logger,
             kHLSLFileSchema,
             wz::asset::AssetType::ShaderSource,
-            "HLSL file carrier"
+            "HLSL file carrier",
+            resource_root
         );
 
         register_byte_file_carrier(
@@ -150,7 +170,8 @@ namespace wz::engine::assets::internal
             logger,
             kBinaryBlobSchema,
             kAssetTypeBinaryBlob,
-            "binary blob carrier"
+            "binary blob carrier",
+            resource_root
         );
 
         register_byte_file_carrier(
@@ -158,7 +179,8 @@ namespace wz::engine::assets::internal
             logger,
             kImportedSourceFileSchema,
             kAssetTypeImportedSourceFile,
-            "imported source file carrier"
+            "imported source file carrier",
+            resource_root
         );
 
         register_byte_file_carrier(
@@ -166,7 +188,8 @@ namespace wz::engine::assets::internal
             logger,
             kCustomBinaryFileSchema,
             kAssetTypeBinaryBlob,
-            "custom binary file carrier"
+            "custom binary file carrier",
+            resource_root
         );
 
         register_byte_file_carrier(
@@ -174,7 +197,8 @@ namespace wz::engine::assets::internal
             logger,
             kCSVFileSchema,
             kAssetTypeRawFile,
-            "CSV file carrier"
+            "CSV file carrier",
+            resource_root
         );
     }
 
