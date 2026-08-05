@@ -95,4 +95,32 @@ namespace wz::app
     // yields Missing (not an error); anything malformed yields Invalid + error.
     AppBootstrapConfigResult load_app_bootstrap_config(
         const wz::fs::Path& base_dir);
+
+    // The AUTHORED (bundle-relative) fields to serialize into a bundle's
+    // wozzits_app.json. Distinct from AppBootstrapConfig, whose paths are already
+    // resolved to absolute against a base dir; the writer emits the relative form
+    // the loader re-resolves at launch. Empty fields are omitted (the loader
+    // supplies its defaults). `cache_root` empty => no cache block (cache off).
+    struct AppBootstrapConfigDoc
+    {
+        wz::fs::Path resource_root;    // omitted when empty (loader => "resources")
+        wz::fs::Path asset_graph;      // required
+        wz::fs::Path scene;            // required
+        wz::fs::Path behavior_modules; // omitted when empty (=> built-ins only)
+        wz::fs::Path cache_root;       // omitted when empty (=> cache off)
+        bool cache_sealed = false;     // emitted in the cache block iff cache_root set
+    };
+
+    // Serialize `doc` to wozzits_app.json text (schema + formatVersion + the set
+    // fields + an optional cache block). The exporter's inverse of
+    // load_app_bootstrap_config for the authored values (issue #334, Seam 3).
+    [[nodiscard]] std::string serialize_app_bootstrap_config(
+        const AppBootstrapConfigDoc& doc);
+
+    // Write serialize_app_bootstrap_config(doc) to <base_dir>/wozzits_app.json.
+    // Returns false and sets `error` on a write failure.
+    bool write_app_bootstrap_config(
+        const wz::fs::Path& base_dir,
+        const AppBootstrapConfigDoc& doc,
+        std::string& error);
 }

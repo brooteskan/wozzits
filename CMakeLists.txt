@@ -897,6 +897,20 @@ target_link_libraries(wozzits_tycho2_prep
         window_engine
 )
 
+# wozzits_export — headless standalone-bundle exporter (issue #334, Seam 3).
+# Resolves a project, runs the resource-closure walker, and assembles a
+# self-contained bundle (project tree + runtime exe + wozzits_app.json). No GPU /
+# no engine boot; links the shared window_engine library only.
+# ----------------------------
+add_executable(wozzits_export
+    src/tools/wozzits_export/main.cpp
+)
+
+target_link_libraries(wozzits_export
+    PRIVATE
+        window_engine
+)
+
 add_library(wozzits_abi SHARED
     src/engine/abi/wozzits_abi.cpp
 )

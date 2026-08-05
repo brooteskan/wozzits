@@ -287,6 +287,59 @@ TEST(AppBootstrapConfig, RequiresAssetGraphAndScene)
     EXPECT_NE(no_graph.error.find("asset_graph"), std::string::npos);
 }
 
+TEST(AppBootstrapConfig, WriterRoundTripsThroughLoader)
+{
+    // Seam 3 of issue #334: the exporter writes wozzits_app.json; loading it back
+    // must reconstruct the same resolved options (a sealed cache bundle here).
+    TempBundleDir bundle;
+
+    wz::app::AppBootstrapConfigDoc doc;
+    doc.resource_root = ".";
+    doc.asset_graph = "assets.graph.json";
+    doc.scene = "scene.json";
+    doc.behavior_modules = "behavior/build/clang-release";
+    doc.cache_root = "cache";
+    doc.cache_sealed = true;
+
+    std::string error;
+    ASSERT_TRUE(wz::app::write_app_bootstrap_config(bundle.base(), doc, error))
+        << error;
+
+    const auto result = wz::app::load_app_bootstrap_config(bundle.base());
+    ASSERT_TRUE(result.valid()) << result.error;
+    EXPECT_EQ(result.config.resource_root, wz::fs::join(bundle.base(), "."));
+    EXPECT_EQ(
+        result.config.asset_graph,
+        wz::fs::join(bundle.base(), "assets.graph.json"));
+    EXPECT_EQ(result.config.scene, wz::fs::join(bundle.base(), "scene.json"));
+    EXPECT_EQ(
+        result.config.behavior_modules,
+        wz::fs::join(bundle.base(), "behavior/build/clang-release"));
+    EXPECT_EQ(result.config.cache.root, wz::fs::join(bundle.base(), "cache"));
+    EXPECT_TRUE(result.config.cache.sealed);
+}
+
+TEST(AppBootstrapConfig, WriterOmitsEmptyOptionalFields)
+{
+    // A minimal doc (no behavior modules, no cache) must still load, with the
+    // cache off and behavior_modules empty.
+    TempBundleDir bundle;
+
+    wz::app::AppBootstrapConfigDoc doc;
+    doc.asset_graph = "assets.graph.json";
+    doc.scene = "scene.json";
+
+    std::string error;
+    ASSERT_TRUE(wz::app::write_app_bootstrap_config(bundle.base(), doc, error))
+        << error;
+
+    const auto result = wz::app::load_app_bootstrap_config(bundle.base());
+    ASSERT_TRUE(result.valid()) << result.error;
+    EXPECT_TRUE(result.config.behavior_modules.empty());
+    EXPECT_TRUE(result.config.cache.root.empty());
+    EXPECT_FALSE(result.config.cache.sealed);
+}
+
 TEST(AppBootstrapConfig, RejectsMalformedJson)
 {
     TempBundleDir bundle;

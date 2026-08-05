@@ -8,11 +8,34 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <vector>
 
 namespace wz::app
 {
     namespace
     {
+        // Minimal JSON string escaper, matching the project manifest writer.
+        // Escapes the backslashes that Windows source paths carry.
+        std::string json_string(const std::string& text)
+        {
+            std::string out;
+            out.push_back('"');
+            for (const char ch : text) {
+                switch (ch) {
+                case '"': out += "\\\""; break;
+                case '\\': out += "\\\\"; break;
+                case '\b': out += "\\b"; break;
+                case '\f': out += "\\f"; break;
+                case '\n': out += "\\n"; break;
+                case '\r': out += "\\r"; break;
+                case '\t': out += "\\t"; break;
+                default: out.push_back(ch); break;
+                }
+            }
+            out.push_back('"');
+            return out;
+        }
+
         std::string read_text_file(const wz::fs::Path& path)
         {
             std::ifstream file(path, std::ios::binary);
@@ -153,5 +176,62 @@ namespace wz::app
 
         result.status = AppBootstrapConfigStatus::Valid;
         return result;
+    }
+
+    std::string serialize_app_bootstrap_config(const AppBootstrapConfigDoc& doc)
+    {
+        // Collect the set members, then join with ",\n" — avoids trailing-comma
+        // bookkeeping as optional fields drop out.
+        std::vector<std::string> members;
+        members.push_back(
+            "  \"schema\": " + json_string(kAppBootstrapConfigSchema));
+        members.push_back(
+            "  \"formatVersion\": "
+            + std::to_string(kAppBootstrapConfigFormatVersion));
+        if (!doc.resource_root.empty()) {
+            members.push_back(
+                "  \"resource_root\": " + json_string(doc.resource_root));
+        }
+        members.push_back("  \"asset_graph\": " + json_string(doc.asset_graph));
+        members.push_back("  \"scene\": " + json_string(doc.scene));
+        if (!doc.behavior_modules.empty()) {
+            members.push_back(
+                "  \"behavior_modules\": " + json_string(doc.behavior_modules));
+        }
+        if (!doc.cache_root.empty()) {
+            members.push_back(
+                "  \"cache\": {\n"
+                "    \"root\": " + json_string(doc.cache_root) + ",\n"
+                "    \"sealed\": "
+                + std::string(doc.cache_sealed ? "true" : "false") + "\n"
+                "  }");
+        }
+
+        std::string out = "{\n";
+        for (size_t i = 0; i < members.size(); ++i) {
+            out += members[i];
+            out += (i + 1 < members.size()) ? ",\n" : "\n";
+        }
+        out += "}\n";
+        return out;
+    }
+
+    bool write_app_bootstrap_config(
+        const wz::fs::Path& base_dir,
+        const AppBootstrapConfigDoc& doc,
+        std::string& error)
+    {
+        const wz::fs::Path path = app_bootstrap_config_path(base_dir);
+        std::ofstream file(path, std::ios::binary);
+        if (!file) {
+            error = "cannot open for write: " + path;
+            return false;
+        }
+        file << serialize_app_bootstrap_config(doc);
+        if (!file) {
+            error = "failed while writing: " + path;
+            return false;
+        }
+        return true;
     }
 }
