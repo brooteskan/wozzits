@@ -120,6 +120,34 @@ namespace
                   s.nodes[0].mesh_level_mask_source = source;
               } },
 
+            // A3-C1-F1 (#77 visit 2): mesh_processing's source/processed/hierarchy
+            // AssetKeys are authored and written to disk but were absent from the
+            // mix, so two mesh_processing components differing only in one of them
+            // collided. Presence + each key are separate mutations here, so the
+            // pairwise-distinctness pass fails if any of the three stops mixing.
+            { "mesh_processing presence",
+              [](SceneAssetData& s) {
+                  s.nodes[0].mesh_processing = SceneMeshProcessingAsset{};
+              } },
+            { "mesh_processing.source_mesh_asset",
+              [](SceneAssetData& s) {
+                  SceneMeshProcessingAsset p;
+                  p.source_mesh_asset.content_hash.lo = 0x1234;
+                  s.nodes[0].mesh_processing = p;
+              } },
+            { "mesh_processing.processed_mesh_asset",
+              [](SceneAssetData& s) {
+                  SceneMeshProcessingAsset p;
+                  p.processed_mesh_asset.content_hash.lo = 0x1234;
+                  s.nodes[0].mesh_processing = p;
+              } },
+            { "mesh_processing.hierarchy_asset",
+              [](SceneAssetData& s) {
+                  SceneMeshProcessingAsset p;
+                  p.hierarchy_asset.content_hash.lo = 0x1234;
+                  s.nodes[0].mesh_processing = p;
+              } },
+
             // --- scene level ---
             { "sky_draws presence",
               [](SceneAssetData& s) {

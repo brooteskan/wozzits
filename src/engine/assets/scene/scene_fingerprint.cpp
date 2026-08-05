@@ -492,6 +492,14 @@ namespace wz::engine::assets
                 fp.mix_value(processing.normal_deviation);
                 fp.mix_value(processing.hausdorff_error);
                 fp.mix_value(processing.preview_level_index);
+                // These three are authored AND written to disk (they have no
+                // *_node_id anchor, so the resolved-key exclusion does not apply),
+                // yet were absent from the mix -- two mesh_processing components
+                // differing only in a source/processed/hierarchy key hashed
+                // identically. (A3-C1-F1, #77 visit 2)
+                mix_asset_key(fp, processing.source_mesh_asset);
+                mix_asset_key(fp, processing.processed_mesh_asset);
+                mix_asset_key(fp, processing.hierarchy_asset);
             }
 
             if (node.mesh_wavelet_analysis) {
