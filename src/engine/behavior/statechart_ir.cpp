@@ -188,9 +188,14 @@ namespace wz::engine::behavior::statechart
             bool effect(const JSONValue& o, Effect& e)
             {
                 std::string k = str(o, "kind");
+                // These three set a SPECIFIC parse reason on failure, so the
+                // per-kind call sites below can `return false` and preserve it
+                // rather than clobbering it with the bare effect-kind word. D2-H4
+                // did this for trigger(); A3-H7 (#77 visit 2) finishes effect().
                 auto agent = [&](Effect& ef) {
-                    int a = c.index_of_agent(str(o, "agent"));
-                    if (a < 0) return false;
+                    const std::string name = str(o, "agent");
+                    int a = c.index_of_agent(name);
+                    if (a < 0) return fail(k + ": unknown agent '" + name + "'");
                     ef.agent = static_cast<uint16_t>(a);
                     return true;
                 };
@@ -201,18 +206,19 @@ namespace wz::engine::behavior::statechart
                         return (b && b->kind == JSONValueKind::String) ? b->string_value : std::string{};
                     }() : std::string{};
                     int bi = c.index_of_binding(port);
-                    if (bi < 0) return false;
+                    if (bi < 0) return fail(k + ": unknown target binding '" + port + "'");
                     ef.binding = static_cast<uint16_t>(bi);
                     return true;
                 };
                 auto value = [&](Effect& ef) {
                     const JSONValue* v = find_member(o, "value");
-                    return v && ref(*v, ef.value);
+                    if (!v) return fail(k + ": missing `value`");
+                    return ref(*v, ef.value);   // ref() sets a specific reason
                 };
 
                 if (k == "set_goal") {
                     e.kind = EffectKind::SetGoal;
-                    if (!agent(e) || !value(e)) return fail("set_goal");
+                    if (!agent(e) || !value(e)) return false;
                     if (!integral(o, "slot", e.slot)) return false;
                 }
                 else if (k == "measure_at") {
@@ -220,20 +226,20 @@ namespace wz::engine::behavior::statechart
                     // of the named agent along axis `value` (radians). Shape mirrors
                     // set_goal (agent + slot + a value Ref, here the angle).
                     e.kind = EffectKind::MeasureAt;
-                    if (!agent(e) || !value(e)) return fail("measure_at");
+                    if (!agent(e) || !value(e)) return false;
                     if (!integral(o, "slot", e.slot)) return false;
                 }
                 else if (k == "set_decoherence") {
                     e.kind = EffectKind::SetDecoherence;
-                    if (!agent(e) || !value(e)) return fail("set_decoherence");
+                    if (!agent(e) || !value(e)) return false;
                 }
                 else if (k == "rearm") {
                     e.kind = EffectKind::Rearm;
-                    if (!agent(e)) return fail("rearm");
+                    if (!agent(e)) return false;
                 }
                 else if (k == "reward") {
                     e.kind = EffectKind::Reward;
-                    if (!agent(e)) return fail("reward");
+                    if (!agent(e)) return false;
                     if (!integral(o, "q", e.slot)) return false;
                     // `branch` names the branch being reinforced -- true is the 1
                     // branch, driving that fact's memory_preference toward -1. That
@@ -265,15 +271,15 @@ namespace wz::engine::behavior::statechart
                 }
                 else if (k == "set_scale") {
                     e.kind = EffectKind::SetScale;
-                    if (!target(e) || !value(e)) return fail("set_scale");
+                    if (!target(e) || !value(e)) return false;
                 }
                 else if (k == "set_visible") {
                     e.kind = EffectKind::SetVisible;
-                    if (!target(e) || !value(e)) return fail("set_visible");
+                    if (!target(e) || !value(e)) return false;
                 }
                 else if (k == "play_sound") {
                     e.kind = EffectKind::PlaySound;
-                    if (!target(e)) return fail("play_sound");
+                    if (!target(e)) return false;
                 }
                 else if (k == "call") {
                     // A behavior-registered actuator, called by name. Args resolve

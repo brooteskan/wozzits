@@ -89,3 +89,17 @@ TEST(AgentLayout, InterAgentBondCouplesSpecificDispositions)
     EXPECT_GT(connected_correlation(g, flee0, flee1), 0.9);     // coupled
     EXPECT_LT(std::abs(connected_correlation(g, alert0, alert1)), 0.2);  // free
 }
+
+// A3-S1 (#77 visit 2): the accumulator summed dispositions in a uint32 and
+// WRAPPED, so {4294967295, 33} produced total_qubits == 32 -- small enough to
+// clear every downstream cap while add_one_hot still looped on the raw
+// 4294967295 (~1e11 iterations = a multi-minute freeze on build). It now
+// saturates so the true magnitude reaches create()'s agent_count cap.
+TEST(AgentLayout, SaturatesInsteadOfWrappingOnOverflow)
+{
+    const AgentLayout layout = make_agent_layout({ 4294967295u, 33u });
+    EXPECT_NE(layout.total_qubits, 32u)
+        << "the wrapped total that used to defeat every cap";
+    EXPECT_EQ(layout.total_qubits, 0xFFFFFFFFu)
+        << "an overflowing disposition sum must saturate, not wrap";
+}

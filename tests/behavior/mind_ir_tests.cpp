@@ -201,3 +201,36 @@ TEST(MindIr, RejectsInconsistentLayouts)
         R"({"dispositions":[2],"goals":[{"agent":0,"disposition":9,"field":1}]})",
         spec, err));
 }
+
+// A3-S1 (#77 visit 2): a disposition layout whose sum overflows uint32 wrapped to
+// a small total that cleared every cap and then froze add_one_hot. The parser now
+// rejects an overflowing sum and an entry outside [1, 2^32) at the authored
+// boundary.
+TEST(MindIr, RejectsOverflowingDispositionLayout)
+{
+    cog::AgentSpec spec;
+    std::string err;
+    EXPECT_FALSE(parse_mind(
+        R"({"dispositions":[4294967295,33],"one_hot":[1.0]})", spec, err));
+    EXPECT_FALSE(parse_mind(
+        R"({"dispositions":[5000000000]})", spec, err));   // entry above 2^32 = UB cast
+
+    // A sane multi-disposition layout still parses.
+    ASSERT_TRUE(parse_mind(
+        R"({"dispositions":[2,3],"one_hot":[1.0]})", spec, err)) << err;
+    EXPECT_EQ(spec.agent_count, 5u);
+}
+
+// A3-H8 (#77 visit 2): the mind IR documents schema "wozzits.mind.ir.v0" but the
+// parser never checked it. Asymmetric like the asset-graph/scene gates: a present-
+// but-wrong schema is refused; a missing one is accepted.
+TEST(MindIr, SchemaGateIsAsymmetric)
+{
+    cog::AgentSpec spec;
+    std::string err;
+    EXPECT_FALSE(parse_mind(
+        R"({"schema":"wozzits.mind.ir.v99.WRONG","qubits":2})", spec, err));
+    EXPECT_TRUE(parse_mind(R"({"qubits":2})", spec, err)) << err;   // missing ok
+    EXPECT_TRUE(parse_mind(
+        R"({"schema":"wozzits.mind.ir.v0","qubits":2})", spec, err)) << err;
+}

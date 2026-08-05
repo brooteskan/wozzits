@@ -56,6 +56,16 @@ namespace wz::engine::behavior
         if (root.kind != JSONValueKind::Object) {
             return fail("mind root must be an object");
         }
+        // Schema gate, asymmetric like the asset-graph and scene gates (D2-H3):
+        // a PRESENT-but-wrong schema is refused so a future dialect is not read
+        // under v0 key meanings; a MISSING schema still loads (inline test/tool
+        // documents need no ceremony). (A3-H8, #77 visit 2)
+        if (const JSONValue* schema = find_member(root, "schema")) {
+            if (schema->kind != JSONValueKind::String
+                || schema->string_value != "wozzits.mind.ir.v0") {
+                return fail("mind `schema` must be \"wozzits.mind.ir.v0\"");
+            }
+        }
 
         cognition::AgentSpec spec;
 
@@ -67,14 +77,31 @@ namespace wz::engine::behavior
         const JSONValue* dispositions = array_of(root, "dispositions");
         if (dispositions) {
             std::vector<uint32_t> per_agent;
+            uint64_t disposition_sum = 0;
             for (const auto& d : dispositions->array_values) {
-                if (d->kind != JSONValueKind::Number || d->number_value < 1.0) {
-                    return fail("mind `dispositions` entries must be >= 1");
+                // Upper-bound the entry too: static_cast<uint32_t> of a value
+                // above 2^32 (or non-finite) is UB, and it is the per-agent count
+                // that drives add_one_hot's loop. (A3-S1, #77 visit 2)
+                if (d->kind != JSONValueKind::Number || d->number_value < 1.0
+                    || d->number_value > 4294967295.0) {
+                    return fail(
+                        "mind `dispositions` entries must be integers in [1, 2^32)");
                 }
-                per_agent.push_back(static_cast<uint32_t>(d->number_value));
+                const uint32_t count = static_cast<uint32_t>(d->number_value);
+                per_agent.push_back(count);
+                disposition_sum += count;
             }
             if (per_agent.empty()) {
                 return fail("mind `dispositions` must not be empty");
+            }
+            // A sum that overflows uint32 would wrap in the layout and disguise a
+            // huge qubit count as a small valid one, clearing every downstream cap
+            // and then freezing add_one_hot. Reject it here at the authored
+            // boundary; a large-but-representable sum is caught by create()'s
+            // agent_count > kMaxAgentCount cap once the layout no longer wraps.
+            // (A3-S1, #77 visit 2)
+            if (disposition_sum > 0xFFFFFFFFull) {
+                return fail("mind `dispositions` sum overflows the qubit count");
             }
             layout = cognition::make_agent_layout(per_agent);
             n = layout.total_qubits;

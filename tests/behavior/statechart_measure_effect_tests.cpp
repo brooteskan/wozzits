@@ -97,3 +97,40 @@ TEST(StatechartMeasureEffect, RunnerMeasuresNamedAgentAtAngle)
     EXPECT_EQ(cap.slot, 1u);
     EXPECT_NEAR(cap.theta, static_cast<float>(angle), 1e-5f);
 }
+
+// A3-H7 (#77 visit 2): the 7 effect() sites reported the bare effect kind
+// ("set_goal") for an unknown agent OR a malformed value, clobbering the specific
+// reason. The agent/target/value lambdas now carry a reason and the sites return
+// false without overwriting it -- distinct causes are distinguishable again.
+TEST(StatechartMeasureEffect, EffectReportsTheSpecificReasonNotJustTheKind)
+{
+    std::string error;
+
+    // Unknown agent: names the agent, not just "set_goal". Fresh Chart per call --
+    // parse_chart is not idempotent (A3-H6), so real callers pass a new one.
+    sc::Chart unknown_agent;
+    EXPECT_FALSE(sc::parse_chart(
+        R"({"schema":"wozzits.statechart.ir.v0","name":"t","bindings":[],)"
+        R"("agents":[{"id":"m","owned":false,"host":"self","agent":"mind"}],)"
+        R"("regions":[{"id":"r","initial":"s","states":["s"]}],)"
+        R"("states":[{"id":"s","do":[{"kind":"set_goal","agent":"ghost",)"
+        R"("value":{"const":1},"slot":0}],"transitions":[]}]})",
+        unknown_agent, error));
+    EXPECT_NE(error, "set_goal");
+    EXPECT_NE(error.find("unknown agent"), std::string::npos) << error;
+    EXPECT_NE(error.find("ghost"), std::string::npos) << error;
+
+    // Malformed value const: the ref reason survives instead of being clobbered.
+    error.clear();
+    sc::Chart bad_value;
+    EXPECT_FALSE(sc::parse_chart(
+        R"({"schema":"wozzits.statechart.ir.v0","name":"t","bindings":[],)"
+        R"("agents":[{"id":"m","owned":false,"host":"self","agent":"mind"}],)"
+        R"("regions":[{"id":"r","initial":"s","states":["s"]}],)"
+        R"("states":[{"id":"s","do":[{"kind":"set_goal","agent":"m",)"
+        R"("value":{"const":"nope"},"slot":0}],"transitions":[]}]})",
+        bad_value, error));
+    EXPECT_NE(error, "set_goal");
+    EXPECT_NE(error.find("const must be number or bool"), std::string::npos)
+        << error;
+}
