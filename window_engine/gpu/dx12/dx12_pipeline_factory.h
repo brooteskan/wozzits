@@ -3,10 +3,9 @@
 //
 // Creates DX12 root signatures and PSOs for BuiltinRenderProgram values.
 //
-// This is the single source of truth for all built-in pipeline state.  Both
-// the legacy debug context path and the new RenderablePipelineCache path call
-// these functions.  The debug context files are transitional wrappers; they
-// should not contain their own PSO creation logic long-term.
+// This is the single source of truth for all built-in pipeline state.  The
+// legacy debug context files are transitional wrappers that call these
+// functions; they should not contain their own PSO creation logic long-term.
 
 #include <d3d12.h>
 

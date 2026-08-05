@@ -52,9 +52,9 @@ namespace wz::engine::rendering
     };
 
     // Resolved result: the GPU resource handle plus pipeline identification.
-    // submit_render_frame uses render_program (when valid) to look up the PSO
-    // in RenderProgramPipelineCache; falls back to the legacy BuiltinRenderProgram
-    // → RenderablePipelineCache path when render_program is invalid.
+    // render_program identifies the PSO in RenderProgramPipelineCache. The
+    // BuiltinRenderProgram `program` field below is legacy: its pipeline-cache
+    // consumer was deleted with the direct submit path (#179).
     struct ResolvedRenderableResource
     {
         struct PulledMeshResource
@@ -176,8 +176,9 @@ namespace wz::engine::rendering
     {
     public:
         // Register a GPU-resident splat cloud together with its render program.
-        // render_program is optional; when valid the submit path prefers it
-        // over the legacy BuiltinRenderProgram → RenderablePipelineCache path.
+        // render_program is the pipeline identity; the legacy BuiltinRenderProgram
+        // alternative lost its pipeline-cache consumer with the direct submit
+        // path (#179).
         // Returns the SplatHandle to store in DrawCommand::splats_buffer.
         wz::scene::SplatHandle register_splat_cloud(
             wz::gpu::GPUHandle                       gpu_resource,

@@ -584,7 +584,7 @@ namespace wz::gpu::dx12::internal {
 
 // ── Graphics pipeline table ───────────────────────────────────────
 //
-// Stores PSO + root signature pairs created by RenderablePipelineCache.
+// Stores PSO + root signature pairs created by RenderProgramPipelineCache.
 // Keyed by GPUHandle of type kGPUGraphicsPipelineResourceType.
 // The debug context singletons are separate; this table is for the
 // production pipeline cache path.

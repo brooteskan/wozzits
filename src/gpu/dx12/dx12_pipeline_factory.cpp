@@ -1,8 +1,7 @@
 // src/gpu/dx12/dx12_pipeline_factory.cpp
 //
 // Single source of truth for built-in DX12 root signature and PSO creation.
-// The legacy debug context files delegate to these functions during the
-// transition to RenderablePipelineCache.
+// The legacy debug context files delegate to these functions.
 
 #include <gpu/dx12/dx12_pipeline_factory.h>
 #include <gpu/dx12/dx12_internal.h>
