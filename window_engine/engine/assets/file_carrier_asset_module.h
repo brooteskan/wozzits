@@ -11,13 +11,23 @@
 
 namespace wz::engine::assets
 {
+    // Strip a single matched surrounding pair of ASCII double-quotes from an
+    // authored path (Windows Explorer's "Copy as path" wraps the path). Only a
+    // genuine leading+trailing pair is removed. This is the cleanup half of the
+    // rooting convention, split out because carrier nodes STORE the authored
+    // path and root it only when reading.
+    [[nodiscard]] wz::fs::Path strip_file_carrier_path_quotes(
+        const wz::fs::Path& path);
+
     // Resolve a file-carrier path against a resource root, mirroring how source
-    // nodes are rooted: strip a single matched surrounding pair of ASCII
-    // double-quotes (Windows Explorer's "Copy as path" wraps the path), then
-    // return the path unchanged when absolute, or joined onto `resource_root`
-    // when relative. This is the single engine-side authority for the rooting
-    // convention so callers (FileCarrierAssetModule, the editor ABI's GLB
-    // import) never reimplement it.
+    // nodes are rooted: strip surrounding quotes, then return the path unchanged
+    // when absolute, or joined onto `resource_root` when relative. This is the
+    // single engine-side authority for the rooting convention so callers (the
+    // editor ABI's GLB import, callers wanting a disk-ready path) never
+    // reimplement it.
+    //
+    // NOTE: this is a READ-TIME operation. Do not use it to compute a path that
+    // will be STORED on a carrier node — see register_file_node below.
     [[nodiscard]] wz::fs::Path resolve_file_carrier_path(
         const wz::fs::Path& resource_root,
         const wz::fs::Path& path);
@@ -33,6 +43,14 @@ namespace wz::engine::assets
     // root provided at construction, or absolute paths that already identify
     // the source file. The module canonicalises paths and constructs keys
     // before forwarding to the shared AssetSystem.
+    //
+    // A registered node STORES the authored path (quotes stripped, otherwise
+    // as given) in FileSourceDesc::full_path — it is NOT joined onto the
+    // resource root. Rooting happens once, at read time, in every consumer:
+    // the file/shader carrier compilers, key derivation, and wozzits_export
+    // (which rewrites the stored path when relocating sources into a bundle).
+    // Keeping the stored path relocatable is what lets an exported bundle and
+    // a moved project resolve their own sources (#334).
 
     class FileCarrierAssetModule
     {
@@ -48,9 +66,9 @@ namespace wz::engine::assets
         );
 
         // Register a file-backed source node in the shared AssetSystem.
-        // path is canonicalised. Relative paths are joined with the resource
-        // root; absolute paths are used directly.
-        // Returns the node key, or a zero key on failure.
+        // path is canonicalised for the key; the node stores it as authored
+        // (see the rooting note above) rather than joined onto the resource
+        // root. Returns the node key, or a zero key on failure.
         [[nodiscard]] wz::asset::AssetKey register_file_node(
             const wz::fs::Path& path,
             wz::asset::SchemaID  schema,

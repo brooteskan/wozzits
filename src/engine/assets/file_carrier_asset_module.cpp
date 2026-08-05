@@ -28,7 +28,15 @@ namespace wz::engine::assets
 
         const wz::asset::AssetKey key = make_file_key(canonical, schema);
 
-        const wz::fs::Path full_path = resolve_path(path);
+        // Store the AUTHORED path, NOT one rooted at resource_root. Every
+        // reader of FileSourceDesc::full_path resolves it against the library's
+        // resource_root at read time (file carriers, shader compilers, key
+        // derivation), and wozzits_export rewrites it to a bundle-relative path
+        // when relocating sources. Rooting it here applied resource_root twice
+        // ("resources/resources/projects/..."), and it also baked a
+        // machine-specific prefix into the serialized graph. Quotes are still
+        // stripped here so the stored path is openable once resolved.
+        const wz::fs::Path full_path = strip_file_carrier_path_quotes(path);
 
         wz::asset::AssetNode node;
         node.key     = key;
@@ -49,22 +57,24 @@ namespace wz::engine::assets
         return key;
     }
 
+    wz::fs::Path strip_file_carrier_path_quotes(const wz::fs::Path& path)
+    {
+        // Strip a single matched surrounding pair of ASCII double-quotes.
+        // Windows Explorer's "Copy as path" wraps the path in double quotes
+        // (e.g. "C:\...\tank1.glb"), which is not openable as-is. Only a
+        // genuine leading+trailing pair is removed; interior quotes and an
+        // unbalanced single quote are left untouched.
+        if (path.size() >= 2 && path.front() == '"' && path.back() == '"') {
+            return path.substr(1, path.size() - 2);
+        }
+        return path;
+    }
+
     wz::fs::Path resolve_file_carrier_path(
         const wz::fs::Path& resource_root,
         const wz::fs::Path& path)
     {
-        // Strip a single matched surrounding pair of ASCII double-quotes before
-        // resolving. Windows Explorer's "Copy as path" wraps the path in double
-        // quotes (e.g. "C:\...\tank1.glb"), which is not openable as-is. Only a
-        // genuine leading+trailing pair is removed; interior quotes and an
-        // unbalanced single quote are left untouched.
-        wz::fs::Path cleaned = path;
-        if (cleaned.size() >= 2
-            && cleaned.front() == '"'
-            && cleaned.back() == '"')
-        {
-            cleaned = cleaned.substr(1, cleaned.size() - 2);
-        }
+        const wz::fs::Path cleaned = strip_file_carrier_path_quotes(path);
 
         return wz::fs::is_absolute(cleaned)
             ? cleaned
