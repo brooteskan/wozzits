@@ -106,8 +106,8 @@ TEST(StatechartMeasureEffect, EffectReportsTheSpecificReasonNotJustTheKind)
 {
     std::string error;
 
-    // Unknown agent: names the agent, not just "set_goal". Fresh Chart per call --
-    // parse_chart is not idempotent (A3-H6), so real callers pass a new one.
+    // Unknown agent: names the agent, not just "set_goal". (A separate Chart per
+    // case keeps the two independent; parse_chart is idempotent since A3-H6.)
     sc::Chart unknown_agent;
     EXPECT_FALSE(sc::parse_chart(
         R"({"schema":"wozzits.statechart.ir.v0","name":"t","bindings":[],)"
@@ -133,4 +133,42 @@ TEST(StatechartMeasureEffect, EffectReportsTheSpecificReasonNotJustTheKind)
     EXPECT_NE(error, "set_goal");
     EXPECT_NE(error.find("const must be number or bool"), std::string::npos)
         << error;
+}
+
+// A3-H6 (#77 visit 2): parse_chart now parses into a local and publishes to `out`
+// only on success, so it is idempotent (a reused out is not corrupted) and
+// failure-atomic (a failed parse leaves out untouched). It used to push_back into
+// the caller's out as it went with no clear, so a second parse hit the duplicate-
+// id guards and a failure left a half-populated chart.
+TEST(StatechartMeasureEffect, ParseChartIsIdempotentAndFailureAtomic)
+{
+    const std::string valid =
+        R"({"schema":"wozzits.statechart.ir.v0","name":"t","bindings":[],)"
+        R"("agents":[{"id":"m","owned":false,"host":"self","agent":"mind"}],)"
+        R"("regions":[{"id":"r","initial":"s","states":["s"]}],)"
+        R"("states":[{"id":"s","do":[{"kind":"measure_at","agent":"m","slot":0,)"
+        R"("value":{"const":0.0}}],"transitions":[]}]})";
+
+    sc::Chart chart;
+    std::string error;
+    ASSERT_TRUE(sc::parse_chart(valid, chart, error)) << error;
+    ASSERT_EQ(chart.agents.size(), 1u);
+
+    // Idempotent: the SAME text into the SAME chart again succeeds and does not
+    // accumulate a duplicate agent (used to fail "duplicate agent id 'm'").
+    ASSERT_TRUE(sc::parse_chart(valid, chart, error)) << error;
+    EXPECT_EQ(chart.agents.size(), 1u);
+    EXPECT_EQ(chart.agents[0].agent_name, "mind");
+
+    // Failure-atomic: a malformed parse into a populated chart returns false and
+    // leaves the previous good chart untouched, not half-overwritten.
+    EXPECT_FALSE(sc::parse_chart(
+        R"({"schema":"wozzits.statechart.ir.v0","name":"t","bindings":[],)"
+        R"("agents":[{"id":"m","owned":false,"host":"self","agent":"mind"}],)"
+        R"("regions":[{"id":"r","initial":"s","states":["s"]}],)"
+        R"("states":[{"id":"s","do":[{"kind":"set_goal","agent":"ghost",)"
+        R"("value":{"const":1},"slot":0}],"transitions":[]}]})",
+        chart, error));
+    EXPECT_EQ(chart.agents.size(), 1u);
+    EXPECT_EQ(chart.agents[0].agent_name, "mind");
 }

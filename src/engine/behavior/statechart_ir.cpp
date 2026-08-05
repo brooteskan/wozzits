@@ -560,7 +560,20 @@ namespace wz::engine::behavior::statechart
             error = "JSON parse failed: " + res.error.message;
             return false;
         }
-        Parser p{ out, error, {}, res.document };
-        return p.run();
+        // Parse into a LOCAL chart and publish to `out` only on success. Parser::c
+        // is a reference that push_back's declarations as it goes with no clear on
+        // entry, so parsing into `out` directly made a reuse corrupt (the second
+        // parse hits the duplicate-id guards, and the two-pass state walk writes
+        // bodies into pre-existing states via c.states[idx++]) and a failed parse
+        // leave `out` half-populated. A fresh local per call is idempotent, and
+        // moving only on success leaves `out` untouched on failure. Mirrors
+        // parse_mind's shape. (A3-H6, #77 visit 2)
+        Chart parsed;
+        Parser p{ parsed, error, {}, res.document };
+        if (!p.run()) {
+            return false;
+        }
+        out = std::move(parsed);
+        return true;
     }
 }
