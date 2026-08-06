@@ -651,6 +651,60 @@ TEST(RhiPuppetRender, RealizesAndRecordsPartPackets)
         renderer.on_graph_changed();
         EXPECT_EQ(renderer.resident_gpu_resource_count(), resident_after)
             << "a second graph swap released the mask targets again";
+
+        // ── B2 leak pin (#311): the stale-reject SELF-HEAL must release the
+        // mask targets too. When a bound resource of a realized renderable goes
+        // stale (an asset reconcile can release a shared buffer while the
+        // renderable stays realized), render_scene rejects the draw and erases
+        // the entry. Before the fix that erase dropped the last handle to the
+        // mask targets WITHOUT releasing them -- the same leak as the swap bug
+        // above, on a path on_graph_changed never reaches.
+        {
+            // The swaps above cleared realized_renderables_ but left the puppet's
+            // asset-owned resources resident, so a render rebuilds the entry and
+            // its mask targets.
+            ASSERT_TRUE(wz::gpu::begin_frame(device));
+            wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+            ASSERT_TRUE(renderer.render_scene(
+                nodes, assets, view_projection, camera_world_pos))
+                << "puppet did not re-realize after the graph swap";
+            ASSERT_TRUE(wz::gpu::end_frame(device));
+            wz::gpu::present(device, /*sync_interval*/ 0);
+            const std::size_t resident_realized =
+                renderer.resident_gpu_resource_count();
+
+            // Force a bound atlas page stale (release + collect it now), so the
+            // next render's Part that samples it is rejected as a stale resource.
+            const wz::rhi::GpuResourceHandle atlas = gpu.resources.find(
+                wz::rhi::ResourceIdentity{
+                    ea::rhi_asset_identity(puppet.output, "atlas_0"), {} });
+            ASSERT_TRUE(atlas.valid())
+                << "puppet atlas page 0 not resident after re-realize";
+            gpu.resources.release(atlas);
+            gpu.resources.collect(UINT64_MAX);
+            const std::size_t resident_stale =
+                renderer.resident_gpu_resource_count();
+            ASSERT_LT(resident_stale, resident_realized)
+                << "forcing the atlas stale did not drop the resident count";
+
+            // Render: the stale atlas bind is rejected and render_scene's
+            // self-heal erases the puppet. With the fix it releases the mask
+            // targets first; collect() then reclaims them.
+            ASSERT_TRUE(wz::gpu::begin_frame(device));
+            wz::gpu::clear(device, 0.1f, 0.1f, 0.12f, 1.0f);
+            renderer.render_scene(
+                nodes, assets, view_projection, camera_world_pos);
+            ASSERT_TRUE(wz::gpu::end_frame(device));
+            wz::gpu::present(device, /*sync_interval*/ 0);
+            gpu.resources.collect(wz::gpu::completed_timeline_value(gpu.device));
+
+            const std::size_t resident_selfheal =
+                renderer.resident_gpu_resource_count();
+            EXPECT_LT(resident_selfheal, resident_stale)
+                << "the stale-reject self-heal erased the puppet without releasing "
+                   "its mask render targets (resident " << resident_stale << " -> "
+                << resident_selfheal << "): the #311 self-heal leak.";
+        }
     }
 
     wz::gpu::destroy_device(device);

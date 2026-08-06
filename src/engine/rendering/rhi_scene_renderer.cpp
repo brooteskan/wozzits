@@ -3429,7 +3429,16 @@ namespace wz::engine::rendering
         // persists fails the re-realize and lands in failed_renderables_, so
         // this cannot ping-pong realize/reject forever.
         for (const wz::asset::AssetKey& key : stale_rejected) {
-            realized_renderables_.erase(key);
+            const auto it = realized_renderables_.find(key);
+            if (it == realized_renderables_.end()) {
+                continue;
+            }
+            // Release renderer-owned resources (mask RTs, CPU-upload pull buffers)
+            // before erasing: RealizedRenderable has no destructor, so a bare erase
+            // strands them in the registry until device loss. Same release
+            // on_graph_changed performs before it clears the map.
+            it->second.release_renderer_owned_resources(gpu_.resources);
+            realized_renderables_.erase(it);
         }
 
         // What the D3D12 debug layer thought of the pass we just recorded
