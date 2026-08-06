@@ -55,6 +55,11 @@
                                      Text="{Binding GammaStartEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                         </Grid>
                         <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                            <TextBlock Text="gamma end" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Classes="InspectorInput"
+                                     Text="{Binding GammaEndEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
                             <TextBlock Text="anneal secs" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
                             <TextBox Grid.Column="1" Classes="InspectorInput"
                                      Text="{Binding AnnealSecondsEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
@@ -85,6 +90,26 @@
                                          x:CompileBindings="False"
                                          Text="{Binding Pane.SelectedNode.GoalEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                             </Grid>
+
+                            <!-- The agent this qubit is a disposition of. Group/Isolate live on the
+                                 canvas toolbar; the exclusivity of a multi-disposition agent is tuned here. -->
+                            <TextBlock Text="agent" Classes="InspectorPropertyName" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding Pane.SelectedAgent.Label}"
+                                       x:CompileBindings="False"
+                                       Classes="InspectorPropertyName"
+                                       TextWrapping="Wrap"/>
+                            <StackPanel Spacing="4" IsVisible="{Binding Pane.HasSelectedAgentGroup}">
+                                <Grid ColumnDefinitions="96,*" ColumnSpacing="8" Margin="0,2">
+                                    <TextBlock Text="exclusivity" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1" Classes="InspectorInput"
+                                             x:CompileBindings="False"
+                                             Text="{Binding Pane.SelectedAgent.OneHotEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                                <TextBlock Text="one_hot penalty — 0 = independent dispositions, &gt; 0 = pick exactly one"
+                                           Classes="InspectorPropertyName"
+                                           TextWrapping="Wrap"
+                                           FontSize="11"/>
+                            </StackPanel>
 
                             <TextBlock Text="coupled to" Classes="InspectorPropertyName" Margin="0,4,0,0"/>
                             <ItemsControl ItemsSource="{Binding Pane.SelectedNodeBonds}">

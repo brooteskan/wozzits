@@ -4,6 +4,23 @@
              xmlns:minds="using:Wozzits.Editor.ViewModels.EditorPanes.Minds"
              x:Class="Wozzits.Editor.App.Views.EditorPanes.Minds.MindPaneView"
              x:DataType="minds:MindPaneViewModel">
+    <UserControl.Styles>
+        <!-- The agent tag on a grouped qubit. Plain group = blue; an exclusive (one-hot)
+             "pick one" agent = amber. -->
+        <Style Selector="Border.mindGroupTag">
+            <Setter Property="Background" Value="#6C8CD5"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="4,1"/>
+        </Style>
+        <Style Selector="Border.mindGroupTag.exclusive">
+            <Setter Property="Background" Value="#E0A44B"/>
+        </Style>
+        <Style Selector="Border.mindGroupTag > TextBlock">
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+    </UserControl.Styles>
     <Grid Classes="EditorPaneRoot">
         <Border Classes="PaneSurface">
             <Grid RowDefinitions="Auto,*">
@@ -14,6 +31,13 @@
                             IsVisible="{Binding HasMind}">
                     <Button Content="+ Qubit" Command="{Binding AddQubitCommand}"/>
                     <Button Content="Delete" Command="{Binding DeleteSelectedCommand}"/>
+                    <Border Width="1" Background="#3A3A3A" Margin="2,2"/>
+                    <Button Content="Group"
+                            Command="{Binding GroupSelectedCommand}"
+                            ToolTip.Tip="Make the selected qubits one agent's dispositions"/>
+                    <Button Content="Isolate"
+                            Command="{Binding IsolateSelectedCommand}"
+                            ToolTip.Tip="Split the selected qubits back into their own agents"/>
                 </StackPanel>
                 <Grid Grid.Row="1">
                 <TextBlock Text="No mind open. Minds &#x2192; open a mind's graph."
@@ -63,16 +87,28 @@
                                                 Classes.selected="{Binding IsSelected}"
                                                 Width="96"
                                                 Height="68">
-                                            <StackPanel VerticalAlignment="Center"
-                                                        HorizontalAlignment="Center"
-                                                        Spacing="2">
-                                                <TextBlock Text="{Binding Title}"
-                                                           Classes="AssetGraphCardName"
-                                                           HorizontalAlignment="Center"/>
-                                                <TextBlock Text="{Binding GoalLabel, StringFormat='goal {0}'}"
-                                                           Classes="AssetGraphCardType"
-                                                           HorizontalAlignment="Center"/>
-                                            </StackPanel>
+                                            <Grid>
+                                                <StackPanel VerticalAlignment="Center"
+                                                            HorizontalAlignment="Center"
+                                                            Spacing="2">
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Classes="AssetGraphCardName"
+                                                               HorizontalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding GoalLabel, StringFormat='goal {0}'}"
+                                                               Classes="AssetGraphCardType"
+                                                               HorizontalAlignment="Center"/>
+                                                </StackPanel>
+                                                <!-- Which agent this qubit belongs to; colour = exclusive (one-hot) vs plain group. -->
+                                                <Border Classes="mindGroupTag"
+                                                        Classes.exclusive="{Binding IsExclusive}"
+                                                        IsVisible="{Binding IsGrouped}"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Top"
+                                                        Margin="0,3,3,0"
+                                                        ToolTip.Tip="This qubit is one disposition of a multi-disposition agent">
+                                                    <TextBlock Text="{Binding GroupTag}"/>
+                                                </Border>
+                                            </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

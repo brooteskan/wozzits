@@ -15,6 +15,8 @@ public sealed class MindNodeViewModel : ViewModelBase, ICanvasNode
     private double _x;
     private double _y;
     private bool _isSelected;
+    private int _groupIndex = -1;
+    private bool _isExclusive;
 
     public MindNodeViewModel(MindQubit qubit, int index)
     {
@@ -55,6 +57,37 @@ public sealed class MindNodeViewModel : ViewModelBase, ICanvasNode
     public double Y { get => _y; set => SetProperty(ref _y, value); }
 
     public bool IsSelected { get => _isSelected; set => SetProperty(ref _isSelected, value); }
+
+    // Which multi-disposition AGENT this qubit belongs to, as a stable color slot among
+    // the grouped agents (-1 = a single-disposition agent of its own, the default -- drawn
+    // plain). Set by the pane on projection; drives the node's group tint + hull.
+    public int GroupIndex
+    {
+        get => _groupIndex;
+        set
+        {
+            if (SetProperty(ref _groupIndex, value))
+            {
+                OnPropertyChanged(nameof(IsGrouped));
+                OnPropertyChanged(nameof(GroupTag));
+            }
+        }
+    }
+
+    // Is the owning agent an EXCLUSIVE (one-hot) choice? Only meaningful when grouped;
+    // the canvas shows it by the group tag's colour, and it is set in the properties panel.
+    public bool IsExclusive
+    {
+        get => _isExclusive;
+        set => SetProperty(ref _isExclusive, value);
+    }
+
+    // In an agent with siblings (not its own singleton).
+    public bool IsGrouped => _groupIndex >= 0;
+
+    // The corner tag on a grouped qubit -- the shared agent, e.g. "A0" -- so co-agent qubits
+    // read as one decision-maker. Empty for a singleton, which is drawn without agent chrome.
+    public string GroupTag => IsGrouped ? $"A{_groupIndex}" : string.Empty;
 
     public double CenterX => _x + NodeWidth / 2.0;
 

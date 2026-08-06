@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -13,11 +15,18 @@ public sealed class MindFormatException : Exception
 /// Loads and compiles a cognition MIND between the POSITIONAL on-disk schema
 /// ("wozzits.mind.ir.v0") and the in-memory authoring model. The on-disk form is the
 /// SAME JSON the engine's parse_mind reads (mind_ir.cpp): a qubit COUNT, with goals
-/// and bonds addressing qubits by INDEX, plus chi / memory / clock / commit. Emit
-/// resolves each bond's qubit Ids -&gt; current indices; Load regenerates positional
-/// qubit Ids (q0..qN-1), since the IR carries no ids. <c>Emit(indented:false)</c> is
-/// the <c>mind_ir</c> string embedded on a quantum_agent; <c>Emit(indented:true)</c>
-/// is the readable <c>.mind.json</c> source.
+/// and bonds addressing qubits by INDEX, plus chi / memory / clock / commit, and an
+/// optional agent layout (dispositions + one_hot). Emit resolves each qubit's model
+/// Id -&gt; its positional index; Load regenerates positional qubit Ids (q0..qN-1),
+/// since the IR carries no ids. <c>Emit(indented:false)</c> is the <c>mind_ir</c> string
+/// embedded on a quantum_agent; <c>Emit(indented:true)</c> is the readable
+/// <c>.mind.json</c> source.
+///
+/// AGENTS: the engine lays each agent's dispositions out as a CONTIGUOUS block of
+/// qubit indices, so Emit orders qubits grouped by agent (see Mind.FlatOrder) and the
+/// positional index of a qubit follows that grouping, not the raw Qubits list. A mind
+/// whose every agent owns a single disposition and sets no exclusivity carries no
+/// layout, and emits byte-identically to the pre-agent positional shape.
 /// </summary>
 public static class MindJson
 {
@@ -27,6 +36,8 @@ public static class MindJson
         try { return (double?)n; }
         catch { return null; }
     }
+
+    private static int AsInt(JsonNode? n, int fallback) => (int)(AsNum(n) ?? fallback);
 
     // ======================================================================
     //  Load: .mind.json / mind_ir text -> authoring model
@@ -62,20 +73,105 @@ public static class MindJson
                 + "rather than loaded under the old meaning of its keys (and then "
                 + "saved back over the newer file).");
 
-        int qubits = (int)(AsNum(o["qubits"]) ?? 0);
-        if (qubits < 1)
-            throw new MindFormatException("mind needs a positive `qubits` count");
+        // The agent layout can SUPPLY the qubit count (like mind_ir.cpp): read
+        // `dispositions` first, then reconcile with an explicit `qubits`.
+        List<int>? sizes = null;
+        if (o["dispositions"] is JsonArray dispArr)
+        {
+            sizes = new List<int>();
+            foreach (var d in dispArr)
+            {
+                int size = AsInt(d, 0);
+                if (size < 1)
+                    throw new MindFormatException("mind `dispositions` entries must be >= 1");
+                sizes.Add(size);
+            }
+            if (sizes.Count == 0)
+                throw new MindFormatException("mind `dispositions` must not be empty");
+        }
+
+        int qubits;
+        if (sizes is not null)
+        {
+            int sum = sizes.Sum();
+            if (o["qubits"] is { } qn && AsInt(qn, -1) != sum)
+                throw new MindFormatException(
+                    "mind `qubits` disagrees with the sum of `dispositions`");
+            qubits = sum;
+        }
+        else
+        {
+            qubits = AsInt(o["qubits"], 0);
+            if (qubits < 1)
+                throw new MindFormatException("mind needs a positive `qubits` count");
+        }
 
         var m = new Mind { Schema = schema, Name = (string?)o["name"] ?? "" };
         for (int i = 0; i < qubits; i++)
             m.Qubits.Add(new MindQubit { Id = $"q{i}" });
 
+        // Materialize agents + the per-agent contiguous flat-index block. Absent a
+        // layout, every qubit is its own single-disposition agent (the plain shape).
+        var blocks = new List<(int Start, int Size)>();
+        if (sizes is not null)
+        {
+            int start = 0;
+            foreach (var size in sizes)
+            {
+                var agent = new MindAgent { Id = m.FreshAgentId() };
+                m.Agents.Add(agent);
+                for (int k = 0; k < size; k++)
+                    m.Qubits[start + k].Agent = agent.Id;
+                blocks.Add((start, size));
+                start += size;
+            }
+        }
+        else
+        {
+            for (int i = 0; i < qubits; i++)
+            {
+                var agent = new MindAgent { Id = m.FreshAgentId() };
+                m.Agents.Add(agent);
+                m.Qubits[i].Agent = agent.Id;
+                blocks.Add((i, 1));
+            }
+        }
+
+        // Exclusivity, aligned to the agents in `dispositions` order. Mirrors the
+        // engine: one_hot needs a layout, and cannot have more entries than agents.
+        if (o["one_hot"] is JsonArray oneHot)
+        {
+            if (sizes is null)
+                throw new MindFormatException("mind `one_hot` needs a `dispositions` layout");
+            if (oneHot.Count > m.Agents.Count)
+                throw new MindFormatException("mind `one_hot` has more entries than agents");
+            for (int i = 0; i < oneHot.Count; i++)
+                m.Agents[i].OneHot = AsNum(oneHot[i]) ?? 0.0;
+        }
+
+        // Resolve a goal/bond endpoint: either the flat qubit `q`/`a`/`b`, or -- with
+        // a layout -- the (agent, disposition) pair. Returns -1 out of range, mirroring
+        // parse_mind's resolve so the two front ends accept exactly the same forms.
+        int Resolve(JsonObject obj, string flatKey, string agentKey, string dispKey)
+        {
+            int agent = AsInt(obj[agentKey], -1);
+            if (agent >= 0)
+            {
+                if (sizes is null || agent >= blocks.Count) return -1;
+                int d = AsInt(obj[dispKey], 0);
+                if (d < 0 || d >= blocks[agent].Size) return -1;
+                return blocks[agent].Start + d;
+            }
+            int q = AsInt(obj[flatKey], -1);
+            return (q < 0 || q >= qubits) ? -1 : q;
+        }
+
         if (o["goals"] is JsonArray goals)
             foreach (var g in goals)
             {
                 if (g is not JsonObject go) continue;
-                int q = (int)(AsNum(go["q"]) ?? -1);
-                if (q < 0 || q >= qubits)
+                int q = Resolve(go, "q", "agent", "disposition");
+                if (q < 0)
                     throw new MindFormatException("mind goal names an out-of-range qubit");
                 m.Qubits[q].Goal = AsNum(go["field"]) ?? 0.0;
             }
@@ -84,9 +180,9 @@ public static class MindJson
             foreach (var b in bonds)
             {
                 if (b is not JsonObject bo) continue;
-                int a = (int)(AsNum(bo["a"]) ?? -1);
-                int bb = (int)(AsNum(bo["b"]) ?? -1);
-                if (a < 0 || bb < 0 || a >= qubits || bb >= qubits)
+                int a = Resolve(bo, "a", "a_agent", "a_disposition");
+                int bb = Resolve(bo, "b", "b_agent", "b_disposition");
+                if (a < 0 || bb < 0)
                     throw new MindFormatException("mind bond names an out-of-range qubit");
                 if (a == bb)
                     throw new MindFormatException("mind bond couples a qubit to itself");
@@ -98,8 +194,8 @@ public static class MindJson
                 });
             }
 
-        m.Chi = Math.Max(0, (int)(AsNum(o["chi"]) ?? 0));
-        m.Memory = Math.Max(0, (int)(AsNum(o["memory"]) ?? 0));
+        m.Chi = Math.Max(0, AsInt(o["chi"], 0));
+        m.Memory = Math.Max(0, AsInt(o["memory"], 0));
 
         if (o["clock"] is JsonObject ck)
         {
@@ -122,9 +218,21 @@ public static class MindJson
 
     public static string Emit(Mind m, bool indented)
     {
+        // Make the agent partition total (orphan qubits get a singleton agent, empty
+        // agents drop) so the flat order below covers every qubit exactly once.
+        m.NormalizeAgents();
+
         var errors = Validate(m);
         if (errors.Count > 0)
             throw new MindFormatException(errors[0]);
+
+        // The positional order the IR indices refer to: each agent's dispositions
+        // contiguously, agents in first-appearance order. With every qubit its own
+        // agent this is just the Qubits order, so the plain shape is unchanged.
+        var flat = m.FlatOrder();
+        var flatIndex = new Dictionary<string, int>();
+        for (int i = 0; i < flat.Count; i++)
+            flatIndex[flat[i].Id] = i;
 
         var root = new JsonObject
         {
@@ -136,23 +244,49 @@ public static class MindJson
         };
         if (m.Name.Length > 0) root["name"] = m.Name;
 
-        // Goals are sparse -- a zero bias is the same as none.
+        // Goals are sparse -- a zero bias is the same as none -- and addressed by the
+        // FLAT (grouped) index.
         var goals = new JsonArray();
-        for (int i = 0; i < m.Qubits.Count; i++)
-            if (m.Qubits[i].Goal != 0.0)
-                goals.Add(new JsonObject { ["q"] = i, ["field"] = m.Qubits[i].Goal });
+        for (int i = 0; i < flat.Count; i++)
+            if (flat[i].Goal != 0.0)
+                goals.Add(new JsonObject { ["q"] = i, ["field"] = flat[i].Goal });
         if (goals.Count > 0) root["goals"] = goals;
 
-        // Bonds: model Ids -> positional indices.
+        // Bonds: model Ids -> flat positional indices.
         var bonds = new JsonArray();
         foreach (var b in m.Bonds)
             bonds.Add(new JsonObject
             {
-                ["a"] = m.IndexOfQubit(b.A),
-                ["b"] = m.IndexOfQubit(b.B),
+                ["a"] = flatIndex[b.A],
+                ["b"] = flatIndex[b.B],
                 ["j"] = b.J,
             });
         if (bonds.Count > 0) root["bonds"] = bonds;
+
+        // The agent layout -- only when it says something the plain shape cannot (an
+        // agent with >1 disposition, or any exclusivity). Emitted in agent order so
+        // dispositions/one_hot line up with the contiguous blocks the flat order laid.
+        if (m.HasLayout)
+        {
+            var order = m.AgentOrder();
+            var dispositions = new JsonArray();
+            foreach (var a in order)
+                dispositions.Add(m.MembersOf(a.Id).Count);
+            root["dispositions"] = dispositions;
+
+            // one_hot is sparse from the tail: emit up to the last exclusive agent
+            // (the engine treats a short array as "the rest have none").
+            int lastExclusive = -1;
+            for (int i = 0; i < order.Count; i++)
+                if (order[i].OneHot != 0.0) lastExclusive = i;
+            if (lastExclusive >= 0)
+            {
+                var oneHot = new JsonArray();
+                for (int i = 0; i <= lastExclusive; i++)
+                    oneHot.Add(order[i].OneHot);
+                root["one_hot"] = oneHot;
+            }
+        }
 
         root["chi"] = m.Chi;
         if (m.Memory > 0) root["memory"] = m.Memory;
@@ -176,8 +310,9 @@ public static class MindJson
     // ======================================================================
 
     /// <summary>Structural problems that would make the mind unloadable or emit a
-    /// broken IR. Backend&lt;-&gt;topology validity (a chi&gt;=2 TTN needs a nearest-
-    /// neighbour chain) is advisory and surfaced by the editor, not blocked here.</summary>
+    /// broken IR. Backend&lt;-&gt;topology validity (a chi&gt;=2 TTN prefers a nearest-
+    /// neighbour chain) and one-hot on a single-disposition agent are advisory and
+    /// surfaced by the editor, not blocked here.</summary>
     public static IReadOnlyList<string> Validate(Mind m)
     {
         var errors = new List<string>();

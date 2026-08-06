@@ -32,6 +32,7 @@ public sealed class MindDocumentViewModel : ViewModelBase
         ChiEditor = IntField(() => _mind.Chi, c => { _mind.Chi = Math.Max(0, c); OnPropertyChanged(nameof(BackendLabel)); Pane.NotifyParamsChanged(); });
         MemoryEditor = IntField(() => _mind.Memory, m => _mind.Memory = Math.Max(0, m));
         GammaStartEditor = DoubleField(() => _mind.Clock.GammaStart, v => _mind.Clock.GammaStart = v);
+        GammaEndEditor = DoubleField(() => _mind.Clock.GammaEnd, v => _mind.Clock.GammaEnd = v);
         AnnealSecondsEditor = DoubleField(() => _mind.Clock.AnnealSeconds, v => _mind.Clock.AnnealSeconds = v);
         RelaxRateEditor = DoubleField(() => _mind.Clock.RelaxRate, v => _mind.Clock.RelaxRate = v);
         ConfidenceEditor = DoubleField(() => _mind.Commit.Confidence, v => _mind.Commit.Confidence = v);
@@ -43,6 +44,8 @@ public sealed class MindDocumentViewModel : ViewModelBase
     public EditableFieldViewModel MemoryEditor { get; }
 
     public EditableFieldViewModel GammaStartEditor { get; }
+
+    public EditableFieldViewModel GammaEndEditor { get; }
 
     public EditableFieldViewModel AnnealSecondsEditor { get; }
 

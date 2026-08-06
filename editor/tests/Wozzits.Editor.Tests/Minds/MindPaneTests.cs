@@ -229,4 +229,110 @@ public sealed class MindPaneTests
 
         Assert.DoesNotContain("needs", pane.ValidationWarning);
     }
+
+    // ---- agents ---------------------------------------------------------------
+
+    private static MindNodeViewModel Node(MindPaneViewModel pane, string id) =>
+        pane.Nodes.First(n => n.NodeId == id);
+
+    [Fact]
+    public void Group_Command_Needs_A_Multi_Selection()
+    {
+        var pane = new MindPaneViewModel();
+        pane.Project(Sample());
+
+        pane.SelectOnly(pane.Nodes[0]);
+        Assert.False(pane.CanGroupSelection);
+        Assert.False(pane.GroupSelectedCommand.CanExecute(null));
+
+        pane.ToggleSelection(pane.Nodes[1]);
+        Assert.True(pane.CanGroupSelection);
+        Assert.True(pane.GroupSelectedCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void Group_Selected_Puts_Them_In_One_Agent()
+    {
+        var mind = Sample();   // q0, q1, q2
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        pane.SelectOnly(Node(pane, "q0"));
+        pane.ToggleSelection(Node(pane, "q1"));
+        pane.GroupSelected();
+
+        // q0 and q1 share one agent (2 dispositions); q2 keeps its own.
+        var shared = mind.AgentOf("q0")!;
+        Assert.Equal(shared.Id, mind.AgentOf("q1")!.Id);
+        Assert.Equal(2, mind.MembersOf(shared.Id).Count);
+        Assert.NotEqual(shared.Id, mind.AgentOf("q2")!.Id);
+        Assert.True(pane.IsDirty);
+
+        // the grouped nodes carry a tint; the loner does not.
+        Assert.True(Node(pane, "q0").IsGrouped);
+        Assert.True(Node(pane, "q1").IsGrouped);
+        Assert.False(Node(pane, "q2").IsGrouped);
+    }
+
+    [Fact]
+    public void Group_Then_Isolate_Restores_Singletons()
+    {
+        var mind = Sample();
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        pane.SelectOnly(Node(pane, "q0"));
+        pane.ToggleSelection(Node(pane, "q1"));
+        pane.GroupSelected();
+        Assert.True(Node(pane, "q0").IsGrouped);
+
+        pane.SelectOnly(Node(pane, "q0"));
+        pane.ToggleSelection(Node(pane, "q1"));
+        pane.IsolateSelected();
+
+        Assert.False(Node(pane, "q0").IsGrouped);
+        Assert.False(Node(pane, "q1").IsGrouped);
+        Assert.NotEqual(mind.AgentOf("q0")!.Id, mind.AgentOf("q1")!.Id);
+        Assert.False(mind.HasLayout);
+    }
+
+    [Fact]
+    public void Selected_Agent_One_Hot_Makes_It_Exclusive()
+    {
+        var mind = Sample();
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+        pane.SelectOnly(Node(pane, "q0"));
+        pane.ToggleSelection(Node(pane, "q1"));
+        pane.GroupSelected();
+
+        pane.SelectOnly(Node(pane, "q0"));
+        Assert.NotNull(pane.SelectedAgent);
+        Assert.True(pane.HasSelectedAgentGroup);
+
+        pane.SelectedAgent!.OneHotEditor.Value = "2";
+
+        Assert.Equal(2.0, mind.AgentOf("q0")!.OneHot);
+        Assert.True(Node(pane, "q0").IsExclusive);
+        Assert.Equal("A0", Node(pane, "q0").GroupTag);
+        Assert.True(pane.IsDirty);
+    }
+
+    // Grouping REORDERS the flat slot indices (each agent's dispositions go contiguous),
+    // and the "qubit N" title tracks that slot -- so an actuator author sees the real slot.
+    [Fact]
+    public void Grouping_Renumbers_The_Flat_Slot_Titles()
+    {
+        var mind = Sample();   // q0, q1, q2
+        var pane = new MindPaneViewModel();
+        pane.Project(mind);
+
+        pane.SelectOnly(Node(pane, "q0"));
+        pane.ToggleSelection(Node(pane, "q2"));
+        pane.GroupSelected();   // {q0, q2} become one agent's contiguous block
+
+        Assert.Equal("qubit 0", Node(pane, "q0").Title);
+        Assert.Equal("qubit 1", Node(pane, "q2").Title);   // a's 2nd disposition
+        Assert.Equal("qubit 2", Node(pane, "q1").Title);   // pushed after the group
+    }
 }

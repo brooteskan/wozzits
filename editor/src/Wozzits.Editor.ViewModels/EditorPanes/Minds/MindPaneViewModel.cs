@@ -28,11 +28,19 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
     {
         AddQubitCommand = new RelayCommand(() => AddQubit());
         DeleteSelectedCommand = new RelayCommand(DeleteSelected);
+        GroupSelectedCommand = new RelayCommand(GroupSelected, () => SelectedNodes.Count >= 2);
+        IsolateSelectedCommand = new RelayCommand(IsolateSelected, () => SelectedNodes.Any(n => n.IsGrouped));
     }
 
     public IRelayCommand AddQubitCommand { get; }
 
     public IRelayCommand DeleteSelectedCommand { get; }
+
+    // Put the (2+) selected qubits into ONE agent (a multi-disposition decision-maker),
+    // and split each selected qubit back out to its own single-disposition agent.
+    public IRelayCommand GroupSelectedCommand { get; }
+
+    public IRelayCommand IsolateSelectedCommand { get; }
 
     public ObservableCollection<MindNodeViewModel> Nodes { get; } = [];
 
@@ -54,11 +62,69 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
                 OnPropertyChanged(nameof(HasSelectedNode));
                 OnPropertyChanged(nameof(SelectedNodeBonds));
                 OnPropertyChanged(nameof(ConnectTargets));
+                RefreshSelectionDependent();
             }
         }
     }
 
     public bool HasSelectedNode => _selectedNode is not null;
+
+    // The agent owning the selected qubit (its exclusivity + label), rebuilt whenever the
+    // selection or the projection changes so it always tracks the live MindAgent.
+    private MindAgentViewModel? _selectedAgent;
+
+    public MindAgentViewModel? SelectedAgent
+    {
+        get => _selectedAgent;
+        private set
+        {
+            if (SetProperty(ref _selectedAgent, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedAgentGroup));
+            }
+        }
+    }
+
+    // Show the exclusivity control only when the selected qubit's agent owns >1 disposition.
+    public bool HasSelectedAgentGroup => _selectedAgent?.IsGrouped ?? false;
+
+    // Enable "group" only with a real multi-selection.
+    public bool CanGroupSelection => SelectedNodes.Count >= 2;
+
+    // Recompute everything that depends on WHICH / HOW MANY qubits are selected.
+    private void RefreshSelectionDependent()
+    {
+        OnPropertyChanged(nameof(CanGroupSelection));
+        GroupSelectedCommand.NotifyCanExecuteChanged();
+        IsolateSelectedCommand.NotifyCanExecuteChanged();
+        SelectedAgent = BuildSelectedAgentVm();
+    }
+
+    private MindAgentViewModel? BuildSelectedAgentVm()
+    {
+        if (_mind is null || _selectedNode is null)
+        {
+            return null;
+        }
+
+        var agent = _mind.AgentOf(_selectedNode.NodeId);
+        if (agent is null)
+        {
+            return null;
+        }
+
+        return new MindAgentViewModel(
+            agent, _mind.MembersOf(agent.Id).Count, _selectedNode.GroupIndex, OnAgentEdited);
+    }
+
+    // A committed exclusivity edit: mark dirty + refresh the affected qubits' badges.
+    private void OnAgentEdited()
+    {
+        MarkDirty();
+        RefreshAgentBadges();
+        OnPropertyChanged(nameof(ValidationWarning));
+        OnPropertyChanged(nameof(HasValidationWarning));
+    }
 
     // The bonds incident to the selected qubit (the properties panel's bond list).
     public IReadOnlyList<MindBondViewModel> SelectedNodeBonds =>
@@ -115,7 +181,7 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
             {
                 foreach (var b in _mind.Bonds)
                 {
-                    if (Math.Abs(_mind.IndexOfQubit(b.A) - _mind.IndexOfQubit(b.B)) != 1)
+                    if (Math.Abs(_mind.FlatIndexOf(b.A) - _mind.FlatIndexOf(b.B)) != 1)
                     {
                         return "some bonds skip qubits, so chi ≥ 2 uses the general graph "
                             + "backend — still entangled, but the nearest-neighbour chain "
@@ -376,11 +442,100 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
         }
     }
 
+    // ---- agents ---------------------------------------------------------------
+
+    // Put every selected qubit into ONE fresh agent -- a decision-maker holding them as
+    // several dispositions (make it exclusive afterward via the agent's one_hot). Agents
+    // the regroup empties are pruned by NormalizeAgents.
+    public void GroupSelected()
+    {
+        if (_mind is null || SelectedNodes.Count < 2)
+        {
+            return;
+        }
+
+        var agent = new MindAgent { Id = _mind.FreshAgentId() };
+        _mind.Agents.Add(agent);
+        var ids = SelectedNodes.Select(n => n.NodeId).ToHashSet();
+        foreach (var q in _mind.Qubits)
+        {
+            if (ids.Contains(q.Id))
+            {
+                q.Agent = agent.Id;
+            }
+        }
+
+        _mind.NormalizeAgents();
+        IsDirty = true;
+        ReprojectPreservingLayout();
+    }
+
+    // Split each selected qubit back out to its own single-disposition agent.
+    public void IsolateSelected()
+    {
+        if (_mind is null || SelectedNodes.Count == 0)
+        {
+            return;
+        }
+
+        var ids = SelectedNodes.Select(n => n.NodeId).ToHashSet();
+        foreach (var q in _mind.Qubits)
+        {
+            if (ids.Contains(q.Id))
+            {
+                q.Agent = string.Empty;   // orphan -> NormalizeAgents gives it a fresh singleton
+            }
+        }
+
+        _mind.NormalizeAgents();
+        IsDirty = true;
+        ReprojectPreservingLayout();
+    }
+
+    // Recompute each node's group tint + exclusivity flag from the model. A stable color
+    // slot is assigned only to MULTI-disposition agents (singletons draw plain), in emit
+    // order so the tint does not jump as unrelated agents change.
+    private void RefreshAgentBadges()
+    {
+        if (_mind is null)
+        {
+            return;
+        }
+
+        var slotOf = new Dictionary<string, int>();
+        int slot = 0;
+        foreach (var a in _mind.AgentOrder())
+        {
+            if (_mind.MembersOf(a.Id).Count > 1)
+            {
+                slotOf[a.Id] = slot++;
+            }
+        }
+
+        foreach (var node in Nodes)
+        {
+            var agent = _mind.AgentOf(node.NodeId);
+            if (agent is not null && slotOf.TryGetValue(agent.Id, out var s))
+            {
+                node.GroupIndex = s;
+                node.IsExclusive = agent.OneHot != 0.0;
+            }
+            else
+            {
+                node.GroupIndex = -1;
+                node.IsExclusive = false;
+            }
+        }
+    }
+
     // ---- projection -----------------------------------------------------------
 
     public void Project(Mind mind)
     {
         _mind = mind;
+        // Make the agent partition total before laying out, so every qubit has an agent and
+        // the flat (grouped) index below is defined for each one.
+        mind.NormalizeAgents();
         foreach (var b in Bonds)
         {
             b.Dispose();
@@ -391,14 +546,25 @@ public sealed class MindPaneViewModel : ViewModelBase, IEditorCanvas
         SelectedNodes.Clear();
         SelectedNode = null;
 
-        var byId = new Dictionary<string, MindNodeViewModel>();
-        for (int i = 0; i < mind.Qubits.Count; i++)
+        // A qubit's DISPLAYED index is its flat (emit) index -- the slot an actuator reads --
+        // which follows the agent grouping, not the raw Qubits order. Nodes are still created
+        // in Qubits order so the saved layout stays keyed the same way.
+        var flat = mind.FlatOrder();
+        var flatIndexById = new Dictionary<string, int>(flat.Count);
+        for (int i = 0; i < flat.Count; i++)
         {
-            var node = new MindNodeViewModel(mind.Qubits[i], i) { GoalEdited = MarkDirty };
+            flatIndexById[flat[i].Id] = i;
+        }
+
+        var byId = new Dictionary<string, MindNodeViewModel>();
+        foreach (var q in mind.Qubits)
+        {
+            var node = new MindNodeViewModel(q, flatIndexById[q.Id]) { GoalEdited = MarkDirty };
             Nodes.Add(node);
             byId[node.NodeId] = node;
         }
 
+        RefreshAgentBadges();
         LayOutCircular();
 
         foreach (var bond in mind.Bonds)
