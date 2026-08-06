@@ -305,8 +305,12 @@ namespace wz::gpu::dx12::internal
         const DX12Shader* vs = get_shader(device, vertex_shader);
         const DX12Shader* ps = get_shader(device, pixel_shader);
 
-        assert(vs && vs->blob);
-        assert(ps && ps->blob);
+        // assert() no-ops in release: a stale/failed shader handle leaves vs/ps
+        // (or their blob) null, and the GetBufferPointer() calls below would then
+        // deref null. Fail the PSO build cleanly instead.
+        if (!vs || !vs->blob || !ps || !ps->blob) {
+            return nullptr;
+        }
 
         // Use explicit offsetof to account for pad0/pad1 in DX12GaussianSplatVertex.
         // D3D12_APPEND_ALIGNED_ELEMENT would compute wrong offsets for ROTATION and
@@ -386,8 +390,12 @@ namespace wz::gpu::dx12::internal
         const DX12Shader* vs = get_shader(device, vertex_shader);
         const DX12Shader* ps = get_shader(device, pixel_shader);
 
-        assert(vs && vs->blob);
-        assert(ps && ps->blob);
+        // assert() no-ops in release: a stale/failed shader handle leaves vs/ps
+        // (or their blob) null, and the GetBufferPointer() calls below would then
+        // deref null. Fail the PSO build cleanly instead.
+        if (!vs || !vs->blob || !ps || !ps->blob) {
+            return nullptr;
+        }
 
         // Same vertex layout as GaussianSplatDebug.
         D3D12_INPUT_ELEMENT_DESC layout[] =
@@ -466,8 +474,12 @@ namespace wz::gpu::dx12::internal
         const DX12Shader* vs = get_shader(device, vertex_shader);
         const DX12Shader* ps = get_shader(device, pixel_shader);
 
-        assert(vs && vs->blob);
-        assert(ps && ps->blob);
+        // assert() no-ops in release: a stale/failed shader handle leaves vs/ps
+        // (or their blob) null, and the GetBufferPointer() calls below would then
+        // deref null. Fail the PSO build cleanly instead.
+        if (!vs || !vs->blob || !ps || !ps->blob) {
+            return nullptr;
+        }
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
         desc.pRootSignature = root_sig;
@@ -761,8 +773,12 @@ namespace wz::gpu::dx12::internal
         const DX12Shader* vs = get_shader(device, vertex_shader);
         const DX12Shader* ps = get_shader(device, pixel_shader);
 
-        assert(vs && vs->blob);
-        assert(ps && ps->blob);
+        // assert() no-ops in release: a stale/failed shader handle leaves vs/ps
+        // (or their blob) null, and the GetBufferPointer() calls below would then
+        // deref null. Fail the PSO build cleanly instead.
+        if (!vs || !vs->blob || !ps || !ps->blob) {
+            return nullptr;
+        }
 
         auto layout = build_input_layout(data.input_layout);
 

@@ -29,6 +29,18 @@ namespace wz::engine::rendering
         {
         }
 
+        // Drain the registry while the backend + device are still alive: this
+        // body runs BEFORE the members are destroyed (reverse order: resources,
+        // then backend). Without it, resident GPU resources are reclaimed only
+        // because destroy_device sweeps the dx12 tables right after -- fine for
+        // the process-lifetime context today, but a leak the moment a context is
+        // rebuilt against a surviving device. GpuBackend has no virtual dtor and
+        // is a plain member, so nothing else frees them.
+        ~EngineGpuContext()
+        {
+            resources.destroy_all();
+        }
+
         wz::gpu::Device&             device;
         EngineGpuBackend             backend;
         wz::rhi::GpuResourceRegistry resources;

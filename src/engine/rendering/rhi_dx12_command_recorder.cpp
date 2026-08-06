@@ -398,7 +398,11 @@ namespace wz::engine::rendering
             ready_ = false;
             last_reject_reason_ =
                 "bind_resource_group: slot " + std::to_string(slot)
-                + " failed to build a descriptor table";
+                + " failed to build a descriptor table (the shader-visible SRV "
+                  "heap is likely exhausted -- "
+                + std::to_string(descriptor_tables_->entries.size())
+                + " tables cached, freed on a graph swap), rather than a real "
+                  "layout/build error";
             return;
         }
 

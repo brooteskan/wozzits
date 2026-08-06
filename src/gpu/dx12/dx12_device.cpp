@@ -208,13 +208,21 @@ namespace wz::gpu::dx12
     {
         HWND hwnd = static_cast<HWND>(native_window);
 
+        // Each Create below is guarded by a real FAILED() check, not an assert:
+        // an assert no-ops in release, so a failure (no D3D12 support, exhausted
+        // memory) would fall through and null-deref the object that failed to
+        // create. Instead we hand back an invalid Device{}, which every caller
+        // already checks (device.valid()) to report "no GPU" and skip. On this
+        // fatal startup path we let the OS reclaim any objects already created.
         HRESULT hr;
         IDXGIFactory4* factory = nullptr;
         hr = CreateDXGIFactory2(
             0,
             IID_PPV_ARGS(&factory)
         );
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            return {};
+        }
 
         // Add this before D3D12CreateDevice:
 #if defined(_DEBUG)
@@ -230,7 +238,9 @@ namespace wz::gpu::dx12
 
         ID3D12Device* device = nullptr;
         hr = D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device));
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr) || !device) {
+            return {};
+        }
 
         // Hold the debug layer's message queue so someone can actually read it
         // (#317). Enabling the layer above without this made every verdict it
@@ -251,7 +261,9 @@ namespace wz::gpu::dx12
 
         ID3D12CommandQueue* queue = nullptr;
         hr = device->CreateCommandQueue(&qdesc, IID_PPV_ARGS(&queue));
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            return {};
+        }
 
         // ────── create swapchain ───────────────────────────────────────────────────────
         DXGI_SWAP_CHAIN_DESC1 scdesc = {};
@@ -276,14 +288,19 @@ namespace wz::gpu::dx12
             nullptr,
             &temp
         );
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr) || !temp) {
+            return {};
+        }
 
-        hr = factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
-        assert(SUCCEEDED(hr));
+        // Non-fatal: alt-enter handling only. A failure here must not abort the
+        // device, so it is not checked -- unlike the creates around it.
+        (void)factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
 
         IDXGISwapChain3* swapchain = nullptr;
         hr = temp->QueryInterface(IID_PPV_ARGS(&swapchain));
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr) || !swapchain) {
+            return {};
+        }
 
 
 
@@ -297,7 +314,9 @@ namespace wz::gpu::dx12
 
         ID3D12DescriptorHeap* rtv_heap = nullptr;
         hr = device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&rtv_heap));
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            return {};
+        }
 
         // ────── create render target views ───────────────────────────────────────────────────────
         UINT rtv_stride = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
@@ -319,7 +338,9 @@ namespace wz::gpu::dx12
             D3D12_COMMAND_LIST_TYPE_DIRECT,
             IID_PPV_ARGS(&allocator)
         );
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            return {};
+        }
 
         ID3D12GraphicsCommandList* cmd = nullptr;
         hr = device->CreateCommandList(
@@ -329,10 +350,14 @@ namespace wz::gpu::dx12
             nullptr,
             IID_PPV_ARGS(&cmd)
         );
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            return {};
+        }
 
         hr = cmd->Close();
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            return {};
+        }
 
         // ────── store everything ───────────────────────────────────────────────────────
         DX12Device* impl = new DX12Device{};
@@ -361,7 +386,10 @@ namespace wz::gpu::dx12
             &srv_heap_desc,
             IID_PPV_ARGS(&impl->scalar_field_srv_heap)
         );
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            delete impl;
+            return {};
+        }
 
         impl->scalar_field_srv_stride =
             device->GetDescriptorHandleIncrementSize(
@@ -385,21 +413,39 @@ namespace wz::gpu::dx12
         // for complex and multiple puppets plus the rest of the scene; a
         // shader-visible CBV/SRV/UAV heap may hold up to 1,000,000 on Tier 1.
         bool srv_alloc_ok = impl->srv_cbv_uav_allocator.init(device, 16384);
-        assert(srv_alloc_ok);
+        if (!srv_alloc_ok) {
+            delete impl;
+            return {};
+        }
 
         // ────── initialize fences ───────────────────────────────────────────────────────
+        // The frame fence + its event ARE the reclamation timeline (end_frame /
+        // wait_for_gpu block on them), so a failed create here must abort the
+        // device rather than no-op an assert and leave a null fence/event that a
+        // later WaitForSingleObject dereferences.
         hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&impl->fence));
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            delete impl;
+            return {};
+        }
 
         impl->fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
         impl->fence_value = 1;
 
         hr = device->CreateFence(
             0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&impl->copy_fence));
-        assert(SUCCEEDED(hr));
+        if (FAILED(hr)) {
+            delete impl;
+            return {};
+        }
 
         impl->copy_fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
         impl->copy_fence_value = 1;
+
+        if (!impl->fence_event || !impl->copy_fence_event) {
+            delete impl;
+            return {};
+        }
 
         // ────── store backbuffers ───────────────────────────────────────────────────────
         for (UINT i = 0; i < 2; ++i)
@@ -411,7 +457,10 @@ namespace wz::gpu::dx12
 
         // ────── create depth buffer + DSV ────────────────────────────────────
         bool depth_ok = create_depth_resources(impl, impl->width, impl->height);
-        assert(depth_ok);
+        if (!depth_ok) {
+            delete impl;
+            return {};
+        }
 
 
         // ────── return ───────────────────────────────────────────────────────
@@ -584,11 +633,17 @@ namespace wz::gpu::dx12
         if (!dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal")) {
             return false;
         }
-        assert(SUCCEEDED(hr));
 
-        if (impl->fence->GetCompletedValue() < impl->fence_value)
+        // The Signal succeeded, so this value now names this submission on the
+        // GPU timeline. Spend it exactly once -- advance PAST it even if the wait
+        // below fails -- or the next end_frame re-Signals the same value and
+        // completed_timeline_value could report it while a second frame under it
+        // is still in flight, corrupting the registry's reclamation timeline.
+        const UINT64 signaled = impl->fence_value++;
+
+        if (impl->fence->GetCompletedValue() < signaled)
         {
-            hr = impl->fence->SetEventOnCompletion(impl->fence_value, impl->fence_event);
+            hr = impl->fence->SetEventOnCompletion(signaled, impl->fence_event);
             if (!dx12_check_hr(
                     *impl,
                     hr,
@@ -596,13 +651,20 @@ namespace wz::gpu::dx12
             {
                 return false;
             }
-            assert(SUCCEEDED(hr));
 
-            DWORD res = WaitForSingleObject(impl->fence_event, INFINITE);
-            assert(res == WAIT_OBJECT_0);
+            if (WaitForSingleObject(impl->fence_event, INFINITE) != WAIT_OBJECT_0)
+            {
+                // The wait itself failed (a bad handle, not a removed device):
+                // release builds cannot rely on the assert this replaced. Fail
+                // loudly so the caller does not reset the command allocator under
+                // a frame we can no longer prove finished; the timeline value is
+                // already spent, so reclamation stays consistent regardless.
+                dx12_check_hr(*impl, HRESULT_FROM_WIN32(GetLastError()),
+                    "WaitForSingleObject(frame fence)");
+                return false;
+            }
         }
 
-        impl->fence_value++;
         return true;
     }
 
@@ -628,20 +690,25 @@ namespace wz::gpu::dx12
                 return;
             }
 
-            // Signal GPU with current fence value
             hr = impl->queue->Signal(impl->fence, impl->fence_value);
             if (!dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal")) {
                 return;
             }
-            assert(SUCCEEDED(hr));
+
+            // Advance the fence so every value is signaled exactly ONCE, the
+            // moment the Signal succeeds -- before the wait, so a wait-setup
+            // failure below cannot leave the value live for the next Signal to
+            // reuse. Without single-use, end_frame's wait could short-circuit
+            // (GetCompletedValue() already >= that value), transiently allowing a
+            // frame in flight under a value that no longer identifies one
+            // submission -- and the registry's reclamation, which judges a
+            // resource complete by its touch value, would then be wrong.
+            const UINT64 signaled = impl->fence_value++;
 
             // If GPU hasn't reached this fence value yet → wait
-            if (impl->fence->GetCompletedValue() < impl->fence_value)
+            if (impl->fence->GetCompletedValue() < signaled)
             {
-                hr = impl->fence->SetEventOnCompletion(
-                    impl->fence_value,
-                    impl->fence_event
-                );
+                hr = impl->fence->SetEventOnCompletion(signaled, impl->fence_event);
                 if (!dx12_check_hr(
                         *impl,
                         hr,
@@ -649,26 +716,14 @@ namespace wz::gpu::dx12
                 {
                     return;
                 }
-                assert(SUCCEEDED(hr));
 
-                DWORD res = WaitForSingleObject(
-                    impl->fence_event,
-                    INFINITE
-                );
-
-                assert(res == WAIT_OBJECT_0);
+                if (WaitForSingleObject(impl->fence_event, INFINITE)
+                    != WAIT_OBJECT_0)
+                {
+                    dx12_check_hr(*impl, HRESULT_FROM_WIN32(GetLastError()),
+                        "WaitForSingleObject(wait_for_gpu)");
+                }
             }
-
-            // Advance the fence so every value is signaled exactly ONCE. Without
-            // this, wait_for_gpu would re-signal the same value the next
-            // end_frame is about to use, and end_frame's wait would then
-            // short-circuit (GetCompletedValue() already >= that value) —
-            // transiently allowing a frame in flight under a value that no
-            // longer identifies a single submission. The rhi registry's precise
-            // reclamation depends on each timeline value naming one submission:
-            // a resource touched with V must not be judged complete by a stray
-            // second signal of V while a later, unwaited V-frame still uses it.
-            impl->fence_value++;
         }
 
     }
@@ -706,9 +761,15 @@ namespace wz::gpu::dx12
             return false;
         }
 
-        if (impl->copy_fence->GetCompletedValue() < impl->copy_fence_value) {
+        // Signal succeeded: spend this copy-fence value exactly once, so a
+        // wait-setup failure below cannot leave it live for the next upload's
+        // Signal to reuse (which could then short-circuit its wait and read a
+        // resource before its copy landed).
+        const UINT64 signaled = impl->copy_fence_value++;
+
+        if (impl->copy_fence->GetCompletedValue() < signaled) {
             hr = impl->copy_fence->SetEventOnCompletion(
-                impl->copy_fence_value, impl->copy_fence_event);
+                signaled, impl->copy_fence_event);
             if (!dx12::dx12_check_hr(
                     *impl, hr, "ID3D12Fence::SetEventOnCompletion(copy)"))
             {
@@ -721,7 +782,6 @@ namespace wz::gpu::dx12
             }
         }
 
-        ++impl->copy_fence_value;
         return true;
     }
 

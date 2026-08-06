@@ -72,9 +72,12 @@ namespace wz::gpu::dx12
         uint32_t                   element_count,
         uint32_t                   stride_bytes)
     {
-        assert(device_);
-        assert(resource);
-        assert(offset < table.count);
+        // assert() no-ops in release; a bad offset would write a descriptor past
+        // this table into a neighbouring allocation in the shared shader-visible
+        // heap. Guard for real and skip the write rather than corrupt the heap.
+        if (!device_ || !resource || offset >= table.count) {
+            return;
+        }
 
         D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
         srv_desc.ViewDimension              = D3D12_SRV_DIMENSION_BUFFER;
@@ -95,9 +98,12 @@ namespace wz::gpu::dx12
         uint32_t                   element_count,
         uint32_t                   stride_bytes)
     {
-        assert(device_);
-        assert(resource);
-        assert(offset < table.count);
+        // assert() no-ops in release; a bad offset would write a descriptor past
+        // this table into a neighbouring allocation in the shared shader-visible
+        // heap. Guard for real and skip the write rather than corrupt the heap.
+        if (!device_ || !resource || offset >= table.count) {
+            return;
+        }
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc{};
         uav_desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
@@ -122,9 +128,12 @@ namespace wz::gpu::dx12
         DXGI_FORMAT                format,
         bool                       is_3d)
     {
-        assert(device_);
-        assert(resource);
-        assert(offset < table.count);
+        // assert() no-ops in release; a bad offset would write a descriptor past
+        // this table into a neighbouring allocation in the shared shader-visible
+        // heap. Guard for real and skip the write rather than corrupt the heap.
+        if (!device_ || !resource || offset >= table.count) {
+            return;
+        }
 
         D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
         srv_desc.Format = format;
