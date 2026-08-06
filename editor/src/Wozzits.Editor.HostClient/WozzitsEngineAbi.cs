@@ -852,6 +852,23 @@ internal static partial class WozzitsEngineAbi
         ulong environmentAssetNodeId,
         byte enabled);
 
+    // Author a node's RENDER TO TEXTURE component (issue #287): which Texture
+    // asset-graph node receives the node's (and optionally its descendants') draws
+    // (0 clears the ref), whether the same nodes also draw in the main pass, and an
+    // enabled flag. The atmosphere/environment seam plus the two composition
+    // switches. Live + host-gated, no-op success when no viewport is running.
+    [LibraryImport(
+        LibraryName,
+        EntryPoint = "wz_host_runtime_set_node_render_to_texture",
+        StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial WzResult WzEditorRuntimeSetNodeRenderToTexture(
+        IntPtr runtime,
+        string nodeIdUtf8,
+        ulong targetAssetNodeId,
+        byte includeDescendants,
+        byte alsoDrawInScene,
+        byte enabled);
+
     // Author a node's MOTION component terrain-constraint fields (terrain-stick
     // track): whether the node sticks to the terrain surface, plus ride height,
     // footprint radius, surface-alignment toggle, and alignment strength. Live +

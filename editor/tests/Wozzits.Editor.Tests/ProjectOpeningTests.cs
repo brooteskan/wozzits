@@ -4522,6 +4522,21 @@ public sealed partial class ProjectOpeningTests
             return ComponentEditResult();
         }
 
+        public List<(string NodeId, ulong TargetAssetNodeId, bool IncludeDescendants,
+            bool AlsoDrawInScene, bool Enabled)> RenderTargets { get; } = [];
+
+        public EngineMutationResponse SetNodeRenderToTexture(
+            string nodeId,
+            ulong targetAssetNodeId,
+            bool includeDescendants,
+            bool alsoDrawInScene,
+            bool enabled)
+        {
+            RenderTargets.Add((nodeId, targetAssetNodeId, includeDescendants,
+                alsoDrawInScene, enabled));
+            return ComponentEditResult();
+        }
+
         public record MotionTerrainEdit(
             string NodeId,
             bool TerrainConstrained,

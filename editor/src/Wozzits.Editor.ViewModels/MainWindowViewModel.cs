@@ -1757,6 +1757,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         // Thread the "Environment" picker, filtered to FrameEnvironment outputs.
         RefreshInspectorEnvironmentSources();
+
+        // Thread the "Render To Texture" picker, filtered to render-target textures.
+        RefreshInspectorRenderTargetSources();
     }
 
     // Thread the "Audio Source" picker with the asset-graph nodes whose OUTPUT
@@ -1814,6 +1817,16 @@ public sealed partial class MainWindowViewModel : ViewModelBase
                     node.DisplayName)));
     }
 
+    private void RefreshInspectorRenderTargetSources()
+    {
+        Inspector.SetAvailableRenderTargets(
+            AssetGraph.Nodes
+                .Where(IsRenderTargetTextureNode)
+                .Select(node => new InspectorAssetGraphRefOptionViewModel(
+                    node.Id,
+                    node.DisplayName)));
+    }
+
     // True when a node produces a render program the render-program component can
     // consume (RenderProgram = 1049 in type_extensions.h, the value the engine's
     // assemble routes on).
@@ -1850,6 +1863,24 @@ public sealed partial class MainWindowViewModel : ViewModelBase
         node.OutputPorts.Any(port => port.Type == EnvironmentAssetTypeId);
 
     private const uint EnvironmentAssetTypeId = 2290;
+
+    // True for a render-target Texture asset-graph node — the only kind of Texture
+    // the RenderToTexture component can draw into. Texture is ONE asset type spanning
+    // several schemas (file image, render target, composite material), so a
+    // port.Type == Texture filter would wrongly offer non-renderable textures. Match
+    // the render-target SCHEMA instead, via node.SchemaLabel (the engine's
+    // schema_tail — low 32 bits of the SchemaID as hex), like IsSceneFromGlbNode.
+    // kRenderTargetTextureSchema is 0xF11ECA55E7001009, so its tail is "e7001009".
+    // No DisplayName fallback: unlike Scene-from-GLB, the render-target schema
+    // declares a `name` param, so a node's DisplayName is that authored name, not the
+    // schema label.
+    private static bool IsRenderTargetTextureNode(AssetGraphNodeCardViewModel node) =>
+        string.Equals(
+            node.SchemaLabel,
+            RenderTargetTextureSchemaLabel,
+            System.StringComparison.Ordinal);
+
+    private const string RenderTargetTextureSchemaLabel = "e7001009";
 
     // True for a "Scene from GLB" asset-graph node — the only graftable subtree
     // source the picker offers (issue #213 piece 2).

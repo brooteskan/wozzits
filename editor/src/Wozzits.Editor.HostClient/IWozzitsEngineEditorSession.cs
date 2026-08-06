@@ -352,6 +352,17 @@ public interface IWozzitsEngineEditorSession
         ulong environmentAssetNodeId,
         bool enabled);
 
+    // Author a node's RenderToTexture component (issue #287): which Texture asset-
+    // graph node receives the node's draws (0 clears the reference), whether
+    // descendants come along, whether the same nodes also draw in the main pass, and
+    // an enabled flag. Live + host-gated, no-op success when no viewport is running.
+    EngineMutationResponse SetNodeRenderToTexture(
+        string nodeId,
+        ulong targetAssetNodeId,
+        bool includeDescendants,
+        bool alsoDrawInScene,
+        bool enabled);
+
     // Author the node's MOTION component terrain-constraint fields (terrain-stick
     // track): whether the node sticks to the terrain surface, ride height,
     // footprint radius, surface-alignment toggle, and alignment strength. Live +

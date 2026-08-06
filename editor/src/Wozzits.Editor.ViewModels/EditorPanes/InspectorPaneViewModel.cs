@@ -78,6 +78,15 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     private string _environmentReferenceLabel = string.Empty;
     private bool _hasEnvironmentComponent;
     private bool _environmentEnabled = true;
+    // "Render To Texture" section (issue #287): the Texture asset-graph node the
+    // node's draws land in + the two composition switches + an enabled flag. A
+    // node-ref seam like atmosphere, with the extra switches.
+    private InspectorAssetGraphRefOptionViewModel? _selectedRenderTargetOption;
+    private string _renderTargetReferenceLabel = string.Empty;
+    private bool _hasRenderToTextureComponent;
+    private bool _renderToTextureIncludeDescendants;
+    private bool _renderToTextureAlsoDrawInScene;
+    private bool _renderToTextureEnabled = true;
     // "Motion" section (terrain-stick track): the terrain-constraint fields of the
     // node's Motion component. Optimistic/session-local display, same as collision.
     private bool _hasMotionComponent;
@@ -198,6 +207,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         RemoveAtmosphereComponentCommand = new RelayCommand(RemoveAtmosphereComponent);
         RemoveEnvironmentComponentCommand =
             new RelayCommand(RemoveEnvironmentComponent);
+        RemoveRenderToTextureComponentCommand =
+            new RelayCommand(RemoveRenderToTextureComponent);
         RemoveMotionFilterComponentCommand =
             new RelayCommand(RemoveMotionFilterComponent);
         // "Audio Source" (audio-track item 10): the header ✕ removes the component
@@ -269,6 +280,14 @@ public sealed class InspectorPaneViewModel : ViewModelBase
     public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
         AvailableEnvironments { get; } = [];
 
+    // The render-target Texture asset-graph nodes the "Render To Texture" picker
+    // offers. Threaded in from MainWindowViewModel on every selection, filtered to
+    // render-target-schema texture nodes (kRenderTargetTextureSchema) — NOT the
+    // whole Texture type, since a from-file or composite texture cannot be rendered
+    // into.
+    public ObservableCollection<InspectorAssetGraphRefOptionViewModel>
+        AvailableRenderTargets { get; } = [];
+
     // The audio-renderable asset-graph nodes the "Audio Source" picker offers
     // (audio-track item 10). Threaded in from MainWindowViewModel on every
     // selection, filtered to audio-renderable outputs (kAssetTypeAudioRenderable
@@ -326,6 +345,9 @@ public sealed class InspectorPaneViewModel : ViewModelBase
 
     // "Environment" section header ✕.
     public IRelayCommand RemoveEnvironmentComponentCommand { get; }
+
+    // "Render To Texture" section header ✕.
+    public IRelayCommand RemoveRenderToTextureComponentCommand { get; }
 
     public IRelayCommand RemoveMotionFilterComponentCommand { get; }
 
@@ -895,6 +917,99 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             if (SetProperty(ref _environmentEnabled, value))
             {
                 OnEnvironmentFieldEdited();
+            }
+        }
+    }
+
+    // ─── Render To Texture (issue #287) ──────────────────────────────────────────
+
+    // The render-target Texture asset-graph node chosen in the picker. Bound TwoWay
+    // to the ComboBox; a pick applies immediately. Programmatic restores assign the
+    // field, not this setter.
+    // See _unresolvedCollisionAssetNodeId (D3-C11) -- same hazard, same fix.
+    private ulong? _unresolvedRenderTargetAssetNodeId;
+
+    public InspectorAssetGraphRefOptionViewModel? SelectedRenderTargetOption
+    {
+        get => _selectedRenderTargetOption;
+        set
+        {
+            if (SetProperty(ref _selectedRenderTargetOption, value)
+                && value is not null)
+            {
+                _unresolvedRenderTargetAssetNodeId = null;
+                ApplyRenderToTexture();
+            }
+        }
+    }
+
+    public bool HasAvailableRenderTargets => AvailableRenderTargets.Count > 0;
+
+    // "Referencing: <node>" line for the picked render-target Texture asset.
+    // Empty => "(none)".
+    public string RenderTargetReferenceLabel
+    {
+        get => _renderTargetReferenceLabel;
+        private set
+        {
+            if (SetProperty(ref _renderTargetReferenceLabel, value))
+            {
+                OnPropertyChanged(nameof(RenderTargetReferenceDisplay));
+            }
+        }
+    }
+
+    public string RenderTargetReferenceDisplay =>
+        string.IsNullOrWhiteSpace(RenderTargetReferenceLabel)
+            ? "(none)"
+            : $"Referencing: {RenderTargetReferenceLabel}";
+
+    // Gates the "Render To Texture" section: shown when the node HAS the component
+    // (added via Add-Component → Render To Texture, removed via the section's ✕).
+    public bool HasRenderToTextureComponent
+    {
+        get => _hasRenderToTextureComponent;
+        private set => SetProperty(ref _hasRenderToTextureComponent, value);
+    }
+
+    // Whether the node's descendants are gathered into the target alongside it.
+    // Toggling re-applies SetNodeRenderToTexture.
+    public bool RenderToTextureIncludeDescendants
+    {
+        get => _renderToTextureIncludeDescendants;
+        set
+        {
+            if (SetProperty(ref _renderToTextureIncludeDescendants, value))
+            {
+                OnRenderToTextureFieldEdited();
+            }
+        }
+    }
+
+    // Whether the gathered nodes ALSO draw in the main pass (not only into the
+    // target). Toggling re-applies SetNodeRenderToTexture.
+    public bool RenderToTextureAlsoDrawInScene
+    {
+        get => _renderToTextureAlsoDrawInScene;
+        set
+        {
+            if (SetProperty(ref _renderToTextureAlsoDrawInScene, value))
+            {
+                OnRenderToTextureFieldEdited();
+            }
+        }
+    }
+
+    // The master switch for this render-to-texture binding. Toggling re-applies
+    // SetNodeRenderToTexture with the current selection (or 0).
+    public bool RenderToTextureEnabled
+    {
+        get => _renderToTextureEnabled;
+        set
+        {
+            if (SetProperty(ref _renderToTextureEnabled, value))
+            {
+                OnRenderToTextureFieldEdited();
             }
         }
     }
@@ -2320,6 +2435,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             ResetMotionFilterState();
             ResetAtmosphereState();
             ResetEnvironmentState();
+            ResetRenderToTextureState();
             ComponentsHeader = "Components";
             SetTransformFields(null);
             HasCameraComponent = false;
@@ -2429,15 +2545,17 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             // just removed. "environment" was missing -- it has a dedicated
             // section (HasEnvironmentComponent / RemoveEnvironmentComponentCommand)
             // exactly like its atmosphere twin.
-            // render_to_texture is deliberately absent: it has no dedicated
-            // section, so a generic row is the only control it has.
+            // render_to_texture now has a dedicated section too
+            // (HasRenderToTextureComponent / RemoveRenderToTextureComponentCommand),
+            // so it is section-owned here rather than a generic row.
             if (string.Equals(component.Kind, "camera", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "collision", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "motion", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "motion_filter", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "audio_source", StringComparison.Ordinal)
                 || string.Equals(component.Kind, "atmosphere", StringComparison.Ordinal)
-                || string.Equals(component.Kind, "environment", StringComparison.Ordinal))
+                || string.Equals(component.Kind, "environment", StringComparison.Ordinal)
+                || string.Equals(component.Kind, "render_to_texture", StringComparison.Ordinal))
             {
                 continue;
             }
@@ -2458,6 +2576,7 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         RestoreAudioSourceState(node);
         RestoreAtmosphereState(node);
         RestoreEnvironmentState(node);
+        RestoreRenderToTextureState(node);
 
         if (node.Camera is not null)
         {
@@ -2879,6 +2998,11 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             HasEnvironmentComponent = true;
             MirrorComponentAdded(kind);
         }
+        else if (string.Equals(kind, "render_to_texture", StringComparison.Ordinal))
+        {
+            HasRenderToTextureComponent = true;
+            MirrorComponentAdded(kind);
+        }
         else if (!Components.Any(
             c => string.Equals(c.Kind, kind, StringComparison.Ordinal)))
         {
@@ -2971,6 +3095,8 @@ public sealed class InspectorPaneViewModel : ViewModelBase
             "audio_source" => "Audio Source",
             "audio_listener" => "Audio Listener",
             "atmosphere" => "Atmosphere",
+            "environment" => "Environment",
+            "render_to_texture" => "Render To Texture",
             _ => kind,
         };
     }
@@ -3785,6 +3911,170 @@ public sealed class InspectorPaneViewModel : ViewModelBase
         _environmentEnabled = true;
         OnPropertyChanged(nameof(EnvironmentEnabled));
         HasEnvironmentComponent = false;
+    }
+
+    // ─── Render To Texture (issue #287) ──────────────────────────────────────────
+
+    // Thread in the render-target Texture asset-graph nodes the picker offers,
+    // restoring the prior selection by id (mirrors SetAvailableEnvironments).
+    public void SetAvailableRenderTargets(
+        IEnumerable<InspectorAssetGraphRefOptionViewModel> options)
+    {
+        var previousId = _selectedRenderTargetOption?.Id;
+        AvailableRenderTargets.Clear();
+        InspectorAssetGraphRefOptionViewModel? restored = null;
+        foreach (var option in options)
+        {
+            AvailableRenderTargets.Add(option);
+            if (previousId is { } id && option.Id == id)
+            {
+                restored = option;
+            }
+        }
+        _selectedRenderTargetOption = restored;
+        OnPropertyChanged(nameof(SelectedRenderTargetOption));
+        OnPropertyChanged(nameof(HasAvailableRenderTargets));
+    }
+
+    // Apply the render-target reference from the picked node — invoked from the
+    // picker's selection setter, so choosing a node applies immediately. Pushes the
+    // chosen node id + the current switches. The seam takes a ulong, so the id is
+    // passed straight through.
+    private void ApplyRenderToTexture()
+    {
+        if (!EnsureCanApply() || SelectedRenderTargetOption is not { } option)
+        {
+            return;
+        }
+
+        var response = _editorSession!.SetNodeRenderToTexture(
+            NodeId,
+            option.Id,
+            RenderToTextureIncludeDescendants,
+            RenderToTextureAlsoDrawInScene,
+            RenderToTextureEnabled);
+        if (SetEditResponse(response))
+        {
+            RenderTargetReferenceLabel = option.Label;
+            MirrorRenderToTextureEdit();
+        }
+    }
+
+    // Re-push the binding when any switch toggles, with the current selection (or 0
+    // when nothing is picked). Suppressed while a node's values are being loaded so
+    // selecting a node doesn't echo back.
+    private void OnRenderToTextureFieldEdited()
+    {
+        if (_suppressLiveEdits || !EnsureCanApply())
+        {
+            return;
+        }
+
+        // D3-C11: preserve an authored-but-unresolved id; 0 means CLEAR.
+        var assetId = SelectedRenderTargetOption is { } option
+            ? option.Id
+            : _unresolvedRenderTargetAssetNodeId ?? 0ul;
+        if (SetEditResponse(_editorSession!.SetNodeRenderToTexture(
+            NodeId,
+            assetId,
+            RenderToTextureIncludeDescendants,
+            RenderToTextureAlsoDrawInScene,
+            RenderToTextureEnabled)))
+        {
+            MirrorRenderToTextureEdit();
+        }
+    }
+
+    // Mirror the live render-to-texture edit onto the cached tree-node VM so an
+    // immediate reselect — before the next snapshot refresh — shows the edit.
+    private void MirrorRenderToTextureEdit()
+    {
+        if (_inspectedSceneNode is not null)
+        {
+            _inspectedSceneNode.RenderToTexture = new EngineSceneNodeRenderToTexture
+            {
+                TargetAssetNodeId = SelectedRenderTargetOption?.Id,
+                IncludeDescendants = RenderToTextureIncludeDescendants,
+                AlsoDrawInScene = RenderToTextureAlsoDrawInScene,
+                Enabled = RenderToTextureEnabled,
+            };
+        }
+    }
+
+    // Remove the RenderToTexture component (the section's ✕): remove it on the
+    // engine via the generic verb and hide the section. Re-attach via "Add Component
+    // → Render To Texture".
+    private void RemoveRenderToTextureComponent()
+    {
+        if (!EnsureCanApply()
+            || !SetEditResponse(
+                _editorSession!.RemoveNodeComponent(NodeId, "render_to_texture")))
+        {
+            return;
+        }
+
+        MirrorComponentRemoved("render_to_texture");
+        ResetRenderToTextureState();
+    }
+
+    // Reveal the "Render To Texture" section when the node carries the component and
+    // restore its persisted field values from the snapshot: pre-select the target
+    // Texture (matching by id) and the switches. Runs under _suppressLiveEdits so
+    // populating the fields doesn't echo a live edit.
+    private void RestoreRenderToTextureState(SceneTreeNodeViewModel node)
+    {
+        var has = node.Components.Any(
+            c => string.Equals(
+                c.Kind, "render_to_texture", StringComparison.Ordinal));
+        if (!has)
+        {
+            ResetRenderToTextureState();
+            return;
+        }
+
+        HasRenderToTextureComponent = true;
+
+        var renderToTexture = node.RenderToTexture;
+        if (renderToTexture?.TargetAssetNodeId is { } assetNodeId)
+        {
+            var option = AvailableRenderTargets.FirstOrDefault(
+                o => o.Id == assetNodeId);
+            _selectedRenderTargetOption = option;
+            _unresolvedRenderTargetAssetNodeId = option is null ? assetNodeId : null;
+            RenderTargetReferenceLabel = option?.Label
+                ?? $"#{assetNodeId.ToString(CultureInfo.InvariantCulture)}";
+        }
+        else
+        {
+            _selectedRenderTargetOption = null;
+            _unresolvedRenderTargetAssetNodeId = null;
+            RenderTargetReferenceLabel = string.Empty;
+        }
+        OnPropertyChanged(nameof(SelectedRenderTargetOption));
+
+        _renderToTextureIncludeDescendants =
+            renderToTexture?.IncludeDescendants ?? false;
+        OnPropertyChanged(nameof(RenderToTextureIncludeDescendants));
+        _renderToTextureAlsoDrawInScene = renderToTexture?.AlsoDrawInScene ?? false;
+        OnPropertyChanged(nameof(RenderToTextureAlsoDrawInScene));
+        _renderToTextureEnabled = renderToTexture?.Enabled ?? true;
+        OnPropertyChanged(nameof(RenderToTextureEnabled));
+    }
+
+    private void ResetRenderToTextureState()
+    {
+        _selectedRenderTargetOption = null;
+        _unresolvedRenderTargetAssetNodeId = null;
+        OnPropertyChanged(nameof(SelectedRenderTargetOption));
+        RenderTargetReferenceLabel = string.Empty;
+        // Reset the switches without echoing a live edit.
+        _renderToTextureIncludeDescendants = false;
+        OnPropertyChanged(nameof(RenderToTextureIncludeDescendants));
+        _renderToTextureAlsoDrawInScene = false;
+        OnPropertyChanged(nameof(RenderToTextureAlsoDrawInScene));
+        _renderToTextureEnabled = true;
+        OnPropertyChanged(nameof(RenderToTextureEnabled));
+        HasRenderToTextureComponent = false;
     }
 
     // ─── Audio Source (audio-track item 10) ──────────────────────────────────────

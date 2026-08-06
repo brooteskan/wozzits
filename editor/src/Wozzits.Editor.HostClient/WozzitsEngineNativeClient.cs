@@ -1509,6 +1509,35 @@ public sealed partial class WozzitsEngineNativeClient
             enabled ? (byte)1 : (byte)0));
     }
 
+    internal EngineMutationResponse SetNodeRenderToTexture(
+        IntPtr runtime,
+        string nodeId,
+        ulong targetAssetNodeId,
+        bool includeDescendants,
+        bool alsoDrawInScene,
+        bool enabled)
+    {
+        if (runtime == IntPtr.Zero)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return InvalidMutation("Scene node id is empty.");
+        }
+
+        // targetAssetNodeId 0 clears the render-target reference; the composition
+        // switches and enabled apply regardless, so both forms are valid.
+        return InvokeMutation(
+            () => WozzitsEngineAbi.WzEditorRuntimeSetNodeRenderToTexture(
+                runtime,
+                nodeId,
+                targetAssetNodeId,
+                includeDescendants ? (byte)1 : (byte)0,
+                alsoDrawInScene ? (byte)1 : (byte)0,
+                enabled ? (byte)1 : (byte)0));
+    }
+
     internal EngineMutationResponse SetNodeEnvironment(
         IntPtr runtime,
         string nodeId,

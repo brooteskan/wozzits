@@ -731,6 +731,7 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
         AudioSource = node.AudioSource;
         Atmosphere = node.Atmosphere;
         Environment = node.Environment;
+        RenderToTexture = node.RenderToTexture;
         RenderableBindings = node.RenderableBindings;
         RenderableConstants = node.RenderableConstants;
         Components = node.Components;
@@ -840,6 +841,10 @@ public sealed class SceneTreeNodeViewModel : ViewModelBase
     // Persisted FrameEnvironment component field values (read-back); settable so
     // the inspector's live edits mirror back onto the cached node.
     public EngineSceneNodeEnvironment? Environment { get; internal set; }
+
+    // Persisted RenderToTexture component field values (read-back); settable so the
+    // inspector's live edits mirror back onto the cached node.
+    public EngineSceneNodeRenderToTexture? RenderToTexture { get; internal set; }
 
     // Custom-renderable ingredients (issue #229/#230). Mutable so the
     // inspector's live binding/constant edits mirror back onto the cached node

@@ -263,6 +263,9 @@
                                                 <MenuItem Header="Environment"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="environment"/>
+                                                <MenuItem Header="Render To Texture"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="render_to_texture"/>
                                                 <MenuItem Header="Statechart Runner"
                                                           Command="{Binding AddComponentCommand}"
                                                           CommandParameter="statechart_runner"/>
@@ -920,6 +923,72 @@
                                 <TextBlock Text="No environment nodes in the asset graph."
                                            Classes="PaneEmptyState"
                                            IsVisible="{Binding !HasAvailableEnvironments}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Render To Texture (issue #287): which Texture asset the
+                             node's (and optionally its descendants') draws land in,
+                             plus the composition switches. The picked reference + the
+                             toggles apply immediately (no Apply button). -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasRenderToTextureComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Render To Texture"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveRenderToTextureComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove render to texture"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Target texture"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableRenderTargets}"
+                                              SelectedItem="{Binding SelectedRenderTargetOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a render-target texture node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableRenderTargets}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding RenderTargetReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Include descendants"
+                                          IsChecked="{Binding RenderToTextureIncludeDescendants}"
+                                          Classes="InspectorCheck"/>
+
+                                <CheckBox Content="Also draw in scene"
+                                          IsChecked="{Binding RenderToTextureAlsoDrawInScene}"
+                                          Classes="InspectorCheck"/>
+
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding RenderToTextureEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No render-target texture nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableRenderTargets}"/>
 
                             </StackPanel>
                         </Border>

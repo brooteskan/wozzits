@@ -692,6 +692,26 @@ public sealed class WozzitsEngineNativeEditorSession : IWozzitsEngineEditorSessi
             runtime.Handle, nodeId, environmentAssetNodeId, enabled);
     }
 
+    public EngineMutationResponse SetNodeRenderToTexture(
+        string nodeId,
+        ulong targetAssetNodeId,
+        bool includeDescendants,
+        bool alsoDrawInScene,
+        bool enabled)
+    {
+        if (_runtime is not { } runtime || !runtime.IsRunning)
+        {
+            return new EngineMutationResponse { Ok = true };
+        }
+        return _client.SetNodeRenderToTexture(
+            runtime.Handle,
+            nodeId,
+            targetAssetNodeId,
+            includeDescendants,
+            alsoDrawInScene,
+            enabled);
+    }
+
     public EngineMutationResponse SetNodeMotionTerrain(
         string nodeId,
         bool terrainConstrained,
