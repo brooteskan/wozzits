@@ -89,12 +89,15 @@ namespace wz::engine::editor
         // Vector field and environment map are OFF this list (#201): their
         // residency is now published onto the same registry as an RGBA32F
         // texture at compile time (first vector channel / decoded HDRI image).
-        // Their rhi render paths are likewise #195. kAssetTypeTexture is not
-        // listed because it has no compiler/schema/runtime table yet — it is an
-        // unimplemented reservation (type_extensions.h), so it never enters the
-        // catalog regardless of this predicate; implementing the Texture asset
-        // (a new CPU data layout + image loader) is its own future task, not a
-        // residency migration.
+        // Their rhi render paths are likewise #195. kAssetTypeTexture is NOT on
+        // this list either: register_texture_compilers registers recipes for it
+        // (a file-backed image, the source-less render target #281/#287, and the
+        // composite material #285), so it enters the authoring catalog like any
+        // other type with a compiler. Residency for these is published as an rhi
+        // texture (a render target is made Sampled | RenderTarget), so none is a
+        // legacy-residency holdout that belongs here. (A stale earlier note here
+        // called Texture an unimplemented reservation with no compiler; that
+        // predated those recipes.)
         return type == ea::kAssetTypeMeshDerivedField
             || type == ea::kAssetTypeMeshSparseOperator
             || type == ea::kAssetTypeGpuSparseMesh
