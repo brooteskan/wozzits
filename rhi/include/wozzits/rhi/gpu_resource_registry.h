@@ -188,6 +188,24 @@ namespace wz::rhi
             ++device_epoch_;
         }
 
+        // End-of-life drain: destroy every backend resource (resident AND
+        // pending) and empty the registry. The backend must still be alive (the
+        // constructor's outlives-the-registry contract), so an owner calls this
+        // just before the backend is torn down. Without it, resident resources
+        // are freed only if the underlying device happens to be destroyed right
+        // after -- a context rebuilt against a surviving device would leak every
+        // resident resource. Unlike on_device_lost this does not bump the epoch;
+        // it is teardown, not a recoverable loss.
+        void destroy_all()
+        {
+            slots_.for_each([&](GpuResourceHandle, Entry& entry) {
+                backend_->destroy(entry.resource.backend);
+            });
+            slots_.clear();
+            index_.clear();
+            pending_.clear();
+        }
+
         [[nodiscard]] size_t resident_count() const noexcept
         {
             return slots_.size();
