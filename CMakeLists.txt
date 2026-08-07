@@ -935,15 +935,6 @@ target_link_libraries(wozzits_sky_bake
         window_engine
 )
 
-add_executable(wozzits_tycho2_prep
-    src/tools/tycho2_prep/main.cpp
-)
-
-target_link_libraries(wozzits_tycho2_prep
-    PRIVATE
-        window_engine
-)
-
 # wozzits_export — headless standalone-bundle exporter (issue #334, Seam 3).
 # Resolves a project, runs the resource-closure walker, and assembles a
 # self-contained bundle (project tree + runtime exe + wozzits_app.json). No GPU /
@@ -1468,7 +1459,6 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     rs_add_test_group(lighting test_sg_lighting)
     rs_add_test_group(starfield test_star_catalog)
-    rs_add_test_group(starfield test_tycho2)
     rs_add_test_group(starfield test_star_catalog_ply_import)
     rs_add_test_group(motion test_motion_filter)
     rs_add_test_group(motion test_motion_filter_sim)
