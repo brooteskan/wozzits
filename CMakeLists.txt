@@ -291,12 +291,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # New renderer (wozzits-rhi) — the engine depends on it (bridge topology A).
-# Header-only INTERFACE library at a sibling path; disable its tests in this
-# build. PUBLIC because engine headers (rhi_render_program_bridge.h) expose rhi
-# types to consumers.
+# Header-only INTERFACE library, vendored in-repo at rhi/ (was a sibling repo
+# before the monorepo consolidation); disable its tests in this build. PUBLIC
+# because engine headers (rhi_render_program_bridge.h) expose rhi types to
+# consumers.
 set(WOZZITS_RHI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory(
-    "${CMAKE_CURRENT_SOURCE_DIR}/../wozzits-rhi"
+    "${CMAKE_CURRENT_SOURCE_DIR}/rhi"
     "${CMAKE_BINARY_DIR}/wozzits-rhi")
 # BUILD_INTERFACE so the header-only dependency does not leak into the engine's
 # install/export set (same idiom as pmp above).
@@ -344,8 +345,18 @@ install(FILES
 if(WOZZITS_ENABLE_V8_SCRIPTING)
     set(WOZZITS_V8_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(WOZZITS_V8_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    # wozzits-v8 is NOT vendored in this monorepo (unlike rhi/ and editor/).
+    # Point this at a wozzits-v8 checkout to build the optional scripting
+    # examples; defaults to a sibling checkout next to the monorepo.
+    set(WOZZITS_V8_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../wozzits-v8"
+        CACHE PATH "Path to an external wozzits-v8 checkout (not vendored here)")
+    if(NOT EXISTS "${WOZZITS_V8_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "WOZZITS_ENABLE_V8_SCRIPTING is ON but no wozzits-v8 checkout was found at "
+            "'${WOZZITS_V8_SOURCE_DIR}'. Set -DWOZZITS_V8_SOURCE_DIR=<path> to a wozzits-v8 clone.")
+    endif()
     add_subdirectory(
-        "${CMAKE_CURRENT_SOURCE_DIR}/../wozzits-v8"
+        "${WOZZITS_V8_SOURCE_DIR}"
         "${CMAKE_CURRENT_BINARY_DIR}/_deps/wozzits-v8")
 endif()
 
