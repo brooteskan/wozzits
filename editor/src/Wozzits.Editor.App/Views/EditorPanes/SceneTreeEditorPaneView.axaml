@@ -1,0 +1,82 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.SceneTreeEditorPaneView"
+             x:DataType="panes:SceneTreeEditorPaneViewModel">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
+            <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                <TextBlock Text="{Binding EmptyState}"
+                           Classes="PaneEmptyState"
+                           IsVisible="{Binding HasNoScene}"/>
+
+                <TreeView Grid.Row="1"
+                          ItemsSource="{Binding Nodes}"
+                          IsVisible="{Binding HasScene}"
+                          SelectionChanged="SceneTreeSelectionChanged"
+                          KeyDown="TreeKeyDown"
+                          DragDrop.AllowDrop="True"
+                          Classes="SceneTreeView">
+                    <TreeView.DataTemplates>
+                        <TreeDataTemplate DataType="panes:SceneTreeNodeViewModel"
+                                          ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal" Spacing="8"
+                                        PointerPressed="NodePointerPressed">
+                                <StackPanel.ContextMenu>
+                                    <!-- Opening re-evaluates viewport availability
+                                         and disables these edits when it is down
+                                         (they run against the live runtime). -->
+                                    <ContextMenu Opening="SceneNodeContextMenuOpening">
+                                        <MenuItem Header="Add Child"
+                                                  Click="AddChildClicked"/>
+                                        <!-- Draw-order (flat array) reorder among
+                                             same-parent siblings; Tag lets the
+                                             Opening handler gate them at the ends. -->
+                                        <MenuItem Header="Move Up (draw earlier)"
+                                                  Tag="reorder-up"
+                                                  Click="MoveUpClicked"/>
+                                        <MenuItem Header="Move Down (draw later)"
+                                                  Tag="reorder-down"
+                                                  Click="MoveDownClicked"/>
+                                        <MenuItem Header="Export subtree as scene…"
+                                                  Click="ExportSubtreeClicked"/>
+                                        <MenuItem Header="Delete"
+                                                  Click="DeleteClicked"/>
+                                    </ContextMenu>
+                                </StackPanel.ContextMenu>
+                                <TextBlock Text="{Binding KindLabel}"
+                                           Classes="SceneTreeNodeKind"/>
+                                <TextBlock Text="{Binding DisplayText}"
+                                           Classes="SceneTreeNodeName"/>
+                                <!-- Runtime-grafted "Subtree from asset" node
+                                     (issue #213): read-only, not authored. -->
+                                <TextBlock Text="instanced"
+                                           Opacity="0.6"
+                                           FontStyle="Italic"
+                                           IsVisible="{Binding IsInstanced}"/>
+                            </StackPanel>
+                        </TreeDataTemplate>
+                    </TreeView.DataTemplates>
+                </TreeView>
+
+                <!-- Drag-drop drop indicator, overlaid on the tree (hit-invisible
+                     so it never blocks a drop): an insertion line for a between-
+                     rows reorder, or an outline around a row for an onto-node
+                     reparent. Positioned + shown from the drag handlers. -->
+                <Canvas x:Name="DropIndicatorCanvas"
+                        Grid.Row="1"
+                        IsHitTestVisible="False">
+                    <Border x:Name="DropIntoHighlight"
+                            IsVisible="False"
+                            BorderBrush="#3B82F6"
+                            BorderThickness="2"
+                            CornerRadius="3"/>
+                    <Border x:Name="DropInsertionLine"
+                            IsVisible="False"
+                            Height="2"
+                            Background="#3B82F6"/>
+                </Canvas>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

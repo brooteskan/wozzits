@@ -1,0 +1,3 @@
+[submodule "external/o3de"]
+	path = external/o3de
+	url = https://github.com/o3de/o3de.git

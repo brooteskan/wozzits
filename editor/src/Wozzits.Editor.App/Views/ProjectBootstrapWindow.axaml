@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Wozzits.Editor.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        d:DesignWidth="460"
+        d:DesignHeight="240"
+        x:Class="Wozzits.Editor.App.Views.ProjectBootstrapWindow"
+        x:DataType="vm:ProjectBootstrapViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="Create Wozzits Project"
+        Width="460"
+        Height="240"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="18" RowSpacing="14">
+        <StackPanel Spacing="6">
+            <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding ProjectStatus}" Opacity="0.75"/>
+        </StackPanel>
+
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource SystemControlForegroundChromeDisabledLowBrush}"
+                BorderThickness="1"
+                Padding="10">
+            <StackPanel Spacing="6">
+                <TextBlock Text="Project Directory" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding ProjectDirectory}" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="#C9352B" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Create Project Files"
+                    Command="{Binding CreateProjectFilesCommand}"/>
+            <Button Content="Quit"
+                    Command="{Binding QuitCommand}"/>
+        </StackPanel>
+    </Grid>
+</Window>

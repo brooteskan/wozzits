@@ -1,0 +1,780 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dock="using:Dock.Avalonia.Controls">
+    <!-- The Wozzits* color/brush resources these styles bind via DynamicResource
+         live in the swappable theme dictionaries (Themes/BlueTheme.axaml,
+         Themes/RedTheme.axaml), merged into Application.Resources and swapped at
+         runtime by EditorTheme (View > Theme). -->
+
+    <Style Selector="Window">
+        <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+    </Style>
+
+    <Style Selector="dock|DockControl">
+        <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
+    </Style>
+
+    <Style Selector="dock|RootDockControl">
+        <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
+    </Style>
+
+    <Style Selector="dock|ProportionalDockControl">
+        <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
+    </Style>
+
+    <Style Selector="dock|DocumentDockControl">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+    </Style>
+
+    <Style Selector="dock|ToolDockControl">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+    </Style>
+
+    <Style Selector="Menu.MainMenu">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="Padding" Value="2,0"/>
+    </Style>
+
+    <Style Selector="MenuItem">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Padding" Value="8,4"/>
+    </Style>
+
+    <Style Selector="MenuItem:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+    </Style>
+
+    <Style Selector="MenuItem:pressed">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+    </Style>
+
+    <Style Selector="Border.EditorTopBar">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        <Setter Property="Padding" Value="14,9"/>
+    </Style>
+
+    <Style Selector="TextBlock.EditorTopBarTitle">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style Selector="TextBlock.EditorTopBarStatus">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style Selector="TextBlock.EditorTopBarPath">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style Selector="Grid.EditorPaneRoot">
+        <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
+        <Setter Property="Margin" Value="8"/>
+    </Style>
+
+    <Style Selector="Border.PaneSurface">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="12"/>
+    </Style>
+
+    <!-- The inspector forgoes the single PaneSurface frame: each section gets its
+         own InspectorSectionCard instead. This flat surface only carries the
+         background so the cards read against it. -->
+    <Style Selector="Border.InspectorPaneSurface">
+        <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="0"/>
+        <Setter Property="Padding" Value="2"/>
+    </Style>
+
+    <!-- Rounded rect around each inspector division (Scene Node, Transform,
+         Renderable Asset, Components, Behaviors, ...). -->
+    <Style Selector="Border.InspectorSectionCard">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="10"/>
+    </Style>
+
+    <!-- Each entry in a list WITHIN a section (a behavior in the Behaviors list) is its
+         own bounded sub-card, so the list reads as discrete items with clear separators
+         and each header's Remove obviously belongs to that one item. Inset background so
+         it reads as nested inside the section card. -->
+    <Style Selector="Border.InspectorSubCard">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="5"/>
+        <Setter Property="Padding" Value="10"/>
+    </Style>
+
+    <!-- The sub-card's heading = the item's identity (a behavior's module name). -->
+    <Style Selector="TextBlock.InspectorSubCardTitle">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Component property sections wrapped inside the Components card (StackPanel.Components-
+         Host) render as inset sub-cards, so the section reads as one card of component cards.
+         Only the fill + radius are overridden; border + padding stay from InspectorSectionCard. -->
+    <Style Selector="StackPanel.ComponentsHost > Border.InspectorSectionCard">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="CornerRadius" Value="5"/>
+    </Style>
+
+    <Style Selector="TextBlock.PaneEmptyState">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontSize" Value="13"/>
+    </Style>
+
+    <Style Selector="TreeView.SceneTreeView">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+    </Style>
+
+    <!-- Card-based scene tree: each node's card wraps BOTH its header AND its children, so
+         the hierarchy reads as cards nested inside cards. Only the TreeViewItem's visual
+         template is replaced (the header + the ItemsPresenter now sit inside one bordered
+         card, vs the stock template's children-as-a-sibling-below); the stock TreeView's
+         selection, drag-drop and keyboard are untouched. -->
+    <Style Selector="TreeView.SceneTreeView TreeViewItem">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="IsExpanded" Value="True"/>
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="5"/>
+        <Setter Property="Padding" Value="8,6"/>
+        <Setter Property="Margin" Value="0,3"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}"
+                        Padding="{TemplateBinding Padding}">
+                    <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <ToggleButton Name="PART_ExpandCollapseChevron"
+                                          Grid.Column="0"
+                                          Focusable="False"
+                                          Classes="SceneTreeChevron"
+                                          IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"/>
+                            <ContentPresenter Name="PART_HeaderPresenter"
+                                              Grid.Column="1"
+                                              VerticalAlignment="Center"
+                                              Content="{TemplateBinding Header}"
+                                              ContentTemplate="{TemplateBinding HeaderTemplate}"/>
+                        </Grid>
+                        <ItemsPresenter Name="PART_ItemsPresenter"
+                                        Margin="14,0,0,0"
+                                        IsVisible="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"/>
+                    </StackPanel>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <!-- Selected node: a lighter card with an accent outline. -->
+    <Style Selector="TreeView.SceneTreeView TreeViewItem:selected">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <!-- Leaf nodes (no children) show no chevron. -->
+    <Style Selector="TreeView.SceneTreeView TreeViewItem:empty /template/ ToggleButton#PART_ExpandCollapseChevron">
+        <Setter Property="IsVisible" Value="False"/>
+    </Style>
+
+    <!-- Minimal expander: "+" when collapsed, "-" when expanded, no button chrome. -->
+    <Style Selector="ToggleButton.SceneTreeChevron">
+        <Setter Property="Width" Value="16"/>
+        <Setter Property="Height" Value="16"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="Transparent" Width="16" Height="16">
+                    <Panel>
+                        <!-- horizontal bar = the "-" (always shown) -->
+                        <Rectangle Width="9" Height="1.6"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Fill="{DynamicResource WozzitsMutedTextBrush}"/>
+                        <!-- vertical bar makes a "+" when collapsed; hidden when expanded -->
+                        <Rectangle Name="Plus" Width="1.6" Height="9"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Fill="{DynamicResource WozzitsMutedTextBrush}"/>
+                    </Panel>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <!-- Expanded (checked) hides the vertical bar -> "-"; collapsed shows both -> "+". -->
+    <Style Selector="ToggleButton.SceneTreeChevron:checked /template/ Rectangle#Plus">
+        <Setter Property="IsVisible" Value="False"/>
+    </Style>
+
+    <Style Selector="TextBlock.SceneTreeNodeKind">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontStyle" Value="Normal"/>
+        <Setter Property="MinWidth" Value="34"/>
+    </Style>
+
+    <Style Selector="TextBlock.SceneTreeNodeName">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontStyle" Value="Normal"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorHeader">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorError">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsErrorBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style Selector="StackPanel.InspectorSection">
+        <Setter Property="Spacing" Value="5"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorSectionTitle">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style Selector="Grid.InspectorPropertyRow">
+        <Setter Property="Margin" Value="0,1"/>
+    </Style>
+
+    <Style Selector="Grid.InspectorVectorRow">
+        <Setter Property="Margin" Value="0,2"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorPropertyName">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="MinWidth" Value="90"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorPropertyValue">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style Selector="TextBox.InspectorInput">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="5,2"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="MinHeight" Value="24"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="TextBox.InspectorInput:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+    </Style>
+
+    <Style Selector="TextBox.InspectorInput:focus">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="TextBox.InspectorInput:focus-within">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="TextBox.InspectorInput /template/ Border">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+    </Style>
+
+    <Style Selector="TextBox.InspectorInput:pointerover /template/ Border">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+    </Style>
+
+    <Style Selector="TextBox.InspectorInput:focus /template/ Border">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="TextBox.InspectorInput:focus-within /template/ Border">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="CheckBox.InspectorCheck">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style Selector="ComboBox.InspectorInput">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="5,2"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="MinHeight" Value="24"/>
+    </Style>
+
+    <Style Selector="Button.InspectorApplyButton">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="HorizontalAlignment" Value="Right"/>
+    </Style>
+
+    <Style Selector="Button.InspectorApplyButton:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorComponentName">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Margin" Value="0,2"/>
+    </Style>
+
+    <Style Selector="StackPanel.InspectorPortItem">
+        <Setter Property="Spacing" Value="1"/>
+        <Setter Property="Margin" Value="0,3"/>
+    </Style>
+
+    <Style Selector="Border.AssetBrowserSchema">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="6,4"/>
+        <Setter Property="Margin" Value="0,2"/>
+        <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+
+    <Style Selector="Border.AssetBrowserSchema:pointerover">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorPortDetail">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style Selector="StackPanel.InspectorDiagnosticItem">
+        <Setter Property="Spacing" Value="2"/>
+        <Setter Property="Margin" Value="0,4"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorDiagnosticMessage">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style Selector="TextBlock.InspectorDiagnosticMeta">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style Selector="Border.AssetGraphCard">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="10"/>
+        <Setter Property="Width" Value="220"/>
+        <Setter Property="MinHeight" Value="116"/>
+    </Style>
+
+    <Style Selector="Border.AssetGraphCard.selected">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="BorderThickness" Value="2"/>
+    </Style>
+
+    <!-- Statechart node kind colours (field-guide semantics). These are 3-class selectors so
+         the kind colour beats the generic .selected accent: a selected statechart node keeps
+         its colour and only THICKENS its border (below), so flow/teal nodes stay legible. -->
+    <Style Selector="Border.AssetGraphCard.scNode.scAgent">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsScAgentBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+    <Style Selector="Border.AssetGraphCard.scNode.scOp">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsScFlowBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+    <Style Selector="Border.AssetGraphCard.scNode.scBinding">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsScFlowBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+    <Style Selector="Border.AssetGraphCard.scNode.scState">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsScEffectBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+    </Style>
+
+    <!-- Selection thickens the (kind-coloured) border. Defined after the kind styles so it wins
+         the thickness on the 3-class specificity tie. -->
+    <Style Selector="Border.AssetGraphCard.scNode.selected">
+        <Setter Property="BorderThickness" Value="3.5"/>
+    </Style>
+
+    <Style Selector="Border.AssetGraphSubGraphCard">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="12,10"/>
+        <Setter Property="Width" Value="200"/>
+        <Setter Property="Height" Value="76"/>
+    </Style>
+
+    <Style Selector="Border.AssetGraphSubGraphCard.selected">
+        <Setter Property="BorderThickness" Value="2.5"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphSubGraphName">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphSubGraphSummary">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontSize" Value="11"/>
+    </Style>
+
+    <Style Selector="Border.AssetGraphSelectionRectangle">
+        <Setter Property="Background" Value="{DynamicResource WozzitsSelectionOverlayBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="2"/>
+    </Style>
+
+    <Style Selector="Border.AssetGraphStatusBar">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="6,4"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphModeDot">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsSuccessBrush}"/>
+        <Setter Property="Width" Value="9"/>
+        <Setter Property="Height" Value="9"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphModeDot.actual">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsSuccessBrush}"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphModeDot.draft">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsWarningBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphStatusText">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style Selector="Button.AssetGraphToolbarButton">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="4"/>
+        <Setter Property="Width" Value="24"/>
+        <Setter Property="Height" Value="24"/>
+    </Style>
+
+    <Style Selector="Button.AssetGraphToolbarButton.success">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsSuccessBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsSuccessBrush}"/>
+    </Style>
+
+    <Style Selector="Button.AssetGraphToolbarButton.failed">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsErrorBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsErrorBrush}"/>
+    </Style>
+
+    <Style Selector="Button.AssetGraphToolbarButton.running">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsWarningBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsWarningBrush}"/>
+    </Style>
+
+    <Style Selector="Button.AssetGraphToolbarButton:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="Button.AssetGraphToolbarButton.success:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsSuccessBrush}"/>
+    </Style>
+
+    <Style Selector="Button.AssetGraphToolbarButton.failed:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsErrorBrush}"/>
+    </Style>
+
+    <Style Selector="Button.AssetGraphToolbarButton.running:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsWarningBrush}"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphCompileDot">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="Width" Value="8"/>
+        <Setter Property="Height" Value="8"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphCompileDot.ready">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsDotReadyBrush}"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphCompileDot.changed">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsDotChangedBrush}"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphCompileDot.error">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsDotErrorBrush}"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphInputPortDot">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsGraphWireBrush}"/>
+        <Setter Property="Width" Value="7"/>
+        <Setter Property="Height" Value="7"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphInputPortDot.connectionTarget">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphInputPortDot.connectionRejected">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsErrorBrush}"/>
+    </Style>
+
+    <!-- Statechart wiring: the drop-target dot pops (bold) while a wire is dragged onto it, so
+         it's clear what the drop will connect to before releasing. Scoped to statechart cards
+         (.scNode) so the asset-graph editor's port dots are unaffected. Scale is a render
+         transform about the dot centre, so it grows the dot without disturbing the row layout. -->
+    <Style Selector="Border.scNode Ellipse.AssetGraphInputPortDot.connectionTarget">
+        <Setter Property="RenderTransform" Value="scale(1.9)"/>
+    </Style>
+
+    <Style Selector="Ellipse.AssetGraphOutputPortDot">
+        <Setter Property="Fill" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="Width" Value="7"/>
+        <Setter Property="Height" Value="7"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphCardName">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphCardId">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="11"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphCardType">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphCompileStatus">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontSize" Value="11"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphCardSchema">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="11"/>
+    </Style>
+
+    <Style Selector="StackPanel.AssetGraphPortRow">
+        <Setter Property="Height" Value="18"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphPortLabel">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphPortTypeLabel">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+
+    <!-- Named-reroute badge on a port (editor-only fan-out declutter). -->
+    <Style Selector="Border.AssetGraphRerouteChip">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="5,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="Border.AssetGraphRerouteChip > TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style Selector="TextBlock.AssetGraphPortEmpty">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontStyle" Value="Italic"/>
+    </Style>
+
+    <Style Selector="Border.GraphNodePreview">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="MinWidth" Value="92"/>
+    </Style>
+
+    <Style Selector="TextBlock.GraphNodePreviewText">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style Selector="Border.ConsoleSurface">
+        <Setter Property="Background" Value="{DynamicResource WozzitsShellBackgroundBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsPanelBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="10"/>
+        <Setter Property="CornerRadius" Value="0"/>
+    </Style>
+
+    <Style Selector="SelectableTextBlock.ConsoleLogText">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <!-- "GLB node" tree picker for the "Mesh from GLB scene" node (issue #213). -->
+    <Style Selector="TreeView.GlbNodeTree">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="MaxHeight" Value="260"/>
+    </Style>
+
+    <Style Selector="TreeView.GlbNodeTree TreeViewItem">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="Padding" Value="2"/>
+        <Setter Property="IsExpanded" Value="True"/>
+    </Style>
+
+    <!-- A pickable (mesh-bearing) GLB node: a flat, full-width clickable label. -->
+    <Style Selector="Button.GlbNodePick">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsTextBrush}"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="4,1"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+
+    <Style Selector="Button.GlbNodePick:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+    </Style>
+
+    <!-- Group (mesh-less) GLB node: shown for structure, but not pickable. -->
+    <Style Selector="Button.GlbNodePick:disabled">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="Opacity" Value="0.7"/>
+        <Setter Property="Cursor" Value="Arrow"/>
+    </Style>
+
+    <!-- The node whose id is the extractor's current node_id pick. -->
+    <Style Selector="Button.GlbNodePick.current">
+        <Setter Property="BorderBrush" Value="{DynamicResource WozzitsAccentBrush}"/>
+    </Style>
+
+    <Style Selector="Button.GlbNodePick.current /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource WozzitsPanelInsetBrush}"/>
+    </Style>
+
+    <Style Selector="TextBlock.GlbNodeMeshMarker">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsAccentBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="TextBlock.GlbNodeGroupMarker">
+        <Setter Property="Foreground" Value="{DynamicResource WozzitsMutedTextBrush}"/>
+        <Setter Property="FontFamily" Value="Consolas"/>
+        <Setter Property="FontSize" Value="10"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+</Styles>

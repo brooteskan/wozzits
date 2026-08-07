@@ -1,0 +1,185 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Wozzits.Editor.App.Controls"
+             xmlns:sc="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
+             xmlns:model="using:Wozzits.Editor.Statecharts"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.Statecharts.DataflowPaneView"
+             x:DataType="sc:DataflowPaneViewModel">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
+            <Grid RowDefinitions="Auto,*">
+                <StackPanel Grid.Row="0"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            Margin="6"
+                            IsVisible="{Binding HasChart}">
+                    <Button Content="+ Op &#x25BE;">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuItem Header="add" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Add}"/>
+                                <MenuItem Header="sub" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Sub}"/>
+                                <MenuItem Header="mul" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Mul}"/>
+                                <MenuItem Header="min" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Min}"/>
+                                <MenuItem Header="max" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Max}"/>
+                                <MenuItem Header="mul_add" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.MulAdd}"/>
+                                <MenuItem Header="clamp01" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Clamp01}"/>
+                                <Separator/>
+                                <MenuItem Header="eq" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Eq}"/>
+                                <MenuItem Header="lt" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Lt}"/>
+                                <MenuItem Header="gt" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Gt}"/>
+                                <MenuItem Header="and" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.And}"/>
+                                <MenuItem Header="or" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Or}"/>
+                                <MenuItem Header="not" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Not}"/>
+                                <MenuItem Header="select" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Select}"/>
+                                <Separator/>
+                                <MenuItem Header="marginal — read the agent's leaning" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Marginal}"/>
+                                <MenuItem Header="committed — read its decision" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Committed}"/>
+                                <MenuItem Header="memory" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Memory}"/>
+                                <MenuItem Header="proximity" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.Proximity}"/>
+                                <MenuItem Header="read state — a behavior's published number" Command="{Binding AddOpCommand}" CommandParameter="{x:Static model:OpKind.ReadState}"/>
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button Content="+ Agent &#x25BE;">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuItem Header="owned — the chart runs its own quantum_agent" Command="{Binding AddAgentCommand}"/>
+                                <MenuItem Header="reference — read a quantum_agent already on the node" Command="{Binding AddAgentRefCommand}"/>
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button Content="+ Binding" Command="{Binding AddBindingCommand}"/>
+                    <Button Content="Delete" Command="{Binding DeleteSelectedCommand}"/>
+                </StackPanel>
+                <Grid Grid.Row="1">
+                <TextBlock Text="No statechart open. Statecharts &#x2192; open a chart's dataflow."
+                           Classes="PaneEmptyState"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding !HasChart}"/>
+
+                <ScrollViewer x:Name="Scroll"
+                              IsVisible="{Binding HasGraph}"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <Grid Width="{Binding ScaledGraphWidth}"
+                          Height="{Binding ScaledGraphHeight}">
+                        <Grid x:Name="Canvas"
+                              Width="{Binding GraphWidth}"
+                              Height="{Binding GraphHeight}"
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Top"
+                              RenderTransformOrigin="0,0">
+                            <Grid.RenderTransform>
+                                <ScaleTransform ScaleX="{Binding Zoom}"
+                                                ScaleY="{Binding Zoom}"/>
+                            </Grid.RenderTransform>
+
+                            <controls:DataflowWireLayer Edges="{Binding Wires}"
+                                                        Stroke="{DynamicResource WozzitsScFlowBrush}"
+                                                        StrokeThickness="2"
+                                                        IsHitTestVisible="False"/>
+
+                            <ItemsControl ItemsSource="{Binding Nodes}"
+                                          x:CompileBindings="False">
+                                <ItemsControl.ItemContainerTheme>
+                                    <ControlTheme TargetType="ContentPresenter">
+                                        <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                                        <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                                    </ControlTheme>
+                                </ItemsControl.ItemContainerTheme>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Canvas/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="sc:DataflowNodeViewModel">
+                                        <Border Classes="AssetGraphCard scNode"
+                                                Classes.selected="{Binding IsSelected}"
+                                                Classes.scAgent="{Binding IsAgentNode}"
+                                                Classes.scOp="{Binding IsOpNode}"
+                                                Classes.scBinding="{Binding IsBindingNode}"
+                                                Opacity="{Binding DimOpacity}"
+                                                Loaded="CardLoaded"
+                                                SizeChanged="CardSizeChanged"
+                                                Width="220">
+                                            <Grid RowDefinitions="Auto,Auto,*"
+                                                  RowSpacing="6">
+                                                <TextBlock Text="{Binding Title}"
+                                                           Classes="AssetGraphCardName"/>
+                                                <StackPanel Grid.Row="1" Spacing="2">
+                                                    <TextBlock Text="{Binding Subtitle}"
+                                                               Classes="AssetGraphCardType"/>
+                                                    <TextBlock Text="{Binding BindingFindEditor.Value, StringFormat='find: {0}'}"
+                                                               Classes="AssetGraphCardId"
+                                                               IsVisible="{Binding IsBindingNode}"/>
+                                                </StackPanel>
+
+                                                <Grid Grid.Row="2"
+                                                      ColumnDefinitions="*,Auto"
+                                                      ColumnSpacing="10">
+                                                    <ItemsControl ItemsSource="{Binding InputPorts}"
+                                                                  IsVisible="{Binding HasInputPorts}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate DataType="sc:DataflowPortViewModel">
+                                                                <StackPanel Orientation="Horizontal"
+                                                                            Spacing="5"
+                                                                            Classes="AssetGraphPortRow">
+                                                                    <Ellipse Classes="AssetGraphInputPortDot"
+                                                                             Classes.connectionTarget="{Binding IsConnectionTarget}"
+                                                                             Classes.connectionRejected="{Binding IsConnectionRejected}"/>
+                                                                    <TextBlock Text="{Binding Label}"
+                                                                               Classes="AssetGraphPortLabel"/>
+                                                                    <TextBlock Text="{Binding ConstantText}"
+                                                                               Classes="AssetGraphPortTypeLabel"
+                                                                               IsVisible="{Binding IsConstant}"/>
+                                                                </StackPanel>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+
+                                                    <ItemsControl Grid.Column="1"
+                                                                  ItemsSource="{Binding OutputPorts}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate DataType="sc:DataflowPortViewModel">
+                                                                <StackPanel Orientation="Horizontal"
+                                                                            Spacing="5"
+                                                                            HorizontalAlignment="Right"
+                                                                            Classes="AssetGraphPortRow">
+                                                                    <TextBlock Text="{Binding Label}"
+                                                                               Classes="AssetGraphPortLabel"
+                                                                               HorizontalAlignment="Right"/>
+                                                                    <Ellipse Classes="AssetGraphOutputPortDot"/>
+                                                                </StackPanel>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Grid>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Line x:Name="WirePreview"
+                                  Stroke="{DynamicResource WozzitsScFlowBrush}"
+                                  StrokeThickness="2"
+                                  StrokeDashArray="4,3"
+                                  IsVisible="False"
+                                  IsHitTestVisible="False"/>
+
+                            <Border x:Name="SelectionRectangle"
+                                    Classes="AssetGraphSelectionRectangle"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    IsVisible="False"
+                                    IsHitTestVisible="False"/>
+                        </Grid>
+                    </Grid>
+                </ScrollViewer>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

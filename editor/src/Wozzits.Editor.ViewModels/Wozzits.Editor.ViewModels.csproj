@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wozzits.Editor.Core\Wozzits.Editor.Core.csproj" />
+    <ProjectReference Include="..\Wozzits.Editor.Protocol\Wozzits.Editor.Protocol.csproj" />
+    <ProjectReference Include="..\Wozzits.Editor.HostClient\Wozzits.Editor.HostClient.csproj" />
+    <ProjectReference Include="..\Wozzits.Editor.Statecharts\Wozzits.Editor.Statecharts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
+    <PackageReference Include="Dock.Model.Mvvm" Version="12.0.0.2" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

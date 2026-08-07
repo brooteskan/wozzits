@@ -1,0 +1,157 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:Wozzits.Editor.App.Controls"
+             xmlns:sc="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.Statecharts.ControlPaneView"
+             x:DataType="sc:ControlPaneViewModel">
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
+            <Grid RowDefinitions="Auto,*">
+                <StackPanel Grid.Row="0"
+                            Orientation="Horizontal"
+                            Spacing="6"
+                            Margin="6"
+                            IsVisible="{Binding HasChart}">
+                    <Button Content="+ State" Command="{Binding AddStateCommand}"/>
+                    <Button Content="+ Region" Command="{Binding AddRegionCommand}"/>
+                    <Button Content="Delete" Command="{Binding DeleteSelectedCommand}"/>
+                    <ToggleButton Content="Draw transition"
+                                  IsChecked="{Binding IsDrawingTransition, Mode=TwoWay}"/>
+                </StackPanel>
+                <Grid Grid.Row="1">
+                <TextBlock Text="No statechart open. Statecharts &#x2192; open a chart's control layer."
+                           Classes="PaneEmptyState"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding !HasChart}"/>
+
+                <ScrollViewer x:Name="Scroll"
+                              IsVisible="{Binding HasGraph}"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <Grid Width="{Binding ScaledGraphWidth}"
+                          Height="{Binding ScaledGraphHeight}">
+                        <Grid x:Name="Canvas"
+                              Width="{Binding GraphWidth}"
+                              Height="{Binding GraphHeight}"
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Top"
+                              RenderTransformOrigin="0,0">
+                            <Grid.RenderTransform>
+                                <ScaleTransform ScaleX="{Binding Zoom}"
+                                                ScaleY="{Binding Zoom}"/>
+                            </Grid.RenderTransform>
+
+                            <!-- Region swimlanes (behind everything) -->
+                            <ItemsControl ItemsSource="{Binding Regions}"
+                                          x:CompileBindings="False">
+                                <ItemsControl.ItemContainerTheme>
+                                    <ControlTheme TargetType="ContentPresenter">
+                                        <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                                        <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                                    </ControlTheme>
+                                </ItemsControl.ItemContainerTheme>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Canvas/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="sc:RegionViewModel">
+                                        <Border Width="{Binding Width}"
+                                                Height="{Binding Height}"
+                                                Background="Transparent"
+                                                BorderBrush="{DynamicResource WozzitsGraphWireBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="6">
+                                            <!-- Editable region name (click to rename). A bare
+                                                 transparent TextBox so it reads like the label
+                                                 but commits on focus-out; the interaction
+                                                 controller lets the click focus it. -->
+                                            <TextBox Text="{Binding NameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                     Foreground="{DynamicResource WozzitsMutedTextBrush}"
+                                                     FontFamily="Consolas"
+                                                     FontSize="11"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     Padding="0"
+                                                     MinHeight="0"
+                                                     HorizontalAlignment="Left"
+                                                     VerticalAlignment="Top"
+                                                     Margin="10,4,6,0"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Transition arrows (over the swimlanes, under the boxes) -->
+                            <controls:TransitionArrowLayer Edges="{Binding Transitions}"
+                                                           Stroke="{DynamicResource WozzitsScTriggerBrush}"
+                                                           LabelBrush="{DynamicResource WozzitsScTriggerBrush}"
+                                                           StrokeThickness="2"
+                                                           BoxWidth="180"
+                                                           BoxHeight="76"
+                                                           IsHitTestVisible="False"/>
+
+                            <!-- State boxes (on top) -->
+                            <ItemsControl ItemsSource="{Binding States}"
+                                          x:CompileBindings="False">
+                                <ItemsControl.ItemContainerTheme>
+                                    <ControlTheme TargetType="ContentPresenter">
+                                        <Setter Property="Canvas.Left" Value="{Binding X}"/>
+                                        <Setter Property="Canvas.Top" Value="{Binding Y}"/>
+                                    </ControlTheme>
+                                </ItemsControl.ItemContainerTheme>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <Canvas/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="sc:StateNodeViewModel">
+                                        <Border Classes="AssetGraphCard scState scNode"
+                                                Classes.selected="{Binding IsSelected}"
+                                                Width="180"
+                                                MinHeight="76">
+                                            <Grid RowDefinitions="Auto,*"
+                                                  RowSpacing="4">
+                                                <Grid ColumnDefinitions="*,Auto"
+                                                      ColumnSpacing="6">
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Classes="AssetGraphCardName"/>
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="&#x25B6; initial"
+                                                               Classes="AssetGraphCardId"
+                                                               IsVisible="{Binding IsInitial}"/>
+                                                </Grid>
+                                                <TextBlock Grid.Row="1"
+                                                           Text="{Binding Summary}"
+                                                           Classes="AssetGraphCardType"
+                                                           VerticalAlignment="Bottom"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Line x:Name="TransitionPreview"
+                                  Stroke="{DynamicResource WozzitsScTriggerBrush}"
+                                  StrokeThickness="2"
+                                  StrokeDashArray="4,3"
+                                  IsVisible="False"
+                                  IsHitTestVisible="False"/>
+
+                            <Border x:Name="SelectionRectangle"
+                                    Classes="AssetGraphSelectionRectangle"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    IsVisible="False"
+                                    IsHitTestVisible="False"/>
+                        </Grid>
+                    </Grid>
+                </ScrollViewer>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

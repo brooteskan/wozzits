@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Wozzits.Editor.Protocol\Wozzits.Editor.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The session's no-viewport contract is testable without a native engine
+         (it short-circuits before touching the ABI), so tests reach the
+         internal constructor directly rather than through a fake that could
+         drift from it. -->
+    <InternalsVisibleTo Include="Wozzits.Editor.Tests" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>

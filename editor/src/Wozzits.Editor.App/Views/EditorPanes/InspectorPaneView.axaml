@@ -1,0 +1,2203 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
+             xmlns:model="using:Wozzits.Editor.Statecharts"
+             xmlns:scvm="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
+             xmlns:mindvm="using:Wozzits.Editor.ViewModels.EditorPanes.Minds"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.InspectorPaneView"
+             x:DataType="panes:InspectorPaneViewModel">
+    <UserControl.Resources>
+        <!-- Keep enum-param dropdowns flat: the Fluent ComboBox otherwise turns
+             solid cream/white on hover/press. Hold every state at the panel
+             inset so the field does not change when hovered. -->
+        <SolidColorBrush x:Key="ComboBoxBackground"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundPressed"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundDisabled"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundUnfocused"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ComboBoxForeground"
+                         Color="{DynamicResource WozzitsTextColor}"/>
+        <SolidColorBrush x:Key="ComboBoxForegroundDisabled"
+                         Color="{DynamicResource WozzitsMutedTextColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrush"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPressed"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrushDisabled"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+    </UserControl.Resources>
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="InspectorPaneSurface">
+            <Grid RowDefinitions="Auto,*" RowSpacing="10">
+                <TextBlock Text="{Binding EmptyState}"
+                           Classes="PaneEmptyState"
+                           IsVisible="{Binding HasNoSelection}"/>
+
+                <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasSubGraphSelection}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{Binding Header}"
+                                   Classes="InspectorHeader"/>
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Sub-graph"
+                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Name"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding SubGraphName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Nodes"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding SubGraphMemberCount}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasSceneNodeSelection}">
+                    <!-- Scene-node edits act on the live viewport runtime, so the
+                         whole edit surface is disabled when it is down; fields stay
+                         readable but non-interactive (mirrors the scene tree). -->
+                    <StackPanel Spacing="12"
+                                IsEnabled="{Binding CanEditNode}">
+                        <TextBlock Text="{Binding Header}"
+                                   Classes="InspectorHeader"/>
+                        <TextBlock Text="{Binding LastEditError}"
+                                   Classes="InspectorError"
+                                   IsVisible="{Binding HasLastEditError}"/>
+
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Scene Node"
+                                           Classes="InspectorSectionTitle"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Node"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding NodeId}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Name"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding NodeName, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Parent"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding ParentId}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Node visible"
+                                          IsChecked="{Binding NodeVisible}"
+                                          Classes="InspectorCheck"/>
+
+                                <!-- Draw-order layer (render_order). Selecting a
+                                     layer sets it live; within a layer, order is
+                                     the tree / drag reorder. -->
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Render layer"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding RenderLayers}"
+                                              SelectedItem="{Binding SelectedRenderLayer}"
+                                              DisplayMemberBinding="{Binding Label}"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Renderable source"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding RenderableSource}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasTransform}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Transform"
+                                           Classes="InspectorSectionTitle"/>
+
+                                <Grid ColumnDefinitions="Auto,*,*,*"
+                                      ColumnSpacing="6"
+                                      Classes="InspectorVectorRow">
+                                    <TextBlock Text="Translation"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding TranslationX, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                    <TextBox Grid.Column="2"
+                                             Text="{Binding TranslationY, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding TranslationZ, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*,*,*"
+                                      ColumnSpacing="6"
+                                      Classes="InspectorVectorRow">
+                                    <TextBlock Text="Rotation XYZ"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding RotationX, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                    <TextBox Grid.Column="2"
+                                             Text="{Binding RotationY, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding RotationZ, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*,*,*"
+                                      ColumnSpacing="6"
+                                      Classes="InspectorVectorRow">
+                                    <TextBlock Text="Scale"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding ScaleX, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                    <TextBox Grid.Column="2"
+                                             Text="{Binding ScaleY, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding ScaleZ, UpdateSourceTrigger=PropertyChanged}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Components section heading + add menu. All optional
+                             component cards (camera/renderable/render program/
+                             subtree/collision/audio source/motion) and the simple
+                             marker rows (audio listener, proximity, ...) are listed
+                             beneath this heading. Transform/Visibility are core node
+                             state, not components, so they stay above. -->
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection ComponentsHost">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Components"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="+"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Add component">
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="Camera"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="camera"/>
+                                                <MenuItem Header="Renderable"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="renderable"/>
+                                                <MenuItem Header="Subtree from asset"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="subtree_from_asset"/>
+                                                <MenuItem Header="Geometry (mesh)"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="geometry"/>
+                                                <MenuItem Header="Render program"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="render_program"/>
+                                                <MenuItem Header="Proximity"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="proximity"/>
+                                                <MenuItem Header="Collision"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="collision"/>
+                                                <MenuItem Header="Motion"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="motion"/>
+                                                <MenuItem Header="Motion Filter"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="motion_filter"/>
+                                                <MenuItem Header="Audio Source"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="audio_source"/>
+                                                <MenuItem Header="Audio Listener"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="audio_listener"/>
+                                                <MenuItem Header="Atmosphere"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="atmosphere"/>
+                                                <MenuItem Header="Environment"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="environment"/>
+                                                <MenuItem Header="Render To Texture"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="render_to_texture"/>
+                                                <MenuItem Header="Statechart Runner"
+                                                          Command="{Binding AddComponentCommand}"
+                                                          CommandParameter="statechart_runner"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                                <TextBlock Text="No attached optional components."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding HasNoComponents}"/>
+                                <ItemsControl ItemsSource="{Binding Components}"
+                                              IsVisible="{Binding HasComponents}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorComponentViewModel">
+                                            <Grid ColumnDefinitions="*,Auto"
+                                                  ColumnSpacing="6">
+                                                <TextBlock Text="{Binding Name}"
+                                                           Classes="InspectorComponentName"/>
+                                                <Button Grid.Column="1"
+                                                        Content="✕"
+                                                        Command="{Binding RemoveCommand}"
+                                                        Classes="InspectorApplyButton"
+                                                        ToolTip.Tip="Remove component"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Statechart runner: added from the Components "+" menu, shown here as a
+                                     sub-card (like a behavior card) that attaches an authored project chart
+                                     to run on this node. Its own Remove sits in the header. -->
+                                <Border Classes="InspectorSubCard" Margin="0,8,0,0"
+                                        IsVisible="{Binding HasStatechartRunnerSection}">
+                                    <StackPanel Spacing="6">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBlock Text="Statechart Runner"
+                                                       Classes="InspectorSubCardTitle"/>
+                                            <Button Grid.Column="1" Content="Remove"
+                                                    Command="{Binding RemoveStatechartRunnerCommand}"
+                                                    Classes="InspectorApplyButton"
+                                                    IsVisible="{Binding HasAttachedStatechartRunner}"/>
+                                        </Grid>
+                                        <Border Height="1"
+                                                Background="{DynamicResource WozzitsPanelBorderBrush}"
+                                                Margin="0,0,0,2"/>
+                                        <TextBlock Text="Pick a chart to run on this node, then Attach. The chart's own bindings name the scene nodes it drives; it runs on Play."
+                                                   Classes="PaneEmptyState"
+                                                   TextWrapping="Wrap"/>
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                            <TextBlock Text="Chart" Classes="InspectorPropertyName"
+                                                       VerticalAlignment="Center"/>
+                                            <ComboBox Grid.Column="1"
+                                                      Classes="InspectorInput"
+                                                      HorizontalAlignment="Stretch"
+                                                      PlaceholderText="pick a chart"
+                                                      ItemsSource="{Binding StatechartRunnerCharts}"
+                                                      SelectedItem="{Binding SelectedStatechartRunnerChart, Mode=TwoWay}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate DataType="scvm:StatechartFileInfo">
+                                                        <TextBlock Text="{Binding Name}"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                        <Button Content="Attach runner"
+                                                Command="{Binding AttachStatechartRunnerCommand}"
+                                                Classes="InspectorApplyButton"
+                                                IsVisible="{Binding HasSelectedStatechartRunnerChart}"/>
+                                        <TextBlock Text="{Binding StatechartRunnerStatus}"
+                                                   Classes="PaneEmptyState"
+                                                   TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasStatechartRunnerStatus}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Quantum-agent mind: auto-reveals when the node has a quantum_agent
+                                     behaviour; points it at an authored mind graph (embeds mind_ir). -->
+                                <Border Classes="InspectorSubCard" Margin="0,8,0,0"
+                                        IsVisible="{Binding HasQuantumAgentMindSection}">
+                                    <StackPanel Spacing="6">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                            <TextBlock Text="Mind"
+                                                       Classes="InspectorSubCardTitle"/>
+                                            <Button Grid.Column="1" Content="Detach"
+                                                    Command="{Binding DetachMindCommand}"
+                                                    Classes="InspectorApplyButton"/>
+                                        </Grid>
+                                        <Border Height="1"
+                                                Background="{DynamicResource WozzitsPanelBorderBrush}"
+                                                Margin="0,0,0,2"/>
+                                        <TextBlock Text="Point this node's quantum_agent at an authored mind graph. The mind supersedes the agent's scalar config on Play."
+                                                   Classes="PaneEmptyState"
+                                                   TextWrapping="Wrap"/>
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                            <TextBlock Text="Mind" Classes="InspectorPropertyName"
+                                                       VerticalAlignment="Center"/>
+                                            <ComboBox Grid.Column="1"
+                                                      Classes="InspectorInput"
+                                                      HorizontalAlignment="Stretch"
+                                                      PlaceholderText="pick a mind"
+                                                      ItemsSource="{Binding QuantumAgentMinds}"
+                                                      SelectedItem="{Binding SelectedQuantumAgentMind, Mode=TwoWay}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate DataType="mindvm:MindFileInfo">
+                                                        <TextBlock Text="{Binding Name}"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                        <TextBlock Text="{Binding QuantumAgentMindStatus}"
+                                                   Classes="PaneEmptyState"
+                                                   TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasQuantumAgentMindStatus}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Classes="InspectorSectionCard"
+                                        IsVisible="{Binding HasRenderableReference}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Renderable Asset"
+                                           Classes="InspectorSectionTitle"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Asset graph node"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding RenderableAssetGraphNodeId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             PlaceholderText="0"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="6">
+                                    <Button Content="Apply Renderable"
+                                            Command="{Binding ApplyRenderableCommand}"
+                                            Classes="InspectorApplyButton"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveRenderableCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove renderable"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Subtree from asset (issue #213): point this node at a
+                             "Scene from GLB" asset-graph node so the runtime grafts that
+                             GLB's hierarchy as the node's children. Attached via "Add
+                             Component → Subtree from asset" (gated on HasSubtreeSection)
+                             and removed via the header ✕, mirroring the Camera component.
+                             Choosing a node in the combo applies immediately (no Apply
+                             button); the ✕ clears the reference + removes the grafted
+                             subtree from the tree + hides the section. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasSubtreeSection}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Subtree from asset"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveSubtreeComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove subtree from asset"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Scene from GLB"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableSceneSources}"
+                                              SelectedItem="{Binding SelectedSceneSourceOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a Scene from GLB node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableSceneSources}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorSceneSourceOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <TextBlock Text="No Scene from GLB nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableSceneSources}"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Referencing"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding SubtreeReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Render program (issue #213): assign a render program to
+                             this node. The program is inherited down the scene tree, so
+                             setting it on a group host (e.g. a grafted GLB subtree's
+                             root) cascades one program over the whole subtree and the
+                             engine applies it to each part's geometry. Attached via
+                             "Add Component → Render program" (gated on
+                             HasRenderProgramSection), removed via the header ✕. Choosing
+                             a node in the combo applies immediately (no Apply button),
+                             mirroring the Camera/Subtree components. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasRenderProgramSection}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Render program"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveRenderProgramComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove render program"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Program"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableRenderPrograms}"
+                                              SelectedItem="{Binding SelectedRenderProgramOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a render program node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableRenderPrograms}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding RenderProgramReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <TextBlock Text="No render-program nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableRenderPrograms}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Geometry (issue #213 increment 2): assign a MESH to this
+                             node directly — the geometry half of the renderable
+                             binding, paired at assembly with the render program above
+                             (or one inherited from an ancestor). No GLB subtree graft
+                             needed. Attached via "Add Component → Geometry (mesh)"
+                             (gated on HasGeometrySection), removed via the header ✕.
+                             Choosing a node applies immediately, mirroring the
+                             render-program picker. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasGeometrySection}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Geometry"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveGeometryComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove geometry"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Mesh"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableGeometrySources}"
+                                              SelectedItem="{Binding SelectedGeometryOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a mesh node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableGeometrySources}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding GeometryReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <TextBlock Text="No mesh nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableGeometrySources}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Renderable bindings + constants (issue #230): the
+                             custom-renderable ingredient form, GENERATED from the
+                             effective render program's authored binding layout
+                             (#227). One source picker per declared SRV semantic
+                             (options filtered to asset types publishing that
+                             resource kind) and one typed value editor per declared
+                             constant tail field. Picks + edits apply immediately
+                             (house pattern); a row ✕ clears the pick / removes the
+                             per-instance override. Constant edits are pack-time on
+                             the engine — no recompile — so sliders/typing stream
+                             live into the running viewport. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasRenderableIngredientsSection}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Renderable bindings"
+                                           Classes="InspectorSectionTitle"/>
+
+                                <TextBlock Text="{Binding RenderableIngredientsHint}"
+                                           TextWrapping="Wrap"
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding HasRenderableIngredientsHint}"/>
+
+                                <ItemsControl ItemsSource="{Binding RenderableBindingRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorRenderableBindingRowViewModel">
+                                            <Grid ColumnDefinitions="*,*,Auto"
+                                                  ColumnSpacing="10"
+                                                  Classes="InspectorPropertyRow">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Semantic}"
+                                                               Classes="InspectorPropertyName"/>
+                                                    <TextBlock Text="{Binding KindLabel}"
+                                                               Classes="InspectorPropertyValue"/>
+                                                </StackPanel>
+                                                <ComboBox Grid.Column="1"
+                                                          ItemsSource="{Binding Options}"
+                                                          SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                                          PlaceholderText="Pick a source node"
+                                                          HorizontalAlignment="Stretch"
+                                                          IsEnabled="{Binding HasOptions}">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                            <TextBlock Text="{Binding Label}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                                <Button Grid.Column="2"
+                                                        Content="✕"
+                                                        Command="{Binding ClearCommand}"
+                                                        Classes="InspectorApplyButton"
+                                                        ToolTip.Tip="Clear this binding"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="Constants"
+                                           Classes="InspectorSectionTitle"
+                                           IsVisible="{Binding HasRenderableConstantRows}"/>
+
+                                <ItemsControl ItemsSource="{Binding RenderableConstantRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorRenderableConstantRowViewModel">
+                                            <Grid ColumnDefinitions="*,2*,Auto"
+                                                  ColumnSpacing="10"
+                                                  Classes="InspectorPropertyRow">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Name}"
+                                                               Classes="InspectorPropertyName"/>
+                                                    <TextBlock Text="{Binding TypeLabel}"
+                                                               Classes="InspectorPropertyValue"/>
+                                                </StackPanel>
+                                                <Grid Grid.Column="1"
+                                                      ColumnDefinitions="*,*,*,*"
+                                                      ColumnSpacing="6">
+                                                    <TextBox Text="{Binding ValueX, Mode=TwoWay}"/>
+                                                    <TextBox Grid.Column="1"
+                                                             Text="{Binding ValueY, Mode=TwoWay}"
+                                                             IsVisible="{Binding ShowY}"/>
+                                                    <TextBox Grid.Column="2"
+                                                             Text="{Binding ValueZ, Mode=TwoWay}"
+                                                             IsVisible="{Binding ShowZ}"/>
+                                                    <TextBox Grid.Column="3"
+                                                             Text="{Binding ValueW, Mode=TwoWay}"
+                                                             IsVisible="{Binding ShowW}"/>
+                                                </Grid>
+                                                <Button Grid.Column="2"
+                                                        Content="✕"
+                                                        Command="{Binding RemoveCommand}"
+                                                        Classes="InspectorApplyButton"
+                                                        IsEnabled="{Binding IsOverridden}"
+                                                        ToolTip.Tip="Remove this override (falls back to the recipe default)"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Collision (terrain-stick track): reference a Collision
+                             asset-graph node ("Collision from height field" / mesh)
+                             and toggle whether the node's movement is constrained by
+                             it. Shown when the node has a Collision component
+                             (HasCollisionComponent), removed via the header ✕.
+                             Choosing a node / toggling the flag applies immediately
+                             (no Apply button). The referenced node + flag are
+                             session-local/optimistic for now. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasCollisionComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Collision"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveCollisionComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove collision"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Collision asset"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableCollisionSources}"
+                                              SelectedItem="{Binding SelectedCollisionOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a collision node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableCollisionSources}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding CollisionReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Constrain movement"
+                                          IsChecked="{Binding CollisionConstrainMovement}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No collision nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableCollisionSources}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Audio Source (audio-track item 10): pick the audio-
+                             renderable asset-graph node this node plays + its
+                             per-entity play policy (auto-play / enabled). Shown when
+                             the node has an AudioSource component, removed via the
+                             header ✕. Choosing a node / toggling a flag applies
+                             immediately (no Apply button). The picked reference
+                             stores the stable asset-graph node id. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasAudioSourceComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Audio Source"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveAudioSourceComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove audio source"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Audio renderable"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableAudioRenderables}"
+                                              SelectedItem="{Binding SelectedAudioRenderableOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick an audio renderable node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableAudioRenderables}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AudioRenderableReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Auto-play on load"
+                                          IsChecked="{Binding AudioSourceAutoPlay}"
+                                          Classes="InspectorCheck"/>
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding AudioSourceEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No audio renderable nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableAudioRenderables}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Atmosphere: which Atmosphere asset the frame's fog
+                             reads + an enabled flag. The picked reference + the
+                             toggle apply immediately (no Apply button). -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasAtmosphereComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Atmosphere"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveAtmosphereComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove atmosphere"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Atmosphere asset"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableAtmospheres}"
+                                              SelectedItem="{Binding SelectedAtmosphereOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick an atmosphere node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableAtmospheres}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AtmosphereReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding AtmosphereEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No atmosphere nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableAtmospheres}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Environment: which FrameEnvironment asset the frame's
+                             environment reads + an enabled flag. The picked reference
+                             + the toggle apply immediately (no Apply button). -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasEnvironmentComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Environment"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveEnvironmentComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove environment"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Environment asset"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableEnvironments}"
+                                              SelectedItem="{Binding SelectedEnvironmentOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick an environment node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableEnvironments}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding EnvironmentReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding EnvironmentEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No environment nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableEnvironments}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Render To Texture (issue #287): which Texture asset the
+                             node's (and optionally its descendants') draws land in,
+                             plus the composition switches. The picked reference + the
+                             toggles apply immediately (no Apply button). -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasRenderToTextureComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Render To Texture"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveRenderToTextureComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove render to texture"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Target texture"
+                                               Classes="InspectorPropertyName"/>
+                                    <ComboBox Grid.Column="1"
+                                              ItemsSource="{Binding AvailableRenderTargets}"
+                                              SelectedItem="{Binding SelectedRenderTargetOption, Mode=TwoWay}"
+                                              PlaceholderText="Pick a render-target texture node"
+                                              HorizontalAlignment="Stretch"
+                                              IsEnabled="{Binding HasAvailableRenderTargets}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="panes:InspectorAssetGraphRefOptionViewModel">
+                                                <TextBlock Text="{Binding Label}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text=""
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding RenderTargetReferenceDisplay}"
+                                               TextWrapping="Wrap"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <CheckBox Content="Include descendants"
+                                          IsChecked="{Binding RenderToTextureIncludeDescendants}"
+                                          Classes="InspectorCheck"/>
+
+                                <CheckBox Content="Also draw in scene"
+                                          IsChecked="{Binding RenderToTextureAlsoDrawInScene}"
+                                          Classes="InspectorCheck"/>
+
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding RenderToTextureEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="No render-target texture nodes in the asset graph."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding !HasAvailableRenderTargets}"/>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Motion (terrain-stick track): the Motion component's
+                             terrain-constraint fields — whether the node sticks to the
+                             terrain, ride height, footprint radius, surface-alignment
+                             toggle, and alignment strength. Shown when the node has a
+                             Motion component (HasMotionComponent), removed via the
+                             header ✕. Every change applies live (no Apply button).
+                             Field values are session-local/optimistic for now. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasMotionComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Motion"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveMotionComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove motion"/>
+                                </Grid>
+
+                                <CheckBox Content="Terrain constrained"
+                                          IsChecked="{Binding MotionTerrainConstrained}"
+                                          Classes="InspectorCheck"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Ride height"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionRideHeight}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Footprint radius"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFootprintRadius}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <CheckBox Content="Align to surface"
+                                          IsChecked="{Binding MotionAlignToSurface}"
+                                          Classes="InspectorCheck"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Alignment strength"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionAlignmentStrength}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Motion Filter (secondary-motion camera damping): per-DOF
+                             smoothing + clamp of the node's driven transform. Translation
+                             channels are WORLD axes (0 smoothing = pass through, e.g. keep
+                             the bob); rotation channels roll/pitch/yaw are node-LOCAL. Shown
+                             when the node has the component; every change applies live. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasMotionFilterComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Motion Filter"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveMotionFilterComponentCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove motion filter"/>
+                                </Grid>
+
+                                <CheckBox Content="Enabled"
+                                          IsChecked="{Binding MotionFilterEnabled}"
+                                          Classes="InspectorCheck"/>
+
+                                <TextBlock Text="Translation smoothing (s, world axes; 0 = off)"
+                                           Classes="InspectorPropertyName"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="X" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterTranslationSmoothingX}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Y" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterTranslationSmoothingY}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Z" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterTranslationSmoothingZ}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <CheckBox Content="Terrain floor (clamp world Y above terrain)"
+                                          IsChecked="{Binding MotionFilterTerrainFloor}"
+                                          Classes="InspectorCheck"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Floor offset"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterTerrainFloorOffset}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <TextBlock Text="Roll (about forward)"
+                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Smoothing (s)"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterRollSmoothing}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <CheckBox Content="Level (ease to horizon)"
+                                          IsChecked="{Binding MotionFilterRollLevel}"
+                                          Classes="InspectorCheck"/>
+                                <CheckBox Content="Limit angle"
+                                          IsChecked="{Binding MotionFilterRollLimit}"
+                                          Classes="InspectorCheck"/>
+                                <Grid ColumnDefinitions="Auto,*,Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Min°" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterRollLimitMin}"
+                                             Classes="InspectorInput"/>
+                                    <TextBlock Grid.Column="2" Text="Max°"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding MotionFilterRollLimitMax}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <TextBlock Text="Pitch (about right)"
+                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Smoothing (s)"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterPitchSmoothing}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <CheckBox Content="Level (ease to horizon)"
+                                          IsChecked="{Binding MotionFilterPitchLevel}"
+                                          Classes="InspectorCheck"/>
+                                <CheckBox Content="Limit angle"
+                                          IsChecked="{Binding MotionFilterPitchLimit}"
+                                          Classes="InspectorCheck"/>
+                                <Grid ColumnDefinitions="Auto,*,Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Min°" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterPitchLimitMin}"
+                                             Classes="InspectorInput"/>
+                                    <TextBlock Grid.Column="2" Text="Max°"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding MotionFilterPitchLimitMax}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <TextBlock Text="Yaw (about up)"
+                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Smoothing (s)"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterYawSmoothing}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+                                <CheckBox Content="Level"
+                                          IsChecked="{Binding MotionFilterYawLevel}"
+                                          Classes="InspectorCheck"/>
+                                <CheckBox Content="Limit angle"
+                                          IsChecked="{Binding MotionFilterYawLimit}"
+                                          Classes="InspectorCheck"/>
+                                <Grid ColumnDefinitions="Auto,*,Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Min°" Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding MotionFilterYawLimitMin}"
+                                             Classes="InspectorInput"/>
+                                    <TextBlock Grid.Column="2" Text="Max°"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="3"
+                                             Text="{Binding MotionFilterYawLimitMax}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasCameraComponent}">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Camera"
+                                               Classes="InspectorSectionTitle"/>
+                                    <Button Grid.Column="1"
+                                            Content="✕"
+                                            Command="{Binding RemoveCameraCommand}"
+                                            Classes="InspectorApplyButton"
+                                            ToolTip.Tip="Remove camera"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="FOV Y"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding CameraFovY}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Near"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding CameraNear}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Far"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding CameraFar}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Aspect"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding CameraAspect}"
+                                             Classes="InspectorInput"/>
+                                </Grid>
+
+                                <Button Content="Apply Camera"
+                                        Command="{Binding ApplyCameraCommand}"
+                                        Classes="InspectorApplyButton"/>
+                            </StackPanel>
+                        </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Behaviors"
+                                               Classes="InspectorSectionTitle"/>
+                                    <!-- The menu is built + shown from code-behind (OnAddBehaviorClick)
+                                         as plain MenuItems, so they use the same default MenuItem theme as
+                                         the Components dropdown above, and the items exist BEFORE the popup
+                                         is shown (populating a Button.Flyout MenuFlyout during Opening is
+                                         too late — its presenter is already built, so it renders empty). -->
+                                    <Button Grid.Column="1"
+                                            Content="+"
+                                            Classes="InspectorApplyButton"
+                                            Click="OnAddBehaviorClick"
+                                            ToolTip.Tip="Add behavior from imported modules"/>
+                                </Grid>
+                                <!-- Last rebuild failed: say so HERE, not only in the console.
+                                     A stale DLL otherwise reads as "the editor is broken": the
+                                     card just quietly lacks the fields you added. Shows every
+                                     diagnostic, so a failure in a module you have not selected
+                                     (or one the per-card match missed) is still visible. -->
+                                <Border IsVisible="{Binding HasBuildFailure}"
+                                        Background="{DynamicResource WozzitsPanelInsetBrush}"
+                                        BorderBrush="{DynamicResource WozzitsErrorBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Padding="8"
+                                        Margin="0,0,0,8">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="{Binding BuildFailureSummary}"
+                                                   Classes="InspectorError"
+                                                   FontWeight="SemiBold"/>
+                                        <ScrollViewer MaxHeight="140"
+                                                      HorizontalScrollBarVisibility="Auto">
+                                            <SelectableTextBlock Text="{Binding BuildErrorText}"
+                                                                 Classes="InspectorError"
+                                                                 FontFamily="Consolas,monospace"
+                                                                 TextWrapping="NoWrap"/>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Text="No behavior bindings."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding HasNoBehaviors}"/>
+                                <ItemsControl ItemsSource="{Binding Behaviors}"
+                                              IsVisible="{Binding HasBehaviors}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorBehaviorViewModel">
+                                            <Border Classes="InspectorSubCard" Margin="0,0,0,8">
+                                              <StackPanel Spacing="6">
+                                                <!-- Header: which behavior this card is, plus its own Remove. -->
+                                                <Grid ColumnDefinitions="*,Auto,Auto"
+                                                      ColumnSpacing="8">
+                                                    <TextBlock Text="{Binding Module}"
+                                                               Classes="InspectorSubCardTitle"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <CheckBox Grid.Column="1" Content="enabled"
+                                                              IsChecked="{Binding Enabled, Mode=TwoWay}"
+                                                              Classes="InspectorCheck"
+                                                              VerticalAlignment="Center"/>
+                                                    <Button Grid.Column="2"
+                                                            Content="Remove"
+                                                            Command="{Binding RemoveCommand}"
+                                                            Classes="InspectorApplyButton"/>
+                                                </Grid>
+                                                <!-- The last rebuild failed ON THIS MODULE: the
+                                                     compiler named it. Right here is where you
+                                                     notice, because this is the card whose fields
+                                                     did not change. -->
+                                                <Border IsVisible="{Binding HasBuildErrors}"
+                                                        Background="{DynamicResource WozzitsPanelInsetBrush}"
+                                                        BorderBrush="{DynamicResource WozzitsErrorBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="8">
+                                                    <StackPanel Spacing="4">
+                                                        <TextBlock Text="This module failed to build — the engine is still running the previous DLL."
+                                                                   Classes="InspectorError"
+                                                                   FontWeight="SemiBold"/>
+                                                        <ScrollViewer MaxHeight="120"
+                                                                      HorizontalScrollBarVisibility="Auto">
+                                                            <SelectableTextBlock Text="{Binding BuildErrors}"
+                                                                                 Classes="InspectorError"
+                                                                                 FontFamily="Consolas,monospace"
+                                                                                 TextWrapping="NoWrap"/>
+                                                        </ScrollViewer>
+                                                    </StackPanel>
+                                                </Border>
+                                                <Border Height="1"
+                                                        Background="{DynamicResource WozzitsPanelBorderBrush}"
+                                                        Margin="0,0,0,2"/>
+                                                <Grid ColumnDefinitions="Auto,*"
+                                                      ColumnSpacing="10">
+                                                    <TextBlock Text="Module"
+                                                               Classes="InspectorPropertyName"/>
+                                                    <TextBox Grid.Column="1"
+                                                             Text="{Binding Module, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             Classes="InspectorInput"/>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="Auto,*"
+                                                      ColumnSpacing="10">
+                                                    <TextBlock Text="Label"
+                                                               Classes="InspectorPropertyName"/>
+                                                    <TextBox Grid.Column="1"
+                                                             Text="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             Classes="InspectorInput"/>
+                                                </Grid>
+                                                <Button Content="Apply Module/Label"
+                                                        Command="{Binding ApplyFieldsCommand}"
+                                                        Classes="InspectorApplyButton"/>
+                                                <TextBlock Text="Events (one channel per line)"
+                                                           Classes="InspectorPropertyName"/>
+                                                <TextBox Text="{Binding Events, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                         AcceptsReturn="True"
+                                                         Classes="InspectorInput"/>
+                                                <Button Content="Apply Events"
+                                                        Command="{Binding ApplyEventsCommand}"
+                                                        Classes="InspectorApplyButton"/>
+                                                <TextBlock Text="Config"
+                                                           Classes="InspectorPropertyName"
+                                                           IsVisible="{Binding HasConfig}"/>
+                                                <ItemsControl ItemsSource="{Binding Config}"
+                                                              IsVisible="{Binding HasConfig}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate DataType="panes:InspectorBehaviorConfigViewModel">
+                                                            <Grid ColumnDefinitions="Auto,*"
+                                                                  ColumnSpacing="10" Margin="0,2">
+                                                                <TextBlock Text="{Binding Label}"
+                                                                           Classes="InspectorPropertyName"
+                                                                           VerticalAlignment="Center"/>
+                                                                <CheckBox Grid.Column="1"
+                                                                          IsChecked="{Binding BoolValue, Mode=TwoWay}"
+                                                                          IsVisible="{Binding IsBool}"
+                                                                          HorizontalAlignment="Left"/>
+                                                                <TextBox Grid.Column="1"
+                                                                         Text="{Binding TextValue, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                                         IsVisible="{Binding IsTextField}"
+                                                                         Classes="InspectorInput"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                              </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasAssetGraphNodeSelection}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{Binding Header}"
+                                   Classes="InspectorHeader"/>
+
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Asset Graph Node"
+                                           Classes="InspectorSectionTitle"/>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Node"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AssetGraphNodeId}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Name"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AssetGraphNodeName}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Type"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AssetGraphNodeType}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Type ID"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AssetGraphNodeTypeId}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Schema"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AssetGraphNodeSchema}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Compile"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AssetGraphNodeCompileStatus}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+
+                                <Grid ColumnDefinitions="Auto,*"
+                                      ColumnSpacing="10"
+                                      Classes="InspectorPropertyRow">
+                                    <TextBlock Text="Position"
+                                               Classes="InspectorPropertyName"/>
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AssetGraphNodePosition}"
+                                               Classes="InspectorPropertyValue"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Named reroute"
+                                           Classes="InspectorSectionTitle"/>
+                                <TextBox Text="{Binding NodeRerouteName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         PlaceholderText="name to collapse this output's wires"
+                                         Classes="InspectorInput"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Parameters"
+                                           Classes="InspectorSectionTitle"/>
+                                <TextBlock Text="No parameters."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding HasNoAssetGraphParams}"/>
+                                <ItemsControl ItemsSource="{Binding AssetGraphParams}"
+                                              IsVisible="{Binding HasAssetGraphParams}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorAssetGraphParamViewModel">
+                                            <StackPanel Classes="InspectorPropertyRow">
+                                                <Grid ColumnDefinitions="Auto,*"
+                                                      ColumnSpacing="10">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               Classes="InspectorPropertyName"/>
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding Detail}"
+                                                               Classes="InspectorPortDetail"/>
+                                                </Grid>
+                                                <!-- Commit on edit-finished (LostFocus), not per keystroke and
+                                                     not via a separate Apply button (#218 Phase 3): the view
+                                                     model applies the value once the field loses focus. -->
+                                                <TextBox Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         Classes="InspectorInput"
+                                                         IsVisible="{Binding IsTextEditable}"/>
+                                                <CheckBox Content="enabled"
+                                                          IsChecked="{Binding BoolValue, Mode=TwoWay}"
+                                                          Classes="InspectorCheck"
+                                                          IsVisible="{Binding IsBool}"/>
+                                                <ComboBox ItemsSource="{Binding Options}"
+                                                          SelectedItem="{Binding Value, Mode=TwoWay}"
+                                                          HorizontalAlignment="Stretch"
+                                                          Classes="InspectorInput"
+                                                          IsVisible="{Binding IsEnum}"/>
+                                                <TextBlock Text="{Binding Value}"
+                                                           Classes="InspectorPropertyValue"
+                                                           IsVisible="{Binding IsReadOnlyText}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- GLB node tree picker (issue #213): only for the "Mesh from
+                             GLB scene" node. Shows the connected GLB scene's hierarchy
+                             as an expandable tree; clicking a mesh-bearing node sets the
+                             node's node_id param (the generic text param above stays as
+                             the typed fallback). Group (mesh-less) nodes show for
+                             structure but are not pickable. A hint shows when the GLB
+                             could not be resolved/read. -->
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding HasGlbNodePicker}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="GLB node"
+                                           Classes="InspectorSectionTitle"/>
+                                <TextBlock Text="Pick the GLB node whose mesh this node extracts."
+                                           Classes="InspectorPropertyName"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding GlbNodePickerHint}"
+                                           Classes="PaneEmptyState"
+                                           TextWrapping="Wrap"
+                                           IsVisible="{Binding HasGlbNodePickerHint}"/>
+                                <TreeView ItemsSource="{Binding GlbNodes}"
+                                          IsVisible="{Binding HasGlbNodes}"
+                                          Classes="GlbNodeTree">
+                                    <TreeView.DataTemplates>
+                                        <TreeDataTemplate DataType="panes:InspectorGlbComponentNodeViewModel"
+                                                          ItemsSource="{Binding Children}">
+                                            <Button Classes="GlbNodePick"
+                                                    Classes.current="{Binding IsCurrentPick}"
+                                                    Command="{Binding PickCommand}"
+                                                    IsEnabled="{Binding IsSelectable}"
+                                                    ToolTip.Tip="{Binding Id}">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <TextBlock Text="◆ mesh"
+                                                               Classes="GlbNodeMeshMarker"
+                                                               IsVisible="{Binding HasMesh}"/>
+                                                    <TextBlock Text="▷ group"
+                                                               Classes="GlbNodeGroupMarker"
+                                                               IsVisible="{Binding IsGroup}"/>
+                                                    <TextBlock Text="{Binding Name}"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </TreeDataTemplate>
+                                    </TreeView.DataTemplates>
+                                </TreeView>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Diagnostics"
+                                           Classes="InspectorSectionTitle"/>
+                                <TextBlock Text="No diagnostics."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding HasNoAssetGraphDiagnostics}"/>
+                                <ItemsControl ItemsSource="{Binding AssetGraphDiagnostics}"
+                                              IsVisible="{Binding HasAssetGraphDiagnostics}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorAssetGraphDiagnosticViewModel">
+                                            <StackPanel Classes="InspectorDiagnosticItem">
+                                                <TextBlock Text="{Binding Message}"
+                                                           Classes="InspectorDiagnosticMessage"/>
+                                                <TextBlock Text="{Binding Detail}"
+                                                           Classes="InspectorDiagnosticMeta"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Input Ports"
+                                           Classes="InspectorSectionTitle"/>
+                                <TextBlock Text="No input ports."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding HasNoAssetGraphInputPorts}"/>
+                                <ItemsControl ItemsSource="{Binding AssetGraphInputPorts}"
+                                              IsVisible="{Binding HasAssetGraphInputPorts}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorAssetGraphPortViewModel">
+                                            <StackPanel Classes="InspectorPortItem">
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Classes="InspectorComponentName"/>
+                                                <TextBlock Text="{Binding Detail}"
+                                                           Classes="InspectorPortDetail"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Output Ports"
+                                           Classes="InspectorSectionTitle"/>
+                                <TextBlock Text="No output ports."
+                                           Classes="PaneEmptyState"
+                                           IsVisible="{Binding HasNoAssetGraphOutputPorts}"/>
+                                <ItemsControl ItemsSource="{Binding AssetGraphOutputPorts}"
+                                              IsVisible="{Binding HasAssetGraphOutputPorts}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="panes:InspectorAssetGraphPortViewModel">
+                                            <StackPanel Classes="InspectorPortItem">
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Classes="InspectorComponentName"/>
+                                                <TextBlock Text="{Binding Detail}"
+                                                           Classes="InspectorPortDetail"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasStatechartNodeSelection}"
+                              x:CompileBindings="False">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{Binding Header}" Classes="InspectorHeader"/>
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="{Binding SelectedStatechartNode.Subtitle}"
+                                           Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
+                                      IsVisible="{Binding SelectedStatechartNode.HasAgentName}">
+                                    <TextBlock Text="name" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1"
+                                             Classes="InspectorInput"
+                                             Text="{Binding SelectedStatechartNode.AgentNameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
+                                      IsVisible="{Binding SelectedStatechartNode.HasAgentTarget}">
+                                    <TextBlock Text="reads agent" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1"
+                                             Classes="InspectorInput"
+                                             PlaceholderText="first agent on node"
+                                             Text="{Binding SelectedStatechartNode.AgentTargetEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
+                                      IsVisible="{Binding SelectedStatechartNode.HasMindPicker}">
+                                    <TextBlock Text="mind" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1" Classes="InspectorInput" HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding SelectedStatechartNode.MindChoices}"
+                                              SelectedItem="{Binding SelectedStatechartNode.SelectedMind, Mode=TwoWay}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
+                                      IsVisible="{Binding SelectedStatechartNode.HasHostPicker}">
+                                    <TextBlock Text="host" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1" Classes="InspectorInput" HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding SelectedStatechartNode.HostChoices}"
+                                              SelectedItem="{Binding SelectedStatechartNode.SelectedHost, Mode=TwoWay}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
+                                      IsVisible="{Binding SelectedStatechartNode.HasOpName}">
+                                    <TextBlock Text="name" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1"
+                                             Classes="InspectorInput"
+                                             Text="{Binding SelectedStatechartNode.OpNameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartNode.PropertyRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Name}" Classes="InspectorPropertyName"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding SelectedStatechartNode.HasSpecFields}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Agent spec" Classes="InspectorSectionTitle"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartNode.SpecFields}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Name}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1"
+                                                         Classes="InspectorInput"
+                                                         Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding SelectedStatechartNode.HasBindingFields}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Binding" Classes="InspectorSectionTitle"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartNode.BindingFields}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Name}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1"
+                                                         Classes="InspectorInput"
+                                                         Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                    <TextBlock Text="scope" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1"
+                                              Classes="InspectorInput"
+                                              HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding SelectedStatechartNode.BindingScopes}"
+                                              SelectedItem="{Binding SelectedStatechartNode.SelectedBindingScope, Mode=TwoWay}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding SelectedStatechartNode.IsReadOp}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Reads" Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                    <TextBlock Text="agent" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1" Classes="InspectorInput" HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding SelectedStatechartNode.ReadAgents}"
+                                              SelectedItem="{Binding SelectedStatechartNode.SelectedReadAgent, Mode=TwoWay}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
+                                      IsVisible="{Binding SelectedStatechartNode.HasSlotChoices}">
+                                    <TextBlock Text="qubit" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1" Classes="InspectorInput" HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding SelectedStatechartNode.SlotChoices}"
+                                              SelectedItem="{Binding SelectedStatechartNode.SelectedSlot, Mode=TwoWay}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2"
+                                      IsVisible="{Binding !SelectedStatechartNode.HasSlotChoices}">
+                                    <TextBlock Text="qubit" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1" Classes="InspectorInput"
+                                             Text="{Binding SelectedStatechartNode.SlotEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding SelectedStatechartNode.IsProximityOp}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Senses" Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                    <TextBlock Text="target" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Column="1" Classes="InspectorInput" HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding SelectedStatechartNode.ProximityTargets}"
+                                              SelectedItem="{Binding SelectedStatechartNode.SelectedProximityTarget, Mode=TwoWay}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding SelectedStatechartNode.IsReadStateOp}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Reads state" Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                    <TextBlock Text="scalar" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1" Classes="InspectorInput"
+                                             Text="{Binding SelectedStatechartNode.ScalarNameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="InspectorSectionCard"
+                                IsVisible="{Binding SelectedStatechartNode.ShowOperandInputs}">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="Inputs" Classes="InspectorSectionTitle"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartNode.InputPorts}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBox Grid.Column="1"
+                                                         Classes="InspectorInput"
+                                                         Text="{Binding ConstEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                                         IsVisible="{Binding IsConstant}"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                                                            IsVisible="{Binding IsWired}">
+                                                    <TextBlock Text="{Binding InspectorValue}" VerticalAlignment="Center"/>
+                                                    <Button Content="Disconnect"
+                                                            Classes="InspectorApplyButton"
+                                                            Command="{Binding DisconnectCommand}"
+                                                            IsVisible="{Binding CanDisconnect}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasStatechartStateSelection}"
+                              x:CompileBindings="False">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{Binding Header}" Classes="InspectorHeader"/>
+                        <Border Classes="InspectorSectionCard">
+                            <StackPanel Classes="InspectorSection">
+                                <TextBlock Text="State" Classes="InspectorSectionTitle"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2">
+                                    <TextBlock Text="name" Classes="InspectorPropertyName" VerticalAlignment="Center"/>
+                                    <TextBox Grid.Column="1"
+                                             Classes="InspectorInput"
+                                             Text="{Binding SelectedStatechartState.NameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                                <TextBlock Text="&#x25B6; initial state"
+                                           IsVisible="{Binding SelectedStatechartState.IsInitial}"/>
+                                <Button Content="Make initial"
+                                        Classes="InspectorApplyButton"
+                                        HorizontalAlignment="Left"
+                                        Command="{Binding SelectedStatechartState.MakeInitialCommand}"
+                                        IsVisible="{Binding SelectedStatechartState.CanMakeInitial}"/>
+
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                                    <TextBlock Text="do" Classes="InspectorSectionTitle" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Content="+ &#x25BE;" Classes="InspectorApplyButton">
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="set_goal" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetGoal}"/>
+                                                <MenuItem Header="set_decoherence" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetDecoherence}"/>
+                                                <MenuItem Header="rearm" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.Rearm}"/>
+                                                <MenuItem Header="reward" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.Reward}"/>
+                                                <MenuItem Header="measure_at" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.MeasureAt}"/>
+                                                <Separator/>
+                                                <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
+                                                <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
+                                                <MenuItem Header="play_sound" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.PlaySound}"/>
+                                                <MenuItem Header="call" Command="{Binding SelectedStatechartState.AddDoEffectCommand}" CommandParameter="{x:Static model:EffectKind.Call}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.DoEffectRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsActuator}"
+                                                              ItemsSource="{Binding TargetBindings}"
+                                                              SelectedItem="{Binding SelectedTargetBind, Mode=TwoWay}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsAgentEffect}"
+                                                              ItemsSource="{Binding AvailableAgents}"
+                                                              SelectedItem="{Binding SelectedEffectAgent, Mode=TwoWay}"/>
+                                                    <TextBox Classes="InspectorInput" Width="56"
+                                                             IsVisible="{Binding HasQubit}" PlaceholderText="qubit"
+                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="104"
+                                                              IsVisible="{Binding IsReward}"
+                                                              ItemsSource="{Binding RewardPoles}"
+                                                              SelectedItem="{Binding SelectedRewardPole, Mode=TwoWay}"/>
+                                                    <StackPanel Orientation="Horizontal" Spacing="6"
+                                                                IsVisible="{Binding HasValueSource}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="108"
+                                                                  ItemsSource="{Binding ValueSources}"
+                                                                  SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                        <TextBox Classes="InspectorInput" Width="80"
+                                                                 IsVisible="{Binding IsEditable}"
+                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Vertical" Spacing="4" IsVisible="{Binding IsCall}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="120"
+                                                                  ItemsSource="{Binding ActuatorNames}"
+                                                                  SelectedItem="{Binding SelectedActuator, Mode=TwoWay}"/>
+                                                        <ItemsControl ItemsSource="{Binding CallArgs}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="10,0,0,0">
+                                                                        <TextBlock Text="{Binding ParamName}" Classes="InspectorPropertyName"
+                                                                                   VerticalAlignment="Center"/>
+                                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsScalar}"
+                                                                                      ItemsSource="{Binding ValueSources}"
+                                                                                      SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                                            <TextBox Classes="InspectorInput" Width="70"
+                                                                                     IsVisible="{Binding IsEditable}"
+                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsBinding}"
+                                                                                      ItemsSource="{Binding Bindings}"
+                                                                                      SelectedItem="{Binding SelectedBinding, Mode=TwoWay}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsAgent}"
+                                                                                      ItemsSource="{Binding Agents}"
+                                                                                      SelectedItem="{Binding SelectedAgent, Mode=TwoWay}"/>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
+                                                        VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                                    <TextBlock Text="entry" Classes="InspectorSectionTitle" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Content="+ &#x25BE;" Classes="InspectorApplyButton">
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="set_goal" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetGoal}"/>
+                                                <MenuItem Header="set_decoherence" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetDecoherence}"/>
+                                                <MenuItem Header="rearm" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.Rearm}"/>
+                                                <MenuItem Header="reward" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.Reward}"/>
+                                                <MenuItem Header="measure_at" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.MeasureAt}"/>
+                                                <Separator/>
+                                                <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
+                                                <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
+                                                <MenuItem Header="play_sound" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.PlaySound}"/>
+                                                <MenuItem Header="call" Command="{Binding SelectedStatechartState.AddEntryEffectCommand}" CommandParameter="{x:Static model:EffectKind.Call}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.EntryEffectRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsActuator}"
+                                                              ItemsSource="{Binding TargetBindings}"
+                                                              SelectedItem="{Binding SelectedTargetBind, Mode=TwoWay}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsAgentEffect}"
+                                                              ItemsSource="{Binding AvailableAgents}"
+                                                              SelectedItem="{Binding SelectedEffectAgent, Mode=TwoWay}"/>
+                                                    <TextBox Classes="InspectorInput" Width="56"
+                                                             IsVisible="{Binding HasQubit}" PlaceholderText="qubit"
+                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="104"
+                                                              IsVisible="{Binding IsReward}"
+                                                              ItemsSource="{Binding RewardPoles}"
+                                                              SelectedItem="{Binding SelectedRewardPole, Mode=TwoWay}"/>
+                                                    <StackPanel Orientation="Horizontal" Spacing="6"
+                                                                IsVisible="{Binding HasValueSource}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="108"
+                                                                  ItemsSource="{Binding ValueSources}"
+                                                                  SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                        <TextBox Classes="InspectorInput" Width="80"
+                                                                 IsVisible="{Binding IsEditable}"
+                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Vertical" Spacing="4" IsVisible="{Binding IsCall}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="120"
+                                                                  ItemsSource="{Binding ActuatorNames}"
+                                                                  SelectedItem="{Binding SelectedActuator, Mode=TwoWay}"/>
+                                                        <ItemsControl ItemsSource="{Binding CallArgs}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="10,0,0,0">
+                                                                        <TextBlock Text="{Binding ParamName}" Classes="InspectorPropertyName"
+                                                                                   VerticalAlignment="Center"/>
+                                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsScalar}"
+                                                                                      ItemsSource="{Binding ValueSources}"
+                                                                                      SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                                            <TextBox Classes="InspectorInput" Width="70"
+                                                                                     IsVisible="{Binding IsEditable}"
+                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsBinding}"
+                                                                                      ItemsSource="{Binding Bindings}"
+                                                                                      SelectedItem="{Binding SelectedBinding, Mode=TwoWay}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsAgent}"
+                                                                                      ItemsSource="{Binding Agents}"
+                                                                                      SelectedItem="{Binding SelectedAgent, Mode=TwoWay}"/>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
+                                                        VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                                    <TextBlock Text="exit" Classes="InspectorSectionTitle" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Content="+ &#x25BE;" Classes="InspectorApplyButton">
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="set_goal" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetGoal}"/>
+                                                <MenuItem Header="set_decoherence" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetDecoherence}"/>
+                                                <MenuItem Header="rearm" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.Rearm}"/>
+                                                <MenuItem Header="reward" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.Reward}"/>
+                                                <MenuItem Header="measure_at" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.MeasureAt}"/>
+                                                <Separator/>
+                                                <MenuItem Header="set_scale" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetScale}"/>
+                                                <MenuItem Header="set_visible" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.SetVisible}"/>
+                                                <MenuItem Header="play_sound" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.PlaySound}"/>
+                                                <MenuItem Header="call" Command="{Binding SelectedStatechartState.AddExitEffectCommand}" CommandParameter="{x:Static model:EffectKind.Call}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.ExitEffectRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsActuator}"
+                                                              ItemsSource="{Binding TargetBindings}"
+                                                              SelectedItem="{Binding SelectedTargetBind, Mode=TwoWay}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="90"
+                                                              IsVisible="{Binding IsAgentEffect}"
+                                                              ItemsSource="{Binding AvailableAgents}"
+                                                              SelectedItem="{Binding SelectedEffectAgent, Mode=TwoWay}"/>
+                                                    <TextBox Classes="InspectorInput" Width="56"
+                                                             IsVisible="{Binding HasQubit}" PlaceholderText="qubit"
+                                                             Text="{Binding QubitEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                    <ComboBox Classes="InspectorInput" MinWidth="104"
+                                                              IsVisible="{Binding IsReward}"
+                                                              ItemsSource="{Binding RewardPoles}"
+                                                              SelectedItem="{Binding SelectedRewardPole, Mode=TwoWay}"/>
+                                                    <StackPanel Orientation="Horizontal" Spacing="6"
+                                                                IsVisible="{Binding HasValueSource}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="108"
+                                                                  ItemsSource="{Binding ValueSources}"
+                                                                  SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                        <TextBox Classes="InspectorInput" Width="80"
+                                                                 IsVisible="{Binding IsEditable}"
+                                                                 Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Vertical" Spacing="4" IsVisible="{Binding IsCall}">
+                                                        <ComboBox Classes="InspectorInput" MinWidth="120"
+                                                                  ItemsSource="{Binding ActuatorNames}"
+                                                                  SelectedItem="{Binding SelectedActuator, Mode=TwoWay}"/>
+                                                        <ItemsControl ItemsSource="{Binding CallArgs}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="10,0,0,0">
+                                                                        <TextBlock Text="{Binding ParamName}" Classes="InspectorPropertyName"
+                                                                                   VerticalAlignment="Center"/>
+                                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsScalar}"
+                                                                                      ItemsSource="{Binding ValueSources}"
+                                                                                      SelectedItem="{Binding SelectedValueSource, Mode=TwoWay}"/>
+                                                                            <TextBox Classes="InspectorInput" Width="70"
+                                                                                     IsVisible="{Binding IsEditable}"
+                                                                                     Text="{Binding ValueEditor.Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsBinding}"
+                                                                                      ItemsSource="{Binding Bindings}"
+                                                                                      SelectedItem="{Binding SelectedBinding, Mode=TwoWay}"/>
+                                                                            <ComboBox Classes="InspectorInput" MinWidth="100"
+                                                                                      IsVisible="{Binding IsAgent}"
+                                                                                      ItemsSource="{Binding Agents}"
+                                                                                      SelectedItem="{Binding SelectedAgent, Mode=TwoWay}"/>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Content="&#x2715;" Classes="InspectorApplyButton"
+                                                        VerticalAlignment="Center" Command="{Binding DeleteCommand}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Text="transitions" Classes="InspectorSectionTitle" Margin="0,8,0,0"
+                                           IsVisible="{Binding SelectedStatechartState.HasTransitions}"/>
+                                <ItemsControl ItemsSource="{Binding SelectedStatechartState.TransitionRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" Classes="InspectorPropertyName"
+                                                           VerticalAlignment="Center"/>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                                                            VerticalAlignment="Center">
+                                                    <ComboBox Classes="InspectorInput"
+                                                              MinWidth="96"
+                                                              ItemsSource="{Binding TriggerKinds}"
+                                                              SelectedItem="{Binding SelectedTriggerKind, Mode=TwoWay}"/>
+                                                    <TextBox Width="70" IsVisible="{Binding IsAfter}"
+                                                             Classes="InspectorInput"
+                                                             Text="{Binding SecondsEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    <TextBlock Text="s" VerticalAlignment="Center"
+                                                               IsVisible="{Binding IsAfter}"/>
+                                                    <TextBox Width="120" IsVisible="{Binding IsEvent}"
+                                                             Classes="InspectorInput" PlaceholderText="event name"
+                                                             Text="{Binding EventNameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                                    <ComboBox MinWidth="120" IsVisible="{Binding IsGuard}"
+                                                              Classes="InspectorInput"
+                                                              ItemsSource="{Binding GuardSources}"
+                                                              SelectedItem="{Binding SelectedGuardSource, Mode=TwoWay}"/>
+                                                    <TextBlock Text="{Binding ActionSummary}" Classes="InspectorPropertyName"
+                                                               VerticalAlignment="Center" IsVisible="{Binding HasActions}"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Content="Delete"
+                                                        Classes="InspectorApplyButton"
+                                                        VerticalAlignment="Center"
+                                                        Command="{Binding DeleteCommand}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

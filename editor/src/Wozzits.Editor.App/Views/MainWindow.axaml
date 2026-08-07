@@ -1,0 +1,92 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Wozzits.Editor.ViewModels"
+        xmlns:dock="using:Dock.Avalonia.Controls"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="760"
+        x:Class="Wozzits.Editor.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Width="1280"
+        Height="760"
+        MinWidth="960"
+        MinHeight="620"
+        Title="{Binding WindowTitle}">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*">
+        <Menu Classes="MainMenu">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Save All"
+                          Command="{Binding SaveAllCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_Run">
+                <MenuItem Header="_Pause Simulation"
+                          ToggleType="CheckBox"
+                          IsChecked="{Binding SimulationPaused, Mode=TwoWay}"/>
+                <MenuItem Header="Restart _Viewport"
+                          Command="{Binding RestartViewportCommand}"/>
+                <MenuItem Header="Rebuild Behavior _Modules"
+                          Command="{Binding RebuildBehaviorsCommand}"/>
+                <Separator/>
+                <MenuItem Header="Launch _Standalone Play"
+                          Command="{Binding LaunchStandaloneCommand}"/>
+                <Separator/>
+                <MenuItem Header="Frame _Profiling"
+                          ToggleType="CheckBox"
+                          IsChecked="{Binding FrameProfilingEnabled, Mode=TwoWay}"/>
+            </MenuItem>
+            <MenuItem Header="S_cenelets" SubmenuOpened="OnPrefabsMenuOpened">
+                <MenuItem Header="_New Scenelet" Click="OnNewScenelet"/>
+                <Separator/>
+                <MenuItem Header="_Open Scenelet" x:Name="OpenPrefabMenu"/>
+                <MenuItem Header="_Back to Scene"
+                          Command="{Binding BackToSceneCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Refresh Scenelet List"
+                          Command="{Binding RefreshSceneletsCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_Statecharts" SubmenuOpened="OnStatechartsMenuOpened">
+                <MenuItem Header="_New Chart" Command="{Binding NewStatechartCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Open Chart" x:Name="OpenStatechartMenu"/>
+            </MenuItem>
+            <MenuItem Header="_Minds" SubmenuOpened="OnMindsMenuOpened">
+                <MenuItem Header="_New Mind" Command="{Binding NewMindCommand}"/>
+                <Separator/>
+                <MenuItem Header="_Open Mind" x:Name="OpenMindMenu"/>
+            </MenuItem>
+            <MenuItem Header="_Assets">
+                <MenuItem Header="Add _Inochi Shared Assets"
+                          Command="{Binding AddInochiSharedAssetsCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Theme">
+                    <MenuItem Header="_Blue (Daylight)"
+                              x:Name="BlueThemeMenuItem"
+                              ToggleType="Radio"
+                              IsChecked="True"
+                              Click="OnSelectBlueTheme"/>
+                    <MenuItem Header="_Red (Night Vision)"
+                              x:Name="RedThemeMenuItem"
+                              ToggleType="Radio"
+                              Click="OnSelectRedTheme"/>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="_Window"/>
+        </Menu>
+
+        <dock:DockControl Grid.Row="1"
+                          Layout="{Binding EditorLayout}"
+                          Factory="{Binding DockFactory}"
+                          DefaultContext="{Binding}"
+                          IsDockingEnabled="True"
+                          EnableManagedWindowLayer="True"
+                          AutoCreateDataTemplates="True"
+                          Background="{DynamicResource WozzitsShellBackgroundBrush}"/>
+    </Grid>
+</Window>

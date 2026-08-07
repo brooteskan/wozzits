@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sc="using:Wozzits.Editor.ViewModels.EditorPanes.Statecharts"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.Statecharts.StatechartDocumentView"
+             x:DataType="sc:StatechartDocumentViewModel">
+    <Grid RowDefinitions="Auto,*">
+        <Border Grid.Row="0"
+                Background="{DynamicResource WozzitsPanelBackgroundBrush}"
+                BorderBrush="{DynamicResource WozzitsPanelBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="10,5">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBox Text="{Binding NameEditor.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                         Classes="InspectorInput"
+                         IsEnabled="{Binding !IsReadOnly}"
+                         MinWidth="180"
+                         MaxWidth="360"
+                         HorizontalAlignment="Left"
+                         VerticalAlignment="Center"
+                         ToolTip.Tip="Rename the chart (renames its files on commit)"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                    <CheckBox Content="Read-only"
+                              Classes="InspectorCheck"
+                              IsChecked="{Binding IsReadOnly, Mode=TwoWay}"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Protect this chart: Save All will not overwrite its .sc.json"/>
+                    <Button Content="Delete"
+                            Classes="InspectorApplyButton"
+                            IsEnabled="{Binding !IsReadOnly}"
+                            VerticalAlignment="Center"
+                            ToolTip.Tip="Delete this chart's files">
+                        <Button.Flyout>
+                            <Flyout>
+                                <StackPanel Spacing="8" MaxWidth="220">
+                                    <TextBlock Text="Delete this chart's files? This can't be undone."
+                                               TextWrapping="Wrap"/>
+                                    <Button Content="Delete chart"
+                                            Classes="InspectorApplyButton"
+                                            HorizontalAlignment="Right"
+                                            Command="{Binding DeleteChartCommand}"/>
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="2*,Auto,3*">
+            <ContentControl Grid.Column="0" Content="{Binding Control}"/>
+
+            <GridSplitter Grid.Column="1"
+                          Width="5"
+                          VerticalAlignment="Stretch"
+                          ResizeDirection="Columns"
+                          Background="{DynamicResource WozzitsGraphWireBrush}"/>
+
+            <ContentControl Grid.Column="2" Content="{Binding Dataflow}"/>
+        </Grid>
+    </Grid>
+</UserControl>

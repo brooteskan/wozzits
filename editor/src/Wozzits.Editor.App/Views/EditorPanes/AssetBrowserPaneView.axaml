@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:panes="using:Wozzits.Editor.ViewModels.EditorPanes"
+             x:Class="Wozzits.Editor.App.Views.EditorPanes.AssetBrowserPaneView"
+             x:DataType="panes:AssetBrowserPaneViewModel">
+    <UserControl.Resources>
+        <!-- Retint + shrink the Fluent Expander header (default is a tall, cream
+             bar). Scoped to this pane via UserControl.Resources. -->
+        <SolidColorBrush x:Key="ExpanderHeaderBackground"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderBackgroundPointerOver"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderBackgroundPressed"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderBackgroundDisabled"
+                         Color="{DynamicResource WozzitsPanelInsetColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderForeground"
+                         Color="{DynamicResource WozzitsTextColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderForegroundPointerOver"
+                         Color="{DynamicResource WozzitsTextColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderForegroundPressed"
+                         Color="{DynamicResource WozzitsTextColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderForegroundDisabled"
+                         Color="{DynamicResource WozzitsMutedTextColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderBorderBrush"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPointerOver"
+                         Color="{DynamicResource WozzitsAccentColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderBorderBrushPressed"
+                         Color="{DynamicResource WozzitsAccentColor}"/>
+        <SolidColorBrush x:Key="ExpanderHeaderBorderBrushDisabled"
+                         Color="{DynamicResource WozzitsPanelBorderColor}"/>
+        <Thickness x:Key="ExpanderHeaderBorderThickness">1</Thickness>
+        <Thickness x:Key="ExpanderHeaderPadding">8,2</Thickness>
+        <x:Double x:Key="ExpanderMinHeight">20</x:Double>
+    </UserControl.Resources>
+    <Grid Classes="EditorPaneRoot">
+        <Border Classes="PaneSurface">
+            <Grid RowDefinitions="Auto,*" RowSpacing="6">
+                <TextBox Grid.Row="0"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         PlaceholderText="Search assets…"
+                         Classes="InspectorInput"/>
+
+                <TextBlock Grid.Row="1"
+                           Text="{Binding EmptyState}"
+                           Classes="PaneEmptyState"
+                           IsVisible="{Binding HasNoTypes}"/>
+
+                <ScrollViewer Grid.Row="1"
+                              IsVisible="{Binding HasTypes}">
+                    <ItemsControl ItemsSource="{Binding Types}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="panes:AssetBrowserTypeViewModel">
+                                <Expander Header="{Binding Header}"
+                                          Classes="AssetBrowserType"
+                                          FontSize="11"
+                                          Margin="0,0,0,2">
+                                    <ItemsControl ItemsSource="{Binding Schemas}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="panes:AssetBrowserSchemaViewModel">
+                                                <Border Classes="AssetBrowserSchema"
+                                                        PointerPressed="SchemaPointerPressed"
+                                                        ToolTip.Tip="Drag onto the asset graph to add a node">
+                                                    <StackPanel Classes="InspectorPortItem">
+                                                        <TextBlock Text="{Binding Label}"
+                                                                   Classes="InspectorComponentName"/>
+                                                        <TextBlock Text="{Binding Detail}"
+                                                                   Classes="InspectorPortDetail"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Expander>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
