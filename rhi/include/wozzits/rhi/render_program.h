@@ -1,0 +1,184 @@
+#pragma once
+
+// wozzits/rhi/render_program.h
+//
+// The declarative render-program description: the data contract at the engine
+// boundary. A render program is fully described by this struct — no behavior
+// hides in a switch keyed off an enum member.
+//
+// Note which things are enums and which are not, because it is the whole point:
+//
+//   - Pipeline STATE (blend / depth / raster / input layout / topology /
+//     binding model) is a set of CLOSED, bounded value sets. Those stay enums;
+//     the correct safety tool for them is exhaustiveness checking, not a
+//     registry. Adding a member should break a switch at compile time.
+//
+//   - Descriptor SEMANTIC (which logical resource a binding wants) is an OPEN
+//     identity set: each new render path may introduce a new one. In the old
+//     engine this was `DescriptorSemantic`, an enum that grew over time
+//     (... MeshFieldVisualization, MeshMaskRules) and had to be agreed upon by
+//     many call sites — exactly the open-identity enum this repo refuses. Here
+//     it is a Tag, registered by name like a render program.
+
+#include <wozzits/rhi/constants_layout.h>
+#include <wozzits/rhi/shader_resource_group_layout.h>
+
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace wz::rhi
+{
+    // ── Closed, bounded pipeline-state value sets: correctly enums ────────────
+
+    // How the pipeline sources vertices. A small, closed STRUCTURAL set — not
+    // content names. The engine's BindingModel had MeshIA / SplatVertexInstanced
+    // / ScalarFieldTexture / ParticlePull / ... — those name the *renderables*
+    // that use a strategy, an open set that grew per content. The structural
+    // truth is just these three; instancing rides on per-attribute step rate.
+    enum class VertexSource : uint8_t
+    {
+        InputAssembler,   // bind vertex/index buffers (classic IA)
+        Pull,             // no IA; the vertex shader reads from an SRV by index
+        None,             // no vertex input (fullscreen / fully procedural)
+    };
+
+    enum class PrimitiveTopology : uint8_t { TriangleList, TriangleStrip };
+
+    // Vertex attribute format — closed, API-bounded enum (like BlendMode /
+    // TextureFormat). Content uses existing formats; it cannot invent new ones.
+    enum class VertexFormat : uint8_t
+    {
+        Float32,
+        Float32x2,
+        Float32x3,
+        Float32x4,
+        UInt32,
+        UInt8x4Unorm,
+    };
+
+    enum class VertexStepRate : uint8_t { PerVertex, PerInstance };
+
+    // Fixed-function blend recipes. Opaque / AlphaBlend / Additive are the
+    // classic trio; Multiply (Src×Dst) and Screen (Src + Dst − Src×Dst) are the
+    // 2D-puppet / overlay compositing modes (inochi runtime). Both are
+    // COVERAGE-AWARE — they fall back to Dst where the source is transparent,
+    // so a partially-covering source composites rather than punching a hole.
+    // For an opaque source that reduces to the textbook operator.
+    // PremultipliedAlpha (Src + Dst×(1−SrcAlpha)) is AlphaBlend's counterpart for
+    // sources that have ALREADY multiplied colour by alpha; it is the correct
+    // "over" operator whenever semi-transparent texels must not bleed toward
+    // black at their edges, and is what the Inochi2D compositing model assumes.
+    // SourceAtop (Src×DstAlpha + Dst×(1−SrcAlpha)) is the Porter-Duff operator
+    // of that name: the source shows only where the destination is already
+    // covered, so it paints ONTO what is beneath without extending it. Both its
+    // colour and its alpha are scaled by the destination's alpha, which keeps
+    // the result premultiplied-consistent — an alpha that outran its colour
+    // would read as a dark fringe once composited.
+    // SliceFromDestination (Src×(1−DstAlpha) − Dst×(1−SrcAlpha), REVERSE
+    // SUBTRACT) is its cutting counterpart: where the source covers, it removes
+    // the destination. Note the operator direction — GL's FUNC_SUBTRACT is
+    // src−dst, which is D3D12's REV_SUBTRACT, not its SUBTRACT.
+    // A new member must be handled by every PSO builder that consumes it — the
+    // engine's DX12 pipeline factories branch on this and have no `default:`.
+    enum class BlendMode : uint8_t
+    {
+        Opaque,
+        AlphaBlend,
+        Additive,
+        Multiply,
+        Screen,
+        PremultipliedAlpha,
+        SourceAtop,
+        SliceFromDestination,
+    };
+    enum class DepthMode : uint8_t { Disabled, TestNoWrite, TestWrite };
+    enum class RasterMode : uint8_t { SolidCullBack, SolidCullNone, WireframeCullNone };
+    // ── Vertex input (data, not an enum) ───────────────────────────────────────
+
+    struct VertexAttribute
+    {
+        uint32_t       location    = 0;   // shader input location / semantic slot
+        VertexFormat   format      = VertexFormat::Float32x3;
+        uint32_t       offset      = 0;   // byte offset within its buffer slot
+        uint32_t       buffer_slot = 0;
+        VertexStepRate step        = VertexStepRate::PerVertex;
+    };
+
+    // The vertex input layout as DATA. A new vertex format — a new renderable's
+    // geometry — is a different attribute list, NOT a new enum member plus a new
+    // pipeline-factory switch. This is the D3D12_INPUT_ELEMENT_DESC[] / Vulkan
+    // vertex-input model. Empty for VertexSource::Pull / None.
+    struct VertexLayout
+    {
+        std::vector<VertexAttribute> attributes;
+    };
+
+    // ── Binding declarations ──────────────────────────────────────────────────
+
+    struct RootConstantBinding
+    {
+        ShaderStage visibility = ShaderStage::All;
+        Tag semantic{};
+        uint32_t shader_register = 0;
+        uint32_t register_space = 0;
+        uint32_t value_count = 0;
+    };
+
+    // ── The program description (the boundary contract) ───────────────────────
+
+    struct RenderProgramDesc
+    {
+        std::string name;
+
+        // Shader identity as a resolvable ref (path or symbolic id). rhi's
+        // shader subsystem resolves these; the engine adapter supplies them
+        // from its shader AssetKeys.
+        std::string vertex_shader;
+        std::string pixel_shader;
+
+        // NOTE THE DEFAULT, and that the DX12 backend REFUSES it at realize:
+        // RhiDx12CommandRecorder::set_geometry binds no vertex buffers, so a
+        // program declaring InputAssembler would draw from buffers that were
+        // never bound. The pipeline cache logs and returns null rather than
+        // realizing one (#317 D1-Q1) -- the same fail-closed shape the recorder
+        // applies to DescriptorKind::Sampler.
+        //
+        // The declaration is kept design surface, not dead code: the IA path is
+        // the classical vertex ladder rung, and the vocabulary below (VertexLayout
+        // / VertexAttribute / VertexFormat / VertexStepRate) is what implementing
+        // it will need. Only USING it is refused, until set_geometry exists.
+        //
+        // The default stays InputAssembler so the refusal is what a caller meets
+        // rather than a silent wrong draw; a program that means the working path
+        // says so. 0 of 16 registered programs in test_mesh_001 leave it here.
+        VertexSource      vertex_source = VertexSource::InputAssembler;
+        VertexLayout      vertex_layout{};   // data; empty for Pull / None
+        PrimitiveTopology topology      = PrimitiveTopology::TriangleList;
+        BlendMode         blend_mode    = BlendMode::Opaque;
+        DepthMode         depth_mode    = DepthMode::TestWrite;
+        RasterMode        raster_mode   = RasterMode::SolidCullBack;
+
+        // Slotted SRG layouts in declaration order. Convention: view=0,
+        // material=1, object=2. Descriptor and constant Tags live inside
+        // these layouts, not on a flat program-wide binding list.
+        std::vector<ShaderResourceGroupLayout> shader_resource_groups;
+    };
+
+    [[nodiscard]] inline std::optional<ConstantsLayout>
+    make_constants_layout(std::span<const RootConstantBinding> bindings)
+    {
+        ConstantsLayout layout;
+        for (const RootConstantBinding& binding : bindings) {
+            if (!layout.append(
+                    binding.semantic,
+                    binding.value_count * sizeof(uint32_t)))
+            {
+                return std::nullopt;
+            }
+        }
+        return layout;
+    }
+}
