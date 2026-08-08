@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Group targets into IDE folders (Solution Explorer / VS CMake Targets View)
+# rather than a flat list -- see the test-target FOLDER below. Harmless when this
+# tree is consumed as a subdirectory of the monorepo (the parent sets it too).
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 option(WOZZITS_RHI_BUILD_TESTS "Build wozzits-rhi tests" ON)
 
 # Header-only foundation library. Consumers (and tests) get the include path.
@@ -50,5 +55,9 @@ if(WOZZITS_RHI_BUILD_TESTS)
         target_link_libraries(${test_name} PRIVATE wozzits_rhi)
         target_compile_options(${test_name} PRIVATE ${WZ_RHI_WARNINGS})
         add_test(NAME ${test_name} COMMAND ${test_name})
+        # Tuck the test exes under a tests/ node in the IDE instead of the flat
+        # top-level list. Only reached in a standalone rhi build -- the monorepo
+        # forces WOZZITS_RHI_BUILD_TESTS OFF, so no test targets exist there.
+        set_target_properties(${test_name} PROPERTIES FOLDER "tests")
     endforeach()
 endif()

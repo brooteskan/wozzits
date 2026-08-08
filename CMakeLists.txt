@@ -1600,3 +1600,82 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(scene_compile scene_adversarial_test_3)
 
 endif()
+
+# ----------------------------------------------------------------------------
+# IDE target organization (Visual Studio / Xcode "Solution Explorer" folders)
+# ----------------------------------------------------------------------------
+# Group targets into folders so the IDE view isn't one flat top-level list. The
+# ~314 test executables already fold themselves under tests/<category> (see the
+# set_target_properties FOLDER call in rs_add_test_group / rs_add_abi_test_group);
+# this section does the same for everything else -- the engine libraries, the
+# apps and CLI tools, the examples, the test-support DLLs, and the vendored
+# third-party trees.
+#
+# FOLDER is purely a generator hint: it changes how projects are grouped in an
+# IDE (the VS generator, and VS's Ninja-backed CMake "Targets View") and has no
+# effect on what gets built. Ninja/Makefile command-line builds ignore it. Kept
+# in one block at end-of-file so every conditional target (examples, test
+# plugins) already exists by the time its FOLDER is set.
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# Set FOLDER on a target only if it exists -- many are guarded by options
+# (examples, tests) so they are absent in a lib-only configure.
+function(wz_set_folder_if_target target folder)
+    if(TARGET ${target})
+        set_target_properties(${target} PROPERTIES FOLDER "${folder}")
+    endif()
+endfunction()
+
+# Assign a FOLDER to every buildsystem target defined under `dir`, recursively.
+# Used to tuck an entire vendored dependency subtree under one node without
+# naming each third-party target it happens to create (rtaudio, pmp, fastgltf +
+# simdjson, the gtest/gmock quartet, ...).
+function(wz_set_folder_recursive dir folder)
+    get_property(_wz_targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_wz_t IN LISTS _wz_targets)
+        set_target_properties(${_wz_t} PROPERTIES FOLDER "${folder}")
+    endforeach()
+    get_property(_wz_subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+    foreach(_wz_sub IN LISTS _wz_subdirs)
+        wz_set_folder_recursive("${_wz_sub}" "${folder}")
+    endforeach()
+endfunction()
+
+# First-party engine libraries (wz_external_ply's objects link into the engine;
+# wozzits_rhi is the header-only RHI foundation, an INTERFACE lib).
+wz_set_folder_if_target(window_engine   "engine")
+wz_set_folder_if_target(wozzits_abi     "engine")
+wz_set_folder_if_target(wz_external_ply "engine")
+wz_set_folder_if_target(wozzits_rhi     "engine")
+
+# Shippable applications and the editor's play-mode host.
+wz_set_folder_if_target(wozzits_app_v1      "apps")
+wz_set_folder_if_target(wozzits_editor_host "apps")
+
+# Headless CLI tools.
+wz_set_folder_if_target(wozzits_sky_bake "tools")
+wz_set_folder_if_target(wozzits_export   "tools")
+
+# Shared resource-staging helper (a custom target, otherwise top-level).
+wz_set_folder_if_target(wz_stage_resources "build")
+
+# Examples (only defined when WINDOW_ENGINE_BUILD_EXAMPLES / V8 scripting is ON).
+wz_set_folder_if_target(wozzits_rtaudio_smoke             "examples")
+wz_set_folder_if_target(rhi_pull_cube                     "examples")
+wz_set_folder_if_target(v8_script_smoke                   "examples")
+wz_set_folder_if_target(wz_behavior_plugin_template       "examples")
+wz_set_folder_if_target(wz_behavior_plugin_angular_motion "examples")
+
+# Test-support plugin DLLs (only defined when WINDOW_ENGINE_ENABLE_TESTS is ON),
+# nested under the existing tests/ node beside tests/<category>.
+wz_set_folder_if_target(behavior_dynamic_test_plugin           "tests/plugins")
+wz_set_folder_if_target(behavior_dynamic_missing_symbol_plugin "tests/plugins")
+wz_set_folder_if_target(wozzits_app_behavior_test_plugin       "tests/plugins")
+
+# Vendored third-party trees -> one node each, whatever targets they define.
+wz_set_folder_recursive("${CMAKE_CURRENT_SOURCE_DIR}/external/gltf/fastgltf" "dependencies/fastgltf")
+wz_set_folder_recursive("${CMAKE_CURRENT_SOURCE_DIR}/external/pmp"           "dependencies/pmp")
+wz_set_folder_recursive("${CMAKE_CURRENT_SOURCE_DIR}/external/audio/rtaudio" "dependencies/rtaudio")
+if(DEFINED googletest_SOURCE_DIR)
+    wz_set_folder_recursive("${googletest_SOURCE_DIR}" "dependencies/googletest")
+endif()
