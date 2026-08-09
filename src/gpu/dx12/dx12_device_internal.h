@@ -180,6 +180,11 @@ namespace wz::gpu::dx12
         ID3D12GraphicsCommandList* cmd = nullptr;
         UINT   frame_slot = 0;
         UINT64 slot_fence_value[kFramesInFlight] = {};
+        // Runtime ring depth, <= kFramesInFlight. 2 == pipelined (default);
+        // WZ_FRAMES_IN_FLIGHT=1 forces serial (slot 0 only, begin_frame waits on
+        // the immediately-prior frame) for an A/B of the overlap (#306). Set once
+        // at device creation.
+        UINT   frames_in_flight = kFramesInFlight;
 
         // render target
         ID3D12DescriptorHeap* rtv_heap = nullptr;

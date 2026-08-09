@@ -875,6 +875,27 @@ namespace wz::app
                 return v != nullptr && v[0] != '\0' && !(v[0] == '0' && v[1] == '\0');
             }();
 
+            // WZ_CPU_LOAD_MS: inject N ms of synthetic per-frame CPU work (a busy
+            // spin) to measure the frames-in-flight headroom (#306) -- how much CPU
+            // the pipeline absorbs before the frame period grows. Default 0 = off.
+            const double env_cpu_load_ms = [] {
+#pragma warning(push)
+#pragma warning(disable : 4996)
+                const char* v = std::getenv("WZ_CPU_LOAD_MS");
+#pragma warning(pop)
+                return v ? std::atof(v) : 0.0;
+            }();
+
+            // WZ_NO_VSYNC=1 presents with sync_interval 0 (uncapped), so raw frame
+            // throughput -- not the 60 Hz cap -- is what the profiler reports.
+            const bool env_no_vsync = [] {
+#pragma warning(push)
+#pragma warning(disable : 4996)
+                const char* v = std::getenv("WZ_NO_VSYNC");
+#pragma warning(pop)
+                return v != nullptr && v[0] != '\0' && !(v[0] == '0' && v[1] == '\0');
+            }();
+
             struct FrameDriveInputs {
                 wz::input::InputState input{};
                 float                 dt           = 0.0f;
@@ -890,6 +911,15 @@ namespace wz::app
                     app.simulation_tick(frame_drive.input, frame_drive.dt, frame_drive.drive_camera);
                 else
                     app.paused_frame_tick(frame_drive.input, frame_drive.dt, frame_drive.drive_camera);
+                if (env_cpu_load_ms > 0.0) {
+                    // Synthetic CPU load (#306 headroom measurement): busy-spin so
+                    // it counts as real per-frame CPU work that overlaps the GPU.
+                    const uint64_t hz = wz::time::TimeSource::ticks_per_second();
+                    const uint64_t target = static_cast<uint64_t>(
+                        env_cpu_load_ms * 1e-3 * static_cast<double>(hz));
+                    const uint64_t start = wz::time::TimeSource::now_ticks();
+                    while (wz::time::TimeSource::now_ticks() - start < target) { }
+                }
                 return true;
             };
             frame_ops.begin_frame = [&] {
@@ -914,7 +944,10 @@ namespace wz::app
                 return true;
             };
             frame_ops.present = [&] {
-                if (!wz::gpu::present(ctx.device)) { ctx.logger.error("present failed"); return false; }
+                const bool ok = env_no_vsync
+                    ? wz::gpu::present(ctx.device, 0u)
+                    : wz::gpu::present(ctx.device);
+                if (!ok) { ctx.logger.error("present failed"); return false; }
                 return true;
             };
 

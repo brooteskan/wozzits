@@ -12,6 +12,8 @@
 #include <gpu/gpu.h>
 #include <gpu/dx12/dx12.h>
 #include <window/window2.h>
+
+#include <cstdlib>
 #include <cassert>
 #include <cstdio>
 
@@ -379,6 +381,19 @@ namespace wz::gpu::dx12
             impl->allocators[i] = allocators[i];
         }
         impl->cmd = cmd;
+
+        // WZ_FRAMES_IN_FLIGHT (1..kFramesInFlight): runtime ring depth. 1 forces
+        // serial for an A/B measurement of the frames-in-flight overlap (#306);
+        // default is the full ring.
+#pragma warning(push)
+#pragma warning(disable : 4996)  // std::getenv is the correct, portable call
+        if (const char* v = std::getenv("WZ_FRAMES_IN_FLIGHT"); v && v[0]) {
+            const int n = std::atoi(v);
+            if (n >= 1 && n <= static_cast<int>(DX12Device::kFramesInFlight)) {
+                impl->frames_in_flight = static_cast<UINT>(n);
+            }
+        }
+#pragma warning(pop)
         impl->rtv_heap = rtv_heap;
         impl->hwnd = hwnd;
         impl->width = 1280;
@@ -504,7 +519,7 @@ namespace wz::gpu::dx12
         // signalled (0 == never used -> no wait). While end_frame still waits on
         // the just-submitted frame this is a no-op (GetCompletedValue is already
         // current); it becomes the real pacing wait once end_frame's wait goes.
-        impl->frame_slot = (impl->frame_slot + 1u) % DX12Device::kFramesInFlight;
+        impl->frame_slot = (impl->frame_slot + 1u) % impl->frames_in_flight;
         const UINT64 slot_wait = impl->slot_fence_value[impl->frame_slot];
         if (slot_wait != 0 && impl->fence->GetCompletedValue() < slot_wait) {
             hr = impl->fence->SetEventOnCompletion(slot_wait, impl->fence_event);
