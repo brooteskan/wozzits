@@ -29,6 +29,7 @@
 #include <tasks/task.h>
 #include <tasks/fiber_backend.h>
 #include <containers/work_stealing_deque.h>
+#include <containers/mpsc_queue.h>
 
 #include <atomic>
 #include <chrono>
@@ -45,6 +46,7 @@
 namespace wz::tasks
 {
     using wz::core::containers::WorkStealingDeque;
+    using wz::core::containers::MPSCQueue;
 
     // One unit of work + the counter it completes. Exactly one of task_fn /
     // index_fn is set (index_fn also reads `index`).
@@ -98,6 +100,7 @@ namespace wz::tasks
         void complete(Counter& c);
 
         bool pop_or_steal(unsigned index, Task& out);
+        void drain_injection(unsigned index);
         bool has_any_work();
 
         FiberContext* acquire_fiber();
@@ -116,7 +119,15 @@ namespace wz::tasks
         std::condition_variable cv_;
         std::deque<FiberContext*> resumable_;    // guarded by mutex_
         std::atomic<bool> running_{ true };
-        std::atomic<unsigned> next_victim_{ 0 };
+
+        // Non-worker submits (the safe-island main thread) are not the owner of any
+        // deque, and the work-stealing deque's push/pop are OWNER-ONLY (#304). So a
+        // non-owner hands work off through this MPSC injection queue; a worker drains
+        // it into its own deque (drain_injection). MPSC = many producers, one
+        // consumer -- injection_drain_lock_ is a try-token that keeps the consumer
+        // side single even though any worker may be the one to drain.
+        MPSCQueue<Task> injection_;
+        std::atomic<bool> injection_drain_lock_{ false };
 
         std::mutex fiber_mutex_;                 // the fibre pool
         std::vector<std::unique_ptr<FiberContext>> all_fibers_;  // guarded by fiber_mutex_

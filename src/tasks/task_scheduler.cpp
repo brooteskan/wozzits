@@ -154,13 +154,15 @@ namespace wz::tasks
 
     void TaskScheduler::submit(const Task& t)
     {
-        const unsigned n = static_cast<unsigned>(deques_.size());
-        unsigned pick;
+        // A worker OWNS its deque, so it pushes there directly -- locality: its own
+        // freshly-forked children stay on its LIFO. A non-worker (the safe-island
+        // main thread) owns no deque and cannot push into one (push/pop are
+        // owner-only), so it hands the task off through the MPSC injection queue; a
+        // worker drains that into its deque in drain_injection().
         if (t_worker_index >= 0)
-            pick = static_cast<unsigned>(t_worker_index);  // own deque (locality)
+            deques_[static_cast<unsigned>(t_worker_index)]->push(t);
         else
-            pick = next_victim_.fetch_add(1, std::memory_order_relaxed) % n;
-        deques_[pick]->push(t);
+            injection_.push(t);
         {
             std::lock_guard<std::mutex> lock(mutex_);
             cv_.notify_one();
@@ -207,8 +209,30 @@ namespace wz::tasks
         return fc;
     }
 
+    void TaskScheduler::drain_injection(unsigned index)
+    {
+        // The injection queue is MPSC: many submitters, but only ONE consumer at a
+        // time. The token enforces that single-consumer side -- a worker that fails
+        // to acquire it leaves draining to whoever holds it and moves on to pop/steal
+        // (the drained tasks land in the drainer's deque and are then stealable). The
+        // empty() pre-check is the cheap no-CAS fast path for the common "nothing
+        // injected" case; it may miss an in-flight push, which the submit's notify
+        // and the next loop iteration catch.
+        if (injection_.empty())
+            return;
+        bool expected = false;
+        if (!injection_drain_lock_.compare_exchange_strong(
+                expected, true, std::memory_order_acquire, std::memory_order_relaxed))
+            return;
+        Task t;
+        while (injection_.try_pop(t))
+            deques_[index]->push(t);  // owner push: this worker owns deque `index`
+        injection_drain_lock_.store(false, std::memory_order_release);
+    }
+
     bool TaskScheduler::pop_or_steal(unsigned index, Task& out)
     {
+        drain_injection(index);
         if (std::optional<Task> t = deques_[index]->pop())
         {
             out = *t;
@@ -230,6 +254,8 @@ namespace wz::tasks
     bool TaskScheduler::has_any_work()
     {
         if (!resumable_.empty())
+            return true;
+        if (!injection_.empty())
             return true;
         for (const std::unique_ptr<WorkStealingDeque<Task>>& d : deques_)
             if (!d->empty())
