@@ -5,9 +5,11 @@
 // wz::tasks -- the fork-join task API (#293). run() submits work against a
 // Counter; wait() returns once that counter reaches zero. This is the S0 surface:
 // the exact signatures the cognition tensor-network contraction (and every later
-// consumer) calls, sitting on a SERIAL-INLINE backend -- run() executes each task
-// immediately on the calling thread, so a counter is already drained by the time
-// its wait() runs.
+// consumer) calls. The backend is pluggable: with no scheduler installed -- and
+// for any call made NESTED from inside a worker -- run() executes each task inline
+// on the calling thread and wait() is immediate (the serial S0 backend). Install a
+// TaskScheduler (tasks/task_scheduler.h) and run() from a non-worker thread fans
+// tasks onto the worker pool while wait() blocks until they finish (S1).
 //
 // The point of S0 is to pin the API and establish the correctness oracle: the
 // contraction rewritten onto run()/wait() produces bit-identical results because
@@ -22,11 +24,13 @@
 // non-capturing lambda converts to the function-pointer form, so call sites stay
 // readable without heap closures.
 
+#include <atomic>
 #include <cstddef>
 
 namespace wz::tasks
 {
     class Counter;
+    class TaskScheduler;
 
     // A task: called with the caller-supplied `user` pointer.
     using TaskFn = void (*)(void* user);
@@ -71,12 +75,14 @@ namespace wz::tasks
         Counter& operator=(Counter&&) = delete;
 
     private:
-        // Outstanding-task count. Plain int at S0 (single thread, drained inline);
-        // becomes std::atomic when the pool makes completion cross-thread (S1).
-        int outstanding_ = 0;
+        // Outstanding-task count: bumped in run(), dropped as each task finishes.
+        // Atomic because at S1 worker threads complete tasks while the submitting
+        // thread blocks in wait() on it via atomic wait/notify.
+        std::atomic<int> outstanding_{ 0 };
 
         friend void run(Counter&, TaskFn, void*);
         friend void run(Counter&, std::size_t, IndexFn, void*);
         friend void wait(Counter&);
+        friend class TaskScheduler;  // completes a task: decrement + notify
     };
 }

@@ -3,6 +3,7 @@
 #include <cognition/tree_bp.h>
 #include <graph/shared_edge_polytree.h>
 #include <cognition/qstate/qstate.h>
+#include <tasks/task_scheduler.h>
 
 #include <gtest/gtest.h>
 
@@ -355,6 +356,56 @@ TEST(TreeTn, BranchingMatchesDenseReference)
         for (std::size_t i = 0; i < got.size(); ++i) {
             EXPECT_NEAR(got[i], ref[i], 1e-9)
                 << "2-level tree trial " << trial << " site " << i;
+        }
+    }
+}
+
+// S1 (#293): with the wz::tasks worker pool installed, the collect/distribute
+// sweeps fan their child subtrees onto worker threads. Because each subtree writes
+// only its own messages and the parent folds children in fixed CSR order, the
+// result must be BIT-IDENTICAL to the serial contraction -- not merely close. This
+// pins that the pool changes only WHEN work runs, never the numbers (and that the
+// concurrent subtrees are race-free). A wide star gives the root many independent
+// children, so there is real cross-thread fan-out.
+TEST(TreeTn, PoolContractionIsBitIdenticalToSerial)
+{
+    Rng rng{ 0xBEEF1234u };
+    const std::vector<uint32_t> leaf_dims = { 2, 3, 2, 2, 3, 2, 2, 2 };  // 8 leaves
+
+    for (int trial = 0; trial < 20; ++trial) {
+        SharedEdgePolytreeBuilder<TreeNode, BondEnv> b;
+
+        std::size_t centre_sz = 2;
+        for (uint32_t d : leaf_dims) {
+            centre_sz *= d;
+        }
+        std::vector<Complex> ct(centre_sz);
+        fill_random(ct, rng);
+        const NodeHandle centre = add_node(b, tn_node(1, leaf_dims, ct));
+
+        for (uint32_t d : leaf_dims) {
+            std::vector<Complex> lt(static_cast<std::size_t>(2) * d);
+            fill_random(lt, rng);
+            const NodeHandle leaf = add_node(b, tn_node(d, {}, std::move(lt)));
+            add_edge(b, centre, leaf, BondEnv{});
+        }
+
+        TreeTnNetwork net = std::move(*build(std::move(b)));
+
+        const std::vector<double> serial = tree_tn_sigma_z(net);
+
+        std::vector<double> pooled;
+        {
+            wz::tasks::TaskScheduler pool{ 4 };
+            wz::tasks::set_task_scheduler(&pool);
+            pooled = tree_tn_sigma_z(net);
+            wz::tasks::set_task_scheduler(nullptr);
+        }
+
+        ASSERT_EQ(serial.size(), pooled.size());
+        for (std::size_t i = 0; i < serial.size(); ++i) {
+            ASSERT_EQ(serial[i], pooled[i])  // bit-exact, deliberately not EXPECT_NEAR
+                << "trial " << trial << " site " << i;
         }
     }
 }

@@ -1255,6 +1255,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(jobs engine_adversarial_tests)
 
     rs_add_test_group(tasks task_tests)
+    rs_add_test_group(tasks task_scheduler_tests)
     rs_add_test_group(engine input_events)
 
 
@@ -1444,6 +1445,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     target_compile_definitions(containers_mpsc_queue PRIVATE WZ_MPSC_QUEUE_TEST_HOOKS)
     rs_add_test_group(containers mpsc_ring_buffer)
     rs_add_test_group(containers spsc_queue)
+    rs_add_test_group(containers work_stealing_deque)
     rs_add_test_group(containers buffer)
     rs_add_test_group(containers buffer_2)
     rs_add_test_group(containers buffer_spec_test)

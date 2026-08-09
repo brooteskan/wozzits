@@ -3,4 +3,5 @@
 # lands in platform/win32) slot in behind the same task.h signatures later.
 target_sources(window_engine PRIVATE
     task.cpp
+    task_scheduler.cpp
 )
