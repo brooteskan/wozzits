@@ -219,7 +219,7 @@ namespace wz::engine::cognition
         });
 
         std::vector<double> sz(node_count(net), 0.0);
-        for (NodeHandle n = 0; n < node_count(net); ++n) {
+        for_each_node(net, [&](NodeHandle n) {
             const TreeNode& T = node_data(net, n);
             const NodeHandle p = parent(net, n);
 
@@ -232,7 +232,7 @@ namespace wz::engine::cognition
                 parent_down = edge_to_parent(net, n).down;
             }
             sz[n] = marginal_sigma_z(T, cu, parent_down);
-        }
+        });
         return sz;
     }
 }

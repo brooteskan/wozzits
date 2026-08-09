@@ -211,6 +211,27 @@ namespace wz::core::graph {
 
     // ─── Traversal ────────────────────────────────────────────────────────────────
 
+    // Flat enumeration of every node, in node-id order — the scaffold that
+    // replaces a raw `for (n = 0; n < node_count; ++n)` at call sites that touch
+    // each node independently (e.g. reading a per-node marginal). It carries no
+    // parent/child dependency, so a parallel driver (#293) can fan it out as a
+    // flat parallel-for behind this same signature. visitor(NodeHandle n).
+    template<typename N, typename E, typename Visitor>
+    void for_each_node(const SharedEdgePolytree<N, E>& t, Visitor&& visit) {
+        const uint32_t nc = node_count(t);
+        for (NodeHandle n = 0; n < nc; ++n) visit(n);
+    }
+
+    // Enumerate the forest's roots (parent == INVALID_NODE), in node-id order.
+    // Used to drive the per-subtree BP sweeps over a multi-root forest.
+    // visitor(NodeHandle root).
+    template<typename N, typename E, typename Visitor>
+    void for_each_root(const SharedEdgePolytree<N, E>& t, Visitor&& visit) {
+        const uint32_t nc = node_count(t);
+        for (NodeHandle n = 0; n < nc; ++n)
+            if (is_root(t, n)) visit(n);
+    }
+
     template<typename N, typename E, typename Visitor>
     void dfs(const SharedEdgePolytree<N, E>& t, NodeHandle root, Visitor&& visit) {
         std::vector<bool>       visited(node_count(t), false);

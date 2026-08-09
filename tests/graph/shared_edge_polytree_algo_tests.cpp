@@ -152,3 +152,92 @@ TEST(SharedEdgePolytreeBP, ForestAggregatesPerTree)
     EXPECT_DOUBLE_EQ(belief(*t, 3, sum), 30.0);
     EXPECT_DOUBLE_EQ(belief(*t, 4, sum), 30.0);
 }
+
+
+// ─── Traversal-order guards ───────────────────────────────────────────────────
+//
+// The BP drivers are dependency-explicit recursions (post-order collect, pre-
+// order distribute) precisely so #293 can swap a parallel run/wait driver in
+// behind them. That swap stays bit-exact against the serial oracle ONLY while two
+// properties hold, so pin them here:
+//   1. each parent's children are visited in fixed CSR (child_list) order — the
+//      order the message kernels fold them in;
+//   2. the sweeps respect the child/parent dependency (collect: children before
+//      parent; distribute: parent before child).
+
+// (1) distribute hands each parent its children in CSR order — even when children
+// were added out of node-id order, so an accidental id-sort would be caught.
+TEST(SharedEdgePolytreeBP, DistributeVisitsChildrenInCsrOrder)
+{
+    // 0 -> children added in edge order {2, 1, 3};  1 -> {5, 4}.
+    auto t = make_tree(
+        { 0, 0, 0, 0, 0, 0 },
+        { { 0, 2 }, { 0, 1 }, { 0, 3 }, { 1, 5 }, { 1, 4 } });
+    ASSERT_TRUE(t.has_value());
+
+    std::vector<std::vector<NodeHandle>> seen(node_count(*t));
+    bp_distribute(*t, [&](NodeHandle n, NodeHandle c, Msg&) {
+        seen[n].push_back(c);
+    });
+
+    for (NodeHandle n = 0; n < node_count(*t); ++n) {
+        auto ch = children(*t, n);
+        const std::vector<NodeHandle> expected(ch.begin(), ch.end());
+        EXPECT_EQ(seen[n], expected)
+            << "parent " << n << " must emit to children in CSR order";
+    }
+    // Guard the fixture itself: node 0's children are genuinely non-ascending.
+    EXPECT_EQ(seen[0], (std::vector<NodeHandle>{ 2, 1, 3 }));
+    EXPECT_EQ(seen[1], (std::vector<NodeHandle>{ 5, 4 }));
+}
+
+// (2a) collect is post-order: every non-root node is visited only after all its
+// children. (A root sends no up-message, so it is never emitted.)
+TEST(SharedEdgePolytreeBP, CollectVisitsChildrenBeforeParent)
+{
+    // 0 -> {1, 2}; 1 -> {3, 4}.
+    auto t = make_tree(
+        { 0, 0, 0, 0, 0 },
+        { { 0, 1 }, { 0, 2 }, { 1, 3 }, { 1, 4 } });
+    ASSERT_TRUE(t.has_value());
+
+    std::vector<int> step(node_count(*t), -1);
+    int clock = 0;
+    bp_collect(*t, [&](NodeHandle n, NodeHandle, Msg&) { step[n] = clock++; });
+
+    EXPECT_EQ(step[0], -1) << "root emits no up-message";
+    for (NodeHandle n = 0; n < node_count(*t); ++n) {
+        for (NodeHandle c : children(*t, n)) {
+            EXPECT_GE(step[c], 0) << "non-root child " << c << " must be collected";
+            if (step[n] >= 0)  // n itself non-root -> it was emitted too
+                EXPECT_LT(step[c], step[n])
+                    << "child " << c << " must be collected before parent " << n;
+        }
+    }
+}
+
+// (2b) distribute is pre-order: a node receives its own down-message before it
+// hands one to any of its children.
+TEST(SharedEdgePolytreeBP, DistributeVisitsParentBeforeChild)
+{
+    // 0 -> {1, 2}; 1 -> {3, 4}.
+    auto t = make_tree(
+        { 0, 0, 0, 0, 0 },
+        { { 0, 1 }, { 0, 2 }, { 1, 3 }, { 1, 4 } });
+    ASSERT_TRUE(t.has_value());
+
+    // distribute(parent, c) is the moment c's incoming down-message is written.
+    std::vector<int> got_down(node_count(*t), -1);
+    int clock = 0;
+    bp_distribute(*t, [&](NodeHandle, NodeHandle c, Msg&) { got_down[c] = clock++; });
+
+    EXPECT_EQ(got_down[0], -1) << "root receives no down-message";
+    for (NodeHandle n = 0; n < node_count(*t); ++n) {
+        for (NodeHandle c : children(*t, n)) {
+            EXPECT_GE(got_down[c], 0) << "non-root child " << c << " must receive a down";
+            if (got_down[n] >= 0)  // n itself non-root -> it received a down first
+                EXPECT_LT(got_down[n], got_down[c])
+                    << "parent " << n << " must receive its down before child " << c;
+        }
+    }
+}

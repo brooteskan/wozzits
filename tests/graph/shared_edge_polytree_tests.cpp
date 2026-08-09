@@ -195,6 +195,36 @@ TEST(SharedEdgePolytree, CycleRejected) {
     EXPECT_FALSE(opt.has_value());
 }
 
+// 10a. for_each_node visits every node exactly once, in node-id order.
+TEST(SharedEdgePolytree, ForEachNodeVisitsAllInOrder) {
+    auto t = make_tree();
+    std::vector<NodeHandle> seen;
+    for_each_node(t, [&](NodeHandle n) { seen.push_back(n); });
+    EXPECT_EQ(seen, (std::vector<NodeHandle>{ R, A, B, C }));
+}
+
+// 10b. for_each_root visits only roots (parent == INVALID_NODE), in node-id
+// order — including across a multi-root forest.
+TEST(SharedEdgePolytree, ForEachRootVisitsRootsOnly) {
+    auto t = make_tree();  // single root R
+    std::vector<NodeHandle> roots;
+    for_each_root(t, [&](NodeHandle n) { roots.push_back(n); });
+    EXPECT_EQ(roots, (std::vector<NodeHandle>{ R }));
+
+    // Two-root forest: 0 -> 2, with 1 a lone root.
+    SharedEdgePolytreeBuilder<Belief, Msg> b;
+    add_node(b, Belief{ 0.f });                  // 0 (root)
+    add_node(b, Belief{ 1.f });                  // 1 (lone root)
+    add_node(b, Belief{ 2.f });                  // 2 (child of 0)
+    EXPECT_TRUE(add_edge(b, 0, 2, Msg{}));
+    auto opt = build(std::move(b));
+    ASSERT_TRUE(opt.has_value());
+
+    std::vector<NodeHandle> froots;
+    for_each_root(*opt, [&](NodeHandle n) { froots.push_back(n); });
+    EXPECT_EQ(froots, (std::vector<NodeHandle>{ 0, 1 }));
+}
+
 // 10. topo_order is a valid topological order; reverse is leaf->root.
 TEST(SharedEdgePolytree, TopoOrderValid) {
     auto t = make_tree();

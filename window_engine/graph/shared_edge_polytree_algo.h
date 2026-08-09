@@ -32,36 +32,81 @@ namespace wz::core::graph {
     // collect sweep writes is the same object the distribute sweep and the
     // neighbors read -- no copies, no staleness.
 
-    // Collect sweep (LEAF -> ROOT). Visits every non-root node in reverse
-    // topological order and invokes collect(node, parent, EdgeData& edge_to_parent)
-    // so the caller writes `node`'s message TOWARD its parent. By the visit order,
-    // every child of `node` has already written its up-message, so the caller can
-    // combine them via for_each_neighbor_except(t, node, parent, ...).
+    namespace detail {
+
+        // ─── #293 substitution seam — collect ────────────────────────────────
+        //
+        // Serial post-order recursion over one subtree: recurse into each child
+        // (in children(t, n) == CSR child-index order), THEN emit this node's
+        // up-message. Post-order guarantees every child's up-message is written
+        // before the parent folds them, and the recursion order matches the fold
+        // order the message kernel uses (for_each_neighbor_except walks the same
+        // CSR order) — so results are independent of how the child subtrees are
+        // scheduled. This is the ONE function #293 replaces: it will dispatch each
+        // child subtree via wz::tasks::run and nest-wait before the post-order
+        // emit, leaving the `collect` kernel and the child-index order untouched.
+        template<typename N, typename E, typename CollectFn>
+        void bp_collect_subtree(
+            SharedEdgePolytree<N, E>& t, NodeHandle n, CollectFn& collect) {
+            for (const NodeHandle c : children(t, n))
+                bp_collect_subtree(t, c, collect);  // #293: run(child subtree) / wait
+            const NodeHandle p = parent(t, n);
+            if (p != INVALID_NODE)                  // a root sends no up-message
+                collect(n, p, edge_to_parent(t, n));
+        }
+
+        // ─── #293 substitution seam — distribute ─────────────────────────────
+        //
+        // Serial pre-order recursion over one subtree: emit this node's down-
+        // message to every child (in children(t, n) == CSR child-index order),
+        // THEN recurse into the child subtrees. Pre-order guarantees a child's
+        // incoming down-message is written before that child emits its own. The
+        // emit pass and the recursion pass are kept separate so the recursion pass
+        // is a clean fan-out over independent subtrees. This is the ONE function
+        // #293 replaces: after the serial pre-order emit it will dispatch the child
+        // subtrees via wz::tasks::run / wait, leaving the `distribute` kernel and
+        // the child-index order untouched.
+        template<typename N, typename E, typename DistributeFn>
+        void bp_distribute_subtree(
+            SharedEdgePolytree<N, E>& t, NodeHandle n, DistributeFn& distribute) {
+            for (const NodeHandle c : children(t, n))
+                distribute(n, c, edge_to_child(t, n, c));
+            for (const NodeHandle c : children(t, n))
+                bp_distribute_subtree(t, c, distribute);  // #293: run(child subtree) / wait
+        }
+
+    } // namespace detail
+
+    // Collect sweep (LEAF -> ROOT). Invokes collect(node, parent, EdgeData&
+    // edge_to_parent) for every non-root node so the caller writes `node`'s
+    // message TOWARD its parent. Driven as a post-order traversal from each root
+    // of the forest: every child of `node` has already written its up-message when
+    // `node` is visited, so the caller can combine them via
+    // for_each_neighbor_except(t, node, parent, ...). (Formerly a flat reverse-
+    // topo loop; reshaped into dependency-explicit recursion so #293 can drop a
+    // parallel run/wait driver behind detail::bp_collect_subtree without touching
+    // this signature or the message kernel.)
     template<typename N, typename E, typename CollectFn>
     void bp_collect(SharedEdgePolytree<N, E>& t, CollectFn&& collect) {
-        auto order = topo_order(t);  // parents precede children
-        for (uint32_t i = static_cast<uint32_t>(order.size()); i-- > 0;) {
-            const NodeHandle n = order[i];
-            const NodeHandle p = parent(t, n);
-            if (p == INVALID_NODE) continue;  // a root sends no up-message
-            collect(n, p, edge_to_parent(t, n));
-        }
+        for_each_root(t, [&](NodeHandle root) {
+            detail::bp_collect_subtree(t, root, collect);
+        });
     }
 
-    // Distribute sweep (ROOT -> LEAF). Visits every (node, child) pair in
-    // topological order and invokes distribute(node, child, EdgeData& edge_to_child)
-    // so the caller writes `node`'s message TOWARD that child. By the visit order,
-    // `node`'s parent has already written its down-message to `node`, so the caller
-    // can combine it with the up-messages of `node`'s OTHER children via
-    // for_each_neighbor_except(t, node, child, ...).
+    // Distribute sweep (ROOT -> LEAF). Invokes distribute(node, child, EdgeData&
+    // edge_to_child) for every (node, child) pair so the caller writes `node`'s
+    // message TOWARD that child. Driven as a pre-order traversal from each root of
+    // the forest: `node`'s parent has already written its down-message to `node`
+    // when `node` is visited, so the caller can combine it with the up-messages of
+    // `node`'s OTHER children via for_each_neighbor_except(t, node, child, ...).
+    // (Formerly a flat forward-topo loop; reshaped into dependency-explicit
+    // recursion so #293 can drop a parallel run/wait driver behind
+    // detail::bp_distribute_subtree without touching this signature or the kernel.)
     template<typename N, typename E, typename DistributeFn>
     void bp_distribute(SharedEdgePolytree<N, E>& t, DistributeFn&& distribute) {
-        auto order = topo_order(t);  // root -> leaf
-        for (const NodeHandle n : order) {
-            for (const NodeHandle c : children(t, n)) {
-                distribute(n, c, edge_to_child(t, n, c));
-            }
-        }
+        for_each_root(t, [&](NodeHandle root) {
+            detail::bp_distribute_subtree(t, root, distribute);
+        });
     }
 
     // Both sweeps. After this, every directed edge holds its converged message and
