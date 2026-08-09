@@ -1036,6 +1036,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(engine behavior_module_catalog_abi_tests)
     rs_add_test_group(engine asset_graph_json_roundtrip_tests)
     rs_add_test_group(engine editor_runtime_control_tests)
+    rs_add_test_group(engine runtime_channel_tests)
     rs_add_test_group(engine view_controller_tests)
 
     # First tests of src/platform/win32 (#313, B4-T4 -- the layer had none).

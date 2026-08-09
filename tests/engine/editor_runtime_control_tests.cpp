@@ -796,6 +796,58 @@ TEST(EditorRuntimeControl, DestroyingRightAfterTheDrainIsSafeUnderConcurrentCall
     }
 }
 
+// ─── Save handshake (#300 layer 1 / #299 A1-C20) ───────────────────────────
+
+TEST(EditorRuntimeControl, SaveSceneBlockingReturnsTheEnginesFileError)
+{
+    // The result the old fire-and-forget save could not deliver: a caller blocks
+    // in save_scene_blocking, the engine services it, and the caller wakes with
+    // exactly the FileError the engine produced.
+    EditorRuntimeControl control;
+    bool serviced = false;
+    wz::fs::FileError error = wz::fs::FileError::None;
+
+    std::thread caller([&] {
+        const auto outcome = control.save_scene_blocking();
+        serviced = outcome.serviced;
+        error = outcome.value;
+    });
+
+    bool ran = false;
+    while (!ran) {
+        control.service_pending_save([&] {
+            ran = true;
+            return wz::fs::FileError::PermissionDenied;
+        });
+        std::this_thread::yield();
+    }
+    caller.join();
+
+    EXPECT_TRUE(serviced);
+    EXPECT_EQ(error, wz::fs::FileError::PermissionDenied);
+}
+
+TEST(EditorRuntimeControl, BeginCloseReleasesAParkedSaveCaller)
+{
+    // The A1-C20 teardown case: a save posted with nothing servicing it (the
+    // viewport is coming down) must not hang, and must report serviced=false so
+    // the editor does not treat a save that never happened as success.
+    auto control = std::make_unique<EditorRuntimeControl>();
+
+    bool serviced = true;
+    std::thread caller(
+        [&] { serviced = control->save_scene_blocking().serviced; });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));  // let it park
+
+    control->begin_close();
+    control->wait_for_callers_to_exit();
+    caller.join();
+
+    EXPECT_FALSE(serviced)
+        << "a save the engine never ran must not report success";
+    control.reset();  // stands in for `delete runtime`; safe after the drain
+}
+
 // ─── Frame delta (issue #313, B4-S2 and B4-C9) ─────────────────────────────
 // The loop's timing rules, extracted so they can be tested without a device.
 // Two defects lived here: the delta was an UNSIGNED tick subtraction with no

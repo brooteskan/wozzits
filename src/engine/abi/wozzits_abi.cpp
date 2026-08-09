@@ -1889,8 +1889,32 @@ extern "C"
         if (!runtime) {
             return result(WZ_RESULT_INVALID_ARGUMENT, "runtime must not be null");
         }
-        runtime->control.request_save();
-        return result(WZ_RESULT_OK, "");
+
+        try {
+            // Blocking handshake (mirrors open_scene / export_subtree): the engine
+            // thread saves on its next frame and hands back the FileError. #299
+            // A1-C20 -- the result is no longer discarded, so a failed or skipped
+            // save now reaches the editor instead of being reported as success.
+            const auto outcome = runtime->control.save_scene_blocking();
+            if (!outcome.serviced) {
+                return result(
+                    WZ_RESULT_INTERNAL_ERROR,
+                    "save failed: engine runtime is not running");
+            }
+            if (outcome.value != wz::fs::FileError::None) {
+                return dynamic_error(
+                    WZ_RESULT_INTERNAL_ERROR,
+                    std::string("save failed: ")
+                        + wz::fs::to_string(outcome.value));
+            }
+            return result(WZ_RESULT_OK, "");
+        }
+        catch (const std::bad_alloc&) {
+            return result(WZ_RESULT_OUT_OF_MEMORY, "out of memory");
+        }
+        catch (...) {
+            return result(WZ_RESULT_INTERNAL_ERROR, "save failed");
+        }
     }
 
     WzResult wz_host_runtime_open_scene(

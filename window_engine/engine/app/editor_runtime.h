@@ -14,6 +14,7 @@
 // AssetGraphDraft is the only thing that crosses the thread boundary.
 
 #include <engine/app/wozzits_app_v1.h>  // AssetGraphCompileResult
+#include <engine/app/runtime_channel.h>  // Mailbox, Request (#300 layer 1)
 
 #include <asset/draft.h>
 #include <engine/assets/scene/scene_asset_data.h>  // AuthoredTransform
@@ -30,6 +31,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace wz::app
@@ -447,11 +449,17 @@ namespace wz::app
         void request_stop();
         [[nodiscard]] bool stop_requested() const;
 
-        // Owner thread: request the engine to persist the scene to disk; the
-        // engine thread saves on its next frame. Non-blocking.
-        void request_save();
-        // Engine thread: consume a pending save request (true once per request).
-        [[nodiscard]] bool take_save_request();
+        // Owner thread: persist the scene, blocking until the engine thread does
+        // it (mirrors open_scene / export_subtree). The outcome carries the
+        // engine's wz::fs::FileError, or serviced=false when the runtime is not
+        // running / stopped first -- so a save that did not happen is never
+        // reported as success (#299 A1-C20). Replaces the old fire-and-forget
+        // request_save, whose bool result had nowhere to cross back.
+        [[nodiscard]] RequestOutcome<wz::fs::FileError> save_scene_blocking();
+        // Engine thread: if a save is pending, run `saver` and publish its
+        // FileError. Called once per frame from run_project_runtime.
+        void service_pending_save(
+            const std::function<wz::fs::FileError()>& saver);
 
         // Owner thread: enable/disable frame profiling (default off). Applied by
         // the engine thread each frame; the app records + writes a CSV only while
@@ -856,7 +864,6 @@ namespace wz::app
         mutable std::mutex mutex_;
         std::condition_variable cv_;
         std::atomic_bool stop_{ false };
-        std::atomic_bool save_requested_{ false };
         std::atomic_bool reload_behaviors_requested_{ false };
         std::atomic_bool frame_profiling_{ false };
         std::atomic_bool paused_{ false };
@@ -915,15 +922,22 @@ namespace wz::app
         wz::asset::AssetGraphDraft result_asset_graph_draft_;
         AssetGraphCompileResult asset_graph_result_;
 
-        // Live scene edits queued for the engine thread (guarded by mutex_,
-        // independent of the bind handshake above). Coalesced by node id.
-        std::vector<SceneNodeTransformEdit> pending_transforms_;
+        // Live scene edits queued for the engine thread. Being migrated onto
+        // Mailbox<T> (#300 layer 1): a converted queue owns its own mutex; the
+        // not-yet-converted std::vectors below are still guarded by mutex_.
+        Mailbox<SceneNodeTransformEdit> transforms_{
+            Mailbox<SceneNodeTransformEdit>::OnDuplicate::Replace,
+            [](const SceneNodeTransformEdit& a,
+               const SceneNodeTransformEdit& b) { return a.id == b.id; }};
         std::vector<SceneNodePropertiesEdit> pending_properties_;
         std::vector<SceneNodeReparentEdit> pending_reparents_;
         std::vector<SceneNodeReorderEdit> pending_reorders_;
         std::vector<SceneNodeRenderOrderEdit> pending_render_orders_;
-        std::vector<wz::scene::AuthoredEntityId> pending_removes_;
-        std::vector<SceneNodeBehaviorEdit> pending_behavior_edits_;
+        Mailbox<wz::scene::AuthoredEntityId> removes_{
+            Mailbox<wz::scene::AuthoredEntityId>::OnDuplicate::Drop,
+            [](const wz::scene::AuthoredEntityId& a,
+               const wz::scene::AuthoredEntityId& b) { return a == b; }};
+        Mailbox<SceneNodeBehaviorEdit> behaviors_;  // append in order
         std::vector<SceneNodeComponentEdit> pending_component_edits_;
         std::vector<SceneNodeRenderableEdit> pending_renderable_edits_;
         std::vector<SceneNodeAudioRenderableEdit> pending_audio_renderable_edits_;
@@ -988,6 +1002,13 @@ namespace wz::app
         wz::scene::AuthoredEntityId pending_export_root_;
         wz::fs::Path pending_export_path_;
         bool export_result_ = false;
+
+        // Blocking save handshake (#300 layer 1) -- the first verb rebuilt onto
+        // the Request primitive, replacing the fire-and-forget save_requested_
+        // atomic. Its own mutex/cv, so it does not share the cross-talk-prone
+        // cv_ above; abandon()ed in mark_finished() so a blocked caller is
+        // released at teardown.
+        Request<std::monostate, wz::fs::FileError> save_;
     };
 
     struct EditorRuntimeLogSink

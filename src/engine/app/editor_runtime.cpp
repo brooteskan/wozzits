@@ -103,14 +103,23 @@ namespace wz::app
         return stop_.load(std::memory_order_acquire);
     }
 
-    void EditorRuntimeControl::request_save()
+    RequestOutcome<wz::fs::FileError> EditorRuntimeControl::save_scene_blocking()
     {
-        save_requested_.store(true, std::memory_order_release);
+        // Same lifetime interlock as the other blocking verbs: CallerScope keeps
+        // the object alive across the wait; begin_close()/mark_finished() abandon
+        // save_ so a parked caller is released. The scope is the last touch of
+        // the control by this thread (call() releases its own lock first).
+        const CallerScope scope(*this);
+        if (!scope.admitted()) {
+            return {};  // teardown already started -- not serviced
+        }
+        return save_.call(std::monostate{});
     }
 
-    bool EditorRuntimeControl::take_save_request()
+    void EditorRuntimeControl::service_pending_save(
+        const std::function<wz::fs::FileError()>& saver)
     {
-        return save_requested_.exchange(false, std::memory_order_acq_rel);
+        save_.service([&](std::monostate) { return saver(); });
     }
 
     void EditorRuntimeControl::set_frame_profiling(bool enabled)
@@ -303,33 +312,13 @@ namespace wz::app
     void EditorRuntimeControl::post_scene_node_transform(
         SceneNodeTransformEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (SceneNodeTransformEdit& pending : pending_transforms_) {
-            if (pending.id == edit.id) {
-                pending.transform = edit.transform;  // coalesce: latest wins
-                return;
-            }
-        }
-        pending_transforms_.push_back(std::move(edit));
+        transforms_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_transforms(
         const std::function<void(const SceneNodeTransformEdit&)>& applier)
     {
-        std::vector<SceneNodeTransformEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_transforms_.empty()) {
-                return;
-            }
-            edits.swap(pending_transforms_);
-        }
-
-        // Apply outside the lock: applier mutates the app/renderer and a post
-        // from the owner thread must never block on it.
-        for (const SceneNodeTransformEdit& edit : edits) {
-            applier(edit);
-        }
+        transforms_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_properties(
@@ -456,55 +445,25 @@ namespace wz::app
     void EditorRuntimeControl::post_scene_node_remove(
         wz::scene::AuthoredEntityId id)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (const wz::scene::AuthoredEntityId& pending : pending_removes_) {
-            if (pending == id) {
-                return;  // dedup
-            }
-        }
-        pending_removes_.push_back(std::move(id));
+        removes_.post(std::move(id));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_removes(
         const std::function<void(const wz::scene::AuthoredEntityId&)>& applier)
     {
-        std::vector<wz::scene::AuthoredEntityId> removes;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_removes_.empty()) {
-                return;
-            }
-            removes.swap(pending_removes_);
-        }
-
-        for (const wz::scene::AuthoredEntityId& id : removes) {
-            applier(id);
-        }
+        removes_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_behavior(
         SceneNodeBehaviorEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: each op is a distinct mutation.
-        pending_behavior_edits_.push_back(std::move(edit));
+        behaviors_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_behaviors(
         const std::function<void(const SceneNodeBehaviorEdit&)>& applier)
     {
-        std::vector<SceneNodeBehaviorEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_behavior_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_behavior_edits_);
-        }
-
-        for (const SceneNodeBehaviorEdit& edit : edits) {
-            applier(edit);
-        }
+        behaviors_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_component(
@@ -1382,6 +1341,10 @@ namespace wz::app
             finished_ = true;
         }
         cv_.notify_all();
+        // Release a caller parked in the save handshake (its own cv, not cv_).
+        // The hand-rolled handshakes above key off finished_ under cv_; save_ is
+        // on the Request primitive, so it needs its own wake. Idempotent.
+        save_.abandon();
     }
 
     bool EditorRuntimeControl::finished() const
@@ -1839,18 +1802,12 @@ namespace wz::app
                             // after open_scene swaps the working scene).
                             return app.authored_scene_nodes();
                         });
-                    if (control->take_save_request()) {
-                        // Fire-and-forget across the ABI today: the result cannot
-                        // ride back to the editor yet (that uniform channel is
-                        // #300), so log a failed save here rather than discard it.
-                        if (const wz::fs::FileError err = app.save_scene();
-                            err != wz::fs::FileError::None) {
-                            ctx.logger.error(
-                                std::string("save_scene (editor request) "
-                                            "failed: ")
-                                + wz::fs::to_string(err));
-                        }
-                    }
+                    // The save result now rides back to the caller through the
+                    // blocking handshake (#300 layer 1); service_pending_save
+                    // publishes app.save_scene()'s FileError, so it is no longer
+                    // discarded or merely logged here.
+                    control->service_pending_save(
+                        [&app] { return app.save_scene(); });
                     control->service_pending_export_subtree(
                         [&app](
                             const wz::scene::AuthoredEntityId& root_node_id,
