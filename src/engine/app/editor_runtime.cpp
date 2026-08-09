@@ -3,6 +3,7 @@
 #include <engine/app/editor_runtime.h>
 
 #include <engine/app_context.h>
+#include <engine/frame_schedule.h>
 
 #include <event/event.h>
 #include <gpu/gpu.h>
@@ -854,6 +855,56 @@ namespace wz::app
             uint32_t frames_presented = 0;
             bool frame_error = false;
 
+            // Per-frame phase DAG (#305): the frame's phases run through
+            // DagScheduler instead of an inline sequence, so per-phase timing +
+            // critical-path come from live frames. Behaviour-preserving -- same
+            // phases, same order, same per-phase failure logs, same
+            // error->abort. Built once; frame_drive carries the per-frame inputs
+            // the callbacks read (updated at the top of each iteration).
+            wz::engine::FrameSchedule frame_schedule;
+            struct FrameDriveInputs {
+                wz::input::InputState input{};
+                float                 dt           = 0.0f;
+                bool                  drive_camera = false;
+            } frame_drive;
+
+            wz::engine::FramePhaseOps frame_ops;
+            // Paused freezes the SCENE, not the VIEWPORT (#313, B4-C8): the
+            // aspect + fly-cam live in update_view, which paused_frame_tick still
+            // runs, so resizing/looking around while paused keeps working.
+            frame_ops.simulate = [&] {
+                if (!control || !control->paused())
+                    app.simulation_tick(frame_drive.input, frame_drive.dt, frame_drive.drive_camera);
+                else
+                    app.paused_frame_tick(frame_drive.input, frame_drive.dt, frame_drive.drive_camera);
+                return true;
+            };
+            frame_ops.begin_frame = [&] {
+                if (!wz::gpu::begin_frame(ctx.device)) { ctx.logger.error("begin_frame failed"); return false; }
+                return true;
+            };
+            frame_ops.clear = [&] {
+                wz::gpu::clear(ctx.device, 0.10f, 0.10f, 0.12f, 1.0f);
+                return true;
+            };
+            frame_ops.render_scene = [&] {
+                return app.render_scene();
+            };
+            // S6 3D-mesh consumer: puppet(s) rendered to an offscreen texture and
+            // shown on a spinning card over the scene (no-op when off / no puppet).
+            frame_ops.render_overlay = [&] {
+                if (!app.render_puppet_showcase()) { ctx.logger.error("render_puppet_showcase failed"); return false; }
+                return true;
+            };
+            frame_ops.end_frame = [&] {
+                if (!wz::gpu::end_frame(ctx.device)) { ctx.logger.error("end_frame failed"); return false; }
+                return true;
+            };
+            frame_ops.present = [&] {
+                if (!wz::gpu::present(ctx.device)) { ctx.logger.error("present failed"); return false; }
+                return true;
+            };
+
             while (!wz::window::window_should_close(ctx.window)
                 && !(control && control->stop_requested()))
             {
@@ -1280,62 +1331,38 @@ namespace wz::app
                 // fight. Unfocused -> a neutral snapshot carrying just the window
                 // dimensions, so aspect still tracks resizes and the scene ignores
                 // input meant for the editor.
-                const bool drive_camera = camera_enabled && input.window.focused;
-                wz::input::InputState frame_input{};
+                // This frame's inputs for the phase DAG's callbacks (frame_ops,
+                // built above the loop). drive_camera / frame_input keep their
+                // exact former meaning; the simulate-vs-paused choice and the
+                // dt-recomputed-every-frame rule moved into frame_ops.simulate.
+                frame_drive.drive_camera = camera_enabled && input.window.focused;
+                frame_drive.input = wz::input::InputState{};
                 if (input.window.focused) {
-                    frame_input = input;
+                    frame_drive.input = input;
                 }
                 else {
-                    frame_input.window = input.window;
+                    frame_drive.input.window = input.window;
+                }
+                frame_drive.dt = dt;
+
+                // Run the frame as a job graph: simulate -> begin -> clear ->
+                // render_scene -> render_overlay -> end -> present, stopping at the
+                // first phase that fails (mirrors the former per-step break).
+                frame_schedule.set_profiling(control && control->frame_profiling_enabled());
+                const wz::engine::FrameSchedule::Result frame_result =
+                    frame_schedule.run(frame_ops);
+                if (!frame_result.ok) {
+                    frame_error = true;
+                    break;
                 }
 
-                // Skip the simulation while paused (editor "pause simulation"): the render
-                // path below keeps running and re-presents the last simulated frame, so the
-                // viewport stays live but agents/behaviors/time stop. dt is recomputed every
-                // frame regardless, so resuming does not produce a catch-up spike.
-                if (!control || !control->paused()) {
-                    app.simulation_tick(frame_input, dt, drive_camera);
-                }
-                else {
-                    // Paused freezes the SCENE, not the VIEWPORT (#313, B4-C8).
-                    // The gate used to skip all of simulation_tick, which took
-                    // the projection aspect and the fly-cam with it: resizing
-                    // while paused stretched the image because the swapchain
-                    // resized and the aspect did not, and you could not look
-                    // around the scene you had paused to inspect. Both live in
-                    // update_view now; materialize_active_view is what carries
-                    // the result into the render path, and with behaviors not
-                    // running there is nothing to order it after.
-                    app.paused_frame_tick(frame_input, dt, drive_camera);
-                }
-
-                if (!wz::gpu::begin_frame(ctx.device)) {
-                    ctx.logger.error("begin_frame failed");
-                    frame_error = true;
-                    break;
-                }
-                wz::gpu::clear(ctx.device, 0.10f, 0.10f, 0.12f, 1.0f);
-                if (!app.render_scene()) {
-                    frame_error = true;
-                    break;
-                }
-                // S6 3D-mesh consumer: puppet(s) rendered to an offscreen texture
-                // and shown on a spinning card over the scene (no-op when the
-                // showcase is off or the scene has no puppet).
-                if (!app.render_puppet_showcase()) {
-                    ctx.logger.error("render_puppet_showcase failed");
-                    frame_error = true;
-                    break;
-                }
-                if (!wz::gpu::end_frame(ctx.device)) {
-                    ctx.logger.error("end_frame failed");
-                    frame_error = true;
-                    break;
-                }
-                if (!wz::gpu::present(ctx.device)) {
-                    ctx.logger.error("present failed");
-                    frame_error = true;
-                    break;
+                // Live per-phase critical-path from real frames (#305), only while
+                // the editor's frame-profiling toggle is on.
+                if (frame_schedule.profiling() && (frames_presented % 120u == 0u)) {
+                    ctx.logger.info(wz::jobs::format_frame_report(
+                        frame_schedule.last_profile(),
+                        frame_schedule.last_analysis(),
+                        wz::time::TimeSource::ticks_per_second()));
                 }
 
                 // Bounded (verification) run: stop after the requested number of

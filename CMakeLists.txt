@@ -1023,6 +1023,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
 
     rs_add_test_group(engine engine)
     rs_add_test_group(engine frame_storage_tests)
+    rs_add_test_group(engine frame_schedule_tests)
     rs_add_test_group(engine runtime_camera_tests)
     rs_add_test_group(engine flying_camera_tests)
     rs_add_test_group(engine project_manifest_tests)
