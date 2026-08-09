@@ -96,16 +96,22 @@ namespace wz::gpu::dx12
 
     struct DX12Device
     {
+        // Number of frames the CPU may have in flight ahead of the GPU (#306).
+        // Declared first so the per-slot arrays below can size themselves by it.
+        static constexpr UINT kFramesInFlight = 2;
+
         //fences
         ID3D12Fence* fence = nullptr;
         HANDLE fence_event = nullptr;
-        UINT64 fence_value = 0;
+        // Starts at 1: 0 is the "slot never used" sentinel for slot_fence_value
+        // below, so a real submission's fence value must never be 0.
+        UINT64 fence_value = 1;
 
-        // Staging buffers referenced by THIS frame's recorded in-frame copies
-        // (record_compute_buffer_update_dx12). Frames are fully synchronous
-        // (end_frame waits), so the previous frame's staging is release-safe
-        // at begin_frame, which drains this.
-        std::vector<ID3D12Resource*> frame_upload_staging;
+        // Staging buffers referenced by an in-flight frame's recorded in-frame
+        // copies (record_compute_buffer_update_dx12) -- one list per frame slot
+        // (#306). A slot's staging is released in begin_frame only after that
+        // slot's prior frame has passed its fence, so the GPU is done reading it.
+        std::vector<ID3D12Resource*> frame_upload_staging[kFramesInFlight];
 
         // One-shot copy/upload fence, separate from the frame fence above. The
         // frame fence's values ARE the rhi registry's reclamation timeline:
@@ -168,10 +174,8 @@ namespace wz::gpu::dx12
         // frame has passed its fence; `cmd` is re-targeted onto the current slot's
         // allocator each begin_frame. frame_slot advances every begin_frame;
         // slot_fence_value[i] is the fence value the last frame using slot i
-        // signalled (0 == never used). NOTE: while end_frame still waits on the
-        // just-submitted frame, the begin_frame slot-wait is a no-op -- it becomes
-        // the real pacing wait once end_frame's wait is removed.
-        static constexpr UINT kFramesInFlight = 2;
+        // signalled (0 == never used) -- begin_frame waits on it before reusing
+        // the slot (the pacing wait that replaced end_frame's blocking wait).
         ID3D12CommandAllocator* allocators[kFramesInFlight] = {};
         ID3D12GraphicsCommandList* cmd = nullptr;
         UINT   frame_slot = 0;

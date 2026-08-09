@@ -240,7 +240,11 @@ namespace
         }
         D3D12_DESCRIPTOR_HEAP_DESC hd{};
         hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        hd.NumDescriptors = wz::gpu::dx12::TexturedQuadContext::kSrvCapacity;
+        // kFramesInFlight partitions of kSrvCapacity each: slot s uses
+        // [s*cap, (s+1)*cap) so an in-flight frame never overwrites another
+        // slot's descriptors (#306); begin_frame sets the cursor to the base.
+        hd.NumDescriptors = wz::gpu::dx12::TexturedQuadContext::kSrvCapacity
+            * wz::gpu::dx12::DX12Device::kFramesInFlight;
         hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         impl->device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&ctx->srv_heap));
         ctx->srv_stride = impl->device->GetDescriptorHandleIncrementSize(
@@ -275,7 +279,8 @@ namespace wz::gpu::dx12::internal
         // are read at execute time, so a slot is never rewritten within a frame
         // — the old single rewritten slot made every recorded quad draw sample
         // the LAST texture written. Cursor resets in begin_frame.
-        if (ctx->srv_cursor >= TexturedQuadContext::kSrvCapacity) {
+        if (ctx->srv_cursor
+            >= (impl->frame_slot + 1u) * TexturedQuadContext::kSrvCapacity) {
             return false;  // out of quad slots this frame; refuse, don't alias
         }
         const uint32_t slot = ctx->srv_cursor++;

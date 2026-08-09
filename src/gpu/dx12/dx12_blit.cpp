@@ -204,7 +204,11 @@ namespace
         }
         D3D12_DESCRIPTOR_HEAP_DESC hd{};
         hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        hd.NumDescriptors = wz::gpu::dx12::BlitContext::kSrvCapacity;
+        // kFramesInFlight partitions of kSrvCapacity each: slot s uses
+        // [s*cap, (s+1)*cap) so an in-flight frame never overwrites another
+        // slot's descriptors (#306); begin_frame sets the cursor to the base.
+        hd.NumDescriptors = wz::gpu::dx12::BlitContext::kSrvCapacity
+            * wz::gpu::dx12::DX12Device::kFramesInFlight;
         hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         impl->device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&ctx->srv_heap));
         ctx->srv_stride = impl->device->GetDescriptorHandleIncrementSize(
@@ -237,8 +241,9 @@ namespace wz::gpu::dx12::internal
 
         // Write the source texture's SRV into the NEXT ring slot. The GPU reads
         // the slot at execute time, so a slot is never rewritten within a frame
-        // (see BlitContext); the cursor resets in begin_frame.
-        if (ctx->srv_cursor >= BlitContext::kSrvCapacity) {
+        // (see BlitContext); the cursor resets to this slot's base in begin_frame.
+        if (ctx->srv_cursor
+            >= (impl->frame_slot + 1u) * BlitContext::kSrvCapacity) {
             return false;  // out of blit slots this frame; refuse, don't alias
         }
         const uint32_t slot = ctx->srv_cursor++;
@@ -290,9 +295,10 @@ namespace wz::gpu::dx12::internal
         BlitContext* ctx = impl->blit_ctx;
 
         // Same per-frame SRV ring discipline as the blit: never rewrite a slot
-        // within a frame (the GPU reads it at execute time); cursor resets in
-        // begin_frame.
-        if (ctx->srv_cursor >= BlitContext::kSrvCapacity) {
+        // within a frame (the GPU reads it at execute time); cursor resets to
+        // this frame slot's base in begin_frame.
+        if (ctx->srv_cursor
+            >= (impl->frame_slot + 1u) * BlitContext::kSrvCapacity) {
             return false;
         }
         const uint32_t slot = ctx->srv_cursor++;

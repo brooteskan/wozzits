@@ -532,21 +532,26 @@ namespace wz::gpu::dx12
         }
         assert(SUCCEEDED(hr));
 
-        // New frame, fresh SRV rings: last frame's slots are past the fence
-        // wait in end_frame, so they are free to reuse.
+        // New frame: point each SRV ring at THIS slot's partition of its heap
+        // (#306). Each context heap holds kFramesInFlight * kSrvCapacity
+        // descriptors; slot s owns [s*cap, (s+1)*cap). The slot-wait above proved
+        // the GPU is done with this slot's prior frame, so its descriptors are
+        // free to overwrite; another in-flight slot's descriptors are untouched.
         if (impl->blit_ctx) {
-            impl->blit_ctx->srv_cursor = 0;
+            impl->blit_ctx->srv_cursor =
+                impl->frame_slot * wz::gpu::dx12::BlitContext::kSrvCapacity;
         }
         if (impl->textured_quad_ctx) {
-            impl->textured_quad_ctx->srv_cursor = 0;
+            impl->textured_quad_ctx->srv_cursor =
+                impl->frame_slot * wz::gpu::dx12::TexturedQuadContext::kSrvCapacity;
         }
 
-        // Drain the previous frame's recorded-update staging: end_frame waited
-        // for that frame, so the GPU is done reading it.
-        for (ID3D12Resource* staging : impl->frame_upload_staging) {
+        // Drain THIS slot's recorded-update staging: the slot-wait above proved
+        // the GPU is done with this slot's prior frame, so its staging is free.
+        for (ID3D12Resource* staging : impl->frame_upload_staging[impl->frame_slot]) {
             staging->Release();
         }
-        impl->frame_upload_staging.clear();
+        impl->frame_upload_staging[impl->frame_slot].clear();
         // impl->cmd->SetGraphicsRootSignature(nullptr); // harmless placeholder sanity reset
 
         // transition to render target
@@ -657,47 +662,22 @@ namespace wz::gpu::dx12
         ID3D12CommandList* lists[] = { impl->cmd };
         impl->queue->ExecuteCommandLists(1, lists);
 
-        // ────── wait for fences ───────────────────────────────────────────────────────
+        // ────── signal the frame fence (no CPU wait -- #306) ────────────────────
+        // Submit + signal, then return WITHOUT blocking on the GPU: the CPU is now
+        // free to build the next frame while this one renders. The pacing wait
+        // moved to begin_frame, which blocks only when the CPU is kFramesInFlight
+        // frames ahead (it waits on the slot it is about to reuse). Every per-frame
+        // resource is per-slot and fence-gated, so nothing here is recycled early.
         hr = impl->queue->Signal(impl->fence, impl->fence_value);
         if (!dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal")) {
             return false;
         }
 
-        // The Signal succeeded, so this value now names this submission on the
-        // GPU timeline. Spend it exactly once -- advance PAST it even if the wait
-        // below fails -- or the next end_frame re-Signals the same value and
-        // completed_timeline_value could report it while a second frame under it
-        // is still in flight, corrupting the registry's reclamation timeline.
+        // The Signal named this submission on the GPU timeline; spend the value
+        // exactly once and record it as THIS slot's fence, so a future begin_frame
+        // reusing the slot waits for exactly this frame before recycling it.
         const UINT64 signaled = impl->fence_value++;
-
-        // #306: remember the value this slot's frame signalled, so a future
-        // begin_frame reusing this slot waits for exactly this frame before it
-        // resets the slot's allocator.
         impl->slot_fence_value[impl->frame_slot] = signaled;
-
-        if (impl->fence->GetCompletedValue() < signaled)
-        {
-            hr = impl->fence->SetEventOnCompletion(signaled, impl->fence_event);
-            if (!dx12_check_hr(
-                    *impl,
-                    hr,
-                    "ID3D12Fence::SetEventOnCompletion"))
-            {
-                return false;
-            }
-
-            if (WaitForSingleObject(impl->fence_event, INFINITE) != WAIT_OBJECT_0)
-            {
-                // The wait itself failed (a bad handle, not a removed device):
-                // release builds cannot rely on the assert this replaced. Fail
-                // loudly so the caller does not reset the command allocator under
-                // a frame we can no longer prove finished; the timeline value is
-                // already spent, so reclamation stays consistent regardless.
-                dx12_check_hr(*impl, HRESULT_FROM_WIN32(GetLastError()),
-                    "WaitForSingleObject(frame fence)");
-                return false;
-            }
-        }
 
         return true;
     }
@@ -855,11 +835,14 @@ namespace wz::gpu::dx12
             wait_for_gpu(impl);
         }
 
-        // Recorded-update staging from the final frame (waited-for above).
-        for (ID3D12Resource* staging : impl->frame_upload_staging) {
-            staging->Release();
+        // Recorded-update staging from every in-flight slot (all waited-for by
+        // wait_for_gpu above).
+        for (auto& slot_staging : impl->frame_upload_staging) {
+            for (ID3D12Resource* staging : slot_staging) {
+                staging->Release();
+            }
+            slot_staging.clear();
         }
-        impl->frame_upload_staging.clear();
 
         // 1. Destroy GPU resource tables.
         impl->compute_pipelines.destroy();

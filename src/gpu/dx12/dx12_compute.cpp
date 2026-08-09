@@ -971,7 +971,7 @@ namespace wz::gpu::dx12::internal
             byte_count);
         transition_buffer(impl->cmd, *buffer, final_state);
 
-        impl->frame_upload_staging.push_back(upload);
+        impl->frame_upload_staging[impl->frame_slot].push_back(upload);
         return true;
     }
 
