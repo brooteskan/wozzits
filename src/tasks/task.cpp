@@ -22,7 +22,7 @@ namespace wz::tasks
     void run(Counter& c, TaskFn fn, void* user)
     {
         TaskScheduler* s = get_task_scheduler();
-        if (s == nullptr)
+        if (s == nullptr || force_serial())
         {
             c.outstanding_.fetch_add(1, std::memory_order_relaxed);
             fn(user);
@@ -39,7 +39,7 @@ namespace wz::tasks
             return;
 
         TaskScheduler* s = get_task_scheduler();
-        if (s == nullptr)
+        if (s == nullptr || force_serial())
         {
             for (std::size_t i = 0; i < n; ++i)
             {
@@ -57,7 +57,7 @@ namespace wz::tasks
     void wait(Counter& c)
     {
         TaskScheduler* s = get_task_scheduler();
-        if (s == nullptr)
+        if (s == nullptr || force_serial())
         {
             assert(c.outstanding_.load(std::memory_order_acquire) == 0 &&
                 "wz::tasks::wait: work still outstanding on the serial path");
@@ -72,12 +72,6 @@ namespace wz::tasks
         }
 
         // Main/engine thread (the safe island): block until the pool drains c.
-        for (;;)
-        {
-            const int v = c.outstanding_.load(std::memory_order_acquire);
-            if (v == 0)
-                return;
-            c.outstanding_.wait(v, std::memory_order_acquire);
-        }
+        s->wait_on_main(c);
     }
 }

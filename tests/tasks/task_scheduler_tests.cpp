@@ -17,7 +17,10 @@
 #include <tasks/task.h>
 #include <tasks/task_scheduler.h>
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
+#include <thread>
 #include <vector>
 
 namespace
@@ -134,5 +137,65 @@ namespace
             sum_subtree(&f);
             ASSERT_EQ(f.result, expected) << "rep " << rep;
         }
+    }
+
+    // S3: the force-serial flag bypasses the pool even when one is installed, so a
+    // bug can be bisected serial-vs-parallel. run() then executes inline on the
+    // CALLING thread (not a worker), and the result is still correct.
+    TEST(TaskScheduler, ForceSerialBypassesThePool)
+    {
+        ScopedPool guard{ 4 };
+        wz::tasks::set_force_serial(true);
+
+        struct Probe { bool ran_on_worker; int value; };
+        Probe p{ true, 0 };
+        Counter c;
+        run(c, [](void* u)
+            {
+                Probe* pr = static_cast<Probe*>(u);
+                pr->ran_on_worker = wz::tasks::is_worker_thread();
+                pr->value = 7;
+            }, &p);
+        wait(c);
+
+        wz::tasks::set_force_serial(false);
+
+        EXPECT_EQ(p.value, 7);
+        EXPECT_FALSE(p.ran_on_worker);  // ran inline on this (non-worker) thread
+    }
+
+    // S3: the stall watchdog reports a counter that never drains -- a lost/hung
+    // task that would otherwise hang the safe-island wait() forever. A task that
+    // spins until released stands in for the lost task; the test releases it after
+    // the watchdog fires, so nothing actually hangs.
+    TEST(TaskScheduler, StallDetectorFiresOnALostTask)
+    {
+        wz::tasks::TaskScheduler pool{
+            2, std::chrono::milliseconds{ 200 }, std::chrono::milliseconds{ 50 } };
+        std::atomic<bool> stall_fired{ false };
+        pool.set_stall_callback([&] { stall_fired.store(true); });
+        wz::tasks::set_task_scheduler(&pool);
+
+        std::atomic<bool> release{ false };
+        Counter c;
+        run(c, [](void* u)
+            {
+                std::atomic<bool>* r = static_cast<std::atomic<bool>*>(u);
+                while (!r->load(std::memory_order_acquire))
+                    std::this_thread::yield();
+            }, &release);
+
+        std::thread waiter([&] { wait(c); });  // the safe-island wait that hangs
+
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds{ 5 };
+        while (!stall_fired.load() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds{ 10 });
+
+        EXPECT_TRUE(stall_fired.load());
+
+        release.store(true, std::memory_order_release);  // let it drain -- no hang
+        waiter.join();
+        wz::tasks::set_task_scheduler(nullptr);
     }
 }

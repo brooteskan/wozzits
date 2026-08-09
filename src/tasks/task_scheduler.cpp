@@ -2,10 +2,12 @@
 
 #include <tasks/fiber_backend.h>
 
+#include <cstdio>
+#include <cstdlib>
 #include <optional>
 #include <utility>
 
-// wz::tasks worker pool (#293, S1 pool + S2 fibres).
+// wz::tasks worker pool (#293, S1 pool + S2 fibres + S3 diagnostics).
 //
 // Each worker thread converts itself to a SCHEDULER FIBRE and loops: run a
 // resumable parked fibre if any, else run a fresh task on a pooled TASK FIBRE,
@@ -37,20 +39,17 @@ namespace wz::tasks
         enum class YieldReason { None, Finished, Parking };
 
         // Per-WORKER-THREAD state. thread_local, NOT fibre-local: a migrated fibre
-        // reads the state of whichever thread now runs it -- which is what we want
-        // (its scheduler fibre, its worker index). The values that must survive a
-        // park/resume live on the fibre's own stack or in the Counter, not here.
+        // reads the state of whichever thread now runs it -- which is what we want.
         thread_local int t_worker_index = -1;
-        thread_local Fiber t_scheduler_fiber{};            // this thread's dispatch fibre
-        thread_local FiberContext* t_current_fiber = nullptr;  // task fibre running now
+        thread_local Fiber t_scheduler_fiber{};
+        thread_local FiberContext* t_current_fiber = nullptr;
 
-        // Set by a task fibre immediately before switching to the scheduler, read by
-        // the scheduler immediately after -- same thread, so no migration between.
         thread_local YieldReason t_yield_reason = YieldReason::None;
         thread_local FiberContext* t_yield_fiber = nullptr;
         thread_local Counter* t_yield_counter = nullptr;
 
         std::atomic<TaskScheduler*> g_scheduler{ nullptr };
+        std::atomic<bool> g_force_serial{ false };
 
         // A unique address used as Counter::waiter_'s "already reached zero"
         // sentinel; never equal to a real FiberContext*.
@@ -82,22 +81,42 @@ namespace wz::tasks
         return t_worker_index >= 0;
     }
 
+    void set_force_serial(bool force)
+    {
+        g_force_serial.store(force, std::memory_order_release);
+    }
+
+    bool force_serial()
+    {
+        // Read the env var once (thread-safe static init); OR the programmatic flag.
+        static const bool from_env = []
+        {
+#pragma warning(push)
+#pragma warning(disable : 4996)  // std::getenv is the correct, portable call
+            const char* v = std::getenv("WZ_TASKS_FORCE_SERIAL");
+#pragma warning(pop)
+            return v != nullptr && v[0] != '\0' && v[0] != '0';
+        }();
+        return from_env || g_force_serial.load(std::memory_order_acquire);
+    }
+
     void TaskScheduler::task_fiber_entry(void* arg)
     {
         FiberContext* self = static_cast<FiberContext*>(arg);
         for (;;)
         {
             self->scheduler->execute_task(self->task);
-            // Task done: ask the scheduler to recycle this fibre, then switch back.
             t_yield_reason = YieldReason::Finished;
             t_yield_fiber = self;
             switch_to_fiber(t_scheduler_fiber);
-            // Reused: the scheduler set self->task + t_current_fiber = self and
-            // switched to us; loop to run the new task.
         }
     }
 
-    TaskScheduler::TaskScheduler(unsigned num_workers)
+    TaskScheduler::TaskScheduler(
+        unsigned num_workers,
+        std::chrono::milliseconds stall_threshold,
+        std::chrono::milliseconds stall_interval)
+        : stall_threshold_(stall_threshold), stall_interval_(stall_interval)
     {
         const unsigned n = resolve_worker_count(num_workers);
         deques_.reserve(n);
@@ -107,6 +126,8 @@ namespace wz::tasks
         workers_.reserve(n);
         for (unsigned i = 0; i < n; ++i)
             workers_.emplace_back([this, i] { worker_main(i); });
+
+        watchdog_ = std::thread([this] { watchdog_main(); });
     }
 
     TaskScheduler::~TaskScheduler()
@@ -116,8 +137,14 @@ namespace wz::tasks
             running_.store(false, std::memory_order_release);
             cv_.notify_all();
         }
+        {
+            std::lock_guard<std::mutex> lock(watchdog_mutex_);
+            watchdog_cv_.notify_all();
+        }
         for (std::thread& w : workers_)
             w.join();
+        if (watchdog_.joinable())
+            watchdog_.join();
 
         // Destruction contract: no work in flight, so every fibre is free and
         // suspended at its entry-loop switch-back. Safe to delete.
@@ -202,9 +229,6 @@ namespace wz::tasks
 
     bool TaskScheduler::has_any_work()
     {
-        // Called while holding mutex_ (park decision). resumable_ is guarded by
-        // mutex_; the deques by their own mutexes (lock order mutex_ ⊃ deque, and
-        // submit never holds both simultaneously, so there is no cycle).
         if (!resumable_.empty())
             return true;
         for (const std::unique_ptr<WorkStealingDeque<Task>>& d : deques_)
@@ -224,11 +248,12 @@ namespace wz::tasks
 
     void TaskScheduler::complete(Counter& c)
     {
+        // Progress signal for the watchdog (a plain monotonic tick).
+        completed_count_.fetch_add(1, std::memory_order_relaxed);
+
         if (c.outstanding_.fetch_sub(1, std::memory_order_acq_rel) == 1)
         {
-            // Count hit zero. Wake a main-thread waiter (a no-op if none).
-            c.outstanding_.notify_all();
-            // Claim a parked fibre waiter, if one is registered.
+            c.outstanding_.notify_all();  // wake a main-thread waiter (no-op if none)
             void* w = c.waiter_.exchange(kDone, std::memory_order_acq_rel);
             if (w != nullptr && w != kDone)
                 push_resumable(static_cast<FiberContext*>(w));
@@ -237,13 +262,10 @@ namespace wz::tasks
 
     void TaskScheduler::park_current_fiber(Counter& c)
     {
-        // Only RECORD the request and switch away; the scheduler registers us on c
-        // (after this switch completes) so we cannot be resumed mid-switch.
         t_yield_reason = YieldReason::Parking;
         t_yield_fiber = t_current_fiber;
         t_yield_counter = &c;
         switch_to_fiber(t_scheduler_fiber);
-        // Resumed after c reached zero; return to wait_on_worker's re-check loop.
     }
 
     void TaskScheduler::wait_on_worker(Counter& c)
@@ -252,10 +274,23 @@ namespace wz::tasks
             park_current_fiber(c);
     }
 
+    void TaskScheduler::wait_on_main(Counter& c)
+    {
+        active_waits_.fetch_add(1, std::memory_order_relaxed);
+        for (;;)
+        {
+            const int v = c.outstanding_.load(std::memory_order_acquire);
+            if (v == 0)
+                break;
+            c.outstanding_.wait(v, std::memory_order_acquire);
+        }
+        active_waits_.fetch_sub(1, std::memory_order_relaxed);
+    }
+
     void TaskScheduler::run_fiber(FiberContext* fc)
     {
         t_current_fiber = fc;
-        switch_to_fiber(fc->fiber);  // run/resume until it yields back
+        switch_to_fiber(fc->fiber);
         t_current_fiber = nullptr;
 
         const YieldReason reason = t_yield_reason;
@@ -271,8 +306,6 @@ namespace wz::tasks
         }
         else if (reason == YieldReason::Parking)
         {
-            // Register yf as yc's waiter. Safe to make resumable only from here on,
-            // because yf has fully switched off its stack.
             void* expected = nullptr;
             if (!yc->waiter_.compare_exchange_strong(
                     expected, yf, std::memory_order_acq_rel))
@@ -311,7 +344,6 @@ namespace wz::tasks
             if (try_run_one(index))
                 continue;
 
-            // Nothing found; spin briefly before parking (absorbs tiny gaps).
             bool found = false;
             for (int s = 0; s < 64; ++s)
             {
@@ -328,7 +360,7 @@ namespace wz::tasks
             std::unique_lock<std::mutex> lock(mutex_);
             if (!running_.load(std::memory_order_acquire))
                 break;
-            if (has_any_work())  // re-check under the lock: no lost wakeup
+            if (has_any_work())
                 continue;
             cv_.wait(lock);
         }
@@ -336,5 +368,61 @@ namespace wz::tasks
         convert_fiber_to_thread();
         t_scheduler_fiber = Fiber{};
         t_worker_index = -1;
+    }
+
+    void TaskScheduler::set_stall_callback(std::function<void()> callback)
+    {
+        std::lock_guard<std::mutex> lock(watchdog_mutex_);
+        stall_callback_ = std::move(callback);
+    }
+
+    void TaskScheduler::watchdog_main()
+    {
+        // A stall is a main-thread wait outstanding while NO task completes for
+        // stall_threshold_. That is a lost task / deadlock -- the safe-island thread
+        // would otherwise block forever. Report once per episode.
+        std::uint64_t last_completed = completed_count_.load(std::memory_order_relaxed);
+        std::chrono::milliseconds stalled_for{ 0 };
+        bool reported = false;
+
+        std::unique_lock<std::mutex> lock(watchdog_mutex_);
+        while (running_.load(std::memory_order_acquire))
+        {
+            watchdog_cv_.wait_for(lock, stall_interval_);
+            if (!running_.load(std::memory_order_acquire))
+                break;
+
+            const std::uint64_t now = completed_count_.load(std::memory_order_relaxed);
+            const bool waiting = active_waits_.load(std::memory_order_relaxed) > 0;
+
+            if (waiting && now == last_completed)
+            {
+                stalled_for += stall_interval_;
+                if (stalled_for >= stall_threshold_ && !reported)
+                {
+                    reported = true;
+                    if (stall_callback_)
+                    {
+                        std::function<void()> cb = stall_callback_;
+                        lock.unlock();
+                        cb();
+                        lock.lock();
+                    }
+                    else
+                    {
+                        std::fprintf(stderr,
+                            "wz::tasks: STALL -- a wait has not made progress in "
+                            "%lld ms; a task may be lost or deadlocked.\n",
+                            static_cast<long long>(stalled_for.count()));
+                    }
+                }
+            }
+            else
+            {
+                stalled_for = std::chrono::milliseconds{ 0 };
+                reported = false;
+            }
+            last_completed = now;
+        }
     }
 }
