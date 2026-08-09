@@ -163,9 +163,19 @@ namespace wz::gpu::dx12
         // Reused by GetMessage so a drain does not allocate per message.
         std::vector<char> debug_scratch;
 
-        // frame
-        ID3D12CommandAllocator* allocator = nullptr;
+        // frame -- N-in-flight ring (#306). One command allocator per in-flight
+        // frame slot, so a slot's allocator is reset only after that slot's prior
+        // frame has passed its fence; `cmd` is re-targeted onto the current slot's
+        // allocator each begin_frame. frame_slot advances every begin_frame;
+        // slot_fence_value[i] is the fence value the last frame using slot i
+        // signalled (0 == never used). NOTE: while end_frame still waits on the
+        // just-submitted frame, the begin_frame slot-wait is a no-op -- it becomes
+        // the real pacing wait once end_frame's wait is removed.
+        static constexpr UINT kFramesInFlight = 2;
+        ID3D12CommandAllocator* allocators[kFramesInFlight] = {};
         ID3D12GraphicsCommandList* cmd = nullptr;
+        UINT   frame_slot = 0;
+        UINT64 slot_fence_value[kFramesInFlight] = {};
 
         // render target
         ID3D12DescriptorHeap* rtv_heap = nullptr;

@@ -332,25 +332,31 @@ namespace wz::gpu::dx12
             handle.ptr += rtv_stride;
         }
 
-        // ────── command allocator + list ───────────────────────────────────────────────────────
-        ID3D12CommandAllocator* allocator = nullptr;
-        hr = device->CreateCommandAllocator(
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
-            IID_PPV_ARGS(&allocator)
-        );
-        if (FAILED(hr)) {
-            return {};
+        // ────── command allocators (one per in-flight slot) + list ──────────────
+        // #306: one allocator per frame slot so begin_frame resets only the
+        // current slot's allocator; the single command list is re-targeted onto it.
+        ID3D12CommandAllocator* allocators[DX12Device::kFramesInFlight] = {};
+        for (UINT i = 0; i < DX12Device::kFramesInFlight; ++i) {
+            hr = device->CreateCommandAllocator(
+                D3D12_COMMAND_LIST_TYPE_DIRECT,
+                IID_PPV_ARGS(&allocators[i])
+            );
+            if (FAILED(hr)) {
+                for (UINT j = 0; j < i; ++j) allocators[j]->Release();
+                return {};
+            }
         }
 
         ID3D12GraphicsCommandList* cmd = nullptr;
         hr = device->CreateCommandList(
             0,
             D3D12_COMMAND_LIST_TYPE_DIRECT,
-            allocator,
+            allocators[0],
             nullptr,
             IID_PPV_ARGS(&cmd)
         );
         if (FAILED(hr)) {
+            for (UINT i = 0; i < DX12Device::kFramesInFlight; ++i) allocators[i]->Release();
             return {};
         }
 
@@ -369,7 +375,9 @@ namespace wz::gpu::dx12
         install_debug_storage_filter(impl);
         impl->swapchain = swapchain;
         impl->queue = queue;
-        impl->allocator = allocator;
+        for (UINT i = 0; i < DX12Device::kFramesInFlight; ++i) {
+            impl->allocators[i] = allocators[i];
+        }
         impl->cmd = cmd;
         impl->rtv_heap = rtv_heap;
         impl->hwnd = hwnd;
@@ -491,13 +499,34 @@ namespace wz::gpu::dx12
 
         impl->frame_index = impl->swapchain->GetCurrentBackBufferIndex();
 
-        hr = impl->allocator->Reset();
+        // #306 frame-slot ring: advance to this frame's slot and, before reusing
+        // its command allocator, wait for the fence the LAST frame in this slot
+        // signalled (0 == never used -> no wait). While end_frame still waits on
+        // the just-submitted frame this is a no-op (GetCompletedValue is already
+        // current); it becomes the real pacing wait once end_frame's wait goes.
+        impl->frame_slot = (impl->frame_slot + 1u) % DX12Device::kFramesInFlight;
+        const UINT64 slot_wait = impl->slot_fence_value[impl->frame_slot];
+        if (slot_wait != 0 && impl->fence->GetCompletedValue() < slot_wait) {
+            hr = impl->fence->SetEventOnCompletion(slot_wait, impl->fence_event);
+            if (!dx12_check_hr(*impl, hr, "ID3D12Fence::SetEventOnCompletion(slot)")) {
+                return false;
+            }
+            if (WaitForSingleObject(impl->fence_event, INFINITE) != WAIT_OBJECT_0) {
+                dx12_check_hr(*impl, HRESULT_FROM_WIN32(GetLastError()),
+                    "WaitForSingleObject(frame slot)");
+                return false;
+            }
+        }
+
+        ID3D12CommandAllocator* slot_allocator = impl->allocators[impl->frame_slot];
+
+        hr = slot_allocator->Reset();
         if (!dx12_check_hr(*impl, hr, "ID3D12CommandAllocator::Reset")) {
             return false;
         }
         assert(SUCCEEDED(hr));
 
-        hr = impl->cmd->Reset(impl->allocator, nullptr);
+        hr = impl->cmd->Reset(slot_allocator, nullptr);
         if (!dx12_check_hr(*impl, hr, "ID3D12GraphicsCommandList::Reset")) {
             return false;
         }
@@ -640,6 +669,11 @@ namespace wz::gpu::dx12
         // completed_timeline_value could report it while a second frame under it
         // is still in flight, corrupting the registry's reclamation timeline.
         const UINT64 signaled = impl->fence_value++;
+
+        // #306: remember the value this slot's frame signalled, so a future
+        // begin_frame reusing this slot waits for exactly this frame before it
+        // resets the slot's allocator.
+        impl->slot_fence_value[impl->frame_slot] = signaled;
 
         if (impl->fence->GetCompletedValue() < signaled)
         {
@@ -929,7 +963,9 @@ namespace wz::gpu::dx12
         if (impl->dsv_heap) { impl->dsv_heap->Release(); impl->dsv_heap = nullptr; }
         if (impl->rtv_heap) { impl->rtv_heap->Release();  impl->rtv_heap = nullptr; }
         if (impl->cmd) { impl->cmd->Release();       impl->cmd = nullptr; }
-        if (impl->allocator) { impl->allocator->Release(); impl->allocator = nullptr; }
+        for (UINT i = 0; i < DX12Device::kFramesInFlight; ++i) {
+            if (impl->allocators[i]) { impl->allocators[i]->Release(); impl->allocators[i] = nullptr; }
+        }
         if (impl->swapchain) { impl->swapchain->Release(); impl->swapchain = nullptr; }
         if (impl->queue) { impl->queue->Release();     impl->queue = nullptr; }
         // Before the device: the info queue holds a reference to it, so

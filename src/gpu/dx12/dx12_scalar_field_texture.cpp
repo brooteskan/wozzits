@@ -45,7 +45,7 @@ namespace wz::gpu::dx12::internal
     {
         auto* impl = static_cast<wz::gpu::dx12::DX12Device*>(device.impl);
 
-        if (!impl || !impl->device || !impl->queue || !impl->allocator || !impl->cmd)
+        if (!impl || !impl->device || !impl->queue || !impl->allocators[0] || !impl->cmd)
             return INVALID_GPU_HANDLE;
 
         if (!impl->fence || !impl->fence_event)
