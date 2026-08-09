@@ -20,6 +20,25 @@ namespace wz::fs
         std::uint64_t size = 0;
     };
 
+    struct FileStatus
+    {
+        bool exists = false;
+        bool is_directory = false;
+        // A regular file is anything that exists and is not a directory. Reparse
+        // points (symlinks/junctions) to a file report as regular; this is a
+        // deliberately pragmatic definition, narrower than std::filesystem's.
+        bool is_regular_file = false;
+        std::uint64_t size = 0;   // 0 for directories
+    };
+
+    // How copy_file / copy_tree treat a destination FILE that already exists.
+    enum class CopyOptions
+    {
+        FailIfExists,       // return AlreadyExists (the default)
+        OverwriteExisting,  // replace it
+        SkipExisting,       // leave it as-is and report success
+    };
+
     //
     FileResult<Buffer> read_file(const Path &path);
 
@@ -39,11 +58,26 @@ namespace wz::fs
     //
     bool exists(const Path &path);
 
+    // True only if the path exists and is a directory.
+    bool is_directory(const Path &path);
+
+    // True if the path exists and is not a directory (see FileStatus).
+    bool is_regular_file(const Path &path);
+
+    // Existence, kind, and size in one query. On a missing path the result
+    // carries FileError::NotFound and a default-constructed FileStatus.
+    FileResult<FileStatus> status(const Path &path);
+
     //
     FileResult<std::uint64_t> file_size(const Path &path);
 
     //
     FileError create_directories(const Path &path);
+
+    // Creates the parent directory of `path` (and any missing ancestors). A no-op
+    // returning None when `path` has no parent component. The companion the
+    // copy/rename sites need before writing a destination.
+    FileError create_parent_directories(const Path &path);
 
     //
     FileError remove_file(const Path &path);
@@ -53,6 +87,38 @@ namespace wz::fs
 
     //
     FileResult<std::vector<DirEntry>> list_directory(const Path &path);
+
+    // Copies a single file. Does NOT create the destination's parent directory
+    // (use create_parent_directories first); see CopyOptions for the
+    // already-exists policy.
+    FileError copy_file(const Path &from,
+                        const Path &to,
+                        CopyOptions options = CopyOptions::FailIfExists);
+
+    // Recursively copies a directory tree (or delegates to copy_file when `from`
+    // is a plain file). Destination directories are created as needed;
+    // CopyOptions governs collisions on the FILES within.
+    FileError copy_tree(const Path &from,
+                        const Path &to,
+                        CopyOptions options = CopyOptions::FailIfExists);
+
+    // Moves/renames a file or directory, replacing an existing destination.
+    FileError rename(const Path &from, const Path &to);
+
+    // Called once per entry discovered under a walk root, pre-order. `full_path`
+    // is the entry's path joined onto the walk root; `entry` carries its name,
+    // kind, and size (size 0 for directories) -- the same data list_directory
+    // reports, so a walk needs no extra per-entry stat.
+    using WalkVisitor = std::function<void(const Path &full_path,
+                                           const DirEntry &entry)>;
+
+    // Recursively visits every entry UNDER `root` (not `root` itself), pre-order.
+    // Policy: does NOT descend into directory reparse points (symlinks/junctions),
+    // so it cannot cycle or escape the tree. An unreadable subdirectory is
+    // surfaced as the returned FileError (the first one encountered) rather than
+    // silently skipped; sibling entries are still visited. Returns None on a
+    // fully-successful walk.
+    FileError walk(const Path &root, const WalkVisitor &visitor);
 
     //
     Path normalize(const Path &path);
@@ -74,6 +140,49 @@ namespace wz::fs
 
     //
     bool is_absolute(const Path &path);
+
+    // Note: extension()/stem() treat the suffix WITHOUT a leading dot ("json",
+    // not ".json"). The helpers below follow that convention.
+
+    // True if path's extension equals `ext`, compared ASCII-case-insensitively.
+    // `ext` may be given with or without a leading dot: has_extension(p, "json")
+    // and has_extension(p, ".json") are equivalent.
+    bool has_extension(const Path &path, const Path &ext);
+
+    // Returns `path` with its extension replaced by `ext` (a leading dot in
+    // `ext` is optional). An empty `ext` removes the extension. Dotfiles like
+    // ".gitignore" have no extension, so the new one is appended after them.
+    Path replace_extension(const Path &path, const Path &ext);
+
+    // Lexically resolves `path` to an absolute path (joining with the current
+    // directory when relative), then normalizes. Does not touch the disk and
+    // does not resolve "."/".." beyond what normalize does.
+    FileResult<Path> absolute(const Path &path);
+
+    // Full path with "."/".." collapsed and the current directory applied
+    // (GetFullPathNameW). Does NOT require the path to exist.
+    FileResult<Path> weakly_canonical(const Path &path);
+
+    // Real on-disk path with symlinks/junctions resolved and the "\\?\" prefix
+    // stripped (GetFinalPathNameByHandleW). Requires the path to EXIST.
+    FileResult<Path> canonical(const Path &path);
+
+    // `path` expressed relative to `base` (both resolved to absolute first),
+    // using ".." to ascend as needed. Returns "." when they are equal, and an
+    // empty path (with FileError::None) when they share no common root, e.g.
+    // different drives -- matching std::filesystem::relative.
+    FileResult<Path> relative(const Path &path, const Path &base);
+
+    // Human-readable, stateless description of a FileError enumerator.
+    const char *to_string(FileError error);
+
+    // Native Win32 diagnostics for the MOST RECENT failing wz::fs call ON THE
+    // CALLING THREAD. Only meaningful right after a call returned a non-None
+    // FileError; a successful call leaves the previous value in place. For the
+    // async_* helpers the operation and its callback run on the same executor
+    // thread, so these are valid when read from within the callback.
+    std::uint32_t last_os_error_code();
+    std::string last_os_error_message();
 
     using ReadCallback = std::function<void(FileResult<Buffer>)>;
     using WriteCallback = std::function<void(FileError)>;
