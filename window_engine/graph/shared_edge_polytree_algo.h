@@ -17,7 +17,9 @@
 // these sweeps; it does NOT belong here.
 
 #include <graph/shared_edge_polytree.h>
+#include <tasks/task.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace wz::core::graph {
@@ -42,16 +44,34 @@ namespace wz::core::graph {
         // before the parent folds them, and the recursion order matches the fold
         // order the message kernel uses (for_each_neighbor_except walks the same
         // CSR order) — so results are independent of how the child subtrees are
-        // scheduled. This is the ONE function #293 replaces: it will dispatch each
-        // child subtree via wz::tasks::run and nest-wait before the post-order
-        // emit, leaving the `collect` kernel and the child-index order untouched.
+        // scheduled. #293 now drives this seam: it dispatches each child subtree
+        // via wz::tasks::run and joins (wait) before the post-order emit, leaving
+        // the `collect` kernel and the child-index order untouched.
         template<typename N, typename E, typename CollectFn>
         void bp_collect_subtree(
             SharedEdgePolytree<N, E>& t, NodeHandle n, CollectFn& collect) {
-            for (const NodeHandle c : children(t, n))
-                bp_collect_subtree(t, c, collect);  // #293: run(child subtree) / wait
+            // Fan the independent child subtrees out through the task system; each
+            // writes only its own up-message, so they carry no cross-dependency.
+            // Serial backend (S0) runs them inline in CSR order == the old
+            // recursion, bit-for-bit; the pool/fibre backend runs them concurrently.
+            const std::span<const NodeHandle> kids = children(t, n);
+            struct Frame {
+                SharedEdgePolytree<N, E>* t;
+                const NodeHandle*         kids;
+                CollectFn*                collect;
+            } frame{ &t, kids.data(), &collect };
+
+            wz::tasks::Counter counter;
+            wz::tasks::run(counter, kids.size(),
+                [](std::size_t i, void* u) {
+                    auto* f = static_cast<Frame*>(u);
+                    bp_collect_subtree(*f->t, f->kids[i], *f->collect);
+                },
+                &frame);
+            wz::tasks::wait(counter);  // join the child subtrees before the emit
+
             const NodeHandle p = parent(t, n);
-            if (p != INVALID_NODE)                  // a root sends no up-message
+            if (p != INVALID_NODE)     // a root sends no up-message
                 collect(n, p, edge_to_parent(t, n));
         }
 
@@ -62,17 +82,34 @@ namespace wz::core::graph {
         // THEN recurse into the child subtrees. Pre-order guarantees a child's
         // incoming down-message is written before that child emits its own. The
         // emit pass and the recursion pass are kept separate so the recursion pass
-        // is a clean fan-out over independent subtrees. This is the ONE function
-        // #293 replaces: after the serial pre-order emit it will dispatch the child
-        // subtrees via wz::tasks::run / wait, leaving the `distribute` kernel and
-        // the child-index order untouched.
+        // is a clean fan-out over independent subtrees. #293 now drives this seam:
+        // after the serial pre-order emit it dispatches the child subtrees via
+        // wz::tasks::run and joins (wait), leaving the `distribute` kernel and the
+        // child-index order untouched.
         template<typename N, typename E, typename DistributeFn>
         void bp_distribute_subtree(
             SharedEdgePolytree<N, E>& t, NodeHandle n, DistributeFn& distribute) {
             for (const NodeHandle c : children(t, n))
-                distribute(n, c, edge_to_child(t, n, c));
-            for (const NodeHandle c : children(t, n))
-                bp_distribute_subtree(t, c, distribute);  // #293: run(child subtree) / wait
+                distribute(n, c, edge_to_child(t, n, c));  // emit pass (sequential)
+
+            // Recursion pass: fan the independent child subtrees out through the
+            // task system, joined before returning. Serial backend (S0) runs them
+            // inline in CSR order == the old recursion; pool/fibre runs concurrently.
+            const std::span<const NodeHandle> kids = children(t, n);
+            struct Frame {
+                SharedEdgePolytree<N, E>* t;
+                const NodeHandle*         kids;
+                DistributeFn*             distribute;
+            } frame{ &t, kids.data(), &distribute };
+
+            wz::tasks::Counter counter;
+            wz::tasks::run(counter, kids.size(),
+                [](std::size_t i, void* u) {
+                    auto* f = static_cast<Frame*>(u);
+                    bp_distribute_subtree(*f->t, f->kids[i], *f->distribute);
+                },
+                &frame);
+            wz::tasks::wait(counter);  // join the child subtrees
         }
 
     } // namespace detail
