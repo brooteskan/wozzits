@@ -261,3 +261,30 @@ TEST(CriticalPathReport, FormatsDurationsPathAndParallelism)
     EXPECT_NE(report.find("A -> B"), std::string::npos);
     EXPECT_NE(report.find("parallelism 1.00x"), std::string::npos);
 }
+
+TEST(CriticalPathReport, CompactLineIsSingleLineWithFields)
+{
+    JobGraphTemplate t;
+    auto a0 = add(t, "A");
+    auto b0 = add(t, "B");
+    t.add_dependency(a0, b0);
+    ASSERT_TRUE(t.commit());
+
+    FrameJobProfile profile;
+    profile.reset(7);
+    record(profile, a0, "A", 1000);   // 1.00 ms at 1e6 ticks/sec
+    record(profile, b0, "B", 3000);   // 3.00 ms
+
+    CriticalPathAnalysis a;
+    analyze_critical_path(t, profile, a);
+
+    const std::string line = format_frame_report_line(profile, a, 1'000'000);
+
+    EXPECT_EQ(line.find('\n'), std::string::npos);   // must fit one log record
+    EXPECT_NE(line.find("frame 7 phases(ms):"), std::string::npos);
+    EXPECT_NE(line.find("A=1.00"), std::string::npos);
+    EXPECT_NE(line.find("B=3.00"), std::string::npos);
+    EXPECT_NE(line.find("crit=4.00"), std::string::npos);
+    EXPECT_NE(line.find("total=4.00"), std::string::npos);
+    EXPECT_NE(line.find("par=1.00x"), std::string::npos);
+}

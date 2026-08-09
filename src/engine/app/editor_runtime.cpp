@@ -13,6 +13,7 @@
 #include <time/w_time.h>
 #include <window/window2.h>
 
+#include <cstdlib>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -862,6 +863,18 @@ namespace wz::app
             // error->abort. Built once; frame_drive carries the per-frame inputs
             // the callbacks read (updated at the top of each iteration).
             wz::engine::FrameSchedule frame_schedule;
+
+            // WZ_FRAME_PROFILING=1 forces per-phase profiling on for standalone /
+            // headless runs, where there is no editor UI to toggle it (mirrors
+            // WZ_TASKS_FORCE_SERIAL). Read once; OR'd into the per-frame gate below.
+            const bool env_frame_profiling = [] {
+#pragma warning(push)
+#pragma warning(disable : 4996)  // std::getenv is the correct, portable call
+                const char* v = std::getenv("WZ_FRAME_PROFILING");
+#pragma warning(pop)
+                return v != nullptr && v[0] != '\0' && !(v[0] == '0' && v[1] == '\0');
+            }();
+
             struct FrameDriveInputs {
                 wz::input::InputState input{};
                 float                 dt           = 0.0f;
@@ -1348,7 +1361,8 @@ namespace wz::app
                 // Run the frame as a job graph: simulate -> begin -> clear ->
                 // render_scene -> render_overlay -> end -> present, stopping at the
                 // first phase that fails (mirrors the former per-step break).
-                frame_schedule.set_profiling(control && control->frame_profiling_enabled());
+                frame_schedule.set_profiling(
+                    env_frame_profiling || (control && control->frame_profiling_enabled()));
                 const wz::engine::FrameSchedule::Result frame_result =
                     frame_schedule.run(frame_ops);
                 if (!frame_result.ok) {
@@ -1359,7 +1373,7 @@ namespace wz::app
                 // Live per-phase critical-path from real frames (#305), only while
                 // the editor's frame-profiling toggle is on.
                 if (frame_schedule.profiling() && (frames_presented % 120u == 0u)) {
-                    ctx.logger.info(wz::jobs::format_frame_report(
+                    ctx.logger.info(wz::jobs::format_frame_report_line(
                         frame_schedule.last_profile(),
                         frame_schedule.last_analysis(),
                         wz::time::TimeSource::ticks_per_second()));

@@ -77,4 +77,12 @@ namespace wz::jobs
     std::string format_frame_report(const FrameJobProfile&      profile,
                                     const CriticalPathAnalysis& analysis,
                                     uint64_t                    ticks_per_second);
+
+    // Compact single-line variant, sized to fit one log record (the multi-line
+    // report above overruns a typical ~256-char logger cap):
+    //   "frame N phases(ms): a=.. b=.. | crit=.. total=.. par=..x"
+    // Per-phase durations in execution order, then the critical-path summary.
+    std::string format_frame_report_line(const FrameJobProfile&      profile,
+                                         const CriticalPathAnalysis& analysis,
+                                         uint64_t                    ticks_per_second);
 }

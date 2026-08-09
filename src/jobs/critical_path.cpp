@@ -135,4 +135,37 @@ namespace wz::jobs
 
         return s;
     }
+
+    std::string format_frame_report_line(const FrameJobProfile&      profile,
+                                         const CriticalPathAnalysis& analysis,
+                                         uint64_t                    ticks_per_second)
+    {
+        const double to_ms = ticks_per_second == 0
+            ? 0.0
+            : 1000.0 / static_cast<double>(ticks_per_second);
+
+        std::string s;
+        char buf[64];
+
+        std::snprintf(buf, sizeof(buf), "frame %llu phases(ms):",
+                      static_cast<unsigned long long>(profile.frame_index));
+        s += buf;
+
+        for (const JobTimingRecord& r : profile.timings)
+        {
+            s += ' ';
+            s += (r.name ? r.name : "<unnamed>");
+            std::snprintf(buf, sizeof(buf), "=%.2f",
+                          static_cast<double>(r.duration_ticks()) * to_ms);
+            s += buf;
+        }
+
+        std::snprintf(buf, sizeof(buf), " | crit=%.2f total=%.2f par=%.2fx",
+                      static_cast<double>(analysis.critical_path_ticks) * to_ms,
+                      static_cast<double>(analysis.total_work_ticks) * to_ms,
+                      analysis.parallelism());
+        s += buf;
+
+        return s;
+    }
 }
