@@ -15,6 +15,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -242,4 +243,31 @@ TEST(Request, MoveOnlyResultRoundTrips)
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(*result, 21);
+}
+
+TEST(Request, ServiceThatThrowsWakesTheCallerAsUnserviced)
+{
+    // A throwing service fn (the case bind_asset_graph's binder can hit) must not
+    // leave the caller parked: it wakes as serviced=false -- NEVER a default
+    // value that could read as success -- and the exception still propagates out
+    // of service() so the engine loop logs it.
+    Request<int, int> req;
+    RequestOutcome<int> out{ true, 123 };  // seeded non-default to prove it clears
+
+    std::thread caller([&] { out = req.call(5); });
+
+    bool threw = false;
+    while (!threw) {
+        try {
+            req.service([](int) -> int { throw std::runtime_error("boom"); });
+        }
+        catch (const std::runtime_error&) {
+            threw = true;  // the throw reached the servicer, as in the engine loop
+        }
+        std::this_thread::yield();
+    }
+    caller.join();
+
+    EXPECT_FALSE(out.serviced);
+    EXPECT_EQ(out.value, 0);
 }

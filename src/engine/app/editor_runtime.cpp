@@ -20,41 +20,6 @@ namespace wz::app
 {
     namespace
     {
-        // Holds a blocking handshake's cycle open until the caller has TAKEN
-        // its result, then wakes the next caller (#313, B4-C2 — see the
-        // *_cycle_busy_ comment in editor_runtime.h for what goes wrong
-        // without it).
-        //
-        // A guard rather than an explicit clear at each return because these
-        // functions have three exits apiece — success, engine-stopped-before-
-        // claiming, engine-stopped-mid-flight — and leaking the flag on any one
-        // of them wedges that verb for the rest of the session, which is a
-        // worse failure than the bug being fixed.
-        //
-        // Runs while the caller's unique_lock is still held: the lock is
-        // declared before the guard, so it is destroyed after it. Notifying
-        // under the lock is intentional and harmless here.
-        struct HandshakeCycle
-        {
-            bool& busy;
-            std::condition_variable& cv;
-
-            HandshakeCycle(bool& busy_flag, std::condition_variable& cond)
-                : busy(busy_flag)
-                , cv(cond)
-            {
-                busy = true;
-            }
-
-            HandshakeCycle(const HandshakeCycle&) = delete;
-            HandshakeCycle& operator=(const HandshakeCycle&) = delete;
-
-            ~HandshakeCycle()
-            {
-                busy = false;
-                cv.notify_all();
-            }
-        };
 
         AssetGraphCompileResult bind_failed(const std::string& message)
         {
@@ -93,9 +58,10 @@ namespace wz::app
 
     void EditorRuntimeControl::request_stop()
     {
+        // The frame loop polls stop_requested(); nothing blocks on a cv here any
+        // more (the hand-rolled handshakes that did are gone with #300 layer 1),
+        // so a bare store is all this needs.
         stop_.store(true, std::memory_order_release);
-        std::lock_guard<std::mutex> lock(mutex_);
-        cv_.notify_all();
     }
 
     bool EditorRuntimeControl::stop_requested() const
@@ -215,98 +181,29 @@ namespace wz::app
         wz::asset::AssetGraphDraft& draft)
     {
         const CallerScope scope(*this);
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock,
-            [this] { return !asset_graph_cycle_busy_ || finished_; });
-        if (!scope.admitted() || finished_) {
+        if (!scope.admitted()) {
             return bind_failed("engine runtime is not running");
         }
-
-        const HandshakeCycle cycle(asset_graph_cycle_busy_, cv_);
-        pending_asset_graph_draft_ = std::move(draft);
-        has_asset_graph_request_ = true;
-        has_asset_graph_result_ = false;
-        cv_.notify_all();
-
-        // A stopping engine must not release this wait while the draft is still
-        // in flight on the engine thread — there would be nothing to hand back.
-        cv_.wait(lock,
-            [this] {
-                return has_asset_graph_result_
-                    || (finished_ && !asset_graph_draft_in_flight_);
-            });
-        if (!has_asset_graph_result_) {
-            // The engine stopped. Reclaim the draft from whichever slot holds it
-            // so the caller's authoring state survives: pending_ when the engine
-            // never claimed the request, result_ when it claimed the draft and
-            // handed it back unbound. Returning with the caller's draft still
-            // moved-from loses the whole authored graph the next time the
-            // session saves.
-            if (has_asset_graph_request_) {
-                draft = std::move(pending_asset_graph_draft_);
-                has_asset_graph_request_ = false;
-            }
-            else {
-                draft = std::move(result_asset_graph_draft_);
-            }
+        // call_inout moves the draft into the request (leaving `draft` a husk for
+        // the bind window, as the draft-loan expects) and moves it back before
+        // returning -- bound on success, or reclaimed unchanged if the engine
+        // stopped / the binder threw. Both non-serviced cases surface as a failed
+        // bind with the caller's authored graph intact.
+        auto outcome = asset_graph_.call_inout(draft);
+        if (!outcome.serviced) {
             return bind_failed("engine runtime stopped before bind completed");
         }
-
-        has_asset_graph_result_ = false;
-        draft = std::move(result_asset_graph_draft_);
-        return std::move(asset_graph_result_);
+        return std::move(outcome.value);
     }
 
     void EditorRuntimeControl::service_pending_asset_graph_bind(
         const std::function<
             AssetGraphCompileResult(wz::asset::AssetGraphDraft&)>& binder)
     {
-        wz::asset::AssetGraphDraft draft;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!has_asset_graph_request_) {
-                return;
-            }
-            draft = std::move(pending_asset_graph_draft_);
-            has_asset_graph_request_ = false;
-            asset_graph_draft_in_flight_ = true;
-        }
-
-        // From here the caller's draft exists ONLY in `draft`, on this thread:
-        // the request slot is empty and no result is published yet. If binder
-        // throws, or the runtime tears down before the publish below, this guard
-        // is what returns the authored graph to the waiting caller.
-        struct DraftHandback
-        {
-            EditorRuntimeControl* control;
-            wz::asset::AssetGraphDraft* draft;
-
-            ~DraftHandback()
-            {
-                {
-                    std::lock_guard<std::mutex> lock(control->mutex_);
-                    if (!control->asset_graph_draft_in_flight_) {
-                        return;  // the publish already handed it back
-                    }
-                    control->result_asset_graph_draft_ = std::move(*draft);
-                    control->asset_graph_draft_in_flight_ = false;
-                }
-                control->cv_.notify_all();
-            }
-        } handback{ this, &draft };
-
-        // Bind outside the lock - it can take seconds (GPU resolve). binder
-        // mutates `draft` in place (resolved keys + validation messages).
-        AssetGraphCompileResult bound = binder(draft);
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            asset_graph_result_ = std::move(bound);
-            result_asset_graph_draft_ = std::move(draft);
-            has_asset_graph_result_ = true;
-            asset_graph_draft_in_flight_ = false;
-        }
-        cv_.notify_all();
+        // The binder mutates the draft in place (resolved keys + validation); the
+        // Request passes args_ by reference, so this is that same draft.
+        asset_graph_.service(
+            [&](wz::asset::AssetGraphDraft& draft) { return binder(draft); });
     }
 
     void EditorRuntimeControl::post_scene_node_transform(
@@ -833,9 +730,9 @@ namespace wz::app
             std::lock_guard<std::mutex> lock(mutex_);
             finished_ = true;
         }
-        cv_.notify_all();  // release a caller parked in the hand-rolled bind wait
-        // Release callers parked in the Request-based verbs (each on its own cv,
-        // not cv_, so finished_ under cv_ does not reach them). Idempotent.
+        // Release every caller parked in a blocking verb (each Request on its
+        // own cv). Idempotent -- teardown may call this more than once.
+        asset_graph_.abandon();
         add_child_.abandon();
         add_behavior_.abandon();
         export_subtree_.abandon();

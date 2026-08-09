@@ -151,52 +151,90 @@ namespace wz::app
         // one request object is only ever in one cycle at a time.
         RequestOutcome<R> call(Args args)
         {
+            // The common case: the payload is input only. call_inout moves it in,
+            // and the moved-back copy lands in this local and is discarded.
+            return call_inout(args);
+        }
+
+        // In-out variant, for a payload that is BOTH input and output and must not
+        // be left moved-from in the caller (the asset-graph draft): `inout` is
+        // moved into the request -- so the caller's object is a husk for the
+        // service window, which is exactly what AssetGraphEditorSession's
+        // draft-loan detects -- the servicer mutates it in place, and it is moved
+        // back before returning: mutated on success, or reclaimed unchanged if the
+        // engine stopped / the servicer threw.
+        RequestOutcome<R> call_inout(Args& inout)
+        {
             std::unique_lock<std::mutex> lock(mutex_);
             cv_.wait(lock, [this] {
                 return state_ == State::Idle || abandoned_;
             });
             if (abandoned_) {
-                return {};
+                return {};  // never claimed -- inout is untouched, still the caller's
             }
 
-            args_ = std::move(args);
+            args_ = std::move(inout);
             state_ = State::Requested;
 
+            // Wake on a published result or a failed (threw) service. On abandon,
+            // wake ONLY while the request is still un-claimed (Requested): once it
+            // is InFlight the servicer is touching the payload, so the caller must
+            // let it finish (Published/Failed) rather than reclaim underneath it.
             cv_.wait(lock, [this] {
-                return state_ == State::Published || abandoned_;
+                return state_ == State::Published || state_ == State::Failed
+                    || (abandoned_ && state_ == State::Requested);
             });
-            if (state_ != State::Published) {
-                return {};  // abandoned before a result was published
-            }
 
-            RequestOutcome<R> out{ true, std::move(result_) };
+            RequestOutcome<R> out;  // serviced=false unless Published below
+            if (state_ == State::Published) {
+                out = RequestOutcome<R>{ true, std::move(result_) };
+            }
+            inout = std::move(args_);  // hand the payload back (mutated or reclaimed)
             state_ = State::Idle;
             cv_.notify_all();  // release the next serialised caller
             return out;
         }
 
-        // Engine thread, once per frame: if a request is pending, run `fn(args)`
-        // OUTSIDE the lock and publish its result. `fn` takes Args by value (it
-        // is moved in) and returns R. A no-op when nothing is pending.
+        // Engine thread, once per frame: if a request is pending, run `fn(args_)`
+        // OUTSIDE the lock and publish its result. `fn` is passed the payload BY
+        // REFERENCE (the caller is parked and does not touch it), so an in-out
+        // verb can mutate it in place; by-value verbs simply read it. A no-op when
+        // nothing is pending.
         template <class Fn>
         void service(Fn&& fn)
         {
-            Args args;
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 if (state_ != State::Requested) {
                     return;
                 }
-                args = std::move(args_);
                 state_ = State::InFlight;
             }
 
-            R result = fn(std::move(args));
+            // fn runs outside the lock (a bind can take seconds). If it throws,
+            // wake the caller as NOT serviced -- never a default-valued "success",
+            // since a default R can read as OK (e.g. FileError::None) -- then
+            // rethrow so the engine loop logs it exactly as before.
+            R result{};
+            try {
+                result = fn(args_);
+            }
+            catch (...) {
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    if (state_ == State::InFlight) {
+                        state_ = State::Failed;
+                    }
+                }
+                cv_.notify_all();
+                throw;
+            }
 
             {
                 std::lock_guard<std::mutex> lock(mutex_);
-                // If abandon() ran while `fn` was in flight the caller has
-                // already left; there is no one to hand the result to.
+                // If abandon() ran while `fn` was in flight the caller is waiting
+                // for THIS transition (not the abandon), so the result is still
+                // handed over cleanly.
                 if (state_ == State::InFlight) {
                     result_ = std::move(result);
                     state_ = State::Published;
@@ -224,6 +262,7 @@ namespace wz::app
             Requested,   // args posted, awaiting the engine
             InFlight,    // engine claimed it; `fn` is running
             Published,   // result ready for the caller to take
+            Failed,      // `fn` threw; the caller wakes as not-serviced
         };
 
         mutable std::mutex mutex_;

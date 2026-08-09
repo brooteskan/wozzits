@@ -401,9 +401,9 @@ namespace wz::app
     public:
         // ─── Shutdown interlock (issue #313, B4-C12) ────────────────────────
         // wz_host_runtime_stop joins the engine thread and then DELETES the
-        // runtime, taking this object's mutex_ and cv_ with it. But join()
-        // only proves the ENGINE thread is gone — a different owner thread can
-        // still be blocked inside one of the seven blocking handshakes, and
+        // runtime, taking this object (and every Request's own mutex/cv) with
+        // it. But join() only proves the ENGINE thread is gone — a different
+        // owner thread can still be blocked inside one of the blocking verbs, and
         // that is the normal shape rather than a corner case: the editor runs
         // the graph bind on a .NET threadpool thread so its UI stays live, and
         // the UI thread is the one that calls stop.
@@ -862,7 +862,6 @@ namespace wz::app
         std::atomic<bool> closing_{ false };
 
         mutable std::mutex mutex_;
-        std::condition_variable cv_;
         std::atomic_bool stop_{ false };
         std::atomic_bool reload_behaviors_requested_{ false };
         std::atomic_bool frame_profiling_{ false };
@@ -871,53 +870,13 @@ namespace wz::app
         std::vector<SceneletCatalogEntry> scenelets_;  // guarded by mutex_
         std::vector<std::string> dropped_edits_;  // guarded by mutex_
         std::size_t dropped_edits_discarded_ = 0;  // guarded by mutex_
-        // ─── The blocking handshakes, and the *_cycle_busy_ flags ───────────
-        // There are seven request/response handshakes below (asset-graph bind,
-        // add-child, add-behavior, grafted nodes, scene nodes, export subtree,
-        // open scene). Each is: the caller posts a request and blocks; the
-        // engine thread claims it, does the work OUTSIDE the lock, publishes a
-        // result; the caller wakes and takes it.
-        //
-        // They all share mutex_ and cv_, so a publish wakes EVERY waiter and
-        // nothing in the payload says whose answer it is. That is only safe if
-        // at most one caller is inside a given verb's cycle at a time, and the
-        // entry gate used to test the wrong thing: it waited for
-        // `!has_X_request_`, which goes false the moment the ENGINE CLAIMS the
-        // request — long before the result is published. A second caller
-        // admitted in that gap would clear has_X_result_ as part of posting,
-        // SWALLOWING the first caller's publish (that caller then waits
-        // forever), and either caller could consume the other's result.
-        // Measured, both symptoms, at two concurrent callers: #313, B4-C2.
-        //
-        // *_cycle_busy_ is the correct gate — true from the moment a caller
-        // posts until it has TAKEN its result, i.e. the whole cycle rather than
-        // just the request half. It is cleared on every exit path (including
-        // the stopped-engine ones) by a scope guard in the .cpp, which also
-        // wakes the next caller. `finished_` still short-circuits everything,
-        // so a stopping engine never leaves a caller blocked on a busy cycle.
-        //
-        // These are NOT one shared flag: the verbs are independent and an
-        // engine-side bind takes seconds, so one flag would stall an unrelated
-        // add-child on the UI thread for the duration of a compile.
-        // Only bind_asset_graph still needs this gate; the other blocking verbs
-        // moved to the Request primitive (#300 layer 1), which serialises callers
-        // per-request on its own cv.
-        bool asset_graph_cycle_busy_ = false;
-
-        // #194: the asset-GRAPH bind handshake (bind_asset_graph /
-        // service_pending_asset_graph_bind). Named for the graph so they read
-        // distinctly from the scene-edit queues + handshakes below.
-        bool has_asset_graph_request_ = false;
-        bool has_asset_graph_result_ = false;
-        // True while the draft lives ONLY in service_pending_asset_graph_bind's
-        // local: claimed out of pending_ but not yet published to result_. A
-        // stopping engine must not release the bind_asset_graph wait in that
-        // window, or the caller returns holding a moved-from draft.
-        bool asset_graph_draft_in_flight_ = false;
+        // Set once when the runtime loop ends (surfaced via finished() /
+        // wz_host_runtime_is_running). It no longer drives any wait: every
+        // blocking verb now lives on the Request primitive (#300 layer 1) and is
+        // released at teardown by abandon(), so the shared cv_ that the seven
+        // hand-rolled handshakes and their *_cycle_busy_ gates once needed is
+        // gone with them.
         bool finished_ = false;
-        wz::asset::AssetGraphDraft pending_asset_graph_draft_;
-        wz::asset::AssetGraphDraft result_asset_graph_draft_;
-        AssetGraphCompileResult asset_graph_result_;
 
         // Live scene edits queued for the engine thread, each on its own Mailbox
         // (#300 layer 1). Coalesce-by-node collapses a drag's stream to the latest
@@ -978,9 +937,12 @@ namespace wz::app
         // caller is released at teardown. The no-answer case is Outcome.serviced
         // == false, distinct from a serviced default value (#313 D3-P039).
         //
-        // bind_asset_graph is the ONE handshake still hand-rolled (above): its
-        // move-only draft, in-flight reclaim, and throwing binder are outside
-        // what the simple Request models.
+        // bind_asset_graph uses Request::call_inout: the move-only draft is moved
+        // in (the caller's copy becomes the husk AssetGraphEditorSession's
+        // draft-loan expects), the binder mutates it in place, and it is moved
+        // back -- bound on success, reclaimed unchanged if the engine stopped or
+        // the binder threw (Request's Failed state wakes the caller either way).
+        // This replaces the old has_/in_flight_/DraftHandback hand-rolling.
         struct AddBehaviorRequest
         {
             wz::scene::AuthoredEntityId node_id;
@@ -991,6 +953,7 @@ namespace wz::app
             wz::scene::AuthoredEntityId root;
             wz::fs::Path out_path;
         };
+        Request<wz::asset::AssetGraphDraft, AssetGraphCompileResult> asset_graph_;
         Request<wz::scene::AuthoredEntityId,
                 wz::engine::assets::SceneAddChildResult> add_child_;
         Request<AddBehaviorRequest,
