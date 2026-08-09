@@ -146,6 +146,34 @@ TEST(FilesystemWholeFileIO, TextRoundTripPreservesEveryByte)
     wz::fs::remove_file(path);
 }
 
+// overwrite=false selects CREATE_NEW: it must create a file into an empty slot
+// but REFUSE to clobber an existing one (AlreadyExists), where overwrite=true
+// (CREATE_ALWAYS, all the tests above) would truncate and replace. This pins the
+// other branch of the CreateFileW disposition -- and that a refused create does
+// NOT touch the bytes already on disk.
+TEST(FilesystemWholeFileIO, WriteFileNoOverwriteCreatesButRefusesToClobber)
+{
+    const std::string path = scratch_path("wz_fs_no_overwrite.bin");
+    wz::fs::remove_file(path);   // clean slot even after an aborted prior run
+
+    const wz::fs::Buffer first(3, std::uint8_t{0xAB});
+    ASSERT_EQ(wz::fs::write_file(path, first, /*overwrite=*/false),
+              wz::fs::FileError::None);
+
+    // Against the now-existing file the same call is refused, not applied.
+    const wz::fs::Buffer second(4, std::uint8_t{0xCD});
+    EXPECT_EQ(wz::fs::write_file(path, second, /*overwrite=*/false),
+              wz::fs::FileError::AlreadyExists);
+
+    // The failed create never opened the handle, so the original bytes stand --
+    // it was not truncated the way a CREATE_ALWAYS would have left it.
+    const auto read_result = wz::fs::read_file(path);
+    ASSERT_TRUE(static_cast<bool>(read_result));
+    EXPECT_EQ(read_result.value, first);
+
+    wz::fs::remove_file(path);
+}
+
 // ---------------------------------------------------------------------------
 // UTF-8 PATH CORRECTNESS (#141 / #299 phase 2).
 //

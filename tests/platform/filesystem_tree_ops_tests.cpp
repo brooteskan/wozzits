@@ -318,6 +318,55 @@ TEST(FilesystemTreeOps, CopyTreeReproducesNestedTreeWithContent)
     fs::remove_directory(dir, true);
 }
 
+// The prior test copies into a clean destination with OverwriteExisting. This
+// one pins the OTHER two CopyOptions where it actually bites: on a FILE inside
+// the tree that already exists at the destination. Each policy gets its own
+// pre-seeded destination so the result does not depend on directory iteration
+// order.
+TEST(FilesystemTreeOps, CopyTreeHonoursCollisionPolicyWithinTree)
+{
+    const fs::Path dir = make_temp_dir("copytree_policy");
+
+    // Source tree: one file that will COLLIDE at the destination, one that will
+    // not (so we can prove non-colliding files still copy through).
+    const fs::Path src = fs::join(dir, "src");
+    ASSERT_EQ(fs::create_directories(fs::join(src, "sub")), fs::FileError::None);
+    ASSERT_EQ(fs::write_file_text(fs::join(src, "keep.txt"), "SRC-KEEP", true),
+              fs::FileError::None);
+    ASSERT_EQ(fs::write_file_text(fs::join(src, "sub/new.txt"), "SRC-NEW", true),
+              fs::FileError::None);
+
+    // A destination pre-seeded with a colliding keep.txt = "DST-OLD".
+    const auto seed_dst = [&](const char *tag) {
+        const fs::Path dst = fs::join(dir, tag);
+        EXPECT_EQ(fs::create_directories(dst), fs::FileError::None);
+        EXPECT_EQ(fs::write_file_text(fs::join(dst, "keep.txt"), "DST-OLD", true),
+                  fs::FileError::None);
+        return dst;
+    };
+
+    // FailIfExists: the collision aborts the copy with AlreadyExists and leaves
+    // the existing destination file untouched.
+    {
+        const fs::Path dst = seed_dst("dst_fail");
+        EXPECT_EQ(fs::copy_tree(src, dst, fs::CopyOptions::FailIfExists),
+                  fs::FileError::AlreadyExists);
+        EXPECT_EQ(fs::read_file_text(fs::join(dst, "keep.txt")).value, "DST-OLD");
+    }
+
+    // SkipExisting: the colliding file is left as-is and reported as success,
+    // while the non-colliding file is still copied through.
+    {
+        const fs::Path dst = seed_dst("dst_skip");
+        EXPECT_EQ(fs::copy_tree(src, dst, fs::CopyOptions::SkipExisting),
+                  fs::FileError::None);
+        EXPECT_EQ(fs::read_file_text(fs::join(dst, "keep.txt")).value, "DST-OLD");
+        EXPECT_EQ(fs::read_file_text(fs::join(dst, "sub/new.txt")).value, "SRC-NEW");
+    }
+
+    fs::remove_directory(dir, true);
+}
+
 TEST(FilesystemTreeOps, RenameMovesAndReplaces)
 {
     const fs::Path dir = make_temp_dir("rename");

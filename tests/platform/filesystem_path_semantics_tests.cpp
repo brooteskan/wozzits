@@ -126,3 +126,62 @@ TEST(FilesystemPathSemantics, StemAndExtensionSeeThroughTrailingAndDirs)
     EXPECT_EQ(fs::extension("dir/tank.scene.json"), "json");
     EXPECT_EQ(fs::extension("dir/name.txt/"), "txt");   // trailing sep ignored
 }
+
+// --- has_extension --------------------------------------------------------
+
+// The documented equivalence: `ext` matches with OR without a leading dot, and
+// the compare is ASCII-case-insensitive (matching Windows path semantics). This
+// is the predicate the asset/scene loaders branch on, so both spellings and
+// mixed case must resolve the same way.
+TEST(FilesystemPathSemantics, HasExtensionIgnoresLeadingDotAndCase)
+{
+    EXPECT_TRUE(fs::has_extension("tank.scene.json", "json"));
+    EXPECT_TRUE(fs::has_extension("tank.scene.json", ".json"));   // dot optional
+    EXPECT_TRUE(fs::has_extension("IMAGE.PNG", "png"));           // case-folded
+    EXPECT_TRUE(fs::has_extension("IMAGE.png", ".PNG"));
+
+    // Only the FINAL extension counts -- "archive.tar.gz" is a .gz, not a .tar.
+    EXPECT_TRUE(fs::has_extension("archive.tar.gz", "gz"));
+    EXPECT_FALSE(fs::has_extension("archive.tar.gz", "tar"));
+
+    // Equality, not a prefix/substring test.
+    EXPECT_FALSE(fs::has_extension("tank.scene.json", "jso"));
+}
+
+// A file with no extension, and a dotfile (whose leading dot names the file
+// rather than starting an extension), match nothing.
+TEST(FilesystemPathSemantics, HasExtensionFalseForNoExtensionAndDotfiles)
+{
+    EXPECT_FALSE(fs::has_extension("plain", "json"));
+    EXPECT_FALSE(fs::has_extension(".gitignore", "gitignore"));
+}
+
+// --- replace_extension ----------------------------------------------------
+
+TEST(FilesystemPathSemantics, ReplaceExtensionSwapsAppendsAndRemoves)
+{
+    // Swap an existing extension; a leading dot on the replacement is optional.
+    EXPECT_EQ(fs::replace_extension("tank.json", "scene"), "tank.scene");
+    EXPECT_EQ(fs::replace_extension("tank.json", ".scene"), "tank.scene");
+
+    // No extension yet -> the new one is appended.
+    EXPECT_EQ(fs::replace_extension("plain", "json"), "plain.json");
+
+    // An empty replacement removes the extension entirely.
+    EXPECT_EQ(fs::replace_extension("tank.json", ""), "tank");
+
+    // Only the LAST extension is replaced, consistent with extension()/stem().
+    EXPECT_EQ(fs::replace_extension("archive.tar.gz", "zip"), "archive.tar.zip");
+
+    EXPECT_EQ(fs::replace_extension("", "json"), "");   // empty stays empty
+}
+
+// The two placement footguns: a dotfile has no extension (so the suffix is
+// appended after the whole name), and a dot in a DIRECTORY component must not be
+// mistaken for the filename's extension boundary.
+TEST(FilesystemPathSemantics, ReplaceExtensionRespectsDotfilesAndDirDots)
+{
+    EXPECT_EQ(fs::replace_extension(".gitignore", "txt"), ".gitignore.txt");
+    EXPECT_EQ(fs::replace_extension("my.dir/tank", "json"), "my.dir/tank.json");
+    EXPECT_EQ(fs::replace_extension("dir/tank.json", "scene"), "dir/tank.scene");
+}
