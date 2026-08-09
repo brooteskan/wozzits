@@ -4,6 +4,11 @@
 // rename. These are the APIs that let the last std::filesystem tree-walkers
 // (chiefly the standalone exporter) migrate onto one filesystem layer.
 //
+// The sibling directory primitives these build on -- list_directory,
+// remove_file, and remove_directory (both recursive and the previously untested
+// non-recursive default) -- are pinned here too, since they operate on the same
+// trees and share the same error-reporting contract.
+//
 // Two behaviours are OS-policy sensitive and cannot be forced on every machine,
 // so they GTEST_SKIP rather than fail when the environment won't cooperate:
 //   - "unreadable subdirectory is surfaced" needs a deny-read DACL to take
@@ -384,6 +389,94 @@ TEST(FilesystemTreeOps, RenameMovesAndReplaces)
     ASSERT_EQ(fs::rename(a, b), fs::FileError::None);
     EXPECT_FALSE(fs::exists(a));
     EXPECT_EQ(fs::read_file_text(b).value, "NEW");
+
+    fs::remove_directory(dir, true);
+}
+
+// --- list_directory ------------------------------------------------------
+
+TEST(FilesystemTreeOps, ListDirectoryReportsEntriesKindsAndSizes)
+{
+    const fs::Path dir = make_temp_dir("list");
+    ASSERT_EQ(fs::write_file_text(fs::join(dir, "a.txt"), "hello", true),
+              fs::FileError::None);            // 5 bytes
+    ASSERT_EQ(fs::write_file_text(fs::join(dir, "b.bin"), "12", true),
+              fs::FileError::None);            // 2 bytes
+    ASSERT_EQ(fs::create_directories(fs::join(dir, "sub")), fs::FileError::None);
+
+    const auto listing = fs::list_directory(dir);
+    ASSERT_TRUE(static_cast<bool>(listing));
+
+    std::map<std::string, fs::DirEntry> by_name;
+    for (const fs::DirEntry &e : listing.value)
+        by_name[e.name] = e;
+
+    // Exactly the three real entries; "." and ".." are excluded.
+    EXPECT_EQ(by_name.size(), 3u);
+    ASSERT_EQ(by_name.count("a.txt"), 1u);
+    ASSERT_EQ(by_name.count("b.bin"), 1u);
+    ASSERT_EQ(by_name.count("sub"), 1u);
+
+    EXPECT_FALSE(by_name["a.txt"].is_directory);
+    EXPECT_EQ(by_name["a.txt"].size, 5u);
+    EXPECT_FALSE(by_name["b.bin"].is_directory);
+    EXPECT_EQ(by_name["b.bin"].size, 2u);
+    EXPECT_TRUE(by_name["sub"].is_directory);   // size is unspecified for dirs
+
+    // A missing directory is an error, not an empty listing.
+    const auto missing = fs::list_directory(fs::join(dir, "nope"));
+    EXPECT_FALSE(static_cast<bool>(missing));
+    EXPECT_EQ(missing.error, fs::FileError::NotFound);
+
+    fs::remove_directory(dir, true);
+}
+
+// --- remove_file / remove_directory --------------------------------------
+
+// remove_directory's DEFAULT is non-recursive: it clears an EMPTY directory but
+// REFUSES a populated one (leaving it intact); only recursive=true removes a
+// non-empty tree. Every other test uses recursive=true for cleanup, so the
+// default branch and the missing-target error path are otherwise unexercised.
+TEST(FilesystemTreeOps, RemoveDirectoryRespectsRecursionAndReportsErrors)
+{
+    const fs::Path dir = make_temp_dir("remove");
+
+    // Non-recursive removal of an empty directory succeeds (default arg).
+    const fs::Path empty = fs::join(dir, "empty");
+    ASSERT_EQ(fs::create_directories(empty), fs::FileError::None);
+    EXPECT_EQ(fs::remove_directory(empty), fs::FileError::None);
+    EXPECT_FALSE(fs::exists(empty));
+
+    // Non-recursive removal of a NON-empty directory fails and leaves it intact.
+    const fs::Path full = fs::join(dir, "full");
+    ASSERT_EQ(fs::create_directories(full), fs::FileError::None);
+    ASSERT_EQ(fs::write_file_text(fs::join(full, "child.txt"), "x", true),
+              fs::FileError::None);
+    EXPECT_NE(fs::remove_directory(full), fs::FileError::None);
+    EXPECT_TRUE(fs::exists(full));
+
+    // recursive=true clears the whole subtree.
+    EXPECT_EQ(fs::remove_directory(full, true), fs::FileError::None);
+    EXPECT_FALSE(fs::exists(full));
+
+    // Removing a directory that isn't there is NotFound, not success.
+    EXPECT_EQ(fs::remove_directory(fs::join(dir, "ghost")),
+              fs::FileError::NotFound);
+
+    fs::remove_directory(dir, true);
+}
+
+TEST(FilesystemTreeOps, RemoveFileDeletesAndReportsMissing)
+{
+    const fs::Path dir = make_temp_dir("removefile");
+    const fs::Path file = fs::join(dir, "gone.txt");
+    ASSERT_EQ(fs::write_file_text(file, "bye", true), fs::FileError::None);
+
+    EXPECT_EQ(fs::remove_file(file), fs::FileError::None);
+    EXPECT_FALSE(fs::exists(file));
+
+    // A second delete of the now-missing file reports NotFound.
+    EXPECT_EQ(fs::remove_file(file), fs::FileError::NotFound);
 
     fs::remove_directory(dir, true);
 }

@@ -12,6 +12,7 @@
 
 #include <file/filesystem.h>
 
+#include <set>
 #include <string>
 
 namespace fs = wz::fs;
@@ -181,4 +182,33 @@ TEST(FilesystemStatusQuery, FailingCallPopulatesNativeErrorAndToString)
               std::string(fs::to_string(fs::FileError::PermissionDenied)));
 
     fs::remove_directory(dir, true);
+}
+
+// Completeness pin for to_string: every enumerator must map to its own non-empty
+// description. A newly-added FileError with no switch case would fall through to
+// the default ("unknown error") and collide with FileError::Unknown -- which the
+// distinctness check below turns into a failure rather than a silent gap.
+TEST(FilesystemStatusQuery, ToStringCoversEveryEnumeratorDistinctly)
+{
+    const fs::FileError all[] = {
+        fs::FileError::None,
+        fs::FileError::InvalidArgument,
+        fs::FileError::NotFound,
+        fs::FileError::PermissionDenied,
+        fs::FileError::IOError,
+        fs::FileError::InvalidPath,
+        fs::FileError::AlreadyExists,
+        fs::FileError::Unknown,
+    };
+
+    std::set<std::string> descriptions;
+    for (const fs::FileError e : all)
+    {
+        const std::string s = fs::to_string(e);
+        EXPECT_FALSE(s.empty());
+        EXPECT_TRUE(descriptions.insert(s).second)
+            << "to_string is not distinct at enumerator value "
+            << static_cast<int>(e) << " (\"" << s << "\")";
+    }
+    EXPECT_EQ(descriptions.size(), sizeof(all) / sizeof(all[0]));
 }

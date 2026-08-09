@@ -1044,6 +1044,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(platform filesystem_path_semantics_tests)
     rs_add_test_group(platform filesystem_status_query_tests)
     rs_add_test_group(platform filesystem_tree_ops_tests)
+    rs_add_test_group(platform filesystem_async_io_tests)
 
     # Strict-isolation render check (issue #213): launch the standalone
     # wozzits_app_v1 executable as a SEPARATE PROCESS on the portable render
