@@ -63,6 +63,12 @@ namespace
     {
         return wz::fs::join(wz::fs::temp_directory_path(), name);
     }
+
+    // "café_日本_ü" as explicit UTF-8 bytes -- a 2-byte (U+00E9, U+00FC) and
+    // 3-byte (U+65E5, U+672C) mix. Written as \x escapes, not u8"" or a
+    // source-encoded literal, so the exact bytes on disk are unambiguous
+    // regardless of this file's encoding or what char8_t does under C++20.
+    const std::string kNonAscii = "caf\xC3\xA9_\xE6\x97\xA5\xE6\x9C\xAC_\xC3\xBC";
 }
 
 TEST(FilesystemWholeFileIO, MultiChunkRoundTripIsByteExact)
@@ -138,6 +144,70 @@ TEST(FilesystemWholeFileIO, TextRoundTripPreservesEveryByte)
     EXPECT_TRUE(read_result.value == text);
 
     wz::fs::remove_file(path);
+}
+
+// ---------------------------------------------------------------------------
+// UTF-8 PATH CORRECTNESS (#141 / #299 phase 2).
+//
+// wz::fs routes every path through utf8_to_wide (MultiByteToWideChar with
+// CP_UTF8) into the wide Win32 APIs, so a path carrying non-ASCII bytes lands
+// at the intended file. The narrow std::ifstream(std::string) / ofstream idiom
+// these writers replaced did NOT: it hands the UTF-8 bytes to the ANSI code
+// page, so a project under e.g. C:\Users\Müller\... was reported unreadable
+// (the A1-C21 case: probe_project_manifest found the manifest with
+// wz::fs::exists, then a narrow read failed and the project refused to open).
+//
+// These pin that the whole-file API is UTF-8-correct -- and stay deterministic
+// across machines, because wz::fs never consults the ANSI code page regardless
+// of the system locale. A regression to narrow paths lands the file elsewhere
+// and fails these round-trips.
+// ---------------------------------------------------------------------------
+TEST(FilesystemWholeFileIO, NonAsciiPathRoundTripsByteExact)
+{
+    const std::string path =
+        scratch_path(("wz_fs_" + kNonAscii + "_roundtrip.txt").c_str());
+
+    const std::string text = "unicode path payload \xE2\x9C\x93";  // ...✓
+
+    ASSERT_EQ(wz::fs::write_file_text(path, text, true),
+              wz::fs::FileError::None);
+
+    // exists() and file_size() must both find the file AT THE UTF-8 PATH --
+    // proof the bytes reached the intended wide path, not a code-page-mangled
+    // sibling that a narrow open would have created instead.
+    EXPECT_TRUE(wz::fs::exists(path));
+    const auto size_result = wz::fs::file_size(path);
+    ASSERT_TRUE(static_cast<bool>(size_result));
+    EXPECT_EQ(size_result.value, static_cast<std::uint64_t>(text.size()));
+
+    const auto read_result = wz::fs::read_file_text(path);
+    ASSERT_TRUE(static_cast<bool>(read_result));
+    EXPECT_TRUE(read_result.value == text);
+
+    wz::fs::remove_file(path);
+}
+
+// The A1-C21 shape specifically: the non-ASCII component is a DIRECTORY (a
+// project root), not the leaf name. Pins the whole path -- create, exists,
+// write and read back -- through wz::fs.
+TEST(FilesystemWholeFileIO, NonAsciiDirectoryRoundTrips)
+{
+    const std::string dir =
+        scratch_path(("wz_fs_" + kNonAscii + "_dir").c_str());
+    ASSERT_EQ(wz::fs::create_directories(dir), wz::fs::FileError::None);
+    EXPECT_TRUE(wz::fs::exists(dir));
+
+    const std::string path = wz::fs::join(dir, "manifest.json");
+    const std::string text = "{\"schema\":\"wozzits.project.v1\"}";
+    ASSERT_EQ(wz::fs::write_file_text(path, text, true),
+              wz::fs::FileError::None);
+
+    const auto read_result = wz::fs::read_file_text(path);
+    ASSERT_TRUE(static_cast<bool>(read_result));
+    EXPECT_TRUE(read_result.value == text);
+
+    wz::fs::remove_file(path);
+    wz::fs::remove_directory(dir, /*recursive=*/true);
 }
 
 // ---------------------------------------------------------------------------
