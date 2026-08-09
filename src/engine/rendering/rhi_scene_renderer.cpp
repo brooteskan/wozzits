@@ -1228,7 +1228,7 @@ namespace wz::engine::rendering
         return screen_constants_buffer_;
     }
 
-    bool RhiSceneRenderer::record_view_buffer_refresh(
+    bool RhiSceneRenderer::record_buffer_refresh(
         wz::rhi::GpuResourceHandle handle,
         const void* data,
         uint64_t size)
@@ -2829,9 +2829,10 @@ namespace wz::engine::rendering
                     + block.size() * sizeof(std::uint32_t));
 
             // Vertex buffer: re-upload ONLY when the mesh moved past a sub-pixel
-            // epsilon since the last upload. Each upload is a synchronous GPU flush
-            // (#278), so skipping the many Parts that sit at the baseline (or move
-            // imperceptibly) is what keeps the puppet from stalling the frame.
+            // epsilon since the last upload. The upload is one recorded copy per
+            // frame (#306 -- no longer a synchronous flush), so skipping the many
+            // Parts that sit at the baseline (or move imperceptibly) still spares
+            // the copy's cost each frame.
             // This Part's slice of the shared array, always kept current so the
             // single upload below carries every Part's latest geometry.
             if (!dp.vertices.empty()
@@ -2871,13 +2872,18 @@ namespace wz::engine::rendering
             }
         }
 
-        // ONE upload for the whole puppet, and only when something moved. This
-        // is the #278 payoff: a deforming Aka went from one synchronous GPU
-        // flush per moving Part to exactly one per frame.
+        // ONE upload for the whole puppet, and only when something moved. #278
+        // batched a deforming Aka's per-Part uploads into one per frame; this now
+        // RECORDS that one copy into the frame's command list instead of a
+        // synchronous registry.update (a one-shot submit+wait), whose flush
+        // stalled the frames-in-flight pipeline (#306). update_puppet_pose runs
+        // with the frame list open and no pass active, and the vertex reads (mask
+        // draws + main pass) are recorded after, so the copy is correctly ordered
+        // ahead of them.
         if (any_moved && realized.puppet_vertices.valid()
             && !realized.puppet_vertex_scratch.empty())
         {
-            gpu_.resources.update(
+            record_buffer_refresh(
                 realized.puppet_vertices,
                 realized.puppet_vertex_scratch.data(),
                 static_cast<std::uint64_t>(
@@ -3006,9 +3012,9 @@ namespace wz::engine::rendering
             // recorder's cached descriptor tables keep viewing the same
             // resource and only the bytes change (the #145 per-frame door).
             // RECORDED into the frame's command list — see
-            // record_view_buffer_refresh — so a multi-pass frame (authored
+            // record_buffer_refresh — so a multi-pass frame (authored
             // RTTs + main) shows each pass its own values (B2-S1, #311).
-            if (!record_view_buffer_refresh(
+            if (!record_buffer_refresh(
                     view_constants_buffer_, &view_constants_,
                     sizeof(view_constants_)))
             {
@@ -3024,7 +3030,7 @@ namespace wz::engine::rendering
             static_cast<float>(target_w),
             static_cast<float>(target_h));
         if (screen_constants_buffer_.valid()) {
-            if (!record_view_buffer_refresh(
+            if (!record_buffer_refresh(
                     screen_constants_buffer_, &screen_constants_,
                     sizeof(screen_constants_)))
             {
@@ -3096,9 +3102,9 @@ namespace wz::engine::rendering
         // Both must happen BEFORE the frame's pass opens. The pose repack feeds
         // the mask draws (a mask is the source Part rasterised through the same
         // placement), and each mask is its OWN offscreen pass -- passes do not
-        // nest. update_puppet_pose also re-uploads moved vertex buffers, and
-        // those uploads are synchronous GPU flushes, which is another thing not
-        // to do with a render pass open.
+        // nest. update_puppet_pose also re-uploads moved vertex buffers as a
+        // recorded copy (#306), which must likewise be recorded with no render
+        // pass active.
         for (const std::size_t node_index : draw_order) {
             if (!nodes[node_index].renderable_asset) {
                 continue;

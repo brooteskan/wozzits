@@ -718,13 +718,20 @@ namespace wz::engine::rendering
         // installed.
         void report_debug_layer_messages(const char* pass);
 
-        // Refresh a view/screen constants buffer AS A RECORDED COPY in the
-        // frame's command list, not the immediate registry.update: a frame
-        // records one pass per authored render target plus the main pass, each
-        // refreshing these buffers with ITS values — an immediate copy
-        // executes before the whole frame, so every pass's draws would read
-        // the LAST refresh (B2-S1, #311). Recorded, each pass reads its own.
-        bool record_view_buffer_refresh(
+        // Refresh a GPU buffer AS A RECORDED COPY in the frame's command list,
+        // not the immediate (synchronous) registry.update. Two reasons:
+        //   - per-pass correctness for constants: a frame records one pass per
+        //     authored render target plus the main pass, each refreshing a
+        //     constants buffer with ITS values; an immediate copy executes before
+        //     the whole frame, so every pass would read the LAST refresh
+        //     (B2-S1, #311). Recorded, each pass reads its own.
+        //   - no synchronous GPU flush: the immediate path submits a one-shot
+        //     command list and waits, stalling the frames-in-flight pipeline
+        //     (#306). Recorded, the copy rides the frame's list, ordered before
+        //     the draws that read it.
+        // Call with the frame's command list open (inside begin/end frame) and
+        // no render pass active.
+        bool record_buffer_refresh(
             wz::rhi::GpuResourceHandle handle,
             const void* data,
             uint64_t size);
