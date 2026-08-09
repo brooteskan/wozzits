@@ -5,7 +5,6 @@
 #include <external/json/json_parser.h>
 #include <external/json/json_read_helpers.h>
 
-#include <fstream>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -38,14 +37,11 @@ namespace wz::app
 
         std::string read_text_file(const wz::fs::Path& path)
         {
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                return {};
-            }
-
-            return std::string(
-                (std::istreambuf_iterator<char>(file)),
-                std::istreambuf_iterator<char>());
+            // Through wz::fs so a non-ASCII path reads correctly (a narrow
+            // std::ifstream(path) would misread it on Windows). {} on failure.
+            const wz::fs::FileResult<std::string> result =
+                wz::fs::read_file_text(path);
+            return result ? result.value : std::string{};
         }
 
         // Resolve one authored config path against the bundle base dir, reusing
@@ -233,14 +229,12 @@ namespace wz::app
         std::string& error)
     {
         const wz::fs::Path path = app_bootstrap_config_path(base_dir);
-        std::ofstream file(path, std::ios::binary);
-        if (!file) {
-            error = "cannot open for write: " + path;
-            return false;
-        }
-        file << serialize_app_bootstrap_config(doc);
-        if (!file) {
-            error = "failed while writing: " + path;
+        // Through wz::fs: UTF-8-correct path + a checked, chunked write (the old
+        // stream reported success before the filebuf flushed on destruction).
+        const wz::fs::FileError err = wz::fs::write_file_text(
+            path, serialize_app_bootstrap_config(doc));
+        if (err != wz::fs::FileError::None) {
+            error = "failed to write: " + path;
             return false;
         }
         return true;

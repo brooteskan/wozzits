@@ -48,7 +48,6 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
-#include <fstream>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -645,13 +644,11 @@ namespace wz::app
                 wz::fs::is_absolute(desc.scene) || resource_root.empty()
                     ? desc.scene
                     : wz::fs::join(resource_root, desc.scene);
-            std::ifstream file(scene_file, std::ios::binary);
-            if (file) {
-                const std::string text(
-                    (std::istreambuf_iterator<char>(file)),
-                    std::istreambuf_iterator<char>());
+            const wz::fs::FileResult<std::string> scene_text =
+                wz::fs::read_file_text(scene_file);
+            if (scene_text) {
                 const wz::json::JSONParseResult parsed =
-                    wz::json::parse_json_string(text);
+                    wz::json::parse_json_string(scene_text.value);
                 if (parsed.ok && parsed.document.root) {
                     if (const std::optional<
                             wz::engine::assets::SceneEditorCameraMetadata>
@@ -2704,13 +2701,11 @@ namespace wz::app
         // is preserved; only the nodes array is replaced from the live edits.
         wz::json::JSONDocument document;
         {
-            std::ifstream file(path, std::ios::binary);
-            if (file) {
-                const std::string text(
-                    (std::istreambuf_iterator<char>(file)),
-                    std::istreambuf_iterator<char>());
+            const wz::fs::FileResult<std::string> text =
+                wz::fs::read_file_text(path);
+            if (text) {
                 wz::json::JSONParseResult parsed =
-                    wz::json::parse_json_string(text);
+                    wz::json::parse_json_string(text.value);
                 if (parsed.ok && parsed.document.root) {
                     document = std::move(parsed.document);
                 }
@@ -2751,12 +2746,15 @@ namespace wz::app
             wz::engine::assets::set_scene_document_editor_camera(document, meta);
         }
 
-        std::ofstream out(path, std::ios::binary);
-        if (!out) {
-            return false;
-        }
-        out << wz::json::serialize_json(document);
-        if (!out.good()) {
+        // Through wz::fs (checked, chunked, UTF-8-correct write). The old raw
+        // stream cleared document_.dirty() after out.good() but BEFORE the filebuf
+        // flushed on destruction, so a small scene that failed to reach disk was
+        // marked clean over a truncated file; a real FileError keeps it dirty for
+        // the next save. (The bool result is still discarded by callers -- surfacing
+        // it is the separate #299 ABI change.)
+        if (const wz::fs::FileError err = wz::fs::write_file_text(
+                path, wz::json::serialize_json(document));
+            err != wz::fs::FileError::None) {
             return false;
         }
 
@@ -2812,14 +2810,9 @@ namespace wz::app
         wz::json::JSONDocument document =
             wz::engine::assets::export_scene_to_json_document(*subtree);
 
-        std::ofstream out(path, std::ios::binary);
-        if (!out) {
-            ctx_.logger.error(
-                "export_subtree_as_scene: could not open output file");
-            return false;
-        }
-        out << wz::json::serialize_json(document);
-        if (!out.good()) {
+        if (const wz::fs::FileError err = wz::fs::write_file_text(
+                path, wz::json::serialize_json(document));
+            err != wz::fs::FileError::None) {
             ctx_.logger.error(
                 "export_subtree_as_scene: write failed");
             return false;

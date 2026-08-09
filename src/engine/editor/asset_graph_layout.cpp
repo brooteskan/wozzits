@@ -7,7 +7,6 @@
 #include <external/json/json_writer.h>
 
 #include <cmath>
-#include <fstream>
 #include <iterator>
 #include <memory>
 #include <string_view>
@@ -23,24 +22,18 @@ namespace wz::engine::editor
 
         std::string read_text_file(const wz::fs::Path& path)
         {
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                return {};
-            }
-
-            return std::string(
-                (std::istreambuf_iterator<char>(file)),
-                std::istreambuf_iterator<char>());
+            // Through wz::fs so a non-ASCII path reads correctly (a narrow
+            // std::ifstream(path) would misread it on Windows). {} on failure.
+            const wz::fs::FileResult<std::string> result =
+                wz::fs::read_file_text(path);
+            return result ? result.value : std::string{};
         }
 
         bool write_text_file(const wz::fs::Path& path, const std::string& text)
         {
-            std::ofstream file(path, std::ios::binary);
-            if (!file) {
-                return false;
-            }
-            file << text;
-            return file.good();
+            // Through wz::fs: UTF-8-correct path + a checked, chunked write (the old
+            // stream reported success before the filebuf flushed on destruction).
+            return wz::fs::write_file_text(path, text) == wz::fs::FileError::None;
         }
 
         wz::fs::Path resolve_resource_path(

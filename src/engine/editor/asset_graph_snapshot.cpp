@@ -11,7 +11,6 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <fstream>
 #include <iomanip>
 #include <iterator>
 #include <map>
@@ -41,14 +40,11 @@ namespace wz::engine::editor
 
         std::string read_text_file(const wz::fs::Path& path)
         {
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                return {};
-            }
-
-            return std::string(
-                (std::istreambuf_iterator<char>(file)),
-                std::istreambuf_iterator<char>());
+            // Through wz::fs so a non-ASCII path reads correctly (a narrow
+            // std::ifstream(path) would misread it on Windows). {} on failure.
+            const wz::fs::FileResult<std::string> result =
+                wz::fs::read_file_text(path);
+            return result ? result.value : std::string{};
         }
 
         wz::fs::Path resolve_resource_path(
