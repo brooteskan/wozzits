@@ -324,122 +324,49 @@ namespace wz::app
     void EditorRuntimeControl::post_scene_node_properties(
         SceneNodePropertiesEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (SceneNodePropertiesEdit& pending : pending_properties_) {
-            if (pending.id == edit.id) {
-                pending.name = std::move(edit.name);  // coalesce: latest wins
-                pending.visible = edit.visible;
-                return;
-            }
-        }
-        pending_properties_.push_back(std::move(edit));
+        properties_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_properties(
         const std::function<void(const SceneNodePropertiesEdit&)>& applier)
     {
-        std::vector<SceneNodePropertiesEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_properties_.empty()) {
-                return;
-            }
-            edits.swap(pending_properties_);
-        }
-
-        for (const SceneNodePropertiesEdit& edit : edits) {
-            applier(edit);
-        }
+        properties_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_reparent(
         SceneNodeReparentEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (SceneNodeReparentEdit& pending : pending_reparents_) {
-            if (pending.id == edit.id) {
-                pending.new_parent_id = std::move(edit.new_parent_id);
-                return;
-            }
-        }
-        pending_reparents_.push_back(std::move(edit));
+        reparents_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_reparents(
         const std::function<void(const SceneNodeReparentEdit&)>& applier)
     {
-        std::vector<SceneNodeReparentEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_reparents_.empty()) {
-                return;
-            }
-            edits.swap(pending_reparents_);
-        }
-
-        for (const SceneNodeReparentEdit& edit : edits) {
-            applier(edit);
-        }
+        reparents_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_reorder(
         SceneNodeReorderEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (SceneNodeReorderEdit& pending : pending_reorders_) {
-            if (pending.id == edit.id) {
-                pending.before_id = std::move(edit.before_id);
-                return;
-            }
-        }
-        pending_reorders_.push_back(std::move(edit));
+        reorders_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_reorders(
         const std::function<void(const SceneNodeReorderEdit&)>& applier)
     {
-        std::vector<SceneNodeReorderEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_reorders_.empty()) {
-                return;
-            }
-            edits.swap(pending_reorders_);
-        }
-
-        for (const SceneNodeReorderEdit& edit : edits) {
-            applier(edit);
-        }
+        reorders_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_render_order(
         SceneNodeRenderOrderEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (SceneNodeRenderOrderEdit& pending : pending_render_orders_) {
-            if (pending.id == edit.id) {
-                pending.render_order = edit.render_order;
-                return;
-            }
-        }
-        pending_render_orders_.push_back(std::move(edit));
+        render_orders_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_render_orders(
         const std::function<void(const SceneNodeRenderOrderEdit&)>& applier)
     {
-        std::vector<SceneNodeRenderOrderEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_render_orders_.empty()) {
-                return;
-            }
-            edits.swap(pending_render_orders_);
-        }
-
-        for (const SceneNodeRenderOrderEdit& edit : edits) {
-            applier(edit);
-        }
+        render_orders_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_remove(
@@ -469,464 +396,207 @@ namespace wz::app
     void EditorRuntimeControl::post_scene_node_component(
         SceneNodeComponentEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: each op is a distinct mutation.
-        pending_component_edits_.push_back(std::move(edit));
+        components_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_components(
         const std::function<void(const SceneNodeComponentEdit&)>& applier)
     {
-        std::vector<SceneNodeComponentEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_component_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_component_edits_);
-        }
-
-        for (const SceneNodeComponentEdit& edit : edits) {
-            applier(edit);
-        }
+        components_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_renderable(
         SceneNodeRenderableEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: a set then a clear must both land.
-        pending_renderable_edits_.push_back(std::move(edit));
+        renderables_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_renderables(
         const std::function<void(const SceneNodeRenderableEdit&)>& applier)
     {
-        std::vector<SceneNodeRenderableEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_renderable_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_renderable_edits_);
-        }
-
-        for (const SceneNodeRenderableEdit& edit : edits) {
-            applier(edit);
-        }
+        renderables_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_audio_renderable(
         SceneNodeAudioRenderableEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        pending_audio_renderable_edits_.push_back(std::move(edit));
+        audio_renderables_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_audio_renderables(
         const std::function<void(const SceneNodeAudioRenderableEdit&)>& applier)
     {
-        std::vector<SceneNodeAudioRenderableEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_audio_renderable_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_audio_renderable_edits_);
-        }
-
-        for (const SceneNodeAudioRenderableEdit& edit : edits) {
-            applier(edit);
-        }
+        audio_renderables_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_audio_source_play(
         SceneNodeAudioSourcePlayEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        pending_audio_source_play_edits_.push_back(std::move(edit));
+        audio_source_plays_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_audio_source_plays(
         const std::function<void(const SceneNodeAudioSourcePlayEdit&)>& applier)
     {
-        std::vector<SceneNodeAudioSourcePlayEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_audio_source_play_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_audio_source_play_edits_);
-        }
-
-        for (const SceneNodeAudioSourcePlayEdit& edit : edits) {
-            applier(edit);
-        }
+        audio_source_plays_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_render_binding(
         SceneNodeRenderBindingEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: a set then a clear must both land.
-        pending_render_binding_edits_.push_back(std::move(edit));
+        render_bindings_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_render_bindings(
         const std::function<void(const SceneNodeRenderBindingEdit&)>& applier)
     {
-        std::vector<SceneNodeRenderBindingEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_render_binding_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_render_binding_edits_);
-        }
-
-        for (const SceneNodeRenderBindingEdit& edit : edits) {
-            applier(edit);
-        }
+        render_bindings_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_renderable_binding(
         SceneNodeRenderableBindingEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: an upsert then a remove of the
-        // same semantic must both land.
-        pending_renderable_binding_edits_.push_back(std::move(edit));
+        renderable_bindings_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_renderable_bindings(
         const std::function<
             void(const SceneNodeRenderableBindingEdit&)>& applier)
     {
-        std::vector<SceneNodeRenderableBindingEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_renderable_binding_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_renderable_binding_edits_);
-        }
-
-        for (const SceneNodeRenderableBindingEdit& edit : edits) {
-            applier(edit);
-        }
+        renderable_bindings_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_renderable_param(
         SceneNodeRenderableParamEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: an upsert then a remove of the
-        // same name must both land.
-        pending_renderable_param_edits_.push_back(std::move(edit));
+        renderable_params_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_renderable_params(
         const std::function<
             void(const SceneNodeRenderableParamEdit&)>& applier)
     {
-        std::vector<SceneNodeRenderableParamEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_renderable_param_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_renderable_param_edits_);
-        }
-
-        for (const SceneNodeRenderableParamEdit& edit : edits) {
-            applier(edit);
-        }
+        renderable_params_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_collision(
         SceneNodeCollisionEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: a set then a clear must both land.
-        pending_collision_edits_.push_back(std::move(edit));
+        collisions_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_collisions(
         const std::function<void(const SceneNodeCollisionEdit&)>& applier)
     {
-        std::vector<SceneNodeCollisionEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_collision_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_collision_edits_);
-        }
-
-        for (const SceneNodeCollisionEdit& edit : edits) {
-            applier(edit);
-        }
+        collisions_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_motion_terrain(
         SceneNodeMotionTerrainEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced.
-        pending_motion_terrain_edits_.push_back(std::move(edit));
+        motion_terrains_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_motion_terrains(
         const std::function<void(const SceneNodeMotionTerrainEdit&)>& applier)
     {
-        std::vector<SceneNodeMotionTerrainEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_motion_terrain_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_motion_terrain_edits_);
-        }
-
-        for (const SceneNodeMotionTerrainEdit& edit : edits) {
-            applier(edit);
-        }
+        motion_terrains_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_motion_filter(
         SceneNodeMotionFilterEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Coalesce by id -- a slider drag streams many, only the latest matters.
-        for (SceneNodeMotionFilterEdit& pending : pending_motion_filter_edits_) {
-            if (pending.node_id == edit.node_id) {
-                pending.filter = edit.filter;
-                return;
-            }
-        }
-        pending_motion_filter_edits_.push_back(std::move(edit));
+        motion_filters_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_motion_filters(
         const std::function<void(const SceneNodeMotionFilterEdit&)>& applier)
     {
-        std::vector<SceneNodeMotionFilterEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_motion_filter_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_motion_filter_edits_);
-        }
-
-        for (const SceneNodeMotionFilterEdit& edit : edits) {
-            applier(edit);
-        }
+        motion_filters_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_camera(
         SceneNodeCameraEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Coalesce by id -- an fov/far drag streams many, only the latest matters.
-        for (SceneNodeCameraEdit& pending : pending_camera_edits_) {
-            if (pending.node_id == edit.node_id) {
-                pending.camera = edit.camera;
-                return;
-            }
-        }
-        pending_camera_edits_.push_back(std::move(edit));
+        cameras_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_cameras(
         const std::function<void(const SceneNodeCameraEdit&)>& applier)
     {
-        std::vector<SceneNodeCameraEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_camera_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_camera_edits_);
-        }
-
-        for (const SceneNodeCameraEdit& edit : edits) {
-            applier(edit);
-        }
+        cameras_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_atmosphere(
         SceneNodeAtmosphereEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Coalesce by id -- toggling enabled / re-picking the asset streams a few,
-        // only the latest matters.
-        for (SceneNodeAtmosphereEdit& pending : pending_atmosphere_edits_) {
-            if (pending.node_id == edit.node_id) {
-                pending.atmosphere = edit.atmosphere;
-                return;
-            }
-        }
-        pending_atmosphere_edits_.push_back(std::move(edit));
+        atmospheres_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_atmospheres(
         const std::function<void(const SceneNodeAtmosphereEdit&)>& applier)
     {
-        std::vector<SceneNodeAtmosphereEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_atmosphere_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_atmosphere_edits_);
-        }
-
-        for (const SceneNodeAtmosphereEdit& edit : edits) {
-            applier(edit);
-        }
+        atmospheres_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_environment(
         SceneNodeEnvironmentEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Coalesce by id -- toggling enabled / re-picking the asset streams a few,
-        // only the latest matters.
-        for (SceneNodeEnvironmentEdit& pending : pending_environment_edits_) {
-            if (pending.node_id == edit.node_id) {
-                pending.environment = edit.environment;
-                return;
-            }
-        }
-        pending_environment_edits_.push_back(std::move(edit));
+        environments_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_environments(
         const std::function<void(const SceneNodeEnvironmentEdit&)>& applier)
     {
-        std::vector<SceneNodeEnvironmentEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_environment_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_environment_edits_);
-        }
-
-        for (const SceneNodeEnvironmentEdit& edit : edits) {
-            applier(edit);
-        }
+        environments_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_render_to_texture(
         SceneNodeRenderToTextureEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Coalesce by id -- toggling a switch / re-picking the target streams a
-        // few, only the latest matters.
-        for (SceneNodeRenderToTextureEdit& pending :
-             pending_render_to_texture_edits_)
-        {
-            if (pending.node_id == edit.node_id) {
-                pending.render_to_texture = edit.render_to_texture;
-                return;
-            }
-        }
-        pending_render_to_texture_edits_.push_back(std::move(edit));
+        render_to_textures_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_render_to_textures(
         const std::function<void(const SceneNodeRenderToTextureEdit&)>& applier)
     {
-        std::vector<SceneNodeRenderToTextureEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_render_to_texture_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_render_to_texture_edits_);
-        }
-
-        for (const SceneNodeRenderToTextureEdit& edit : edits) {
-            applier(edit);
-        }
+        render_to_textures_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_scene_source(
         SceneNodeSceneSourceEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: a set then a clear must both land.
-        pending_scene_source_edits_.push_back(std::move(edit));
+        scene_sources_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_scene_sources(
         const std::function<void(const SceneNodeSceneSourceEdit&)>& applier)
     {
-        std::vector<SceneNodeSceneSourceEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_scene_source_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_scene_source_edits_);
-        }
-
-        for (const SceneNodeSceneSourceEdit& edit : edits) {
-            applier(edit);
-        }
+        scene_sources_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_glb_scene_source(
         SceneNodeGlbSceneSourceEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: a set then a clear must both land.
-        pending_glb_scene_source_edits_.push_back(std::move(edit));
+        glb_scene_sources_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_glb_scene_sources(
         const std::function<void(const SceneNodeGlbSceneSourceEdit&)>& applier)
     {
-        std::vector<SceneNodeGlbSceneSourceEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_glb_scene_source_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_glb_scene_source_edits_);
-        }
-
-        for (const SceneNodeGlbSceneSourceEdit& edit : edits) {
-            applier(edit);
-        }
+        glb_scene_sources_.drain(applier);
     }
 
     void EditorRuntimeControl::post_scene_node_glb_style(
         SceneNodeGlbStyleEdit edit)
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        // Appended in order, never coalesced: distinct meshes / set-then-clear
-        // must all land.
-        pending_glb_style_edits_.push_back(std::move(edit));
+        glb_styles_.post(std::move(edit));
     }
 
     void EditorRuntimeControl::service_pending_scene_node_glb_styles(
         const std::function<void(const SceneNodeGlbStyleEdit&)>& applier)
     {
-        std::vector<SceneNodeGlbStyleEdit> edits;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (pending_glb_style_edits_.empty()) {
-                return;
-            }
-            edits.swap(pending_glb_style_edits_);
-        }
-
-        for (const SceneNodeGlbStyleEdit& edit : edits) {
-            applier(edit);
-        }
+        glb_styles_.drain(applier);
     }
 
     wz::engine::assets::SceneAddChildResult EditorRuntimeControl::add_child(

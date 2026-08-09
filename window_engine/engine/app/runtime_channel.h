@@ -115,6 +115,20 @@ namespace wz::app
         SameKey same_key_;
     };
 
+    // Build a Mailbox<T>::SameKey that compares a member of T (the common "same
+    // node" key), e.g. Mailbox<CameraEdit>{Replace, coalesce_by(&CameraEdit::
+    // node_id)}. A free function rather than a Mailbox constructor on purpose: a
+    // `M T::*` parameter in a member of Mailbox<T> is ill-formed the moment T is a
+    // non-class type (Mailbox<int>), whereas this template is only instantiated at
+    // the call sites, which always pass a real struct member.
+    template <class T, class M>
+    std::function<bool(const T&, const T&)> coalesce_by(M T::* field)
+    {
+        return [field](const T& a, const T& b) {
+            return a.*field == b.*field;
+        };
+    }
+
     // ── Request<Args,R> ────────────────────────────────────────────────────
     template <class R>
     struct RequestOutcome

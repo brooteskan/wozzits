@@ -922,42 +922,57 @@ namespace wz::app
         wz::asset::AssetGraphDraft result_asset_graph_draft_;
         AssetGraphCompileResult asset_graph_result_;
 
-        // Live scene edits queued for the engine thread. Being migrated onto
-        // Mailbox<T> (#300 layer 1): a converted queue owns its own mutex; the
-        // not-yet-converted std::vectors below are still guarded by mutex_.
+        // Live scene edits queued for the engine thread, each on its own Mailbox
+        // (#300 layer 1). Coalesce-by-node collapses a drag's stream to the latest
+        // per node (Replace); the append queues keep every distinct op in order
+        // (Keep); remove dedupes by id (Drop).
         Mailbox<SceneNodeTransformEdit> transforms_{
             Mailbox<SceneNodeTransformEdit>::OnDuplicate::Replace,
-            [](const SceneNodeTransformEdit& a,
-               const SceneNodeTransformEdit& b) { return a.id == b.id; }};
-        std::vector<SceneNodePropertiesEdit> pending_properties_;
-        std::vector<SceneNodeReparentEdit> pending_reparents_;
-        std::vector<SceneNodeReorderEdit> pending_reorders_;
-        std::vector<SceneNodeRenderOrderEdit> pending_render_orders_;
+            coalesce_by(&SceneNodeTransformEdit::id)};
+        Mailbox<SceneNodePropertiesEdit> properties_{
+            Mailbox<SceneNodePropertiesEdit>::OnDuplicate::Replace,
+            coalesce_by(&SceneNodePropertiesEdit::id)};
+        Mailbox<SceneNodeReparentEdit> reparents_{
+            Mailbox<SceneNodeReparentEdit>::OnDuplicate::Replace,
+            coalesce_by(&SceneNodeReparentEdit::id)};
+        Mailbox<SceneNodeReorderEdit> reorders_{
+            Mailbox<SceneNodeReorderEdit>::OnDuplicate::Replace,
+            coalesce_by(&SceneNodeReorderEdit::id)};
+        Mailbox<SceneNodeRenderOrderEdit> render_orders_{
+            Mailbox<SceneNodeRenderOrderEdit>::OnDuplicate::Replace,
+            coalesce_by(&SceneNodeRenderOrderEdit::id)};
         Mailbox<wz::scene::AuthoredEntityId> removes_{
             Mailbox<wz::scene::AuthoredEntityId>::OnDuplicate::Drop,
             [](const wz::scene::AuthoredEntityId& a,
                const wz::scene::AuthoredEntityId& b) { return a == b; }};
-        Mailbox<SceneNodeBehaviorEdit> behaviors_;  // append in order
-        std::vector<SceneNodeComponentEdit> pending_component_edits_;
-        std::vector<SceneNodeRenderableEdit> pending_renderable_edits_;
-        std::vector<SceneNodeAudioRenderableEdit> pending_audio_renderable_edits_;
-        std::vector<SceneNodeAudioSourcePlayEdit> pending_audio_source_play_edits_;
-        std::vector<SceneNodeRenderBindingEdit> pending_render_binding_edits_;
-        std::vector<SceneNodeRenderableBindingEdit>
-            pending_renderable_binding_edits_;
-        std::vector<SceneNodeRenderableParamEdit>
-            pending_renderable_param_edits_;
-        std::vector<SceneNodeCollisionEdit> pending_collision_edits_;
-        std::vector<SceneNodeMotionTerrainEdit> pending_motion_terrain_edits_;
-        std::vector<SceneNodeMotionFilterEdit> pending_motion_filter_edits_;
-        std::vector<SceneNodeCameraEdit> pending_camera_edits_;
-        std::vector<SceneNodeAtmosphereEdit> pending_atmosphere_edits_;
-        std::vector<SceneNodeEnvironmentEdit> pending_environment_edits_;
-        std::vector<SceneNodeRenderToTextureEdit>
-            pending_render_to_texture_edits_;
-        std::vector<SceneNodeSceneSourceEdit> pending_scene_source_edits_;
-        std::vector<SceneNodeGlbSceneSourceEdit> pending_glb_scene_source_edits_;
-        std::vector<SceneNodeGlbStyleEdit> pending_glb_style_edits_;
+        Mailbox<SceneNodeBehaviorEdit> behaviors_;
+        Mailbox<SceneNodeComponentEdit> components_;
+        Mailbox<SceneNodeRenderableEdit> renderables_;
+        Mailbox<SceneNodeAudioRenderableEdit> audio_renderables_;
+        Mailbox<SceneNodeAudioSourcePlayEdit> audio_source_plays_;
+        Mailbox<SceneNodeRenderBindingEdit> render_bindings_;
+        Mailbox<SceneNodeRenderableBindingEdit> renderable_bindings_;
+        Mailbox<SceneNodeRenderableParamEdit> renderable_params_;
+        Mailbox<SceneNodeCollisionEdit> collisions_;
+        Mailbox<SceneNodeMotionTerrainEdit> motion_terrains_;
+        Mailbox<SceneNodeMotionFilterEdit> motion_filters_{
+            Mailbox<SceneNodeMotionFilterEdit>::OnDuplicate::Replace,
+            coalesce_by(&SceneNodeMotionFilterEdit::node_id)};
+        Mailbox<SceneNodeCameraEdit> cameras_{
+            Mailbox<SceneNodeCameraEdit>::OnDuplicate::Replace,
+            coalesce_by(&SceneNodeCameraEdit::node_id)};
+        Mailbox<SceneNodeAtmosphereEdit> atmospheres_{
+            Mailbox<SceneNodeAtmosphereEdit>::OnDuplicate::Replace,
+            coalesce_by(&SceneNodeAtmosphereEdit::node_id)};
+        Mailbox<SceneNodeEnvironmentEdit> environments_{
+            Mailbox<SceneNodeEnvironmentEdit>::OnDuplicate::Replace,
+            coalesce_by(&SceneNodeEnvironmentEdit::node_id)};
+        Mailbox<SceneNodeRenderToTextureEdit> render_to_textures_{
+            Mailbox<SceneNodeRenderToTextureEdit>::OnDuplicate::Replace,
+            coalesce_by(&SceneNodeRenderToTextureEdit::node_id)};
+        Mailbox<SceneNodeSceneSourceEdit> scene_sources_;
+        Mailbox<SceneNodeGlbSceneSourceEdit> glb_scene_sources_;
+        Mailbox<SceneNodeGlbStyleEdit> glb_styles_;
 
         // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
         // the bind handshake): the owner posts a parent and blocks for the
