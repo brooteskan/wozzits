@@ -148,7 +148,7 @@ namespace wz::engine::cognition
 
         // Each node's marginal: its tensor contracted with both environments.
         std::vector<double> sz(node_count(net), 0.0);
-        for (NodeHandle n = 0; n < node_count(net); ++n) {
+        for_each_node(net, [&](NodeHandle n) {
             const MpsSite& A = node_data(net, n);
 
             std::vector<Complex> Ml = { Complex{ 1, 0 } };
@@ -167,7 +167,7 @@ namespace wz::engine::cognition
                 });
 
             sz[n] = sigma_z_from_envs(A, Ml, ldim, Mr, rdim);
-        }
+        });
         return sz;
     }
 

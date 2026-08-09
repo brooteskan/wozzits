@@ -225,3 +225,37 @@ TEST(SharedEdgeGraph, NodeDataRoundTrip) {
     const auto& cg = g;
     EXPECT_FLOAT_EQ(node_data(cg, 1).v, 99.f);  // const overload sees the write
 }
+
+// 10. for_each_node visits every node once, in node-id order.
+TEST(SharedEdgeGraph, ForEachNodeVisitsAllInOrder) {
+    auto g = make_four_cycle();
+    std::vector<NodeHandle> seen;
+    for_each_node(g, [&](NodeHandle n) { seen.push_back(n); });
+    EXPECT_EQ(seen, (std::vector<NodeHandle>{ 0, 1, 2, 3 }));
+}
+
+// 11. for_each_node_reverse visits every node once, in REVERSE node-id order —
+// the mirror sweep the canonicalize backward pass relies on.
+TEST(SharedEdgeGraph, ForEachNodeReverseVisitsAllInReverse) {
+    auto g = make_four_cycle();
+    std::vector<NodeHandle> seen;
+    for_each_node_reverse(g, [&](NodeHandle n) { seen.push_back(n); });
+    EXPECT_EQ(seen, (std::vector<NodeHandle>{ 3, 2, 1, 0 }));
+}
+
+// 12. for_each_edge visits every edge id once, in [0, edge_count) order (edge ids
+// are assigned in add_edge order).
+TEST(SharedEdgeGraph, ForEachEdgeVisitsEveryEdgeIdInOrder) {
+    auto g = make_four_cycle();  // 4 edges -> ids 0..3
+    std::vector<uint32_t> seen;
+    for_each_edge(g, [&](uint32_t e) { seen.push_back(e); });
+    EXPECT_EQ(seen, (std::vector<uint32_t>{ 0, 1, 2, 3 }));
+
+    // A single-node graph has no edges — the sweep is a no-op.
+    SharedEdgeGraphBuilder<Belief, Msg> b;
+    add_node(b, Belief{ 0.f });
+    auto lone = build(std::move(b));
+    int count = 0;
+    for_each_edge(lone, [&](uint32_t) { ++count; });
+    EXPECT_EQ(count, 0);
+}

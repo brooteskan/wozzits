@@ -528,29 +528,28 @@ namespace wz::engine::cognition
         void canonicalize(GraphTn& g, uint32_t chi, uint32_t passes)
         {
             const std::vector<Complex> id = identity_gate();
-            const uint32_t n = node_count(g.graph);
             // Each pass is a full forward-then-backward sweep. Sweeping both
             // directions propagates the gauge from one end of a tree to the other
             // and back, so a single pass canonicalizes a chain/tree exactly; the
             // extra passes settle the gauge on loops (where no single sweep order
             // is exact).
             for (uint32_t pass = 0; pass < passes; ++pass) {
-                for (NodeHandle u = 0; u < n; ++u) {
+                for_each_node(g.graph, [&](NodeHandle u) {
                     for_each_neighbor(g.graph, u, [&](NodeHandle v, GraphBond& e) {
                         if (v <= u) {
                             return;  // each undirected edge once, low -> high
                         }
                         apply_edge_gate(g.graph, u, v, e, id, chi, g.svd_out, g.svd_scratch);
                     });
-                }
-                for (NodeHandle uu = n; uu-- > 0;) {
+                });
+                for_each_node_reverse(g.graph, [&](NodeHandle uu) {
                     for_each_neighbor(g.graph, uu, [&](NodeHandle v, GraphBond& e) {
                         if (v >= uu) {
                             return;  // each undirected edge once, high -> low
                         }
                         apply_edge_gate(g.graph, uu, v, e, id, chi, g.svd_out, g.svd_scratch);
                     });
-                }
+                });
             }
         }
     }  // namespace
@@ -615,12 +614,12 @@ namespace wz::engine::cognition
         const uint32_t n = node_count(g.graph);
 
         auto half_fields = [&]() {
-            for (NodeHandle u = 0; u < n; ++u) {
+            for_each_node(g.graph, [&](NodeHandle u) {
                 const double h =
                     u < g.goal_field.size() ? g.goal_field[u] : 0.0;
                 apply_physical(
                     node_data(g.graph, u), field_matrix(gamma, h, dtau * 0.5));
-            }
+            });
         };
 
         half_fields();
@@ -628,7 +627,7 @@ namespace wz::engine::cognition
         // Full coupling step: one imaginary-time ZZ per edge via simple update.
         // Iterate every undirected edge once. We reach each edge from its lower-
         // handle endpoint so it is visited exactly once, and pass the shared slot.
-        for (NodeHandle u = 0; u < n; ++u) {
+        for_each_node(g.graph, [&](NodeHandle u) {
             for_each_neighbor(g.graph, u, [&](NodeHandle v, GraphBond& e) {
                 if (v <= u) {
                     return;  // visit each undirected edge once (from lower u)
@@ -637,7 +636,7 @@ namespace wz::engine::cognition
                     g.graph, u, v, e, zz_gate(e.j, dtau), g.chi,
                     g.svd_out, g.svd_scratch);
             });
-        }
+        });
 
         half_fields();
 
@@ -650,9 +649,9 @@ namespace wz::engine::cognition
         // holding a clamp on this backend affordable at all; doing it as a
         // separate collapse() per substep would re-canonicalize the whole graph
         // once per clamped agent per substep.
-        for (uint32_t u = 0; u < n && u < g.clamp.size(); ++u) {
-            if (g.clamp[u] < 0) {
-                continue;
+        for_each_node(g.graph, [&](NodeHandle u) {
+            if (u >= g.clamp.size() || g.clamp[u] < 0) {
+                return;
             }
             GraphSite& s = node_data(g.graph, u);
             std::size_t tail = 1;
@@ -664,7 +663,7 @@ namespace wz::engine::cognition
             for (std::size_t j = 0; j < tail; ++j) {
                 s.t[base + j] = Complex{ 0, 0 };
             }
-        }
+        });
 
         // The trailing single-site field gates are non-unitary rotations on the
         // physical legs; they perturb each node's tensor OUT of Vidal canonical
@@ -704,9 +703,9 @@ namespace wz::engine::cognition
     {
         const uint32_t n = node_count(g.graph);
         std::vector<double> z(n, 0.0);
-        for (uint32_t i = 0; i < n; ++i) {
+        for_each_node(g.graph, [&](NodeHandle i) {
             z[i] = decision_z(g, i);
-        }
+        });
         return z;
     }
 

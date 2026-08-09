@@ -210,7 +210,7 @@ namespace wz::engine::cognition
         // Also cache, per node, its ordered incidences (neighbor + edge id) so the
         // per-edge fold can find the target leg and the other legs' messages.
         std::vector<std::vector<Incidence>> inc(n);
-        for (NodeHandle u = 0; u < n; ++u) {
+        for_each_node(graph, [&](NodeHandle u) {
             inc[u] = incidences_of(graph, u);
             for (const Incidence& in : inc[u]) {
                 if (u < in.neighbor) {
@@ -218,7 +218,7 @@ namespace wz::engine::cognition
                     edge_high[in.edge] = in.neighbor;
                 }
             }
-        }
+        });
 
         // ── initialize every message to the normalized identity at the bond's
         // current dim (lambda.size()).
@@ -229,16 +229,16 @@ namespace wz::engine::cognition
         // Record each edge's bond dim from either endpoint (both see the same
         // shared bond). inc[u][k] is u's leg k, so its bond_dim[k] IS that edge's
         // current dim.
-        for (NodeHandle u = 0; u < n; ++u) {
+        for_each_node(graph, [&](NodeHandle u) {
             const GraphSite& s = node_data(graph, u);
             for (std::size_t k = 0; k < inc[u].size(); ++k) {
                 msgs.dim[inc[u][k].edge] = s.bond_dim[k];
             }
-        }
-        for (uint32_t e = 0; e < ec; ++e) {
+        });
+        for_each_edge(graph, [&](uint32_t e) {
             msgs.forward[e] = identity_over_d(msgs.dim[e]);
             msgs.backward[e] = identity_over_d(msgs.dim[e]);
-        }
+        });
 
         // inc[u][k] carries (neighbor, edge) at leg k, so a node's leg position of
         // a given edge is found by a small scan of inc[u] in the hot loop below.
@@ -251,7 +251,7 @@ namespace wz::engine::cognition
             BpMessages next = msgs;  // copies dims + old values as the damping base
             double residual = 0.0;
 
-            for (uint32_t e = 0; e < ec; ++e) {
+            for_each_edge(graph, [&](uint32_t e) {
                 const NodeHandle a = edge_low[e];
                 const NodeHandle b = edge_high[e];
 
@@ -312,7 +312,7 @@ namespace wz::engine::cognition
                     }
                     new_dir = std::move(computed);
                 }
-            }
+            });
 
             msgs = std::move(next);
             conv.iterations = iter + 1;
@@ -385,9 +385,9 @@ namespace wz::engine::cognition
     {
         const uint32_t n = node_count(g.graph);
         std::vector<double> z(n, 0.0);
-        for (uint32_t i = 0; i < n; ++i) {
+        for_each_node(g.graph, [&](NodeHandle i) {
             z[i] = bp_marginal_z(g, msgs, i);
-        }
+        });
         return z;
     }
 

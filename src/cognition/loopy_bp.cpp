@@ -11,6 +11,7 @@ namespace wz::engine::cognition
     using wz::core::graph::add_node;
     using wz::core::graph::build;
     using wz::core::graph::for_each_neighbor;
+    using wz::core::graph::for_each_node;
     using wz::core::graph::node_count;
     using wz::core::graph::node_data;
     using wz::core::graph::NodeHandle;
@@ -68,37 +69,37 @@ namespace wz::engine::cognition
         //    register). A clamped neighbor contributes its pinned z, so it acts
         //    as a fixed field on its neighbors.
         std::vector<double> h_eff(n, 0.0);
-        for (NodeHandle u = 0; u < n; ++u) {
+        for_each_node(g.graph, [&](NodeHandle u) {
             double h = g.goal_field[u];
             for_each_neighbor(g.graph, u, [&](NodeHandle nbr, LoopyBond& e) {
                 h += e.j * g.z[nbr];
             });
             h_eff[u] = h;
-        }
+        });
 
         // 2. Relax each UNCLAMPED agent toward its ground state under (gamma,
         //    h_eff). Clamped agents are NOT relaxed -- their register stays
         //    projected. Single-qubit agents: the coupled qubit is qubit 0.
-        for (NodeHandle u = 0; u < n; ++u) {
+        for_each_node(g.graph, [&](NodeHandle u) {
             if (g.clamped[u]) {
-                continue;
+                return;
             }
             qstate::apply_imag_time_field(
                 node_data(g.graph, u), 0u, gamma, h_eff[u], dtau);
-        }
+        });
 
         // 3. Update the broadcasts with damping. Clamped agents keep their
         //    pinned z; unclamped agents mix the previous broadcast with the
         //    freshly relaxed marginal.
         const double lambda = g.damping;
-        for (NodeHandle u = 0; u < n; ++u) {
+        for_each_node(g.graph, [&](NodeHandle u) {
             if (g.clamped[u]) {
-                continue;  // pinned in collapse(); left untouched here
+                return;  // pinned in collapse(); left untouched here
             }
             const double marginal =
                 qstate::expectation_z(node_data(g.graph, u), 0u);
             g.z[u] = (1.0 - lambda) * g.z[u] + lambda * marginal;
-        }
+        });
     }
 
     void relax(LoopyBpGroup& g, double gamma, double dtau, uint32_t iterations)
@@ -118,9 +119,9 @@ namespace wz::engine::cognition
     {
         const uint32_t n = node_count(g.graph);
         std::vector<double> z(n, 0.0);
-        for (NodeHandle u = 0; u < n; ++u) {
+        for_each_node(g.graph, [&](NodeHandle u) {
             z[u] = qstate::expectation_z(node_data(g.graph, u), 0u);
-        }
+        });
         return z;
     }
 

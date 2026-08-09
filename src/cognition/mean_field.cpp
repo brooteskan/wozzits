@@ -5,6 +5,7 @@
 namespace wz::engine::cognition
 {
     using wz::core::graph::for_each_neighbor;
+    using wz::core::graph::for_each_node;
     using wz::core::graph::INVALID_NODE;
     using wz::core::graph::node_count;
     using wz::core::graph::node_data;
@@ -13,16 +14,15 @@ namespace wz::engine::cognition
 
     void refresh_messages(MeanFieldNetwork& net)
     {
-        const uint32_t n = node_count(net);
-        for (NodeHandle c = 0; c < n; ++c) {
+        for_each_node(net, [&](NodeHandle c) {
             const NodeHandle p = parent(net, c);
             if (p == INVALID_NODE) {
-                continue;  // root has no parent-edge
+                return;  // root has no parent-edge
             }
             MeanFieldBond& b = wz::core::graph::edge_to_parent(net, c);
             b.up = qstate::expectation_z(node_data(net, c), b.child_qubit);
             b.down = qstate::expectation_z(node_data(net, p), b.parent_qubit);
-        }
+        });
     }
 
     void relax_step(MeanFieldNetwork& net, double gamma, double dtau)
@@ -32,20 +32,20 @@ namespace wz::engine::cognition
         // Effective longitudinal field on each node from the CURRENT messages
         // (Jacobi: this step reads the previous step's messages for every node).
         std::vector<double> h_eff(n, 0.0);
-        for (NodeHandle u = 0; u < n; ++u) {
+        for_each_node(net, [&](NodeHandle u) {
             const NodeHandle p = parent(net, u);
             for_each_neighbor(net, u, [&](NodeHandle nb, MeanFieldBond& b) {
                 const double neighbor_z = (nb == p) ? b.down : b.up;
                 h_eff[u] += b.j * neighbor_z;
             });
-        }
+        });
 
         // Relax each node toward its ground state under (gamma, h_eff). Single-
         // qubit nodes: the coupled qubit is qubit 0.
-        for (NodeHandle u = 0; u < n; ++u) {
+        for_each_node(net, [&](NodeHandle u) {
             qstate::apply_imag_time_field(
                 node_data(net, u), 0u, gamma, h_eff[u], dtau);
-        }
+        });
 
         refresh_messages(net);
     }
@@ -68,10 +68,9 @@ namespace wz::engine::cognition
     {
         const uint32_t n = node_count(net);
         std::vector<double> z(n, 0.0);
-        for (NodeHandle u = 0; u < n; ++u) {
-            z[u] = qstate::expectation_z(
-                node_data(net, u), 0u);
-        }
+        for_each_node(net, [&](NodeHandle u) {
+            z[u] = qstate::expectation_z(node_data(net, u), 0u);
+        });
         return z;
     }
 

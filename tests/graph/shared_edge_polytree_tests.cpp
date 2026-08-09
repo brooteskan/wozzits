@@ -225,6 +225,29 @@ TEST(SharedEdgePolytree, ForEachRootVisitsRootsOnly) {
     EXPECT_EQ(froots, (std::vector<NodeHandle>{ 0, 1 }));
 }
 
+// 10c. for_each_edge visits every parent->child edge once, in child-node-id
+// order, exposing the shared edge slot (roots have no parent-edge).
+TEST(SharedEdgePolytree, ForEachEdgeVisitsAllEdgesInChildOrder) {
+    auto t = make_tree();  // r=0 -> {a=1, b=2}; a=1 -> c=3
+    std::vector<NodeHandle> parents, kids;
+    for_each_edge(t, [&](NodeHandle p, NodeHandle c, Msg&) {
+        parents.push_back(p);
+        kids.push_back(c);
+    });
+    // child-id order: c=1(p=0), c=2(p=0), c=3(p=1); root 0 emits nothing.
+    EXPECT_EQ(kids, (std::vector<NodeHandle>{ A, B, C }));
+    EXPECT_EQ(parents, (std::vector<NodeHandle>{ R, R, A }));
+
+    // The visited edge is the shared slot: a write is observable via
+    // edge_to_parent(child).
+    for_each_edge(t, [&](NodeHandle, NodeHandle c, Msg& e) {
+        e.m = static_cast<float>(c) * 2.f;
+    });
+    EXPECT_FLOAT_EQ(edge_to_parent(t, A).m, 2.f);
+    EXPECT_FLOAT_EQ(edge_to_parent(t, B).m, 4.f);
+    EXPECT_FLOAT_EQ(edge_to_parent(t, C).m, 6.f);
+}
+
 // 10. topo_order is a valid topological order; reverse is leaf->root.
 TEST(SharedEdgePolytree, TopoOrderValid) {
     auto t = make_tree();

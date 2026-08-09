@@ -232,6 +232,19 @@ namespace wz::core::graph {
             if (is_root(t, n)) visit(n);
     }
 
+    // Visit every parent→child edge exactly once, in child-node-id order — the
+    // scaffold for a sweep over the bonds themselves (e.g. a per-bond gate). 'edge'
+    // is the shared child-indexed slot edge_store[child]; a root has no parent-edge
+    // and is skipped. visitor(NodeHandle parent, NodeHandle child, EdgeData& edge).
+    template<typename N, typename E, typename Visitor>
+    void for_each_edge(SharedEdgePolytree<N, E>& t, Visitor&& visit) {
+        const uint32_t nc = node_count(t);
+        for (NodeHandle c = 0; c < nc; ++c) {
+            const NodeHandle p = t.parent[c];
+            if (p != INVALID_NODE) visit(p, c, t.edge_store[c]);
+        }
+    }
+
     template<typename N, typename E, typename Visitor>
     void dfs(const SharedEdgePolytree<N, E>& t, NodeHandle root, Visitor&& visit) {
         std::vector<bool>       visited(node_count(t), false);

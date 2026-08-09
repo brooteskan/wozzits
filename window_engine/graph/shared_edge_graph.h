@@ -131,6 +131,39 @@ namespace wz::core::graph {
     }
 
 
+    // ─── Flat node / edge enumeration ─────────────────────────────────────────────
+    //
+    // Scaffolds that replace raw `for (n = 0; n < node_count; ++n)` and `for (e =
+    // 0; e < edge_count; ++e)` sweeps at call sites, so those seams can later be
+    // driven by a parallel driver behind the same signature. for_each_neighbor
+    // (above) already covers the "each undirected edge once, from its lower-handle
+    // endpoint" idiom; these cover the flat node-space and edge-index sweeps.
+
+    // Visit every node once, in node-id order. visitor(NodeHandle n).
+    template<typename N, typename E, typename Visitor>
+    void for_each_node(const SharedEdgeGraph<N, E>& t, Visitor&& visit) {
+        const uint32_t nc = node_count(t);
+        for (NodeHandle n = 0; n < nc; ++n) visit(n);
+    }
+
+    // Visit every node once, in REVERSE node-id order — the mirror sweep a
+    // forward-then-backward gauge pass needs. visitor(NodeHandle n).
+    template<typename N, typename E, typename Visitor>
+    void for_each_node_reverse(const SharedEdgeGraph<N, E>& t, Visitor&& visit) {
+        for (NodeHandle n = node_count(t); n-- > 0;) visit(n);
+    }
+
+    // Visit every undirected edge once, by edge-store index — the id that indexes
+    // edge_store and any parallel per-edge arrays (e.g. BP message buffers).
+    // visitor(uint32_t edge_id). Use for_each_neighbor when you need an edge's
+    // endpoints or its shared payload slot.
+    template<typename N, typename E, typename Visitor>
+    void for_each_edge(const SharedEdgeGraph<N, E>& t, Visitor&& visit) {
+        const uint32_t ec = edge_count(t);
+        for (uint32_t e = 0; e < ec; ++e) visit(e);
+    }
+
+
     // ─── build() ─────────────────────────────────────────────────────────────────
     //
     // Consumes the builder. ALWAYS succeeds — cycles are fine, there is no failure

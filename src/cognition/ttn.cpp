@@ -83,9 +83,8 @@ namespace wz::engine::cognition
         // qstate's normalize-after-each-imaginary-time-op and graph_tn's lambda renorm.)
         void renormalize_sites(TreeBpNetwork& mps)
         {
-            const uint32_t n = node_count(mps);
-            for (uint32_t i = 0; i < n; ++i) {
-                MpsSite& A = node_data(mps, static_cast<NodeHandle>(i));
+            for_each_node(mps, [&](NodeHandle i) {
+                MpsSite& A = node_data(mps, i);
                 double sumsq = 0.0;
                 for (const Complex& c : A.a) {
                     sumsq += c.real() * c.real() + c.imag() * c.imag();
@@ -96,7 +95,7 @@ namespace wz::engine::cognition
                         c *= inv;
                     }
                 }
-            }
+            });
         }
     }
 
@@ -128,7 +127,6 @@ namespace wz::engine::cognition
 
     void relax_step(TtnChain& g, double gamma, double dtau)
     {
-        const uint32_t n = node_count(g.mps);
         g.last_truncation_error = 0.0;
         // 2nd-order symmetric (Strang) split: half a step of the single-site
         // fields, a full step of the two-site couplings, then the other half of
@@ -139,35 +137,37 @@ namespace wz::engine::cognition
         // accumulated only across the full-step coupling sweep -- the single-site
         // half-sweeps do not truncate and must not touch it.
         // Single-site fields, first half-step (commute across sites).
-        for (uint32_t i = 0; i < n; ++i) {
+        for_each_node(g.mps, [&](NodeHandle i) {
             apply_one_site_gate(
                 node_data(g.mps, i), site_gate(gamma, g.goal_field[i], dtau * 0.5));
-        }
-        // Nearest-neighbour couplings, full step, each truncated to chi.
-        for (uint32_t i = 0; i + 1 < n; ++i) {
+        });
+        // Nearest-neighbour couplings, full step, each truncated to chi. A CHAIN
+        // bond (parent=left site, child=right site) per for_each_edge, in chain
+        // order -- the sequential TEBD sweep (each gate rewrites both shared sites).
+        for_each_edge(g.mps, [&](NodeHandle left, NodeHandle right, BondEnv&) {
             g.last_truncation_error += apply_two_site_gate(
-                node_data(g.mps, i),
-                node_data(g.mps, i + 1),
-                coupling_gate(g.coupling[i], dtau),
+                node_data(g.mps, left),
+                node_data(g.mps, right),
+                coupling_gate(g.coupling[left], dtau),
                 g.chi,
                 g.scratch);
-        }
+        });
         // Single-site fields, second half-step.
-        for (uint32_t i = 0; i < n; ++i) {
+        for_each_node(g.mps, [&](NodeHandle i) {
             apply_one_site_gate(
                 node_data(g.mps, i), site_gate(gamma, g.goal_field[i], dtau * 0.5));
-        }
+        });
         // Re-apply every held collapse. Both the single-site gates and the coupling
         // gates mix a projected site back off its latch, so without this a
         // "committed" decision is a soft nudge that decays each step -- and its
         // coupled partners spend the tick deliberating against an agent that has
         // already decided. Before the rescale: zeroing a component only shrinks
         // the site, which renormalize_sites then puts back in range.
-        for (uint32_t i = 0; i < n && i < g.clamp.size(); ++i) {
-            if (g.clamp[i] >= 0) {
+        for_each_node(g.mps, [&](NodeHandle i) {
+            if (i < g.clamp.size() && g.clamp[i] >= 0) {
                 collapse(g, i, g.clamp[i] != 0);
             }
-        }
+        });
         // The gates above are non-unitary, so rescale the sites back into range or the
         // MPS 2-norm compounds each step and eventually overflows to inf/NaN (see
         // renormalize_sites). Pure gauge -- the trace-normalized marginals are unchanged.
