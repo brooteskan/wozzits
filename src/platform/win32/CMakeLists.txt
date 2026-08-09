@@ -3,6 +3,7 @@ target_sources(window_engine PRIVATE
     src/w_time.cpp
     src/controller_win32.cpp
     src/ri_win32.cpp
+    src/fiber_win32.cpp
 )
 
 target_include_directories(window_engine PRIVATE

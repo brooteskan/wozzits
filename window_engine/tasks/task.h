@@ -80,9 +80,16 @@ namespace wz::tasks
         // thread blocks in wait() on it via atomic wait/notify.
         std::atomic<int> outstanding_{ 0 };
 
+        // S2 fibre parking: the task fibre parked in wait() on this counter, or a
+        // DONE sentinel once the count reaches zero (nullptr = neither). The pool
+        // claims it on the count->zero transition and makes it resumable. A
+        // main-thread waiter instead blocks on outstanding_'s atomic wait/notify and
+        // leaves this null.
+        std::atomic<void*> waiter_{ nullptr };
+
         friend void run(Counter&, TaskFn, void*);
         friend void run(Counter&, std::size_t, IndexFn, void*);
         friend void wait(Counter&);
-        friend class TaskScheduler;  // completes a task: decrement + notify
+        friend class TaskScheduler;  // completes a task; parks/resumes fibres
     };
 }
