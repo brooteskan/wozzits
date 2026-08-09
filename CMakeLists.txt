@@ -1253,6 +1253,8 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(jobs job_graph_tests)
     # rs_add_test_group(jobs render_prep_job_tests)
     rs_add_test_group(jobs profiler_tests)
+    rs_add_test_group(jobs critical_path_tests)
+    rs_add_test_group(jobs scheduler_benchmark_tests)
     rs_add_test_group(jobs engine_adversarial_tests)
 
     rs_add_test_group(tasks task_tests)
