@@ -2642,7 +2642,7 @@ namespace wz::app
         }
     }
 
-    bool WozzitsApp_v1::save_scene()
+    wz::fs::FileError WozzitsApp_v1::save_scene()
     {
         // Per-frame profile (#252): write the accumulated CSV on the way out.
         // save_scene runs at play/editor exit; independent of the scene-dirty
@@ -2655,10 +2655,15 @@ namespace wz::app
         const bool want_editor_camera = !view_.prefer_scene_camera();
         if (!document_.dirty()
             && !(want_editor_camera && view_.editor_camera_dirty())) {
-            return true;  // nothing changed since load / last save
+            // Nothing changed since load / last save.
+            return wz::fs::FileError::None;
         }
+        // Reached only with unsaved changes (the not-dirty case returned above),
+        // so an empty source path means "there are edits but nowhere to write
+        // them" -- a failure, not a no-op (#299 open decision 3). InvalidPath is
+        // the FileError a missing destination maps to.
         if (scene_source_path_.empty()) {
-            return false;
+            return wz::fs::FileError::InvalidPath;
         }
 
         const wz::fs::Path resource_root =
@@ -2697,71 +2702,78 @@ namespace wz::app
             }
         }
 
-        // Read the existing scene so its non-node data (lights, defaults, sky)
-        // is preserved; only the nodes array is replaced from the live edits.
-        wz::json::JSONDocument document;
-        {
-            const wz::fs::FileResult<std::string> text =
-                wz::fs::read_file_text(path);
-            if (text) {
-                wz::json::JSONParseResult parsed =
-                    wz::json::parse_json_string(text.value);
-                if (parsed.ok && parsed.document.root) {
-                    document = std::move(parsed.document);
+        // The editor viewport camera pose, if we are persisting it (editor only).
+        // Built once so both the in-place update and the create-fresh fallback
+        // below upsert the same block.
+        wz::engine::assets::SceneEditorCameraMetadata camera_meta;
+        if (want_editor_camera) {
+            const wz::bench::FlyingCamera& camera = view_.free_fly_camera();
+            camera_meta.position[0] = camera.x;
+            camera_meta.position[1] = camera.y;
+            camera_meta.position[2] = camera.z;
+            camera_meta.orientation[0] = camera.orientation.x;
+            camera_meta.orientation[1] = camera.orientation.y;
+            camera_meta.orientation[2] = camera.orientation.z;
+            camera_meta.orientation[3] = camera.orientation.w;
+            camera_meta.move_speed       = camera.move_speed;
+            camera_meta.look_speed       = camera.look_speed;
+            camera_meta.boost_multiplier = camera.boost_multiplier;
+            camera_meta.roll_speed       = camera.roll_speed;
+        }
+
+        // Read-modify-write the existing scene so its non-node data (lights,
+        // defaults, sky, and anything this exporter does not model) is preserved;
+        // the nodes array is replaced only on a scene edit, the editor camera
+        // upserted only in the editor. Persistence itself -- read, parse, and the
+        // checked/chunked/UTF-8-correct write -- now lives in the scene library
+        // (#299), so the buffered-flush false-positive of the old raw std::ofstream
+        // (good() passed and dirty was cleared before the filebuf destructor's
+        // flush failed) is gone: a real FileError propagates and keeps the scene
+        // dirty for the next save. A camera-only save (scene not dirty) leaves the
+        // authored nodes untouched so panning never churns the node array.
+        const bool scene_dirty = document_.dirty();
+        wz::fs::FileError err = wz::engine::assets::update_scene_document(
+            path,
+            [&](wz::json::JSONDocument& document) {
+                if (scene_dirty) {
+                    wz::engine::assets::set_scene_document_nodes(
+                        document, persisted_nodes);
                 }
-            }
-        }
-        if (document.root) {
-            // A camera-only save (scene not dirty) leaves the authored nodes
-            // untouched so panning the viewport never churns the node array.
-            if (document_.dirty()) {
-                wz::engine::assets::set_scene_document_nodes(
-                    document, persisted_nodes);
-            }
-        }
-        else {
-            // No readable source — emit a fresh scene document from the nodes.
+                if (want_editor_camera) {
+                    wz::engine::assets::set_scene_document_editor_camera(
+                        document, camera_meta);
+                }
+                return true;  // past the dirty early-out: always a write
+            });
+
+        // No usable scene on disk yet (first save, or a corrupt file that could
+        // not be parsed): emit a fresh document from the live nodes, mirroring the
+        // old "no readable source" fallback. Read/write errors that are not those
+        // two (permission, IO) are real failures and propagate unchanged.
+        if (err == wz::fs::FileError::NotFound
+            || err == wz::fs::FileError::InvalidPath) {
             wz::engine::assets::SceneAssetData snapshot;
             snapshot.nodes = persisted_nodes;
-            document =
+            wz::json::JSONDocument document =
                 wz::engine::assets::export_scene_to_json_document(snapshot);
+            if (want_editor_camera) {
+                wz::engine::assets::set_scene_document_editor_camera(
+                    document, camera_meta);
+            }
+            err = wz::engine::assets::write_scene_document(path, document);
         }
 
-        // Persist the editor viewport camera (editor only). Upserts just the
-        // scene_editor_metadata.camera block, leaving nodes + other data intact.
-        if (want_editor_camera && document.root) {
-            const wz::bench::FlyingCamera& camera = view_.free_fly_camera();
-            wz::engine::assets::SceneEditorCameraMetadata meta;
-            meta.position[0] = camera.x;
-            meta.position[1] = camera.y;
-            meta.position[2] = camera.z;
-            meta.orientation[0] = camera.orientation.x;
-            meta.orientation[1] = camera.orientation.y;
-            meta.orientation[2] = camera.orientation.z;
-            meta.orientation[3] = camera.orientation.w;
-            meta.move_speed       = camera.move_speed;
-            meta.look_speed       = camera.look_speed;
-            meta.boost_multiplier = camera.boost_multiplier;
-            meta.roll_speed       = camera.roll_speed;
-            wz::engine::assets::set_scene_document_editor_camera(document, meta);
-        }
-
-        // Through wz::fs (checked, chunked, UTF-8-correct write). The old raw
-        // stream cleared document_.dirty() after out.good() but BEFORE the filebuf
-        // flushed on destruction, so a small scene that failed to reach disk was
-        // marked clean over a truncated file; a real FileError keeps it dirty for
-        // the next save. (The bool result is still discarded by callers -- surfacing
-        // it is the separate #299 ABI change.)
-        if (const wz::fs::FileError err = wz::fs::write_file_text(
-                path, wz::json::serialize_json(document));
-            err != wz::fs::FileError::None) {
-            return false;
+        if (err != wz::fs::FileError::None) {
+            // The result is no longer discarded here -- it is returned to the
+            // caller (surfacing it across the ABI is #300; the engine-thread
+            // callers log it). The scene stays dirty for the next attempt.
+            return err;
         }
 
         document_.dirty() = false;
         view_.clear_editor_camera_dirty();
         ctx_.logger.info("save_scene: scene persisted");
-        return true;
+        return wz::fs::FileError::None;
     }
 
     bool WozzitsApp_v1::export_subtree_as_scene(
@@ -2806,15 +2818,17 @@ namespace wz::app
                 : wz::fs::join(resource_root, out_path);
 
         // Emit a FRESH scene document: a prefab is self-contained, so there is no
-        // existing-file non-node data to preserve (unlike save_scene).
+        // existing-file non-node data to preserve (unlike save_scene). The scene
+        // library owns the checked write (#299).
         wz::json::JSONDocument document =
             wz::engine::assets::export_scene_to_json_document(*subtree);
 
-        if (const wz::fs::FileError err = wz::fs::write_file_text(
-                path, wz::json::serialize_json(document));
+        if (const wz::fs::FileError err =
+                wz::engine::assets::write_scene_document(path, document);
             err != wz::fs::FileError::None) {
             ctx_.logger.error(
-                "export_subtree_as_scene: write failed");
+                std::string("export_subtree_as_scene: write failed: ")
+                + wz::fs::to_string(err));
             return false;
         }
 

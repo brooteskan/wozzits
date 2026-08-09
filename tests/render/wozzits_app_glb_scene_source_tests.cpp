@@ -557,7 +557,7 @@ TEST_F(WozzitsAppGlbSceneSourceFixture, GraftedChildComponentOverridePersists)
         wz::app::WozzitsApp_v1 app(ctx);
         ASSERT_TRUE(app.load_scene(load_desc));
         ASSERT_TRUE(app.set_node_render_program("tank_host/body", kProgram));
-        ASSERT_TRUE(app.save_scene());
+        ASSERT_EQ(app.save_scene(), wz::fs::FileError::None);
     }
 
     // Reload in a FRESH engine context (a separate asset system) so the scene is

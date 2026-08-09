@@ -707,12 +707,13 @@ extern "C"
             }
 
             // The ONE scene author: build the document as data, then hand it to
-            // the same exporter save_scene and export_subtree_as_scene use.
+            // the same scene-library writer save_scene and export_subtree_as_scene
+            // use (#299).
             const wz::json::JSONDocument document =
                 wz::engine::assets::export_scene_to_json_document(
                     wz::engine::assets::make_minimal_scenelet(name));
-            if (const wz::fs::FileError err = wz::fs::write_file_text(
-                    absolute, wz::json::serialize_json(document));
+            if (const wz::fs::FileError err =
+                    wz::engine::assets::write_scene_document(absolute, document);
                 err != wz::fs::FileError::None)
             {
                 return dynamic_error(
@@ -785,45 +786,39 @@ extern "C"
 
             const wz::fs::Path path = wz::fs::join(
                 resolved.launch.resource_root, scene_rel_path_utf8);
-            const wz::fs::FileResult<std::string> text =
-                wz::fs::read_file_text(path);
-            if (!text) {
+
+            // One read-modify-write in the scene library (#299), replacing the
+            // hand-rolled read/parse/patch/serialize/write this verb used to
+            // duplicate. The edit reports whether anything changed;
+            // update_scene_document skips the write when it did not, preserving
+            // the "0 changes => bytes untouched" idempotence this verb relies on
+            // (a scenelet that is also the open scene must not be rewritten twice).
+            uint32_t changed = 0u;
+            const wz::fs::FileError err =
+                wz::engine::assets::update_scene_document(
+                    path,
+                    [&](wz::json::JSONDocument& document) {
+                        changed = wz::engine::assets::
+                            set_scene_document_behavior_config(
+                                document,
+                                module_utf8,
+                                match_key_utf8,
+                                match_value_utf8 ? match_value_utf8 : "",
+                                config_key_utf8,
+                                value_utf8 ? value_utf8 : "");
+                        return changed != 0u;
+                    });
+            if (err != wz::fs::FileError::None) {
+                // Before a change is applied the only failures are read/parse (a
+                // bad argument: missing file, or not valid JSON); once a change is
+                // applied the only failure is the write (internal). `changed`
+                // distinguishes the two, preserving the original result codes.
                 return dynamic_error(
-                    WZ_RESULT_INVALID_ARGUMENT,
-                    "could not read scene '" + path + "'");
-            }
-
-            wz::json::JSONParseResult parsed =
-                wz::json::parse_json_string(text.value);
-            if (!parsed.ok) {
-                return dynamic_error(
-                    WZ_RESULT_INVALID_ARGUMENT,
-                    "scene '" + path + "' is not valid JSON: "
-                        + parsed.error.message);
-            }
-
-            const uint32_t changed =
-                wz::engine::assets::set_scene_document_behavior_config(
-                    parsed.document,
-                    module_utf8,
-                    match_key_utf8,
-                    match_value_utf8 ? match_value_utf8 : "",
-                    config_key_utf8,
-                    value_utf8 ? value_utf8 : "");
-
-            // Nothing matched, or every match already carried the value: leave
-            // the file's bytes exactly as they were.
-            if (changed == 0u) {
-                return result(WZ_RESULT_OK, "");
-            }
-
-            if (const wz::fs::FileError err = wz::fs::write_file_text(
-                    path, wz::json::serialize_json(parsed.document));
-                err != wz::fs::FileError::None)
-            {
-                return dynamic_error(
-                    WZ_RESULT_INTERNAL_ERROR,
-                    "could not write scene '" + path + "'");
+                    changed == 0u ? WZ_RESULT_INVALID_ARGUMENT
+                                  : WZ_RESULT_INTERNAL_ERROR,
+                    (changed == 0u ? "could not read scene '"
+                                   : "could not write scene '")
+                        + path + "': " + wz::fs::to_string(err));
             }
 
             *out_updated_count = changed;

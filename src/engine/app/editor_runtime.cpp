@@ -1840,7 +1840,16 @@ namespace wz::app
                             return app.authored_scene_nodes();
                         });
                     if (control->take_save_request()) {
-                        app.save_scene();
+                        // Fire-and-forget across the ABI today: the result cannot
+                        // ride back to the editor yet (that uniform channel is
+                        // #300), so log a failed save here rather than discard it.
+                        if (const wz::fs::FileError err = app.save_scene();
+                            err != wz::fs::FileError::None) {
+                            ctx.logger.error(
+                                std::string("save_scene (editor request) "
+                                            "failed: ")
+                                + wz::fs::to_string(err));
+                        }
                     }
                     control->service_pending_export_subtree(
                         [&app](
@@ -2012,7 +2021,13 @@ namespace wz::app
 
             // Persist any unsaved edits before the runtime tears down (covers
             // the viewport window closing and the editor stopping the runtime).
-            app.save_scene();
+            // Nothing waits on this result, so a failure is logged, not returned.
+            if (const wz::fs::FileError err = app.save_scene();
+                err != wz::fs::FileError::None) {
+                ctx.logger.error(
+                    std::string("save_scene (runtime teardown) failed: ")
+                    + wz::fs::to_string(err));
+            }
 
             wz::platform::win32::controller_shutdown();
             wz::input::shutdown_raw_input();

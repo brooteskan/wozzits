@@ -1,6 +1,10 @@
 #include <engine/assets/scene/scene_json_export.h>
 
+#include <external/json/json_parser.h>
 #include <external/json/json_read_helpers.h>
+#include <external/json/json_writer.h>
+
+#include <file/filesystem.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -2691,6 +2695,45 @@ namespace wz::engine::assets
             .key = "camera",
             .value = std::move(camera_obj),
         });
+    }
+
+    wz::fs::FileError update_scene_document(
+        const wz::fs::Path& path,
+        const std::function<bool(wz::json::JSONDocument&)>& edit)
+    {
+        const wz::fs::FileResult<std::string> text =
+            wz::fs::read_file_text(path);
+        if (!text) {
+            // Read failure, NotFound included: report it verbatim. The create-if-
+            // missing callers key off NotFound; the must-exist callers surface it.
+            return text.error;
+        }
+
+        wz::json::JSONParseResult parsed =
+            wz::json::parse_json_string(text.value);
+        if (!parsed.ok || !parsed.document.root) {
+            // The file exists and was read, but is not a usable scene document.
+            // Reported as InvalidPath so a create-if-missing caller can treat a
+            // corrupt file the way it treats an absent one (emit fresh) rather
+            // than write nothing.
+            return wz::fs::FileError::InvalidPath;
+        }
+
+        if (!edit(parsed.document)) {
+            // No change: leave the file's bytes exactly as they were (no reformat,
+            // no mtime bump). This is what preserves an idempotent caller's
+            // "0 changes => file untouched" contract.
+            return wz::fs::FileError::None;
+        }
+
+        return write_scene_document(path, parsed.document);
+    }
+
+    wz::fs::FileError write_scene_document(
+        const wz::fs::Path& path,
+        const wz::json::JSONDocument& document)
+    {
+        return wz::fs::write_file_text(path, wz::json::serialize_json(document));
     }
 
     std::optional<SceneEditorCameraMetadata> read_scene_document_editor_camera(

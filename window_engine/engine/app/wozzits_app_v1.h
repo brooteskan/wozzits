@@ -559,9 +559,13 @@ namespace wz::app
         authored_scene_nodes() const;
 
         // Persist the current scene back to its source file: the nodes are
-        // re-emitted, all other scene data preserved. No-op (returns true) when
-        // no live edit happened since load/last save; false on write failure.
-        bool save_scene();
+        // re-emitted, all other scene data preserved. Returns FileError::None on
+        // success AND when no live edit happened since load/last save (a no-op);
+        // a non-None FileError on a read/write failure or when there are unsaved
+        // edits but no source path to write them to (#299). The write goes through
+        // the scene library's wz::fs-backed writer, so a failed write is reported,
+        // never swallowed by a stream destructor.
+        wz::fs::FileError save_scene();
 
         // Frame profiling is opt-in (default OFF). OFF records nothing, so the
         // exit-time flush is a no-op and no frame_profile_<tag>.csv is written

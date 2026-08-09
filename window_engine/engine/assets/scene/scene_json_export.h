@@ -3,8 +3,10 @@
 #include <engine/assets/scene/scene_asset_data.h>
 
 #include <external/json/json_document.h>
+#include <file/filesystem.h>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string_view>
 
@@ -78,6 +80,41 @@ namespace wz::engine::assets
     // Returns nullopt when the block is absent; a present block fills the returned
     // struct field-by-field, keeping the default for any missing/malformed field.
     std::optional<SceneEditorCameraMetadata> read_scene_document_editor_camera(
+        const wz::json::JSONDocument& document);
+
+    // ─── Scene-document persistence (issue #299) ────────────────────────────
+    // The scene library owns the scene DOCUMENT; these two functions give it the
+    // one wz::fs-backed reader/writer that turns a document into bytes on disk,
+    // so the four scene-document writers no longer each roll their own persistence
+    // (two of which used a raw std::ofstream whose destructor swallowed the write
+    // error). Every write goes through wz::fs::write_file_text — a checked,
+    // chunked, UTF-8-correct CreateFileW/WriteFile, not a stream whose buffered
+    // flush on destruction can report a truncated file as a successful save.
+
+    // Read + parse the scene document at `path`, hand the parsed document to
+    // `edit`, and write the re-serialized result back ONLY if `edit` returns true
+    // (a change was made). The change-gated write is what keeps an idempotent
+    // caller's bytes untouched: `edit` returning false => the file is not
+    // rewritten at all (no reformat, no mtime bump).
+    //
+    // STRICT about the existing file: a read failure (including NotFound) is
+    // returned as that FileError without calling `edit`, and a file that is not
+    // valid JSON is returned as FileError::InvalidPath. Callers that must CREATE a
+    // missing file (save_scene's first save) detect NotFound/InvalidPath and fall
+    // back to write_scene_document with a freshly built document; callers that
+    // require the file to exist (the scene-file behaviour-config upsert) surface
+    // the error directly. No parent directories are created (mirrors the raw
+    // writers it replaces).
+    wz::fs::FileError update_scene_document(
+        const wz::fs::Path& path,
+        const std::function<bool(wz::json::JSONDocument&)>& edit);
+
+    // Serialize `document` and write it to `path`, for callers with no existing
+    // file to preserve (a fresh prefab/scenelet export, or save_scene's create
+    // path). A thin, checked wz::fs::write_file_text wrapper; does NOT create
+    // parent directories.
+    wz::fs::FileError write_scene_document(
+        const wz::fs::Path& path,
         const wz::json::JSONDocument& document);
 
 } // namespace wz::engine::assets

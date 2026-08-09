@@ -329,7 +329,7 @@ TEST_F(WozzitsAppTerrainConstraintFixture, SaveScenePersistsSimCurrentPose)
             << "scene_nodes_ was mutated per frame — write-back should be gone";
 
         // save_scene must derive the sim-current pose from the polytree.
-        ASSERT_TRUE(app.save_scene());
+        ASSERT_EQ(app.save_scene(), wz::fs::FileError::None);
     }
 
     // Reload in a FRESH engine context so the scene is re-read from disk.

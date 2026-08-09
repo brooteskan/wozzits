@@ -152,7 +152,7 @@ TEST_F(WozzitsAppCollisionMotionFixture, AuthorAndPersistCollisionRefAndMotion)
         EXPECT_FALSE(patched->terrain_align_to_surface);
         EXPECT_FLOAT_EQ(patched->terrain_alignment_strength, 0.4f);
 
-        ASSERT_TRUE(app.save_scene());
+        ASSERT_EQ(app.save_scene(), wz::fs::FileError::None);
     }
 
     // Reload in a FRESH AppContext (a new asset cache, so the by-path compiled
