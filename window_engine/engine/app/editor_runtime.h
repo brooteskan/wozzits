@@ -899,13 +899,10 @@ namespace wz::app
         // These are NOT one shared flag: the verbs are independent and an
         // engine-side bind takes seconds, so one flag would stall an unrelated
         // add-child on the UI thread for the duration of a compile.
+        // Only bind_asset_graph still needs this gate; the other blocking verbs
+        // moved to the Request primitive (#300 layer 1), which serialises callers
+        // per-request on its own cv.
         bool asset_graph_cycle_busy_ = false;
-        bool add_cycle_busy_ = false;
-        bool add_behavior_cycle_busy_ = false;
-        bool grafted_cycle_busy_ = false;
-        bool scene_nodes_cycle_busy_ = false;
-        bool export_cycle_busy_ = false;
-        bool open_scene_cycle_busy_ = false;
 
         // #194: the asset-GRAPH bind handshake (bind_asset_graph /
         // service_pending_asset_graph_bind). Named for the graph so they read
@@ -974,55 +971,36 @@ namespace wz::app
         Mailbox<SceneNodeGlbSceneSourceEdit> glb_scene_sources_;
         Mailbox<SceneNodeGlbStyleEdit> glb_styles_;
 
-        // Blocking add-child request/response (guarded by mutex_/cv_, mirrors
-        // the bind handshake): the owner posts a parent and blocks for the
-        // minted-id result the engine thread produces.
-        bool has_add_request_ = false;
-        bool has_add_result_ = false;
-        wz::scene::AuthoredEntityId pending_add_parent_;
-        wz::engine::assets::SceneAddChildResult add_result_;
-
-        // Blocking add-behavior request/response (mirrors the add-child
-        // handshake): the owner posts a node id + module and blocks for the
-        // minted binding-id result.
-        bool has_add_behavior_request_ = false;
-        bool has_add_behavior_result_ = false;
-        wz::scene::AuthoredEntityId pending_add_behavior_node_;
-        std::string pending_add_behavior_module_;
-        wz::engine::assets::SceneAddBehaviorResult add_behavior_result_;
-
-        // Blocking grafted-scene-nodes request/response (issue #213, mirrors the
-        // add-child handshake but with no request payload — the engine just
-        // copies its grafted nodes): the owner sets the request flag and blocks
-        // for the copied node list.
-        bool has_grafted_request_ = false;
-        bool has_grafted_result_ = false;
-        std::vector<wz::engine::assets::SceneNodeAsset> grafted_result_;
-
-        // Blocking authored-scene-nodes request/response (prefab editor: rebuild the
-        // tree after a scene swap). Same shape as the grafted handshake.
-        bool has_scene_nodes_request_ = false;
-        bool has_scene_nodes_result_ = false;
-        std::vector<wz::engine::assets::SceneNodeAsset> scene_nodes_result_;
-
-        // Blocking export-subtree request/response (the prefab milestone, mirrors
-        // the add-child handshake): the owner posts a root node id + output path
-        // and blocks for the bool the engine thread produces.
-        bool has_export_request_ = false;
-        bool has_export_result_ = false;
-        bool has_open_scene_request_ = false;
-        bool has_open_scene_result_ = false;
-        wz::fs::Path pending_open_scene_path_;
-        bool open_scene_result_ = false;
-        wz::scene::AuthoredEntityId pending_export_root_;
-        wz::fs::Path pending_export_path_;
-        bool export_result_ = false;
-
-        // Blocking save handshake (#300 layer 1) -- the first verb rebuilt onto
-        // the Request primitive, replacing the fire-and-forget save_requested_
-        // atomic. Its own mutex/cv, so it does not share the cross-talk-prone
-        // cv_ above; abandon()ed in mark_finished() so a blocked caller is
-        // released at teardown.
+        // Blocking request/response verbs, each on the Request primitive (#300
+        // layer 1). Each has its own mutex/cv, so a publish wakes only its
+        // caller (the shared-cv cross-talk that forced the *_cycle_busy_ gate
+        // cannot occur), and all are abandon()ed in mark_finished() so a parked
+        // caller is released at teardown. The no-answer case is Outcome.serviced
+        // == false, distinct from a serviced default value (#313 D3-P039).
+        //
+        // bind_asset_graph is the ONE handshake still hand-rolled (above): its
+        // move-only draft, in-flight reclaim, and throwing binder are outside
+        // what the simple Request models.
+        struct AddBehaviorRequest
+        {
+            wz::scene::AuthoredEntityId node_id;
+            std::string module;
+        };
+        struct ExportSubtreeRequest
+        {
+            wz::scene::AuthoredEntityId root;
+            wz::fs::Path out_path;
+        };
+        Request<wz::scene::AuthoredEntityId,
+                wz::engine::assets::SceneAddChildResult> add_child_;
+        Request<AddBehaviorRequest,
+                wz::engine::assets::SceneAddBehaviorResult> add_behavior_;
+        Request<ExportSubtreeRequest, bool> export_subtree_;
+        Request<wz::fs::Path, bool> open_scene_;
+        Request<std::monostate,
+                std::vector<wz::engine::assets::SceneNodeAsset>> grafted_nodes_;
+        Request<std::monostate,
+                std::vector<wz::engine::assets::SceneNodeAsset>> authored_nodes_;
         Request<std::monostate, wz::fs::FileError> save_;
     };
 

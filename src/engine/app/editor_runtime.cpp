@@ -603,58 +603,30 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& parent_id)
     {
         const CallerScope scope(*this);
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !add_cycle_busy_ || finished_; });
-        if (!scope.admitted() || finished_) {
+        if (!scope.admitted()) {
             return wz::engine::assets::SceneAddChildResult{
                 .ok = false,
                 .new_id = {},
                 .error = "engine runtime is not running",
             };
         }
-
-        pending_add_parent_ = parent_id;
-        const HandshakeCycle cycle(add_cycle_busy_, cv_);
-        has_add_request_ = true;
-        has_add_result_ = false;
-        cv_.notify_all();
-
-        cv_.wait(lock, [this] { return has_add_result_ || finished_; });
-        if (!has_add_result_) {
-            has_add_request_ = false;
+        auto outcome = add_child_.call(parent_id);
+        if (!outcome.serviced) {
             return wz::engine::assets::SceneAddChildResult{
                 .ok = false,
                 .new_id = {},
                 .error = "engine runtime stopped before add completed",
             };
         }
-
-        has_add_result_ = false;
-        return std::move(add_result_);
+        return std::move(outcome.value);
     }
 
     void EditorRuntimeControl::service_pending_add_child(
         const std::function<wz::engine::assets::SceneAddChildResult(
             const wz::scene::AuthoredEntityId&)>& adder)
     {
-        wz::scene::AuthoredEntityId parent;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!has_add_request_) {
-                return;
-            }
-            parent = std::move(pending_add_parent_);
-            has_add_request_ = false;
-        }
-
-        wz::engine::assets::SceneAddChildResult applied = adder(parent);
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            add_result_ = std::move(applied);
-            has_add_result_ = true;
-        }
-        cv_.notify_all();
+        add_child_.service(
+            [&](wz::scene::AuthoredEntityId parent) { return adder(parent); });
     }
 
     bool EditorRuntimeControl::export_subtree_as_scene(
@@ -662,101 +634,37 @@ namespace wz::app
         const wz::fs::Path& out_path)
     {
         const CallerScope scope(*this);
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !export_cycle_busy_ || finished_; });
-        if (!scope.admitted() || finished_) {
+        if (!scope.admitted()) {
             return false;  // runtime is not running — nothing to export
         }
-
-        pending_export_root_ = root_node_id;
-        pending_export_path_ = out_path;
-        const HandshakeCycle cycle(export_cycle_busy_, cv_);
-        has_export_request_ = true;
-        has_export_result_ = false;
-        cv_.notify_all();
-
-        cv_.wait(lock, [this] { return has_export_result_ || finished_; });
-        if (!has_export_result_) {
-            has_export_request_ = false;
-            return false;  // stopped before the export completed
-        }
-
-        has_export_result_ = false;
-        return export_result_;
+        const auto outcome = export_subtree_.call(
+            ExportSubtreeRequest{ root_node_id, out_path });
+        return outcome.serviced && outcome.value;  // false if it stopped first
     }
 
     void EditorRuntimeControl::service_pending_export_subtree(
         const std::function<bool(
             const wz::scene::AuthoredEntityId&, const wz::fs::Path&)>& exporter)
     {
-        wz::scene::AuthoredEntityId root;
-        wz::fs::Path path;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!has_export_request_) {
-                return;
-            }
-            root = std::move(pending_export_root_);
-            path = std::move(pending_export_path_);
-            has_export_request_ = false;
-        }
-
-        const bool applied = exporter(root, path);
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            export_result_ = applied;
-            has_export_result_ = true;
-        }
-        cv_.notify_all();
+        export_subtree_.service([&](ExportSubtreeRequest req) {
+            return exporter(req.root, req.out_path);
+        });
     }
 
     bool EditorRuntimeControl::open_scene(const wz::fs::Path& scene_path)
     {
         const CallerScope scope(*this);
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !open_scene_cycle_busy_ || finished_; });
-        if (!scope.admitted() || finished_) {
+        if (!scope.admitted()) {
             return false;  // runtime is not running
         }
-
-        pending_open_scene_path_ = scene_path;
-        const HandshakeCycle cycle(open_scene_cycle_busy_, cv_);
-        has_open_scene_request_ = true;
-        has_open_scene_result_ = false;
-        cv_.notify_all();
-
-        cv_.wait(lock, [this] { return has_open_scene_result_ || finished_; });
-        if (!has_open_scene_result_) {
-            has_open_scene_request_ = false;
-            return false;  // stopped before the open completed
-        }
-
-        has_open_scene_result_ = false;
-        return open_scene_result_;
+        const auto outcome = open_scene_.call(scene_path);
+        return outcome.serviced && outcome.value;  // false if it stopped first
     }
 
     void EditorRuntimeControl::service_pending_open_scene(
         const std::function<bool(const wz::fs::Path&)>& opener)
     {
-        wz::fs::Path path;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!has_open_scene_request_) {
-                return;
-            }
-            path = std::move(pending_open_scene_path_);
-            has_open_scene_request_ = false;
-        }
-
-        const bool loaded = opener(path);
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            open_scene_result_ = loaded;
-            has_open_scene_result_ = true;
-        }
-        cv_.notify_all();
+        open_scene_.service([&](wz::fs::Path path) { return opener(path); });
     }
 
     wz::engine::assets::SceneAddBehaviorResult
@@ -765,163 +673,78 @@ namespace wz::app
         const std::string& module)
     {
         const CallerScope scope(*this);
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(
-            lock, [this] { return !add_behavior_cycle_busy_ || finished_; });
-        if (!scope.admitted() || finished_) {
+        if (!scope.admitted()) {
             return wz::engine::assets::SceneAddBehaviorResult{
                 .ok = false,
                 .binding_id = {},
                 .error = "engine runtime is not running",
             };
         }
-
-        pending_add_behavior_node_ = node_id;
-        pending_add_behavior_module_ = module;
-        const HandshakeCycle cycle(add_behavior_cycle_busy_, cv_);
-        has_add_behavior_request_ = true;
-        has_add_behavior_result_ = false;
-        cv_.notify_all();
-
-        cv_.wait(
-            lock, [this] { return has_add_behavior_result_ || finished_; });
-        if (!has_add_behavior_result_) {
-            has_add_behavior_request_ = false;
+        auto outcome =
+            add_behavior_.call(AddBehaviorRequest{ node_id, module });
+        if (!outcome.serviced) {
             return wz::engine::assets::SceneAddBehaviorResult{
                 .ok = false,
                 .binding_id = {},
                 .error = "engine runtime stopped before add completed",
             };
         }
-
-        has_add_behavior_result_ = false;
-        return std::move(add_behavior_result_);
+        return std::move(outcome.value);
     }
 
     void EditorRuntimeControl::service_pending_add_node_behavior(
         const std::function<wz::engine::assets::SceneAddBehaviorResult(
             const wz::scene::AuthoredEntityId&, const std::string&)>& adder)
     {
-        wz::scene::AuthoredEntityId node;
-        std::string module;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!has_add_behavior_request_) {
-                return;
-            }
-            node = std::move(pending_add_behavior_node_);
-            module = std::move(pending_add_behavior_module_);
-            has_add_behavior_request_ = false;
-        }
-
-        wz::engine::assets::SceneAddBehaviorResult applied =
-            adder(node, module);
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            add_behavior_result_ = std::move(applied);
-            has_add_behavior_result_ = true;
-        }
-        cv_.notify_all();
+        add_behavior_.service([&](AddBehaviorRequest req) {
+            return adder(req.node_id, req.module);
+        });
     }
 
     std::optional<std::vector<wz::engine::assets::SceneNodeAsset>>
     EditorRuntimeControl::request_grafted_scene_nodes()
     {
         const CallerScope scope(*this);
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !grafted_cycle_busy_ || finished_; });
-        if (!scope.admitted() || finished_) {
-            // NO ANSWER, not "nothing grafted" (D3-P039). Both used to return an
-            // empty vector, so the caller could not tell them apart.
+        if (!scope.admitted()) {
+            // NO ANSWER, not "nothing grafted" (D3-P039) -- Outcome.serviced is
+            // the same distinction, now carried by the primitive.
             return std::nullopt;
         }
-
-        const HandshakeCycle cycle(grafted_cycle_busy_, cv_);
-        has_grafted_request_ = true;
-        has_grafted_result_ = false;
-        cv_.notify_all();
-
-        cv_.wait(lock, [this] { return has_grafted_result_ || finished_; });
-        if (!has_grafted_result_) {
-            has_grafted_request_ = false;
+        auto outcome = grafted_nodes_.call(std::monostate{});
+        if (!outcome.serviced) {
             return std::nullopt;  // engine stopped before servicing
         }
-
-        has_grafted_result_ = false;
-        return std::move(grafted_result_);
+        return std::move(outcome.value);
     }
 
     void EditorRuntimeControl::service_pending_grafted_scene_nodes(
         const std::function<
             std::vector<wz::engine::assets::SceneNodeAsset>()>& provider)
     {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!has_grafted_request_) {
-                return;
-            }
-            has_grafted_request_ = false;
-        }
-
-        // Build the copy outside the lock (it walks scene_nodes_); a request
-        // from the owner thread must never block on it.
-        std::vector<wz::engine::assets::SceneNodeAsset> nodes = provider();
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            grafted_result_ = std::move(nodes);
-            has_grafted_result_ = true;
-        }
-        cv_.notify_all();
+        // The provider walks scene_nodes_; Request::service runs it outside its
+        // lock, so a request from the owner thread never blocks on it.
+        grafted_nodes_.service([&](std::monostate) { return provider(); });
     }
 
     std::optional<std::vector<wz::engine::assets::SceneNodeAsset>>
     EditorRuntimeControl::request_scene_nodes()
     {
         const CallerScope scope(*this);
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !scene_nodes_cycle_busy_ || finished_; });
-        if (!scope.admitted() || finished_) {
-            // NO ANSWER, not "the scene is empty" (D3-P039).
+        if (!scope.admitted()) {
+            return std::nullopt;  // NO ANSWER, not "the scene is empty" (D3-P039)
+        }
+        auto outcome = authored_nodes_.call(std::monostate{});
+        if (!outcome.serviced) {
             return std::nullopt;
         }
-
-        const HandshakeCycle cycle(scene_nodes_cycle_busy_, cv_);
-        has_scene_nodes_request_ = true;
-        has_scene_nodes_result_ = false;
-        cv_.notify_all();
-
-        cv_.wait(lock, [this] { return has_scene_nodes_result_ || finished_; });
-        if (!has_scene_nodes_result_) {
-            has_scene_nodes_request_ = false;
-            return std::nullopt;
-        }
-
-        has_scene_nodes_result_ = false;
-        return std::move(scene_nodes_result_);
+        return std::move(outcome.value);
     }
 
     void EditorRuntimeControl::service_pending_scene_nodes(
         const std::function<
             std::vector<wz::engine::assets::SceneNodeAsset>()>& provider)
     {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!has_scene_nodes_request_) {
-                return;
-            }
-            has_scene_nodes_request_ = false;
-        }
-
-        std::vector<wz::engine::assets::SceneNodeAsset> nodes = provider();
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            scene_nodes_result_ = std::move(nodes);
-            has_scene_nodes_result_ = true;
-        }
-        cv_.notify_all();
+        authored_nodes_.service([&](std::monostate) { return provider(); });
     }
 
     FrameDelta compute_frame_delta(
@@ -1010,10 +833,15 @@ namespace wz::app
             std::lock_guard<std::mutex> lock(mutex_);
             finished_ = true;
         }
-        cv_.notify_all();
-        // Release a caller parked in the save handshake (its own cv, not cv_).
-        // The hand-rolled handshakes above key off finished_ under cv_; save_ is
-        // on the Request primitive, so it needs its own wake. Idempotent.
+        cv_.notify_all();  // release a caller parked in the hand-rolled bind wait
+        // Release callers parked in the Request-based verbs (each on its own cv,
+        // not cv_, so finished_ under cv_ does not reach them). Idempotent.
+        add_child_.abandon();
+        add_behavior_.abandon();
+        export_subtree_.abandon();
+        open_scene_.abandon();
+        grafted_nodes_.abandon();
+        authored_nodes_.abandon();
         save_.abandon();
     }
 
