@@ -315,12 +315,43 @@ namespace wz::tasks
         // Progress signal for the watchdog (a plain monotonic tick).
         completed_count_.fetch_add(1, std::memory_order_relaxed);
 
-        if (c.outstanding_.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        // Drop the outstanding count. Whoever takes it to zero is the FINISHER and
+        // alone runs the waiter handoff below.
+        //
+        // Counter LIFETIME hazard -- the finisher must do EVERY access to `c` while
+        // the count still reads non-zero, and publish zero as its LAST touch: a
+        // Counter lives on the WAITER's stack (task.h), and wait_on_main() returns
+        // the instant it observes outstanding_ == 0, after which that stack frame --
+        // and the Counter -- is gone. The old code decremented straight to zero with
+        // fetch_sub and only THEN read/wrote c.waiter_, so a main-thread waiter could
+        // free the Counter mid-handoff; the worker's stale waiter_ write then smashed
+        // reused stack (STATUS_STACK_BUFFER_OVERRUN) or read back garbage it resumed
+        // as a fibre (SEGFAULT) -- the intermittent cognition pool-oracle crash.
+        //
+        // So: claim the parked fibre (its kDone publish also closes the
+        // park-vs-complete registration race with run_fiber) FIRST, then store zero.
+        // After that store the Counter may vanish, so nothing below touches `c`:
+        // notify_all() wakes by address without dereferencing the storage, and
+        // push_resumable() only takes the local fibre pointer + pool-owned state.
+        int v = c.outstanding_.load(std::memory_order_acquire);
+        for (;;)
         {
-            c.outstanding_.notify_all();  // wake a main-thread waiter (no-op if none)
-            void* w = c.waiter_.exchange(kDone, std::memory_order_acq_rel);
-            if (w != nullptr && w != kDone)
-                push_resumable(static_cast<FiberContext*>(w));
+            if (v == 1)
+            {
+                // Finisher: exactly one task -- this one -- remained, so no other
+                // thread is completing `c` and this branch races with nobody on it.
+                void* w = c.waiter_.exchange(kDone, std::memory_order_acq_rel);
+                c.outstanding_.store(0, std::memory_order_release);  // release + last touch of c
+                c.outstanding_.notify_all();  // wake a main-thread waiter (no-op if none)
+                if (w != nullptr && w != kDone)
+                    push_resumable(static_cast<FiberContext*>(w));
+                return;
+            }
+            // Tasks still outstanding: a plain decrement (retry on contention; the
+            // failed CAS reloads v with the current count).
+            if (c.outstanding_.compare_exchange_weak(
+                    v, v - 1, std::memory_order_acq_rel, std::memory_order_acquire))
+                return;
         }
     }
 
