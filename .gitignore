@@ -17,6 +17,9 @@ build/
 *AppDataLocalTemp*
 CmakeUserPresets.json
 CMakeSettings.json
+
+# Local build configuration (per-machine); build.env.example is the committed template.
+build.env
 /Testing/
 # this must be from ninja?
 /out
