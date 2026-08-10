@@ -110,7 +110,15 @@ TEST(Buffer, DoesNotOverwriteBeyondCapacity)
 
 TEST(Buffer, AliasingTwoBuffersSameStorage)
 {
-    int storage[4];
+    // Two wrap() views over one storage block each keep their OWN count, so they
+    // do not coordinate: both start at index 0 and the second push overwrites the
+    // first. That much IS defined, and it is what this test pins down.
+    //
+    // It used to assert EXPECT_NE(storage[0], storage[1]) instead, which read
+    // storage[1] while it was still uninitialized -- UB, and clang-cl at -O2
+    // legally folded it into an int3 trap, aborting the whole target mid-run with
+    // STATUS_BREAKPOINT and no gtest failure line.
+    int storage[4] = { 0, 0, 0, 0 };
 
     auto b1 = Buffer<int>::wrap(storage, 4);
     auto b2 = Buffer<int>::wrap(storage, 4);
@@ -118,8 +126,9 @@ TEST(Buffer, AliasingTwoBuffersSameStorage)
     EXPECT_TRUE(b1.push(1));
     EXPECT_TRUE(b2.push(2));
 
-    // This is NOT deterministic ordering anymore unless you define it
-    EXPECT_NE(storage[0], storage[1]);
+    EXPECT_EQ(storage[0], 2);   // b2's push landed on the same slot as b1's
+    EXPECT_EQ(b1.count(), 1u);  // counts are per-view, not shared
+    EXPECT_EQ(b2.count(), 1u);
 }
 
 TEST(Buffer, WrapExistingInitialStateIntegrity)
@@ -138,13 +147,25 @@ TEST(Buffer, WrapExistingInitialStateIntegrity)
 
 TEST(Buffer, WrapExistingRejectsInvalidCount)
 {
-    int storage[4];
-
-    // This should trigger assert or at least be invalid
+    // count > capacity trips WZ_BUFFER_ASSERT(count <= capacity), which is a plain
+    // assert -- the header's safety model is explicit that out-of-bounds protection
+    // is "enforced via assertions only" and that invalid usage is UB otherwise. So
+    // NDEBUG strips it and nothing dies. Same gating as
+    // TreeBP.BranchingTripsChainOnlyGuard.
+    //
+    // This failure was invisible until the AliasingTwoBuffersSameStorage UB above
+    // was fixed: that test's uninitialized read trapped at -O2 and killed the
+    // process partway through the target, so every test after it -- including this
+    // one -- never ran in Release.
+#ifndef NDEBUG
+    int storage[4] = { 0, 0, 0, 0 };
     EXPECT_DEATH(
         Buffer<int>::wrap_existing(storage, 5, 4),
         ""
     );
+#else
+    GTEST_SKIP() << "count<=capacity is a debug assert; stripped by NDEBUG";
+#endif
 }
 
 

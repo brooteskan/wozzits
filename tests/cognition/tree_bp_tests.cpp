@@ -194,7 +194,17 @@ TEST(TreeBP, BranchingTripsChainOnlyGuard)
     add_edge(b, nodes[0], nodes[2], BondEnv{});
     TreeBpNetwork net = std::move(*build(std::move(b)));
 
+    // The precondition is a plain assert (see tree_bp.h -- it is documented as a
+    // debug assert), so NDEBUG strips it and nothing dies. Gated rather than
+    // switched to EXPECT_DEBUG_DEATH because that macro still RUNS the statement
+    // under NDEBUG, and on a branching tree tree_bp_sigma_z keeps only the last
+    // child environment -- meaningless output, and memory-safe only as long as
+    // the kept child's bond dim happens to match the site's right dim.
+#ifndef NDEBUG
     EXPECT_DEATH(tree_bp_sigma_z(net), "");
+#else
+    GTEST_SKIP() << "chain-only precondition is a debug assert; stripped by NDEBUG";
+#endif
 }
 
 // With chi large enough that no truncation happens, the two-site update

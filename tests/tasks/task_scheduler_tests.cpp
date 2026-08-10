@@ -255,4 +255,119 @@ namespace
         release.store(true, std::memory_order_release);  // let it drain -- no hang
         waiter.join();
     }
+
+    // ── reused counters (Counter::arm) ──────────────────────────────────────
+    //
+    // complete()'s finisher exchanges waiter_ to a kDone sentinel and never
+    // restores it, so a counter that has drained once would stay permanently
+    // "done" for parking purposes. arm() clears the slot on the first batch of a
+    // new round; without it every later worker-fibre park fails its registration
+    // CAS and bounces onto the resumable list. The API never said a Counter is
+    // single-use, and both live consumers happen to use a fresh stack Counter per
+    // run/wait pair -- so the reuse path arm() exists for had no test at all.
+
+    struct ReuseFrame
+    {
+        int                repetitions;
+        std::size_t        fan;
+        std::atomic<int>*  hits;
+    };
+
+    // Runs ON a worker (the caller fans it out), so each wait() here is a NESTED
+    // wait -- the one that parks a fibre on the counter, which is what makes the
+    // stale kDone sentinel matter. The same Counter serves every repetition.
+    void reuse_counter_body(void* user)
+    {
+        ReuseFrame& f = *static_cast<ReuseFrame*>(user);
+        Counter c;
+        for (int r = 0; r < f.repetitions; ++r)
+        {
+            run(c, f.fan, [](std::size_t, void* u)
+                {
+                    static_cast<std::atomic<int>*>(u)->fetch_add(
+                        1, std::memory_order_relaxed);
+                }, f.hits);
+            wait(c);
+        }
+    }
+
+    // ONE worker: the configuration the livelock note in task.h names. try_run_one
+    // drains resumables before deque work, so a fibre that bounces instead of
+    // parking starves the very tasks that would drop the count -- a hang, not a
+    // wrong answer, and only on a small machine. A regression here trips the
+    // target's ctest TIMEOUT rather than failing an assertion.
+    TEST(TaskScheduler, ReusedCounterNestedOnAOneWorkerPool)
+    {
+        ScopedPool guard{ 1 };
+        ASSERT_EQ(guard.pool.worker_count(), 1u);
+
+        std::atomic<int> hits{ 0 };
+        ReuseFrame frame{ /*repetitions*/ 200, /*fan*/ 8, &hits };
+
+        Counter outer;
+        run(outer, reuse_counter_body, &frame);
+        wait(outer);
+
+        EXPECT_EQ(hits.load(), frame.repetitions * static_cast<int>(frame.fan));
+    }
+
+    // The same reuse on a multi-worker pool, where real stealing is in play.
+    TEST(TaskScheduler, ReusedCounterNestedOnAMultiWorkerPool)
+    {
+        ScopedPool guard{ 4 };
+
+        std::atomic<int> hits{ 0 };
+        ReuseFrame frame{ /*repetitions*/ 200, /*fan*/ 8, &hits };
+
+        Counter outer;
+        run(outer, reuse_counter_body, &frame);
+        wait(outer);
+
+        EXPECT_EQ(hits.load(), frame.repetitions * static_cast<int>(frame.fan));
+    }
+
+    // Reuse from the MAIN thread: an outer wait blocks on outstanding_ and leaves
+    // waiter_ null, but the finisher still stamps kDone into it -- so round two
+    // starts from the same stale sentinel a nested park would trip over. Cheap,
+    // and it pins arm()'s "clear on the first batch of a round" directly.
+    TEST(TaskScheduler, ReusedCounterAcrossOuterWaits)
+    {
+        ScopedPool guard{ 2 };
+        constexpr std::size_t N = 64;
+        constexpr int kRounds = 200;
+
+        std::atomic<int> hits{ 0 };
+        Counter c;
+        for (int round = 0; round < kRounds; ++round)
+        {
+            run(c, N, [](std::size_t, void* u)
+                {
+                    static_cast<std::atomic<int>*>(u)->fetch_add(
+                        1, std::memory_order_relaxed);
+                }, &hits);
+            wait(c);
+            ASSERT_EQ(hits.load(), static_cast<int>(N) * (round + 1))
+                << "round " << round;
+        }
+    }
+
+    // The existing nested fork-join shape, but with a single worker: every nested
+    // wait must park and be resumed by the same thread that parked it, with no
+    // second worker able to pick up the slack.
+    TEST(TaskScheduler, NestedForkJoinOnAOneWorkerPool)
+    {
+        ScopedPool guard{ 1 };
+
+        long long next = 1;
+        const Node root = build_tree(/*depth*/ 3, /*branching*/ 4, next);
+        const long long nodes = next - 1;
+        const long long expected = nodes * (nodes + 1) / 2;
+
+        for (int rep = 0; rep < 20; ++rep)
+        {
+            Frame f{ &root, 0 };
+            sum_subtree(&f);
+            ASSERT_EQ(f.result, expected) << "rep " << rep;
+        }
+    }
 }

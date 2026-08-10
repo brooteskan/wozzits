@@ -60,6 +60,23 @@ namespace wz::diag
         // lane's thread is joined without the reporter racing shutdown_logger.
         flush_now();
         reporting_.store(false, std::memory_order_release);
+
+        // Barrier: prove no cycle is still mid-report. Without this, the store
+        // above only stops cycles that have not yet reached the reporting_ load in
+        // drain_and_report -- a cadence cycle that woke between the flush_now
+        // returning and the store, loaded true, and was then descheduled would call
+        // the reporter after the runtime moved on to shutdown_logger, which is
+        // precisely the use-after-free quiesce exists to prevent (and it sits on
+        // the live teardown path).
+        //
+        // One extra flush_now closes it because the worker is SERIAL: this
+        // flush_now returns only once a cycle has acked a request issued after the
+        // store, and the single worker thread cannot begin that cycle until any
+        // in-flight drain_and_report has run to completion. So on return, every
+        // cycle that could have loaded reporting_ as true is done, and every later
+        // one loads false. Idempotent -- a second quiesce() just adds two acked
+        // no-op cycles.
+        flush_now();
     }
 
     void LoggerServiceLane::drain_and_report()

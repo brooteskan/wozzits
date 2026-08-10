@@ -129,6 +129,12 @@ namespace wz::engine::rendering
     public:
         RhiSceneRenderer(EngineGpuContext& gpu, wz::Logger& logger);
 
+        // Flushes the GPU before the caches below are torn down. cache_ (PSOs +
+        // root signatures) and recorder_ (cached SRV descriptor ranges) are NOT
+        // timeline-tracked, so nothing else gates their release against frames
+        // still executing -- see the definition for the full argument.
+        ~RhiSceneRenderer();
+
         RhiSceneRenderer(const RhiSceneRenderer&)            = delete;
         RhiSceneRenderer& operator=(const RhiSceneRenderer&) = delete;
         RhiSceneRenderer(RhiSceneRenderer&&)                 = delete;

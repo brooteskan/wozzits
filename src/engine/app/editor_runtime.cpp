@@ -860,23 +860,6 @@ namespace wz::app
             }
         };
 
-        if (!wz::engine::init(ctx, desc)) {
-            // Bounded (verification) runs distinguish "no GPU device" from a real
-            // failure so a separate-process test can be SKIPPED rather than
-            // failed on a machine without a device.
-            //
-            // init() leaves the logger UP on its failure paths (it has no idea
-            // whether the caller still wants to log), and the diagnostics lane
-            // holds ctx.logger by reference -- so silence the lane and free the
-            // logger here, in the same order the success path uses. Without this
-            // the logger's own worker thread outlived the runtime on every
-            // no-device run.
-            logger_service->quiesce();
-            wz::logging::shutdown_logger(ctx.logger);
-            teardown_lanes();
-            return run_options.max_frames > 0 ? kRuntimeNoDeviceExitCode : 1;
-        }
-
         // Ordered teardown on EVERY exit from here on, including an exception.
         // Nothing below is noexcept -- Request::service deliberately rethrows so
         // the loop can log a throwing bind, and any allocation can throw -- and an
@@ -886,11 +869,23 @@ namespace wz::app
         // ordering exists to prevent, and g_scheduler / g_executor / g_sink would
         // be left pointing at destroyed objects while the ABI catches the
         // exception and keeps the process running.
+        //
+        // Constructed BEFORE engine::init, not after it: init allocates after
+        // create_device succeeds (the EngineGpuContext / EngineAssetLibrary
+        // make_uniques and their ostringstream logging), so a throw in that window
+        // left a live device with no destroy_device -- the lanes then joined their
+        // threads under it, the exact AMD inversion above. It also covers the
+        // globals installed just above, which were unguarded until now.
+        //
+        // Referencing the lambda's own type rather than copying it into a
+        // std::function: the copy was itself an allocation that could throw, and
+        // it sat in the one spot no guard covered.
+        using TeardownLanesFn = decltype(teardown_lanes);
         struct RuntimeTeardown
         {
             wz::diag::LoggerServiceLane& logger_service;
             wz::engine::AppContext& ctx;
-            const std::function<void()>& teardown_lanes;
+            const TeardownLanesFn& teardown_lanes;
 
             ~RuntimeTeardown()
             {
@@ -908,13 +903,30 @@ namespace wz::app
                 // flight), THEN join the lane threads -- the mirror of spinning
                 // them up before init, keeping the thread-join storm clear of GPU
                 // teardown (#305).
+                //
+                // Safe on every state init can leave behind, which is why the
+                // init-failure path below needs no teardown of its own: wait_idle
+                // and destroy_device are gated on device.valid(), the assets/gpu
+                // resets are no-ops on the null unique_ptrs a failed init leaves,
+                // destroy_window is gated on window.valid(), and shutdown_logger
+                // is null-safe and idempotent (as is Logger::info, which no-ops
+                // when state is null). init() leaves the logger UP on its failure
+                // paths and the diagnostics lane holds ctx.logger by reference, so
+                // routing those exits through here frees it in the same order the
+                // success path uses -- without it the logger's own worker thread
+                // outlived the runtime on every no-device run.
                 wz::engine::shutdown(ctx);
                 teardown_lanes();
             }
         };
-        const std::function<void()> teardown_lanes_fn = teardown_lanes;
-        RuntimeTeardown runtime_teardown{
-            *logger_service, ctx, teardown_lanes_fn };
+        RuntimeTeardown runtime_teardown{ *logger_service, ctx, teardown_lanes };
+
+        if (!wz::engine::init(ctx, desc)) {
+            // Bounded (verification) runs distinguish "no GPU device" from a real
+            // failure so a separate-process test can be SKIPPED rather than
+            // failed on a machine without a device. The guard above tears down.
+            return run_options.max_frames > 0 ? kRuntimeNoDeviceExitCode : 1;
+        }
 
         // Logger is up now -- report what was spun up before init.
         if (task_pool)

@@ -968,6 +968,34 @@ namespace wz::engine::rendering
         forward_ = ctx_.passes.acquire("forward");
     }
 
+    RhiSceneRenderer::~RhiSceneRenderer()
+    {
+        // Wait for the GPU before the members below are destroyed. Reverse
+        // declaration order runs ~RhiDx12CommandRecorder (frees its cached SRV
+        // descriptor ranges) then ~RhiDx12PipelineCache -> clear() (Releases
+        // every PSO and root signature) -- and NEITHER is timeline-tracked, so
+        // unlike a GpuResourceRegistry resource nothing gates them against
+        // frames still in flight.
+        //
+        // Since #306 end_frame signals its fence and returns without blocking,
+        // so up to kFramesInFlight frames can still be executing command lists
+        // that reference these objects when this runs, and D3D12 does NOT keep
+        // command lists' resource references alive. Releasing a PSO an in-flight
+        // list is still reading is a use-after-free on the GPU: a corrupt final
+        // frame or a device-removed TDR, both sporadic by nature.
+        //
+        // engine::shutdown's wait_idle does not cover this: the app scope owning
+        // this renderer closes FIRST, so these caches are already gone by then
+        // (the same hazard that wait protects the resource registry from, one
+        // owner higher). on_graph_changed already wait_idles for exactly these
+        // two caches before the same pair of releases; this is the destructor's
+        // equivalent, and being in the destructor it also covers an unwind.
+        //
+        // wait_idle is a no-op on a null or device-lost device, so the
+        // device-lost teardown path neither hangs nor faults here.
+        wz::gpu::wait_idle(gpu_.device);
+    }
+
     void RhiSceneRenderer::simulation_tick(float dt_seconds)
     {
         // The app owns the frame boundary and already measures a real delta, so
