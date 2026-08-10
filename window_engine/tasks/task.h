@@ -60,6 +60,17 @@ namespace wz::tasks
     // not yet finished. Lives on the caller's stack, spanning one run()/wait()
     // pair; non-copyable and non-movable (a worker may hold a pointer to it).
     //
+    // ONE WAITER AT A TIME. A Counter carries a single parking slot (waiter_), so
+    // it can hold one parked fibre, not a queue of them. Two fibres waiting on the
+    // SAME counter concurrently is outside the contract: only one wins the
+    // registration CAS, and the loser bounces back onto the resumable list and
+    // re-attempts -- correct, since it re-checks the count each time, but it
+    // burns a worker spinning instead of parking, and on a one-worker pool it can
+    // starve the very tasks that would drain the count. Fan out from one waiter
+    // and join there; that is what every consumer does and what the fork-join
+    // shape means. Reuse across SEQUENTIAL run/wait pairs is fine and supported
+    // (see arm()) -- it is concurrent waiters that are not.
+    //
     // At S0 the count is only ever transiently non-zero inside run() (tasks finish
     // inline), so it is a plain int; it becomes atomic when the worker pool lands
     // (S1). The type exists now so consumer code is written against the final shape

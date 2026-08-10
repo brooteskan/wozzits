@@ -501,6 +501,28 @@ namespace wz::engine::rendering
                         : wz::gpu::GPUHandle{};
     }
 
+    // Releases descriptor ranges back to the SHARED heap, and does it MID-FRAME
+    // with no fence gate -- so a range freed here can be handed straight back out
+    // to the create_resource_descriptor_table below, in this same frame, while
+    // draws already recorded (and frames still in flight since #306) reference it.
+    //
+    // What makes that safe today, stated because nothing in the code says it:
+    // an entry is dropped only when one of its handles no longer RESOLVES in the
+    // registry, and the registry's touch/collect discipline is what decides when
+    // a handle stops resolving -- it holds a released resource until the GPU
+    // timeline has passed its last-use value. So by the time an entry looks dead
+    // here, no in-flight frame is still reading the resources that table views.
+    // The soundness is entirely transitive on that discipline; this function
+    // checks nothing itself.
+    //
+    // Which makes it fragile, and worth contrasting with its sibling: the
+    // graph-swap path releases the very same cache (release_cached_descriptor_
+    // tables) behind an explicit wait_idle, because THERE the entries being
+    // dropped are still live. Anything that loosens collect() -- reclaiming on a
+    // frame counter, an eager sweep, a resource that bypasses touch -- breaks
+    // this path silently and at a distance, with no wait_idle to fall back on.
+    // Fixing that properly means deferring range reuse behind a timeline value
+    // (a fenced free list) rather than reusing immediately.
     void RhiDx12CommandRecorder::drop_dead_descriptor_tables()
     {
         if (!descriptor_tables_ || !device_ || !resources_) {

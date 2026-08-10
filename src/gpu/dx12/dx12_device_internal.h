@@ -168,6 +168,16 @@ namespace wz::gpu::dx12
         // at device creation.
         UINT   frames_in_flight = kFramesInFlight;
 
+        // True between a successful begin_frame and end_frame's Close -- i.e.
+        // exactly when `cmd` is open and legal to record into. Several internal
+        // entry points document "call only between begin/end_frame" (or the
+        // reverse), and this is what lets them enforce it instead of trusting the
+        // caller: recording into a CLOSED list is a D3D12 error, and running a
+        // one-shot execute-and-wait upload while the frame list holds recorded
+        // but unexecuted transitions computes its barrier from a CPU-side
+        // resource state the GPU has not reached yet.
+        bool frame_recording = false;
+
         // render target
         ID3D12DescriptorHeap* rtv_heap = nullptr;
         ID3D12Resource* backbuffers[2] = {};

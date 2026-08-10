@@ -83,7 +83,29 @@ TEST(GpuTimelineExclusivity, OneShotUploadsDoNotSignalTheFrameTimeline)
            "— a mid-frame collect would destroy resources this frame's "
            "recorded draws still reference";
 
+    // The frame-list update path is legal HERE, between begin and end_frame --
+    // it records into the frame's list, so the copy lands in queue order with
+    // the draws around it.
+    EXPECT_TRUE(gi::record_compute_buffer_update_dx12(
+        device, buffer, updated, sizeof(updated), 0));
+
     ASSERT_TRUE(wz::gpu::end_frame(device));
+
+    // ...and refused OUTSIDE one. `cmd` is the persistent frame list, so it is
+    // still non-null here and the old code recorded into it happily -- into a
+    // CLOSED list, which is a D3D12 error, with the staging parked in a frame
+    // arena the next begin_frame drains without ever submitting the copy.
+    // Enforced now rather than left to the header's say-so.
+    EXPECT_FALSE(gi::record_compute_buffer_update_dx12(
+        device, buffer, updated, sizeof(updated), 0))
+        << "record_compute_buffer_update_dx12 must refuse outside begin/end_frame";
+
+    // The immediate one-shot stays legal on both sides of the frame boundary --
+    // it builds and executes its own list. Pinned so the enforcement above is
+    // not later widened into "no uploads outside a frame" (or, as was tried,
+    // "no one-shots inside one" -- that breaks the mid-frame uploads above).
+    EXPECT_TRUE(gi::update_compute_buffer_dx12(
+        device, buffer, updated, sizeof(updated), 0));
 
     // #306: end_frame submits and SIGNALS the frame value but no longer waits on the
     // GPU -- the pacing wait moved to the next begin_frame's slot reuse -- so the

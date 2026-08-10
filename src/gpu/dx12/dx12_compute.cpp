@@ -888,6 +888,36 @@ namespace wz::gpu::dx12::internal
             return false;
         }
 
+        // LATENT HAZARD, stated precisely because it is easy to get wrong in both
+        // directions. The barriers below take StateBefore from buffer->state, the
+        // CPU-side mirror that transition_buffer advances at RECORD time. This
+        // list executes IMMEDIATELY (execute_and_wait), so if the frame list is
+        // holding a recorded-but-unexecuted transition on this same buffer, the
+        // mirror already names a state the GPU has not reached and this barrier's
+        // StateBefore is wrong: a validation error, or a silently mis-transitioned
+        // buffer.
+        //
+        // It is NOT simply "do not call this mid-frame". Mid-frame one-shot
+        // uploads are a supported, deliberately tested pattern (see
+        // tests/gpu/timeline_exclusivity.cpp, which uploads a buffer and a texture
+        // between begin_frame and end_frame) and several live paths do it through
+        // EngineGpuBackend::write. Asserting !frame_recording here fails four
+        // suites -- it was tried.
+        //
+        // The actual precondition is narrower: no NET state change may be recorded
+        // into the frame list for THIS buffer and still unexecuted.
+        // record_compute_buffer_update_dx12 is fine -- it transitions to COPY_DEST
+        // and back, so the mirror ends where it started and still matches the GPU.
+        // The hazard needs a lasting advance, i.e. transition_compute_buffer /
+        // transition_compute_buffer_for_graphics_srv recorded into the frame list,
+        // followed by a one-shot on the same buffer in that frame. No current path
+        // does that, which is why this is a comment and not a check.
+        //
+        // Making it enforceable means frame-stamping the mirror: give
+        // DX12ComputeBuffer a `state_recorded_frame`, set it when transition_buffer
+        // records into impl->cmd, and assert against a per-frame counter here.
+        // That is a real change to the transition path, not a comment, so it is
+        // left for whenever a caller actually needs the combination.
         const D3D12_RESOURCE_STATES final_state = buffer->state;
         transition_buffer(cmd, *buffer, D3D12_RESOURCE_STATE_COPY_DEST);
         cmd->CopyBufferRegion(
@@ -914,6 +944,15 @@ namespace wz::gpu::dx12::internal
     {
         auto* impl = static_cast<DX12Device*>(device.impl);
         if (!impl || !impl->cmd || !impl->device || !data || byte_count == 0u) {
+            return false;
+        }
+        // "Call only between begin/end_frame" was a header comment and nothing
+        // more: `cmd` is the persistent frame list, so it is non-null outside a
+        // frame too, and recording into it once end_frame has Closed it is a
+        // D3D12 error. Enforced rather than documented now -- and the staging
+        // push below would otherwise park in a frame arena that the next
+        // begin_frame drains without the copy ever having been submitted.
+        if (!impl->frame_recording) {
             return false;
         }
 

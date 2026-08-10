@@ -489,6 +489,17 @@ namespace wz::gpu::dx12
 
         impl->frame_index = impl->swapchain->GetCurrentBackBufferIndex();
 
+        // A failed resize leaves this null. resize() releases both backbuffers
+        // before calling ResizeBuffers, so a failure in ResizeBuffers or in the
+        // GetBuffer reacquire below it returns with them still released -- and
+        // the transition further down would then hand D3D12 a barrier on a null
+        // resource. Refuse the frame instead; nothing has been mutated yet at
+        // this point, and a later resize that succeeds reacquires them and
+        // rendering resumes, so this stays recoverable rather than terminal.
+        if (!impl->backbuffers[impl->frame_index]) {
+            return false;
+        }
+
         // #306 frame-slot ring: advance to this frame's slot and, before reusing
         // its command allocator, wait for the fence the LAST frame in this slot
         // signalled (0 == never used -> no wait). This IS the pacing wait: it is
@@ -522,6 +533,10 @@ namespace wz::gpu::dx12
             return false;
         }
         assert(SUCCEEDED(hr));
+
+        // `cmd` is open from here until end_frame closes it. See DX12Device::
+        // frame_recording for what enforces its contract.
+        impl->frame_recording = true;
 
         // New frame: point each SRV ring at THIS slot's partition of its heap
         // (#306). Each context heap holds kFramesInFlight * kSrvCapacity
@@ -645,6 +660,9 @@ namespace wz::gpu::dx12
         impl->cmd->ResourceBarrier(1, &barrier);
 
         hr = impl->cmd->Close();
+        // Closed (or failed trying): either way `cmd` is no longer recordable, so
+        // clear the flag before the failure return below rather than after it.
+        impl->frame_recording = false;
         if (!dx12_check_hr(*impl, hr, "ID3D12GraphicsCommandList::Close")) {
             return false;
         }
@@ -746,6 +764,20 @@ namespace wz::gpu::dx12
                         hr,
                         "ID3D12Fence::SetEventOnCompletion"))
                 {
+                    // Do NOT return here: this function is void, and every caller
+                    // reads "it returned" as "the GPU is idle" -- wait_idle's
+                    // callers then release resources an in-flight frame may still
+                    // be reading. Registering the event failed (E_OUTOFMEMORY is
+                    // the realistic cause), but GetCompletedValue needs no event,
+                    // so completion is still OBSERVABLE; only the ability to sleep
+                    // while waiting was lost. Spin instead.
+                    //
+                    // Terminates: on device removal GetCompletedValue returns
+                    // UINT64_MAX, which satisfies the condition and drops out --
+                    // so a wedged GPU exits via TDR rather than spinning forever.
+                    while (impl->fence->GetCompletedValue() < signaled) {
+                        SwitchToThread();
+                    }
                     return;
                 }
 
@@ -754,6 +786,12 @@ namespace wz::gpu::dx12
                 {
                     dx12_check_hr(*impl, HRESULT_FROM_WIN32(GetLastError()),
                         "WaitForSingleObject(wait_for_gpu)");
+                    // Same reasoning: the wait did not complete normally, so fall
+                    // back to polling rather than reporting a GPU that may still
+                    // be busy as idle.
+                    while (impl->fence->GetCompletedValue() < signaled) {
+                        SwitchToThread();
+                    }
                 }
             }
         }

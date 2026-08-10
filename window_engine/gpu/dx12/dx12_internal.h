@@ -751,6 +751,14 @@ namespace wz::gpu::dx12::internal {
 
     bool dispatch_compute_dx12(Device& device, const wz::gpu::ComputeDispatchDesc& desc);
     std::vector<std::byte> readback_buffer_dx12(Device& device, GPUHandle buffer);
+    // Immediate one-shot upload: records its own list and executes-and-waits.
+    // Legal mid-frame (several live paths do it, and timeline_exclusivity pins
+    // it), with one latent precondition documented at the definition: this
+    // buffer must not have a NET state change recorded into the frame list and
+    // still unexecuted, or the one-shot's StateBefore -- read from the CPU-side
+    // mirror -- names a state the GPU has not reached. Use
+    // record_compute_buffer_update_dx12 when a mid-frame update needs to be
+    // ordered against the draws around it.
     bool update_compute_buffer_dx12(
         Device& device,
         GPUHandle destination,
@@ -763,7 +771,12 @@ namespace wz::gpu::dx12::internal {
     // Required for any buffer refreshed more than once per frame with
     // different values — with the immediate copy every recorded draw reads the
     // LAST refresh at execute (#311 B2-S1). Staging rides a per-frame arena
-    // released at the next begin_frame. Call only between begin/end_frame.
+    // released at the next begin_frame.
+    //
+    // Call ONLY between begin/end_frame -- enforced, returns false otherwise
+    // (the frame list is Closed outside a frame, so recording into it is a D3D12
+    // error, and the staging would park in an arena the next begin_frame drains
+    // without the copy ever being submitted).
     bool record_compute_buffer_update_dx12(
         Device& device,
         GPUHandle destination,

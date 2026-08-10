@@ -25,6 +25,17 @@
 // deadlock would otherwise hang the safe-island main thread forever); and
 // set_force_serial / the WZ_TASKS_FORCE_SERIAL env var bypass the pool so a bug can
 // be bisected serial-vs-parallel without recompiling.
+//
+// WATCHDOG SCOPE -- it observes OUTER waits only, i.e. the safe-island wait made
+// from a non-worker thread (wait_outer feeds the stall accounting). A NESTED wait
+// -- a task on a worker calling wait() on its own counter, which parks the fibre
+// and steals other work -- is not accounted, so a counter that never drains
+// underneath a parked fibre hangs that fibre silently: the pool keeps running,
+// the outer wait is still progressing, and nothing reports it. That is the
+// deadlock shape the fork-join tree can actually produce at depth, and it is the
+// one the watchdog cannot see. Widening it means giving each parked fibre its own
+// last-progress timestamp for the watchdog to sweep, rather than the single
+// outer-wait counter it samples today.
 
 #include <tasks/task.h>
 #include <tasks/fiber_backend.h>
