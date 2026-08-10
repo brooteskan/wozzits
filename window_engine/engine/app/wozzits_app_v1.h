@@ -40,6 +40,7 @@
 #include <engine/behavior/behavior_plugin_adapter.h>
 #include <engine/behavior/behavior_registry.h>
 #include <engine/frame_storage.h>
+#include <engine/frame_profiler.h>
 #include <engine/motion/motion_filter.h>
 
 #include <asset/dag.h>
@@ -628,7 +629,7 @@ namespace wz::app
         void set_frame_profiling_enabled(bool enabled);
         [[nodiscard]] bool frame_profiling_enabled() const noexcept
         {
-            return frame_profiling_enabled_;
+            return frame_profiler_.enabled();
         }
 
         // Scene-simulation start/stop gates (#258) — pause the running scene in
@@ -1064,10 +1065,6 @@ namespace wz::app
         // reads document_.nodes() each frame, so the next render reflects it. No-op
         // without an asset library.
         void rematerialize_node_render_binding(const std::string& node_id);
-        // Write the accumulated per-frame profile to
-        // <resource_root>/frame_profile.csv through the data_table -> csv_export
-        // asset chain (issue #252). No-op when nothing was recorded.
-        void flush_frame_profile_csv();
 
         // Re-materialize the GLB scene-source descriptors after one was edited
         // (issue #213): re-resolve every descriptor into a Scene asset, compile
@@ -1483,36 +1480,12 @@ namespace wz::app
         bool                                     simulation_enabled_ = true;
         bool                                     behaviors_enabled_  = true;
 
-        // --- Per-frame rebuild profiling (issue #252) -----------------------------
-        // Counted during dispatch_scene_behaviors, reset each simulation_tick. More
-        // than one rematerialize/rebuild in a single frame is redundant structural
-        // work (warned). Samples accumulate into a CSV via the data_table +
-        // csv_export asset chain at save/shutdown, for before/after Track-A analysis.
-        uint32_t rematerialize_count_this_frame_ = 0;
-        uint32_t rebuild_scene_count_this_frame_ = 0;
-        struct FrameProfileSample
-        {
-            uint64_t frame = 0;
-            double   dt_ms = 0.0;
-            double   sim_ms = 0.0;
-            uint64_t scene_nodes = 0;
-            uint32_t rematerialize = 0;
-            uint32_t rebuild = 0;
-            std::string callers{};  // ";"-joined seam labels for the remat calls
-        };
-        // Opt-in (issue #252 follow-up): off by default so a normal editor/play
-        // session records nothing and writes no CSV. Toggled from the editor menu
-        // via set_frame_profiling_enabled.
-        bool                                     frame_profiling_enabled_ = false;
-        std::vector<FrameProfileSample>          frame_profile_{};
-        // A wall-clock tag (YYYYMMDD_HHMMSS) minted once per process so each play
-        // session writes its OWN frame_profile_<tag>.csv -- successive play/stop
-        // cycles are separate host processes and no longer clobber one file (#252).
-        std::string                              frame_profile_run_tag_{};
-        // Per-frame ";"-joined short caller labels for each rematerialize call,
-        // reset each sim tick -> the frame_profile "remat_callers" column names
-        // WHICH seam forced the spurious burst (#252).
-        std::string                              remat_callers_this_frame_{};
+        // Per-frame structural-work profiler (#252), extracted to an engine service
+        // (#219 avenue 5): owns the counters, the opt-in capture buffer, and the CSV
+        // flush. Fed begin_frame / record_rematerialize / record_rebuild / end_frame
+        // each tick and toggled via set_frame_profiling_enabled; off by default, so
+        // a normal editor/play session records nothing.
+        wz::engine::FrameProfiler                frame_profiler_{};
 
         // Runtime prefab spawning (the second prefab-system milestone). Prefabs are
         // registered scenelets keyed by their name's FNV-1a/32 hash (register_prefab);

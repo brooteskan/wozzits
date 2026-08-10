@@ -175,7 +175,7 @@ namespace wz::app
 
     void WozzitsApp_v1::rebuild_behavior_scene(bool append_only)
     {
-        ++rebuild_scene_count_this_frame_;
+        frame_profiler_.record_rebuild();
         // DIAGNOSTIC (#219): a rebuild while the scene camera is the active source
         // renumbers polytree handles; refresh_active_camera_entity re-seats the
         // handle below, but logging the event tells us whether an unexpected

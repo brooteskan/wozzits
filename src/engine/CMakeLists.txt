@@ -2,6 +2,7 @@ target_sources(window_engine PRIVATE
     engine.cpp
     app_context.cpp
     frame_schedule.cpp
+    frame_profiler.cpp
     app/wozzits_app_v1.cpp
     app/wozzits_app_v1_spawn.cpp
     app/wozzits_app_v1_behavior.cpp
