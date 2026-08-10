@@ -66,6 +66,18 @@ namespace wz::app
         // descriptor into a Scene, re-graft + assemble + rebuild
         // (rematerialize_glb_scene_sources runs the whole sequence).
         GlbSource,
+
+        // A live Motion component's terrain-stick FIELDS were tweaked on an
+        // EXISTING component (not an add). The host patches the live Motion record
+        // in place from the authored fields -- leaving the runtime-only
+        // terrain_alignment_rate + velocities alone -- rather than rebuild + snap
+        // sim actors; a missing live record (no runtime / not materialized) falls
+        // back to a rebuild. Adding the component is RuntimeRebuild. Carries node id.
+        MotionFieldTweak,
+
+        // A live Motion Filter component was tweaked on an EXISTING component.
+        // Mirrors MotionFieldTweak for the motion_filters record. Carries node id.
+        MotionFilterTweak,
     };
 
     struct SceneChange
@@ -104,6 +116,20 @@ namespace wz::app
         {
             SceneChange change;
             change.kind = SceneChangeKind::RenderBindingNode;
+            change.node_id = std::move(node_id);
+            return change;
+        }
+        static SceneChange motion_field_tweak(std::string node_id)
+        {
+            SceneChange change;
+            change.kind = SceneChangeKind::MotionFieldTweak;
+            change.node_id = std::move(node_id);
+            return change;
+        }
+        static SceneChange motion_filter_tweak(std::string node_id)
+        {
+            SceneChange change;
+            change.kind = SceneChangeKind::MotionFilterTweak;
             change.node_id = std::move(node_id);
             return change;
         }

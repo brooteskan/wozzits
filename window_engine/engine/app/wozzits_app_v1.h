@@ -1036,6 +1036,17 @@ namespace wz::app
         // the bound graph -- stay here. Kinds are handled as verbs are converted.
         void apply_scene_change(const SceneChange& change);
 
+        // Reaction for MotionFieldTweak / MotionFilterTweak (#219 avenue 2): patch
+        // the live Motion / Motion-Filter record for node_id in place from the
+        // authored component the SceneDocument mutator just wrote, leaving the
+        // runtime-only fields (terrain_alignment_rate, velocities, filter state)
+        // alone. Return false when there is no live record to patch (no runtime,
+        // node not materialized, or no matching record) so apply_scene_change
+        // falls back to a rebuild -- exactly the old inline verb's behaviour.
+        [[nodiscard]] bool patch_live_motion_terrain_fields(
+            const std::string& node_id);
+        [[nodiscard]] bool patch_live_motion_filter(const std::string& node_id);
+
         // Re-assemble renderable bindings after one was edited live (issue #213
         // increment 2): re-bridge the pre-built renderables, re-run
         // assemble_render_bindings against the bound graph, then compile the

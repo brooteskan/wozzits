@@ -2,6 +2,8 @@
 
 #include <engine/app/scene_document.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -424,5 +426,343 @@ namespace wz::app
         }
         dirty_ = true;
         return { true, SceneChange::scene_source() };
+    }
+
+    // --- renderable-recipe mutators ------------------------------------------
+
+    SceneEdit<bool> SceneDocument::set_render_program(
+        const wz::scene::AuthoredEntityId& node_id,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        if (asset_graph_node_id != 0) {
+            wz::engine::assets::attach_render_program_node(
+                *node, asset_graph_node_id);
+        }
+        else {
+            wz::engine::assets::detach_render_program_node(*node);
+        }
+        dirty_ = true;
+        // A program change cascades to descendants via inheritance; the host
+        // re-assembles every binding (assemble walks ancestors per node).
+        return { true, SceneChange::render_binding() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_renderable_binding(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& semantic,
+        wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node || semantic.empty()) {
+            return { false, SceneChange::none() };
+        }
+
+        auto& bindings = node->renderable_bindings;
+        const auto it = std::find_if(
+            bindings.begin(), bindings.end(),
+            [&semantic](
+                const wz::engine::assets::SceneRenderableSemanticBinding& b) {
+                return b.semantic == semantic;
+            });
+        if (asset_graph_node_id != 0) {
+            if (it != bindings.end()) {
+                it->asset_graph_node_id = asset_graph_node_id;
+                it->asset = {};  // stale until the re-assembly bridges it
+            }
+            else {
+                bindings.push_back(
+                    wz::engine::assets::SceneRenderableSemanticBinding{
+                        .semantic = semantic,
+                        .asset_graph_node_id = asset_graph_node_id,
+                    });
+            }
+        }
+        else if (it != bindings.end()) {
+            bindings.erase(it);
+        }
+
+        dirty_ = true;
+        // A binding decides whether the assembled renderable is the custom (0x70A)
+        // form, so the host re-assembles like the geometry/program seams.
+        return { true, SceneChange::render_binding() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_renderable_constant(
+        const wz::scene::AuthoredEntityId& node_id,
+        const std::string& name,
+        const float* value)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node || name.empty()) {
+            return { false, SceneChange::none() };
+        }
+
+        auto& constants = node->renderable_constants;
+        const auto it = std::find_if(
+            constants.begin(), constants.end(),
+            [&name](
+                const wz::engine::assets::SceneRenderableConstantOverride& c) {
+                return c.name == name;
+            });
+        const bool existed = it != constants.end();
+        if (value) {
+            wz::engine::assets::SceneRenderableConstantOverride* target =
+                existed
+                    ? &*it
+                    : &constants.emplace_back(
+                          wz::engine::assets::SceneRenderableConstantOverride{
+                              .name = name });
+            std::copy(value, value + 4, target->value);
+        }
+        else if (existed) {
+            constants.erase(it);
+        }
+
+        // Instance overrides merge at PACK time -- no re-assembly -- EXCEPT the
+        // first override on a geometry node with no bindings, which flips its
+        // synthesized renderable to the custom (0x70A) form (and the last removal
+        // flips it back). Only that flip needs a single-node re-assemble (#253).
+        const bool custom_form_flipped =
+            node->geometry_asset_node_id
+            && node->renderable_bindings.empty()
+            && ((value && !existed && constants.size() == 1u)
+                || (!value && existed && constants.empty()));
+        dirty_ = true;
+        return { true,
+                 custom_form_flipped
+                     ? SceneChange::render_binding_node(node->id)
+                     : SceneChange::none() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_render_to_texture(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneRenderToTextureAsset& render_to_texture)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        node->render_to_texture = render_to_texture;
+        // The resolved target key is re-derived by assemble_render_bindings from
+        // target_node_id, so drop whatever the caller handed us rather than
+        // trusting a key that may not match the new anchor.
+        node->render_to_texture->target = {};
+        dirty_ = true;
+        // A RenderBinding change (not a runtime rebuild): the host re-assembles so
+        // render_to_texture->target re-resolves from the authored node id.
+        return { true, SceneChange::render_binding() };
+    }
+
+    // --- render/sim component mutators ---------------------------------------
+
+    SceneEdit<bool> SceneDocument::set_camera(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneCameraAsset& camera)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        node->camera = camera;
+        dirty_ = true;
+        // Rebuild so the live view controller re-reads the camera params.
+        return { true, SceneChange::runtime_rebuild() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_atmosphere(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneAtmosphereAsset& atmosphere)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        node->atmosphere = atmosphere;
+        dirty_ = true;
+        // Rebuild so the renderer re-resolves the frame atmosphere (the
+        // atmosphere_asset key is re-bridged from atmosphere_asset_node_id).
+        return { true, SceneChange::runtime_rebuild() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_environment(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneEnvironmentAsset& environment)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        node->environment = environment;
+        dirty_ = true;
+        // Rebuild so the renderer re-resolves the frame environment (the
+        // environment_asset key is re-bridged from environment_asset_node_id).
+        return { true, SceneChange::runtime_rebuild() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_motion_terrain_fields(
+        const wz::scene::AuthoredEntityId& node_id,
+        bool terrain_constrained,
+        float ride_height,
+        float footprint_radius,
+        bool align_to_surface,
+        float alignment_strength)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        const bool adding_component = !node->motion.has_value();
+        if (adding_component) {
+            node->motion.emplace();
+        }
+        node->motion->terrain_constrained = terrain_constrained;
+        node->motion->terrain_ride_height = ride_height;
+        node->motion->terrain_footprint_radius = footprint_radius;
+        node->motion->terrain_align_to_surface = align_to_surface;
+        node->motion->terrain_alignment_strength = alignment_strength;
+        dirty_ = true;
+        // ADDING the component must materialize the record (rebuild); tweaking an
+        // existing one patches the live record in place (host reaction) so a field
+        // change does not rebuild + snap sim-driven actors (#221).
+        return { true,
+                 adding_component
+                     ? SceneChange::runtime_rebuild()
+                     : SceneChange::motion_field_tweak(node->id) };
+    }
+
+    SceneEdit<bool> SceneDocument::set_motion_filter(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneMotionFilterAsset& filter)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        const bool adding_component = !node->motion_filter.has_value();
+        node->motion_filter = filter;
+        dirty_ = true;
+        return { true,
+                 adding_component
+                     ? SceneChange::runtime_rebuild()
+                     : SceneChange::motion_filter_tweak(node->id) };
+    }
+
+    // --- GLB scene-source / per-mesh style mutators --------------------------
+
+    SceneEdit<bool> SceneDocument::set_glb_scene_source(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::SceneGLBSceneSource& descriptor)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node) {
+            return { false, SceneChange::none() };
+        }
+        // An empty path clears the descriptor (and any node-ref scene source);
+        // otherwise attach it. attach_glb_scene_source also clears the
+        // asset-graph-node route so the node stays single-route.
+        if (descriptor.path.empty()) {
+            wz::engine::assets::detach_scene_source(*node);
+        }
+        else {
+            wz::engine::assets::attach_glb_scene_source(*node, descriptor);
+        }
+        dirty_ = true;
+        return { true, SceneChange::glb_source() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_glb_base_style(
+        const wz::scene::AuthoredEntityId& node_id,
+        const wz::engine::assets::MeshRenderStyleData& style)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node || !node->glb_scene_source) {
+            return { false, SceneChange::none() };
+        }
+        node->glb_scene_source->base_style = style;
+        dirty_ = true;
+        return { true, SceneChange::glb_source() };
+    }
+
+    SceneEdit<bool> SceneDocument::set_glb_mesh_style(
+        const wz::scene::AuthoredEntityId& node_id,
+        uint32_t mesh_index,
+        const wz::engine::assets::MeshRenderStyleData& style)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node || !node->glb_scene_source) {
+            return { false, SceneChange::none() };
+        }
+
+        // Replace-or-insert the override for this mesh index.
+        std::vector<wz::engine::assets::SceneGLBSceneSourceStyleOverride>&
+            overrides = node->glb_scene_source->style_overrides;
+        const auto it = std::find_if(
+            overrides.begin(),
+            overrides.end(),
+            [mesh_index](
+                const wz::engine::assets::SceneGLBSceneSourceStyleOverride& ov) {
+                return ov.mesh_index == mesh_index;
+            });
+        if (it != overrides.end()) {
+            it->style = style;
+        }
+        else {
+            overrides.push_back(
+                wz::engine::assets::SceneGLBSceneSourceStyleOverride{
+                    .mesh_index = mesh_index,
+                    .style = style,
+                });
+        }
+
+        dirty_ = true;
+        return { true, SceneChange::glb_source() };
+    }
+
+    SceneEdit<bool> SceneDocument::clear_glb_mesh_style(
+        const wz::scene::AuthoredEntityId& node_id,
+        uint32_t mesh_index)
+    {
+        wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(nodes_, node_id);
+        if (!node || !node->glb_scene_source) {
+            return { false, SceneChange::none() };
+        }
+
+        std::vector<wz::engine::assets::SceneGLBSceneSourceStyleOverride>&
+            overrides = node->glb_scene_source->style_overrides;
+        const auto before = overrides.size();
+        overrides.erase(
+            std::remove_if(
+                overrides.begin(),
+                overrides.end(),
+                [mesh_index](
+                    const wz::engine::assets::SceneGLBSceneSourceStyleOverride&
+                        ov) { return ov.mesh_index == mesh_index; }),
+            overrides.end());
+
+        // Even a no-op clear (no such override) is a success: the requested state
+        // -- "no override for this mesh" -- holds. Only mark dirty + react when
+        // something actually changed.
+        const bool changed = overrides.size() != before;
+        if (changed) {
+            dirty_ = true;
+        }
+        return { true, changed ? SceneChange::glb_source() : SceneChange::none() };
     }
 }

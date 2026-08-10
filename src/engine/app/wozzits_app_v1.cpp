@@ -1418,7 +1418,82 @@ namespace wz::app
             // Only one node's recipe changed; re-assemble just it (#253).
             rematerialize_node_render_binding(change.node_id);
             break;
+        case SceneChangeKind::MotionFieldTweak:
+            // A terrain-stick field tweak on an EXISTING Motion component: patch
+            // the live record in place (leaving runtime-only fields alone); if
+            // there is no live record to patch, rebuild so the record exists.
+            if (!patch_live_motion_terrain_fields(change.node_id)) {
+                rebuild_behavior_scene();
+            }
+            break;
+        case SceneChangeKind::MotionFilterTweak:
+            // As MotionFieldTweak, for the motion_filters record.
+            if (!patch_live_motion_filter(change.node_id)) {
+                rebuild_behavior_scene();
+            }
+            break;
         }
+    }
+
+    bool WozzitsApp_v1::patch_live_motion_terrain_fields(
+        const std::string& node_id)
+    {
+        if (!behavior_scene_) {
+            return false;
+        }
+        const auto it = behavior_scene_->authored_to_runtime.find(node_id);
+        if (it == behavior_scene_->authored_to_runtime.end()) {
+            return false;
+        }
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
+        if (!node || !node->motion) {
+            return false;
+        }
+        for (auto& record : behavior_scene_->motions) {
+            if (record.node != it->second) {
+                continue;
+            }
+            // Only the authored terrain-stick fields; terrain_alignment_rate
+            // (runtime-only, set by SetTerrainAlignmentRate) and the velocities are
+            // untouched -- wiping them would reset a self.start-configured actor to
+            // instant alignment (#221).
+            record.component.terrain_constrained =
+                node->motion->terrain_constrained;
+            record.component.terrain_ride_height =
+                node->motion->terrain_ride_height;
+            record.component.terrain_footprint_radius =
+                node->motion->terrain_footprint_radius;
+            record.component.terrain_align_to_surface =
+                node->motion->terrain_align_to_surface;
+            record.component.terrain_alignment_strength =
+                node->motion->terrain_alignment_strength;
+            return true;
+        }
+        return false;
+    }
+
+    bool WozzitsApp_v1::patch_live_motion_filter(const std::string& node_id)
+    {
+        if (!behavior_scene_) {
+            return false;
+        }
+        const auto it = behavior_scene_->authored_to_runtime.find(node_id);
+        if (it == behavior_scene_->authored_to_runtime.end()) {
+            return false;
+        }
+        const wz::engine::assets::SceneNodeAsset* node =
+            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
+        if (!node || !node->motion_filter) {
+            return false;
+        }
+        for (auto& record : behavior_scene_->motion_filters) {
+            if (record.node == it->second) {
+                record.component = *node->motion_filter;
+                return true;
+            }
+        }
+        return false;
     }
 
     // The structural edit verbs delegate the document mutation to document_ (which
@@ -1688,30 +1763,23 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id,
         wz::asset::AssetGraphDraftNodeId asset_graph_node_id)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        const SceneEdit<bool> edit =
+            document_.set_render_program(node_id, asset_graph_node_id);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_render_program: no-op (node '" + node_id
                 + "' missing)");
             return false;
         }
-        if (asset_graph_node_id != 0) {
-            wz::engine::assets::attach_render_program_node(
-                *node, asset_graph_node_id);
-        }
-        else {
-            wz::engine::assets::detach_render_program_node(*node);
-        }
-        document_.dirty() = true;
         // If this targets a runtime-only grafted scene-source child, mirror the
         // program onto its host as a sticky override (issue #213) so it survives
         // reload (save_scene excludes grafted children). No-op for authored nodes.
-        // (A cross-node document write -- part of the mutation, not the reaction.)
+        // A cross-node document write -- kept on the host as it consults grafted
+        // state; the pure attach/detach mutation moved to SceneDocument (#219 av2).
         capture_grafted_child_override(node_id);
-        // A program change cascades to descendants via inheritance, so
-        // re-assemble every binding (assemble walks ancestors per node).
-        apply_scene_change(SceneChange::render_binding());
+        // A program change cascades to descendants via inheritance, so the host
+        // re-assembles every binding (assemble walks ancestors per node).
+        apply_scene_change(edit.change);
         return true;
     }
 
@@ -1735,35 +1803,12 @@ namespace wz::app
             return false;
         }
 
-        auto& bindings = node->renderable_bindings;
-        const auto it = std::find_if(
-            bindings.begin(), bindings.end(),
-            [&semantic](
-                const wz::engine::assets::SceneRenderableSemanticBinding& b) {
-                return b.semantic == semantic;
-            });
-        if (asset_graph_node_id != 0) {
-            if (it != bindings.end()) {
-                it->asset_graph_node_id = asset_graph_node_id;
-                it->asset = {};  // stale until the re-assembly bridges it
-            }
-            else {
-                bindings.push_back(
-                    wz::engine::assets::SceneRenderableSemanticBinding{
-                        .semantic = semantic,
-                        .asset_graph_node_id = asset_graph_node_id,
-                    });
-            }
-        }
-        else if (it != bindings.end()) {
-            bindings.erase(it);
-        }
-
-        document_.dirty() = true;
-        // A binding decides whether the assembled renderable is the custom
-        // (0x70A) form, so re-assemble like the geometry/program seams.
-        apply_scene_change(SceneChange::render_binding());
-        return true;
+        const SceneEdit<bool> edit = document_.set_renderable_binding(
+            node_id, semantic, asset_graph_node_id);
+        // A binding decides whether the assembled renderable is the custom (0x70A)
+        // form, so the host re-assembles like the geometry/program seams.
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_renderable_constant(
@@ -1786,50 +1831,13 @@ namespace wz::app
             return false;
         }
 
-        auto& constants = node->renderable_constants;
-        const auto it = std::find_if(
-            constants.begin(), constants.end(),
-            [&name](
-                const wz::engine::assets::SceneRenderableConstantOverride& c) {
-                return c.name == name;
-            });
-        const bool existed = it != constants.end();
-        if (value) {
-            wz::engine::assets::SceneRenderableConstantOverride* target =
-                existed
-                    ? &*it
-                    : &constants.emplace_back(
-                          wz::engine::assets::SceneRenderableConstantOverride{
-                              .name = name });
-            std::copy(value, value + 4, target->value);
-        }
-        else if (existed) {
-            constants.erase(it);
-        }
-
-        // Instance overrides merge at PACK time from the node — no
-        // re-assembly, no recompile, no re-key. The one exception: the FIRST
-        // override on a GEOMETRY node with no bindings flips its SYNTHESIZED
-        // renderable from the plain pull-mesh recipe to the custom (0x70A) form
-        // (and the last removal flips it back), which IS an assembly change. A
-        // node drawn by a PRE-BUILT renderable (renderable_asset_node_id, e.g.
-        // the cannon FX) has no synthesized recipe to flip — assemble_render_-
-        // bindings skips it (no geometry) — so its constant just merges at pack
-        // time and a rematerialize there is pure O(scene) waste (#252/#253).
-        const bool custom_form_flipped =
-            node->geometry_asset_node_id
-            && node->renderable_bindings.empty()
-            && ((value && !existed && constants.size() == 1u)
-                || (!value && existed && constants.empty()));
-        document_.dirty() = true;
-        // The kind is decided by POST-mutation document state: only the custom-
-        // form flip needs a re-assemble (of just this node, #253); a plain
-        // override merges at pack time with no reaction.
-        apply_scene_change(
-            custom_form_flipped
-                ? SceneChange::render_binding_node(node->id)
-                : SceneChange::none());
-        return true;
+        const SceneEdit<bool> edit =
+            document_.set_renderable_constant(node_id, name, value);
+        // The kind is decided by POST-mutation document state (in the mutator):
+        // only the custom-form flip needs a re-assemble (of just this node, #253);
+        // a plain override merges at pack time with no reaction.
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     std::optional<std::array<float, 4>>
@@ -1879,196 +1887,101 @@ namespace wz::app
         bool align_to_surface,
         float alignment_strength)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        const SceneEdit<bool> edit = document_.set_motion_terrain_fields(
+            node_id, terrain_constrained, ride_height, footprint_radius,
+            align_to_surface, alignment_strength);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_motion_terrain_fields: no-op (node '" + node_id
                 + "' missing)");
-            return false;
         }
-        const bool adding_component = !node->motion.has_value();
-        if (adding_component) {
-            node->motion.emplace();
-        }
-        node->motion->terrain_constrained = terrain_constrained;
-        node->motion->terrain_ride_height = ride_height;
-        node->motion->terrain_footprint_radius = footprint_radius;
-        node->motion->terrain_align_to_surface = align_to_surface;
-        node->motion->terrain_alignment_strength = alignment_strength;
-        document_.dirty() = true;
-
-        // #221: patch the LIVE Motion record in place instead of rebuilding the
-        // whole runtime for a field tweak (a full rebuild_behavior_scene would
-        // reset behavior/sim state — and snap sim-driven actors, which the
-        // preservation map then has to restore — for what is just a component
-        // field change). Only ADDING the Motion component (no live record yet)
-        // needs a rebuild so the record is materialized. Crucially, the in-place
-        // path leaves terrain_alignment_rate ALONE — it is a runtime-only field a
-        // behavior set (SetTerrainAlignmentRate) that does NOT live on the
-        // authored asset, and it rides the SAME MotionComponent record; wiping it
-        // here would reset a self.start-configured actor to instant alignment.
-        bool patched = false;
-        if (!adding_component && behavior_scene_) {
-            const auto it = behavior_scene_->authored_to_runtime.find(node_id);
-            if (it != behavior_scene_->authored_to_runtime.end()) {
-                for (auto& record : behavior_scene_->motions) {
-                    if (record.node != it->second) {
-                        continue;
-                    }
-                    // Only the authored terrain-stick fields; terrain_alignment_-
-                    // rate (runtime-only) and velocities are untouched. This dual
-                    // write (authored field + live record) stays inline: it mutates
-                    // the runtime, which the document has no handle on.
-                    record.component.terrain_constrained = terrain_constrained;
-                    record.component.terrain_ride_height = ride_height;
-                    record.component.terrain_footprint_radius = footprint_radius;
-                    record.component.terrain_align_to_surface = align_to_surface;
-                    record.component.terrain_alignment_strength =
-                        alignment_strength;
-                    patched = true;
-                    break;
-                }
-            }
-        }
-
-        // Patched the live record in place -> no reaction. Otherwise adding the
-        // component (or, defensively, no matching live record) needs a rebuild so
-        // the Motion record participates in integrate_motion + constraints.
-        apply_scene_change(
-            patched ? SceneChange::none() : SceneChange::runtime_rebuild());
-        return true;
+        // #221: a terrain-stick field tweak on an EXISTING component patches the
+        // live Motion record in place (MotionFieldTweak) rather than rebuild + snap
+        // sim actors; ADDING the component is a rebuild. apply_scene_change routes
+        // both and falls back to a rebuild when there is no live record to patch.
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_motion_filter(
         const wz::scene::AuthoredEntityId& node_id,
         const wz::engine::assets::SceneMotionFilterAsset& filter)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        const SceneEdit<bool> edit = document_.set_motion_filter(node_id, filter);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_motion_filter: no-op (node '" + node_id
                 + "' missing)");
-            return false;
         }
-        const bool adding_component = !node->motion_filter.has_value();
-        node->motion_filter = filter;
-        document_.dirty() = true;
-
-        // Patch the LIVE motion_filter record in place when it already exists (a
-        // field tweak must not rebuild + snap sim actors). The filter STATE lives
-        // in motion_filter_states_ (keyed by stable id), so it is untouched either
-        // way. Adding the component needs a rebuild so the record is materialized
-        // into behavior_scene_->motion_filters.
-        bool patched = false;
-        if (!adding_component && behavior_scene_) {
-            const auto it = behavior_scene_->authored_to_runtime.find(node_id);
-            if (it != behavior_scene_->authored_to_runtime.end()) {
-                for (auto& record : behavior_scene_->motion_filters) {
-                    if (record.node == it->second) {
-                        record.component = filter;
-                        patched = true;
-                        break;
-                    }
-                }
-            }
-        }
-
-        apply_scene_change(
-            patched ? SceneChange::none() : SceneChange::runtime_rebuild());
-        return true;
+        // A field tweak on an EXISTING component patches the live motion_filter
+        // record in place (MotionFilterTweak); ADDING it is a rebuild. The filter
+        // STATE (motion_filter_states_, keyed by stable id) is untouched either way.
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_camera(
         const wz::scene::AuthoredEntityId& node_id,
         const wz::engine::assets::SceneCameraAsset& camera)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        const SceneEdit<bool> edit = document_.set_camera(node_id, camera);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_camera: no-op (node '" + node_id + "' missing)");
-            return false;
         }
-        node->camera = camera;
-        document_.dirty() = true;
-
-        // Rebuild so the live view controller re-reads the camera params next
-        // frame. Camera edits are edit-time and coalesced by id, so a rebuild per
-        // service cycle is fine; a lighter in-place patch (as the motion filter
-        // does for a field tweak) could replace this later if it ever matters.
-        apply_scene_change(SceneChange::runtime_rebuild());
-        return true;
+        // Rebuild so the live view controller re-reads the camera params; a lighter
+        // in-place patch (as the motion verbs do) could replace this if it matters.
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_atmosphere(
         const wz::scene::AuthoredEntityId& node_id,
         const wz::engine::assets::SceneAtmosphereAsset& atmosphere)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        const SceneEdit<bool> edit = document_.set_atmosphere(node_id, atmosphere);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_atmosphere: no-op (node '" + node_id + "' missing)");
-            return false;
         }
-        node->atmosphere = atmosphere;
-        document_.dirty() = true;
-
-        // Rebuild so the renderer re-resolves the frame atmosphere next frame (the
-        // atmosphere_asset key is re-bridged from atmosphere_asset_node_id on the
-        // rebind). Edits are coalesced by id, so a rebuild per service cycle is fine.
-        apply_scene_change(SceneChange::runtime_rebuild());
-        return true;
+        // Rebuild so the renderer re-resolves the frame atmosphere (the
+        // atmosphere_asset key is re-bridged from atmosphere_asset_node_id).
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_environment(
         const wz::scene::AuthoredEntityId& node_id,
         const wz::engine::assets::SceneEnvironmentAsset& environment)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        const SceneEdit<bool> edit =
+            document_.set_environment(node_id, environment);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_environment: no-op (node '" + node_id + "' missing)");
-            return false;
         }
-        node->environment = environment;
-        document_.dirty() = true;
-
-        // Rebuild so the renderer re-resolves the frame environment next frame (the
-        // environment_asset key is re-bridged from environment_asset_node_id on the
-        // rebind). Edits are coalesced by id, so a rebuild per service cycle is fine.
-        apply_scene_change(SceneChange::runtime_rebuild());
-        return true;
+        // Rebuild so the renderer re-resolves the frame environment (the
+        // environment_asset key is re-bridged from environment_asset_node_id).
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_render_to_texture(
         const wz::scene::AuthoredEntityId& node_id,
         const wz::engine::assets::SceneRenderToTextureAsset& render_to_texture)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        const SceneEdit<bool> edit =
+            document_.set_render_to_texture(node_id, render_to_texture);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_render_to_texture: no-op (node '" + node_id
                 + "' missing)");
-            return false;
         }
-        node->render_to_texture = render_to_texture;
-        // The resolved target key is re-derived by assemble_render_bindings from
-        // target_node_id, so drop whatever the caller handed us rather than
-        // trusting a key that may not match the new anchor.
-        node->render_to_texture->target = {};
-        document_.dirty() = true;
-
-        // A RenderBinding change (not a runtime rebuild): assemble_render_bindings
-        // is what resolves render_to_texture->target from the authored node id,
-        // and nothing about this edit invalidates the behavior runtime's entity
-        // ids. Edits are coalesced by id, so one re-assemble per service cycle.
-        apply_scene_change(SceneChange::render_binding());
-        return true;
+        // A RenderBinding change (not a runtime rebuild): the host re-assembles so
+        // render_to_texture->target re-resolves from the authored node id, and
+        // nothing about this edit invalidates the behavior runtime's entity ids.
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     // Extract a short seam identifier from a source_location function name --
@@ -2161,32 +2074,19 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id,
         const wz::engine::assets::SceneGLBSceneSource& descriptor)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node) {
+        const SceneEdit<bool> edit =
+            document_.set_glb_scene_source(node_id, descriptor);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_glb_scene_source: no-op (node '" + node_id
                 + "' missing)");
-            return false;
         }
-
-        // An empty path clears the descriptor (and any node-ref scene source);
-        // otherwise attach the authored descriptor. attach_glb_scene_source also
-        // clears the asset-graph-node route so the node stays single-route.
-        if (descriptor.path.empty()) {
-            wz::engine::assets::detach_scene_source(*node);
-        }
-        else {
-            wz::engine::assets::attach_glb_scene_source(*node, descriptor);
-        }
-        document_.dirty() = true;
-
         // Re-materialize so the change shows on the next frame. The GlbSource
         // reaction mirrors the descriptor-route sequence load_scene runs (NOT the
-        // node-ref bridge that set_node_scene_source uses): re-resolve the
-        // descriptor into a Scene, compile, then re-graft + rebuild.
-        apply_scene_change(SceneChange::glb_source());
-        return true;
+        // node-ref bridge set_node_scene_source uses): re-resolve the descriptor
+        // into a Scene, compile, then re-graft + rebuild.
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     void WozzitsApp_v1::rematerialize_glb_scene_sources()
@@ -2230,19 +2130,14 @@ namespace wz::app
         const wz::scene::AuthoredEntityId& node_id,
         const wz::engine::assets::MeshRenderStyleData& style)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node || !node->glb_scene_source) {
+        const SceneEdit<bool> edit = document_.set_glb_base_style(node_id, style);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_glb_base_style: no-op (node '" + node_id
                 + "' has no GLB scene source)");
-            return false;
         }
-
-        node->glb_scene_source->base_style = style;
-        document_.dirty() = true;
-        apply_scene_change(SceneChange::glb_source());
-        return true;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::set_node_glb_mesh_style(
@@ -2250,76 +2145,33 @@ namespace wz::app
         uint32_t mesh_index,
         const wz::engine::assets::MeshRenderStyleData& style)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node || !node->glb_scene_source) {
+        const SceneEdit<bool> edit =
+            document_.set_glb_mesh_style(node_id, mesh_index, style);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "set_node_glb_mesh_style: no-op (node '" + node_id
                 + "' has no GLB scene source)");
-            return false;
         }
-
-        // Replace-or-insert the override for this mesh index.
-        std::vector<wz::engine::assets::SceneGLBSceneSourceStyleOverride>&
-            overrides = node->glb_scene_source->style_overrides;
-        const auto it = std::find_if(
-            overrides.begin(),
-            overrides.end(),
-            [mesh_index](
-                const wz::engine::assets::SceneGLBSceneSourceStyleOverride& ov) {
-                return ov.mesh_index == mesh_index;
-            });
-        if (it != overrides.end()) {
-            it->style = style;
-        }
-        else {
-            overrides.push_back(
-                wz::engine::assets::SceneGLBSceneSourceStyleOverride{
-                    .mesh_index = mesh_index,
-                    .style = style,
-                });
-        }
-
-        document_.dirty() = true;
-        apply_scene_change(SceneChange::glb_source());
-        return true;
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::clear_node_glb_mesh_style(
         const wz::scene::AuthoredEntityId& node_id,
         uint32_t mesh_index)
     {
-        wz::engine::assets::SceneNodeAsset* node =
-            wz::engine::assets::find_scene_node(document_.nodes(), node_id);
-        if (!node || !node->glb_scene_source) {
+        const SceneEdit<bool> edit =
+            document_.clear_glb_mesh_style(node_id, mesh_index);
+        if (!edit.result) {
             ctx_.logger.warn(
                 "clear_node_glb_mesh_style: no-op (node '" + node_id
                 + "' has no GLB scene source)");
-            return false;
         }
-
-        std::vector<wz::engine::assets::SceneGLBSceneSourceStyleOverride>&
-            overrides = node->glb_scene_source->style_overrides;
-        const auto before = overrides.size();
-        overrides.erase(
-            std::remove_if(
-                overrides.begin(),
-                overrides.end(),
-                [mesh_index](
-                    const wz::engine::assets::SceneGLBSceneSourceStyleOverride&
-                        ov) { return ov.mesh_index == mesh_index; }),
-            overrides.end());
-
-        // Even a no-op clear (no such override) returns true: the requested state
-        // — "no override for this mesh" — holds. Only re-materialize + mark dirty
-        // when something actually changed.
-        const bool changed = overrides.size() != before;
-        if (changed) {
-            document_.dirty() = true;
-        }
-        apply_scene_change(
-            changed ? SceneChange::glb_source() : SceneChange::none());
-        return true;
+        // Even a no-op clear (no such override) is a success: the requested state
+        // — "no override for this mesh" — holds. The mutator marks dirty + reacts
+        // (GlbSource) only when something actually changed.
+        apply_scene_change(edit.change);
+        return edit.result;
     }
 
     bool WozzitsApp_v1::flatten_scene_source(

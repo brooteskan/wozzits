@@ -23,6 +23,7 @@
 #include <asset/draft.h>                             // AssetGraphDraftNodeId
 #include <scene/scene_ecs.h>                          // AuthoredEntityId
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -166,6 +167,73 @@ namespace wz::app
         SceneEdit<bool> set_scene_source(
             const wz::scene::AuthoredEntityId& node_id,
             wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+
+        // --- renderable-recipe mutators (RenderBinding reaction) ---------------
+        // Author the render-program / semantic-binding / per-instance-constant /
+        // render-to-texture halves of a node's renderable recipe. Pure document
+        // writes; the host re-assembles the render bindings. set_render_program's
+        // grafted-child override mirror stays on the host (it consults grafted
+        // state); the two multi-guard verbs (binding/constant) keep their
+        // empty-arg warning on the host and assume a non-empty semantic/name here.
+        SceneEdit<bool> set_render_program(
+            const wz::scene::AuthoredEntityId& node_id,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+        SceneEdit<bool> set_renderable_binding(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& semantic,
+            wz::asset::AssetGraphDraftNodeId asset_graph_node_id);
+        // Returns RenderBindingNode only on the custom-form flip (first/last
+        // override on a geometry node with no bindings); a plain override is None.
+        SceneEdit<bool> set_renderable_constant(
+            const wz::scene::AuthoredEntityId& node_id,
+            const std::string& name,
+            const float* value);
+        SceneEdit<bool> set_render_to_texture(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneRenderToTextureAsset& render_to_texture);
+
+        // --- render/sim component mutators -------------------------------------
+        // camera / atmosphere / environment re-materialize the runtime
+        // UNCONDITIONALLY (RuntimeRebuild). The two motion mutators tweak fields on
+        // an EXISTING component in place (MotionFieldTweak / MotionFilterTweak, so
+        // the host patches the live record) but ADDING one is RuntimeRebuild.
+        SceneEdit<bool> set_camera(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneCameraAsset& camera);
+        SceneEdit<bool> set_atmosphere(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneAtmosphereAsset& atmosphere);
+        SceneEdit<bool> set_environment(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneEnvironmentAsset& environment);
+        SceneEdit<bool> set_motion_terrain_fields(
+            const wz::scene::AuthoredEntityId& node_id,
+            bool terrain_constrained,
+            float ride_height,
+            float footprint_radius,
+            bool align_to_surface,
+            float alignment_strength);
+        SceneEdit<bool> set_motion_filter(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneMotionFilterAsset& filter);
+
+        // --- GLB scene-source / per-mesh style mutators (GlbSource reaction) ----
+        // A cleared clear_glb_mesh_style (no such override) is a no-op-success:
+        // result=true, change=None. A missing node / no glb_scene_source is
+        // result=false (the host logs its warning).
+        SceneEdit<bool> set_glb_scene_source(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::SceneGLBSceneSource& descriptor);
+        SceneEdit<bool> set_glb_base_style(
+            const wz::scene::AuthoredEntityId& node_id,
+            const wz::engine::assets::MeshRenderStyleData& style);
+        SceneEdit<bool> set_glb_mesh_style(
+            const wz::scene::AuthoredEntityId& node_id,
+            uint32_t mesh_index,
+            const wz::engine::assets::MeshRenderStyleData& style);
+        SceneEdit<bool> clear_glb_mesh_style(
+            const wz::scene::AuthoredEntityId& node_id,
+            uint32_t mesh_index);
 
     private:
         std::vector<wz::engine::assets::SceneNodeAsset> nodes_{};
