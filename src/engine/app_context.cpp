@@ -71,6 +71,15 @@ namespace wz::engine
 
     void shutdown(AppContext& ctx)
     {
+        // The one-call form: safe only when no other thread can still log. A
+        // caller with background lanes must use the two-phase form instead, so
+        // the logger outlives the thread join (see the header).
+        shutdown_subsystems(ctx);
+        shutdown_logging(ctx);
+    }
+
+    void shutdown_subsystems(AppContext& ctx)
+    {
         {
             std::ostringstream msg;
             msg
@@ -114,7 +123,13 @@ namespace wz::engine
 
         ctx.device = {};
         ctx.window = {};
+        // The logger is deliberately NOT torn down here -- it outlives every
+        // subsystem above, and shutdown_logging() ends it once the caller's own
+        // threads are joined too.
+    }
 
+    void shutdown_logging(AppContext& ctx)
+    {
         wz::logging::shutdown_logger(ctx.logger); // last — outlives everything
     }
 }

@@ -22,11 +22,17 @@
 // Teardown ordering (why quiesce() exists): the reporter calls a wz::Logger, whose
 // state pointer is torn down by shutdown_logger() -- and reading it while that runs
 // is a data race. But the AMD-driver rule wants lane threads joined AFTER
-// destroy_device (which shutdown() does just before shutdown_logger()). So the
-// runtime calls quiesce() BEFORE engine shutdown (final report while the logger
-// lives, then the lane stops touching it), and destroys the lane AFTER -- the
-// thread is parked and logger-silent across shutdown, joined once the device is
-// gone.
+// destroy_device. So the runtime calls quiesce() BEFORE engine teardown (final
+// report while the logger lives, then the lane stops touching it), and destroys the
+// lane AFTER -- the thread is parked and logger-silent across shutdown, joined once
+// the device is gone.
+//
+// The runtime now ALSO splits the logger out of engine teardown
+// (engine::shutdown_subsystems() ... join lanes ... engine::shutdown_logging(), see
+// engine/app_context.h), so the logger outlives every lane thread and the window
+// quiesce() covers is no longer the only thing standing between the reporter and a
+// freed logger. quiesce() still earns its place: it pins the FINAL report to a
+// defined point, before the GPU it reports on is destroyed.
 
 #include <atomic>
 #include <chrono>

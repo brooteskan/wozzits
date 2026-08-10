@@ -840,14 +840,18 @@ namespace wz::app
         // its cadence with the debug-layer reporter (category name + main/offscreen
         // label). The reporter captures ctx.logger BY REFERENCE and dereferences it
         // only on the cadence, after init has brought the logger up; quiesce() below
-        // stops that before the logger is torn down.
+        // stops that at a defined point, and shutdown_logging() now runs after this
+        // lane is joined, so the reference cannot outlive the logger either way.
         auto logger_service = std::make_unique<wz::diag::LoggerServiceLane>(
             wz::gpu::make_debug_layer_reporter(ctx.logger));
         wz::diag::set_diagnostic_sink(logger_service.get());
 
-        // Uninstall + join the lanes. The LoggerService lane is quiesced before
-        // engine::shutdown (see the guard below), so this only joins its
-        // already-silent thread.
+        // Uninstall + join the lanes. The LoggerService lane is quiesced first
+        // (see the guard below), so this only joins its already-silent thread.
+        // The IO and pool resets below DRAIN before they join -- queued jobs and
+        // tasks still run here -- and the guard sequences this between
+        // shutdown_subsystems() and shutdown_logging(), so a job that logs on its
+        // way out finds a live logger.
         const auto teardown_lanes = [&]
         {
             wz::diag::set_diagnostic_sink(nullptr);
@@ -889,13 +893,13 @@ namespace wz::app
 
             ~RuntimeTeardown()
             {
-                // Quiesce the LoggerService lane while the logger is STILL ALIVE:
-                // a final report, then it stops touching the logger (#291 / #305
-                // step 4d). This must precede engine::shutdown, which frees the
-                // logger -- reporting across that free would be a data race. The
-                // lane thread stays alive but logger-silent, joined below after
-                // the device is gone. quiesce() is idempotent, so the normal path
-                // having its own reasons to call it early stays safe.
+                // Quiesce the LoggerService lane: a final report, then it stops
+                // touching the logger (#291 / #305 step 4d). The logger now
+                // outlives the whole teardown (see below), so this is no longer
+                // what keeps the reporter off a freed logger -- it is what pins
+                // the final report to a defined point, before the GPU it reports
+                // about is gone. Idempotent, so the normal path having its own
+                // reasons to call it early stays safe.
                 logger_service.quiesce();
 
                 // Tear the GPU/engine down FIRST, while the lanes are still alive
@@ -908,15 +912,29 @@ namespace wz::app
                 // init-failure path below needs no teardown of its own: wait_idle
                 // and destroy_device are gated on device.valid(), the assets/gpu
                 // resets are no-ops on the null unique_ptrs a failed init leaves,
-                // destroy_window is gated on window.valid(), and shutdown_logger
+                // destroy_window is gated on window.valid(), and shutdown_logging
                 // is null-safe and idempotent (as is Logger::info, which no-ops
                 // when state is null). init() leaves the logger UP on its failure
                 // paths and the diagnostics lane holds ctx.logger by reference, so
                 // routing those exits through here frees it in the same order the
                 // success path uses -- without it the logger's own worker thread
                 // outlived the runtime on every no-device run.
-                wz::engine::shutdown(ctx);
+                wz::engine::shutdown_subsystems(ctx);
+
+                // Join the lanes BEFORE the logger dies. This is the two-phase
+                // split's whole purpose: teardown_lanes() drains the IO queue and
+                // runs the task pool's last tasks, and those threads are joined
+                // here -- after destroy_device, as the AMD ordering requires -- so
+                // with the one-call engine::shutdown() they were draining against
+                // an ALREADY-FREED logger. Nothing in the tree logs from a lane
+                // job today, but nothing enforced it either, and wz::fs::async_*
+                // callbacks are caller-supplied: the first one that logs would
+                // have been a use-after-free reachable only at teardown. Now the
+                // ordering makes it safe rather than the convention.
                 teardown_lanes();
+
+                // Every thread that could log is joined. End the logger last.
+                wz::engine::shutdown_logging(ctx);
             }
         };
         RuntimeTeardown runtime_teardown{ *logger_service, ctx, teardown_lanes };

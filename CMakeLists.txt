@@ -1070,6 +1070,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(engine editor_runtime_control_tests)
     rs_add_test_group(engine runtime_channel_tests)
     rs_add_test_group(engine view_controller_tests)
+    rs_add_test_group(engine app_context_teardown_tests)
 
     # First tests of src/platform/win32 (#313, B4-T4 -- the layer had none).
     rs_add_test_group(platform raw_input_translation_tests)

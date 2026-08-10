@@ -38,5 +38,33 @@ namespace wz::engine
     };
 
     bool init(AppContext& ctx, const AppDesc& desc);
+
+    // Full teardown: shutdown_subsystems() then shutdown_logging(). What a caller
+    // with no background threads of its own wants.
     void shutdown(AppContext& ctx);
+
+    // ── two-phase teardown, for callers that own threads ────────────────────
+    //
+    // A caller with background lanes cannot use the one-call form. The logger's
+    // state is a plain heap pointer, so freeing it while ANY thread might still
+    // log is a use-after-free -- and lane threads have to be joined AFTER
+    // destroy_device (the AMD-driver ordering that governs every lane in
+    // run_project_runtime), which means they are necessarily still alive when
+    // the one-call form would already have freed the logger.
+    //
+    // Split so the logger can outlive the join:
+    //
+    //     wz::engine::shutdown_subsystems(ctx);  // GPU, assets, device, window
+    //     join_your_lane_threads();              // may still log -- safely
+    //     wz::engine::shutdown_logging(ctx);     // now nothing can log
+    //
+    // Everything but the logger: waits for the GPU, releases the asset library
+    // and GPU context, then destroys the device and the window. The logger is
+    // left UP, so this is safe to log around.
+    void shutdown_subsystems(AppContext& ctx);
+
+    // Release the logger. Call once every thread that might log is joined.
+    // Null-safe and idempotent, so a caller that already ran shutdown() -- or
+    // that failed init before the logger came up -- can call it harmlessly.
+    void shutdown_logging(AppContext& ctx);
 }
