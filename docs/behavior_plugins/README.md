@@ -15,6 +15,21 @@ That header wraps the C-compatible ABI in a small event-handler API. Most
 behavior code should use the helpers in this document instead of touching the
 raw callback fields in `WzBehaviorFrameFacts`.
 
+> **Currency.** The helpers, signatures, enums, and constants described below are
+> verified against
+> [`window_engine/engine/behavior/behavior_module_api.h`](../../window_engine/engine/behavior/behavior_module_api.h)
+> and its ABI header at commit `ec40e8ea` (2026-08-09) — what is documented here is
+> accurate. The ABI has, however, grown several subsystems this document does
+> **not** yet cover: GPU compute jobs (`wz_gpu_*`), cognition / agent decisions
+> (`wz_agent_*`), granular audio (`wz_write_play_sound*`, `wz_write_set_grain_*`),
+> prefab spawning (`wz_write_spawn_prefab*`), renderable constant params
+> (`wz_write_set_renderable_param*`), node visibility / active state
+> (`wz_write_set_visible` / `_set_active`), active camera, behavior-defined events
+> and published scalars (`wz_emit_*`, `wz_set_entity_scalar`), descendant lookup
+> (`wz_find_descendant_by_name`), and the warn/error logging tiers (`wz_log_warn*`,
+> `wz_log_error*`). Treat the header as the source of truth for anything not
+> described here.
+
 ## Project Layout
 
 A scene editor project can keep behavior source and compiled behavior modules
@@ -294,7 +309,17 @@ WZ_EVENT_INPUT_CONTROLLER_AXIS_CHANGED
 ```
 
 `WZ_EVENT_SCENE_LOADED` is reserved in the ABI and channel table; current
-runtime dispatch sends frame, collision, proximity, and input events.
+runtime dispatch sends frame, collision, proximity, and input events to scene
+behaviors.
+
+Beyond these scene events, the ABI defines additional event kinds delivered for
+subsystems this document does not cover (see the currency note near the top):
+`WZ_EVENT_SELF_START` (token `self.start`), `WZ_EVENT_COGNITION_TICK`
+(`cognition.tick`), and `WZ_EVENT_GPU_COMPUTE_REQUEST` / `_COMPLETED` / `_FAILED`
+(`gpu.compute.request` / `.completed` / `.failed`) carry event-channel tokens;
+`WZ_EVENT_SPAWN_COMPLETED` / `_FAILED` and `WZ_EVENT_SELF_ACTIVATED` are
+dispatched without a channel token. See `behavior_module_api.h` for their payload
+accessors.
 
 Event helper signatures:
 

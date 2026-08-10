@@ -1,33 +1,33 @@
 <#
 .SYNOPSIS
-    Sets up the Wozzits workspace by cloning required sibling repositories.
+    One-time setup for a fresh wozzits clone.
 
 .DESCRIPTION
-    Clones any missing sibling repositories into the parent directory of
-    wozzits-window-engine so that the CMake build can find them.
+    Prepares a freshly cloned wozzits repository for building:
+        1. Initialises the git submodule the build needs (external/pmp).
+        2. Installs the local pre-push hook (build + test gate; see BUILDING.md).
 
-    Expected workspace layout after running:
-        wozzits/
-          wozzits-window-engine/   (this repo)
-          wozzits-scene-render/    (cloned if missing)
+    The repository is otherwise self-contained — the renderer (rhi/), scene layer
+    (src/scene_render), and math library (src/algo_math) are vendored in-tree, so
+    no sibling repositories need to be cloned.
 
-.PARAMETER BaseUrl
-    GitHub base URL to clone from. Default: https://github.com/woguls
+.PARAMETER SkipSubmodules
+    Skip initialising the external/pmp submodule.
 
-.PARAMETER SkipSceneRender
-    Skip cloning wozzits-scene-render.
+.PARAMETER SkipHook
+    Skip installing the pre-push git hook.
 
 .EXAMPLE
     .\scripts\setup-workspace.ps1
 
 .EXAMPLE
-    .\scripts\setup-workspace.ps1 -BaseUrl https://github.com/my-fork
+    .\scripts\setup-workspace.ps1 -SkipHook
 #>
 
 [CmdletBinding()]
 param(
-    [string] $BaseUrl       = "https://github.com/woguls",
-    [switch] $SkipSceneRender
+    [switch] $SkipSubmodules,
+    [switch] $SkipHook
 )
 
 Set-StrictMode -Version Latest
@@ -40,52 +40,42 @@ function Write-Ok    { param([string]$Msg) Write-Host "    OK  $Msg" -Foreground
 function Write-Skip  { param([string]$Msg) Write-Host "    --  $Msg" -ForegroundColor DarkGray }
 function Write-Fail  { param([string]$Msg) Write-Host "    ERR $Msg" -ForegroundColor Red }
 
-function Ensure-Repo {
-    param(
-        [string] $Name,
-        [string] $TargetPath
-    )
-
-    if (Test-Path (Join-Path $TargetPath "CMakeLists.txt")) {
-        Write-Ok "$Name already present at $TargetPath"
-        return
-    }
-
-    if (Test-Path $TargetPath) {
-        Write-Fail "$TargetPath exists but has no CMakeLists.txt — unexpected contents."
-        throw "Unexpected directory at $TargetPath"
-    }
-
-    $url = "$BaseUrl/$Name.git"
-    Write-Step "Cloning $Name from $url"
-    git clone $url $TargetPath
-    if ($LASTEXITCODE -ne 0) {
-        Write-Fail "git clone failed for $Name"
-        throw "Clone failed"
-    }
-    Write-Ok "Cloned $Name"
-}
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-$repoRoot   = Split-Path -Parent $PSScriptRoot          # …/wozzits-window-engine
-$workspaceRoot = Split-Path -Parent $repoRoot           # …/wozzits
+$repoRoot = Split-Path -Parent $PSScriptRoot          # …/wozzits
 
-Write-Step "Workspace root: $workspaceRoot"
+Write-Step "Repository root: $repoRoot"
 
-if (-not $SkipSceneRender) {
-    Ensure-Repo -Name "wozzits-scene-render" `
-                -TargetPath (Join-Path $workspaceRoot "wozzits-scene-render")
+# Build-time submodule: external/pmp (mesh processing). Scoped on purpose so a
+# fresh clone pulls only what the build needs.
+if (-not $SkipSubmodules) {
+    Write-Step "Initialising submodule external/pmp"
+    git -C $repoRoot submodule update --init external/pmp
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "git submodule update failed"
+        throw "Submodule init failed"
+    }
+    Write-Ok "external/pmp ready"
+} else {
+    Write-Skip "Skipped submodule init (-SkipSubmodules)"
 }
 
 # Local pre-push CI: build + test on this machine before every push (no cloud
 # compute). The hook is version-controlled in .githooks; point git at it. Bypass
 # a single push with 'git push --no-verify'. See BUILDING.md.
-git -C $repoRoot config core.hooksPath .githooks
-Write-Host "Configured local pre-push CI (git core.hooksPath -> .githooks)." -ForegroundColor Green
+if (-not $SkipHook) {
+    git -C $repoRoot config core.hooksPath .githooks
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Failed to configure core.hooksPath"
+        throw "Hook setup failed"
+    }
+    Write-Ok "Configured local pre-push CI (git core.hooksPath -> .githooks)"
+} else {
+    Write-Skip "Skipped pre-push hook install (-SkipHook)"
+}
 
 Write-Host ""
-Write-Host "Workspace ready." -ForegroundColor Green
+Write-Host "Setup complete." -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. Open a VS 2022 x64 Developer Command Prompt with clang-cl/lld-link on PATH"

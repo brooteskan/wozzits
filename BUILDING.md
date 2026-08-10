@@ -10,26 +10,23 @@
 | Ninja | any | Bundled with VS 2022; otherwise install via `winget install Ninja-build.Ninja` |
 | Git | any | |
 
-An internet connection is required on first configure — CMake fetches GoogleTest automatically.
+An internet connection is required for first-time setup: `git submodule update` fetches `external/pmp`, and CMake fetches GoogleTest on the first configure.
 
-## Workspace layout
+## Getting the source
 
-`wozzits-window-engine` depends on `wozzits-scene-render` (which in turn provides `algo_math`).
-Both must sit as siblings under the same parent directory:
-
-```
-wozzits/
-  wozzits-window-engine/   ← this repo
-  wozzits-scene-render/    ← required sibling
-```
-
-The quickest way to get there is to run the setup script (see [Setup script](#setup-script) below),
-or clone manually:
+The repository is self-contained. The renderer (`rhi/`), scene layer
+(`src/scene_render`), and math library (`src/algo_math`) are all vendored in-tree,
+so no sibling repositories are required. The only build-time submodule is
+`external/pmp` (mesh processing).
 
 ```powershell
-git clone https://github.com/woguls/wozzits-scene-render.git
-git clone https://github.com/woguls/wozzits-window-engine.git
+git clone https://github.com/brooteskan/wozzits.git
+cd wozzits
+git submodule update --init external/pmp
 ```
+
+Or run the setup script, which initialises the submodule and installs the
+pre-push hook in one step (see [Setup script](#setup-script) below).
 
 ## Configure, build, and test
 
@@ -37,7 +34,7 @@ All commands must be run from a **VS 2022 x64 Developer Command Prompt** (or Dev
 with `clang-cl`, `lld-link`, and Ninja on the path. MSVC compiler targets are not supported.
 
 ```powershell
-cd wozzits-window-engine
+cd wozzits
 
 # Configure
 cmake --preset clang-debug
@@ -53,7 +50,7 @@ Build output lands in `build/clang-debug/`. Substitute `clang-release` for an op
 
 ### Opening in Visual Studio
 
-VS 2022 supports CMake presets natively. Open the `wozzits-window-engine` folder in VS
+VS 2022 supports CMake presets natively. Open the `wozzits` folder in VS
 (`File > Open > Folder`) and select the **Windows x64 Clang Debug** configuration from the
 toolbar. VS will configure and build automatically.
 
@@ -134,12 +131,12 @@ cmake --build --preset local-v8-debug
 
 ## Setup script
 
-`scripts/setup-workspace.ps1` automates the workspace setup step:
+`scripts/setup-workspace.ps1` performs the one-time setup for a fresh clone —
+it initialises the `external/pmp` submodule and installs the pre-push hook:
 
 ```powershell
-# From the wozzits-window-engine directory:
+# From the repo root:
 .\scripts\setup-workspace.ps1
 ```
 
-It clones any missing sibling repos into the parent directory and reports what it found
-or created. Run it with `-Help` to see all options.
+Pass `-SkipSubmodules` or `-SkipHook` to skip a step.
