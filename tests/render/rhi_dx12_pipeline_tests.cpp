@@ -2,10 +2,15 @@
 
 #include <engine/rendering/rhi_dx12_pipeline.h>
 #include <gpu/dx12/dx12_internal.h>
+#include <gpu/gpu_diagnostics.h>
 #include <engine/rendering/rhi_render_program_bridge.h>
+#include <diagnostics/diagnostic_state.h>
+#include <logging/logger.h>
 
 #include <cstddef>
 #include <span>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace ea = wz::engine::assets;
@@ -666,4 +671,53 @@ TEST(Dx12DebugMessages, MapsD3D12SeverityOntoDiagnosticSeverity)
               DiagnosticSeverity::Info);
     EXPECT_EQ(to_diagnostic_severity(D3D12_MESSAGE_SEVERITY_MESSAGE),
               DiagnosticSeverity::Info);
+}
+
+// The D3D12 debug-layer reporter formats a record with its category NAME, the
+// EXACT running count, and the main/offscreen pass label (#291) -- the string-
+// building the render thread no longer does. Device-free: drive it directly with a
+// hand-built aggregate through a real logger with a capture sink.
+namespace
+{
+    struct CapturedLines
+    {
+        std::vector<std::pair<wz::LogLevel, std::string>> lines;
+    };
+
+    void capture_sink(const wz::logging::LogRecordView& record, void* user)
+    {
+        static_cast<CapturedLines*>(user)->lines.emplace_back(
+            record.level, std::string(record.text, record.text_size));
+    }
+}
+
+TEST(Dx12DebugMessages, DebugLayerReporterNamesCategoryCountAndPass)
+{
+    wz::Logger logger;
+    ASSERT_TRUE(wz::logging::init_logger(logger, {}));
+    CapturedLines cap;
+    wz::logging::set_log_sink(logger, capture_sink, &cap);
+
+    auto reporter = wz::gpu::make_debug_layer_reporter(logger);
+    wz::diag::DiagnosticState<64> state;
+    wz::diag::DiagnosticRecord r;
+    r.id          = 820;
+    r.occurrences = 1584;
+    r.source      = wz::diag::DiagnosticSource::D3D12;
+    r.severity    = wz::diag::DiagnosticSeverity::Warning;
+    r.category    = static_cast<uint8_t>(D3D12_MESSAGE_CATEGORY_EXECUTION);
+    r.pass        = wz::gpu::dx12::internal::kDebugPassOffscreen;
+    state.ingest(r);
+    reporter(state);
+
+    wz::logging::wait_until_idle(logger);
+    wz::logging::shutdown_logger(logger);
+
+    ASSERT_FALSE(cap.lines.empty());
+    const std::string& line = cap.lines.back().second;
+    EXPECT_EQ(cap.lines.back().first, wz::LogLevel::Warning);      // WARNING severity
+    EXPECT_NE(line.find("EXECUTION"), std::string::npos) << line;  // category name
+    EXPECT_NE(line.find("#820"), std::string::npos) << line;       // id
+    EXPECT_NE(line.find("1584"), std::string::npos) << line;       // exact total
+    EXPECT_NE(line.find("[offscreen pass]"), std::string::npos) << line;  // pass label
 }

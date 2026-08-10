@@ -130,35 +130,50 @@ namespace wz::diag
         }
     }
 
+    void report_diagnostics(
+        DiagnosticAggregate& state,
+        wz::Logger& logger,
+        const std::function<std::string(const DiagnosticAggregate::Entry&)>&
+            format_line,
+        uint64_t& last_dropped)
+    {
+        for (std::size_t i = 0; i < state.size(); ++i) {
+            const auto& e = state.entry(i);
+            if (e.unreported() == 0) {
+                continue;  // nothing new since the last report -- no line
+            }
+            emit(logger, e.severity, format_line(e));
+            state.mark_reported(i);
+        }
+        if (state.dropped() > last_dropped) {
+            logger.warn(
+                "diagnostics: table full, "
+                + std::to_string(state.dropped())
+                + " occurrences of untracked ids not itemized");
+            last_dropped = state.dropped();
+        }
+    }
+
     DiagnosticReporter make_logging_reporter(wz::Logger& logger)
     {
         // last_dropped persists across cadence calls (the lane never copies the
         // reporter between calls), so the table-cap note logs only when it grows.
         return [&logger, last_dropped = uint64_t{0}](
                    DiagnosticAggregate& state) mutable {
-            for (std::size_t i = 0; i < state.size(); ++i) {
-                const auto& e = state.entry(i);
-                if (e.unreported() == 0) {
-                    continue;  // nothing new since the last report -- no line
-                }
-                std::string line = source_label(e.source);
-                line += " diagnostic #";
-                line += std::to_string(e.id);
-                line += " x";
-                line += std::to_string(e.count);      // the EXACT running total (#291)
-                line += " [pass ";
-                line += std::to_string(e.last_pass);
-                line += "]";
-                emit(logger, e.severity, line);
-                state.mark_reported(i);
-            }
-            if (state.dropped() > last_dropped) {
-                logger.warn(
-                    "diagnostics: table full, "
-                    + std::to_string(state.dropped())
-                    + " occurrences of untracked ids not itemized");
-                last_dropped = state.dropped();
-            }
+            report_diagnostics(
+                state, logger,
+                [](const DiagnosticAggregate::Entry& e) {
+                    std::string line = source_label(e.source);
+                    line += " diagnostic #";
+                    line += std::to_string(e.id);
+                    line += " x";
+                    line += std::to_string(e.count);  // the EXACT running total (#291)
+                    line += " [pass ";
+                    line += std::to_string(e.last_pass);
+                    line += "]";
+                    return line;
+                },
+                last_dropped);
         };
     }
 

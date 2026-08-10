@@ -27,4 +27,5 @@ target_sources(window_engine PRIVATE
     dx12/dx12_compute.cpp
     dx12/dx12_terrain_surface_mesh.cpp
     dx12/dx12_gpu_timer.cpp
+    dx12/dx12_diagnostics_reporter.cpp
 )

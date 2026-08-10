@@ -108,12 +108,25 @@ namespace wz::diag
         std::thread             thread_;
     };
 
+    // The report cycle a DiagnosticReporter runs, shared by the generic reporter
+    // and backend-specific ones (e.g. the D3D12 debug-layer reporter, which formats
+    // the same entries with category names and a main/offscreen label): log every
+    // entry with new occurrences -- its text produced by `format_line` -- at the
+    // entry's severity, mark it reported, then note any growth in the table-cap drop
+    // count. `last_dropped` is the reporter's carried state (drops reported last
+    // cycle). Runs on the lane thread.
+    void report_diagnostics(
+        DiagnosticAggregate& state,
+        wz::Logger& logger,
+        const std::function<std::string(const DiagnosticAggregate::Entry&)>&
+            format_line,
+        uint64_t& last_dropped);
+
     // A generic reporter that logs each unreported entry through `logger` as
     // "<source> diagnostic #<id> x<count> [pass <n>]" at the entry's severity, and
-    // notes any table-cap drops. The D3D12 client later supplies a richer reporter
-    // that resolves the id to a message name; this is the default until then.
-    // `logger` must outlive the lane's reporting (the runtime quiesces before
-    // shutting the logger down).
+    // notes any table-cap drops. The GPU debug-layer client supplies a richer one
+    // (wz::gpu::make_debug_layer_reporter); this is the default. `logger` must
+    // outlive the lane's reporting (the runtime quiesces before shutting it down).
     DiagnosticReporter make_logging_reporter(wz::Logger& logger);
 
 } // namespace wz::diag

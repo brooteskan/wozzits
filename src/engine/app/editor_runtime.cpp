@@ -9,6 +9,7 @@
 #include <io/io_executor.h>
 #include <async/async.h>
 #include <diagnostics/logger_service.h>
+#include <gpu/gpu_diagnostics.h>
 
 #include <event/event.h>
 #include <gpu/gpu.h>
@@ -833,13 +834,15 @@ namespace wz::app
 
         // LoggerService lane: a cold thread that turns published diagnostic state
         // into log lines off the hot lanes (#291 / #305 step 4d). Spun up here with
-        // the other lanes -- before create_device, per the AMD constraint. Nothing
-        // publishes to it yet (the D3D12 InfoQueue producer is the follow-up), so it
-        // is installed and idle. The reporter captures ctx.logger BY REFERENCE and
-        // dereferences it only on the report cadence, after init has brought the
-        // logger up; quiesce() below stops that before the logger is torn down.
+        // the other lanes -- before create_device, per the AMD constraint. The D3D12
+        // debug-layer producer (publish_debug_diagnostics, on the render thread)
+        // publishes into it; this lane keeps the exact repeat count and reports on
+        // its cadence with the debug-layer reporter (category name + main/offscreen
+        // label). The reporter captures ctx.logger BY REFERENCE and dereferences it
+        // only on the cadence, after init has brought the logger up; quiesce() below
+        // stops that before the logger is torn down.
         auto logger_service = std::make_unique<wz::diag::LoggerServiceLane>(
-            wz::diag::make_logging_reporter(ctx.logger));
+            wz::gpu::make_debug_layer_reporter(ctx.logger));
         wz::diag::set_diagnostic_sink(logger_service.get());
 
         // Uninstall + join the lanes. Used on the init-failure path here, and again
@@ -876,7 +879,8 @@ namespace wz::app
         ctx.logger.info(
             "IO lane installed, threads="
             + std::to_string(io_executor->thread_count()));
-        ctx.logger.info("LoggerService lane installed (idle; no producer yet)");
+        ctx.logger.info(
+            "LoggerService lane installed (D3D12 debug-layer diagnostics)");
 
         if (log_sink.write) {
             wz::logging::set_log_sink(
