@@ -638,41 +638,32 @@ TEST(RhiDx12ShaderBindings, Float4PaddingIsNotADisagreement)
     }
 }
 
-// ── D3D12 debug-layer suppression: severity policy ───────────────────────────
+// ── D3D12 debug-layer severity mapping ───────────────────────────────────────
 //
-// take_debug_messages mutes an ID that repeats past a limit, because a benign
-// warning repeating every frame made 1584 lines of one real session -- 57% of
-// the log -- and a channel nobody reads is not a channel.
+// The producer publishes each debug-layer message as a DiagnosticRecord (#291);
+// to_diagnostic_severity folds D3D12's five severities onto the engine's four.
+// The three that mean "this frame is wrong" (CORRUPTION/ERROR/WARNING) map
+// across; INFO/MESSAGE -- per-resource chatter denied at storage -- fold into
+// Info so the mapping can never promote chatter into a real severity.
 //
-// That mute must never reach ERROR or CORRUPTION. The finding this whole
-// channel was built for (#317 D1-C5) was an EXECUTION ERROR #615 firing every
-// frame: a blanket repeat limit would have hidden it after 8 frames, which is
-// strictly worse than the noise the limit exists to remove. A repeating error
-// is a stronger signal, not a redundant one.
-//
-// Device-free on purpose -- the predicate is a free function in the header for
-// exactly this reason, the same as dx12_input_element_semantic (D1-C7).
-TEST(Dx12DebugMessages, OnlyWarningsAreEverSuppressed)
+// Device-free on purpose -- a free function in the header for exactly this
+// reason, the same as dx12_input_element_semantic (#317, D1-C7). (Replaces the
+// old debug_message_is_suppressible: #291 dropped the deny-after-8 suppression
+// that predicate gated, so nothing is muted at the source any more -- state-side
+// dedup on the LoggerService lane keeps the exact count instead.)
+TEST(Dx12DebugMessages, MapsD3D12SeverityOntoDiagnosticSeverity)
 {
-    using wz::gpu::dx12::internal::debug_message_is_suppressible;
+    using wz::diag::DiagnosticSeverity;
+    using wz::gpu::dx12::internal::to_diagnostic_severity;
 
-    EXPECT_TRUE(debug_message_is_suppressible(
-        D3D12_MESSAGE_SEVERITY_WARNING));
-
-    // The two that must survive any amount of repetition.
-    EXPECT_FALSE(debug_message_is_suppressible(
-        D3D12_MESSAGE_SEVERITY_ERROR))
-        << "a repeating ERROR is the signal, not the noise -- #615 fired every "
-           "frame and would have been muted";
-    EXPECT_FALSE(debug_message_is_suppressible(
-        D3D12_MESSAGE_SEVERITY_CORRUPTION));
-
-    // INFO/MESSAGE never reach the tally at all (a storage filter denies them
-    // at the source), so their answer here is moot -- but if that filter is
-    // ever removed they must not become suppressible either, because the
-    // suppression path is what decides whether a message is reported.
-    EXPECT_FALSE(debug_message_is_suppressible(
-        D3D12_MESSAGE_SEVERITY_INFO));
-    EXPECT_FALSE(debug_message_is_suppressible(
-        D3D12_MESSAGE_SEVERITY_MESSAGE));
+    EXPECT_EQ(to_diagnostic_severity(D3D12_MESSAGE_SEVERITY_CORRUPTION),
+              DiagnosticSeverity::Corruption);
+    EXPECT_EQ(to_diagnostic_severity(D3D12_MESSAGE_SEVERITY_ERROR),
+              DiagnosticSeverity::Error);
+    EXPECT_EQ(to_diagnostic_severity(D3D12_MESSAGE_SEVERITY_WARNING),
+              DiagnosticSeverity::Warning);
+    EXPECT_EQ(to_diagnostic_severity(D3D12_MESSAGE_SEVERITY_INFO),
+              DiagnosticSeverity::Info);
+    EXPECT_EQ(to_diagnostic_severity(D3D12_MESSAGE_SEVERITY_MESSAGE),
+              DiagnosticSeverity::Info);
 }

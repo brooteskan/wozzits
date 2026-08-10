@@ -11,6 +11,7 @@
 
 #include <gpu/gpu.h>
 #include <gpu/dx12/dx12.h>
+#include <diagnostics/diagnostic_sink.h>  // publish debug-layer diagnostics (#291)
 #include <window/window2.h>
 
 #include <cstdlib>
@@ -38,16 +39,17 @@ namespace
     }
 
 
-    // Install the debug layer's storage filter: keep only the three severities
-    // take_debug_messages reports, and deny every ID that has already repeated
-    // past its limit.
+    // Install the debug layer's SEVERITY storage filter: store only CORRUPTION/
+    // ERROR/WARNING, so INFO/MESSAGE -- per-resource-creation chatter -- never reach
+    // storage. This is the volume cap #291 keeps.
     //
-    // It is ONE filter carrying both lists, replaced wholesale, rather than a
-    // severity filter with deny filters stacked on top. D3D12 applies every
-    // filter on the stack, so appending would work -- but the stack would then
-    // grow once per suppressed ID for the life of the process, and popping to
-    // trim it would take the severity filter with it. One filter, re-pushed, has
-    // neither problem.
+    // The old per-id deny list (deny an id after it repeated past 8) is GONE:
+    // state-side dedup on the LoggerService lane keeps the exact repeat count now,
+    // so the source no longer has to stop storing an id to keep the log quiet
+    // (which is what lost the count). Just the severity allow-list, installed once
+    // at device creation. Pop-before-push stays so a second call can't grow the
+    // stack; a failed push leaves the prior filter in place (the drain runs each
+    // frame regardless now, so a momentarily absent cap is harmless).
     void install_debug_storage_filter(wz::gpu::dx12::DX12Device* impl)
     {
         if (!impl || !impl->info_queue) {
@@ -59,51 +61,15 @@ namespace
             D3D12_MESSAGE_SEVERITY_ERROR,
             D3D12_MESSAGE_SEVERITY_WARNING,
         };
-        // The deny list mutes only repeating WARNINGs, so scope it to the WARNING
-        // severity. A D3D12 DenyList with an EMPTY severity list matches ANY
-        // severity, so an id suppressed as a warning would be denied AT THE SOURCE
-        // for every severity -- and if a later ERROR or CORRUPTION happens to
-        // carry that same D3D12_MESSAGE_ID it would never be stored, never
-        // drained, never logged: exactly the persistent error this channel exists
-        // to surface. The drain already exempts ERROR/CORRUPTION from muting
-        // (debug_message_is_suppressible), but the storage filter is one layer
-        // beneath the drain, so the exemption has to be restated here (#317
-        // D1-H36).
-        D3D12_MESSAGE_SEVERITY denied_severity[] = {
-            D3D12_MESSAGE_SEVERITY_WARNING,
-        };
-
         D3D12_INFO_QUEUE_FILTER filter{};
         filter.AllowList.NumSeverities = _countof(kept);
         filter.AllowList.pSeverityList = kept;
-        if (!impl->debug_suppressed_ids.empty()) {
-            filter.DenyList.NumSeverities = _countof(denied_severity);
-            filter.DenyList.pSeverityList = denied_severity;
-            filter.DenyList.NumIDs =
-                static_cast<UINT>(impl->debug_suppressed_ids.size());
-            filter.DenyList.pIDList = impl->debug_suppressed_ids.data();
-        }
 
-        // Replace the single filter: pop the old before pushing the new so the
-        // stack cannot grow once per suppressed ID (D3D12 applies every filter on
-        // it). If the push FAILS (rare -- OOM or the filter's size limit), do not
-        // leave the queue with no storage filter at all: INFO/MESSAGE would then
-        // re-flood storage and defeat the GetNumStoredMessages()==0 fast path the
-        // whole design rests on. Fall back to a severity-only filter (no deny
-        // list, so it always fits) -- the deny list is a repeat-noise
-        // optimisation, not a correctness requirement (#317 D1-H37).
         if (impl->debug_filter_pushed) {
             impl->info_queue->PopStorageFilter();
             impl->debug_filter_pushed = false;
         }
         if (SUCCEEDED(impl->info_queue->PushStorageFilter(&filter))) {
-            impl->debug_filter_pushed = true;
-            return;
-        }
-        D3D12_INFO_QUEUE_FILTER severity_only{};
-        severity_only.AllowList.NumSeverities = _countof(kept);
-        severity_only.AllowList.pSeverityList = kept;
-        if (SUCCEEDED(impl->info_queue->PushStorageFilter(&severity_only))) {
             impl->debug_filter_pushed = true;
         }
     }
@@ -1338,26 +1304,52 @@ namespace wz::gpu::dx12::internal
         }
     }
 
-    std::vector<std::string> take_debug_messages(Device& d)
+    void publish_debug_diagnostics(Device& d, uint16_t pass)
     {
-        std::vector<std::string> out;
         auto* impl = (DX12Device*)d.impl;
         if (!impl || !impl->info_queue) {
-            return out;
+            return;  // release build (no debug layer) -- one null check
         }
 
         ID3D12InfoQueue* q = impl->info_queue;
         const UINT64 count = q->GetNumStoredMessages();
-
-        // The steady-state fast path. Once every repeating ID is suppressed
-        // this is the ONLY thing a frame does: one call, no allocation, no
-        // string, no logger. Anything below runs solely when the layer has
-        // something it has not said too often already.
         if (count == 0) {
-            return out;
+            return;  // nothing stored for this pass
         }
 
-        bool suppression_changed = false;
+        wz::diag::IDiagnosticSink* sink = wz::diag::get_diagnostic_sink();
+        if (!sink) {
+            // No LoggerService lane installed -- nowhere to publish. Still clear the
+            // queue so a stored message never wedges GetNumStoredMessages() nonzero.
+            q->ClearStoredMessages();
+            return;
+        }
+
+        // Per-drain dedup by id: fold repeats of one id in THIS drain into a single
+        // record carrying the occurrence count, so a burst of the same warning
+        // crosses the channel once (the lane accumulates the total across drains).
+        // Fixed stack table -- no allocation; distinct debug ids in one pass are few.
+        struct DrainEntry
+        {
+            D3D12_MESSAGE_ID       id;
+            uint32_t               occurrences;
+            D3D12_MESSAGE_SEVERITY severity;
+            uint8_t                category;
+        };
+        constexpr size_t kDrainCap = 64;
+        DrainEntry entries[kDrainCap];
+        size_t     distinct = 0;
+
+        auto publish_one = [&](const DrainEntry& e) {
+            wz::diag::DiagnosticRecord r;
+            r.id          = static_cast<uint32_t>(e.id);
+            r.occurrences = e.occurrences;
+            r.severity    = to_diagnostic_severity(e.severity);
+            r.source      = wz::diag::DiagnosticSource::D3D12;
+            r.category    = e.category;
+            r.pass        = pass;
+            sink->publish(r);  // non-blocking; drops on a full channel
+        };
 
         for (UINT64 i = 0; i < count; ++i) {
             SIZE_T length = 0;
@@ -1372,122 +1364,46 @@ namespace wz::gpu::dx12::internal
             if (FAILED(q->GetMessage(i, message, &length))) {
                 continue;
             }
-            // INFO/MESSAGE are per-resource-creation chatter; only the three
-            // severities that mean "this frame is wrong" are worth a log line.
-            const char* severity =
-                message->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION
-                    ? "CORRUPTION"
-                : message->Severity == D3D12_MESSAGE_SEVERITY_ERROR
-                    ? "ERROR"
-                : message->Severity == D3D12_MESSAGE_SEVERITY_WARNING
-                    ? "WARNING"
-                    : nullptr;
-            if (!severity) {
+            // Only the three severities that mean "this frame is wrong". INFO/
+            // MESSAGE are already denied at storage; this guards the drain anyway.
+            // No string built from pDescription -- id/severity/category are enough,
+            // and the description would be hot-lane allocation (#291).
+            if (message->Severity != D3D12_MESSAGE_SEVERITY_CORRUPTION
+                && message->Severity != D3D12_MESSAGE_SEVERITY_ERROR
+                && message->Severity != D3D12_MESSAGE_SEVERITY_WARNING) {
                 continue;
             }
 
-            // CORRUPTION and ERROR are never muted, however often they repeat --
-            // see debug_message_is_suppressible. They fall straight through to
-            // the report below without touching the tally, so no accumulated
-            // count can ever start hiding one.
-            if (!debug_message_is_suppressible(message->Severity)) {
-                out.push_back(
-                    std::string("D3D12 ") + severity + " #"
-                    + std::to_string(static_cast<int>(message->ID)) + ": "
-                    + std::string(
-                        message->pDescription,
-                        message->pDescription
-                            + message->DescriptionByteLength));
-                continue;
-            }
-
-            // Tally this WARNING id. Linear scan over a list bounded by how
-            // many DISTINCT things the layer has to say, which is small -- a
-            // handful in practice -- so this is cheaper than a map and never
-            // allocates once the list has settled.
-            DX12Device::DebugMessageTally* tally = nullptr;
-            for (auto& entry : impl->debug_tally) {
-                if (entry.id == message->ID) {
-                    tally = &entry;
+            DrainEntry* slot = nullptr;
+            for (size_t j = 0; j < distinct; ++j) {
+                if (entries[j].id == message->ID) {
+                    slot = &entries[j];
                     break;
                 }
             }
-            if (!tally) {
-                if (impl->debug_tally.size()
-                    >= DX12Device::kDebugMessageTallyCapacity)
-                {
-                    // The tally is full -- more distinct WARNING ids than
-                    // budgeted. We can no longer count this id toward its repeat
-                    // limit, so suppress it at the source now (once) rather than
-                    // reporting every occurrence: a WARNING that recurs every
-                    // frame but is never deny-listed keeps GetNumStoredMessages()
-                    // non-zero forever, so the frame loop never returns to the
-                    // no-op fast path and pays the drain every frame (#317 D1-H38).
-                    // Reported once here; the re-installed deny list stops it
-                    // after. WARNING-only suppression (H36) means a same-id ERROR
-                    // still gets through.
-                    bool already = false;
-                    for (const D3D12_MESSAGE_ID id : impl->debug_suppressed_ids) {
-                        if (id == message->ID) {
-                            already = true;
-                            break;
-                        }
-                    }
-                    if (!already) {
-                        impl->debug_suppressed_ids.push_back(message->ID);
-                        suppression_changed = true;
-                        out.push_back(
-                            std::string("D3D12 ") + severity + " #"
-                            + std::to_string(static_cast<int>(message->ID))
-                            + ": debug message tally is full at "
-                            + std::to_string(
-                                DX12Device::kDebugMessageTallyCapacity)
-                            + " distinct IDs; suppressing this id at the source");
-                    }
-                    continue;
-                }
-                impl->debug_tally.push_back({ message->ID, 0, false });
-                tally = &impl->debug_tally.back();
+            if (slot) {
+                ++slot->occurrences;
+                slot->severity = message->Severity;  // stable per id
+                slot->category = static_cast<uint8_t>(message->Category);
             }
-
-            if (tally) {
-                ++tally->count;
-
-                if (tally->suppressed) {
-                    continue;
-                }
-
-                if (tally->count > DX12Device::kDebugMessageRepeatLimit) {
-                    tally->suppressed = true;
-                    suppression_changed = true;
-                    impl->debug_suppressed_ids.push_back(message->ID);
-                    out.push_back(
-                        std::string("D3D12 ") + severity + " #"
-                        + std::to_string(static_cast<int>(message->ID))
-                        + ": repeated "
-                        + std::to_string(tally->count)
-                        + " times; suppressing it at the source from here on "
-                          "(see #330 for keeping the true count)");
-                    continue;
-                }
+            else if (distinct < kDrainCap) {
+                entries[distinct++] = {
+                    message->ID, 1u, message->Severity,
+                    static_cast<uint8_t>(message->Category) };
             }
-
-            out.push_back(
-                std::string("D3D12 ") + severity + " #"
-                + std::to_string(static_cast<int>(message->ID)) + ": "
-                + std::string(
-                    message->pDescription,
-                    message->pDescription + message->DescriptionByteLength));
+            else {
+                // More distinct ids in one drain than the fold table holds
+                // (pathological) -- publish this occurrence directly, never drop it.
+                publish_one({ message->ID, 1u, message->Severity,
+                              static_cast<uint8_t>(message->Category) });
+            }
         }
 
-        // Re-push the whole deny list rather than appending, so the filter
-        // stack cannot grow once per suppressed ID over a long session.
-        if (suppression_changed) {
-            install_debug_storage_filter(impl);
+        for (size_t j = 0; j < distinct; ++j) {
+            publish_one(entries[j]);
         }
 
         q->ClearStoredMessages();
-        return out;
     }
 
     ID3D12GraphicsCommandList* get_command_list(Device& d)

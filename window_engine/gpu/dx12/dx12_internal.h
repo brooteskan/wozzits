@@ -14,6 +14,7 @@
 #include <gpu/gpu_types.h>
 #include <gpu/shader.h>
 #include <gpu/gaussian_splat_coverage_settings.h>
+#include <diagnostics/diagnostic_record.h>  // DiagnosticSeverity (debug-layer producer)
 #include <d3dcompiler.h>
 #include <d3d12.h>
 #include <engine/assets/render_program/render_program.h>
@@ -80,39 +81,54 @@ namespace wz::gpu::dx12::internal
     [[nodiscard]] D3D12_RENDER_TARGET_BLEND_DESC
     render_target_blend_desc(wz::rhi::BlendMode mode) noexcept;
 
-    // Drain the D3D12 debug layer's stored messages (CORRUPTION/ERROR/WARNING
-    // only), oldest first, and clear the queue.
-    //
-    // The debug layer has always been ENABLED in debug builds and nothing was
-    // ever listening: no ID3D12InfoQueue existed anywhere in the engine, so
-    // every verdict it rendered went only to the native debug stream, visible
-    // solely under an attached debugger. That is how a hard EXECUTION ERROR
-    // (#615, depth-enabled PSO against a null DSV) shipped green in two test
-    // suites -- see #317. This layer owns no logger, so it hands the messages
-    // up as plain strings and the engine logs them.
-    //
-    // Returns empty when the debug layer is unavailable (release builds), so a
-    // per-frame caller costs one null check there.
-    std::vector<std::string> take_debug_messages(Device& d);
+    // Pass attribution stamped into each published DiagnosticRecord (#291): the
+    // two units a frame records -- the main pass, and an authored render target's
+    // offscreen pass. The pass is the unit that is wrong, captured at the source so
+    // the cold LoggerService reporter never has to reconstruct it. The reporter
+    // maps these back to "main"/"offscreen" labels.
+    inline constexpr uint16_t kDebugPassMain      = 0;
+    inline constexpr uint16_t kDebugPassOffscreen = 1;
 
-    // Which severities may be muted once they start repeating.
-    //
-    // WARNING only, and the exclusion is the whole point. A repeating ERROR or
-    // CORRUPTION is a STRONGER signal, not a redundant one: the `#615` above --
-    // the reason this channel exists at all -- is an EXECUTION ERROR that fired
-    // every frame, so a rule that mutes repeats after N would have silenced
-    // precisely the thing the channel was built to catch, and done it eight
-    // frames in. Noise from a benign warning is worth trading away; the ability
-    // to see a persistent error is not.
-    //
-    // Free function in the header rather than a branch inside the drain so it
-    // is testable with no device, the same reason dx12_input_element_semantic
-    // lives out here (#317, D1-C7).
-    [[nodiscard]] inline bool debug_message_is_suppressible(
+    // Map a D3D12 debug-layer severity onto the engine's DiagnosticSeverity. INFO
+    // and MESSAGE (per-resource chatter, denied at storage) fold into Info. Free
+    // function in the header so it is testable with no device -- the same reason
+    // dx12_input_element_semantic lives out here (#317, D1-C7).
+    [[nodiscard]] inline wz::diag::DiagnosticSeverity to_diagnostic_severity(
         D3D12_MESSAGE_SEVERITY severity) noexcept
     {
-        return severity == D3D12_MESSAGE_SEVERITY_WARNING;
+        switch (severity) {
+            case D3D12_MESSAGE_SEVERITY_CORRUPTION:
+                return wz::diag::DiagnosticSeverity::Corruption;
+            case D3D12_MESSAGE_SEVERITY_ERROR:
+                return wz::diag::DiagnosticSeverity::Error;
+            case D3D12_MESSAGE_SEVERITY_WARNING:
+                return wz::diag::DiagnosticSeverity::Warning;
+            default:  // INFO / MESSAGE
+                return wz::diag::DiagnosticSeverity::Info;
+        }
     }
+
+    // Drain the D3D12 debug layer for the pass just recorded and PUBLISH each
+    // distinct stored message (CORRUPTION/ERROR/WARNING) as a DiagnosticRecord --
+    // id/severity/category + a per-drain occurrence count, stamped with `pass` --
+    // to the installed diagnostic sink, then clear the queue. NO string is built
+    // and NO logger is called on this (render / GPUOwner) lane: detection is cheap
+    // ints, and the cold LoggerService lane keeps the exact count and reports on
+    // its cadence (#291). A no-op when the debug layer is absent (release) or no
+    // sink is installed.
+    //
+    // Replaces take_debug_messages + its per-id deny-after-8 tally: state-side
+    // dedup on the lane keeps the true total the tally had to throw away (it stopped
+    // D3D12 storing an id to dedup it). The severity storage filter stays as the
+    // volume cap (INFO/MESSAGE never stored); the per-id deny list is gone, so a
+    // repeating warning now re-stores each frame and the drain runs each frame --
+    // cheap (ints only), which is the trade #291 makes for the exact count.
+    //
+    // Backstory: the debug layer has always been enabled in debug builds with
+    // nothing listening -- every verdict went only to the native debug stream, so a
+    // hard EXECUTION ERROR (#615, depth-enabled PSO vs a null DSV) shipped green in
+    // two suites (#317). Now it feeds the diagnostics channel.
+    void publish_debug_diagnostics(Device& d, uint16_t pass);
 
     ID3D12RootSignature* create_empty_root_signature(ID3D12Device* device);
 

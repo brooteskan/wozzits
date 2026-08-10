@@ -26,6 +26,7 @@
 #include <file/filesystem.h>
 #include <gpu/gpu.h>
 #include <gpu/dx12/dx12_internal.h>
+#include <diagnostics/diagnostic_sink.h>
 
 #include <cstdint>
 #include <string>
@@ -87,24 +88,24 @@ namespace
         }
     };
 
-    // What the D3D12 debug layer said, collected from the engine log.
-    //
-    // RhiSceneRenderer drains the layer per pass and logs what it finds, so the
-    // log IS the observation point -- take_debug_messages has already been
-    // consumed by the time a test could call it.
-    struct DebugLayerErrors
+    // What the D3D12 debug layer flagged during the frame, collected straight from
+    // the diagnostics channel (#291): RhiSceneRenderer now PUBLISHES each debug-
+    // layer message as a DiagnosticRecord (per pass) instead of logging a string,
+    // so a diagnostic sink -- not the log -- is the observation point. Keep only the
+    // two severities that mean a draw was illegal; an OffscreenPass regression shows
+    // up as an Error/Corruption record. publish() runs on the render thread, which
+    // is this thread (render is synchronous here), so the vector needs no lock.
+    struct CollectingDiagnosticSink : wz::diag::IDiagnosticSink
     {
-        std::vector<std::string> messages;
+        std::vector<wz::diag::DiagnosticRecord> errors;
 
-        static void sink(const wz::logging::LogRecordView& record, void* user)
+        void publish(const wz::diag::DiagnosticRecord& r) override
         {
-            const std::string_view text(record.text, record.text_size);
-            if (text.find("D3D12 ERROR") == std::string_view::npos
-                && text.find("D3D12 CORRUPTION") == std::string_view::npos)
+            if (r.severity == wz::diag::DiagnosticSeverity::Error
+                || r.severity == wz::diag::DiagnosticSeverity::Corruption)
             {
-                return;
+                errors.push_back(r);
             }
-            static_cast<DebugLayerErrors*>(user)->messages.emplace_back(text);
         }
     };
 }
@@ -187,8 +188,8 @@ TEST_F(WozzitsAppRenderToTextureFixture, AuthoredSourceFillsItsTargetAndLeavesTh
 // renderer now drains the layer into the log (05cf03e4).
 TEST_F(WozzitsAppRenderToTextureFixture, OffscreenPassIssuesNoIllegalDraws)
 {
-    DebugLayerErrors observed;
-    wz::logging::set_log_sink(ctx.logger, &DebugLayerErrors::sink, &observed);
+    CollectingDiagnosticSink observed;
+    wz::diag::set_diagnostic_sink(&observed);
 
     {
         wz::app::WozzitsApp_v1 app(ctx);
@@ -201,13 +202,17 @@ TEST_F(WozzitsAppRenderToTextureFixture, OffscreenPassIssuesNoIllegalDraws)
         wz::gpu::present(ctx.device, /*sync_interval*/ 0);
     }
 
-    wz::logging::set_log_sink(ctx.logger, nullptr, nullptr);
+    wz::diag::set_diagnostic_sink(nullptr);
 
-    for (const std::string& message : observed.messages) {
-        ADD_FAILURE() << message;
+    for (const wz::diag::DiagnosticRecord& r : observed.errors) {
+        ADD_FAILURE()
+            << "D3D12 "
+            << (r.severity == wz::diag::DiagnosticSeverity::Corruption
+                    ? "CORRUPTION" : "ERROR")
+            << " #" << r.id << " [pass " << r.pass << "]";
     }
-    EXPECT_TRUE(observed.messages.empty())
-        << observed.messages.size()
+    EXPECT_TRUE(observed.errors.empty())
+        << observed.errors.size()
         << " D3D12 debug-layer error(s) during an authored "
            "render-to-texture frame";
 }

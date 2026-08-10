@@ -131,40 +131,22 @@ namespace wz::gpu::dx12
         ID3D12CommandQueue* queue = nullptr;
 
         // The debug layer's message sink, when the layer is installed (debug
-        // builds only; null otherwise). Drained by take_debug_messages() so the
-        // engine can log what the layer says -- before #317 the layer was
-        // enabled and nobody held this interface, so its verdicts were
-        // invisible outside a debugger.
+        // builds only; null otherwise). Drained by publish_debug_diagnostics(),
+        // which publishes each message as a DiagnosticRecord to the LoggerService
+        // lane (#291) -- before #317 the layer was enabled and nobody held this
+        // interface, so its verdicts were invisible outside a debugger.
         ID3D12InfoQueue* info_queue = nullptr;
 
-        // Per-ID tally behind take_debug_messages' suppression (#317 follow-up).
-        //
-        // The debug layer will repeat a benign message every frame forever --
-        // measured 1584 ClearRenderTargetView #820 in a 27-second session, 57%
-        // of the whole log. A channel that is mostly one line does not get read,
-        // which defeats the reason the InfoQueue was installed at all.
-        //
-        // So an ID that repeats past kDebugMessageRepeatLimit is added to a
-        // DENY storage filter and D3D12 stops storing it. The steady state is
-        // then GetNumStoredMessages() == 0: no allocation, no string building
-        // and no logger call anywhere in the frame loop, which is the rule.
-        // The trade is the exact count -- you get "suppressed after N" rather
-        // than the true total. Keeping the count needs the diagnostics thread
-        // in #330.
-        struct DebugMessageTally
-        {
-            D3D12_MESSAGE_ID id{};
-            uint32_t count = 0;
-            bool suppressed = false;
-        };
-        static constexpr uint32_t kDebugMessageRepeatLimit = 8;
-        static constexpr size_t kDebugMessageTallyCapacity = 64;
-
-        std::vector<DebugMessageTally> debug_tally;
-        std::vector<D3D12_MESSAGE_ID> debug_suppressed_ids;
-        // Whether install_debug_storage_filter has a filter on the stack to pop
-        // before pushing a replacement. Tracked rather than assumed, because
+        // Whether install_debug_storage_filter has a severity filter on the stack
+        // to pop before pushing a replacement. Tracked rather than assumed, because
         // popping a stack we never pushed to is not harmless.
+        //
+        // The per-id deny-after-8 tally that used to live here (#317) is GONE
+        // (#291): it stopped D3D12 storing a repeating id to keep the log quiet,
+        // which lost the true count -- "1584 ClearRenderTargetView #820 in 27s"
+        // became "suppressed after 8". State-side dedup on the LoggerService lane
+        // keeps the exact total now, so the source no longer suppresses per id; the
+        // severity storage filter (no INFO/MESSAGE) stays as the volume cap.
         bool debug_filter_pushed = false;
         // Reused by GetMessage so a drain does not allocate per message.
         std::vector<char> debug_scratch;
