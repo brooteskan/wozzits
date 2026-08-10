@@ -34,6 +34,7 @@
 
 #include <engine/assets/scene/scene_asset_data.h>
 #include <engine/assets/scene/scene_instance.h>
+#include <engine/assets/scene/scene_json_export.h>  // SceneEditorCameraMetadata (save split)
 #include <engine/audio/audio_runtime.h>
 #include <engine/audio/scene_audio.h>
 #include <engine/behavior/behavior_plugin_adapter.h>
@@ -565,7 +566,58 @@ namespace wz::app
         // edits but no source path to write them to (#299). The write goes through
         // the scene library's wz::fs-backed writer, so a failed write is reported,
         // never swallowed by a stream destructor.
+        //
+        // Synchronous composition of the three-part split below (used at teardown,
+        // where blocking the -- already exited -- frame loop is fine). The editor's
+        // interactive save drives the parts directly so the disk write lands on the
+        // IO lane instead of the frame thread (#305 step 4b / #300 layer 2).
         wz::fs::FileError save_scene();
+
+        // The frame-thread-owned inputs of ONE scene save, snapshotted so the
+        // blocking disk read-modify-write can run OFF the frame thread (#305 step
+        // 4b). Everything here is OWNED -- no borrow into the live scene or a stack
+        // frame, per design-doc §5.3 -- so commit_scene_save() is safe on the IO
+        // lane while the frame loop moves on.
+        struct PreparedSceneSave
+        {
+            wz::fs::Path path;
+            std::vector<wz::engine::assets::SceneNodeAsset> persisted_nodes;
+            wz::engine::assets::SceneEditorCameraMetadata camera_meta;
+            bool scene_dirty = false;         // write the nodes array (a scene edit)
+            bool want_editor_camera = false;  // upsert the editor viewport camera
+        };
+
+        // What prepare_scene_save() decided. needs_write == false => `early_out` is
+        // the final result and there is nothing to commit (the not-dirty no-op, or
+        // the no-source-path failure). needs_write == true => commit `work`.
+        struct SceneSavePreparation
+        {
+            bool needs_write = false;
+            wz::fs::FileError early_out = wz::fs::FileError::None;
+            PreparedSceneSave work;
+        };
+
+        // prepare (frame thread): flush the profile CSV, resolve the dirty / no-path
+        // early-outs, snapshot the persisted nodes + editor camera, and clear the
+        // dirty flags OPTIMISTICALLY. A successful commit persists exactly this
+        // snapshot; an edit after this point re-dirties (correct -- it is not in the
+        // snapshot); a FAILED commit restores the flags via finalize. Reads live
+        // scene state, so it MUST run on the frame thread.
+        SceneSavePreparation prepare_scene_save();
+
+        // commit (any thread): the blocking read-modify-write of the scene file from
+        // an already-snapshotted PreparedSceneSave. Static + self-contained (touches
+        // no live app state), so the IO lane runs it while the frame loop continues.
+        static wz::fs::FileError commit_scene_save(const PreparedSceneSave& work);
+
+        // finalize (frame thread): on success, log; on failure, RESTORE the dirty
+        // flags prepare cleared (idempotent) so a failed write keeps the scene dirty
+        // for the teardown / next save. The two bools are the prep's scene_dirty /
+        // want_editor_camera.
+        void finalize_scene_save(
+            wz::fs::FileError err,
+            bool restore_scene_dirty,
+            bool restore_camera_dirty);
 
         // Frame profiling is opt-in (default OFF). OFF records nothing, so the
         // exit-time flush is a no-op and no frame_profile_<tag>.csv is written

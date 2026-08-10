@@ -2644,9 +2644,31 @@ namespace wz::app
 
     wz::fs::FileError WozzitsApp_v1::save_scene()
     {
+        // Synchronous composition of the three-part split (#305 step 4b), for the
+        // teardown save where the frame loop has already exited so blocking on the
+        // write is fine. The editor's interactive save drives the parts directly so
+        // the write lands on the IO lane instead of the frame thread. Behaviour is
+        // identical to the old monolith: prepare clears the dirty flags, a failed
+        // commit restores them in finalize, so a failure still keeps the scene
+        // dirty for the next attempt.
+        const SceneSavePreparation prep = prepare_scene_save();
+        if (!prep.needs_write) {
+            return prep.early_out;
+        }
+        const wz::fs::FileError err = commit_scene_save(prep.work);
+        finalize_scene_save(
+            err, prep.work.scene_dirty, prep.work.want_editor_camera);
+        return err;
+    }
+
+    WozzitsApp_v1::SceneSavePreparation WozzitsApp_v1::prepare_scene_save()
+    {
+        SceneSavePreparation prep;
+
         // Per-frame profile (#252): write the accumulated CSV on the way out.
         // save_scene runs at play/editor exit; independent of the scene-dirty
-        // early-out below, and a no-op when nothing was recorded.
+        // early-out below, and a no-op when nothing was recorded. Reads the live
+        // frame-profile buffer, so it stays on the frame thread here in prepare.
         flush_frame_profile_csv();
 
         // The editor viewport's free-fly camera pose is unsaved state independent
@@ -2655,20 +2677,27 @@ namespace wz::app
         const bool want_editor_camera = !view_.prefer_scene_camera();
         if (!document_.dirty()
             && !(want_editor_camera && view_.editor_camera_dirty())) {
-            // Nothing changed since load / last save.
-            return wz::fs::FileError::None;
+            // Nothing changed since load / last save -- no write (early_out None).
+            return prep;
         }
         // Reached only with unsaved changes (the not-dirty case returned above),
         // so an empty source path means "there are edits but nowhere to write
         // them" -- a failure, not a no-op (#299 open decision 3). InvalidPath is
-        // the FileError a missing destination maps to.
+        // the FileError a missing destination maps to. Dirty is NOT cleared here:
+        // the edits are still unsaved.
         if (scene_source_path_.empty()) {
-            return wz::fs::FileError::InvalidPath;
+            prep.early_out = wz::fs::FileError::InvalidPath;
+            return prep;
         }
+
+        prep.needs_write = true;
+        PreparedSceneSave& work = prep.work;
+        work.want_editor_camera = want_editor_camera;
+        work.scene_dirty = document_.dirty();
 
         const wz::fs::Path resource_root =
             ctx_.assets ? ctx_.assets->resource_root() : wz::fs::Path{};
-        const wz::fs::Path path =
+        work.path =
             wz::fs::is_absolute(scene_source_path_) || resource_root.empty()
                 ? scene_source_path_
                 : wz::fs::join(resource_root, scene_source_path_);
@@ -2680,100 +2709,123 @@ namespace wz::app
         // are ephemeral runtime state -- persisting them would re-load as authored
         // nodes and collide with a fresh spawn's ids. Flattened nodes are authored
         // (not tracked here), so they persist normally.
-        std::vector<wz::engine::assets::SceneNodeAsset> persisted_nodes;
         {
             const std::unordered_set<std::string> grafted(
                 document_.grafted_ids().begin(), document_.grafted_ids().end());
-            persisted_nodes.reserve(document_.nodes().size());
+            work.persisted_nodes.reserve(document_.nodes().size());
             for (const wz::engine::assets::SceneNodeAsset& n : document_.nodes()) {
                 if (grafted.count(n.id) != 0
                     || n.id.rfind("spawn:", 0) == 0) {
                     continue;
                 }
-                persisted_nodes.push_back(n);
+                work.persisted_nodes.push_back(n);
                 // #221: derive-on-save. The per-frame write-back that used to keep
                 // document_.nodes() transforms sim-current is gone, so decompose the
                 // live polytree pose into the saved node here (one lossy decompose
                 // at save, not per frame). No sim => the stored authored transform.
                 if (const std::optional<wz::engine::assets::AuthoredTransform>
                         derived = derived_authored_transform(n.id)) {
-                    persisted_nodes.back().local = *derived;
+                    work.persisted_nodes.back().local = *derived;
                 }
             }
         }
 
         // The editor viewport camera pose, if we are persisting it (editor only).
-        // Built once so both the in-place update and the create-fresh fallback
-        // below upsert the same block.
-        wz::engine::assets::SceneEditorCameraMetadata camera_meta;
+        // Snapshotted here so the commit upserts it off the frame thread.
         if (want_editor_camera) {
             const wz::bench::FlyingCamera& camera = view_.free_fly_camera();
-            camera_meta.position[0] = camera.x;
-            camera_meta.position[1] = camera.y;
-            camera_meta.position[2] = camera.z;
-            camera_meta.orientation[0] = camera.orientation.x;
-            camera_meta.orientation[1] = camera.orientation.y;
-            camera_meta.orientation[2] = camera.orientation.z;
-            camera_meta.orientation[3] = camera.orientation.w;
-            camera_meta.move_speed       = camera.move_speed;
-            camera_meta.look_speed       = camera.look_speed;
-            camera_meta.boost_multiplier = camera.boost_multiplier;
-            camera_meta.roll_speed       = camera.roll_speed;
+            work.camera_meta.position[0] = camera.x;
+            work.camera_meta.position[1] = camera.y;
+            work.camera_meta.position[2] = camera.z;
+            work.camera_meta.orientation[0] = camera.orientation.x;
+            work.camera_meta.orientation[1] = camera.orientation.y;
+            work.camera_meta.orientation[2] = camera.orientation.z;
+            work.camera_meta.orientation[3] = camera.orientation.w;
+            work.camera_meta.move_speed       = camera.move_speed;
+            work.camera_meta.look_speed       = camera.look_speed;
+            work.camera_meta.boost_multiplier = camera.boost_multiplier;
+            work.camera_meta.roll_speed       = camera.roll_speed;
         }
 
+        // Clear the dirty flags NOW (optimistic), at the exact snapshot point --
+        // where the old synchronous path cleared them relative to this frame's
+        // drained edits. The commit persists exactly this snapshot; an edit AFTER
+        // this point re-dirties (correct -- it is not in the snapshot); a FAILED
+        // commit restores them in finalize_scene_save. Clearing here rather than
+        // after the write is what keeps the flags correct when the commit runs
+        // later on the IO lane and edits interleave.
+        document_.dirty() = false;
+        view_.clear_editor_camera_dirty();
+        return prep;
+    }
+
+    wz::fs::FileError WozzitsApp_v1::commit_scene_save(
+        const PreparedSceneSave& work)
+    {
         // Read-modify-write the existing scene so its non-node data (lights,
         // defaults, sky, and anything this exporter does not model) is preserved;
         // the nodes array is replaced only on a scene edit, the editor camera
         // upserted only in the editor. Persistence itself -- read, parse, and the
-        // checked/chunked/UTF-8-correct write -- now lives in the scene library
-        // (#299), so the buffered-flush false-positive of the old raw std::ofstream
-        // (good() passed and dirty was cleared before the filebuf destructor's
-        // flush failed) is gone: a real FileError propagates and keeps the scene
-        // dirty for the next save. A camera-only save (scene not dirty) leaves the
-        // authored nodes untouched so panning never churns the node array.
-        const bool scene_dirty = document_.dirty();
+        // checked/chunked/UTF-8-correct write -- lives in the scene library (#299),
+        // so the buffered-flush false-positive of the old raw std::ofstream (good()
+        // passed and dirty was cleared before the filebuf destructor's flush
+        // failed) is gone: a real FileError propagates. A camera-only save (scene
+        // not dirty) leaves the authored nodes untouched so panning never churns
+        // the node array. Static + self-contained: no live app state, so this runs
+        // on the IO lane off the frame thread (#305 step 4b).
         wz::fs::FileError err = wz::engine::assets::update_scene_document(
-            path,
+            work.path,
             [&](wz::json::JSONDocument& document) {
-                if (scene_dirty) {
+                if (work.scene_dirty) {
                     wz::engine::assets::set_scene_document_nodes(
-                        document, persisted_nodes);
+                        document, work.persisted_nodes);
                 }
-                if (want_editor_camera) {
+                if (work.want_editor_camera) {
                     wz::engine::assets::set_scene_document_editor_camera(
-                        document, camera_meta);
+                        document, work.camera_meta);
                 }
                 return true;  // past the dirty early-out: always a write
             });
 
         // No usable scene on disk yet (first save, or a corrupt file that could
-        // not be parsed): emit a fresh document from the live nodes, mirroring the
+        // not be parsed): emit a fresh document from the snapshot, mirroring the
         // old "no readable source" fallback. Read/write errors that are not those
         // two (permission, IO) are real failures and propagate unchanged.
         if (err == wz::fs::FileError::NotFound
             || err == wz::fs::FileError::InvalidPath) {
             wz::engine::assets::SceneAssetData snapshot;
-            snapshot.nodes = persisted_nodes;
+            snapshot.nodes = work.persisted_nodes;
             wz::json::JSONDocument document =
                 wz::engine::assets::export_scene_to_json_document(snapshot);
-            if (want_editor_camera) {
+            if (work.want_editor_camera) {
                 wz::engine::assets::set_scene_document_editor_camera(
-                    document, camera_meta);
+                    document, work.camera_meta);
             }
-            err = wz::engine::assets::write_scene_document(path, document);
+            err = wz::engine::assets::write_scene_document(work.path, document);
         }
+        return err;
+    }
 
+    void WozzitsApp_v1::finalize_scene_save(
+        wz::fs::FileError err,
+        bool restore_scene_dirty,
+        bool restore_camera_dirty)
+    {
         if (err != wz::fs::FileError::None) {
-            // The result is no longer discarded here -- it is returned to the
-            // caller (surfacing it across the ABI is #300; the engine-thread
-            // callers log it). The scene stays dirty for the next attempt.
-            return err;
+            // The commit failed AFTER prepare cleared the dirty flags optimistically.
+            // Restore exactly the flags this save cleared, so the unsaved edits stay
+            // dirty for the teardown save / next attempt (#299). Idempotent: a
+            // re-dirtying edit since prepare has already set them. The FileError
+            // itself is surfaced by the caller (the ABI, or the engine-thread log).
+            if (restore_scene_dirty) {
+                document_.dirty() = true;
+            }
+            if (restore_camera_dirty) {
+                view_.mark_editor_camera_dirty();
+            }
+            return;
         }
-
-        document_.dirty() = false;
-        view_.clear_editor_camera_dirty();
         ctx_.logger.info("save_scene: scene persisted");
-        return wz::fs::FileError::None;
     }
 
     bool WozzitsApp_v1::export_subtree_as_scene(

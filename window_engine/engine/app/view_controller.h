@@ -126,6 +126,10 @@ namespace wz::app
         // update_free_fly in editor mode; cleared by the host on load / save.
         bool editor_camera_dirty() const { return editor_camera_dirty_; }
         void clear_editor_camera_dirty()  { editor_camera_dirty_ = false; }
+        // Re-mark the pose dirty. The restore path for a save that cleared this
+        // optimistically and then FAILED to write (#305 step 4b): the unsaved pose
+        // must stay dirty for the next save. Idempotent with update_free_fly.
+        void mark_editor_camera_dirty()   { editor_camera_dirty_ = true; }
 
     private:
         // Which source update_active_view() materializes from. FreeFly = the
