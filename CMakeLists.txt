@@ -1263,6 +1263,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(tasks fiber_backend_tests)
 
     rs_add_test_group(io io_executor_tests)
+    rs_add_test_group(diagnostics diagnostic_state_tests)
     rs_add_test_group(engine input_events)
 
 
