@@ -396,6 +396,18 @@ namespace wz::app
         wz::time::Tick sampled,
         uint64_t ticks_per_second);
 
+    // The result of an interactive save whose write ran on the IO lane (#305 step
+    // 4b): posted by the IO lane back to the frame thread so it can finalize the
+    // save. The FileError already reached the blocked caller via the save_ Request
+    // (complete_pending_save); this carries only what the frame-thread finalize
+    // needs -- which dirty flags to restore if the write failed.
+    struct AsyncSaveResult
+    {
+        wz::fs::FileError err = wz::fs::FileError::None;
+        bool restore_scene_dirty = false;
+        bool restore_camera_dirty = false;
+    };
+
     class EditorRuntimeControl
     {
     public:
@@ -456,10 +468,28 @@ namespace wz::app
         // reported as success (#299 A1-C20). Replaces the old fire-and-forget
         // request_save, whose bool result had nowhere to cross back.
         [[nodiscard]] RequestOutcome<wz::fs::FileError> save_scene_blocking();
-        // Engine thread: if a save is pending, run `saver` and publish its
-        // FileError. Called once per frame from run_project_runtime.
-        void service_pending_save(
-            const std::function<wz::fs::FileError()>& saver);
+
+        // The interactive save, serviced OFF the frame thread (#305 step 4b / #300
+        // layer 2). The old service_pending_save ran the blocking disk write inline
+        // on the frame thread; now the engine claims the pending save, prepares the
+        // snapshot, and hands the write to the IO lane, which publishes the
+        // FileError back to the parked caller and posts an AsyncSaveResult the frame
+        // thread finalizes. run_project_runtime drives the three below.
+
+        // Engine thread: claim a pending save (Request -> InFlight) so the caller
+        // stays parked until complete_pending_save(). Returns false when no save is
+        // pending. Once this returns true, complete_pending_save() MUST run on some
+        // thread, or the caller waits forever.
+        [[nodiscard]] bool begin_pending_save();
+        // Any thread (the IO lane): publish the claimed save's FileError, waking
+        // the caller blocked in save_scene_blocking().
+        void complete_pending_save(wz::fs::FileError err);
+        // Any thread (the IO lane): hand the frame thread what finalize needs
+        // (which dirty flags to restore on a failed write).
+        void post_async_save_result(AsyncSaveResult result);
+        // Engine thread, once per frame: finalize each async save that finished.
+        void drain_async_save_results(
+            const std::function<void(const AsyncSaveResult&)>& fn);
 
         // Owner thread: enable/disable frame profiling (default off). Applied by
         // the engine thread each frame; the app records + writes a CSV only while
@@ -965,6 +995,11 @@ namespace wz::app
         Request<std::monostate,
                 std::vector<wz::engine::assets::SceneNodeAsset>> authored_nodes_;
         Request<std::monostate, wz::fs::FileError> save_;
+
+        // The IO lane posts an interactive save's outcome here after the off-thread
+        // write; the frame thread drains it once per frame to finalize (#305 step
+        // 4b). Fire-and-forget append: each save's result is distinct.
+        Mailbox<AsyncSaveResult> async_save_results_;
     };
 
     struct EditorRuntimeLogSink

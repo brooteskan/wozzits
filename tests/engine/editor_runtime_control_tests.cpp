@@ -802,7 +802,8 @@ TEST(EditorRuntimeControl, SaveSceneBlockingReturnsTheEnginesFileError)
 {
     // The result the old fire-and-forget save could not deliver: a caller blocks
     // in save_scene_blocking, the engine services it, and the caller wakes with
-    // exactly the FileError the engine produced.
+    // exactly the FileError the engine produced. Serviced via the #305 step 4b
+    // split -- claim, then publish -- as the runtime loop does.
     EditorRuntimeControl control;
     bool serviced = false;
     wz::fs::FileError error = wz::fs::FileError::None;
@@ -813,18 +814,59 @@ TEST(EditorRuntimeControl, SaveSceneBlockingReturnsTheEnginesFileError)
         error = outcome.value;
     });
 
-    bool ran = false;
-    while (!ran) {
-        control.service_pending_save([&] {
-            ran = true;
-            return wz::fs::FileError::PermissionDenied;
-        });
+    while (!control.begin_pending_save()) {
         std::this_thread::yield();
     }
+    control.complete_pending_save(wz::fs::FileError::PermissionDenied);
     caller.join();
 
     EXPECT_TRUE(serviced);
     EXPECT_EQ(error, wz::fs::FileError::PermissionDenied);
+}
+
+TEST(EditorRuntimeControl, AsyncSavePublishesOffThreadAndReportsBackToTheFrameThread)
+{
+    // #305 step 4b: the caller blocks in save_scene_blocking; the engine claims
+    // the save (begin_pending_save) and hands the write to ANOTHER thread (the IO
+    // lane), which publishes the FileError to the parked caller AND posts an
+    // AsyncSaveResult the frame thread drains to finalize -- restoring the dirty
+    // flags a failed write cleared.
+    EditorRuntimeControl control;
+    bool serviced = false;
+    wz::fs::FileError caller_error = wz::fs::FileError::None;
+
+    std::thread caller([&] {
+        const auto outcome = control.save_scene_blocking();
+        serviced = outcome.serviced;
+        caller_error = outcome.value;
+    });
+
+    // Engine (frame) thread claims the pending save.
+    while (!control.begin_pending_save()) {
+        std::this_thread::yield();
+    }
+    // The "IO lane": finish the write and report back on a separate thread.
+    std::thread io([&] {
+        control.complete_pending_save(wz::fs::FileError::PermissionDenied);
+        control.post_async_save_result(
+            { wz::fs::FileError::PermissionDenied,
+              /*restore_scene_dirty=*/true,
+              /*restore_camera_dirty=*/false });
+    });
+    io.join();
+    caller.join();
+
+    EXPECT_TRUE(serviced);
+    EXPECT_EQ(caller_error, wz::fs::FileError::PermissionDenied);
+
+    // The frame thread drains exactly one result carrying what finalize needs.
+    std::vector<wz::app::AsyncSaveResult> got;
+    control.drain_async_save_results(
+        [&](const wz::app::AsyncSaveResult& r) { got.push_back(r); });
+    ASSERT_EQ(got.size(), 1u);
+    EXPECT_EQ(got[0].err, wz::fs::FileError::PermissionDenied);
+    EXPECT_TRUE(got[0].restore_scene_dirty);
+    EXPECT_FALSE(got[0].restore_camera_dirty);
 }
 
 TEST(EditorRuntimeControl, BeginCloseReleasesAParkedSaveCaller)

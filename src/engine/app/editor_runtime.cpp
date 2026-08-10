@@ -90,10 +90,29 @@ namespace wz::app
         return save_.call(std::monostate{});
     }
 
-    void EditorRuntimeControl::service_pending_save(
-        const std::function<wz::fs::FileError()>& saver)
+    bool EditorRuntimeControl::begin_pending_save()
     {
-        save_.service([&](std::monostate) { return saver(); });
+        // Claim the pending save (if any). save_'s payload is std::monostate --
+        // the snapshot the write needs comes from app.prepare_scene_save() on the
+        // frame thread, not from the Request -- so the claimed-out value is unused.
+        std::monostate ignored;
+        return save_.claim(ignored);
+    }
+
+    void EditorRuntimeControl::complete_pending_save(wz::fs::FileError err)
+    {
+        save_.publish(err);
+    }
+
+    void EditorRuntimeControl::post_async_save_result(AsyncSaveResult result)
+    {
+        async_save_results_.post(result);
+    }
+
+    void EditorRuntimeControl::drain_async_save_results(
+        const std::function<void(const AsyncSaveResult&)>& fn)
+    {
+        async_save_results_.drain(fn);
     }
 
     void EditorRuntimeControl::set_frame_profiling(bool enabled)
@@ -1358,12 +1377,73 @@ namespace wz::app
                             // after open_scene swaps the working scene).
                             return app.authored_scene_nodes();
                         });
-                    // The save result now rides back to the caller through the
-                    // blocking handshake (#300 layer 1); service_pending_save
-                    // publishes app.save_scene()'s FileError, so it is no longer
-                    // discarded or merely logged here.
-                    control->service_pending_save(
-                        [&app] { return app.save_scene(); });
+                    // Interactive save, off the frame thread (#305 step 4b / #300
+                    // layer 2). First finalize any async save that finished since
+                    // last frame -- draining BEFORE dispatching a new one so a prior
+                    // save's dirty-flag restore lands before the next snapshot.
+                    control->drain_async_save_results(
+                        [&app, &ctx](const wz::app::AsyncSaveResult& r) {
+                            app.finalize_scene_save(
+                                r.err, r.restore_scene_dirty,
+                                r.restore_camera_dirty);
+                            if (r.err != wz::fs::FileError::None) {
+                                // Parity with the teardown save's log; the ABI also
+                                // surfaces this to the caller.
+                                ctx.logger.error(
+                                    std::string("save_scene (async) failed: ")
+                                    + wz::fs::to_string(r.err));
+                            }
+                        });
+                    // Then service a newly requested save: prepare the snapshot on
+                    // this (frame) thread -- it reads live scene state -- and run the
+                    // blocking read-modify-write on the IO lane so the frame loop
+                    // does not stall on disk. The caller blocked in
+                    // save_scene_blocking() wakes with the FileError the IO lane
+                    // publishes; a failed write restores the dirty flags via the
+                    // AsyncSaveResult drained above.
+                    if (control->begin_pending_save()) {
+                        wz::app::WozzitsApp_v1::SceneSavePreparation prep =
+                            app.prepare_scene_save();
+                        if (!prep.needs_write) {
+                            // Not dirty, or no source path -- answer the caller now.
+                            control->complete_pending_save(prep.early_out);
+                        }
+                        else if (wz::IAsyncExecutor* io =
+                                     wz::get_async_executor()) {
+                            io->post(
+                                [control, work = std::move(prep.work)] {
+                                    // The IO worker loop does not catch, so a save
+                                    // closure must never escape it: a throw becomes
+                                    // an IOError the caller sees, and finalize
+                                    // restores the scene dirty.
+                                    wz::fs::FileError err =
+                                        wz::fs::FileError::IOError;
+                                    try {
+                                        err = wz::app::WozzitsApp_v1::
+                                            commit_scene_save(work);
+                                    }
+                                    catch (...) {
+                                        err = wz::fs::FileError::IOError;
+                                    }
+                                    control->complete_pending_save(err);
+                                    control->post_async_save_result(
+                                        { err, work.scene_dirty,
+                                          work.want_editor_camera });
+                                });
+                        }
+                        else {
+                            // No IO lane installed (the live runtime always installs
+                            // one before init; this is the belt-and-braces path):
+                            // commit inline so the save still happens.
+                            const wz::fs::FileError err =
+                                wz::app::WozzitsApp_v1::commit_scene_save(
+                                    prep.work);
+                            control->complete_pending_save(err);
+                            app.finalize_scene_save(
+                                err, prep.work.scene_dirty,
+                                prep.work.want_editor_camera);
+                        }
+                    }
                     control->service_pending_export_subtree(
                         [&app](
                             const wz::scene::AuthoredEntityId& root_node_id,
@@ -1507,6 +1587,22 @@ namespace wz::app
                         + " frame_error="
                         + std::to_string(frame_error ? 1 : 0));
                 }
+            }
+
+            // Finalize an interactive save that finished on the final frame but
+            // was not drained before the loop exited (#305 step 4b): a failed one
+            // restores the scene dirty so the teardown save just below re-attempts
+            // it. (A write still in flight on the IO lane is drained + published at
+            // teardown_lanes below; its result then has no frame to finalize on --
+            // the caller still gets the FileError, and a success has already
+            // persisted the scene. See the async-save note on that edge.) Only the
+            // editor path has a control; standalone play saves synchronously below.
+            if (control) {
+                control->drain_async_save_results(
+                    [&app](const wz::app::AsyncSaveResult& r) {
+                        app.finalize_scene_save(
+                            r.err, r.restore_scene_dirty, r.restore_camera_dirty);
+                    });
             }
 
             // Persist any unsaved edits before the runtime tears down (covers
