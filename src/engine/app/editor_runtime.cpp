@@ -8,6 +8,7 @@
 #include <tasks/task_scheduler.h>
 #include <io/io_executor.h>
 #include <async/async.h>
+#include <diagnostics/logger_service.h>
 
 #include <event/event.h>
 #include <gpu/gpu.h>
@@ -830,10 +831,24 @@ namespace wz::app
         auto io_executor = std::make_unique<wz::io::IoExecutor>();
         wz::set_async_executor(io_executor.get());
 
-        // Uninstall + join both lanes. Used on the init-failure path here, and
-        // again after engine shutdown below.
+        // LoggerService lane: a cold thread that turns published diagnostic state
+        // into log lines off the hot lanes (#291 / #305 step 4d). Spun up here with
+        // the other lanes -- before create_device, per the AMD constraint. Nothing
+        // publishes to it yet (the D3D12 InfoQueue producer is the follow-up), so it
+        // is installed and idle. The reporter captures ctx.logger BY REFERENCE and
+        // dereferences it only on the report cadence, after init has brought the
+        // logger up; quiesce() below stops that before the logger is torn down.
+        auto logger_service = std::make_unique<wz::diag::LoggerServiceLane>(
+            wz::diag::make_logging_reporter(ctx.logger));
+        wz::diag::set_diagnostic_sink(logger_service.get());
+
+        // Uninstall + join the lanes. Used on the init-failure path here, and again
+        // after engine shutdown below. The LoggerService lane is quiesced before
+        // engine::shutdown (see below), so this only joins its already-silent thread.
         const auto teardown_lanes = [&]
         {
+            wz::diag::set_diagnostic_sink(nullptr);
+            logger_service.reset();
             wz::set_async_executor(nullptr);
             io_executor.reset();
             if (task_pool) {
@@ -861,6 +876,7 @@ namespace wz::app
         ctx.logger.info(
             "IO lane installed, threads="
             + std::to_string(io_executor->thread_count()));
+        ctx.logger.info("LoggerService lane installed (idle; no producer yet)");
 
         if (log_sink.write) {
             wz::logging::set_log_sink(
@@ -1618,6 +1634,13 @@ namespace wz::app
             wz::platform::win32::controller_shutdown();
             wz::input::shutdown_raw_input();
         }
+
+        // Quiesce the LoggerService lane while the logger is STILL ALIVE: a final
+        // report, then it stops touching the logger (#291 / #305 step 4d). This
+        // must precede engine::shutdown, which frees the logger (shutdown_logger) --
+        // reporting across that free would be a data race. The lane thread stays
+        // alive but logger-silent, joined below after the device is gone.
+        logger_service->quiesce();
 
         // Tear the GPU/engine down FIRST, while the lanes are still alive but
         // quiescent (the app scope has closed, so nothing is in flight), THEN join
