@@ -85,7 +85,13 @@ TEST(GpuTimelineExclusivity, OneShotUploadsDoNotSignalTheFrameTimeline)
 
     ASSERT_TRUE(wz::gpu::end_frame(device));
 
-    // end_frame signalled and waited: NOW the value is complete.
+    // #306: end_frame submits and SIGNALS the frame value but no longer waits on the
+    // GPU -- the pacing wait moved to the next begin_frame's slot reuse -- so the
+    // value is not complete the instant end_frame returns. Flush explicitly to
+    // observe it complete: wait_idle signals and waits a LATER value, and the frame
+    // value is signalled exactly once, so once wait_idle returns the frame value has
+    // necessarily passed.
+    wz::gpu::wait_idle(device);
     EXPECT_GE(wz::gpu::completed_timeline_value(device), frame_value);
 
     wz::gpu::release_compute_buffer(device, buffer);
