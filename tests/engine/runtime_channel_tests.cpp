@@ -271,3 +271,83 @@ TEST(Request, ServiceThatThrowsWakesTheCallerAsUnserviced)
     EXPECT_FALSE(out.serviced);
     EXPECT_EQ(out.value, 0);
 }
+
+// ── Request: deferred (cross-thread) completion — claim() + publish() ────────
+// The #305 step 4b / #300 layer 2 split: the engine thread claim()s a request,
+// and a DIFFERENT thread (the IO lane) publish()es the result once the blocking
+// work finishes. These pin that the caller wakes with the right value no matter
+// which thread finished, and that the abandon()/no-op edges hold.
+
+TEST(Request, ClaimThenPublishOnAnotherThreadDeliversTheResult)
+{
+    Request<int, int> req;
+    RequestOutcome<int> out;
+
+    std::thread caller([&] { out = req.call(9); });
+
+    // Engine thread claims and takes the payload...
+    int payload = 0;
+    while (!req.claim(payload)) {
+        std::this_thread::yield();
+    }
+    // ...and a separate thread finishes the work and publishes.
+    std::thread finisher([&] { req.publish(payload * 5); });
+    finisher.join();
+    caller.join();
+
+    EXPECT_TRUE(out.serviced);
+    EXPECT_EQ(out.value, 45);
+}
+
+TEST(Request, ClaimWithNoPendingRequestReturnsFalseAndLeavesTheArgUntouched)
+{
+    Request<int, int> req;
+    int a = 77;
+    EXPECT_FALSE(req.claim(a));
+    EXPECT_EQ(a, 77);  // no request to take -- the destination is not written
+}
+
+TEST(Request, PublishWithoutAClaimIsANoOpAndDoesNotWedgeTheNextCycle)
+{
+    Request<int, int> req;
+    req.publish(5);  // nothing is InFlight -- must change nothing
+
+    // A normal claim/publish cycle still works right afterwards.
+    RequestOutcome<int> out;
+    std::thread caller([&] { out = req.call(2); });
+    int a = 0;
+    while (!req.claim(a)) {
+        std::this_thread::yield();
+    }
+    req.publish(a + 100);
+    caller.join();
+
+    EXPECT_TRUE(out.serviced);
+    EXPECT_EQ(out.value, 102);
+}
+
+TEST(Request, AbandonWhileClaimedStillDeliversTheLaterPublish)
+{
+    // A claim()ed request is InFlight: the servicer owns the payload, so an
+    // abandon() (teardown) landing mid-flight must NOT reclaim it underneath them.
+    // The caller stays parked and wakes on the publish the servicer still makes --
+    // the same handover service() gives for an abandon during its own fn, now
+    // across threads.
+    Request<int, int> req;
+    RequestOutcome<int> out{ false, -1 };
+
+    std::thread caller([&] { out = req.call(3); });
+    int a = 0;
+    while (!req.claim(a)) {
+        std::this_thread::yield();
+    }
+
+    req.abandon();       // teardown lands while the work is in flight
+    req.publish(a * 7);  // the servicer finishes anyway
+
+    caller.join();
+
+    EXPECT_TRUE(out.serviced)
+        << "an abandon mid-flight must not swallow the servicer's publish";
+    EXPECT_EQ(out.value, 21);
+}

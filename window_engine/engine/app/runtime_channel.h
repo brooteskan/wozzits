@@ -243,6 +243,58 @@ namespace wz::app
             cv_.notify_all();
         }
 
+        // ── Deferred (cross-thread) completion: claim() + publish() ────────────
+        // service() runs the servicer and publishes on ONE thread. When the work
+        // must finish on ANOTHER thread -- the engine thread claims a save but the
+        // blocking disk write runs on the IO lane (#305 step 4b / #300 layer 2) --
+        // that pair splits into these two: service(fn) == claim(a) then, once the
+        // work is done, publish(fn(a)).
+        //
+        // For the ASYNC shape only (a by-value verb whose result is produced later),
+        // NOT the in-out (call_inout) shape: claim() moves the payload OUT to the
+        // servicer so the async closure is self-contained (design doc §5.3 -- an
+        // async job borrows no stack frame, it owns its inputs), which means the
+        // servicer's mutations do NOT ride args_ back to the caller the way an
+        // in-out service() needs. save_ is Request<std::monostate,FileError>, so
+        // there is no payload to lose here.
+
+        // Engine thread: if a request is pending, move its payload into `out`,
+        // transition to InFlight, and return true; the caller stays parked until a
+        // matching publish() (which may run on a different thread). Returns false
+        // with `out` untouched when nothing is pending. Once claim() returns true a
+        // publish() MUST follow on some thread, or the caller waits forever -- the
+        // InFlight state does not wake on abandon() (the servicer owns the payload),
+        // exactly as service()'s own InFlight window does not.
+        bool claim(Args& out)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (state_ != State::Requested) {
+                return false;
+            }
+            out = std::move(args_);
+            state_ = State::InFlight;
+            return true;
+        }
+
+        // Any thread: publish the result of a claim()ed request, waking its caller.
+        // A no-op unless the request is still InFlight (double publish, or a request
+        // that was never claimed, changes nothing). This is service()'s publish tail
+        // lifted out so it can run on the thread that finished the work; the
+        // abandon()-during-InFlight handover is identical -- an abandon() that landed
+        // while the work was in flight still hands this result over cleanly, because
+        // the caller is waiting for precisely this InFlight->Published transition.
+        void publish(R result)
+        {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (state_ == State::InFlight) {
+                    result_ = std::move(result);
+                    state_ = State::Published;
+                }
+            }
+            cv_.notify_all();
+        }
+
         // Teardown: wake a blocked caller so call() returns {serviced=false}.
         // Terminal -- the owning object is about to be destroyed, so there is no
         // "next cycle" to reset for.
