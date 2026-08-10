@@ -6,6 +6,8 @@
 #include <engine/frame_schedule.h>
 
 #include <tasks/task_scheduler.h>
+#include <io/io_executor.h>
+#include <async/async.h>
 
 #include <event/event.h>
 #include <gpu/gpu.h>
@@ -777,29 +779,20 @@ namespace wz::app
         desc.asset_cache.enabled = !run_options.cache_root.empty();
         desc.asset_cache.sealed = run_options.cache_sealed;
 
-        if (!wz::engine::init(ctx, desc)) {
-            // Bounded (verification) runs distinguish "no GPU device" from a real
-            // failure so a separate-process test can be SKIPPED rather than
-            // failed on a machine without a device.
-            return run_options.max_frames > 0 ? kRuntimeNoDeviceExitCode : 1;
-        }
-        if (log_sink.write) {
-            wz::logging::set_log_sink(
-                ctx.logger,
-                forward_editor_runtime_log,
-                &log_sink);
-            ctx.logger.info("editor resident engine log sink attached");
-        }
-
-        // Install the wz::tasks worker pool for the live runtime (#305 step 3), so
-        // the cognition workload the behaviours ABI drives -- tensor-network /
-        // belief-propagation agent minds -- runs on real worker threads instead of
-        // the serial-inline S0 backend. Results are UNCHANGED: the pool is
+        // Spin up the worker pool + IO lane BEFORE creating the GPU device (#305).
+        // The thread-creation storm (up to ~16 threads) then settles -- the workers
+        // find no work and park -- while the system is calm, instead of firing the
+        // instant create_device returns, which was observed to upset the AMD driver
+        // once the pool went live. Symmetrically they are torn down AFTER engine
+        // shutdown below, so GPU teardown also runs while the lanes are quiescent.
+        // Nothing dispatches to either during init, so installing the globals here
+        // is safe; the logger is not up until init, so the "installed" lines are
+        // logged just after it.
+        //
+        // Compute pool: runs the cognition workload the behaviours ABI drives --
         // bit-identical to serial (the #293 S3 determinism oracle), only faster.
-        // Installed AFTER engine init (nothing dispatches before the app scope) and
-        // torn down AFTER it (below), before engine shutdown. Default on;
-        // WZ_TASKS_POOL=0 skips the install entirely (zero pool threads) for A/B,
-        // and WZ_TASKS_FORCE_SERIAL keeps the pool up but dispatches serially.
+        // WZ_TASKS_POOL=0 skips it (zero threads) for A/B; WZ_TASKS_FORCE_SERIAL
+        // keeps it up but dispatches serially.
         const bool task_pool_enabled = [] {
 #pragma warning(push)
 #pragma warning(disable : 4996)  // std::getenv is the correct, portable call
@@ -811,13 +804,51 @@ namespace wz::app
         if (task_pool_enabled) {
             task_pool = std::make_unique<wz::tasks::TaskScheduler>();
             wz::tasks::set_task_scheduler(task_pool.get());
+        }
+        // IO lane: dedicated blocking-I/O threads backing the wz::IAsyncExecutor
+        // seam, so wz::fs::async_read_file / async_write_file run off the frame
+        // thread instead of returning IOError (inert until an executor is installed).
+        auto io_executor = std::make_unique<wz::io::IoExecutor>();
+        wz::set_async_executor(io_executor.get());
+
+        // Uninstall + join both lanes. Used on the init-failure path here, and
+        // again after engine shutdown below.
+        const auto teardown_lanes = [&]
+        {
+            wz::set_async_executor(nullptr);
+            io_executor.reset();
+            if (task_pool) {
+                wz::tasks::set_task_scheduler(nullptr);
+                task_pool.reset();
+            }
+        };
+
+        if (!wz::engine::init(ctx, desc)) {
+            // Bounded (verification) runs distinguish "no GPU device" from a real
+            // failure so a separate-process test can be SKIPPED rather than
+            // failed on a machine without a device.
+            teardown_lanes();
+            return run_options.max_frames > 0 ? kRuntimeNoDeviceExitCode : 1;
+        }
+
+        // Logger is up now -- report what was spun up before init.
+        if (task_pool)
             ctx.logger.info(
                 "wz::tasks pool installed, workers="
                 + std::to_string(task_pool->worker_count()));
-        }
-        else {
+        else
             ctx.logger.info(
                 "wz::tasks pool disabled (WZ_TASKS_POOL=0); serial-inline backend");
+        ctx.logger.info(
+            "IO lane installed, threads="
+            + std::to_string(io_executor->thread_count()));
+
+        if (log_sink.write) {
+            wz::logging::set_log_sink(
+                ctx.logger,
+                forward_editor_runtime_log,
+                &log_sink);
+            ctx.logger.info("editor resident engine log sink attached");
         }
 
         // Bounded-run exit code, computed inside the app scope below (it needs
@@ -1492,15 +1523,13 @@ namespace wz::app
             wz::input::shutdown_raw_input();
         }
 
-        // Tear down the worker pool BEFORE engine shutdown (#305 step 3): the app
-        // scope above has closed, so no fork-join work is in flight -- uninstall so
-        // nothing can dispatch to it, then reset() joins the workers.
-        if (task_pool) {
-            wz::tasks::set_task_scheduler(nullptr);
-            task_pool.reset();
-        }
-
+        // Tear the GPU/engine down FIRST, while the lanes are still alive but
+        // quiescent (the app scope has closed, so nothing is in flight), THEN join
+        // the lane threads -- the mirror of spinning them up before init, keeping
+        // the thread-join storm clear of GPU teardown (#305). No fork-join work or
+        // queued I/O is outstanding, so the join is immediate.
         wz::engine::shutdown(ctx);
+        teardown_lanes();
         return exit_code;
     }
 }
