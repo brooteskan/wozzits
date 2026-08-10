@@ -673,12 +673,29 @@ namespace wz::gpu::dx12
         // Returning early left slot_fence_value holding the value from two frames
         // back -- already complete -- so that begin_frame would sail through its
         // pacing wait and reset an allocator the GPU was still reading. Better a
-        // wait that never completes (dx12_device_lost gates it) than one that
-        // wrongly completes. dx12_check_hr only marks the device lost for
-        // device-lost HRESULTs, so a plain E_OUTOFMEMORY here reaches this path
-        // with a live device.
+        // wait that never completes than one that wrongly completes.
         const UINT64 signaled = impl->fence_value++;
         impl->slot_fence_value[impl->frame_slot] = signaled;
+
+        // ...but "a wait that never completes" has to be GATED, and it was not.
+        // dx12_check_hr only marks the device lost for the three device-lost
+        // HRESULTs, so a plain E_OUTOFMEMORY from Signal left status == Ok. The
+        // value just recorded is then unreachable -- nothing will ever signal it --
+        // and the next begin_frame on this slot passes the dx12_device_lost gate
+        // and blocks in WaitForSingleObject(INFINITE) forever: the frame thread
+        // hangs, and wz_host_runtime_stop then hangs behind it at thread.join().
+        //
+        // So a failed Signal marks the device lost explicitly. Once the queue
+        // cannot name a submission on the timeline, completion is permanently
+        // unobservable -- there is no correct wait left to perform, only a choice
+        // between hanging forever and surfacing it -- and "lost" is already the
+        // engine's word for that: render_scene sees the status, calls
+        // on_device_lost() to release every resource, and reports the frame error
+        // instead of wedging. Idempotent, so the device-lost HRESULTs that
+        // dx12_check_hr already marked pass straight through.
+        if (!signal_ok) {
+            dx12_mark_device_lost(*impl, hr, "ID3D12CommandQueue::Signal");
+        }
 
         return signal_ok;
     }

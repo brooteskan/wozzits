@@ -19,18 +19,59 @@ namespace wz::gpu::dx12
     };
 
 
+    namespace
+    {
+        // Release whatever got built and hand back an INVALID timer (null impl),
+        // which is exactly what GpuTimer::valid() is for. Every failure path below
+        // goes through here so a partially-built timer never escapes.
+        GpuTimer fail_gpu_timer(GpuTimerImpl* impl)
+        {
+            if (impl)
+            {
+                // mapped_data is only set after a successful Map, so Unmap is
+                // called only when there is a Map to match.
+                if (impl->mapped_data && impl->readback)
+                {
+                    const D3D12_RANGE written{ 0, 0 };
+                    impl->readback->Unmap(0, &written);
+                }
+                if (impl->readback)
+                    impl->readback->Release();
+                if (impl->query_heap)
+                    impl->query_heap->Release();
+                delete impl;
+            }
+            return GpuTimer{};
+        }
+    }
+
     GpuTimer create_gpu_timer(Device& device, uint32_t slot_count)
     {
+        // Checked, not asserted. Every HRESULT here used to be consumed ONLY by
+        // assert(SUCCEEDED(hr)), which NDEBUG strips -- so in Release each failure
+        // fell straight through and create_gpu_timer returned a timer that
+        // valid() called good with a null query_heap (EndQuery on null in
+        // gpu_timer_begin) or, worse, a null mapped_data that the memset at the
+        // bottom dereferenced immediately. dx12_check_hr logs the failure and
+        // marks the device lost when the HRESULT says so, matching every other
+        // call site in this backend.
         assert(device.impl);
         auto* dx = static_cast<DX12Device*>(device.impl);
+        if (!dx || !dx->device || !dx->queue)
+            return GpuTimer{};
 
         auto* impl = new GpuTimerImpl{};
         impl->slot_count = slot_count;
 
-        // Query the GPU timestamp frequency from the command queue.
+        // Query the GPU timestamp frequency from the command queue. A queue that
+        // does not support timestamps fails here rather than producing a timer
+        // that can only ever report zero.
         HRESULT hr = dx->queue->GetTimestampFrequency(&impl->gpu_frequency);
-        assert(SUCCEEDED(hr));
-        assert(impl->gpu_frequency > 0);
+        if (!dx12_check_hr(*dx, hr, "ID3D12CommandQueue::GetTimestampFrequency")
+            || impl->gpu_frequency == 0)
+        {
+            return fail_gpu_timer(impl);
+        }
 
         // Each slot uses 2 timestamps (begin + end).
         const uint32_t query_count = slot_count * 2;
@@ -42,7 +83,8 @@ namespace wz::gpu::dx12
         heap_desc.NodeMask = 0;
 
         hr = dx->device->CreateQueryHeap(&heap_desc, IID_PPV_ARGS(&impl->query_heap));
-        assert(SUCCEEDED(hr));
+        if (!dx12_check_hr(*dx, hr, "ID3D12Device::CreateQueryHeap(timestamp)"))
+            return fail_gpu_timer(impl);
 
         // Create readback buffer for resolved timestamps.
         const uint64_t readback_size = sizeof(uint64_t) * query_count;
@@ -66,13 +108,21 @@ namespace wz::gpu::dx12
             D3D12_RESOURCE_STATE_COPY_DEST,
             nullptr,
             IID_PPV_ARGS(&impl->readback));
-        assert(SUCCEEDED(hr));
+        if (!dx12_check_hr(
+                *dx, hr, "ID3D12Device::CreateCommittedResource(timestamp readback)"))
+        {
+            return fail_gpu_timer(impl);
+        }
 
         // Persistently map the readback buffer.
         void* mapped = nullptr;
-        D3D12_RANGE read_range{ 0, readback_size };
+        const D3D12_RANGE read_range{ 0, readback_size };
         hr = impl->readback->Map(0, &read_range, &mapped);
-        assert(SUCCEEDED(hr));
+        if (!dx12_check_hr(*dx, hr, "ID3D12Resource::Map(timestamp readback)")
+            || mapped == nullptr)
+        {
+            return fail_gpu_timer(impl);
+        }
         impl->mapped_data = static_cast<uint64_t*>(mapped);
 
         // Zero out initial data.
