@@ -49,16 +49,68 @@ namespace wz::gpu
             return "UNKNOWN";
         }
 
+        // Names for the D3D12 message ids we actually see (#291): the benign per-
+        // frame repeaters this channel exists to summarize, plus the common draw /
+        // resource-state validation ids. Matched by ENUM CONSTANT, not raw number,
+        // so it is robust across SDK versions -- the record carries message->ID's
+        // numeric value, which equals the constant's value. There are ~1300 ids;
+        // this is the useful subset. Unknown ids stay numeric (the category still
+        // classifies them) -- add a case as more show up in real sessions.
+        const char* d3d12_message_name(uint32_t id)
+        {
+            switch (static_cast<D3D12_MESSAGE_ID>(id)) {
+                // The benign per-frame repeaters (a clear whose colour differs from
+                // the resource's optimized clear value) -- #291's 1584-line spam.
+                case D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE:
+                    return "ClearRenderTargetView mismatching clear value";
+                case D3D12_MESSAGE_ID_CLEARDEPTHSTENCILVIEW_MISMATCHINGCLEARVALUE:
+                    return "ClearDepthStencilView mismatching clear value";
+                // Draw-time validation -- a misconfigured draw (the shape of #615,
+                // the null-DSV EXECUTION error this channel was built to catch).
+                case D3D12_MESSAGE_ID_COMMAND_LIST_DRAW_VERTEX_BUFFER_NOT_SET:
+                    return "Draw: vertex buffer not set";
+                case D3D12_MESSAGE_ID_COMMAND_LIST_DRAW_INDEX_BUFFER_NOT_SET:
+                    return "Draw: index buffer not set";
+                case D3D12_MESSAGE_ID_COMMAND_LIST_DRAW_ROOT_SIGNATURE_NOT_SET:
+                    return "Draw: root signature not set";
+                case D3D12_MESSAGE_ID_COMMAND_LIST_DRAW_ROOT_SIGNATURE_MISMATCH:
+                    return "Draw: root signature mismatch";
+                case D3D12_MESSAGE_ID_COMMAND_LIST_DRAW_RENDER_TARGET_DELETED:
+                    return "Draw: render target deleted";
+                case D3D12_MESSAGE_ID_COMMAND_LIST_DRAW_INVALID_PRIMITIVETOPOLOGY:
+                    return "Draw: invalid primitive topology";
+                case D3D12_MESSAGE_ID_COMMAND_LIST_DRAW_VERTEX_BUFFER_TOO_SMALL:
+                    return "Draw: vertex buffer too small";
+                case D3D12_MESSAGE_ID_COMMAND_LIST_DRAW_INDEX_BUFFER_TOO_SMALL:
+                    return "Draw: index buffer too small";
+                // Resource state / barriers -- the common state-tracking mistakes.
+                case D3D12_MESSAGE_ID_INVALID_SUBRESOURCE_STATE:
+                    return "Invalid subresource state";
+                case D3D12_MESSAGE_ID_RESOURCE_BARRIER_BEFORE_AFTER_MISMATCH:
+                    return "Resource barrier before/after state mismatch";
+                case D3D12_MESSAGE_ID_RESOURCE_BARRIER_MATCHING_STATES:
+                    return "Resource barrier with matching before/after states";
+                default:
+                    return nullptr;  // unknown id -- the category classifies it
+            }
+        }
+
         std::string format_entry(const wz::diag::DiagnosticAggregate::Entry& e)
         {
-            // D3D12 records get the category name + the pass label the producer
-            // stamped (kDebugPassMain / kDebugPassOffscreen). A record from another
-            // source sharing this lane (future engine-detected GPU errors) falls
-            // back to a plain form rather than mislabelling it as D3D12.
+            // D3D12 records get the message NAME if we know the id, else the message
+            // category, plus the pass label the producer stamped (kDebugPassMain /
+            // kDebugPassOffscreen). A record from another source sharing this lane
+            // (future engine-detected GPU errors) falls back to a plain form rather
+            // than mislabelling it as D3D12.
             std::string line;
             if (e.source == wz::diag::DiagnosticSource::D3D12) {
                 line = "D3D12 ";
-                line += d3d12_category_name(e.category);
+                if (const char* name = d3d12_message_name(e.id)) {
+                    line += name;
+                }
+                else {
+                    line += d3d12_category_name(e.category);
+                }
                 line += " #";
                 line += std::to_string(e.id);
                 line += " x";

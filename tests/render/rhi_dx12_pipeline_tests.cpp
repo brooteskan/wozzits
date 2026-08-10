@@ -691,8 +691,11 @@ namespace
     }
 }
 
-TEST(Dx12DebugMessages, DebugLayerReporterNamesCategoryCountAndPass)
+TEST(Dx12DebugMessages, DebugLayerReporterNamesAKnownMessageId)
 {
+    // #291's motivating repeater: a known id prints its NAME (not just the number),
+    // with the exact running total and the pass. Keyed by enum constant, so this is
+    // independent of the id's numeric value.
     wz::Logger logger;
     ASSERT_TRUE(wz::logging::init_logger(logger, {}));
     CapturedLines cap;
@@ -701,10 +704,43 @@ TEST(Dx12DebugMessages, DebugLayerReporterNamesCategoryCountAndPass)
     auto reporter = wz::gpu::make_debug_layer_reporter(logger);
     wz::diag::DiagnosticState<64> state;
     wz::diag::DiagnosticRecord r;
-    r.id          = 820;
+    r.id          = static_cast<uint32_t>(
+        D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE);
     r.occurrences = 1584;
     r.source      = wz::diag::DiagnosticSource::D3D12;
     r.severity    = wz::diag::DiagnosticSeverity::Warning;
+    r.category    = static_cast<uint8_t>(D3D12_MESSAGE_CATEGORY_EXECUTION);
+    r.pass        = wz::gpu::dx12::internal::kDebugPassMain;
+    state.ingest(r);
+    reporter(state);
+
+    wz::logging::wait_until_idle(logger);
+    wz::logging::shutdown_logger(logger);
+
+    ASSERT_FALSE(cap.lines.empty());
+    const std::string& line = cap.lines.back().second;
+    EXPECT_EQ(cap.lines.back().first, wz::LogLevel::Warning);
+    EXPECT_NE(line.find("ClearRenderTargetView"), std::string::npos) << line;  // the NAME
+    EXPECT_NE(line.find("1584"), std::string::npos) << line;                   // exact total
+    EXPECT_NE(line.find("[main pass]"), std::string::npos) << line;            // pass label
+}
+
+TEST(Dx12DebugMessages, DebugLayerReporterFallsBackToCategoryForUnknownIds)
+{
+    // An id not in the name table still classifies by its message category, so
+    // nothing goes unlabelled.
+    wz::Logger logger;
+    ASSERT_TRUE(wz::logging::init_logger(logger, {}));
+    CapturedLines cap;
+    wz::logging::set_log_sink(logger, capture_sink, &cap);
+
+    auto reporter = wz::gpu::make_debug_layer_reporter(logger);
+    wz::diag::DiagnosticState<64> state;
+    wz::diag::DiagnosticRecord r;
+    r.id          = 0xFFFFFFu;  // far outside the D3D12_MESSAGE_ID range -- unknown
+    r.occurrences = 3;
+    r.source      = wz::diag::DiagnosticSource::D3D12;
+    r.severity    = wz::diag::DiagnosticSeverity::Error;
     r.category    = static_cast<uint8_t>(D3D12_MESSAGE_CATEGORY_EXECUTION);
     r.pass        = wz::gpu::dx12::internal::kDebugPassOffscreen;
     state.ingest(r);
@@ -715,9 +751,7 @@ TEST(Dx12DebugMessages, DebugLayerReporterNamesCategoryCountAndPass)
 
     ASSERT_FALSE(cap.lines.empty());
     const std::string& line = cap.lines.back().second;
-    EXPECT_EQ(cap.lines.back().first, wz::LogLevel::Warning);      // WARNING severity
-    EXPECT_NE(line.find("EXECUTION"), std::string::npos) << line;  // category name
-    EXPECT_NE(line.find("#820"), std::string::npos) << line;       // id
-    EXPECT_NE(line.find("1584"), std::string::npos) << line;       // exact total
+    EXPECT_EQ(cap.lines.back().first, wz::LogLevel::Error);
+    EXPECT_NE(line.find("EXECUTION"), std::string::npos) << line;         // category fallback
     EXPECT_NE(line.find("[offscreen pass]"), std::string::npos) << line;  // pass label
 }
