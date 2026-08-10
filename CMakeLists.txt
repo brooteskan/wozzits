@@ -43,6 +43,21 @@ option(WOZZITS_ENABLE_V8_SCRIPTING "Build optional V8 scripting examples" OFF)
 option(WZ_FP_STRICT_TESTS
     "ctest fails a test that raises FE_INVALID / FE_DIVBYZERO / FE_OVERFLOW" ON)
 
+# Per-test wall-clock ceiling. Without one ctest applies its 1500s default, so a
+# LIVENESS bug -- a counter that never drains, a claim() with no publish(), a
+# thief spinning on a deque that never yields -- shows up as a 25-minute hang
+# rather than a failure, and reads as "the suite is slow today" instead of "the
+# suite found something". Every concurrency suite here also contains unbounded
+# `while` spins waiting for another thread, which is exactly the shape that
+# hangs. These values are ceilings for a pathological run, not budgets: the
+# slowest unit suite is well under 10s in Debug.
+set(WZ_TEST_TIMEOUT_SECONDS 120 CACHE STRING
+    "ctest per-test timeout (seconds) for the unit-test groups")
+# The standalone/export tests spawn processes, compile shaders, and drive a real
+# device, so they get a wider ceiling.
+set(WZ_RENDER_TEST_TIMEOUT_SECONDS 300 CACHE STRING
+    "ctest per-test timeout (seconds) for the standalone render/export tests")
+
 
 include(FetchContent)
 
@@ -772,12 +787,23 @@ function(rs_add_test_group category name)
     # labelled, so a
     # `-L render` gate missed the ~33 rs_add_test_group(render ...) device suites
     # and render regressions (D1-C20/C21) shipped green.
-    set_tests_properties(${target} PROPERTIES LABELS ${category})
+    set_tests_properties(${target} PROPERTIES
+        LABELS ${category}
+        TIMEOUT ${WZ_TEST_TIMEOUT_SECONDS})
 
+    # Test-process environment. WZ_TASKS_FORCE_SERIAL is pinned OFF because
+    # wz::tasks::force_serial() latches the env var into a function-local
+    # `static const bool` on its first call: a shell that still had it set from a
+    # bisect would silently run the WHOLE suite on the serial backend, and every
+    # concurrency test would pass green having exercised no concurrency at all.
+    # ctest sets this per test process, so it beats the ambient shell without
+    # touching the developer's own environment.
+    set(test_env "WZ_TASKS_FORCE_SERIAL=0")
     # The floating-point gate, applied to the ctest run only -- see the option.
     if(WZ_FP_STRICT_TESTS)
-        set_tests_properties(${target} PROPERTIES ENVIRONMENT "WZ_FP_STRICT=1")
+        list(APPEND test_env "WZ_FP_STRICT=1")
     endif()
+    set_tests_properties(${target} PROPERTIES ENVIRONMENT "${test_env}")
 
 endfunction()
 
@@ -833,12 +859,17 @@ function(rs_add_abi_test_group category name)
     # labelled, so a
     # `-L render` gate missed the ~33 rs_add_test_group(render ...) device suites
     # and render regressions (D1-C20/C21) shipped green.
-    set_tests_properties(${target} PROPERTIES LABELS ${category})
+    set_tests_properties(${target} PROPERTIES
+        LABELS ${category}
+        TIMEOUT ${WZ_TEST_TIMEOUT_SECONDS})
 
+    # See rs_add_test_group for why WZ_TASKS_FORCE_SERIAL is pinned here.
+    set(test_env "WZ_TASKS_FORCE_SERIAL=0")
     # The floating-point gate, applied to the ctest run only -- see the option.
     if(WZ_FP_STRICT_TESTS)
-        set_tests_properties(${target} PROPERTIES ENVIRONMENT "WZ_FP_STRICT=1")
+        list(APPEND test_env "WZ_FP_STRICT=1")
     endif()
+    set_tests_properties(${target} PROPERTIES ENVIRONMENT "${test_env}")
 
 endfunction()
 
@@ -1063,7 +1094,11 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             --frames 5)
     set_tests_properties(wozzits_app_v1_standalone_render PROPERTIES
         SKIP_RETURN_CODE 3
-        LABELS "render")
+        LABELS "render"
+        TIMEOUT ${WZ_RENDER_TEST_TIMEOUT_SECONDS}
+        # These launch the real app/exporter, which drives the task pool -- pin the
+        # backend here too (see rs_add_test_group).
+        ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
     # Issue #213 increment 1b: same separate-process harness, but the scene drives
     # its renderables via geometry+program BINDINGS (the engine assembles the
@@ -1077,7 +1112,11 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             --frames 5)
     set_tests_properties(wozzits_app_v1_render_binding PROPERTIES
         SKIP_RETURN_CODE 3
-        LABELS "render")
+        LABELS "render"
+        TIMEOUT ${WZ_RENDER_TEST_TIMEOUT_SECONDS}
+        # These launch the real app/exporter, which drives the task pool -- pin the
+        # backend here too (see rs_add_test_group).
+        ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
     # Bundle-export smoke test (#334, Seam 3.6): the headless acceptance guard.
     # Export the self-contained render fixture into a bundle, then launch the
@@ -1094,14 +1133,22 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             --no-log)
     set_tests_properties(wozzits_export_bundle_setup PROPERTIES
         FIXTURES_SETUP wozzits_bundle
-        LABELS "render")
+        LABELS "render"
+        TIMEOUT ${WZ_RENDER_TEST_TIMEOUT_SECONDS}
+        # These launch the real app/exporter, which drives the task pool -- pin the
+        # backend here too (see rs_add_test_group).
+        ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
     add_test(NAME wozzits_export_bundle_render
         COMMAND "${CMAKE_BINARY_DIR}/bundle_smoke/wozzits_app_v1.exe" --frames 5)
     set_tests_properties(wozzits_export_bundle_render PROPERTIES
         FIXTURES_REQUIRED wozzits_bundle
         SKIP_RETURN_CODE 3
-        LABELS "render")
+        LABELS "render"
+        TIMEOUT ${WZ_RENDER_TEST_TIMEOUT_SECONDS}
+        # These launch the real app/exporter, which drives the task pool -- pin the
+        # backend here too (see rs_add_test_group).
+        ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
     # Seam 3.3 guard: the SEALED export end to end. --seal warms the baked cache
     # (the fixture's procedural scalar field), strips the cache-served sources,
@@ -1117,7 +1164,11 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             --seal --no-log)
     set_tests_properties(wozzits_export_bundle_sealed PROPERTIES
         SKIP_RETURN_CODE 3
-        LABELS "render")
+        LABELS "render"
+        TIMEOUT ${WZ_RENDER_TEST_TIMEOUT_SECONDS}
+        # These launch the real app/exporter, which drives the task pool -- pin the
+        # backend here too (see rs_add_test_group).
+        ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
     # External-resource relocation guard (#334): test_rebind_fixture references
     # shaders OUTSIDE its project dir (its own fixture shaders + the shipping
@@ -1134,7 +1185,11 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             --no-log)
     set_tests_properties(wozzits_export_relocate_setup PROPERTIES
         FIXTURES_SETUP wozzits_bundle_relocate
-        LABELS "render")
+        LABELS "render"
+        TIMEOUT ${WZ_RENDER_TEST_TIMEOUT_SECONDS}
+        # These launch the real app/exporter, which drives the task pool -- pin the
+        # backend here too (see rs_add_test_group).
+        ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
     add_test(NAME wozzits_export_relocate_render
         COMMAND
@@ -1143,7 +1198,11 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     set_tests_properties(wozzits_export_relocate_render PROPERTIES
         FIXTURES_REQUIRED wozzits_bundle_relocate
         SKIP_RETURN_CODE 3
-        LABELS "render")
+        LABELS "render"
+        TIMEOUT ${WZ_RENDER_TEST_TIMEOUT_SECONDS}
+        # These launch the real app/exporter, which drives the task pool -- pin the
+        # backend here too (see rs_add_test_group).
+        ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
     # Behavior DLL shipping + ABI verify/stamp guard (#334 Seam 3.4/3.5). Export
     # the rendering bundle fixture but SHIP the behavior test plugin via
@@ -1161,7 +1220,11 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
             --no-log)
     set_tests_properties(wozzits_export_behavior_setup PROPERTIES
         FIXTURES_SETUP wozzits_bundle_behavior
-        LABELS "render")
+        LABELS "render"
+        TIMEOUT ${WZ_RENDER_TEST_TIMEOUT_SECONDS}
+        # These launch the real app/exporter, which drives the task pool -- pin the
+        # backend here too (see rs_add_test_group).
+        ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
     add_test(NAME wozzits_export_behavior_render
         COMMAND
@@ -1170,7 +1233,11 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     set_tests_properties(wozzits_export_behavior_render PROPERTIES
         FIXTURES_REQUIRED wozzits_bundle_behavior
         SKIP_RETURN_CODE 3
-        LABELS "render")
+        LABELS "render"
+        TIMEOUT ${WZ_RENDER_TEST_TIMEOUT_SECONDS}
+        # These launch the real app/exporter, which drives the task pool -- pin the
+        # backend here too (see rs_add_test_group).
+        ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
     rs_add_test_group(behavior behavior_registry_core_tests)
     rs_add_test_group(behavior event_channels)

@@ -758,10 +758,19 @@ namespace wz::fs
             return;
         }
 
-        executor->post([path, callback]()
-                       {
+        if (!executor->post([path, callback]()
+                            {
         auto result = read_file(path);
-        callback(std::move(result)); });
+        callback(std::move(result)); }))
+        {
+            // The executor refused the job (shutting down), so nothing will run
+            // the callback. Answer here instead, exactly as the no-executor path
+            // above does -- a caller waiting on this callback must never be left
+            // waiting forever.
+            FileResult<Buffer> result;
+            result.error = FileError::IOError;
+            callback(std::move(result));
+        }
     }
 
     void async_write_file(const Path &path,
@@ -777,10 +786,14 @@ namespace wz::fs
             return;
         }
 
-        executor->post([path, data = std::move(data), callback, overwrite]()
-                       {
+        if (!executor->post([path, data = std::move(data), callback, overwrite]()
+                            {
         FileError err = write_file(path, data, overwrite);
-        callback(err); });
+        callback(err); }))
+        {
+            // Refused (shutting down) -- see async_read_file.
+            callback(FileError::IOError);
+        }
     }
 
     static bool is_separator(char c)

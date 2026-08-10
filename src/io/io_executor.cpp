@@ -31,22 +31,37 @@ namespace wz::io
     {
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            running_ = false;  // stop accepting; workers still drain what's queued
+            accepting_ = false;  // stop accepting
+            running_ = false;    // ...and let the workers leave once drained
         }
         cv_.notify_all();
         for (std::thread& t : threads_)
             t.join();
     }
 
-    void IoExecutor::post(std::function<void()> job)
+    bool IoExecutor::post(std::function<void()> job)
     {
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (!running_)
-                return;  // tearing down -- drop (see the destructor contract)
+            if (!accepting_)
+                return false;  // quiesced or tearing down -- refuse (see the header)
             queue_.push_back(std::move(job));
         }
         cv_.notify_one();
+        return true;
+    }
+
+    void IoExecutor::quiesce()
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        accepting_ = false;
+        // Wait out the backlog AND whatever is mid-write. in_flight_ is what makes
+        // this a real barrier: an empty queue alone would return while a worker is
+        // still inside a job, which for the scene save means still holding the file
+        // open. running_ stays true, so no worker leaves its loop here.
+        idle_cv_.wait(lock, [this] {
+            return queue_.empty() && in_flight_ == 0;
+        });
     }
 
     void IoExecutor::worker_main()
@@ -59,12 +74,24 @@ namespace wz::io
                 cv_.wait(lock, [this] { return !running_ || !queue_.empty(); });
                 // Drain-on-teardown: only exit once running_ is false AND the queue
                 // is empty, so every posted closure runs before the thread leaves.
+                // A quiesce() leaves running_ true, so it parks the thread here
+                // rather than retiring it.
                 if (queue_.empty())
                     return;
                 job = std::move(queue_.front());
                 queue_.pop_front();
+                ++in_flight_;
             }
             job();  // runs outside the lock: it blocks on I/O
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                --in_flight_;
+            }
+            // No job outstanding for this thread now -- a waiting quiesce() may be
+            // the last thing this releases. (A throwing job never reaches here, but
+            // it never returns to the loop either: it escapes worker_main and
+            // terminates, which is the lane's standing contract.)
+            idle_cv_.notify_all();
         }
     }
 }

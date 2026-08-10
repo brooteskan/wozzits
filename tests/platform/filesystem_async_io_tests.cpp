@@ -42,10 +42,11 @@ namespace
         std::mutex m;
         std::vector<std::thread> threads;
 
-        void post(std::function<void()> job) override
+        bool post(std::function<void()> job) override
         {
             std::lock_guard<std::mutex> lock(m);
             threads.emplace_back(std::move(job));
+            return true;  // this executor never refuses
         }
 
         void drain()

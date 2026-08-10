@@ -2,6 +2,7 @@
 
 #include <tasks/fiber_backend.h>
 
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
@@ -91,6 +92,18 @@ namespace wz::tasks
         // out of the loop, so the base is recomputed on the executing thread at use.
         WZ_NOINLINE Fiber tls_scheduler_fiber() { return t_scheduler_fiber; }
         WZ_NOINLINE FiberContext* tls_current_fiber() { return t_current_fiber; }
+        // Same hazard, same reason: a task fibre that parks and resumes may come
+        // back on a DIFFERENT worker, so any read of the worker index taken across
+        // a park must be recomputed on the thread actually executing. submit() and
+        // is_worker_thread() are both reachable from task code that does exactly
+        // that, and submit() acts on the value -- it pushes into
+        // deques_[index], which is owner-only. A hoisted stale index there means
+        // one worker pushing into another's deque, corrupting a structure whose
+        // single-producer assumption is the basis of the lock-free protocol. The
+        // build has no LTO today so nothing can inline across these TUs, but the
+        // cost of routing through the accessor is a call the branch predictor
+        // eats, and the cost of being wrong is another release-only heisenbug.
+        WZ_NOINLINE int tls_worker_index() { return t_worker_index; }
         WZ_NOINLINE void tls_store_yield(
             YieldReason reason, FiberContext* fiber, Counter* counter)
         {
@@ -112,7 +125,7 @@ namespace wz::tasks
 
     bool is_worker_thread()
     {
-        return t_worker_index >= 0;
+        return tls_worker_index() >= 0;
     }
 
     void set_force_serial(bool force)
@@ -186,6 +199,21 @@ namespace wz::tasks
 
         // Destruction contract: no work in flight, so every fibre is free and
         // suspended at its entry-loop switch-back. Safe to delete.
+        //
+        // The contract was unenforced, which is a bad trade for something this
+        // quiet: a fibre still PARKED on a counter is not in free_fibers_, and
+        // deleting it unwinds nothing and frees a stack that a resume would have
+        // switched to -- so the symptom is a crash somewhere else entirely, long
+        // after the pool is gone. Assert it instead. A mismatch means a caller
+        // destroyed the pool with work outstanding (a missed wait()), which is
+        // that caller's bug, not this destructor's.
+        assert(free_fibers_.size() == all_fibers_.size()
+               && "~TaskScheduler: a task fibre is still parked -- work was in "
+                  "flight at destruction (a missing wz::tasks::wait?)");
+        assert(resumable_.empty()
+               && "~TaskScheduler: a fibre is still queued to resume -- work was "
+                  "in flight at destruction");
+
         for (std::unique_ptr<FiberContext>& fc : all_fibers_)
             destroy_fiber(fc->fiber);
     }
@@ -197,8 +225,12 @@ namespace wz::tasks
         // main thread) owns no deque and cannot push into one (push/pop are
         // owner-only), so it hands the task off through the MPSC injection queue; a
         // worker drains that into its deque in drain_injection().
-        if (t_worker_index >= 0)
-            deques_[static_cast<unsigned>(t_worker_index)]->push(t);
+        //
+        // Read the index ONCE, through the accessor: this runs from task code that
+        // may have migrated across workers since it started (see tls_worker_index).
+        const int worker = tls_worker_index();
+        if (worker >= 0)
+            deques_[static_cast<unsigned>(worker)]->push(t);
         else
             injection_.push(t);
         {
@@ -220,6 +252,21 @@ namespace wz::tasks
         FiberContext* fc = owned.get();
         fc->scheduler = this;
         fc->fiber = create_fiber(kFiberStackBytes, &TaskScheduler::task_fiber_entry, fc);
+        // A failed CreateFiberEx returns a null handle, which run_fiber would hand
+        // straight to SwitchToFiber -- an immediate, contextless crash inside the
+        // OS switch. There is no recovery here (the pool has no fibre-less path
+        // that still honours the nested-wait contract), so fail where the cause is
+        // still legible. Each fibre reserves kFiberStackBytes of address space, so
+        // the realistic trigger is a deeply-nested wait chain exhausting it.
+        if (fc->fiber.impl == nullptr)
+        {
+            std::fprintf(stderr,
+                "wz::tasks: FATAL -- could not create a task fibre (%zu live, "
+                "%zu bytes of stack each). Out of memory or address space.\n",
+                all_fibers_.size() + 1u,
+                static_cast<std::size_t>(kFiberStackBytes));
+            std::abort();
+        }
         all_fibers_.push_back(std::move(owned));
         return fc;
     }
@@ -334,6 +381,9 @@ namespace wz::tasks
         // notify_all() wakes by address without dereferencing the storage, and
         // push_resumable() only takes the local fibre pointer + pool-owned state.
         int v = c.outstanding_.load(std::memory_order_acquire);
+        assert(v > 0 && "TaskScheduler::complete: counter already at zero -- a "
+                        "task was completed twice, or completed against a counter "
+                        "it was never submitted against");
         for (;;)
         {
             if (v == 1)
@@ -435,6 +485,16 @@ namespace wz::tasks
     {
         t_worker_index = static_cast<int>(index);
         t_scheduler_fiber = convert_thread_to_fiber();
+        // Without a scheduler fibre this worker cannot switch back out of a task,
+        // so every park on it would jump through a null handle. Same reasoning as
+        // acquire_fiber: fail here, where the cause is still readable.
+        if (t_scheduler_fiber.impl == nullptr)
+        {
+            std::fprintf(stderr,
+                "wz::tasks: FATAL -- worker %u could not convert its thread to a "
+                "fibre.\n", index);
+            std::abort();
+        }
 
         while (running_.load(std::memory_order_acquire))
         {

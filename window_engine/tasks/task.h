@@ -75,6 +75,31 @@ namespace wz::tasks
         Counter& operator=(Counter&&) = delete;
 
     private:
+        // Add `n` outstanding tasks and, if this is the first batch since the
+        // counter last drained, clear the parking slot.
+        //
+        // TaskScheduler::complete()'s finisher exchanges waiter_ to its kDone
+        // sentinel and never restores it, so a counter that has reached zero once
+        // would stay permanently "done" for parking purposes. On a REUSED counter
+        // every later worker-fibre park then fails its registration CAS in
+        // run_fiber() and bounces straight back onto the resumable list -- a spin,
+        // and on a ONE-worker pool (a 2-3 core machine, a VM) a livelock:
+        // try_run_one drains resumables before deque work, so the tasks that would
+        // drop the count never get to run. Both live consumers use a fresh stack
+        // Counter per run/wait pair, but nothing in this API says they must, and
+        // the failure mode is a hang that only shows on small machines.
+        //
+        // Safe to write here: observing outstanding_ == 0 means the finisher has
+        // already published its final store (this acquire pairs with its release),
+        // and past that point complete() deliberately touches nothing in the
+        // Counter -- the whole shape of the stack-lifetime fix in 18484cbb. No task
+        // is outstanding, so no worker can be mid-park either.
+        void arm(int n)
+        {
+            if (outstanding_.fetch_add(n, std::memory_order_acquire) == 0)
+                waiter_.store(nullptr, std::memory_order_release);
+        }
+
         // Outstanding-task count: bumped in run(), dropped as each task finishes.
         // Atomic because at S1 worker threads complete tasks while the submitting
         // thread blocks in wait() on it via atomic wait/notify.

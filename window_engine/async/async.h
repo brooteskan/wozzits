@@ -30,9 +30,18 @@ namespace wz
          *
          * @param job Callable object representing the work to perform.
          *
+         * @return true if the executor took ownership and the job WILL run;
+         *         false if it refused the job (e.g. it is shutting down), in
+         *         which case the job is discarded and never runs.
+         *
          * @note This call must return quickly and must not block.
+         * @warning Callers must handle a false return. A job is frequently the
+         *          only thing that will answer a waiting caller -- publish a
+         *          claimed Request, invoke a completion callback -- and dropping
+         *          it silently leaves that caller blocked forever. Answer it on
+         *          the refusal path instead.
          */
-        virtual void post(std::function<void()> job) = 0;
+        [[nodiscard]] virtual bool post(std::function<void()> job) = 0;
     };
 
     /**

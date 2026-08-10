@@ -29,7 +29,7 @@ namespace wz::tasks
             c.outstanding_.fetch_sub(1, std::memory_order_relaxed);
             return;
         }
-        c.outstanding_.fetch_add(1, std::memory_order_relaxed);
+        c.arm(1);
         s->submit(Task{ &c, user, fn, nullptr, 0 });
     }
 
@@ -49,7 +49,7 @@ namespace wz::tasks
             }
             return;
         }
-        c.outstanding_.fetch_add(static_cast<int>(n), std::memory_order_relaxed);
+        c.arm(static_cast<int>(n));
         for (std::size_t i = 0; i < n; ++i)
             s->submit(Task{ &c, user, nullptr, fn, i });
     }

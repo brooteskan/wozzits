@@ -1002,6 +1002,40 @@ namespace wz::app
         Mailbox<AsyncSaveResult> async_save_results_;
     };
 
+    // Backstop for begin_pending_save()'s claim obligation: publishes IOError on
+    // destruction unless `answered` says some path already published.
+    //
+    // A claimed save Request only ever wakes its caller on the InFlight->Published
+    // transition -- abandon() will not wake it, by design, because the servicer
+    // owns the payload. So a claim that escapes without a publish parks that
+    // caller permanently: save_scene_blocking() never returns,
+    // wait_for_callers_to_exit() spins behind it, and wz_host_runtime_stop never
+    // returns. Ordinary returns are easy to audit; the paths that motivated this
+    // are the ones that do not look like returns -- prepare_scene_save() or the
+    // inline commit throwing, and the IO lane refusing the job mid-teardown.
+    class PendingSaveGuard
+    {
+    public:
+        PendingSaveGuard(EditorRuntimeControl* control, const bool& answered)
+            : control_(control), answered_(answered)
+        {
+        }
+
+        ~PendingSaveGuard()
+        {
+            if (control_ != nullptr && !answered_) {
+                control_->complete_pending_save(wz::fs::FileError::IOError);
+            }
+        }
+
+        PendingSaveGuard(const PendingSaveGuard&) = delete;
+        PendingSaveGuard& operator=(const PendingSaveGuard&) = delete;
+
+    private:
+        EditorRuntimeControl* control_;
+        const bool& answered_;
+    };
+
     struct EditorRuntimeLogSink
     {
         void (*write)(

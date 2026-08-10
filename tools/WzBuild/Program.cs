@@ -62,6 +62,11 @@ internal static class Program
             "  --skip-native                  skip the CMake engine half\n" +
             "  --skip-managed                 skip the .NET editor half\n" +
             "  --dry-run                      print commands without running them\n\n" +
+            "Options (test only):\n" +
+            "  --label <ctest label>          run only one test category (e.g. tasks)\n" +
+            "  --repeat <N>                   re-run until failure, up to N times\n\n" +
+            "Race hunting (a timing bug is green on any single Debug run):\n" +
+            "  build.cmd test --config Release --label tasks --repeat 20\n\n" +
             "Variables (precedence: flag > environment > build.env > default):\n" +
             "  WOZZITS_APP_INSTALL_DIR, WOZZITS_BUILD_CONFIG, WOZZITS_EDITOR_PUBLISH");
     }
@@ -76,6 +81,8 @@ internal sealed class Options
     public bool SkipNative;
     public bool SkipManaged;
     public bool DryRun;
+    public string? Label;
+    public int Repeat;
 
     public static Options Parse(string[] args)
     {
@@ -92,10 +99,19 @@ internal sealed class Options
                 case "--skip-native": o.SkipNative = true; break;
                 case "--skip-managed": o.SkipManaged = true; break;
                 case "--dry-run": o.DryRun = true; break;
+                case "--label": o.Label = Next(args, ref i, a); break;
+                case "--repeat": o.Repeat = ParseRepeat(Next(args, ref i, a)); break;
                 default: throw new ArgumentException($"unknown option '{a}'");
             }
         }
         return o;
+    }
+
+    static int ParseRepeat(string value)
+    {
+        if (!int.TryParse(value, out int n) || n < 1)
+            throw new ArgumentException($"--repeat needs a positive integer (got '{value}')");
+        return n;
     }
 
     static string Next(string[] args, ref int i, string flag)
@@ -236,8 +252,30 @@ internal static class Steps
     {
         if (!o.SkipNative)
         {
-            Log.Info("Engine tests (ctest)");
-            if (!Proc.Run(cfg, o.DryRun, "ctest", "--preset", cfg.Preset))
+            Log.Info($"Engine tests (ctest, {cfg.BuildConfig})");
+            var args = new List<string> { "--preset", cfg.Preset };
+
+            // Narrow to one ctest label, e.g. `--label tasks`. Pairs with --repeat:
+            // hunting a race is worth many runs of the concurrency suites and no
+            // runs of the 300 that cannot race.
+            if (!string.IsNullOrWhiteSpace(o.Label))
+            {
+                args.Add("-L");
+                args.Add(o.Label);
+            }
+
+            // Race hunting. A timing bug that reproduces one run in seven is green
+            // on any single run -- both threading crashes found so far (#293's
+            // stack-Counter use-after-free, the release-only fibre SIGSEGV) were
+            // that shape. until-fail stops at the first failure and keeps its
+            // output, so the run that reproduced is the one you read.
+            if (o.Repeat > 1)
+            {
+                args.Add("--repeat");
+                args.Add($"until-fail:{o.Repeat}");
+            }
+
+            if (!Proc.Run(cfg, o.DryRun, "ctest", args.ToArray()))
                 return false;
         }
 

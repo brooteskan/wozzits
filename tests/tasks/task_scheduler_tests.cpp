@@ -42,6 +42,56 @@ namespace
         TaskScheduler pool;
     };
 
+    // Sets the force-serial flag for a test body and always clears it -- so a body
+    // that fails out early cannot leave the flag on and silently serialize every
+    // test that runs after it.
+    struct ScopedForceSerial
+    {
+        ScopedForceSerial() { wz::tasks::set_force_serial(true); }
+        ~ScopedForceSerial() { wz::tasks::set_force_serial(false); }
+    };
+
+    // Installs an already-constructed pool. The stall test needs custom watchdog
+    // timings so it cannot use ScopedPool, but the global still must not outlive
+    // the pool object -- which is exactly what an early return from a failing body
+    // would leave behind, crashing the NEXT test rather than this one.
+    struct ScopedInstall
+    {
+        explicit ScopedInstall(TaskScheduler& p)
+        {
+            wz::tasks::set_task_scheduler(&p);
+        }
+        ~ScopedInstall() { wz::tasks::set_task_scheduler(nullptr); }
+    };
+
+    // Guard for this whole file. force_serial() latches the WZ_TASKS_FORCE_SERIAL
+    // env var into a function-local `static const bool` on its FIRST call, so a
+    // shell that still has it set from a bisect makes run() execute inline on the
+    // calling thread -- and every test below still passes, having exercised no
+    // concurrency at all. ctest pins the variable off per test process (see
+    // rs_add_test_group in CMakeLists.txt); this catches a direct run from such a
+    // shell.
+    //
+    // A global environment rather than a plain TEST, because gtest skips EVERY
+    // test when a global SetUp() fails. A single failing test would let the rest
+    // run, and StallDetectorFiresOnALostTask genuinely deadlocks on the serial
+    // backend -- run() executes its spin-until-released task inline, so the
+    // release below never runs -- turning a clear diagnostic into a hang.
+    class ForceSerialGuard : public ::testing::Environment
+    {
+    public:
+        void SetUp() override
+        {
+            ASSERT_FALSE(wz::tasks::force_serial())
+                << "WZ_TASKS_FORCE_SERIAL is set in this environment: these tests "
+                   "would run on the serial backend and pass without exercising "
+                   "any concurrency. Clear it and re-run.";
+        }
+    };
+
+    const ::testing::Environment* const kForceSerialGuard =
+        ::testing::AddGlobalTestEnvironment(new ForceSerialGuard);
+
     TEST(TaskScheduler, DefaultPoolHasWorkers)
     {
         TaskScheduler pool;
@@ -51,11 +101,21 @@ namespace
     TEST(TaskScheduler, SingleTaskRunsOnThePool)
     {
         ScopedPool guard{ 4 };
-        int ran = 0;
+        struct Probe { bool ran_on_worker; int ran; };
+        Probe p{ false, 0 };
         Counter c;
-        run(c, [](void* u) { ++*static_cast<int*>(u); }, &ran);
+        run(c, [](void* u)
+            {
+                Probe* pr = static_cast<Probe*>(u);
+                pr->ran_on_worker = wz::tasks::is_worker_thread();
+                ++pr->ran;
+            }, &p);
         wait(c);
-        EXPECT_EQ(ran, 1);
+        EXPECT_EQ(p.ran, 1);
+        // The whole point of the suite: the task really crossed onto a worker.
+        // Asserting only the side effect would pass identically on the serial
+        // backend, which is how a force-serial environment goes unnoticed.
+        EXPECT_TRUE(p.ran_on_worker);
     }
 
     TEST(TaskScheduler, IndexFanOutCoversRangeOnThePool)
@@ -145,7 +205,7 @@ namespace
     TEST(TaskScheduler, ForceSerialBypassesThePool)
     {
         ScopedPool guard{ 4 };
-        wz::tasks::set_force_serial(true);
+        ScopedForceSerial serial;
 
         struct Probe { bool ran_on_worker; int value; };
         Probe p{ true, 0 };
@@ -157,8 +217,6 @@ namespace
                 pr->value = 7;
             }, &p);
         wait(c);
-
-        wz::tasks::set_force_serial(false);
 
         EXPECT_EQ(p.value, 7);
         EXPECT_FALSE(p.ran_on_worker);  // ran inline on this (non-worker) thread
@@ -174,7 +232,7 @@ namespace
             2, std::chrono::milliseconds{ 200 }, std::chrono::milliseconds{ 50 } };
         std::atomic<bool> stall_fired{ false };
         pool.set_stall_callback([&] { stall_fired.store(true); });
-        wz::tasks::set_task_scheduler(&pool);
+        ScopedInstall installed{ pool };
 
         std::atomic<bool> release{ false };
         Counter c;
@@ -196,6 +254,5 @@ namespace
 
         release.store(true, std::memory_order_release);  // let it drain -- no hang
         waiter.join();
-        wz::tasks::set_task_scheduler(nullptr);
     }
 }

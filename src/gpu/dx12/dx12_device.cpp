@@ -358,6 +358,15 @@ namespace wz::gpu::dx12
             if (n >= 1 && n <= static_cast<int>(DX12Device::kFramesInFlight)) {
                 impl->frames_in_flight = static_cast<UINT>(n);
             }
+            else {
+                // Say so rather than silently keeping the default: this knob exists
+                // for A/B measurement, and a typo that quietly measured the default
+                // twice would read as "frames-in-flight makes no difference".
+                std::fprintf(stderr,
+                    "wz::gpu: ignoring WZ_FRAMES_IN_FLIGHT='%s' (expected 1..%u); "
+                    "using %u.\n",
+                    v, DX12Device::kFramesInFlight, impl->frames_in_flight);
+            }
         }
 #pragma warning(pop)
         impl->rtv_heap = rtv_heap;
@@ -482,9 +491,10 @@ namespace wz::gpu::dx12
 
         // #306 frame-slot ring: advance to this frame's slot and, before reusing
         // its command allocator, wait for the fence the LAST frame in this slot
-        // signalled (0 == never used -> no wait). While end_frame still waits on
-        // the just-submitted frame this is a no-op (GetCompletedValue is already
-        // current); it becomes the real pacing wait once end_frame's wait goes.
+        // signalled (0 == never used -> no wait). This IS the pacing wait: it is
+        // the only place the CPU blocks on the GPU per frame now that end_frame
+        // signals and returns, and it blocks only once the CPU is
+        // frames_in_flight frames ahead.
         impl->frame_slot = (impl->frame_slot + 1u) % impl->frames_in_flight;
         const UINT64 slot_wait = impl->slot_fence_value[impl->frame_slot];
         if (slot_wait != 0 && impl->fence->GetCompletedValue() < slot_wait) {
@@ -650,17 +660,27 @@ namespace wz::gpu::dx12
         // frames ahead (it waits on the slot it is about to reuse). Every per-frame
         // resource is per-slot and fence-gated, so nothing here is recycled early.
         hr = impl->queue->Signal(impl->fence, impl->fence_value);
-        if (!dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal")) {
-            return false;
-        }
+        const bool signal_ok =
+            dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal");
 
         // The Signal named this submission on the GPU timeline; spend the value
         // exactly once and record it as THIS slot's fence, so a future begin_frame
         // reusing the slot waits for exactly this frame before recycling it.
+        //
+        // Recorded even when the Signal FAILED. ExecuteCommandLists above already
+        // handed the frame to the GPU, so the work is in flight either way; the
+        // only question is what the next begin_frame on this slot waits for.
+        // Returning early left slot_fence_value holding the value from two frames
+        // back -- already complete -- so that begin_frame would sail through its
+        // pacing wait and reset an allocator the GPU was still reading. Better a
+        // wait that never completes (dx12_device_lost gates it) than one that
+        // wrongly completes. dx12_check_hr only marks the device lost for
+        // device-lost HRESULTs, so a plain E_OUTOFMEMORY here reaches this path
+        // with a live device.
         const UINT64 signaled = impl->fence_value++;
         impl->slot_fence_value[impl->frame_slot] = signaled;
 
-        return true;
+        return signal_ok;
     }
 
     bool present(Device& d)

@@ -845,9 +845,9 @@ namespace wz::app
             wz::gpu::make_debug_layer_reporter(ctx.logger));
         wz::diag::set_diagnostic_sink(logger_service.get());
 
-        // Uninstall + join the lanes. Used on the init-failure path here, and again
-        // after engine shutdown below. The LoggerService lane is quiesced before
-        // engine::shutdown (see below), so this only joins its already-silent thread.
+        // Uninstall + join the lanes. The LoggerService lane is quiesced before
+        // engine::shutdown (see the guard below), so this only joins its
+        // already-silent thread.
         const auto teardown_lanes = [&]
         {
             wz::diag::set_diagnostic_sink(nullptr);
@@ -864,9 +864,57 @@ namespace wz::app
             // Bounded (verification) runs distinguish "no GPU device" from a real
             // failure so a separate-process test can be SKIPPED rather than
             // failed on a machine without a device.
+            //
+            // init() leaves the logger UP on its failure paths (it has no idea
+            // whether the caller still wants to log), and the diagnostics lane
+            // holds ctx.logger by reference -- so silence the lane and free the
+            // logger here, in the same order the success path uses. Without this
+            // the logger's own worker thread outlived the runtime on every
+            // no-device run.
+            logger_service->quiesce();
+            wz::logging::shutdown_logger(ctx.logger);
             teardown_lanes();
             return run_options.max_frames > 0 ? kRuntimeNoDeviceExitCode : 1;
         }
+
+        // Ordered teardown on EVERY exit from here on, including an exception.
+        // Nothing below is noexcept -- Request::service deliberately rethrows so
+        // the loop can log a throwing bind, and any allocation can throw -- and an
+        // unwind that skipped this ran the destructors in declaration order:
+        // io_executor and task_pool would join their threads while the GPU device
+        // was still alive, which is precisely the inversion the AMD-driver
+        // ordering exists to prevent, and g_scheduler / g_executor / g_sink would
+        // be left pointing at destroyed objects while the ABI catches the
+        // exception and keeps the process running.
+        struct RuntimeTeardown
+        {
+            wz::diag::LoggerServiceLane& logger_service;
+            wz::engine::AppContext& ctx;
+            const std::function<void()>& teardown_lanes;
+
+            ~RuntimeTeardown()
+            {
+                // Quiesce the LoggerService lane while the logger is STILL ALIVE:
+                // a final report, then it stops touching the logger (#291 / #305
+                // step 4d). This must precede engine::shutdown, which frees the
+                // logger -- reporting across that free would be a data race. The
+                // lane thread stays alive but logger-silent, joined below after
+                // the device is gone. quiesce() is idempotent, so the normal path
+                // having its own reasons to call it early stays safe.
+                logger_service.quiesce();
+
+                // Tear the GPU/engine down FIRST, while the lanes are still alive
+                // but quiescent (the app scope has closed, so nothing is in
+                // flight), THEN join the lane threads -- the mirror of spinning
+                // them up before init, keeping the thread-join storm clear of GPU
+                // teardown (#305).
+                wz::engine::shutdown(ctx);
+                teardown_lanes();
+            }
+        };
+        const std::function<void()> teardown_lanes_fn = teardown_lanes;
+        RuntimeTeardown runtime_teardown{
+            *logger_service, ctx, teardown_lanes_fn };
 
         // Logger is up now -- report what was spun up before init.
         if (task_pool)
@@ -981,12 +1029,26 @@ namespace wz::app
             // WZ_CPU_LOAD_MS: inject N ms of synthetic per-frame CPU work (a busy
             // spin) to measure the frames-in-flight headroom (#306) -- how much CPU
             // the pipeline absorbs before the frame period grows. Default 0 = off.
-            const double env_cpu_load_ms = [] {
+            const double env_cpu_load_ms = [&ctx] {
 #pragma warning(push)
 #pragma warning(disable : 4996)
                 const char* v = std::getenv("WZ_CPU_LOAD_MS");
 #pragma warning(pop)
-                return v ? std::atof(v) : 0.0;
+                if (v == nullptr || v[0] == '\0') {
+                    return 0.0;
+                }
+                const double ms = std::atof(v);
+                // atof yields 0.0 for anything unparseable, which is also the
+                // "off" value -- so a typo silently measured the un-loaded case.
+                // A negative value is equally meaningless here. Either way, say so.
+                if (!(ms > 0.0)) {
+                    ctx.logger.warn(
+                        std::string("ignoring WZ_CPU_LOAD_MS='") + v
+                        + "' (expected a positive number of milliseconds); "
+                          "no synthetic CPU load");
+                    return 0.0;
+                }
+                return ms;
             }();
 
             // WZ_NO_VSYNC=1 presents with sync_interval 0 (uncapped), so raw frame
@@ -1422,15 +1484,38 @@ namespace wz::app
                     // publishes; a failed write restores the dirty flags via the
                     // AsyncSaveResult drained above.
                     if (control->begin_pending_save()) {
+                        // The request is now CLAIMED, and a claim obliges exactly
+                        // one publish: a caller parked in save_scene_blocking()
+                        // wakes only on the InFlight->Published transition, and
+                        // abandon() deliberately will not wake it (runtime_channel.h
+                        // -- the servicer owns the payload). So every exit from
+                        // this block must answer, including an exception thrown by
+                        // prepare_scene_save() or by commit inline below. Miss it
+                        // and the caller waits forever, wait_for_callers_to_exit()
+                        // spins forever behind it, and wz_host_runtime_stop never
+                        // returns -- an unkillable editor, not a crash.
+                        //
+                        // `answered` is set by whichever path took responsibility;
+                        // the guard publishes IOError on any path that did not.
+                        bool answered = false;
+                        wz::app::PendingSaveGuard save_guard(control, answered);
+
                         wz::app::WozzitsApp_v1::SceneSavePreparation prep =
                             app.prepare_scene_save();
                         if (!prep.needs_write) {
                             // Not dirty, or no source path -- answer the caller now.
                             control->complete_pending_save(prep.early_out);
+                            answered = true;
                         }
                         else if (wz::IAsyncExecutor* io =
                                      wz::get_async_executor()) {
-                            io->post(
+                            // Keep the restore flags before the snapshot moves into
+                            // the closure -- the refusal path below still needs
+                            // them, and `prep.work` is gone by then.
+                            const bool restore_scene = prep.work.scene_dirty;
+                            const bool restore_camera =
+                                prep.work.want_editor_camera;
+                            const bool accepted = io->post(
                                 [control, work = std::move(prep.work)] {
                                     // The IO worker loop does not catch, so a save
                                     // closure must never escape it: a throw becomes
@@ -1445,20 +1530,55 @@ namespace wz::app
                                     catch (...) {
                                         err = wz::fs::FileError::IOError;
                                     }
-                                    control->complete_pending_save(err);
+                                    // Post the finalize result BEFORE waking the
+                                    // caller. complete_pending_save returns the
+                                    // request to Idle, so the frame thread can
+                                    // claim and prepare the NEXT save the moment
+                                    // it lands -- and prepare clears the dirty
+                                    // flags. Waking first let save #2's snapshot
+                                    // be taken before save #1's restore was even
+                                    // queued, inverting the finalize-before-next-
+                                    // snapshot ordering the drain site documents.
                                     control->post_async_save_result(
                                         { err, work.scene_dirty,
                                           work.want_editor_camera });
+                                    control->complete_pending_save(err);
                                 });
+                            if (accepted) {
+                                answered = true;  // the closure owns the publish
+                            }
+                            else {
+                                // The lane refused it: teardown has begun and its
+                                // threads are draining to a join. Nothing will run
+                                // that closure, so answer here and put back the
+                                // dirty flags prepare() optimistically cleared --
+                                // the teardown save then re-attempts the write
+                                // instead of skipping it as "not dirty".
+                                control->complete_pending_save(
+                                    wz::fs::FileError::IOError);
+                                answered = true;
+                                app.finalize_scene_save(
+                                    wz::fs::FileError::IOError, restore_scene,
+                                    restore_camera);
+                            }
                         }
                         else {
                             // No IO lane installed (the live runtime always installs
                             // one before init; this is the belt-and-braces path):
-                            // commit inline so the save still happens.
-                            const wz::fs::FileError err =
-                                wz::app::WozzitsApp_v1::commit_scene_save(
+                            // commit inline so the save still happens. Catches for
+                            // the same reason the IO closure does -- an escaping
+                            // throw here would skip the publish below and park the
+                            // caller forever.
+                            wz::fs::FileError err = wz::fs::FileError::IOError;
+                            try {
+                                err = wz::app::WozzitsApp_v1::commit_scene_save(
                                     prep.work);
+                            }
+                            catch (...) {
+                                err = wz::fs::FileError::IOError;
+                            }
                             control->complete_pending_save(err);
+                            answered = true;
                             app.finalize_scene_save(
                                 err, prep.work.scene_dirty,
                                 prep.work.want_editor_camera);
@@ -1609,13 +1729,27 @@ namespace wz::app
                 }
             }
 
-            // Finalize an interactive save that finished on the final frame but
-            // was not drained before the loop exited (#305 step 4b): a failed one
-            // restores the scene dirty so the teardown save just below re-attempts
-            // it. (A write still in flight on the IO lane is drained + published at
-            // teardown_lanes below; its result then has no frame to finalize on --
-            // the caller still gets the FileError, and a success has already
-            // persisted the scene. See the async-save note on that edge.) Only the
+            // Quiesce the IO lane FIRST: stop accepting saves and wait out any
+            // write still in flight. Everything below writes the scene file from
+            // this thread, and commit_scene_save is a read-modify-write with no
+            // lock and no atomic rename, so an interactive save still running on
+            // the lane would be a second, unsynchronized writer of the same file.
+            //
+            // It also fixes the ordering: before this, a save still QUEUED at
+            // teardown ran during teardown_lanes -- i.e. AFTER the teardown save
+            // below -- and its older snapshot overwrote the newer file. And a save
+            // completing after the drain below posted its result into a mailbox
+            // with no consumer left, so a FAILED one never restored the dirty
+            // flags prepare_scene_save() had already cleared, and the teardown save
+            // then skipped as "not dirty": edits silently lost.
+            //
+            // Not a join -- the lane threads must outlive destroy_device (see
+            // IoExecutor::quiesce and the AMD ordering note on teardown_lanes).
+            io_executor->quiesce();
+
+            // Now finalize every interactive save that finished, including any the
+            // quiesce just waited out (#305 step 4b): a failed one restores the
+            // scene dirty so the teardown save just below re-attempts it. Only the
             // editor path has a control; standalone play saves synchronously below.
             if (control) {
                 control->drain_async_save_results(
@@ -1639,20 +1773,9 @@ namespace wz::app
             wz::input::shutdown_raw_input();
         }
 
-        // Quiesce the LoggerService lane while the logger is STILL ALIVE: a final
-        // report, then it stops touching the logger (#291 / #305 step 4d). This
-        // must precede engine::shutdown, which frees the logger (shutdown_logger) --
-        // reporting across that free would be a data race. The lane thread stays
-        // alive but logger-silent, joined below after the device is gone.
-        logger_service->quiesce();
-
-        // Tear the GPU/engine down FIRST, while the lanes are still alive but
-        // quiescent (the app scope has closed, so nothing is in flight), THEN join
-        // the lane threads -- the mirror of spinning them up before init, keeping
-        // the thread-join storm clear of GPU teardown (#305). No fork-join work or
-        // queued I/O is outstanding, so the join is immediate.
-        wz::engine::shutdown(ctx);
-        teardown_lanes();
+        // The ordered teardown (logger quiesce -> engine shutdown -> lane join)
+        // runs in ~RuntimeTeardown above, so it happens on this return and on an
+        // unwind alike.
         return exit_code;
     }
 }

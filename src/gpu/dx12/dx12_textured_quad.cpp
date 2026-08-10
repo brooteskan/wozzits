@@ -250,6 +250,13 @@ namespace
         ctx->srv_stride = impl->device->GetDescriptorHandleIncrementSize(
             D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+        // Start the cursor in the CURRENT slot's partition, not at 0 -- see the
+        // same fix in ensure_blit_ctx. A context created lazily while frame_slot
+        // is nonzero would otherwise spend its first frame writing slot 0's
+        // descriptors while slot 0's frame may still be reading them.
+        ctx->srv_cursor =
+            impl->frame_slot * wz::gpu::dx12::TexturedQuadContext::kSrvCapacity;
+
         impl->textured_quad_ctx = ctx;
         return ctx->root_sig && ctx->pso && ctx->pso_world && ctx->pso_composite
             && ctx->srv_heap;

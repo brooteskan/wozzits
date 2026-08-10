@@ -48,9 +48,25 @@ namespace wz::io
         IoExecutor& operator=(const IoExecutor&) = delete;
 
         // Enqueue a closure to run on an I/O thread. Returns immediately -- never
-        // blocks on the I/O itself. Safe to call from any thread. A post once
-        // teardown has begun is dropped (the executor is going away).
-        void post(std::function<void()> job) override;
+        // blocks on the I/O itself. Safe to call from any thread.
+        //
+        // Returns false, having discarded the job, once teardown has begun (the
+        // executor is going away and its threads are draining to a join). The
+        // caller must then answer whatever was waiting on that job itself -- see
+        // the warning on IAsyncExecutor::post.
+        [[nodiscard]] bool post(std::function<void()> job) override;
+
+        // Stop accepting new work and BLOCK until everything already queued or
+        // in flight has finished. The threads stay alive and idle -- they are
+        // joined by the destructor, not here.
+        //
+        // Deliberately not a join: lane threads must outlive destroy_device (the
+        // AMD-driver ordering that governs every lane in run_project_runtime), so
+        // a caller that needs the I/O to be *finished* before touching the same
+        // files -- the runtime's teardown save, which otherwise races an
+        // interactive save still writing on this lane -- needs a wait that is not
+        // a join. Idempotent; a post() after this returns false.
+        void quiesce();
 
         unsigned thread_count() const
         {
@@ -60,10 +76,17 @@ namespace wz::io
     private:
         void worker_main();
 
-        std::mutex mutex_;                            // guards queue_ + running_
-        std::condition_variable cv_;
+        std::mutex mutex_;  // guards queue_ + running_ + accepting_ + in_flight_
+        std::condition_variable cv_;       // wakes workers: new work or teardown
+        std::condition_variable idle_cv_;  // wakes quiesce(): a job finished
         std::deque<std::function<void()>> queue_;
+        // Two flags, not one: accepting_ gates post() and is cleared by quiesce()
+        // OR teardown, while running_ is what lets a worker LEAVE its loop and is
+        // cleared only by the destructor. Folding them together would make
+        // quiesce() retire the threads early, which the AMD ordering forbids.
         bool running_ = true;
+        bool accepting_ = true;
+        unsigned in_flight_ = 0;  // jobs currently executing outside the lock
         std::vector<std::thread> threads_;
     };
 }

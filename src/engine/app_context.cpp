@@ -84,6 +84,25 @@ namespace wz::engine
             ctx.logger.info(msg.str());
         }
 
+        // Wait for the GPU BEFORE freeing anything it might still be reading.
+        // Since #306 end_frame signals its fence and returns without blocking, so
+        // the frame loop can exit with up to kFramesInFlight frames still
+        // executing. Both resets below free GPU resources immediately and with no
+        // fence gate -- ctx.gpu.reset() runs ~EngineGpuContext ->
+        // GpuResourceRegistry::destroy_all(), which calls backend destroy() on
+        // every resident resource -- and D3D12 does NOT keep command lists'
+        // resource references alive, so releasing a resource an in-flight list
+        // still reads is a use-after-free on the GPU: a corrupt final frame or a
+        // device-removed TDR, both sporadic by nature.
+        //
+        // Before #306 the blocking end_frame made "the loop exited" imply "the GPU
+        // is idle", and this teardown silently relied on that. The wait that used
+        // to be implicit is now explicit. destroy_device() further down does its
+        // own wait_for_gpu, but that is far too late -- by then the resources the
+        // in-flight frame referenced have already been released.
+        if (ctx.device.valid())
+            wz::gpu::wait_idle(ctx.device);
+
         ctx.assets.reset();
         ctx.gpu.reset();
 

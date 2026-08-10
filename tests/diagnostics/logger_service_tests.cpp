@@ -69,6 +69,19 @@ namespace
             }
         };
     }
+
+    // Installs the process-wide sink for a test body and always clears it. The
+    // global must never outlive the lane it points at: a body that leaves early
+    // would strand a dangling sink that the NEXT test's publish() writes through,
+    // failing somewhere unrelated to the test that actually broke.
+    struct ScopedSink
+    {
+        explicit ScopedSink(wz::diag::IDiagnosticSink* sink)
+        {
+            wz::diag::set_diagnostic_sink(sink);
+        }
+        ~ScopedSink() { wz::diag::set_diagnostic_sink(nullptr); }
+    };
 }
 
 // ── seam ────────────────────────────────────────────────────────────────────
@@ -81,10 +94,10 @@ TEST(DiagnosticSink, IsInertUntilInstalledThenRoundTrips)
     auto lane = std::make_unique<LoggerServiceLane>(
         recording_reporter(obs), kNoAutoCadence);
 
-    wz::diag::set_diagnostic_sink(lane.get());
-    EXPECT_EQ(wz::diag::get_diagnostic_sink(), lane.get());
-
-    wz::diag::set_diagnostic_sink(nullptr);
+    {
+        ScopedSink installed{ lane.get() };
+        EXPECT_EQ(wz::diag::get_diagnostic_sink(), lane.get());
+    }
     EXPECT_EQ(wz::diag::get_diagnostic_sink(), nullptr);
 }
 

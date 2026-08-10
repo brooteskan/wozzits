@@ -214,6 +214,17 @@ namespace
         ctx->srv_stride = impl->device->GetDescriptorHandleIncrementSize(
             D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+        // Start the cursor in the CURRENT slot's partition, not at 0. This context
+        // is built lazily, on the first blit of whichever frame first needs one --
+        // which may be any slot. The struct default of 0 plus the per-frame guard
+        // (which only checks the partition's upper bound) meant a context first
+        // created while frame_slot == 1 wrote descriptors 0..cap-1, i.e. slot 0's
+        // partition, while slot 0's frame could still be in flight reading them.
+        // begin_frame rebases the cursor from here on, so this only had to be wrong
+        // once, on the frame that created the context.
+        ctx->srv_cursor =
+            impl->frame_slot * wz::gpu::dx12::BlitContext::kSrvCapacity;
+
         impl->blit_ctx = ctx;
         return ctx->root_sig && ctx->pso && ctx->srv_heap;
     }
