@@ -1,11 +1,10 @@
-#include <support/fp_expectations.h>
-
 #include <gtest/gtest.h>
 
 #include <external/json/json_parser.h>
 #include <external/json/json_read_helpers.h>
 #include <external/json/json_writer.h>
 
+#include <cfenv>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -256,10 +255,14 @@ TEST(JSONWriter, EscapesStrings)
 // UB (or a silently wrong id/slot/layer) into the engine.
 TEST(JSONReadHelpers, NarrowNumberRejectsWhatTheTargetCannotHold)
 {
-    // Narrowing values the target cannot hold is the whole subject of this test,
-    // so the out-of-range conversions raise FE_INVALID by design.
-    wz::testing::ExpectFpException expected_fp{ FE_INVALID };
-
+    // NO ExpectFpException here, deliberately. This test used to declare
+    // FE_INVALID on the theory that "the out-of-range conversions raise it by
+    // design" -- but narrow_number never PERFORMS an out-of-range conversion.
+    // Rejecting before the cast is the entire point of the function, so every
+    // rejection below raises nothing at all, in both configs. The declaration
+    // described behaviour this code does not have, and it failed every Release
+    // run for a reason that had nothing to do with the rejections: see the note
+    // on the 2^64-2048 case at the bottom for what actually set the flag.
     using wz::json::narrow_number;
 
     // Exact bounds are accepted; one past them is not.
@@ -294,6 +297,24 @@ TEST(JSONReadHelpers, NarrowNumberRejectsWhatTheTargetCannotHold)
     EXPECT_EQ(
         narrow_number<uint64_t>(18446744073709549568.0),   // 2^64 - 2048
         std::optional<uint64_t>(18446744073709549568ull));
+
+    // The line above is the ONLY thing in this test that touches the FP status
+    // word, and it is the one case that SUCCEEDS -- not a rejection. x86-64 has
+    // no double->unsigned-64 instruction, so a conversion whose value is at or
+    // above 2^63 is lowered through a SIGNED 64-bit conversion that overflows
+    // (raising FE_INVALID) and is then corrected. The uint64_t this yields is
+    // exactly right -- the EXPECT_EQ above proves it -- so the flag is an
+    // artifact of the lowering, not a domain error. Measured: a bare
+    // (uint64_t)18446744073709549568.0 raises FE_INVALID at -Od and returns the
+    // correct value; at -O2 the literal folds at compile time and nothing is
+    // raised, which is the entire Debug/Release split that made this test fail
+    // in Release only.
+    //
+    // Cleared narrowly, right here rather than at the end of the test, so the
+    // fp_status_listener gate (#320, WZ_FP_STRICT under ctest, Debug-only) still
+    // catches a genuine FE_INVALID raised anywhere else in this test.
+    std::feclearexcept(FE_INVALID);
+
     EXPECT_FALSE(narrow_number<int64_t>(std::ldexp(1.0, 63)).has_value());
 }
 
