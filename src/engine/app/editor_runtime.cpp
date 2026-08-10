@@ -1475,19 +1475,22 @@ namespace wz::app
                     // layer 2). First finalize any async save that finished since
                     // last frame -- draining BEFORE dispatching a new one so a prior
                     // save's dirty-flag restore lands before the next snapshot.
-                    control->drain_async_save_results(
-                        [&app, &ctx](const wz::app::AsyncSaveResult& r) {
-                            app.finalize_scene_save(
-                                r.err, r.restore_scene_dirty,
-                                r.restore_camera_dirty);
-                            if (r.err != wz::fs::FileError::None) {
-                                // Parity with the teardown save's log; the ABI also
-                                // surfaces this to the caller.
-                                ctx.logger.error(
-                                    std::string("save_scene (async) failed: ")
-                                    + wz::fs::to_string(r.err));
-                            }
-                        });
+                    const auto finalize_finished_saves = [&app, &ctx, control] {
+                        control->drain_async_save_results(
+                            [&app, &ctx](const wz::app::AsyncSaveResult& r) {
+                                app.finalize_scene_save(
+                                    r.err, r.restore_scene_dirty,
+                                    r.restore_camera_dirty);
+                                if (r.err != wz::fs::FileError::None) {
+                                    // Parity with the teardown save's log; the ABI
+                                    // also surfaces this to the caller.
+                                    ctx.logger.error(
+                                        std::string("save_scene (async) failed: ")
+                                        + wz::fs::to_string(r.err));
+                                }
+                            });
+                    };
+                    finalize_finished_saves();
                     // Then service a newly requested save: prepare the snapshot on
                     // this (frame) thread -- it reads live scene state -- and run the
                     // blocking read-modify-write on the IO lane so the frame loop
@@ -1512,6 +1515,24 @@ namespace wz::app
                         bool answered = false;
                         wz::app::PendingSaveGuard save_guard(control, answered);
 
+                        // Drain AGAIN, inside the claim. The drain above and this
+                        // claim are not atomic against the IO lane: save #1 can
+                        // finish in the window between them, and its closure posts
+                        // the result BEFORE releasing the request, so the owner can
+                        // issue save #2 and have it claimed right here with #1's
+                        // result still undrained. prepare_scene_save() would then
+                        // read dirty flags that #1's restore had not put back yet --
+                        // and if #1 FAILED, it takes the "nothing changed" early-out
+                        // and answers None for edits that were never written.
+                        //
+                        // Self-healing (the next frame's drain restores the flags and
+                        // the teardown save re-attempts the write), but a false
+                        // success reported to the caller in the meantime, on exactly
+                        // the invariant the closure's post-before-wake ordering
+                        // exists to protect. Inside the guard, so a throw from
+                        // finalize_scene_save still answers the claim.
+                        finalize_finished_saves();
+
                         wz::app::WozzitsApp_v1::SceneSavePreparation prep =
                             app.prepare_scene_save();
                         if (!prep.needs_write) {
@@ -1527,7 +1548,9 @@ namespace wz::app
                             const bool restore_scene = prep.work.scene_dirty;
                             const bool restore_camera =
                                 prep.work.want_editor_camera;
-                            const bool accepted = io->post(
+                            bool accepted = false;
+                            try {
+                                accepted = io->post(
                                 [control, work = std::move(prep.work)] {
                                     // The IO worker loop does not catch, so a save
                                     // closure must never escape it: a throw becomes
@@ -1551,21 +1574,64 @@ namespace wz::app
                                     // be taken before save #1's restore was even
                                     // queued, inverting the finalize-before-next-
                                     // snapshot ordering the drain site documents.
-                                    control->post_async_save_result(
-                                        { err, work.scene_dirty,
-                                          work.want_editor_camera });
+                                    //
+                                    // Guarded: this is Mailbox::post -> vector
+                                    // push_back, which can throw bad_alloc, and it
+                                    // sat OUTSIDE the try above -- where an escape
+                                    // leaves worker_main (which does not catch) and
+                                    // calls std::terminate. Losing a restore is
+                                    // survivable; killing the editor is not. The
+                                    // caller still learns the real result from the
+                                    // publish below, so err is left honest here: on
+                                    // a FAILED write it already carries the failure,
+                                    // and on a successful one there was nothing to
+                                    // restore anyway.
+                                    try {
+                                        control->post_async_save_result(
+                                            { err, work.scene_dirty,
+                                              work.want_editor_camera });
+                                    }
+                                    catch (...) {
+                                    }
+                                    // Not guarded, deliberately: publish takes a
+                                    // FileError by value and only moves an enum
+                                    // under a lock -- it allocates nothing. It is
+                                    // also the one call that MUST happen, since a
+                                    // claim obliges exactly one publish.
                                     control->complete_pending_save(err);
                                 });
+                            }
+                            catch (...) {
+                                // post() allocates before it can queue anything --
+                                // the std::function heap-copies this closure, and
+                                // the lane's deque may grow -- so bad_alloc can
+                                // throw it out here. push_back is strongly
+                                // exception-safe and the std::function never
+                                // reaches the queue, so the closure definitively
+                                // did NOT run and cannot publish: falling through
+                                // as "not accepted" answers the caller and restores
+                                // the flags exactly once.
+                                //
+                                // Previously this unwound past the guard, which
+                                // published IOError but skipped the dirty-flag
+                                // restore that the refusal branch does -- and the
+                                // unwind skipped the teardown save too, so the
+                                // edits were silently lost.
+                                accepted = false;
+                            }
                             if (accepted) {
                                 answered = true;  // the closure owns the publish
                             }
                             else {
-                                // The lane refused it: teardown has begun and its
-                                // threads are draining to a join. Nothing will run
-                                // that closure, so answer here and put back the
-                                // dirty flags prepare() optimistically cleared --
-                                // the teardown save then re-attempts the write
-                                // instead of skipping it as "not dirty".
+                                // Refused (teardown has begun and the lane's threads
+                                // are draining to a join), or the post threw above.
+                                // Either way nothing will run that closure, so answer
+                                // here and put back the dirty flags prepare()
+                                // optimistically cleared -- the teardown save then
+                                // re-attempts the write instead of skipping it as
+                                // "not dirty". restore_scene / restore_camera were
+                                // copied before prep.work moved into the closure,
+                                // which is what makes them readable on both paths.
                                 control->complete_pending_save(
                                     wz::fs::FileError::IOError);
                                 answered = true;

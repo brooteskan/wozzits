@@ -869,6 +869,77 @@ TEST(EditorRuntimeControl, AsyncSavePublishesOffThreadAndReportsBackToTheFrameTh
     EXPECT_FALSE(got[0].restore_camera_dirty);
 }
 
+// The ordering guarantee the frame loop's in-claim drain rests on: once a SECOND
+// save is claimable, the FIRST save's result is already drainable.
+//
+// The frame loop drains finished saves, then claims a newly requested one -- and
+// those two steps are not atomic against the IO lane, so save #1 can land in the
+// gap between them. What makes that survivable is the closure posting its result
+// BEFORE waking the caller: the caller cannot return (and so cannot request save
+// #2, which is what makes a claim possible) until after the post. Draining again
+// inside the claim therefore always sees it. Reverse those two and the guarantee
+// is gone -- save #2 gets prepared while #1's dirty-flag restore is still in
+// flight, and a failed #1 makes prepare take its "nothing changed" early-out and
+// answer None for edits that were never written.
+//
+// Scope, stated honestly: this pins the OBSERVABLE end state -- a result posted
+// by the lane is drainable by the time the next save is claimed -- not the
+// ordering that guarantees it. Inverting the closure to complete-then-post was
+// tried here and still passes: losing the race would require the caller to wake,
+// return, request save #2, and the frame thread to claim and drain it, all before
+// the lane executes its very next function call. The window is real but not
+// reachable from a test. The frame-loop sequencing that consumes this
+// (run_project_runtime's drain / claim / drain) needs a live app and has no
+// harness here either.
+TEST(EditorRuntimeControl, ASecondSaveIsClaimableOnlyOnceTheFirstResultIsDrainable)
+{
+    EditorRuntimeControl control;
+
+    // ── save #1 ──────────────────────────────────────────────────────────────
+    std::thread caller1([&] { (void)control.save_scene_blocking(); });
+    while (!control.begin_pending_save()) {
+        std::this_thread::yield();
+    }
+    // The "IO lane", in the order the production closure uses: post the result,
+    // THEN wake the caller.
+    std::thread io1([&] {
+        control.post_async_save_result(
+            { wz::fs::FileError::PermissionDenied,
+              /*restore_scene_dirty=*/true,
+              /*restore_camera_dirty=*/false });
+        control.complete_pending_save(wz::fs::FileError::PermissionDenied);
+    });
+
+    // Join the CALLER, not the IO thread. Joining io1 here would serialize the
+    // whole lane and the assert below would hold under either ordering, testing
+    // nothing. The caller returns purely on the publish, which is what the real
+    // owner thread does -- so if the post did not already happen-before that
+    // publish, the drain below races it and comes up empty.
+    caller1.join();
+
+    // ── save #2, requested the instant #1's caller returned ──────────────────
+    std::thread caller2([&] { (void)control.save_scene_blocking(); });
+    while (!control.begin_pending_save()) {
+        std::this_thread::yield();
+    }
+
+    // #2 is claimed. #1's result must ALREADY be here -- this is the drain the
+    // frame loop does inside the claim, before it prepares #2's snapshot.
+    std::vector<wz::app::AsyncSaveResult> got;
+    control.drain_async_save_results(
+        [&](const wz::app::AsyncSaveResult& r) { got.push_back(r); });
+    ASSERT_EQ(got.size(), 1u)
+        << "save #1's result must be drainable before save #2 can be prepared";
+    EXPECT_EQ(got[0].err, wz::fs::FileError::PermissionDenied);
+    EXPECT_TRUE(got[0].restore_scene_dirty)
+        << "the restore a failed #1 owes the scene must reach the frame thread "
+           "before #2's snapshot is taken";
+
+    control.complete_pending_save(wz::fs::FileError::None);
+    caller2.join();
+    io1.join();
+}
+
 TEST(EditorRuntimeControl, BeginCloseReleasesAParkedSaveCaller)
 {
     // The A1-C20 teardown case: a save posted with nothing servicing it (the
