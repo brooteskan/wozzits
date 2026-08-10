@@ -5,6 +5,8 @@
 #include <engine/app_context.h>
 #include <engine/frame_schedule.h>
 
+#include <tasks/task_scheduler.h>
+
 #include <event/event.h>
 #include <gpu/gpu.h>
 #include <input/input.h>
@@ -14,6 +16,8 @@
 #include <window/window2.h>
 
 #include <cstdlib>
+#include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -787,6 +791,35 @@ namespace wz::app
             ctx.logger.info("editor resident engine log sink attached");
         }
 
+        // Install the wz::tasks worker pool for the live runtime (#305 step 3), so
+        // the cognition workload the behaviours ABI drives -- tensor-network /
+        // belief-propagation agent minds -- runs on real worker threads instead of
+        // the serial-inline S0 backend. Results are UNCHANGED: the pool is
+        // bit-identical to serial (the #293 S3 determinism oracle), only faster.
+        // Installed AFTER engine init (nothing dispatches before the app scope) and
+        // torn down AFTER it (below), before engine shutdown. Default on;
+        // WZ_TASKS_POOL=0 skips the install entirely (zero pool threads) for A/B,
+        // and WZ_TASKS_FORCE_SERIAL keeps the pool up but dispatches serially.
+        const bool task_pool_enabled = [] {
+#pragma warning(push)
+#pragma warning(disable : 4996)  // std::getenv is the correct, portable call
+            const char* v = std::getenv("WZ_TASKS_POOL");
+#pragma warning(pop)
+            return !(v != nullptr && v[0] == '0' && v[1] == '\0');  // default ON
+        }();
+        std::unique_ptr<wz::tasks::TaskScheduler> task_pool;
+        if (task_pool_enabled) {
+            task_pool = std::make_unique<wz::tasks::TaskScheduler>();
+            wz::tasks::set_task_scheduler(task_pool.get());
+            ctx.logger.info(
+                "wz::tasks pool installed, workers="
+                + std::to_string(task_pool->worker_count()));
+        }
+        else {
+            ctx.logger.info(
+                "wz::tasks pool disabled (WZ_TASKS_POOL=0); serial-inline backend");
+        }
+
         // Bounded-run exit code, computed inside the app scope below (it needs
         // the live app to query resolved renderables) and returned after
         // shutdown. Stays 0 for the unbounded interactive loop.
@@ -1457,6 +1490,14 @@ namespace wz::app
 
             wz::platform::win32::controller_shutdown();
             wz::input::shutdown_raw_input();
+        }
+
+        // Tear down the worker pool BEFORE engine shutdown (#305 step 3): the app
+        // scope above has closed, so no fork-join work is in flight -- uninstall so
+        // nothing can dispatch to it, then reset() joins the workers.
+        if (task_pool) {
+            wz::tasks::set_task_scheduler(nullptr);
+            task_pool.reset();
         }
 
         wz::engine::shutdown(ctx);
