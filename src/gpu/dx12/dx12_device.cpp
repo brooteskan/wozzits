@@ -215,8 +215,8 @@ namespace wz::gpu::dx12
         // renders -- unbound vertex buffers, wrong resource states, the
         // depth/DSV mismatch that shipped green in two suites -- reachable only
         // from an attached debugger. QueryInterface fails when the layer is not
-        // installed, which is the release build; take_debug_messages then
-        // returns empty.
+        // installed, which is the release build; publish_debug_diagnostics then
+        // returns without publishing.
         ID3D12InfoQueue* info_queue = nullptr;
         if (device
             && FAILED(device->QueryInterface(IID_PPV_ARGS(&info_queue))))
