@@ -22,9 +22,26 @@ From the repo root:
 
 ```powershell
 git submodule update --init external/pmp
+
+copy `build.env.example` to `build.env`
+edit `WOZZITS_APP_INSTALL_DIR`
+
 .\build.cmd build
+
+or
+
+Run `.\build.cmd --help` for options
+
 ```
 
+## Run the tests
+
+```powershell
+.\build.cmd test
+```
+This runs the engine tests (`ctest`) and the editor tests (`dotnet test`).
+
+## Run the editor
 `build.cmd` builds the C++ engine and publishes the .NET editor into one folder
 (default `D:\wozzits-app`). Launch it:
 
@@ -36,10 +53,4 @@ To change where it installs, copy `build.env.example` to `build.env` and edit
 `WOZZITS_APP_INSTALL_DIR`. Run `.\build.cmd --help` for options (`--config
 Release`, `--dry-run`, …).
 
-## Run the tests
 
-```powershell
-.\build.cmd test
-```
-
-This runs the engine tests (`ctest`) and the editor tests (`dotnet test`).
