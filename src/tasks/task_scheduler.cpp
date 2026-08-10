@@ -7,6 +7,15 @@
 #include <optional>
 #include <utility>
 
+// Marks the TLS accessors below: forces the thread_local base to be recomputed on
+// the executing thread rather than hoisted across a fibre switch that changes
+// threads (see the accessor note in the anonymous namespace).
+#if defined(_MSC_VER)
+#define WZ_NOINLINE __declspec(noinline)
+#else
+#define WZ_NOINLINE __attribute__((noinline))
+#endif
+
 // wz::tasks worker pool (#293, S1 pool + S2 fibres + S3 diagnostics).
 //
 // Each worker thread converts itself to a SCHEDULER FIBRE and loops: run a
@@ -40,6 +49,9 @@ namespace wz::tasks
 
         // Per-WORKER-THREAD state. thread_local, NOT fibre-local: a migrated fibre
         // reads the state of whichever thread now runs it -- which is what we want.
+        // But that only holds if each access re-reads the TLS base on the executing
+        // thread; the migration-sensitive ones go through the tls_* accessors below
+        // (see their note) so the optimizer cannot hoist the base across a switch.
         thread_local int t_worker_index = -1;
         thread_local Fiber t_scheduler_fiber{};
         thread_local FiberContext* t_current_fiber = nullptr;
@@ -63,6 +75,28 @@ namespace wz::tasks
             const unsigned hc = std::thread::hardware_concurrency();
             const unsigned n = (hc > 2) ? hc - 2 : 1;
             return (n < 16u) ? n : 16u;
+        }
+
+        // A task fibre can PARK on one worker and RESUME on another (the pool
+        // migrates it when its counter drains). After such a switch, its TLS reads
+        // must resolve to the thread NOW running it. The optimizer, assuming a
+        // thread cannot change mid-function, hoists the loop-invariant TLS-base
+        // computation out of task_fiber_entry's for(;;) loop -- computing it once on
+        // the thread that first ran the fibre and reusing it after execute_task has
+        // migrated the fibre elsewhere. The stale base reaches the ORIGINAL thread's
+        // slots, so a fibre "switching back to its scheduler" jumps into a DIFFERENT
+        // thread's scheduler fibre; two threads then run one fibre stack and smash
+        // it -- a release-only crash (an -O0 build reloads TLS every access and hides
+        // it). These WZ_NOINLINE accessors are opaque calls the compiler cannot hoist
+        // out of the loop, so the base is recomputed on the executing thread at use.
+        WZ_NOINLINE Fiber tls_scheduler_fiber() { return t_scheduler_fiber; }
+        WZ_NOINLINE FiberContext* tls_current_fiber() { return t_current_fiber; }
+        WZ_NOINLINE void tls_store_yield(
+            YieldReason reason, FiberContext* fiber, Counter* counter)
+        {
+            t_yield_reason = reason;
+            t_yield_fiber = fiber;
+            t_yield_counter = counter;
         }
     }
 
@@ -106,9 +140,13 @@ namespace wz::tasks
         for (;;)
         {
             self->scheduler->execute_task(self->task);
-            t_yield_reason = YieldReason::Finished;
-            t_yield_fiber = self;
-            switch_to_fiber(t_scheduler_fiber);
+            // execute_task may have MIGRATED this fibre to another worker (a nested
+            // wait parks it; a different worker resumes it). `self` is the fibre's
+            // own entry arg so it is always right, but the yield state and the
+            // scheduler-fibre handle are thread_local and must be THIS thread's --
+            // hence the accessors (see their note).
+            tls_store_yield(YieldReason::Finished, self, nullptr);
+            switch_to_fiber(tls_scheduler_fiber());
         }
     }
 
@@ -288,10 +326,12 @@ namespace wz::tasks
 
     void TaskScheduler::park_current_fiber(Counter& c)
     {
-        t_yield_reason = YieldReason::Parking;
-        t_yield_fiber = t_current_fiber;
-        t_yield_counter = &c;
-        switch_to_fiber(t_scheduler_fiber);
+        // Runs on the task fibre, which may already have migrated across workers, so
+        // every TLS access here goes through the accessors (see their note): the
+        // fibre to register is THIS thread's current fibre, and the switch target is
+        // THIS thread's scheduler fibre.
+        tls_store_yield(YieldReason::Parking, tls_current_fiber(), &c);
+        switch_to_fiber(tls_scheduler_fiber());
     }
 
     void TaskScheduler::wait_on_worker(Counter& c)
