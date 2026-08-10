@@ -1451,6 +1451,11 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(containers mpsc_ring_buffer)
     rs_add_test_group(containers spsc_queue)
     rs_add_test_group(containers work_stealing_deque)
+    # The deque's concurrency tests park a thief inside steal()'s read-then-CAS
+    # window through the header's test seam to construct the last-element /
+    # recycled-index race deterministically (#304) -- see the
+    # WZ_WORK_STEALING_DEQUE_TEST_HOOKS block in work_stealing_deque.h.
+    target_compile_definitions(containers_work_stealing_deque PRIVATE WZ_WORK_STEALING_DEQUE_TEST_HOOKS)
     rs_add_test_group(containers buffer)
     rs_add_test_group(containers buffer_2)
     rs_add_test_group(containers buffer_spec_test)
