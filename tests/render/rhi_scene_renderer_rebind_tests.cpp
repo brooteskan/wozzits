@@ -34,7 +34,7 @@ namespace
 {
     constexpr const char* kProjectRoot = "projects/test_rebind_fixture";
 
-    // #324: WozzitsApp_v1 currently GATES the sRGB output encode OFF
+    // #285: WozzitsApp_v1 currently GATES the sRGB output encode OFF
     // (kEncodeSrgbOutput = false in wozzits_app_v1.cpp -- it returns to true only
     // with the input-linearisation seams), so render_scene never acquires the
     // linear RGBA16F scene-colour target the encode pass would sample; that
@@ -187,7 +187,7 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
               kFixtureResidentAssets + kSrgbSceneColorTargets)
         << "renderer should bind the resident pull buffers rather than "
            "re-uploading them, and the fixture's other resident assets should "
-           "appear exactly once (+1 for the #324 sRGB scene-colour target)";
+           "appear exactly once (+1 for the #285 sRGB scene-colour target)";
     EXPECT_GT(programs_after_first, 0u);
     // #192: the fixture's custom render program (schema 0x103) must come from the
     // asset compiler — which registers the rhi program under program_ref during
@@ -216,7 +216,7 @@ TEST_F(WozzitsAppFixture, RebindReleasesOutgoingGraphResources)
     EXPECT_EQ(app.resident_gpu_resource_count(),
               kFixtureResidentAssets + kSrgbSceneColorTargets)
         << "rebind should retain only the resolved asset-published resources "
-           "(plus the renderer's own #324 sRGB scene-colour target)";
+           "(plus the renderer's own #285 sRGB scene-colour target)";
 
     // Render the rebound graph: it re-realizes against the new keys.
     render_one_frame(app);
@@ -281,7 +281,7 @@ TEST_F(WozzitsAppFixture, RebindToGraphWithoutRenderableClearsStaleKey)
     render_one_frame(app);
     EXPECT_EQ(app.resident_gpu_resource_count(), kSrgbSceneColorTargets)
         << "an empty graph should realize/draw nothing -- only the renderer's "
-           "own #324 sRGB scene-colour target remains resident";
+           "own #285 sRGB scene-colour target remains resident";
 }
 
 // B2-T1 (#311): the leak-cycle harness. The editor's commit loop is
@@ -363,7 +363,7 @@ TEST_F(WozzitsAppFixture, RepeatedRebindCyclesHoldEveryCountFlat)
             << "descriptor tables not released on empty commit " << cycle;
         render_one_frame(app);
         EXPECT_EQ(app.resident_gpu_resource_count(), kSrgbSceneColorTargets)
-            << "residency not fully reclaimed on empty commit (only the #324 "
+            << "residency not fully reclaimed on empty commit (only the #285 "
                "sRGB scene-colour target should remain) " << cycle;
 
         wz::asset::AssetGraphDraft draft;

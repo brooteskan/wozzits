@@ -111,7 +111,7 @@ namespace wz::engine::rendering
         // The arguments of one ID3D12GraphicsCommandList::DrawInstanced call,
         // recorded at the call site itself. Ground truth for "how many draws
         // does a frame issue, and with what instance count" -- questions the
-        // #327 ladder register could previously only answer by reading code.
+        // #288 ladder register could previously only answer by reading code.
         struct CapturedDraw
         {
             // As handed to DrawInstanced, in its argument order.

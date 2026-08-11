@@ -48,6 +48,15 @@ namespace wz::engine
             return none;
         }
 
+        // Did the frame die INSIDE the GPU's begin/end bracket? Those are the
+        // phases strictly between BeginFrame and EndFrame: begin_frame succeeded
+        // (or the run would have stopped at it, with no list open) and end_frame
+        // never ran (or it closed the list itself, including on its own failure).
+        bool needs_frame_abort(FramePhase failed)
+        {
+            return failed > FramePhase::BeginFrame && failed < FramePhase::EndFrame;
+        }
+
         // The single job body for every node. The node handle is the phase index
         // (nodes are added in FramePhase order), so one function serves all phases.
         void run_phase(jobs::JobContext& ctx)
@@ -114,6 +123,16 @@ namespace wz::engine
         {
             sched_.set_profile(nullptr);
             analyze_critical_path(graph_, profile_, analysis_);
+        }
+
+        // Unwind the GPU frame the failure left half-open, BEFORE returning: the
+        // caller sees only "the frame failed", and nothing in that signal says a
+        // command list is still open. Leaving it to the caller is what made this
+        // a latent wedge -- every later begin_frame would fail to reset the list
+        // while the device still reported itself healthy.
+        if (state.stopped && needs_frame_abort(state.failed) && ops.abort_frame)
+        {
+            ops.abort_frame();
         }
 
         Result r;

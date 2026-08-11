@@ -11,8 +11,24 @@
 
 #include <gpu/gpu.h>
 #include <gpu/dx12/dx12.h>
+#include <gpu/gpu_resource_lifecycle.h>   // the kFrameLatency coupling asserted below
 #include <diagnostics/diagnostic_sink.h>  // publish debug-layer diagnostics (#291)
 #include <window/window2.h>
+
+// The deferred-release latency must outlast the frame ring: a resource deferred
+// during frame N is released kFrameLatency frames later, and the GPU is only
+// provably done with frame N once the CPU is more than frames_in_flight frames
+// past it. The two constants live in different layers -- gpu_resource_lifecycle.h
+// cannot see the backend's ring depth -- so this is the one place that can check
+// them against each other. Deepening the ring without deepening the queue frees
+// resources the GPU is still reading; that failure is load-dependent and silent,
+// which is exactly what a compile-time check is for.
+static_assert(
+    wz::gpu::DeferredReleaseQueue::kFrameLatency
+        > wz::gpu::dx12::DX12Device::kFramesInFlight,
+    "DeferredReleaseQueue::kFrameLatency must exceed DX12Device::kFramesInFlight "
+    "-- raise kFrameLatency alongside the frame ring, or deferred releases will "
+    "free resources an in-flight frame is still reading.");
 
 #include <cstdlib>
 #include <cassert>
@@ -479,6 +495,82 @@ namespace wz::gpu::dx12
         assert(false && "deprecated triangle test path removed");
     }
 
+    namespace
+    {
+        // Poll until the fence reaches `target`. The fallback when the event
+        // machinery is unavailable: registering an event can fail, but
+        // GetCompletedValue cannot, so completion stays OBSERVABLE even when
+        // sleeping on it is not.
+        //
+        // Terminates: on device removal GetCompletedValue returns UINT64_MAX,
+        // which satisfies any target -- so a wedged GPU exits via TDR rather than
+        // spinning forever.
+        void spin_until_fence(ID3D12Fence* fence, UINT64 target)
+        {
+            while (fence->GetCompletedValue() < target) {
+                SwitchToThread();
+            }
+        }
+
+        // Block until `fence` reaches `target`. Returns true if the wait ran as
+        // intended; false if it had to fall back to polling (the caller may want
+        // to refuse the frame), but IN BOTH CASES the fence has reached `target`
+        // by the time this returns -- unless the device was removed, which makes
+        // completion unobservable and is reported through the device-lost status.
+        // That post-condition is the whole point: callers of the wait paths
+        // release backbuffers, reset allocators, and free staging on the strength
+        // of "the wait returned".
+        //
+        // TWO THINGS THIS DOES THAT A BARE SetEventOnCompletion + WaitForSingle-
+        // Object DOES NOT:
+        //
+        // 1. It RE-CHECKS the fence after waking instead of trusting a single
+        //    WAIT_OBJECT_0. fence_event/copy_fence_event are shared AUTO-RESET
+        //    events reused by every wait on that fence. A wait that registered
+        //    the event and then bailed (see the fallbacks below) leaves its
+        //    registration armed; when the fence later passes that value the event
+        //    is set with nobody waiting, and the NEXT wait's WaitForSingleObject
+        //    returns instantly on that stale signal. Trusting it means resetting
+        //    a command allocator the GPU is still reading. Re-checking makes a
+        //    stale signal harmless.
+        //
+        // 2. On a spurious wake it waits AGAIN rather than re-registering. Two
+        //    registrations of the same event on the same value means two sets --
+        //    i.e. this loop would manufacture exactly the stale signal it exists
+        //    to absorb.
+        bool wait_for_fence_value(
+            DX12Device& impl,
+            ID3D12Fence* fence,
+            HANDLE fence_event,
+            UINT64 target,
+            const char* what)
+        {
+            if (fence->GetCompletedValue() >= target) {
+                return true;
+            }
+
+            const HRESULT hr = fence->SetEventOnCompletion(target, fence_event);
+            if (!dx12_check_hr(impl, hr, what)) {
+                spin_until_fence(fence, target);
+                return false;
+            }
+
+            for (;;) {
+                if (WaitForSingleObject(fence_event, INFINITE) != WAIT_OBJECT_0) {
+                    dx12_check_hr(impl, HRESULT_FROM_WIN32(GetLastError()),
+                        "WaitForSingleObject(fence)");
+                    spin_until_fence(fence, target);
+                    return false;
+                }
+                if (fence->GetCompletedValue() >= target) {
+                    return true;
+                }
+                // Woken by a stale signal from an abandoned registration. Ours is
+                // still armed, so just wait again.
+            }
+        }
+    }
+
     bool begin_frame(Device& d)
     {
         HRESULT hr;
@@ -508,16 +600,17 @@ namespace wz::gpu::dx12
         // frames_in_flight frames ahead.
         impl->frame_slot = (impl->frame_slot + 1u) % impl->frames_in_flight;
         const UINT64 slot_wait = impl->slot_fence_value[impl->frame_slot];
-        if (slot_wait != 0 && impl->fence->GetCompletedValue() < slot_wait) {
-            hr = impl->fence->SetEventOnCompletion(slot_wait, impl->fence_event);
-            if (!dx12_check_hr(*impl, hr, "ID3D12Fence::SetEventOnCompletion(slot)")) {
-                return false;
-            }
-            if (WaitForSingleObject(impl->fence_event, INFINITE) != WAIT_OBJECT_0) {
-                dx12_check_hr(*impl, HRESULT_FROM_WIN32(GetLastError()),
-                    "WaitForSingleObject(frame slot)");
-                return false;
-            }
+        if (slot_wait != 0
+            && !wait_for_fence_value(*impl, impl->fence, impl->fence_event,
+                                     slot_wait,
+                                     "ID3D12Fence::SetEventOnCompletion(slot)")) {
+            // The helper guarantees the slot IS free by the time it returns
+            // (it polls when it cannot sleep), so refusing the frame here is
+            // caution about whatever broke the event machinery -- most likely a
+            // device loss dx12_check_hr has already recorded -- not a correctness
+            // requirement. Dropping a frame is cheap; resetting this slot's
+            // allocator while the GPU reads it is not.
+            return false;
         }
 
         ID3D12CommandAllocator* slot_allocator = impl->allocators[impl->frame_slot];
@@ -643,6 +736,58 @@ namespace wz::gpu::dx12
         }
     }
 
+    void abort_frame(Device& d)
+    {
+        auto* impl = (DX12Device*)d.impl;
+        if (!impl || !impl->frame_recording) {
+            return;  // no open recording -- idempotent, and safe to call blind
+        }
+
+        // THE FRAME DIED MID-RECORDING. A phase between begin_frame and end_frame
+        // failed, so end_frame -- the only thing that closes `cmd` -- never ran.
+        // Without this the command list stays OPEN forever: every later
+        // begin_frame fails at its allocator/list Reset pair (a list must be
+        // closed before it can be reset) with the device status still Ok, so the
+        // backend is permanently unable to start a frame while reporting nothing
+        // wrong. That was survivable only because the sole driver tears the
+        // session down on any frame failure; it is a trap for the first caller
+        // that tries to continue.
+        //
+        // Discard rather than submit: the recording is incomplete (the
+        // render-target -> present transition end_frame appends is missing, and
+        // whichever phase failed may have recorded a partial pass), so the only
+        // correct thing to do with it is throw it away. Close() is how a D3D12
+        // list is made resettable; the recorded commands die with it, unexecuted.
+        const HRESULT hr = impl->cmd->Close();
+        impl->frame_recording = false;
+        // A Close failure means the list was recorded into invalidly. It is not
+        // resettable and never will be, so surface it rather than let the next
+        // begin_frame fail mysteriously. (dx12_check_hr marks the device lost for
+        // the device-lost HRESULTs; anything else is recorded and reported.)
+        dx12_check_hr(*impl, hr, "ID3D12GraphicsCommandList::Close(abort)");
+
+        // The staging this aborted recording queued for release at the next
+        // begin_frame on this slot. Nothing was submitted, so no GPU work
+        // references it and it can go now -- begin_frame emptied this slot's list
+        // before recording started, so everything here belongs to the dead frame.
+        for (ID3D12Resource* staging : impl->frame_upload_staging[impl->frame_slot]) {
+            staging->Release();
+        }
+        impl->frame_upload_staging[impl->frame_slot].clear();
+
+        // CPU-side binding mirrors describe a list that no longer exists. The
+        // next begin_frame sets both unconditionally, but leaving them claiming a
+        // bound depth target with no open list is exactly the mirror-vs-truth
+        // divergence that makes a later bug unreadable.
+        impl->depth_target_bound = false;
+
+        // frame_slot stays advanced and slot_fence_value is untouched: nothing
+        // was signalled, so this slot's recorded fence still names the last GPU
+        // work that actually used it, and the next frame simply moves on to the
+        // following slot. The backbuffer likewise stays in PRESENT state -- the
+        // transition to RENDER_TARGET was only ever recorded, never executed.
+    }
+
     bool end_frame(Device& d)
     {
         HRESULT hr;
@@ -742,6 +887,23 @@ namespace wz::gpu::dx12
 
             hr = impl->queue->Signal(impl->fence, impl->fence_value);
             if (!dx12_check_hr(*impl, hr, "ID3D12CommandQueue::Signal")) {
+                // A FAILED SIGNAL MUST NOT LOOK LIKE AN IDLE GPU. This function
+                // is void and its whole contract is "returned => the GPU is
+                // done": resize() then releases both backbuffers and the depth
+                // buffer, destroy_device releases everything, and wait_idle ->
+                // on_graph_changed clears the PSO cache -- any of which the GPU
+                // may still be mid-frame on. Returning here handed all of them a
+                // false idle.
+                //
+                // Nor can we wait our way out: dx12_check_hr only marks the three
+                // device-lost HRESULTs, so a plain E_OUTOFMEMORY leaves status Ok
+                // with NO value naming this submission on the timeline. There is
+                // nothing correct left to wait for. Mark the device lost, which
+                // is already the engine's word for "completion is permanently
+                // unobservable" -- the same argument, and the same fix, that
+                // end_frame's Signal branch carries a few lines above. Idempotent
+                // for the HRESULTs dx12_check_hr already marked.
+                dx12_mark_device_lost(*impl, hr, "ID3D12CommandQueue::Signal");
                 return;
             }
 
@@ -755,45 +917,12 @@ namespace wz::gpu::dx12
             // resource complete by its touch value, would then be wrong.
             const UINT64 signaled = impl->fence_value++;
 
-            // If GPU hasn't reached this fence value yet → wait
-            if (impl->fence->GetCompletedValue() < signaled)
-            {
-                hr = impl->fence->SetEventOnCompletion(signaled, impl->fence_event);
-                if (!dx12_check_hr(
-                        *impl,
-                        hr,
-                        "ID3D12Fence::SetEventOnCompletion"))
-                {
-                    // Do NOT return here: this function is void, and every caller
-                    // reads "it returned" as "the GPU is idle" -- wait_idle's
-                    // callers then release resources an in-flight frame may still
-                    // be reading. Registering the event failed (E_OUTOFMEMORY is
-                    // the realistic cause), but GetCompletedValue needs no event,
-                    // so completion is still OBSERVABLE; only the ability to sleep
-                    // while waiting was lost. Spin instead.
-                    //
-                    // Terminates: on device removal GetCompletedValue returns
-                    // UINT64_MAX, which satisfies the condition and drops out --
-                    // so a wedged GPU exits via TDR rather than spinning forever.
-                    while (impl->fence->GetCompletedValue() < signaled) {
-                        SwitchToThread();
-                    }
-                    return;
-                }
-
-                if (WaitForSingleObject(impl->fence_event, INFINITE)
-                    != WAIT_OBJECT_0)
-                {
-                    dx12_check_hr(*impl, HRESULT_FROM_WIN32(GetLastError()),
-                        "WaitForSingleObject(wait_for_gpu)");
-                    // Same reasoning: the wait did not complete normally, so fall
-                    // back to polling rather than reporting a GPU that may still
-                    // be busy as idle.
-                    while (impl->fence->GetCompletedValue() < signaled) {
-                        SwitchToThread();
-                    }
-                }
-            }
+            // The helper polls rather than giving up when the event machinery
+            // fails, so this returns only once the GPU has actually reached
+            // `signaled` -- the post-condition every caller assumes.
+            (void)wait_for_fence_value(*impl, impl->fence, impl->fence_event,
+                                       signaled,
+                                       "ID3D12Fence::SetEventOnCompletion");
         }
 
     }
@@ -828,6 +957,16 @@ namespace wz::gpu::dx12
         if (!dx12::dx12_check_hr(
                 *impl, hr, "ID3D12CommandQueue::Signal(copy)"))
         {
+            // Same argument as wait_for_gpu's Signal branch: the copy work was
+            // already submitted, nothing now names its completion on the copy
+            // timeline, and the callers of this (upload / readback / the compute
+            // dispatch helpers) release staging -- and in one case the
+            // destination -- as soon as it returns. A plain E_OUTOFMEMORY would
+            // otherwise leave status Ok and let them free memory the copy queue
+            // is still reading. Returning false alone was not enough, because
+            // several callers release their staging on the failure path too.
+            dx12::dx12_mark_device_lost(
+                *impl, hr, "ID3D12CommandQueue::Signal(copy)");
             return false;
         }
 
@@ -837,22 +976,12 @@ namespace wz::gpu::dx12
         // resource before its copy landed).
         const UINT64 signaled = impl->copy_fence_value++;
 
-        if (impl->copy_fence->GetCompletedValue() < signaled) {
-            hr = impl->copy_fence->SetEventOnCompletion(
-                signaled, impl->copy_fence_event);
-            if (!dx12::dx12_check_hr(
-                    *impl, hr, "ID3D12Fence::SetEventOnCompletion(copy)"))
-            {
-                return false;
-            }
-            if (WaitForSingleObject(impl->copy_fence_event, INFINITE)
-                != WAIT_OBJECT_0)
-            {
-                return false;
-            }
-        }
-
-        return true;
+        // Polls if it cannot sleep, and re-checks after every wake, so a false
+        // return still means the copy has landed -- see wait_for_fence_value.
+        // Callers release staging on the strength of this returning at all.
+        return wait_for_fence_value(
+            *impl, impl->copy_fence, impl->copy_fence_event, signaled,
+            "ID3D12Fence::SetEventOnCompletion(copy)");
     }
 
     uint64_t frame_timeline_value(Device& d)
@@ -1251,7 +1380,7 @@ namespace wz::gpu::dx12::internal
     // depth buffer -- unlike begin_offscreen_pass, which binds no depth for the
     // mask/overlay path. The scene renders depth-tested into this (an RGBA16F
     // linear target) instead of the backbuffer, so lighting accumulates in
-    // linear space; a later encode resolves it to the sRGB backbuffer (#324).
+    // linear space; a later encode resolves it to the sRGB backbuffer (#285).
     // Transitions the target to RENDER_TARGET, binds target+DSV, records the
     // bound colour format for the PSO key, viewport = target dims, clears both.
     bool begin_primary_color_pass(Device& d, GPUHandle color_target,
@@ -1634,7 +1763,7 @@ namespace wz::gpu::dx12::internal
     }
 
     // The one backbuffer fact the engine still needs: every PSO that targets
-    // the swapchain declares this format. NOT _SRGB -- see #327, which puts
+    // the swapchain declares this format. NOT _SRGB -- see #288, which puts
     // post-processing below its own R1 for exactly this reason.
     DXGI_FORMAT get_backbuffer_format()
     {

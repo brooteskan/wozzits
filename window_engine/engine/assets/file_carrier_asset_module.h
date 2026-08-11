@@ -50,7 +50,7 @@ namespace wz::engine::assets
     // the file/shader carrier compilers, key derivation, and wozzits_export
     // (which rewrites the stored path when relocating sources into a bundle).
     // Keeping the stored path relocatable is what lets an exported bundle and
-    // a moved project resolve their own sources (#334).
+    // a moved project resolve their own sources (#295).
 
     class FileCarrierAssetModule
     {

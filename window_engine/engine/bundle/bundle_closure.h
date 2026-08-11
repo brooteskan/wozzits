@@ -2,7 +2,7 @@
 
 // engine/bundle/bundle_closure.h
 //
-// Resource-closure computation for the standalone bundle exporter (issue #334,
+// Resource-closure computation for the standalone bundle exporter (issue #295,
 // Seam 3.1). Given a project's asset graph, enumerate every filesystem SOURCE it
 // references and classify each Copy vs Strip for a SEALED bundle:
 //

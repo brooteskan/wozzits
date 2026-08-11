@@ -94,7 +94,7 @@ namespace wz::math
         for (auto& p : f.planes)
         {
             const float len = length(p.normal);
-            // #326 skips normalization for a finite zero-length normal (the
+            // #287 skips normalization for a finite zero-length normal (the
             // all-zero view_projection), which leaves the plane finite and inert.
             // But a NaN/inf ALREADY present in the vp survives a bare skip: a NaN
             // normal has len=NaN and `!(NaN > 0)` is true; an inf normal has
@@ -104,7 +104,7 @@ namespace wz::math
             // and silently no-ops culling -- invisible, because that ordered
             // compare does not even raise FE_INVALID (C1(v2)-C20, #314). Reset a
             // non-finite plane to inert-and-finite; leave the finite zero-length
-            // case exactly as #326 did.
+            // case exactly as #287 did.
             if (!std::isfinite(len) || !std::isfinite(p.distance))
             {
                 p.normal = { 0.0f, 0.0f, 0.0f };

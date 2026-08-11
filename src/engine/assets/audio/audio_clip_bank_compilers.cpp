@@ -213,7 +213,7 @@ namespace wz::engine::assets::internal
                 // Resolve a RELATIVE directory against the library resource_root
                 // (the project dir at runtime), matching the file carriers so a
                 // relocated project can store a project-relative wav directory
-                // (issue #334). Absolute stays as-is; empty root => used as-is.
+                // (issue #295). Absolute stays as-is; empty root => used as-is.
                 if (!resource_root.empty() && !wz::fs::is_absolute(directory)) {
                     directory = wz::fs::join(resource_root, directory);
                 }

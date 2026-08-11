@@ -351,6 +351,166 @@ namespace
         }
     }
 
+    // ─── Re-arm during completion ───────────────────────────────────────────
+    //
+    // The finisher in complete() claims the counter's parking slot and THEN
+    // publishes the count. A second run() batch landing inside that window used
+    // to be erased by a blind store(0): wait() returned with the new batch still
+    // in flight, and its completions then wrote a Counter whose stack frame was
+    // gone -- the crash class 18484cbb fixed, re-reachable through a plain
+    // heterogeneous fork-join. The window is nanoseconds wide, so the test seam
+    // holds the finisher open inside it while the main thread arms the second
+    // batch, making the interleaving deterministic instead of a stress lottery.
+    //
+    // Against the blind store this test fails on b_ran (Release) or trips
+    // complete()'s own `v > 0` assert when B finishes against a zeroed counter
+    // (Debug) -- an abort rather than a clean failure, which is the honest
+    // signal for a corrupted counter.
+    struct ArmRaceState
+    {
+        std::atomic<int>  hook_fired{ 0 };
+        std::atomic<bool> finisher_held{ false };
+        std::atomic<bool> second_batch_armed{ false };
+        std::atomic<int>  b_ran{ 0 };
+    };
+
+    // Restores the production (null) hook however the body leaves -- an early
+    // return from a failing EXPECT must not leave a live hook pointing at a dead
+    // stack frame for every test that runs after it.
+    struct ScopedCompleteHook
+    {
+        ScopedCompleteHook(wz::tasks::CompleteHook hook, void* user)
+        {
+            wz::tasks::set_complete_test_hook(hook, user);
+        }
+        ~ScopedCompleteHook() { wz::tasks::set_complete_test_hook(nullptr, nullptr); }
+    };
+
+    // Spins on a handshake flag, giving up rather than hanging ctest's timeout.
+    template <typename Pred>
+    bool spin_until(Pred pred)
+    {
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds{ 10 };
+        while (!pred())
+        {
+            if (std::chrono::steady_clock::now() > deadline)
+                return false;
+            std::this_thread::yield();
+        }
+        return true;
+    }
+
+    TEST(TaskScheduler, ArmDuringCompletionDoesNotDropTheSecondBatch)
+    {
+        // ONE worker, so there is exactly one completer and the handshake below
+        // cannot be satisfied by some other thread wandering through complete().
+        ScopedPool guard{ 1 };
+        ArmRaceState s;
+
+        ScopedCompleteHook hook_guard(
+            [](void* u)
+            {
+                ArmRaceState* st = static_cast<ArmRaceState*>(u);
+                // One-shot: the second batch's own completion must run to the end
+                // unheld, or nothing would ever drain the counter.
+                if (st->hook_fired.fetch_add(1, std::memory_order_relaxed) != 0)
+                    return;
+                st->finisher_held.store(true, std::memory_order_release);
+                spin_until([st]
+                    { return st->second_batch_armed.load(std::memory_order_acquire); });
+            },
+            &s);
+
+        Counter c;
+        run(c, [](void*) {}, nullptr);  // batch A: arms the counter to 1
+
+        // A's completion is now parked inside the finisher, past the waiter_ claim
+        // and before the publish.
+        ASSERT_TRUE(spin_until([&s]
+            { return s.finisher_held.load(std::memory_order_acquire); }))
+            << "the completion hook never fired -- task A never ran";
+
+        run(c, [](void* u)  // batch B: arms 1 -> 2 underneath the held finisher
+            {
+                static_cast<ArmRaceState*>(u)->b_ran.fetch_add(
+                    1, std::memory_order_relaxed);
+            }, &s);
+        s.second_batch_armed.store(true, std::memory_order_release);
+
+        wait(c);
+
+        // The contract: wait() joins BOTH batches. Reading b_ran after wait() is
+        // exactly what a real caller does with a fork-join result.
+        EXPECT_EQ(s.b_ran.load(std::memory_order_relaxed), 1);
+    }
+
+    // The same shape without the seam, on real threads: several run() batches
+    // stacked on one counter and joined by a single wait(). Each round re-runs the
+    // arm-vs-finisher race unsynchronized, so a regression that only misbehaves on
+    // a narrower interleaving than the seam builds still has many chances to show.
+    TEST(TaskScheduler, HeterogeneousBatchesJoinOnOneCounter)
+    {
+        ScopedPool guard{ 4 };
+        constexpr int kRounds = 2000;
+
+        std::atomic<int> hits{ 0 };
+        for (int round = 0; round < kRounds; ++round)
+        {
+            Counter c;
+            run(c, [](void* u)
+                { static_cast<std::atomic<int>*>(u)->fetch_add(
+                      1, std::memory_order_relaxed); }, &hits);
+            run(c, 4, [](std::size_t, void* u)
+                { static_cast<std::atomic<int>*>(u)->fetch_add(
+                      1, std::memory_order_relaxed); }, &hits);
+            run(c, [](void* u)
+                { static_cast<std::atomic<int>*>(u)->fetch_add(
+                      1, std::memory_order_relaxed); }, &hits);
+            wait(c);
+            ASSERT_EQ(hits.load(std::memory_order_relaxed), 6 * (round + 1))
+                << "round " << round;
+        }
+    }
+
+    // Concurrent PRODUCERS on the injection queue. Every submit from a non-worker
+    // goes through the MPSC injection path (#304), and until now every test drove
+    // it from a single thread -- the "MP" half was uncovered. Each thread owns its
+    // own counter and its own slice of the result vector, so a lost or duplicated
+    // injection shows up as a wrong count in that slice.
+    TEST(TaskScheduler, ConcurrentSubmittersShareTheInjectionQueue)
+    {
+        ScopedPool guard{ 4 };
+        constexpr int kSubmitters = 4;
+        constexpr int kRounds = 200;
+        constexpr std::size_t kFan = 16;
+
+        std::vector<std::vector<int>> hits(
+            kSubmitters, std::vector<int>(kFan, 0));
+
+        std::vector<std::thread> submitters;
+        submitters.reserve(kSubmitters);
+        for (int t = 0; t < kSubmitters; ++t)
+        {
+            submitters.emplace_back([&hits, t]
+                {
+                    for (int round = 0; round < kRounds; ++round)
+                    {
+                        Counter c;
+                        run(c, kFan, [](std::size_t i, void* u)
+                            { ++static_cast<int*>(u)[i]; }, hits[t].data());
+                        wait(c);
+                    }
+                });
+        }
+        for (std::thread& th : submitters)
+            th.join();
+
+        for (int t = 0; t < kSubmitters; ++t)
+            for (std::size_t i = 0; i < kFan; ++i)
+                EXPECT_EQ(hits[t][i], kRounds) << "submitter " << t << " index " << i;
+    }
+
     // The existing nested fork-join shape, but with a single worker: every nested
     // wait must park and be resumed by the same thread that parked it, with no
     // second worker able to pick up the slack.

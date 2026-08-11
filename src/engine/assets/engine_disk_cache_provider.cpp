@@ -24,7 +24,7 @@ namespace wz::engine::assets
                 && (schema == kScalarFieldFromRawF32Schema
                     // The Gaea .r32 heightfield: its compiler store_cached's the
                     // field, so the provider must serve it too, or a sealed cache
-                    // with the .r32 stripped can't resolve it (issue #334). The
+                    // with the .r32 stripped can't resolve it (issue #295). The
                     // store/serve sets must stay in lockstep.
                     || schema == kScalarFieldFromGaeaR32Schema
                     || schema == kScalarFieldProceduralSchema
@@ -172,7 +172,7 @@ namespace wz::engine::assets
             // Re-publish rhi residency (the compiler's finalize side effect) so a
             // cache-served height field is GPU-resident, not merely CPU-registered
             // — else the clipmap's scalar_field_texture binding is "not resident"
-            // (issue #334). Uses `data` before the move into the table.
+            // (issue #295). Uses `data` before the move into the table.
             if (gpu_resources_) {
                 internal::publish_scalar_field_residency(
                     key, data, *gpu_resources_, rhi_resource_tracker_, logger_);

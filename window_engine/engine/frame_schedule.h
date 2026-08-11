@@ -62,6 +62,22 @@ namespace wz::engine
         std::function<bool()> render_overlay;
         std::function<bool()> end_frame;
         std::function<bool()> present;
+
+        // NOT a phase -- the unwind. Invoked by run() when the frame stopped at a
+        // phase BETWEEN begin_frame and end_frame, i.e. exactly when begin_frame
+        // succeeded and end_frame will never run.
+        //
+        // It exists because "stop at the first failing phase" silently breaks the
+        // GPU's begin/end bracket: the backend's command list is opened by
+        // begin_frame and closed only by end_frame, and a list that is never
+        // closed can never be reset -- so every SUBSEQUENT frame fails to begin,
+        // with the device still reporting itself healthy. Skipping end_frame is
+        // right (the recording is incomplete and must not be submitted); skipping
+        // the close is not. wz::gpu::abort_frame is the intended implementation.
+        //
+        // Leaving this unset is fine for a schedule with no GPU framing (the
+        // mock-phase tests), and is the pre-existing behaviour otherwise.
+        std::function<void()> abort_frame;
     };
 
     class FrameSchedule

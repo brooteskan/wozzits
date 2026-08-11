@@ -41,6 +41,20 @@ namespace wz::gpu
 	bool begin_frame(Device& device); // acquire backbuffer
 	void clear(Device& device, float r, float g, float b, float a); // record commands
 	bool end_frame(Device& device); // close + submit command list
+
+	// Abandon a frame that begin_frame opened but end_frame will never close --
+	// a phase between them failed. Discards the partial recording and returns
+	// the backend to a state where the NEXT begin_frame works.
+	//
+	// Required, not optional: end_frame is the only thing that closes the command
+	// list, and a D3D12 list must be closed before it can be reset, so skipping
+	// both leaves the backend unable to begin any further frame -- while
+	// device_status() still reports Ok. Exactly one of end_frame or abort_frame
+	// must follow a successful begin_frame.
+	//
+	// Idempotent and safe to call when no frame is open, so a caller may invoke
+	// it on any failure path without tracking which phase got how far.
+	void abort_frame(Device& device);
 	bool present(Device& device); // swapchain present (vsync on, sync_interval=1)
 	bool present(Device& device, uint32_t sync_interval); // explicit sync interval (0 = no vsync)
 	bool resize(Device& device, int w, int h); // This MUST recreate swapchain safely.

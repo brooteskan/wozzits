@@ -130,7 +130,7 @@ namespace wz::engine::assets::internal
                 // Resolve a RELATIVE HLSL source_path against the library
                 // resource_root (the project dir at runtime), matching the raw/
                 // byte file carriers so a relocated project can store project-
-                // relative shader paths (issue #334). Absolute paths unchanged;
+                // relative shader paths (issue #295). Absolute paths unchanged;
                 // an empty resource_root leaves the path as-is.
                 if (!resource_root.empty() && !wz::fs::is_absolute(path)) {
                     path = wz::fs::join(resource_root, path);

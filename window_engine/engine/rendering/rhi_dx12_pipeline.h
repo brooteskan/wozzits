@@ -203,7 +203,7 @@ namespace wz::engine::rendering
         // a non-UNKNOWN DSVFormat against a null DSV; (2) the bound colour
         // target's DXGI format -- RTVFormats[0] must match the bound RTV, so a
         // program drawn into the RGBA16F scene target and into the RGBA8
-        // backbuffer needs one pipeline each (#324, H18 on #316).
+        // backbuffer needs one pipeline each (#285, H18 on #316).
         [[nodiscard]] const RhiDx12RealizedPipeline* realize(
             wz::rhi::Tag program);
         [[nodiscard]] const RhiDx12RealizedPipeline* get(
@@ -233,7 +233,7 @@ namespace wz::engine::rendering
             // program -- the same program yields a different pipeline depending
             // on what the pass bound: whether a depth-stencil view was bound,
             // and the bound colour target's DXGI format (stored as its integer
-            // value so this header stays free of the DXGI headers). #324.
+            // value so this header stays free of the DXGI headers). #285.
             bool depth_target_bound = false;
             std::uint32_t color_target_format = 0;
             RhiDx12RealizedPipeline realized{};

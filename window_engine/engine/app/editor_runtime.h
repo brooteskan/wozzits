@@ -507,6 +507,40 @@ namespace wz::app
         void drain_async_save_results(
             const std::function<void(const AsyncSaveResult&)>& fn);
 
+        // ── The dirty-flag restore, as a sticky signal ──────────────────────
+        //
+        // post_async_save_result above is a Mailbox post -- a vector push_back,
+        // which ALLOCATES. On a failed save the IO lane has to guard it, because
+        // an escaping bad_alloc would leave the lane and (before the worker
+        // caught) terminate. Guarding it drops the result, and dropping it is
+        // not survivable the way the old comment claimed: without the restore,
+        // document_.dirty() stays cleared from prepare's optimistic clear, so
+        // the RETRY takes prepare_scene_save's "nothing changed" early-out and
+        // reports None having written nothing -- a false success, on the exact
+        // invariant the async save exists to protect. The teardown save skips
+        // for the same reason, so the edits are simply gone. And the two
+        // failures correlate: whatever exhausted the heap for the mailbox post
+        // is what failed the save.
+        //
+        // So the restore rides a bitmask instead of a queue: fetch_or cannot
+        // throw, cannot allocate, and cannot be lost. It is STICKY -- bits stay
+        // set until the frame thread takes them -- and idempotent with the
+        // mailbox path, which stays as the (loggable, richer) normal channel.
+        enum DirtyRestore : unsigned
+        {
+            kRestoreSceneDirty  = 1u << 0,
+            kRestoreCameraDirty = 1u << 1,
+        };
+
+        // Any thread (the IO lane), on a FAILED save: record which flags must go
+        // back. noexcept and allocation-free by construction.
+        void request_dirty_restore(bool scene, bool camera) noexcept;
+
+        // Engine thread: take the pending bits and clear them. Drained in the
+        // same places as drain_async_save_results -- including inside the save
+        // claim, so a restore always lands before the next snapshot is taken.
+        [[nodiscard]] unsigned take_dirty_restore() noexcept;
+
         // Owner thread: enable/disable frame profiling (default off). Applied by
         // the engine thread each frame; the app records + writes a CSV only while
         // enabled, and flushes to its own file on the on->off transition.
@@ -1016,6 +1050,11 @@ namespace wz::app
         // write; the frame thread drains it once per frame to finalize (#305 step
         // 4b). Fire-and-forget append: each save's result is distinct.
         Mailbox<AsyncSaveResult> async_save_results_;
+
+        // The allocation-free duplicate of the above's restore flags -- see
+        // request_dirty_restore. A DirtyRestore bitmask, set by the IO lane and
+        // taken by the frame thread; survives an OOM that loses the mailbox post.
+        std::atomic<unsigned> pending_dirty_restore_{ 0 };
     };
 
     // Backstop for begin_pending_save()'s claim obligation: publishes IOError on
@@ -1073,7 +1112,7 @@ namespace wz::app
         //      test that loads a project and asserts it renders.
         uint32_t max_frames = 0;
 
-        // Baked disk-cache root for a shipped bundle (issue #334). Empty (the
+        // Baked disk-cache root for a shipped bundle (issue #295). Empty (the
         // default) leaves the cache OFF, so every existing caller — including the
         // editor's in-process engine, which passes a default RuntimeRunOptions —
         // resolves from source exactly as before. Only the standalone bundle sets

@@ -135,9 +135,9 @@ namespace wz::gpu
 
     wz::diag::DiagnosticReporter make_debug_layer_reporter(wz::Logger& logger)
     {
-        return [&logger, last_dropped = uint64_t{0}](
+        return [&logger, last_reported = wz::diag::ReportedLosses{}](
                    wz::diag::DiagnosticAggregate& state) mutable {
-            wz::diag::report_diagnostics(state, logger, format_entry, last_dropped);
+            wz::diag::report_diagnostics(state, logger, format_entry, last_reported);
         };
     }
 }

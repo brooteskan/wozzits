@@ -117,6 +117,27 @@ namespace wz::app
         async_save_results_.drain(fn);
     }
 
+    void EditorRuntimeControl::request_dirty_restore(
+        bool scene, bool camera) noexcept
+    {
+        unsigned bits = 0;
+        if (scene)
+            bits |= kRestoreSceneDirty;
+        if (camera)
+            bits |= kRestoreCameraDirty;
+        if (bits == 0)
+            return;
+        // OR, not store: two failed saves' restores accumulate rather than the
+        // second erasing the first. Release so the frame thread's acquire below
+        // sees everything the save did before it failed.
+        pending_dirty_restore_.fetch_or(bits, std::memory_order_release);
+    }
+
+    unsigned EditorRuntimeControl::take_dirty_restore() noexcept
+    {
+        return pending_dirty_restore_.exchange(0, std::memory_order_acquire);
+    }
+
     void EditorRuntimeControl::set_frame_profiling(bool enabled)
     {
         frame_profiling_.store(enabled, std::memory_order_release);
@@ -808,7 +829,7 @@ namespace wz::app
         desc.window = { window_title.c_str(), 1280, 720, true, false };
         desc.resource_root = resource_root;
         // Enable the baked disk cache only when a bundle asked for it (issue
-        // #334). An empty cache_root leaves asset_cache default (enabled but with
+        // #295). An empty cache_root leaves asset_cache default (enabled but with
         // an empty root => the provider serves nothing), so the editor's resident
         // engine — which passes a default RuntimeRunOptions — is unaffected.
         desc.asset_cache.root = run_options.cache_root;
@@ -1152,6 +1173,14 @@ namespace wz::app
             frame_ops.end_frame = [&] {
                 if (!wz::gpu::end_frame(ctx.device)) { ctx.logger.error("end_frame failed"); return false; }
                 return true;
+            };
+            // The unwind for a frame that failed between begin and end: close the
+            // command list end_frame will now never close, so the backend can
+            // start another frame. This loop breaks out on any frame error today,
+            // which is what has been masking the wedge -- keep it wired anyway,
+            // because "the only caller happens to exit" is not a contract.
+            frame_ops.abort_frame = [&] {
+                wz::gpu::abort_frame(ctx.device);
             };
             frame_ops.present = [&] {
                 const bool ok = env_no_vsync
@@ -1522,6 +1551,20 @@ namespace wz::app
                                         + wz::fs::to_string(r.err));
                                 }
                             });
+                        // The out-of-band restore (request_dirty_restore). Normally
+                        // this repeats what the mailbox result above already did --
+                        // restore_unsaved_flags is idempotent -- and it is the ONLY
+                        // restore when the mailbox post was lost to an allocation
+                        // failure. Taken here, inside the same lambda the save claim
+                        // calls, so it always lands before the next snapshot.
+                        const unsigned restore = control->take_dirty_restore();
+                        if (restore != 0) {
+                            app.restore_unsaved_flags(
+                                (restore & wz::app::EditorRuntimeControl::
+                                               kRestoreSceneDirty) != 0,
+                                (restore & wz::app::EditorRuntimeControl::
+                                               kRestoreCameraDirty) != 0);
+                        }
                     };
                     finalize_finished_saves();
                     // Then service a newly requested save: prepare the snapshot on
@@ -1598,6 +1641,22 @@ namespace wz::app
                                     catch (...) {
                                         err = wz::fs::FileError::IOError;
                                     }
+                                    // The restore signal FIRST, and out of band:
+                                    // fetch_or on a bitmask, which cannot throw
+                                    // and cannot allocate, so a failed save's
+                                    // dirty flags are recorded before anything
+                                    // that can fail runs. See
+                                    // request_dirty_restore -- losing the restore
+                                    // is what turns save #2 into a false success
+                                    // that writes nothing, and the OOM that would
+                                    // lose it is correlated with the failure that
+                                    // needs it.
+                                    if (err != wz::fs::FileError::None) {
+                                        control->request_dirty_restore(
+                                            work.scene_dirty,
+                                            work.want_editor_camera);
+                                    }
+
                                     // Post the finalize result BEFORE waking the
                                     // caller. complete_pending_save returns the
                                     // request to Idle, so the frame thread can
@@ -1611,14 +1670,14 @@ namespace wz::app
                                     // Guarded: this is Mailbox::post -> vector
                                     // push_back, which can throw bad_alloc, and it
                                     // sat OUTSIDE the try above -- where an escape
-                                    // leaves worker_main (which does not catch) and
-                                    // calls std::terminate. Losing a restore is
-                                    // survivable; killing the editor is not. The
-                                    // caller still learns the real result from the
-                                    // publish below, so err is left honest here: on
-                                    // a FAILED write it already carries the failure,
-                                    // and on a successful one there was nothing to
-                                    // restore anyway.
+                                    // leaves worker_main and (before it learned to
+                                    // catch) called std::terminate. This channel
+                                    // carries the LOG line and the outcome; the
+                                    // restore it also carries is now belt-and-
+                                    // braces, so dropping it costs a log entry,
+                                    // not the edits. err is left honest: the
+                                    // caller learns the real result from the
+                                    // publish below.
                                     try {
                                         control->post_async_save_result(
                                             { err, work.scene_dirty,
@@ -1868,6 +1927,18 @@ namespace wz::app
                         app.finalize_scene_save(
                             r.err, r.restore_scene_dirty, r.restore_camera_dirty);
                     });
+                // ...and the out-of-band restore, for the save whose mailbox post
+                // was lost to an allocation failure. Without this the teardown
+                // save below sees a clean document and skips, which is how the
+                // edits were being lost silently.
+                const unsigned restore = control->take_dirty_restore();
+                if (restore != 0) {
+                    app.restore_unsaved_flags(
+                        (restore & wz::app::EditorRuntimeControl::
+                                       kRestoreSceneDirty) != 0,
+                        (restore & wz::app::EditorRuntimeControl::
+                                       kRestoreCameraDirty) != 0);
+                }
             }
 
             // Persist any unsaved edits before the runtime tears down (covers

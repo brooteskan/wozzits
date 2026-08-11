@@ -82,6 +82,11 @@ namespace wz::diag
         // Producer seam (any thread): publish a detected event. Non-blocking, never
         // allocates; a full channel drops the record. No wake -- the cadence (or a
         // flush_now) drains, so a hot lane never touches the lane's cv.
+        //
+        // A DROP IS COUNTED, not silent: its occurrences are accumulated and folded
+        // into the aggregate's channel_dropped() on the next drain, so the reporter
+        // can say the totals are short rather than presenting an undercount as
+        // exact. See DiagnosticState::note_channel_drops.
         void publish(const DiagnosticRecord& record) override;
 
         // Drain + report NOW, blocking until the lane thread has completed one
@@ -112,21 +117,39 @@ namespace wz::diag
         uint64_t                flush_request_ = 0;
         uint64_t                flush_done_    = 0;
         std::thread             thread_;
+
+        // Occurrences lost to a full channel, accumulated by the PRODUCERS (any
+        // thread, hence atomic) and folded into state_ by the lane thread each
+        // drain. It cannot live in state_ directly: that table is lane-local and
+        // deliberately not thread-safe.
+        std::atomic<uint64_t>   channel_drops_{ 0 };
+    };
+
+    // The loss totals a reporter has already logged, carried across cadence cycles
+    // so each is mentioned only when it GROWS -- otherwise a single full table
+    // would repeat its note every cycle forever. One instance per reporter, held
+    // in the reporter's own closure.
+    struct ReportedLosses
+    {
+        uint64_t table_dropped   = 0;  // DiagnosticState::dropped()
+        uint64_t channel_dropped = 0;  // DiagnosticState::channel_dropped()
     };
 
     // The report cycle a DiagnosticReporter runs, shared by the generic reporter
     // and backend-specific ones (e.g. the D3D12 debug-layer reporter, which formats
     // the same entries with category names and a main/offscreen label): log every
     // entry with new occurrences -- its text produced by `format_line` -- at the
-    // entry's severity, mark it reported, then note any growth in the table-cap drop
-    // count. `last_dropped` is the reporter's carried state (drops reported last
-    // cycle). Runs on the lane thread.
+    // entry's severity, mark it reported, then note any growth in EITHER loss
+    // count. Runs on the lane thread.
+    //
+    // Both losses are surfaced because the entry lines advertise exact totals, so
+    // a silent loss anywhere turns an undercount into a confident wrong number.
     void report_diagnostics(
         DiagnosticAggregate& state,
         wz::Logger& logger,
         const std::function<std::string(const DiagnosticAggregate::Entry&)>&
             format_line,
-        uint64_t& last_dropped);
+        ReportedLosses& last_reported);
 
     // A generic reporter that logs each unreported entry through `logger` as
     // "<source> diagnostic #<id> x<count> [pass <n>]" at the entry's severity, and

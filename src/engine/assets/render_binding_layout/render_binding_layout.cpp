@@ -24,7 +24,7 @@ namespace wz::engine::assets
 
         // The order descriptor SRV registers are handed out in, keyed by the
         // row's SEMANTIC rather than by its position in the authored list
-        // (#322, option C). Two layouts that share a semantic therefore agree
+        // (#283, option C). Two layouts that share a semantic therefore agree
         // on its register no matter what order their rows were written in, so
         // reordering rows in the editor can no longer silently repoint a
         // binding out from under a shader that names it by register.
@@ -76,7 +76,7 @@ namespace wz::engine::assets
                 // lands uvs at t6 (see sg_lit_uv_vs.hlsl's own comment). Ranking
                 // uvs among the mesh-pull streams above repointed
                 // sky_gaussian/points/material_albedo out from under the shipping
-                // shader -- exactly the silent repoint #322 exists to prevent,
+                // shader -- exactly the silent repoint #283 exists to prevent,
                 // caught here by the D3DReflect layout check (#317 D1-C20).
                 DescriptorSemantic::PulledMeshUvs,
                 // Non-rows (see comment above): listed only for completeness.
@@ -292,7 +292,7 @@ namespace wz::engine::assets
         }
 
         // Assign t-registers by canonical semantic rank rather than authored
-        // position (#322 option C): a stable sort into that order makes the
+        // position (#283 option C): a stable sort into that order makes the
         // register a property of the SEMANTIC, so reordering the rows produces
         // an identical SRG. Duplicate semantics were rejected above, so no two
         // rows share a rank; the sort is a no-op for a layout already authored

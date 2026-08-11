@@ -193,7 +193,7 @@ namespace wz::engine::rendering
             // sampleable, instead of the backbuffer. The texture must have been
             // created with ResourceUsage_RenderTarget. Default = the backbuffer.
             wz::gpu::GPUHandle offscreen_target = {},
-            // sRGB output (#324): when true (and not offscreen), the main pass
+            // sRGB output (#285): when true (and not offscreen), the main pass
             // renders into a LINEAR RGBA16F scene-colour target and a fullscreen
             // pass encodes it to the sRGB backbuffer; overlays composite after
             // the encode, in display-referred space. Default false leaves the
@@ -286,7 +286,7 @@ namespace wz::engine::rendering
         }
 
 #ifdef WZ_ENABLE_TESTING
-        // ── Frame capture (#327) ──────────────────────────────────────────
+        // ── Frame capture (#288) ──────────────────────────────────────────
         // The register's Draw-submission and Transparency rows rested on
         // reading the submit loop rather than watching it run. These two
         // sinks are what let a test watch it: one names WHAT was submitted
@@ -699,7 +699,7 @@ namespace wz::engine::rendering
         wz::rhi::GpuResourceHandle ensure_screen_constants_buffer();
 
         // (Re)create the linear RGBA16F scene-colour target at (width,height)
-        // for sRGB output (#324), rebuilt when the size changes (the same
+        // for sRGB output (#285), rebuilt when the size changes (the same
         // key-by-size discipline the puppet-mask sets use). Returns true when
         // scene_color_target_ is valid at that size. A device-level frame
         // resource, not an asset -- anonymous identity, self-managed lifetime.
@@ -814,7 +814,7 @@ namespace wz::engine::rendering
         // The screen-constants twin buffer (see ensure_screen_constants_buffer).
         wz::rhi::GpuResourceHandle screen_constants_buffer_{};
 
-        // Linear scene-colour target for sRGB output (#324): the main pass
+        // Linear scene-colour target for sRGB output (#285): the main pass
         // renders here (RGBA16F, depth-tested) instead of the backbuffer, then a
         // fullscreen pass encodes it to the sRGB backbuffer. A full-screen frame
         // resource (sibling of the depth buffer), rebuilt when the size changes.

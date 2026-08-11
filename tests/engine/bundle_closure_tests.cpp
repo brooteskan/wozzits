@@ -11,7 +11,7 @@
 #include <string>
 #include <utility>
 
-// Seam 3.1 of issue #334: the bundle resource-closure walker. These exercise the
+// Seam 3.1 of issue #295: the bundle resource-closure walker. These exercise the
 // Copy-vs-Strip classifier over synthetic graphs (no device, no file I/O), which
 // is exactly what makes it headlessly testable. The strip rule must mirror the
 // runtime resolve: a source feeding a cache-served product is pruned (Strip); a

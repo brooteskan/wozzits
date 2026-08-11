@@ -32,7 +32,7 @@ namespace wz::engine::assets
             TerrainVisualProxyTable& terrain_visual_proxies,
             CollisionAssetTable& collisions,
             // GPU-residency hook: a cache-served asset must re-publish the same
-            // rhi residency a fresh compile would (issue #334). Null gpu_resources
+            // rhi residency a fresh compile would (issue #295). Null gpu_resources
             // (device-only library) skips it, matching the compilers.
             wz::rhi::GpuResourceRegistry* gpu_resources = nullptr,
             internal::RhiResourceTracker rhi_resource_tracker = {});
@@ -75,7 +75,7 @@ namespace wz::engine::assets
     // entry is present — the type whitelist only, independent of cache settings and
     // of any key's on-disk existence. Single source of truth (disk_cache_spec)
     // shared by EngineDiskCacheProvider::is_cacheable AND the bundle closure walker
-    // (issue #334), so "what the sealed cache serves" cannot fork between the
+    // (issue #295), so "what the sealed cache serves" cannot fork between the
     // runtime that reads the cache and the exporter that decides which sources a
     // sealed bundle may strip.
     [[nodiscard]] bool is_disk_cacheable(

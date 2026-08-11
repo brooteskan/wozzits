@@ -17,7 +17,7 @@
 // the principle that installing a diagnostic and gating on it are separate
 // decisions and doing both at once means the gate arrives with a red tree nobody
 // can read. That sweep found 32 tests raising hard IEEE exceptions -- among them
-// a live culling bug (#326) -- and with all 32 closed the gate went on.
+// a live culling bug (#287) -- and with all 32 closed the gate went on.
 //
 // CMake sets WZ_FP_STRICT=1 as a test property (option WZ_FP_STRICT_TESTS, ON),
 // so `ctest` is strict and running a test executable DIRECTLY is not -- which is

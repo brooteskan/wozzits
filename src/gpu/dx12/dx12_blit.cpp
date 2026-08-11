@@ -39,7 +39,7 @@ namespace
         "    return gTex.Sample(gSmp, i.uv);\n"
         "}\n";
 
-    // Fullscreen encode (#324): same triangle + sampler as the blit, but the
+    // Fullscreen encode (#285): same triangle + sampler as the blit, but the
     // pixel shader applies the IEC 61966-2-1 linear->sRGB transfer so a linear
     // RGBA16F source lands display-referred in the UNORM backbuffer. The branch
     // is the exact piecewise sRGB curve (not a bare 2.2 pow), so darks match
@@ -177,7 +177,7 @@ namespace
             kBlitShader, sizeof(kBlitShader) - 1, "blit", "vs_main", "vs_5_0");
         ID3DBlob* ps = compile_blit(
             kBlitShader, sizeof(kBlitShader) - 1, "blit", "ps_main", "ps_5_0");
-        // The #324 encode reuses the fullscreen VS + root sig; only its pixel
+        // The #285 encode reuses the fullscreen VS + root sig; only its pixel
         // shader differs, so it is a second PSO on this context (the same
         // one-root-sig-many-PSOs shape TexturedQuadContext already uses).
         ID3DBlob* encode_ps = compile_blit(
@@ -285,7 +285,7 @@ namespace wz::gpu::dx12::internal
     }
 
     // Fullscreen linear->sRGB encode of `linear_texture` onto the currently-bound
-    // backbuffer (#324). Identical plumbing to blit_texture_dx12 -- shared root
+    // backbuffer (#285). Identical plumbing to blit_texture_dx12 -- shared root
     // sig, SRV ring slot, fullscreen triangle -- differing only in the PSO, whose
     // pixel shader applies the sRGB transfer. Must be inside a begin/end_frame
     // bracket with the (UNORM) backbuffer bound; `linear_texture` must rest

@@ -44,7 +44,7 @@ namespace wz::engine::assets::internal {
         AudioClipBankTable& audio_clip_bank_table,
         AudioClipTable& audio_clip_table,
         // The library resource_root: a RELATIVE from-directory "directory" param
-        // resolves against it (issue #334), matching the file carriers. Empty =>
+        // resolves against it (issue #295), matching the file carriers. Empty =>
         // used as-is (historical CWD-relative behavior).
         wz::fs::Path resource_root = {}
     );

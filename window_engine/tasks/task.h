@@ -57,8 +57,16 @@ namespace wz::tasks
     void wait(Counter& c);
 
     // A fork-join completion counter: the number of tasks submitted against it but
-    // not yet finished. Lives on the caller's stack, spanning one run()/wait()
-    // pair; non-copyable and non-movable (a worker may hold a pointer to it).
+    // not yet finished. Lives on the caller's stack, spanning a run()/wait() pair;
+    // non-copyable and non-movable (a worker may hold a pointer to it).
+    //
+    // SEVERAL run() BATCHES MAY BE JOINED BY ONE wait(). The heterogeneous
+    // fork-join -- `run(c, A, &a); run(c, B, &b); wait(c);` -- is supported: each
+    // run() arms the counter independently, and a second batch landing while the
+    // first is still draining is handled by the completion finisher's CAS publish
+    // (see the re-arm note in TaskScheduler::complete). Reuse across SEQUENTIAL
+    // run/wait pairs is likewise fine (see arm()). It is concurrent WAITERS that
+    // are not supported:
     //
     // ONE WAITER AT A TIME. A Counter carries a single parking slot (waiter_), so
     // it can hold one parked fibre, not a queue of them. Two fibres waiting on the
@@ -68,8 +76,7 @@ namespace wz::tasks
     // burns a worker spinning instead of parking, and on a one-worker pool it can
     // starve the very tasks that would drain the count. Fan out from one waiter
     // and join there; that is what every consumer does and what the fork-join
-    // shape means. Reuse across SEQUENTIAL run/wait pairs is fine and supported
-    // (see arm()) -- it is concurrent waiters that are not.
+    // shape means.
     //
     // At S0 the count is only ever transiently non-zero inside run() (tasks finish
     // inline), so it is a plain int; it becomes atomic when the worker pool lands
@@ -105,6 +112,12 @@ namespace wz::tasks
         // and past that point complete() deliberately touches nothing in the
         // Counter -- the whole shape of the stack-lifetime fix in 18484cbb. No task
         // is outstanding, so no worker can be mid-park either.
+        //
+        // The other direction -- arming a counter that is NOT drained, i.e. a
+        // second run() batch stacked on a live one -- is the finisher's problem,
+        // not this one's: it may land in the middle of complete()'s claim-then-
+        // publish, so that publish is a CAS 1->0 that detects us and unwinds. This
+        // fetch_add is the acquire side of that handshake.
         void arm(int n)
         {
             if (outstanding_.fetch_add(n, std::memory_order_acquire) == 0)

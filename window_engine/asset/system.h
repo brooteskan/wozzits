@@ -283,7 +283,7 @@ namespace wz::asset {
         // but demand-driven: a cache-served node prunes its prerequisite subtree,
         // so a heavy source that only feeds a cached asset is never demanded.
         // This is what lets the runtime resolve from a sealed cache with the
-        // source stripped (issue #334). Empty before commit.
+        // source stripped (issue #295). Empty before commit.
         std::vector<AssetKey> terminal_keys() const;
 
 

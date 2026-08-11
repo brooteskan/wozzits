@@ -179,9 +179,20 @@ namespace wz::gpu::dx12
         // readback buffer.  This must happen on the command list BEFORE it
         // is closed + submitted, so call this before end_frame().
         //
-        // However, the caller typically wants results AFTER end_frame()'s
-        // fence wait.  So we resolve into the readback buffer that is already
-        // persistently mapped; the fence guarantees the data is available.
+        // STALE PREMISE -- READ BEFORE USING THIS TIMER. The design here assumed
+        // end_frame performed a CPU fence wait, so "resolve now, read after
+        // end_frame" was safe. #306 removed that wait: end_frame submits and
+        // returns, and the pacing wait moved to the NEXT begin_frame on the same
+        // slot. Two consequences, neither handled:
+        //   - reading elapsed_ms() straight after end_frame now races the GPU;
+        //     the caller must wait on the frame's fence value itself.
+        //   - the query heap and readback buffer are SINGLE-BUFFERED across the
+        //     whole frame ring, so with frames_in_flight > 1 the next frame
+        //     resolves into the same buffer while the previous frame's results
+        //     are still being written.
+        // There are zero callers today, which is the only reason this is a note
+        // rather than a bug. Making it usable means per-slot query heaps and
+        // readback buffers, like every other per-frame resource (#306).
         dx->cmd->ResolveQueryData(
             timer.impl->query_heap,
             D3D12_QUERY_TYPE_TIMESTAMP,

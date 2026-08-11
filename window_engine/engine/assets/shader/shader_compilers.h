@@ -22,7 +22,7 @@ namespace wz::engine::assets::internal {
         wz::gpu::Device& device,
         wz::rhi::ShaderModuleRegistry* shaders,
         // The library resource_root: a RELATIVE HLSL source_path resolves against
-        // it (issue #334), matching the raw/byte file carriers. Empty => path used
+        // it (issue #295), matching the raw/byte file carriers. Empty => path used
         // as-is (schema-only registries / historical CWD-relative behavior).
         wz::fs::Path resource_root = {}
     );

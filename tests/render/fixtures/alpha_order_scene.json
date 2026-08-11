@@ -1,7 +1,7 @@
 {
   "schema": "wozzits.scene.v0",
   "name": "alpha_order_scene",
-  "note": "#327 frame capture: three MUTUALLY OVERLAPPING, ALPHA-BLENDED cubes strung out along the view axis, authored NEAR first and FAR last -- the order a back-to-front transparency sort would have to reverse. All three bind graph node 44 (the cube geometry through the alpha_program, blend_mode = AlphaBlend, depth TestNoWrite), so nothing here distinguishes them except where they are. The draw-submission capture test renders this, then re-renders with the depths swapped, and reports which order the recorder actually saw.",
+  "note": "#288 frame capture: three MUTUALLY OVERLAPPING, ALPHA-BLENDED cubes strung out along the view axis, authored NEAR first and FAR last -- the order a back-to-front transparency sort would have to reverse. All three bind graph node 44 (the cube geometry through the alpha_program, blend_mode = AlphaBlend, depth TestNoWrite), so nothing here distinguishes them except where they are. The draw-submission capture test renders this, then re-renders with the depths swapped, and reports which order the recorder actually saw.",
   "nodes": [
     {
       "id": "root",

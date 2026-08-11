@@ -86,6 +86,20 @@ namespace wz::app
         // Engine thread: swap the queue out and apply each item OUTSIDE the lock
         // -- an apply mutates the app/renderer, and a post from the owner thread
         // must never block on it.
+        //
+        // A THROWING `apply` LOSES THE REST OF THE BATCH. The items were swapped
+        // out of pending_ before the loop (they have to be -- the lock is
+        // released), so an exception out of apply() unwinds with the untouched
+        // TAIL still in the local vector, which is then destroyed. For the edit
+        // mailboxes, where every operation must land or be reported dropped,
+        // that is silent loss of edits the owner already believes were accepted.
+        //
+        // The contract is therefore on the CALLER: `apply` must not throw. Every
+        // apply today either is noexcept in practice or reports its own failure
+        // through record_dropped_edit rather than an exception. Re-queueing the
+        // tail instead would be the alternative, but it inverts the ordering
+        // guarantee (the tail would land after items posted since the swap), so
+        // the requirement is stated rather than papered over.
         template <class Apply>
         void drain(Apply&& apply)
         {

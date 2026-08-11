@@ -169,4 +169,18 @@ namespace wz::tasks
     // serial-vs-parallel. Also enabled by the WZ_TASKS_FORCE_SERIAL env var.
     void set_force_serial(bool force);
     bool force_serial();
+
+    // ─── Completion test seam ───────────────────────────────────────────────
+    // Called by the completion FINISHER at the one instant that decides whether
+    // a concurrent re-arm is handled correctly: after it has claimed the
+    // counter's parking slot and before it publishes the count. That window is
+    // nanoseconds wide in production, so the only way to test the re-arm path
+    // deterministically is to hold the finisher open inside it while another
+    // thread calls run() -- see complete() and the ArmDuringCompletion test.
+    //
+    // Null in production; the cost is one relaxed-ordered load of a null
+    // pointer per completed task. Install `user` before `hook` and clear `hook`
+    // before `user` (the two are separate atomics, read hook-then-user).
+    using CompleteHook = void (*)(void* user);
+    void set_complete_test_hook(CompleteHook hook, void* user);
 }

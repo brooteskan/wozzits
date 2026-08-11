@@ -87,6 +87,20 @@ namespace wz::diag
         // "nothing else happened".
         uint64_t dropped() const { return dropped_; }
 
+        // Occurrences that never REACHED this table: the cross-lane channel was
+        // full when the producer published them. Counted on the producer side and
+        // folded in here by the lane each cadence (LoggerServiceLane::publish).
+        //
+        // Kept separate from dropped() because the two losses mean different
+        // things and are fixed differently -- a full table means more than
+        // Capacity distinct ids, a full channel means the producer outran the
+        // consumer's cadence -- and because this one used to be invisible: the
+        // publish discarded try_push's result while the reporter advertised its
+        // totals as exact. Every other hop in the diagnostics path counts its
+        // losses; this closes the last silent one.
+        void note_channel_drops(uint64_t occurrences) { channel_dropped_ += occurrences; }
+        uint64_t channel_dropped() const { return channel_dropped_; }
+
         // Snapshot entry i as reported: its unreported() becomes 0 until more
         // occurrences arrive. Called by the reporter after it logs the entry.
         void mark_reported(std::size_t i) { entries_[i].reported = entries_[i].count; }
@@ -99,14 +113,16 @@ namespace wz::diag
 
         void clear()
         {
-            size_    = 0;
-            dropped_ = 0;
+            size_            = 0;
+            dropped_         = 0;
+            channel_dropped_ = 0;
         }
 
     private:
         Entry       entries_[Capacity];
-        std::size_t size_    = 0;
-        uint64_t    dropped_ = 0;
+        std::size_t size_            = 0;
+        uint64_t    dropped_         = 0;
+        uint64_t    channel_dropped_ = 0;
     };
 
 } // namespace wz::diag

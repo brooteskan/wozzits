@@ -60,7 +60,7 @@ namespace wz::gpu::dx12
         ID3D12RootSignature*  root_sig        = nullptr;
         ID3D12PipelineState*  pso             = nullptr;
         // Second PSO sharing root_sig + srv_heap: same fullscreen sample, but the
-        // pixel shader applies the linear->sRGB transfer. Used by the #324 encode
+        // pixel shader applies the linear->sRGB transfer. Used by the #285 encode
         // pass that resolves the RGBA16F scene target to the sRGB backbuffer.
         ID3D12PipelineState*  pso_srgb_encode = nullptr;
         ID3D12DescriptorHeap* srv_heap        = nullptr;
@@ -208,7 +208,7 @@ namespace wz::gpu::dx12
         // because a PSO's RTVFormats[0] must match the bound RTV's format. Read
         // from the device, not plumbed, so it cannot disagree with the last
         // OMSetRenderTargets. INVARIANT: every OMSetRenderTargets in this layer
-        // must set it (same grep as depth_target_bound). #324 (H18 on #316).
+        // must set it (same grep as depth_target_bound). #285 (H18 on #316).
         DXGI_FORMAT bound_color_format = DXGI_FORMAT_R8G8B8A8_UNORM;
 
         UINT frame_index = 0;

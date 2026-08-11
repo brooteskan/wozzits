@@ -59,6 +59,11 @@ namespace wz::logging::internal
         return !accepting_.load(std::memory_order_acquire);
     }
 
+    bool LoggerQueue::empty() const
+    {
+        return queue_->empty();
+    }
+
     uint64_t LoggerQueue::dropped_count() const
     {
         return dropped_count_.load(std::memory_order_relaxed);

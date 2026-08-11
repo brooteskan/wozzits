@@ -52,8 +52,15 @@ namespace wz::logging::internal
         LoggerQueue               queue_;
         std::thread               worker_;
         std::atomic<bool>         running_   { false };
+
+        // Messages accepted but not yet dispatched. wait_until_idle() blocks on
+        // this reaching zero via C++20 ATOMIC wait/notify rather than a
+        // condition_variable, because the decrement-to-zero happens on the
+        // PRODUCER side too (a rejected push) -- and the producer side is
+        // reachable from the audio realtime callback, where taking a mutex is the
+        // priority-inversion hazard this whole file's design excludes. The cv
+        // version put a lock_guard on exactly that path, and only when the queue
+        // was backed up, which is when it is most likely to be contended.
         std::atomic<int>          in_flight_ { 0 };
-        std::mutex                idle_mutex_;
-        std::condition_variable   idle_cv_;
     };
 }

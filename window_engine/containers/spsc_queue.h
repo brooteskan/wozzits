@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <new>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 namespace wz::core::containers
@@ -14,6 +15,20 @@ namespace wz::core::containers
     template <typename T>
     class SPSCQueue
     {
+        // The destructor and clear() reset the indices WITHOUT running ~T() on
+        // whatever is still queued, so a T that owns anything leaks on every
+        // teardown and every clear. Every user today is a POD command struct, and
+        // this pins that: the alternative (destroying the live range) is a real
+        // change to a lock-free container, so the constraint is declared rather
+        // than quietly assumed. Mirrors the trivially-copyable assert the
+        // work-stealing deque carries for the same reason.
+        static_assert(
+            std::is_trivially_destructible_v<T>,
+            "SPSCQueue does not destroy queued elements on clear() or "
+            "destruction, so T must be trivially destructible. Either store a "
+            "POD (what every user does today) or teach clear()/~SPSCQueue() to "
+            "drain the live range first.");
+
     public:
         explicit SPSCQueue(size_t capacity_pow2)
             : capacity(capacity_pow2),
@@ -69,6 +84,10 @@ namespace wz::core::containers
                    write_index.load(std::memory_order_acquire);
         }
 
+        // Discard everything queued. NOT concurrency-safe: it stores both indices
+        // relaxed, so a concurrent producer or consumer sees them move under it.
+        // Call only when both ends are known idle (reset between runs), never as
+        // a "drop the backlog" verb on a live queue.
         void clear()
         {
             read_index.store(0, std::memory_order_relaxed);

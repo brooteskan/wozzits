@@ -82,16 +82,51 @@ namespace wz::io
                 queue_.pop_front();
                 ++in_flight_;
             }
-            job();  // runs outside the lock: it blocks on I/O
+            // Runs outside the lock: it blocks on I/O.
+            //
+            // A THROWING JOB MUST NOT TAKE THE LANE DOWN. Jobs on this lane allocate
+            // -- read_file sizes its buffer to the whole file, the save closure
+            // builds its document -- so std::bad_alloc is a reachable outcome of
+            // ordinary work, not a programming error. Letting it escape terminated
+            // the process; swallowing it without the scope guard below would be
+            // worse, leaving in_flight_ stuck above zero so quiesce() -- and with it
+            // teardown, which waits on quiesce before destroying the device -- hangs
+            // forever. So: decrement on EVERY path, then swallow.
+            //
+            // The job itself still owes its caller an answer; a job that lets an
+            // exception out has already failed to deliver one, which is why the
+            // async_* wrappers (file/filesystem.cpp) catch internally and report a
+            // FileError instead of relying on this net. This is the backstop for
+            // everything that does not.
             {
-                std::lock_guard<std::mutex> lock(mutex_);
-                --in_flight_;
+                struct InFlightScope
+                {
+                    IoExecutor* self;
+                    ~InFlightScope()
+                    {
+                        {
+                            std::lock_guard<std::mutex> lock(self->mutex_);
+                            --self->in_flight_;
+                        }
+                        // No job outstanding for this thread now -- a waiting
+                        // quiesce() may be the last thing this releases.
+                        self->idle_cv_.notify_all();
+                    }
+                } scope{ this };
+
+                try
+                {
+                    job();
+                }
+                catch (...)
+                {
+                }
+                // Drop the closure's captured state (a prepared save document, a
+                // read buffer) while still inside the scope guard, so quiesce()
+                // returning means that state is released and not merely idle.
+                // Reachable on both paths -- the catch above swallows.
+                job = nullptr;
             }
-            // No job outstanding for this thread now -- a waiting quiesce() may be
-            // the last thing this releases. (A throwing job never reaches here, but
-            // it never returns to the loop either: it escapes worker_main and
-            // terminates, which is the lane's standing contract.)
-            idle_cv_.notify_all();
         }
     }
 }

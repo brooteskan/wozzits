@@ -69,6 +69,10 @@ namespace wz::tasks
         char g_done_storage;
         void* const kDone = &g_done_storage;
 
+        // The completion test seam (task_scheduler.h). Null in production.
+        std::atomic<CompleteHook> g_complete_hook{ nullptr };
+        std::atomic<void*> g_complete_hook_user{ nullptr };
+
         unsigned resolve_worker_count(unsigned requested)
         {
             if (requested != 0)
@@ -145,6 +149,22 @@ namespace wz::tasks
             return v != nullptr && v[0] != '\0' && v[0] != '0';
         }();
         return from_env || g_force_serial.load(std::memory_order_acquire);
+    }
+
+    void set_complete_test_hook(CompleteHook hook, void* user)
+    {
+        // Ordered so a completer that observes a non-null hook also observes the
+        // matching user pointer: publish user first, retire hook first.
+        if (hook != nullptr)
+        {
+            g_complete_hook_user.store(user, std::memory_order_release);
+            g_complete_hook.store(hook, std::memory_order_release);
+        }
+        else
+        {
+            g_complete_hook.store(nullptr, std::memory_order_release);
+            g_complete_hook_user.store(user, std::memory_order_release);
+        }
     }
 
     void TaskScheduler::task_fiber_entry(void* arg)
@@ -376,10 +396,14 @@ namespace wz::tasks
         // as a fibre (SEGFAULT) -- the intermittent cognition pool-oracle crash.
         //
         // So: claim the parked fibre (its kDone publish also closes the
-        // park-vs-complete registration race with run_fiber) FIRST, then store zero.
-        // After that store the Counter may vanish, so nothing below touches `c`:
-        // notify_all() wakes by address without dereferencing the storage, and
+        // park-vs-complete registration race with run_fiber) FIRST, then publish
+        // zero. After that publish the Counter may vanish, so nothing below touches
+        // `c`: notify_all() wakes by address without dereferencing the storage, and
         // push_resumable() only takes the local fibre pointer + pool-owned state.
+        //
+        // The publish is a CAS 1->0, not a blind store, because a concurrent
+        // arm() can land between the claim and the publish -- see the re-arm
+        // note on the failure path below.
         int v = c.outstanding_.load(std::memory_order_acquire);
         assert(v > 0 && "TaskScheduler::complete: counter already at zero -- a "
                         "task was completed twice, or completed against a counter "
@@ -388,14 +412,48 @@ namespace wz::tasks
         {
             if (v == 1)
             {
-                // Finisher: exactly one task -- this one -- remained, so no other
-                // thread is completing `c` and this branch races with nobody on it.
+                // Prospective finisher: one task -- this one -- remained. No other
+                // COMPLETER can be on this branch (see the re-arm note), but a
+                // submitter still can, via arm().
                 void* w = c.waiter_.exchange(kDone, std::memory_order_acq_rel);
-                c.outstanding_.store(0, std::memory_order_release);  // release + last touch of c
-                c.outstanding_.notify_all();  // wake a main-thread waiter (no-op if none)
+
+                if (CompleteHook hook = g_complete_hook.load(std::memory_order_acquire))
+                    hook(g_complete_hook_user.load(std::memory_order_acquire));
+
+                int expected = 1;
+                if (c.outstanding_.compare_exchange_strong(expected,
+                                                           0,
+                                                           std::memory_order_acq_rel,
+                                                           std::memory_order_acquire))
+                {
+                    c.outstanding_.notify_all();  // wake a main-thread waiter (no-op if none)
+                    if (w != nullptr && w != kDone)
+                        push_resumable(static_cast<FiberContext*>(w));
+                    return;
+                }
+
+                // RE-ARMED under us: a second run() batch was submitted against this
+                // counter between the claim above and this publish, so the count is
+                // no longer 1 and this task is no longer the last. Publishing zero
+                // here (what a blind store did) would drop the new batch's count,
+                // release wait() while those tasks are still in flight, and hand
+                // their completions a Counter whose stack frame is gone -- the
+                // STATUS_STACK_BUFFER_OVERRUN / SEGFAULT class 18484cbb fixed,
+                // reachable through a plain `run(c, A); run(c, B); wait(c)`.
+                //
+                // Unwinding is safe, and only here, because THIS task's count is
+                // still outstanding: the counter cannot reach zero until we
+                // decrement below, so no waiter can return and `c` cannot die
+                // underneath these two stores. It also means no other completer can
+                // be on the v==1 branch with us -- the smallest count any of them
+                // can load while we hold ours is 2 -- so we are still the sole owner
+                // of waiter_ and may put it back. Restore it BEFORE republishing the
+                // fibre, or the fibre re-parks against a stale kDone and spins.
+                c.waiter_.store(nullptr, std::memory_order_release);
                 if (w != nullptr && w != kDone)
                     push_resumable(static_cast<FiberContext*>(w));
-                return;
+                v = expected;  // the count the failed CAS reloaded (>= 2)
+                continue;
             }
             // Tasks still outstanding: a plain decrement (retry on contention; the
             // failed CAS reloads v with the current count).

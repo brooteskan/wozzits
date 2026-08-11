@@ -55,6 +55,32 @@ namespace wz::fs
                           const std::string &text,
                           bool overwrite = true);
 
+    // ─── Crash-atomic replace ───────────────────────────────────────────────
+    // Replace `path`'s contents such that a reader (or a crash) NEVER observes a
+    // partial file: the bytes are staged in a sibling temp, flushed to stable
+    // storage, then published with a single MoveFileEx replace. Either the old
+    // contents or the new ones are on disk -- never a splice of the two.
+    //
+    // Use this for AUTHORED data whose loss is unrecoverable. Plain write_file
+    // opens the destination CREATE_ALWAYS, which truncates it up front, so a
+    // process death anywhere in the write leaves a half-file that the next load
+    // cannot parse. For a scene document that is authored-data loss: the reader
+    // treats an unparseable file as "no scene yet".
+    //
+    // Costs, all of which plain write_file avoids: a second file briefly exists
+    // beside the destination (and survives a crash as visible litter), the write
+    // is flushed rather than left to the cache, and the destination's identity
+    // changes -- an open handle, hardlink, or ACL on the OLD file does not follow
+    // the replace. Not for high-frequency or cache-like writes.
+    //
+    // Always overwrites; there is no create-only mode (that is write_file's
+    // `overwrite = false`). Does NOT create parent directories.
+    FileError write_file_atomic(const Path &path, const Buffer &data);
+
+    // write_file_atomic for text, matching write_file_text's encoding (raw UTF-8
+    // bytes, no BOM).
+    FileError write_file_text_atomic(const Path &path, const std::string &text);
+
     //
     bool exists(const Path &path);
 
@@ -187,11 +213,27 @@ namespace wz::fs
     using ReadCallback = std::function<void(FileResult<Buffer>)>;
     using WriteCallback = std::function<void(FileError)>;
 
+    // Read/write off the calling thread, via the installed wz::IAsyncExecutor
+    // (async/async.h) -- in the engine, the IO lane.
     //
+    // THE CALLBACK ALWAYS RUNS, EXACTLY ONCE. It is the only channel these verbs
+    // have, so every failure is delivered through it rather than thrown: an I/O
+    // error, an allocation failure inside the operation (a whole-file read buffer
+    // is the obvious one), no executor installed, and an executor that refused
+    // the job because it is shutting down all arrive as a FileError.
+    //
+    // WHICH THREAD it runs on depends on how far the work got. Normally: the
+    // executor thread, which is what makes last_os_error_code() above meaningful
+    // inside it. But the two paths that never reach the executor -- none
+    // installed, or the post refused -- answer with FileError::IOError
+    // SYNCHRONOUSLY, on the caller's thread, before the call returns. A callback
+    // that takes a lock the caller already holds, or that assumes it is off the
+    // frame thread, must tolerate that.
     void async_read_file(const Path &path,
                          ReadCallback callback);
 
-    //
+    // See async_read_file for the callback contract. `data` is copied into the
+    // job, so the caller's buffer is free the moment this returns.
     void async_write_file(const Path &path,
                           Buffer data,
                           WriteCallback callback,

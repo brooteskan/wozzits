@@ -225,7 +225,7 @@ namespace wz::engine::assets
         // disk-cache provider with CachePreferred: a cached heavy asset is served
         // from the (possibly sealed) cache and its source prerequisites are never
         // demanded — so the runtime resolves with heavy sources stripped. Coverage
-        // matches resolve_all (sinks + prerequisites = every node). Issue #334.
+        // matches resolve_all (sinks + prerequisites = every node). Issue #295.
         ResolveReport resolve_all_cached(
             std::source_location caller =
                 std::source_location::current());

@@ -36,7 +36,22 @@ namespace wz::diag
         // Non-blocking, drop on full. Deliberately no notify_all: waking the lane
         // per-publish from a hot lane would both hammer the cv and defeat "report on
         // its own cadence". The cadence timer (or a flush_now) drains.
-        channel_.try_push(record);
+        if (channel_.try_push(record)) {
+            return;
+        }
+        // COUNT THE DROP. This return used to be discarded, which made the channel
+        // the one lossy hop in the diagnostics path that did not account for itself
+        // -- while the reporter presented its per-id totals as the exact running
+        // count. The headroom argument for the ring's capacity assumes one drain per
+        // frame, but drains run per PASS and the >64-distinct-ids fallback publishes
+        // one record per message, so a validation storm can fill the ring inside a
+        // single cadence: exactly when the numbers matter most, they were quietly
+        // short. The occurrences (not the record count) are what is lost, since one
+        // record can carry many.
+        //
+        // Relaxed: this is a pure counter with no other state ordered against it,
+        // and the lane's exchange only needs to observe it eventually.
+        channel_drops_.fetch_add(record.occurrences, std::memory_order_relaxed);
     }
 
     void LoggerServiceLane::flush_now()
@@ -84,6 +99,14 @@ namespace wz::diag
         DiagnosticRecord r;
         while (channel_.try_pop(r)) {
             state_.ingest(r);
+        }
+        // Fold in whatever the producers could not fit. Taken AFTER the drain so a
+        // drop recorded during it is attributed to this cycle rather than left for
+        // the next one; exchange rather than load so nothing is counted twice.
+        if (const uint64_t lost =
+                channel_drops_.exchange(0, std::memory_order_relaxed);
+            lost != 0) {
+            state_.note_channel_drops(lost);
         }
         // After quiesce() the channel is still drained (kept from overflowing) but
         // the reporter -- the only thing that touches the logger -- is not called.
@@ -152,7 +175,7 @@ namespace wz::diag
         wz::Logger& logger,
         const std::function<std::string(const DiagnosticAggregate::Entry&)>&
             format_line,
-        uint64_t& last_dropped)
+        ReportedLosses& last_reported)
     {
         for (std::size_t i = 0; i < state.size(); ++i) {
             const auto& e = state.entry(i);
@@ -162,20 +185,34 @@ namespace wz::diag
             emit(logger, e.severity, format_line(e));
             state.mark_reported(i);
         }
-        if (state.dropped() > last_dropped) {
+        if (state.dropped() > last_reported.table_dropped) {
             logger.warn(
                 "diagnostics: table full, "
                 + std::to_string(state.dropped())
                 + " occurrences of untracked ids not itemized");
-            last_dropped = state.dropped();
+            last_reported.table_dropped = state.dropped();
+        }
+        // The other loss: records the producer could not fit into the cross-lane
+        // channel. Distinct from the table cap above -- that one means too many
+        // distinct ids, this one means the producer outran the report cadence --
+        // and it is the reason the per-id totals above may read short. Saying so
+        // is the whole point: an undercount presented as exact is worse than an
+        // undercount that admits it.
+        if (state.channel_dropped() > last_reported.channel_dropped) {
+            logger.warn(
+                "diagnostics: channel full, "
+                + std::to_string(state.channel_dropped())
+                + " occurrences never reached the report (totals above are short "
+                  "by at least this much)");
+            last_reported.channel_dropped = state.channel_dropped();
         }
     }
 
     DiagnosticReporter make_logging_reporter(wz::Logger& logger)
     {
-        // last_dropped persists across cadence calls (the lane never copies the
-        // reporter between calls), so the table-cap note logs only when it grows.
-        return [&logger, last_dropped = uint64_t{0}](
+        // last_reported persists across cadence calls (the lane never copies the
+        // reporter between calls), so each loss note logs only when it grows.
+        return [&logger, last_reported = ReportedLosses{}](
                    DiagnosticAggregate& state) mutable {
             report_diagnostics(
                 state, logger,
@@ -190,7 +227,7 @@ namespace wz::diag
                     line += "]";
                     return line;
                 },
-                last_dropped);
+                last_reported);
         };
     }
 

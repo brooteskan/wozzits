@@ -919,7 +919,7 @@ namespace wz::engine::assets
             terrain_visual_proxy_table_,
             collision_table_,
             // GPU-residency hook so a cache-served scalar field re-publishes the
-            // same rhi texture residency a fresh compile would (#334). Mirrors the
+            // same rhi texture residency a fresh compile would (#295). Mirrors the
             // tracker the EngineAssetContext gives the compilers.
             gpu_resources_,
             [this](
@@ -969,7 +969,7 @@ namespace wz::engine::assets
             // In a sealed bundle a cacheable asset that is absent surfaces as
             // ExternalCacheMiss on the missing node itself; spell out what it
             // means so the failure reads as "the baked cache is incomplete",
-            // not a bare error code (issue #334, Seam 2b).
+            // not a bare error code (issue #295, Seam 2b).
             if (err == wz::asset::ResolveError::ExternalCacheMiss
                 && cache_settings_.sealed)
             {

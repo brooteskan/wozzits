@@ -255,10 +255,10 @@ TEST(Frustum, ZeroViewProjectionYieldsFinitePlanesAndDoesNotAcceptEverything)
         << "control: a real frustum must reject a sphere well behind it";
 }
 
-// C1(v2)-C20 (#314): #326 handled a ZERO view_projection, but a NaN
+// C1(v2)-C20 (#314): #287 handled a ZERO view_projection, but a NaN
 // view_projection -- from a NaN camera transform reaching view_projection =
 // proj * view -- was left producing NaN planes, reproducing the exact silent-cull
-// no-op #326 was written to eliminate (a NaN plane's `d < -r` is false, so it
+// no-op #287 was written to eliminate (a NaN plane's `d < -r` is false, so it
 // accepts every sphere; and that ordered compare does not even raise FE_INVALID,
 // so no instrument sees it). frustum_from_view_projection now resets a non-finite
 // plane to inert-and-finite.

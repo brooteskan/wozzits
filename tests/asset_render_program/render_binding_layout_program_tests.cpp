@@ -720,7 +720,7 @@ TEST(RenderBindingLayoutKey, ViewHeadChangesTheKey)
 // #317 D1-T11: the D3DReflect check (D1-C13) compares a shader's bytecode against
 // its layout by register + KIND, but it cannot see SEMANTIC identity -- two
 // same-kind resources (e.g. two StructuredBuffers) at swapped registers pass it.
-// That is the SILENT half of the D1-C20 class: #322's canonical order repointed
+// That is the SILENT half of the D1-C20 class: #283's canonical order repointed
 // sky_gaussian / sky_gaussian_points / material_albedo / uvs, and only the two
 // slots where the KIND also flipped (material_albedo <-> uvs) were caught by
 // reflection; t3/t4 were silently mis-bound.

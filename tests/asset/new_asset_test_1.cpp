@@ -141,7 +141,7 @@ private:
     ResourceHandle handle_{};
 };
 
-// Models a shipped bundle's baked cache (issue #334): the entry is always absent
+// Models a shipped bundle's baked cache (issue #295): the entry is always absent
 // (can_load=false), but the provider still reports whether the type is one it
 // serves (is_cacheable) and whether the cache is sealed. Lets the resolve engine
 // tell a genuinely-missing cacheable asset (sealed => fatal) apart from a type
@@ -1491,7 +1491,7 @@ TEST_F(AssetSystemTest, ResolveRoots_CachePreferredMissFallsBackToSource)
 
 TEST_F(AssetSystemTest, ResolveRoots_SealedCacheableMissFailsWithoutRecompiling)
 {
-    // Issue #334, Seam 2b: in a sealed bundle a node whose (schema,type) is
+    // Issue #295, Seam 2b: in a sealed bundle a node whose (schema,type) is
     // cache-backed but has no baked entry must FAIL on that node itself
     // (ExternalCacheMiss, so the key is named) instead of silently recompiling
     // from a source the bundle stripped.

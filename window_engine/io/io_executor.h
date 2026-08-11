@@ -54,6 +54,13 @@ namespace wz::io
         // executor is going away and its threads are draining to a join). The
         // caller must then answer whatever was waiting on that job itself -- see
         // the warning on IAsyncExecutor::post.
+        //
+        // A job that THROWS does not take the lane down: the exception is caught
+        // and discarded at the worker loop, the thread stays in service, and
+        // quiesce() still completes. That is a backstop against std::bad_alloc,
+        // not a reporting channel -- the lane has nowhere to deliver an exception,
+        // so a job that owes an answer to a caller (a callback, a Request publish)
+        // must catch internally and answer, or that caller waits forever.
         [[nodiscard]] bool post(std::function<void()> job) override;
 
         // Stop accepting new work and BLOCK until everything already queued or

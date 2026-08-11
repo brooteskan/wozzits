@@ -376,7 +376,7 @@ namespace wz::engine::assets::internal
             // recorded), so the omission propagated rather than being chosen.
             // Whether the live path should clamp is #316 C3-Q2 -- it changes
             // what renders, so it is not a comment fix. Note there is no
-            // tonemap in the engine either (#327 puts post-processing below
+            // tonemap in the engine either (#288 puts post-processing below
             // its own R1), so an out-of-range colour is not headroom for
             // anything downstream today; it clips at the backbuffer.
             out.color[0] = 0.5f + SH_C0 * splat.color_dc[0];

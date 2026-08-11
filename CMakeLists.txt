@@ -475,7 +475,7 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/render_to_texture.scene.json"
     COPYONLY)
 
-# Self-contained render fixture for the bundle-export smoke test (#334, Seam 3.6):
+# Self-contained render fixture for the bundle-export smoke test (#295, Seam 3.6):
 # a RELOCATABLE project (project-relative source paths, all referenced shaders
 # staged locally) so wozzits_export — which requires a self-contained project —
 # can bundle it. The graph + manifest are committed (relative paths); the scene,
@@ -539,7 +539,7 @@ configure_file(
     "${WZ_REBIND_FIXTURE_DST}/lit_uv_surface.scene.json"
     COPYONLY)
 
-# Issue #327: three overlapping ALPHA-BLENDED cubes along the view axis for the
+# Issue #288: three overlapping ALPHA-BLENDED cubes along the view axis for the
 # test_rebind_fixture graph (all binding node 44, the alpha_program renderable),
 # authored near-to-far. The draw-submission capture test renders it and reports
 # what order the recorder saw -- the measurement the ladder register's
@@ -966,7 +966,7 @@ target_link_libraries(wozzits_sky_bake
         window_engine
 )
 
-# wozzits_export — headless standalone-bundle exporter (issue #334, Seam 3).
+# wozzits_export — headless standalone-bundle exporter (issue #295, Seam 3).
 # Resolves a project, runs the resource-closure walker, and assembles a
 # self-contained bundle (project tree + runtime exe + wozzits_app.json). No GPU /
 # no engine boot; links the shared window_engine library only.
@@ -1079,6 +1079,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(platform filesystem_status_query_tests)
     rs_add_test_group(platform filesystem_tree_ops_tests)
     rs_add_test_group(platform filesystem_async_io_tests)
+    rs_add_test_group(platform filesystem_atomic_write_tests)
 
     # Strict-isolation render check (issue #213): launch the standalone
     # wozzits_app_v1 executable as a SEPARATE PROCESS on the portable render
@@ -1119,7 +1120,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
         # backend here too (see rs_add_test_group).
         ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
-    # Bundle-export smoke test (#334, Seam 3.6): the headless acceptance guard.
+    # Bundle-export smoke test (#295, Seam 3.6): the headless acceptance guard.
     # Export the self-contained render fixture into a bundle, then launch the
     # BUNDLED exe from the bundle dir with NO path args — so it boots from the
     # co-located wozzits_app.json (Seam 1) and its relative-path closure — and
@@ -1171,7 +1172,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
         # backend here too (see rs_add_test_group).
         ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
-    # External-resource relocation guard (#334): test_rebind_fixture references
+    # External-resource relocation guard (#295): test_rebind_fixture references
     # shaders OUTSIDE its project dir (its own fixture shaders + the shipping
     # sg_lit shaders), so exporting it exercises relocate_external_sources —
     # copying them into the bundle's resources/ subtree and rewriting the graph —
@@ -1205,7 +1206,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
         # backend here too (see rs_add_test_group).
         ENVIRONMENT "WZ_TASKS_FORCE_SERIAL=0")
 
-    # Behavior DLL shipping + ABI verify/stamp guard (#334 Seam 3.4/3.5). Export
+    # Behavior DLL shipping + ABI verify/stamp guard (#295 Seam 3.4/3.5). Export
     # the rendering bundle fixture but SHIP the behavior test plugin via
     # --behavior-modules: the export copies just the DLL into a clean
     # bundle/behavior/, dry-run-loads it to verify its ABI matches the runtime (a
@@ -1517,7 +1518,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     # Containers
     rs_add_test_group(containers mpsc_queue)
     # MPSCQueue's concurrency tests park a producer/consumer inside the two-step
-    # publish/consume windows through the header's test seam -- see issue #328
+    # publish/consume windows through the header's test seam -- see issue #289
     # and the WZ_MPSC_QUEUE_TEST_HOOKS block in mpsc_queue.h.
     target_compile_definitions(containers_mpsc_queue PRIVATE WZ_MPSC_QUEUE_TEST_HOOKS)
     rs_add_test_group(containers mpsc_ring_buffer)
@@ -1620,7 +1621,7 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(render wozzits_app_render_binding_tests)
     add_dependencies(render_wozzits_app_render_binding_tests wz_stage_resources)
 
-    # The #327 frame capture: watches a real device frame's DrawInstanced calls
+    # The #288 frame capture: watches a real device frame's DrawInstanced calls
     # and the renderer's submission order, so the ladder register's Draw
     # submission and Transparency rows rest on a measurement. Loads
     # test_rebind_fixture's graph paired with alpha_order.scene.json.

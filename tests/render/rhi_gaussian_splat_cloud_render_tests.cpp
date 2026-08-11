@@ -305,7 +305,7 @@ TEST(RhiGaussianSplatCloudRender, RealizesAndRecordsADraw)
         const wz::math::Mat4 view_projection = wz::math::Mat4::identity();
         const wz::math::Vec3 camera_world_pos{ 0.0f, 0.0f, 0.0f };
 
-        // #327 frame capture: watch what the whole cloud actually costs.
+        // #288 frame capture: watch what the whole cloud actually costs.
         std::vector<
             wz::engine::rendering::RhiDx12CommandRecorder::CapturedDraw>
             captured;
@@ -328,7 +328,7 @@ TEST(RhiGaussianSplatCloudRender, RealizesAndRecordsADraw)
         // hardware instancing: DrawInstanced is D3D12's name for a non-indexed
         // draw, and the instance count is 1 (nothing in the engine ever sets
         // DrawArgs::instance_count -- rhi's make_draw_args leaves the default).
-        // The #327 register said "a single instanced draw", which read the API
+        // The #288 register said "a single instanced draw", which read the API
         // name as the mechanism. Six vertices per splat: two self-contained
         // triangles, because the program is a TriangleList and a 4-vertex quad
         // would span adjacent splats.

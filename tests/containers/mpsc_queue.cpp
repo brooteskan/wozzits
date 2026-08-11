@@ -52,7 +52,7 @@ namespace
     // ctest run stays fast: absent WZ_RUN_STRESS they GTEST_SKIP (visible), and
     // they run when it is set. This is the "label" the issue asks for instead of
     // DISABLED_ -- concurrency defects hid here precisely because the stress
-    // tests were switched off. See issue #328.
+    // tests were switched off. See issue #289.
     // getenv_s, not the deprecated getenv: the build avoids a target-wide
     // _CRT_SECURE_NO_WARNINGS on purpose (CMakeLists.txt) and controller_win32
     // reads env the same way.

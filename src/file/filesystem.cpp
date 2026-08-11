@@ -4,8 +4,10 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
+#include <atomic>
 #include <cctype>
 #include <cstddef>
+#include <cstdio>
 #include <system_error>
 #include <vector>
 
@@ -251,15 +253,18 @@ namespace wz::fs
         return result;
     }
 
-    /// @brief Writes data to a file.
-    /// @param path The path to the file.
-    /// @param data The data to write.
-    /// @param overwrite Whether to overwrite the file if it exists.
-    /// @return The error code, or Error::None on success.
-    wz::fs::FileError
-    write_file(const Path &path,
-                       const Buffer &data,
-                       bool overwrite)
+    /// @brief Shared body of write_file and write_file_atomic.
+    /// @param flush Push the bytes to stable storage before closing. Only the
+    ///        atomic writer asks for this: NTFS journals the rename's METADATA,
+    ///        not the file data behind it, so without the flush a crash just
+    ///        after the rename can leave the destination present but empty --
+    ///        which is the failure write_file_atomic exists to prevent, wearing
+    ///        a different hat. Plain write_file skips it (a per-write flush
+    ///        would slow every disk-cache write for no invariant it promises).
+    static FileError write_file_checked(const Path &path,
+                                        const Buffer &data,
+                                        bool overwrite,
+                                        bool flush)
     {
         std::wstring wpath = utf8_to_wide(path);
 
@@ -304,10 +309,87 @@ namespace wz::fs
             total_written += written;
         }
 
-        CloseHandle(file);
-
         if (total_written != data.size())
+        {
+            CloseHandle(file);
             return FileError::IOError;
+        }
+
+        if (flush && !FlushFileBuffers(file))
+        {
+            const FileError err = last_error();
+            CloseHandle(file);
+            return err;
+        }
+
+        CloseHandle(file);
+        return FileError::None;
+    }
+
+    /// @brief Writes data to a file.
+    /// @param path The path to the file.
+    /// @param data The data to write.
+    /// @param overwrite Whether to overwrite the file if it exists.
+    /// @return The error code, or Error::None on success.
+    wz::fs::FileError
+    write_file(const Path &path,
+                       const Buffer &data,
+                       bool overwrite)
+    {
+        return write_file_checked(path, data, overwrite, /*flush*/ false);
+    }
+
+    // A sibling of `path` to stage an atomic write in. SAME DIRECTORY, so the
+    // rename that publishes it is a within-volume metadata update rather than a
+    // copy -- a temp in %TEMP% would land on another volume and silently degrade
+    // MoveFileEx into a non-atomic copy+delete.
+    //
+    // The name is unique per process and per call rather than a fixed ".tmp"
+    // suffix: two writers staging the same destination at once would otherwise
+    // scribble over each other's staging file and publish a spliced document.
+    // The cost is that a process killed mid-write leaves its staging file behind
+    // -- visible litter next to the destination, which is a much better outcome
+    // than the truncated destination it replaces.
+    static Path unique_temp_sibling(const Path &path)
+    {
+        static std::atomic<unsigned> counter{ 0 };
+        char suffix[64];
+        std::snprintf(suffix, sizeof(suffix), ".%lu.%u.wztmp",
+                      static_cast<unsigned long>(GetCurrentProcessId()),
+                      counter.fetch_add(1, std::memory_order_relaxed));
+        return path + suffix;
+    }
+
+    wz::fs::FileError
+    write_file_atomic(const Path &path, const Buffer &data)
+    {
+        const Path temp = unique_temp_sibling(path);
+
+        const FileError write_err =
+            write_file_checked(temp, data, /*overwrite*/ true, /*flush*/ true);
+        if (write_err != FileError::None)
+        {
+            remove_file(temp);  // best effort: the destination is untouched
+            return write_err;
+        }
+
+        std::wstring wtemp = utf8_to_wide(temp);
+        std::wstring wpath = utf8_to_wide(path);
+
+        // REPLACE_EXISTING makes this a real replace; WRITE_THROUGH does not
+        // return until the rename itself is on disk. NO COPY_ALLOWED -- a
+        // cross-volume fallback is a non-atomic copy+delete, i.e. exactly the
+        // window this function exists to close, and the staging file is a
+        // sibling so it can never be needed. A failure here (destination open by
+        // another process, read-only, permissions) leaves the destination's old
+        // bytes fully intact, which is the contract.
+        if (!MoveFileExW(wtemp.c_str(), wpath.c_str(),
+                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        {
+            const FileError err = last_error();
+            remove_file(temp);
+            return err;
+        }
 
         return FileError::None;
     }
@@ -632,10 +714,8 @@ namespace wz::fs
         return create_directories(parent);
     }
 
-    wz::fs::FileError
-    write_file_text(const Path &path,
-                            const std::string &text,
-                            bool overwrite)
+    // Text -> bytes, shared by write_file_text and write_file_text_atomic.
+    static Buffer text_to_buffer(const std::string &text)
     {
         Buffer buffer;
         buffer.reserve(text.size());
@@ -644,7 +724,21 @@ namespace wz::fs
                       reinterpret_cast<const Byte *>(text.data()),
                       reinterpret_cast<const Byte *>(text.data() + text.size()));
 
-        return write_file(path, buffer, overwrite);
+        return buffer;
+    }
+
+    wz::fs::FileError
+    write_file_text(const Path &path,
+                            const std::string &text,
+                            bool overwrite)
+    {
+        return write_file(path, text_to_buffer(text), overwrite);
+    }
+
+    wz::fs::FileError
+    write_file_text_atomic(const Path &path, const std::string &text)
+    {
+        return write_file_atomic(path, text_to_buffer(text));
     }
 
     wz::fs::FileResult<std::string>
@@ -760,7 +854,22 @@ namespace wz::fs
 
         if (!executor->post([path, callback]()
                             {
-        auto result = read_file(path);
+        FileResult<Buffer> result;
+        // read_file sizes its buffer to the WHOLE file, so std::bad_alloc is an
+        // ordinary outcome here -- a large asset on a tight heap -- not a
+        // programming error. The lane catches escaping exceptions, but it has
+        // nowhere to report them, so a throw that got that far would leave this
+        // callback uncalled and its caller waiting forever. Answer with an error
+        // instead: same shape as the refusal paths above and below.
+        try
+        {
+            result = read_file(path);
+        }
+        catch (...)
+        {
+            result.value = Buffer{};
+            result.error = FileError::IOError;
+        }
         callback(std::move(result)); }))
         {
             // The executor refused the job (shutting down), so nothing will run
@@ -788,7 +897,17 @@ namespace wz::fs
 
         if (!executor->post([path, data = std::move(data), callback, overwrite]()
                             {
-        FileError err = write_file(path, data, overwrite);
+        // See async_read_file: an escaping exception (write_file widens the path,
+        // which allocates) would strand this callback's caller, and the lane has
+        // no channel to report it on.
+        FileError err = FileError::IOError;
+        try
+        {
+            err = write_file(path, data, overwrite);
+        }
+        catch (...)
+        {
+        }
         callback(err); }))
         {
             // Refused (shutting down) -- see async_read_file.

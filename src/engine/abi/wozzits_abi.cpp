@@ -57,6 +57,11 @@ struct WzHostRuntime
 
 namespace
 {
+    // Set while a resident runtime exists. See wz_host_runtime_start for why a
+    // second concurrent runtime is refused rather than allowed to cross-wire the
+    // process-global lanes.
+    std::atomic<bool> g_runtime_live{ false };
+
     WzResult result(WzResultCode code, const char* message)
     {
         return WzResult{
@@ -1451,6 +1456,38 @@ extern "C"
             return nullptr;
         }
 
+        // ONE RESIDENT RUNTIME AT A TIME. run_project_runtime installs
+        // PROCESS-GLOBAL singletons unconditionally -- the task scheduler
+        // (set_task_scheduler), the async executor (set_async_executor), and the
+        // diagnostic sink (set_diagnostic_sink) -- so a second concurrent start
+        // silently overwrites the first runtime's lanes with its own. From then
+        // on runtime A's saves are posted to runtime B's IO lane, and B's
+        // teardown quiesce() -- which proves there is no second writer of the
+        // scene file -- is proving it about the wrong lane. Worse, whichever
+        // runtime stops first uninstalls the globals out from under the other,
+        // leaving the survivor posting into destroyed objects.
+        //
+        // Refusing here is the cheap, honest boundary: the ABI is where "a
+        // runtime" is a concept, and a host that wants two viewports needs the
+        // lane ownership reworked first, not a race. Released by
+        // wz_host_runtime_stop; a start that fails below releases it here.
+        bool expected = false;
+        if (!g_runtime_live.compare_exchange_strong(expected, true)) {
+            return nullptr;
+        }
+        // Armed until the start SUCCEEDS; disarmed on the success path so the
+        // flag stays set for the runtime's lifetime and stop() clears it.
+        struct StartGuard
+        {
+            bool release_on_exit = true;
+            ~StartGuard()
+            {
+                if (release_on_exit) {
+                    g_runtime_live.store(false, std::memory_order_release);
+                }
+            }
+        } start_guard;
+
         try {
             auto runtime = std::make_unique<WzHostRuntime>();
             const std::string project_root = project_root_utf8;
@@ -1517,6 +1554,7 @@ extern "C"
                 raw->control.mark_finished();
             });
 
+            start_guard.release_on_exit = false;  // the runtime now owns the flag
             return runtime.release();
         }
         catch (...) {
@@ -1529,6 +1567,17 @@ extern "C"
         if (!runtime) {
             return;
         }
+        // Release the single-runtime claim once this runtime is fully gone (the
+        // store is after the delete below). Scoped so it runs even if a join or
+        // the drain throws.
+        struct LiveFlagRelease
+        {
+            ~LiveFlagRelease()
+            {
+                g_runtime_live.store(false, std::memory_order_release);
+            }
+        } release_live;
+
         runtime->control.request_stop();
         if (runtime->thread.joinable()) {
             runtime->thread.join();

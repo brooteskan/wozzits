@@ -950,6 +950,79 @@ TEST(EditorRuntimeControl, ASecondSaveIsClaimableOnlyOnceTheFirstResultIsDrainab
     io1.join();
 }
 
+// ─── The out-of-band dirty restore ─────────────────────────────────────────
+//
+// post_async_save_result allocates (Mailbox -> vector push_back), so the IO
+// closure has to guard it -- and the guard DROPS the result on bad_alloc. That
+// was reasoned about as survivable, but it is not: with the restore lost,
+// document_.dirty() stays cleared from prepare's optimistic clear, so the retry
+// takes the "nothing changed" early-out and reports success having written
+// nothing, and the teardown save skips for the same reason. The two failures are
+// correlated -- whatever exhausted the heap for the post is what failed the save.
+//
+// request_dirty_restore is the allocation-free duplicate: a bitmask fetch_or,
+// noexcept by construction, that the frame thread takes alongside the mailbox
+// drain. These tests drive the lane WITHOUT the mailbox post at all, which is
+// exactly the state an OOM leaves behind.
+
+TEST(EditorRuntimeControl, DirtyRestoreSurvivesALostMailboxPost)
+{
+    EditorRuntimeControl control;
+
+    std::thread caller([&] { (void)control.save_scene_blocking(); });
+    while (!control.begin_pending_save()) {
+        std::this_thread::yield();
+    }
+
+    // The IO lane after a FAILED write, with the mailbox post lost to bad_alloc:
+    // the restore signal, then the publish. No post_async_save_result.
+    std::thread io([&] {
+        control.request_dirty_restore(/*scene=*/true, /*camera=*/true);
+        control.complete_pending_save(wz::fs::FileError::PermissionDenied);
+    });
+    io.join();
+    caller.join();
+
+    // Nothing in the mailbox -- this is the state that used to lose the edits.
+    int mailbox_results = 0;
+    control.drain_async_save_results(
+        [&](const wz::app::AsyncSaveResult&) { ++mailbox_results; });
+    EXPECT_EQ(mailbox_results, 0);
+
+    // The restore is still there, and says which flags the frame thread owes.
+    const unsigned restore = control.take_dirty_restore();
+    EXPECT_NE(restore & EditorRuntimeControl::kRestoreSceneDirty, 0u)
+        << "a failed save's scene-dirty restore was lost with the mailbox post";
+    EXPECT_NE(restore & EditorRuntimeControl::kRestoreCameraDirty, 0u);
+}
+
+TEST(EditorRuntimeControl, DirtyRestoreIsTakenOnceAndAccumulates)
+{
+    EditorRuntimeControl control;
+
+    // Nothing pending: an empty take must not claim a restore that never
+    // happened, or every frame would re-dirty a cleanly saved scene.
+    EXPECT_EQ(control.take_dirty_restore(), 0u);
+
+    // Two failed saves before the frame thread gets a turn: the second must not
+    // erase the first's bits (fetch_or, not store). Scene-only then camera-only,
+    // so a store would leave exactly one bit set.
+    control.request_dirty_restore(/*scene=*/true, /*camera=*/false);
+    control.request_dirty_restore(/*scene=*/false, /*camera=*/true);
+
+    const unsigned restore = control.take_dirty_restore();
+    EXPECT_NE(restore & EditorRuntimeControl::kRestoreSceneDirty, 0u);
+    EXPECT_NE(restore & EditorRuntimeControl::kRestoreCameraDirty, 0u);
+
+    // Sticky, but not permanent: taken bits are cleared, so the NEXT frame does
+    // not re-restore and mark a saved scene dirty forever.
+    EXPECT_EQ(control.take_dirty_restore(), 0u);
+
+    // A successful save asks for nothing and must leave no trace.
+    control.request_dirty_restore(/*scene=*/false, /*camera=*/false);
+    EXPECT_EQ(control.take_dirty_restore(), 0u);
+}
+
 TEST(EditorRuntimeControl, BeginCloseReleasesAParkedSaveCaller)
 {
     // The A1-C20 teardown case: a save posted with nothing servicing it (the

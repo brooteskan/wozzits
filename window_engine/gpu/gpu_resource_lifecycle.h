@@ -29,6 +29,20 @@ namespace wz::gpu
     //
     // Resources pushed via defer_release() are held for kFrameLatency frames
     // before being released, ensuring the GPU has finished reading them.
+    //
+    // THE LATENCY IS COUPLED TO THE BACKEND'S FRAME RING and nothing here can
+    // see it. A resource deferred during frame N is released when advance_frame
+    // wraps back to its slot, i.e. kFrameLatency frames later; the GPU is done
+    // with frame N only once the CPU is more than frames_in_flight frames past
+    // it. So the queue is safe exactly while
+    //
+    //     kFrameLatency > frames_in_flight
+    //
+    // 3 > 2 holds for the N=2 ring shipped today, with ONE frame of margin --
+    // raising the ring to 3 without raising this makes the queue release
+    // resources the GPU is still reading, silently and only under load. The
+    // relationship is asserted where both constants are visible (the DX12
+    // backend's dx12_device.cpp); this comment is the reason it exists.
     class DeferredReleaseQueue
     {
     public:

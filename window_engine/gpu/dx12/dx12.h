@@ -90,6 +90,10 @@ namespace wz::gpu::dx12
         const ScalarFieldDebugView& view
     );
 
+    // See wz::gpu::abort_frame: discard a recording begin_frame opened that
+    // end_frame will never close, so the next begin_frame can Reset the list.
+    void abort_frame(wz::gpu::Device& device);
+
     bool end_frame(wz::gpu::Device& device);
     bool present(wz::gpu::Device& device);
     bool present(wz::gpu::Device& device, uint32_t sync_interval);

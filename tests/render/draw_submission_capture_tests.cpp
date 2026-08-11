@@ -1,6 +1,6 @@
 // tests/render/draw_submission_capture_tests.cpp
 //
-// A FRAME CAPTURE, for the two rows of the #327 rendering-capability-ladder
+// A FRAME CAPTURE, for the two rows of the #288 rendering-capability-ladder
 // register that rested on reading the submit loop rather than watching it run:
 // Draw submission and Transparency.
 //

@@ -673,7 +673,7 @@ TEST(RenderBindingLayout, ViewBlockDoesNotDisturbObjectRegisters)
     EXPECT_EQ(before, after);
 }
 
-// ── Registers follow the SEMANTIC, not the row order (#322 option C) ──────────
+// ── Registers follow the SEMANTIC, not the row order (#283 option C) ──────────
 // A binding's t-register is a property of its semantic, not of where the author
 // placed the row. Two layouts with the same semantics in DIFFERENT orders must
 // derive the identical SRG, so reordering rows in the editor can no longer

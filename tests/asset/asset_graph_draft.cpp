@@ -956,7 +956,7 @@ TEST(AssetGraphDraft, EngineHookMaterializesFileCarrierKey)
 // every disk-cache filename derived from it — does not depend on where the
 // runtime was launched. Before the fix exists()/read resolved against the CWD, so
 // the same bundle produced different asset keys from different directories
-// (identity-guard §5 finding on #334).
+// (identity-guard §5 finding on #295).
 TEST(AssetGraphDraft, EngineHookCarrierKeyResolvesReadAgainstResourceRoot)
 {
     namespace ea = wz::engine::assets;

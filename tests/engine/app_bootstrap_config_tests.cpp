@@ -9,7 +9,7 @@
 #include <fstream>
 #include <string>
 
-// Seam 1 of issue #334: the bundle bootstrap config the standalone runtime reads
+// Seam 1 of issue #295: the bundle bootstrap config the standalone runtime reads
 // on a no-argument launch. These exercise the parse -> resolved-options step in
 // isolation (no device, no window), which is exactly what makes the seam small
 // and independently testable.
@@ -134,7 +134,7 @@ TEST(AppBootstrapConfig, DefaultsResourceRootAndOmitsBehaviorModules)
 
 TEST(AppBootstrapConfig, ParsesSealedCacheBlockResolvingRoot)
 {
-    // Seam 2 of issue #334: the bundle's baked-cache block. A relative root
+    // Seam 2 of issue #295: the bundle's baked-cache block. A relative root
     // resolves against the bundle dir like every other path, and sealed rides
     // through as a plain bool.
     TempBundleDir bundle;
@@ -289,7 +289,7 @@ TEST(AppBootstrapConfig, RequiresAssetGraphAndScene)
 
 TEST(AppBootstrapConfig, WriterRoundTripsThroughLoader)
 {
-    // Seam 3 of issue #334: the exporter writes wozzits_app.json; loading it back
+    // Seam 3 of issue #295: the exporter writes wozzits_app.json; loading it back
     // must reconstruct the same resolved options (a sealed cache bundle here).
     TempBundleDir bundle;
 

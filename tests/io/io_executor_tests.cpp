@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -269,5 +270,61 @@ namespace
         io.quiesce();
         EXPECT_EQ(ran.load(), 1);
         EXPECT_EQ(refused.load(), 1);
+    }
+
+    // A THROWING JOB MUST NOT TAKE THE LANE DOWN. Jobs here allocate -- a
+    // whole-file read buffer, a prepared save document -- so std::bad_alloc is a
+    // reachable outcome of ordinary work. It used to escape worker_main and
+    // terminate the process.
+    //
+    // The half-fix is worse than the bug, which is what this pins: catching the
+    // exception WITHOUT decrementing in_flight_ on the unwind leaves the count
+    // stuck above zero, so quiesce() -- and teardown, which waits on it before
+    // destroying the device -- blocks forever. A regression there hangs rather
+    // than fails, so the assertions below are ordered to say which half broke:
+    // the ctest timeout means the count leaked, a failed EXPECT means the thread
+    // died.
+    TEST(IoExecutor, ThrowingJobDoesNotKillTheLaneOrWedgeQuiesce)
+    {
+        std::atomic<int> ran_after{ 0 };
+        // ONE thread, so the job that throws and the job that must still run are
+        // provably served by the SAME worker: a lane that lost a thread to the
+        // throw could not run the second job at all.
+        IoExecutor io(1);
+
+        EXPECT_TRUE(io.post([] { throw std::runtime_error("job blew up"); }));
+        EXPECT_TRUE(io.post([&] { ran_after.fetch_add(1, std::memory_order_relaxed); }));
+
+        io.quiesce();  // hangs if the unwind skipped the in_flight_ decrement
+
+        EXPECT_EQ(ran_after.load(), 1) << "the worker did not survive the throw";
+
+        // Still in service after the quiesce barrier, too -- the thread is parked
+        // and joinable, not dead. (post() is refused post-quiesce by contract, so
+        // this checks the destructor's join rather than another round of work.)
+        EXPECT_EQ(io.thread_count(), 1u);
+    }
+
+    // Same hazard reached through the wz::fs wrapper the engine actually calls:
+    // a throwing CALLBACK. The wrappers catch around the I/O itself, but the
+    // callback runs on the lane too, so it is the remaining way an exception
+    // reaches worker_main from ordinary code.
+    TEST(IoExecutor, ThrowingJobLeavesTheQueueDrainable)
+    {
+        std::atomic<int> ran{ 0 };
+        IoExecutor io(2);
+
+        for (int i = 0; i < 8; ++i)
+        {
+            EXPECT_TRUE(io.post([&, i]
+            {
+                ran.fetch_add(1, std::memory_order_relaxed);
+                if (i % 2 == 0)
+                    throw std::runtime_error("every other job throws");
+            }));
+        }
+
+        io.quiesce();
+        EXPECT_EQ(ran.load(), 8);
     }
 }

@@ -713,7 +713,7 @@ namespace wz::asset
                 if (policy == ResolvePolicy::CacheRequired) {
                     return ResolveError::ExternalCacheMiss;
                 }
-                // Sealed bundle (issue #334): a node whose (schema, type) IS
+                // Sealed bundle (issue #295): a node whose (schema, type) IS
                 // cache-backed but has no entry must fail loudly on THIS node,
                 // naming its key, instead of falling through to recompile from a
                 // source the bundle stripped — which would otherwise surface as a

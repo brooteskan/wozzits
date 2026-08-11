@@ -83,12 +83,12 @@ namespace wz::rhi
         // Display-referred 8-bit colour: identical bytes to RGBA8Unorm, but the
         // sampler decodes sRGB -> linear on read (and so filters in linear).
         // Appended rather than grouped next to RGBA8Unorm so every prior ordinal
-        // stays stable. Honours the authored TextureColorSpace (#324).
+        // stays stable. Honours the authored TextureColorSpace (#285).
         RGBA8UnormSrgb,
         // Keep last. Count equals the member total, so appending a format trips
         // the static_assert beside every exhaustive mapping (rhi -> gpu -> DXGI)
         // rather than silently falling through. Pinning a named member's ordinal
-        // would be append-blind (cf. C3-H5 on #316); Count is not. #324.
+        // would be append-blind (cf. C3-H5 on #316); Count is not. #285.
         Count,
     };
 

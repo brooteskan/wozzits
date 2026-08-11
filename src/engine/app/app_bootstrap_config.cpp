@@ -149,7 +149,7 @@ namespace wz::app
                 resolve(base_dir, std::string(*behavior_modules));
         }
 
-        // Optional `cache` block (issue #334, Seam 2): the baked disk-cache the
+        // Optional `cache` block (issue #295, Seam 2): the baked disk-cache the
         // bundle runs from. Absent block, or a `root` that is missing/empty,
         // leaves the cache off (root empty). `root` is resolved against base_dir
         // like every other path so the bundle stays relocatable; `sealed` is a
@@ -170,7 +170,7 @@ namespace wz::app
             }
         }
 
-        // Optional behavior-ABI stamp (issue #334, Seam 3.5); absent => 0 (no
+        // Optional behavior-ABI stamp (issue #295, Seam 3.5); absent => 0 (no
         // check). Read leniently like the other optional fields.
         if (const auto abi = wz::json::read_uint(root, "behavior_abi_version")) {
             result.config.behavior_abi_version = *abi;

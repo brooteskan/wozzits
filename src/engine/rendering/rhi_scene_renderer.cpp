@@ -196,7 +196,7 @@ namespace wz::engine::rendering
         // TriangleList, so each splat needs two self-contained triangles or
         // they span adjacent splats and shatter (see the record site, which has
         // always said 6). Measured at the DrawInstanced call: a 64-splat cloud
-        // draws 384 vertices with instance count 1 (#327). Carried alongside
+        // draws 384 vertices with instance count 1 (#288). Carried alongside
         // the (empty) pull source so ensure_renderable takes the splat branch.
         struct SplatCloudBinding
         {
@@ -1089,7 +1089,7 @@ namespace wz::engine::rendering
         // back a handle the sweep just invalidated.
         view_constants_buffer_ = {};
         screen_constants_buffer_ = {};
-        // #324 scene-colour target: its backend resource died in the sweep;
+        // #285 scene-colour target: its backend resource died in the sweep;
         // reset (dims too) so ensure_scene_color_target rebuilds fresh rather
         // than binding a handle the sweep just invalidated.
         scene_color_resource_ = {};
@@ -3146,7 +3146,7 @@ namespace wz::engine::rendering
             (void)render_puppet_masks(*realized, target_w, target_h);
         }
 
-        // #324: render the main pass into a LINEAR scene-colour target (with the
+        // #285: render the main pass into a LINEAR scene-colour target (with the
         // shared depth) instead of the backbuffer, so a fullscreen pass can then
         // encode it to the sRGB backbuffer. Mutually exclusive with the
         // depth-less offscreen (mask) path. A target-acquire failure falls back
@@ -3204,7 +3204,7 @@ namespace wz::engine::rendering
         const std::uint32_t this_pass = capture_pass_++;
 #endif
 
-        // #324 seam 4: draw_order is world-first then overlay (see the partition
+        // #285 seam 4: draw_order is world-first then overlay (see the partition
         // above), so the first overlay-layer draw is the seam. In encode mode we
         // close the linear scene pass there, encode it to the sRGB backbuffer,
         // and let overlays draw into the backbuffer AFTER -- so display-referred
@@ -3431,7 +3431,7 @@ namespace wz::engine::rendering
             }
         }
 
-        // #324: an all-world scene (no overlay layer) never hit the seam in the
+        // #285: an all-world scene (no overlay layer) never hit the seam in the
         // loop, so encode now -- close the linear pass and resolve it to the
         // sRGB backbuffer. Mutually exclusive with to_offscreen below.
         if (encode_to_scene_color && !encoded_srgb) {

@@ -449,7 +449,7 @@ namespace
         // The bound colour target's format, threaded from the pass state rather
         // than hardcoded to the backbuffer -- so this same builder serves the
         // RGBA16F scene target and the RGBA8 backbuffer without a format
-        // mismatch against the bound RTV (#324, fixes C3-H18 on #316).
+        // mismatch against the bound RTV (#285, fixes C3-H18 on #316).
         desc.RTVFormats[0] = color_target_format;
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
@@ -864,7 +864,7 @@ namespace wz::engine::rendering
         // cannot disagree with what OMSetRenderTargets actually did (#317).
         const bool depth_bound =
             wz::gpu::dx12::internal::depth_target_bound(*device_);
-        // The other half of the pass-shape key (#324, H18): the bound colour
+        // The other half of the pass-shape key (#285, H18): the bound colour
         // target's format. Same source discipline as depth_bound -- read from
         // the device, never plumbed -- so it matches the live OMSetRenderTargets.
         const DXGI_FORMAT color_fmt =

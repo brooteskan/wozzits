@@ -116,6 +116,116 @@ TEST(FrameSchedule, ProfilingDisabledRecordsNothing)
     EXPECT_TRUE(schedule.last_profile().timings.empty());
 }
 
+// ─── The GPU begin/end bracket the short-circuit breaks ─────────────────────
+//
+// "Stop at the first failing phase" is right for the phases themselves and wrong
+// for the GPU framing around them: begin_frame opens the backend's command list
+// and only end_frame closes it, and a D3D12 list that is never closed can never
+// be reset -- so every LATER begin_frame fails while the device still reports
+// itself healthy. abort_frame is the unwind, and run() owes it to the caller,
+// who sees only "the frame failed" and has nothing in that signal to tell them a
+// list is still open.
+//
+// Each case below is the exact phase-position question: was begin_frame's
+// bracket left open when the run stopped here?
+
+namespace
+{
+    // recording_ops plus an abort hook that appends a sentinel, so the abort's
+    // POSITION in the sequence is checked, not just that it happened.
+    FramePhaseOps aborting_ops(std::vector<FramePhase>& order, int& aborts)
+    {
+        FramePhaseOps ops = recording_ops(order);
+        ops.abort_frame = [&aborts]() { ++aborts; };
+        return ops;
+    }
+}
+
+TEST(FrameSchedule, AbortsTheOpenFrameWhenAMidBracketPhaseFails)
+{
+    for (const FramePhase failing :
+         { FramePhase::Clear, FramePhase::RenderScene, FramePhase::RenderOverlay })
+    {
+        std::vector<FramePhase> order;
+        int aborts = 0;
+        FramePhaseOps ops = aborting_ops(order, aborts);
+
+        auto fail = [&order, failing]() { order.push_back(failing); return false; };
+        switch (failing)
+        {
+            case FramePhase::Clear:         ops.clear = fail;          break;
+            case FramePhase::RenderScene:   ops.render_scene = fail;   break;
+            case FramePhase::RenderOverlay: ops.render_overlay = fail; break;
+            default: FAIL() << "unexpected phase in this loop";
+        }
+
+        FrameSchedule schedule;
+        const FrameSchedule::Result r = schedule.run(ops);
+
+        EXPECT_FALSE(r.ok);
+        EXPECT_EQ(r.failed_phase, failing);
+        EXPECT_EQ(aborts, 1)
+            << "a frame that failed at " << to_string(failing)
+            << " left begin_frame's command list open and unclosable";
+    }
+}
+
+TEST(FrameSchedule, DoesNotAbortWhenNoFrameWasOpen)
+{
+    // Simulate runs BEFORE begin_frame, so nothing is open -- calling abort here
+    // would be a spurious close against the previous frame's already-closed list.
+    std::vector<FramePhase> order;
+    int aborts = 0;
+    FramePhaseOps ops = aborting_ops(order, aborts);
+    ops.simulate = [&order]() { order.push_back(FramePhase::Simulate); return false; };
+
+    FrameSchedule schedule;
+    EXPECT_FALSE(schedule.run(ops).ok);
+    EXPECT_EQ(aborts, 0);
+
+    // begin_frame's own failure: it returns false without leaving a list open
+    // (the backend's Reset either succeeded and the frame continued, or it did
+    // not and there is nothing to close).
+    order.clear();
+    aborts = 0;
+    ops = aborting_ops(order, aborts);
+    ops.begin_frame = [&order]() { order.push_back(FramePhase::BeginFrame); return false; };
+    EXPECT_FALSE(schedule.run(ops).ok);
+    EXPECT_EQ(aborts, 0);
+}
+
+TEST(FrameSchedule, DoesNotAbortOnceEndFrameHasRun)
+{
+    // end_frame closes the list on BOTH its paths, so a failure at or after it
+    // needs no unwind -- and aborting anyway would close an already-closed list.
+    std::vector<FramePhase> order;
+    int aborts = 0;
+    FramePhaseOps ops = aborting_ops(order, aborts);
+    ops.end_frame = [&order]() { order.push_back(FramePhase::EndFrame); return false; };
+
+    FrameSchedule schedule;
+    EXPECT_FALSE(schedule.run(ops).ok);
+    EXPECT_EQ(aborts, 0);
+
+    order.clear();
+    aborts = 0;
+    ops = aborting_ops(order, aborts);
+    ops.present = [&order]() { order.push_back(FramePhase::Present); return false; };
+    EXPECT_FALSE(schedule.run(ops).ok);
+    EXPECT_EQ(aborts, 0);
+}
+
+TEST(FrameSchedule, DoesNotAbortASuccessfulFrame)
+{
+    std::vector<FramePhase> order;
+    int aborts = 0;
+    FramePhaseOps ops = aborting_ops(order, aborts);
+
+    FrameSchedule schedule;
+    EXPECT_TRUE(schedule.run(ops).ok);
+    EXPECT_EQ(aborts, 0);
+}
+
 TEST(FrameSchedule, ReusableAcrossFrames)
 {
     FrameSchedule schedule;

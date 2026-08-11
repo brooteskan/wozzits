@@ -82,7 +82,7 @@ namespace wz::engine::rendering
     // The switch above keeps a default: (Undefined + the depth formats reject
     // cleanly), so an appended wz::rhi::TextureFormat would silently fall to
     // `return false` instead of being routed -- exactly the append-blindness
-    // #324 (C3-H5 on #316) calls out. Count pins the extent so a new format
+    // #285 (C3-H5 on #316) calls out. Count pins the extent so a new format
     // trips here at build time first. Bump only after adding the case above.
     static_assert(
         static_cast<int>(wz::rhi::TextureFormat::Count) == 8,

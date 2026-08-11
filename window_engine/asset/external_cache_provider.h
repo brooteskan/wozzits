@@ -33,7 +33,7 @@ namespace wz::asset {
         }
 
         // Whether the cache is SEALED (a shipped bundle running from a read-only
-        // baked cache with sources stripped, issue #334): a cacheable asset with
+        // baked cache with sources stripped, issue #295): a cacheable asset with
         // no entry is a fatal miss, not a recompile from an absent source.
         virtual bool sealed() const noexcept { return false; }
     };

@@ -30,6 +30,13 @@ namespace wz::logging::internal
         bool is_accepting() const;
         bool is_closed()    const;
 
+        // True when nothing is claimed in the ring. Distinct from "try_pop
+        // returned false", which is also true at a slot whose producer has
+        // claimed it but not yet published -- see MPSCRingBuffer::try_pop. The
+        // shutdown drain needs the difference to avoid abandoning messages
+        // queued behind such a hole.
+        bool empty() const;
+
         uint64_t dropped_count()   const;
         uint64_t submitted_count() const;
 
@@ -44,7 +51,9 @@ namespace wz::logging::internal
         std::atomic<uint64_t> dropped_count_ { 0 };
         std::atomic<uint64_t> submitted_count_{ 0 };
 
-        // Heap-allocated: ~3.5 MB at kLoggerQueueCapacity=65536, too large for stack
+        // Heap-allocated: ~19 MB at kLoggerQueueCapacity=65536 (a LogMessage is
+        // ~296 B -- it carries its text inline so a push never allocates), far
+        // too large for the stack.
         std::unique_ptr<wz::core::containers::MPSCRingBuffer<LogMessage, kLoggerQueueCapacity>> queue_;
     };
 }

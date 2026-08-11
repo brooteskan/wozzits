@@ -1,6 +1,6 @@
 // src/tools/wozzits_export/main.cpp
 //
-// wozzits_export — headless standalone-bundle exporter (issue #334, Seam 3.2).
+// wozzits_export — headless standalone-bundle exporter (issue #295, Seam 3.2).
 //
 //   wozzits_export --project <dir> --out <bundle-dir> [--app-exe <path>] [--no-log]
 //
@@ -250,7 +250,7 @@ namespace
         return "unknown";
     }
 
-    // Export-time ABI verify (issue #334, Seam 3.5): dry-run LOAD each shipped
+    // Export-time ABI verify (issue #295, Seam 3.5): dry-run LOAD each shipped
     // behavior DLL exactly as the runtime will (LoadLibrary + wz_register_behaviors
     // at the exporter's WZ_BEHAVIOR_ABI_VERSION, which equals the shipped exe's
     // since both are one build). A DLL built against a different ABI fails to

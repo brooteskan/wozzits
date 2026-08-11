@@ -12,7 +12,7 @@ namespace Wozzits.Editor.Tests.Statecharts;
 /// editor mind silently anneals/commits differently than an identically-authored
 /// hand-written or scalar one.
 ///
-/// That is exactly #337: gamma_end drifted to 0.0 here while the engine authored
+/// That is exactly #298: gamma_end drifted to 0.0 here while the engine authored
 /// 0.5, and there was no editor control to even see it. These pin the editor's copy
 /// so it cannot drift again. They can only catch drift on the EDITOR side -- a C#
 /// test cannot read the C++ constant -- so the engine authoring defaults remain the
@@ -27,7 +27,7 @@ public sealed class MindDefaultsTests
     {
         var clock = new MindClock();
         Assert.Equal(2.0, clock.GammaStart);    // mind_ir.cpp spec.clock.gamma_start
-        Assert.Equal(0.5, clock.GammaEnd);      // kQuantumAgentDefaultGammaEnd (#337)
+        Assert.Equal(0.5, clock.GammaEnd);      // kQuantumAgentDefaultGammaEnd (#298)
         Assert.Equal(4.0, clock.AnnealSeconds); // mind_ir.cpp spec.clock.anneal_seconds
         Assert.Equal(1.0, clock.RelaxRate);     // mind_ir.cpp spec.clock.relax_rate
 

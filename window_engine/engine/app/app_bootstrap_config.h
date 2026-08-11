@@ -2,7 +2,7 @@
 
 // engine/app/app_bootstrap_config.h
 //
-// The bundle bootstrap config (issue #334, Seam 1). A shipped app bundle places
+// The bundle bootstrap config (issue #295, Seam 1). A shipped app bundle places
 // a `wozzits_app.json` next to `wozzits_app_v1.exe`; the runtime reads it on a
 // no-argument launch so the bundle runs by double-clicking the exe, with no
 // editor host in the loop deriving CLI paths.
@@ -28,7 +28,7 @@ namespace wz::app
     inline constexpr uint32_t kAppBootstrapConfigFormatVersion = 1u;
 
     // Optional `cache` block: the baked disk-cache the bundle runs from (issue
-    // #334, Seam 2). Absent block => `root` empty => cache off (the runtime
+    // #295, Seam 2). Absent block => `root` empty => cache off (the runtime
     // resolves every asset from source, the dev/editor behavior). When `root` is
     // set the runtime serves baked assets from it; `sealed` additionally makes a
     // cacheable asset that is ABSENT a fatal miss naming the key, rather than a
@@ -54,7 +54,7 @@ namespace wz::app
         wz::fs::Path behavior_modules;
         AppBootstrapCacheConfig cache;
         // The WZ_BEHAVIOR_ABI_VERSION the bundle's shipped behavior DLLs were
-        // verified against at export (issue #334, Seam 3.5). 0 = unstamped (an
+        // verified against at export (issue #295, Seam 3.5). 0 = unstamped (an
         // older bundle, or one with no behavior DLLs). When non-zero the runtime
         // rejects a launch whose own behavior ABI differs, so a bundle can't
         // silently ship an exe/DLL ABI mismatch.
@@ -120,7 +120,7 @@ namespace wz::app
 
     // Serialize `doc` to wozzits_app.json text (schema + formatVersion + the set
     // fields + an optional cache block). The exporter's inverse of
-    // load_app_bootstrap_config for the authored values (issue #334, Seam 3).
+    // load_app_bootstrap_config for the authored values (issue #295, Seam 3).
     [[nodiscard]] std::string serialize_app_bootstrap_config(
         const AppBootstrapConfigDoc& doc);
 

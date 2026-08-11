@@ -85,7 +85,7 @@ public sealed class MindClock
     /// into its file, so they must match the engine's authoring default
     /// (kQuantumAgentDefaultGammaEnd, quantum_agent_behaviors.h) -- the library
     /// deliberately keeps its own, different struct default (0.0, an undriven test
-    /// baseline). This drifted to 0.0 once (#337): with no editor control for it,
+    /// baseline). This drifted to 0.0 once (#298): with no editor control for it,
     /// every editor mind then annealed fully classical and nobody could see why.
     /// MindDefaultsTests pins each value here so it cannot silently drift again.</summary>
     public double GammaEnd { get; set; } = 0.5;

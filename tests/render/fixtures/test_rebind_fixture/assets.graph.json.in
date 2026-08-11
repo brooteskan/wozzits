@@ -927,7 +927,7 @@
       }
     },
     {
-      "_note": "#327 frame capture: node 10 with blend_mode = AlphaBlend(1), so the draw-order capture has genuinely TRANSPARENT renderables to ask about. Every other param matches node 10 -- the pair differs in exactly the thing the Transparency ladder row is about.",
+      "_note": "#288 frame capture: node 10 with blend_mode = AlphaBlend(1), so the draw-order capture has genuinely TRANSPARENT renderables to ask about. Every other param matches node 10 -- the pair differs in exactly the thing the Transparency ladder row is about.",
       "node_id": 43,
       "type": 1049,
       "schema": "0xf11eca55e7000103",
@@ -955,7 +955,7 @@
       }
     },
     {
-      "_note": "#327: the pull-mesh renderable binding the cube geometry (9) to the alpha program (43). Mirrors node 8, which binds the same geometry to the OPAQUE program (10).",
+      "_note": "#288: the pull-mesh renderable binding the cube geometry (9) to the alpha program (43). Mirrors node 8, which binds the same geometry to the OPAQUE program (10).",
       "node_id": 44,
       "type": 1048,
       "schema": "0xf11eca55e7000707",

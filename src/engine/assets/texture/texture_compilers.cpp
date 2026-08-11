@@ -228,7 +228,7 @@ namespace wz::engine::assets::internal
             const RhiResourceTracker& rhi_resource_tracker,
             wz::Logger& logger)
         {
-            // The read side of the resolved TextureColorSpace (#324). An
+            // The read side of the resolved TextureColorSpace (#285). An
             // authored-sRGB texture uploads as the _SRGB variant so the sampler
             // decodes gamma -> linear (and filters in linear) on read; Linear
             // data (normal / mask / LUT) stays UNORM and samples raw. Same bytes

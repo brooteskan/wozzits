@@ -1,7 +1,7 @@
 // src/app/wozzits_app_v1/main.cpp
 //
 // wozzits_app_v1 — the thin runtime driver. It resolves the runtime paths from a
-// co-located bootstrap config (a shipped bundle: issue #334, Seam 1) and/or
+// co-located bootstrap config (a shipped bundle: issue #295, Seam 1) and/or
 // explicit CLI args, then hands off to wz::app::run_project_runtime (the shared
 // loop also used by the editor's in-process engine ABI, so the loop lives in one
 // place).
@@ -33,7 +33,7 @@ namespace
         // only (the loader early-returns on an empty folder). Resolved against
         // the asset resource root, matching the editor's resident runtime.
         wz::fs::Path behavior_modules;
-        // Baked disk-cache root (issue #334). Empty => cache off (resolve from
+        // Baked disk-cache root (issue #295). Empty => cache off (resolve from
         // source). When set, the runtime serves baked assets from it; `cache_sealed`
         // makes a cacheable-but-absent asset a fatal miss instead of a recompile.
         wz::fs::Path cache_root;
@@ -141,7 +141,7 @@ int main(int argc, char** argv)
         options.cache_root = boot.config.cache.root;
         options.cache_sealed = boot.config.cache.sealed;
 
-        // ABI lockstep (issue #334, Seam 3.5): a stamped bundle names the
+        // ABI lockstep (issue #295, Seam 3.5): a stamped bundle names the
         // behavior ABI its DLLs were verified against at export. Reject a launch
         // where this runtime's ABI differs — that means the exe and the behavior
         // DLLs are from different builds and would fail to register at load.

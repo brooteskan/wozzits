@@ -115,11 +115,16 @@ namespace wz::logging::internal
 
         if (!queue_.try_push(level, text))
         {
+            // THE DROP PATH IS LOCK-FREE. This is the producer side -- reachable
+            // from the audio realtime callback -- so it must not take a mutex,
+            // which is exactly what the old idle_cv_ notify did here. Worse, it
+            // did so only when the queue was FULL: the one moment the lock is
+            // likeliest to be contended (the worker is behind, holding it to
+            // notify its own decrements) is the one moment an RT thread was made
+            // to wait for it. C++20 atomic notify wakes by address instead --
+            // no lock for the producer to block on, and no priority inversion.
             if (in_flight_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-            {
-                std::lock_guard lock(idle_mutex_);
-                idle_cv_.notify_all();
-            }
+                in_flight_.notify_all();
             return false;
         }
 
@@ -128,11 +133,16 @@ namespace wz::logging::internal
 
     void LoggerState::wait_until_idle()
     {
-        std::unique_lock lock(idle_mutex_);
-        idle_cv_.wait(lock, [&]
+        // Atomic wait rather than a cv: same reason as the notify in push().
+        // Re-checks after every wake, so a spurious wake or a stale notify just
+        // loops -- and a zero observed before the first wait returns immediately.
+        for (;;)
         {
-            return in_flight_.load(std::memory_order_acquire) == 0;
-        });
+            const int v = in_flight_.load(std::memory_order_acquire);
+            if (v == 0)
+                return;
+            in_flight_.wait(v, std::memory_order_acquire);
+        }
     }
 
     void LoggerState::run()
@@ -153,7 +163,9 @@ namespace wz::logging::internal
         // Deliberately NOT a condition variable: that would put a mutex in
         // LoggerState::push, which is reachable from ANY thread -- including the
         // audio realtime callback, where taking a lock is a priority-inversion
-        // hazard. The producer side stays lock-free.
+        // hazard. The producer side stays lock-free. (The idle handshake used to
+        // violate that rule on push's drop path; it now rides C++20 atomic
+        // wait/notify on in_flight_ -- see push().)
         constexpr int kSpinsBeforeSleep = 64;
         constexpr auto kIdleSleep = std::chrono::milliseconds(1);
         int idle_spins = 0;
@@ -167,10 +179,7 @@ namespace wz::logging::internal
                 dispatch(msg);
 
                 if (in_flight_.fetch_sub(1, std::memory_order_acq_rel) == 1)
-                {
-                    std::lock_guard lock(idle_mutex_);
-                    idle_cv_.notify_all();
-                }
+                    in_flight_.notify_all();
             }
             else if (idle_spins < kSpinsBeforeSleep)
             {
@@ -183,15 +192,41 @@ namespace wz::logging::internal
             }
         }
 
-        // Final drain after running_ goes false
-        while (queue_.try_pop(msg))
+        // Final drain after running_ goes false.
+        //
+        // NOT a plain `while (try_pop)`. try_pop returns false at a cell whose
+        // producer has CLAIMED its slot but not yet published it -- a transient
+        // hole, not an empty queue -- and the ring is ordered, so every message
+        // fully pushed BEHIND that hole is invisible until it fills. Stopping on
+        // the first false therefore threw those away: the last messages before
+        // shutdown, which are the ones a crash report is made of. Their
+        // in_flight_ counts were abandoned with them, so a wait_until_idle()
+        // after this point could never return either.
+        //
+        // So: retry while the ring still reports occupancy. Bounded, because
+        // this runs on the shutdown path and a producer that claimed a slot and
+        // then died (or was preempted for a long time) must not hang the join --
+        // a hole only takes one move-assignment to fill, so a spin this long
+        // means the producer is not coming back.
+        constexpr int kMaxDrainStalls = 10000;
+        int drain_stalls = 0;
+        for (;;)
         {
-            dispatch(msg);
-            in_flight_.fetch_sub(1, std::memory_order_acq_rel);
+            if (queue_.try_pop(msg))
+            {
+                dispatch(msg);
+                in_flight_.fetch_sub(1, std::memory_order_acq_rel);
+                drain_stalls = 0;
+                continue;
+            }
+            if (queue_.empty() || ++drain_stalls > kMaxDrainStalls)
+                break;
+            std::this_thread::yield();  // a producer is mid-push; let it finish
         }
 
-        std::lock_guard lock(idle_mutex_);
-        idle_cv_.notify_all();
+        // Release anyone in wait_until_idle(), including the case where the loop
+        // above drained the last message without ever seeing the count hit one.
+        in_flight_.notify_all();
     }
 
     void LoggerState::dispatch(const LogMessage& msg)

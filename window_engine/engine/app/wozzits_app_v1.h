@@ -620,6 +620,15 @@ namespace wz::app
             bool restore_scene_dirty,
             bool restore_camera_dirty);
 
+        // The restore half of finalize, on its own (frame thread). Put back the
+        // dirty flags a failed save cleared optimistically; idempotent, so
+        // running it twice for one save -- which the sticky restore signal in
+        // EditorRuntimeControl deliberately can -- is harmless. Separate from
+        // finalize_scene_save because that path also logs an outcome, and the
+        // sticky signal carries no outcome to log.
+        void restore_unsaved_flags(bool restore_scene_dirty,
+                                   bool restore_camera_dirty);
+
         // Frame profiling is opt-in (default OFF). OFF records nothing, so the
         // exit-time flush is a no-op and no frame_profile_<tag>.csv is written
         // (fixes the file spam + slow shutdown). Toggling ON starts a fresh
@@ -870,7 +879,7 @@ namespace wz::app
 #ifdef WZ_ENABLE_TESTING
         // The app's renderer, so a test can drive render_scene with a node span
         // it composed itself -- the same warm renderer that just drew the loaded
-        // scene, rather than a second one on the same device. What the #327
+        // scene, rather than a second one on the same device. What the #288
         // frame capture needs: re-render the SAME renderables from a different
         // viewpoint without going through scene authoring to move them.
         [[nodiscard]] wz::engine::rendering::RhiSceneRenderer&

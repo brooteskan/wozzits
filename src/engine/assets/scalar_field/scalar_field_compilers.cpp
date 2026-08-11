@@ -764,7 +764,7 @@ namespace wz::engine::assets::internal
         // Public entry to the compiler's rhi-residency side effect (the height
         // texture + deterministic identity), so the disk-cache provider can
         // re-publish residency for a scalar field it serves straight from cache,
-        // bypassing the compiler's finalize path (issue #334).
+        // bypassing the compiler's finalize path (issue #295).
         publish_resident_scalar_field(
             key, field, gpu_resources, rhi_resource_tracker, logger);
     }

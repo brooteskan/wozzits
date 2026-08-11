@@ -229,7 +229,7 @@ TEST(FoundationCarriers, CustomBinaryFileSchemaFeedsDependentRecipe)
     EXPECT_EQ(compiled->handle.type, kTestTextConsumerType);
 }
 
-// A RELATIVE source_path resolves against the library resource_root (issue #334:
+// A RELATIVE source_path resolves against the library resource_root (issue #295:
 // a relocated, self-contained project stores project-relative asset paths, and
 // the runtime's resource_root is the project directory). This mirrors the
 // custom-binary carrier test but stores the path RELATIVE and passes a

@@ -2520,20 +2520,29 @@ namespace wz::app
         bool restore_camera_dirty)
     {
         if (err != wz::fs::FileError::None) {
-            // The commit failed AFTER prepare cleared the dirty flags optimistically.
-            // Restore exactly the flags this save cleared, so the unsaved edits stay
-            // dirty for the teardown save / next attempt (#299). Idempotent: a
-            // re-dirtying edit since prepare has already set them. The FileError
-            // itself is surfaced by the caller (the ABI, or the engine-thread log).
-            if (restore_scene_dirty) {
-                document_.dirty() = true;
-            }
-            if (restore_camera_dirty) {
-                view_.mark_editor_camera_dirty();
-            }
+            restore_unsaved_flags(restore_scene_dirty, restore_camera_dirty);
             return;
         }
         ctx_.logger.info("save_scene: scene persisted");
+    }
+
+    void WozzitsApp_v1::restore_unsaved_flags(
+        bool restore_scene_dirty,
+        bool restore_camera_dirty)
+    {
+        // The commit failed AFTER prepare cleared the dirty flags optimistically.
+        // Restore exactly the flags that save cleared, so the unsaved edits stay
+        // dirty for the teardown save / next attempt (#299). Idempotent: a
+        // re-dirtying edit since prepare has already set them, and the sticky
+        // restore signal can deliver the same restore a second time. The
+        // FileError itself is surfaced by the caller (the ABI, or the
+        // engine-thread log).
+        if (restore_scene_dirty) {
+            document_.dirty() = true;
+        }
+        if (restore_camera_dirty) {
+            view_.mark_editor_camera_dirty();
+        }
     }
 
     bool WozzitsApp_v1::export_subtree_as_scene(
@@ -3093,7 +3102,7 @@ namespace wz::app
         }
 
         // Colour-management track: the sRGB output ENCODE is GATED OFF for now.
-        // The float-intermediate + encode + H18 format-key infra (#324) stays
+        // The float-intermediate + encode + H18 format-key infra (#285) stays
         // wired behind this flag as the output substrate, but encoding the frame
         // while the engine's non-texture colour inputs (material / vertex /
         // light constants, e.g. sg_lit_ps's hardcoded albedo) are still authored

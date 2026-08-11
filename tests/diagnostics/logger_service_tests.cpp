@@ -399,3 +399,87 @@ TEST(LoggerServiceReporter, FormatsExactCountAndPassThroughARealLogger)
     EXPECT_NE(line.find("1584"), std::string::npos) << line;   // exact total (#291)
     EXPECT_NE(line.find("pass 1"), std::string::npos) << line;
 }
+
+// ── channel overflow is accounted for, not silent ───────────────────────────
+//
+// publish() used to discard try_push's return, so a full channel lost records
+// with no trace -- while the reporter printed its per-id totals as "the EXACT
+// running total". Every other hop counts what it loses (the logger queue, the
+// aggregate's table cap); this was the one that did not, and it is reachable
+// precisely when the numbers matter: the ring's headroom math assumes one drain
+// per frame, but drains run per PASS, and the >64-distinct-ids fallback publishes
+// one record per message, so a validation storm can fill 2048 slots inside one
+// cadence.
+
+TEST(LoggerServiceLane, ChannelOverflowIsCountedNotSilent)
+{
+    uint64_t reported_channel_drops = 0;
+    int report_calls = 0;
+
+    // No cadence, so NOTHING drains until the explicit flush below -- which is
+    // what makes the channel provably full when the overflow pushes land, rather
+    // than racing a background drain that would free slots.
+    auto lane = std::make_unique<LoggerServiceLane>(
+        [&](DiagnosticAggregate& state) {
+            ++report_calls;
+            reported_channel_drops = state.channel_dropped();
+            state.mark_all_reported();
+        },
+        kNoAutoCadence);
+
+    // Fill the ring exactly...
+    for (std::size_t i = 0; i < wz::diag::kDiagnosticChannelCapacity; ++i) {
+        lane->publish(rec(static_cast<uint32_t>(i)));
+    }
+    // ...then overflow it by a known number of OCCURRENCES. Occurrences, not
+    // records: one record can carry many, and occurrences are the unit the
+    // totals are counted in, so a counter that tallied records would be short
+    // by 100x here.
+    constexpr uint64_t kLostOccurrences = 5 * 100;
+    for (int i = 0; i < 5; ++i) {
+        lane->publish(rec(/*id=*/9000, /*occ=*/100));
+    }
+
+    lane->flush_now();
+    EXPECT_EQ(reported_channel_drops, kLostOccurrences)
+        << "occurrences lost to a full channel must reach the reporter";
+
+    // Accounted once. The producer-side counter is exchanged, not loaded, so a
+    // later cycle with no new drops sees the same total rather than doubling it.
+    const int calls_after_first = report_calls;
+    lane->flush_now();
+    EXPECT_GT(report_calls, calls_after_first);
+    EXPECT_EQ(reported_channel_drops, kLostOccurrences);
+}
+
+TEST(LoggerServiceReporter, SurfacesChannelLossNextToTheTotals)
+{
+    wz::Logger logger;
+    ASSERT_TRUE(wz::logging::init_logger(logger, {}));
+    CapturedLog cap;
+    wz::logging::set_log_sink(logger, capture_sink, &cap);
+
+    auto reporter = wz::diag::make_logging_reporter(logger);
+    DiagnosticAggregate state;
+    state.ingest(rec(820, 1584, /*pass=*/1));
+    state.note_channel_drops(77);
+    reporter(state);
+
+    // A second cycle with NO new loss must not repeat the warning -- otherwise a
+    // single overflow noises up every cadence line forever.
+    reporter(state);
+
+    wz::logging::wait_until_idle(logger);
+    wz::logging::shutdown_logger(logger);
+
+    int channel_notes = 0;
+    for (const auto& [level, text] : cap.lines) {
+        if (text.find("channel full") != std::string::npos) {
+            ++channel_notes;
+            EXPECT_EQ(level, wz::LogLevel::Warning);
+            EXPECT_NE(text.find("77"), std::string::npos) << text;
+        }
+    }
+    EXPECT_EQ(channel_notes, 1)
+        << "the channel loss must be reported exactly once per growth";
+}

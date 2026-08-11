@@ -126,7 +126,7 @@ namespace wz::engine::assets
 
     // The program-facing SRG derived from a layout. Descriptor registers are
     // assigned by canonical SEMANTIC order in the object space, not by the row
-    // order the author wrote (#322), so reordering rows produces an identical
+    // order the author wrote (#283), so reordering rows produces an identical
     // SRG. This is THE one derivation — the custom render-program compiler
     // consumes it, and the generated HLSL binding include (#231) must mirror it.
     struct RenderBindingLayoutSrg

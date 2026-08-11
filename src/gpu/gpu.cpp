@@ -71,6 +71,11 @@ namespace wz::gpu
         wz::gpu::dx12::clear(d, r, g, b, a);
     }
 
+    void abort_frame(Device& d)
+    {
+        wz::gpu::dx12::abort_frame(d);
+    }
+
     bool end_frame(Device& d)
     {
         return wz::gpu::dx12::end_frame(d);

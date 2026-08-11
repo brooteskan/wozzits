@@ -2733,7 +2733,21 @@ namespace wz::engine::assets
         const wz::fs::Path& path,
         const wz::json::JSONDocument& document)
     {
-        return wz::fs::write_file_text(path, wz::json::serialize_json(document));
+        // ATOMIC, not a plain write: this is the one writer for every scene and
+        // scenelet document, and a truncated one is unrecoverable. A plain
+        // write_file_text opens CREATE_ALWAYS -- the destination is emptied
+        // before the first byte lands -- so a process death mid-write (a TDR
+        // taking the app down, a power loss) leaves scene.json half-serialized.
+        // The next save then reads it, fails to parse, and update_scene_document
+        // reports InvalidPath, which save_scene's create-path fallback treats as
+        // "no scene on disk yet" and answers by emitting a fresh document from
+        // the NODE SNAPSHOT alone. Everything the read-modify-write exists to
+        // preserve -- lights, sky, defaults, anything this exporter does not
+        // model -- is silently gone at that point, and the crash that caused it
+        // is long past. Staging in a sibling and publishing with a rename means
+        // the file on disk is always one whole document or the other.
+        return wz::fs::write_file_text_atomic(
+            path, wz::json::serialize_json(document));
     }
 
     std::optional<SceneEditorCameraMetadata> read_scene_document_editor_camera(

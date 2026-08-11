@@ -52,7 +52,7 @@ namespace wz::gpu::dx12::internal
     // The DXGI format of the currently-bound colour target. Twin of
     // depth_target_bound: the PSO cache keys on it so a program drawn into the
     // RGBA16F scene target and into the RGBA8 backbuffer gets one pipeline each.
-    // Same bind-site invariant as set_depth_target_bound. #324 (H18 on #316).
+    // Same bind-site invariant as set_depth_target_bound. #285 (H18 on #316).
     [[nodiscard]] DXGI_FORMAT bound_color_format(Device& d);
     void set_bound_color_format(Device& d, DXGI_FORMAT format);
 
@@ -146,7 +146,7 @@ namespace wz::gpu::dx12::internal
     // colour target (the offscreen path is depth-less, for the mask/overlay use).
     // The scene's main pass uses this to render depth-tested into a full-screen
     // RGBA16F target; end_ transitions it to shader-read and rebinds the
-    // backbuffer so the encode + overlays + present land on screen. #324.
+    // backbuffer so the encode + overlays + present land on screen. #285.
     bool begin_primary_color_pass(Device& d, GPUHandle color_target,
                                   const float clear_color[4]);
     bool end_primary_color_pass(Device& d, GPUHandle color_target);
@@ -160,7 +160,7 @@ namespace wz::gpu::dx12::internal
     bool blit_texture_dx12(Device& device, GPUHandle texture);
     // Fullscreen pass that samples a LINEAR texture, applies the linear->sRGB
     // transfer, and writes the currently-bound (sRGB-less UNORM) backbuffer --
-    // the #324 encode that turns the RGBA16F scene target into display-referred
+    // the #285 encode that turns the RGBA16F scene target into display-referred
     // pixels. The ONE place gamma is applied; anything drawn after is untouched.
     bool encode_srgb_to_backbuffer_dx12(Device& device, GPUHandle linear_texture);
     // How a textured quad draws. See dx12_textured_quad.cpp.

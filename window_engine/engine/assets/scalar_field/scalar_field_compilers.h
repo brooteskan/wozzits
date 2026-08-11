@@ -38,7 +38,7 @@ namespace wz::engine::assets::internal {
     // re-publish residency for a field it serves STRAIGHT from cache (bypassing
     // the compiler), matching a fresh compile — otherwise a cache-served height
     // field is CPU-only and the clipmap's scalar_field_texture binding renders
-    // "not resident" (issue #334). No-op semantics match the compiler: only a
+    // "not resident" (issue #295). No-op semantics match the compiler: only a
     // valid 2D R32F field (depth 1) is uploaded.
     void publish_scalar_field_residency(
         const wz::asset::AssetKey& key,

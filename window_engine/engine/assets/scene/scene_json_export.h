@@ -111,8 +111,15 @@ namespace wz::engine::assets
 
     // Serialize `document` and write it to `path`, for callers with no existing
     // file to preserve (a fresh prefab/scenelet export, or save_scene's create
-    // path). A thin, checked wz::fs::write_file_text wrapper; does NOT create
-    // parent directories.
+    // path). Does NOT create parent directories.
+    //
+    // CRASH-ATOMIC (wz::fs::write_file_atomic): the document is staged in a
+    // sibling temp and published with a rename, so an interrupted save leaves
+    // the previous document intact rather than a half-written file. That matters
+    // because the recovery path for an unparseable scene document is to emit a
+    // fresh one from the node snapshot, which drops every non-node section the
+    // read-modify-write above exists to preserve. update_scene_document's
+    // write-back funnels through here too, so both scene writers are atomic.
     wz::fs::FileError write_scene_document(
         const wz::fs::Path& path,
         const wz::json::JSONDocument& document);
