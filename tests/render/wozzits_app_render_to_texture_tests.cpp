@@ -189,7 +189,20 @@ TEST_F(WozzitsAppRenderToTextureFixture, AuthoredSourceFillsItsTargetAndLeavesTh
 TEST_F(WozzitsAppRenderToTextureFixture, OffscreenPassIssuesNoIllegalDraws)
 {
     CollectingDiagnosticSink observed;
-    wz::diag::set_diagnostic_sink(&observed);
+    // RAII, because the ASSERT_TRUE below can return from this function: a raw
+    // install left g_sink pointing at `observed` after it had been destroyed, and
+    // every later test in this binary then published into freed memory -- so one
+    // early failure here reported itself as a crash somewhere else entirely.
+    struct ScopedSink
+    {
+        explicit ScopedSink(wz::diag::IDiagnosticSink* sink)
+        {
+            wz::diag::set_diagnostic_sink(sink);
+        }
+        ~ScopedSink() { wz::diag::set_diagnostic_sink(nullptr); }
+        ScopedSink(const ScopedSink&) = delete;
+        ScopedSink& operator=(const ScopedSink&) = delete;
+    } scoped_sink(&observed);
 
     {
         wz::app::WozzitsApp_v1 app(ctx);
@@ -201,8 +214,6 @@ TEST_F(WozzitsAppRenderToTextureFixture, OffscreenPassIssuesNoIllegalDraws)
         render_one_frame(app);
         wz::gpu::present(ctx.device, /*sync_interval*/ 0);
     }
-
-    wz::diag::set_diagnostic_sink(nullptr);
 
     for (const wz::diag::DiagnosticRecord& r : observed.errors) {
         ADD_FAILURE()

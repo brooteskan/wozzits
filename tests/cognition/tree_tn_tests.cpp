@@ -23,6 +23,26 @@ using wz::engine::cognition::qstate::Rng;
 
 namespace
 {
+    // Installs a pool for a scope and ALWAYS uninstalls it. The raw
+    // set_task_scheduler(&pool) ... set_task_scheduler(nullptr) pairs this
+    // replaces sat around ASSERT_EQs: one failing assert returned from the test
+    // with the global still pointing at a pool that was about to destruct, so the
+    // next test to dispatch a task used a dangling scheduler -- crashing somewhere
+    // else and blaming the wrong test.
+    struct ScopedPool
+    {
+        wz::tasks::TaskScheduler pool;
+
+        explicit ScopedPool(unsigned workers) : pool(workers)
+        {
+            wz::tasks::set_task_scheduler(&pool);
+        }
+        ~ScopedPool() { wz::tasks::set_task_scheduler(nullptr); }
+
+        ScopedPool(const ScopedPool&) = delete;
+        ScopedPool& operator=(const ScopedPool&) = delete;
+    };
+
     TreeNode tn_node(uint32_t parent_bond, std::vector<uint32_t> child_bonds,
         std::vector<Complex> t)
     {
@@ -369,6 +389,16 @@ TEST(TreeTn, BranchingMatchesDenseReference)
 // children, so there is real cross-thread fan-out.
 TEST(TreeTn, PoolContractionIsBitIdenticalToSerial)
 {
+    // This file had no force-serial guard, unlike the tasks suite. Without it,
+    // WZ_TASKS_FORCE_SERIAL=1 in the environment makes the "pooled" run below
+    // execute inline on this thread -- so the test compares serial against serial
+    // and passes brilliantly while testing nothing at all. CMake pins the var to 0
+    // for the test process; this catches a run where that did not take.
+    ASSERT_FALSE(wz::tasks::force_serial())
+        << "WZ_TASKS_FORCE_SERIAL is set in this environment: the pooled "
+           "contraction would run serially and this determinism test would be "
+           "vacuous";
+
     Rng rng{ 0xBEEF1234u };
     const std::vector<uint32_t> leaf_dims = { 2, 3, 2, 2, 3, 2, 2, 2 };  // 8 leaves
 
@@ -396,10 +426,8 @@ TEST(TreeTn, PoolContractionIsBitIdenticalToSerial)
 
         std::vector<double> pooled;
         {
-            wz::tasks::TaskScheduler pool{ 4 };
-            wz::tasks::set_task_scheduler(&pool);
+            ScopedPool guard{ 4 };
             pooled = tree_tn_sigma_z(net);
-            wz::tasks::set_task_scheduler(nullptr);
         }
 
         ASSERT_EQ(serial.size(), pooled.size());
@@ -415,6 +443,10 @@ TEST(TreeTn, PoolContractionIsBitIdenticalToSerial)
 // contraction under 1, 2, and 8 workers is bit-identical to serial.
 TEST(TreeTn, PoolResultIsWorkerCountInvariant)
 {
+    ASSERT_FALSE(wz::tasks::force_serial())
+        << "WZ_TASKS_FORCE_SERIAL is set: every worker count below would run "
+           "serially, so the invariance this asserts would be trivial";
+
     Rng rng{ 0x515Eu };
     const std::vector<uint32_t> leaf_dims = { 2, 3, 2, 2, 3, 2 };
 
@@ -437,10 +469,8 @@ TEST(TreeTn, PoolResultIsWorkerCountInvariant)
     const std::vector<double> serial = tree_tn_sigma_z(net);
 
     for (unsigned workers : { 1u, 2u, 8u }) {
-        wz::tasks::TaskScheduler pool{ workers };
-        wz::tasks::set_task_scheduler(&pool);
+        ScopedPool guard{ workers };
         const std::vector<double> pooled = tree_tn_sigma_z(net);
-        wz::tasks::set_task_scheduler(nullptr);
 
         ASSERT_EQ(serial.size(), pooled.size());
         for (std::size_t i = 0; i < serial.size(); ++i) {

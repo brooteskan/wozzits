@@ -136,6 +136,117 @@ TEST(Mailbox, ConcurrentPostsAndDrainsLoseNothing)
     EXPECT_TRUE(box.empty());
 }
 
+// ── coalesce_by ────────────────────────────────────────────────────────────
+//
+// The helper every real channel builds its SameKey with (Mailbox<CameraEdit>
+// {Replace, coalesce_by(&CameraEdit::node_id)} and ~50 siblings), and it had zero
+// test references: the policy tests above all hand-roll their comparator, so the
+// thing production actually passes was never the thing under test.
+
+namespace
+{
+    struct Edit
+    {
+        int node_id;
+        int value;
+    };
+}
+
+TEST(Mailbox, CoalesceByFieldReplacesTheMatchingPostLatestWins)
+{
+    Mailbox<Edit> box(
+        Mailbox<Edit>::OnDuplicate::Replace,
+        wz::app::coalesce_by(&Edit::node_id));
+
+    box.post({ 7, 100 });
+    box.post({ 9, 200 });
+    box.post({ 7, 300 });  // same node as the first -- replaces it in place
+
+    std::vector<Edit> got;
+    box.drain([&](const Edit& e) { got.push_back(e); });
+
+    ASSERT_EQ(got.size(), 2u);
+    EXPECT_EQ(got[0].node_id, 7);
+    EXPECT_EQ(got[0].value, 300) << "latest wins";
+    EXPECT_EQ(got[0].node_id, 7) << "and it keeps the ORIGINAL slot, not the tail";
+    EXPECT_EQ(got[1].node_id, 9);
+    EXPECT_EQ(got[1].value, 200);
+}
+
+TEST(Mailbox, CoalesceByFieldDedupesUnderDropKeepingTheFirst)
+{
+    Mailbox<Edit> box(
+        Mailbox<Edit>::OnDuplicate::Drop,
+        wz::app::coalesce_by(&Edit::node_id));
+
+    box.post({ 7, 100 });
+    box.post({ 7, 300 });  // dropped -- first wins under Drop
+    box.post({ 9, 200 });
+
+    std::vector<Edit> got;
+    box.drain([&](const Edit& e) { got.push_back(e); });
+
+    ASSERT_EQ(got.size(), 2u);
+    EXPECT_EQ(got[0].value, 100) << "Drop keeps the FIRST post, unlike Replace";
+    EXPECT_EQ(got[1].value, 200);
+}
+
+// Coalescing was only ever exercised single-threaded, but the policy runs under
+// the post lock with real owner-thread producers behind it. Many producers over a
+// small key space: whatever survives per key must be a value that was actually
+// posted for that key, and no key may vanish.
+TEST(Mailbox, ConcurrentCoalescingKeepsOneLivePostPerKey)
+{
+    constexpr int kProducers = 4;
+    constexpr int kKeys = 8;
+    constexpr int kPer = 500;
+
+    Mailbox<Edit> box(
+        Mailbox<Edit>::OnDuplicate::Replace,
+        wz::app::coalesce_by(&Edit::node_id));
+
+    std::vector<Edit> drained;
+    std::atomic<bool> stop{ false };
+    std::thread drainer([&] {
+        while (!stop.load(std::memory_order_acquire)) {
+            box.drain([&](const Edit& e) { drained.push_back(e); });
+            std::this_thread::yield();
+        }
+    });
+
+    std::vector<std::thread> producers;
+    for (int p = 0; p < kProducers; ++p) {
+        producers.emplace_back([&, p] {
+            for (int i = 0; i < kPer; ++i) {
+                box.post({ i % kKeys, p * 1000 + i });
+            }
+        });
+    }
+    for (std::thread& t : producers) {
+        t.join();
+    }
+    stop.store(true, std::memory_order_release);
+    drainer.join();
+    box.drain([&](const Edit& e) { drained.push_back(e); });
+
+    // Every key posted must appear at least once (coalescing drops duplicates,
+    // never a key), and every value handed out must be one a producer really
+    // posted for that key -- a torn or cross-key value would show up here.
+    std::vector<bool> seen(kKeys, false);
+    for (const Edit& e : drained) {
+        ASSERT_GE(e.node_id, 0);
+        ASSERT_LT(e.node_id, kKeys);
+        seen[static_cast<std::size_t>(e.node_id)] = true;
+        const int i = e.value % 1000;
+        EXPECT_EQ(i % kKeys, e.node_id)
+            << "value " << e.value << " was not posted for key " << e.node_id;
+    }
+    for (int k = 0; k < kKeys; ++k) {
+        EXPECT_TRUE(seen[static_cast<std::size_t>(k)]) << "key " << k << " vanished";
+    }
+    EXPECT_TRUE(box.empty());
+}
+
 // ── Request ──────────────────────────────────────────────────────────────
 
 TEST(Request, RoundTripDeliversTheServicedValue)
@@ -350,4 +461,107 @@ TEST(Request, AbandonWhileClaimedStillDeliversTheLaterPublish)
     EXPECT_TRUE(out.serviced)
         << "an abandon mid-flight must not swallow the servicer's publish";
     EXPECT_EQ(out.value, 21);
+}
+
+// ── call_inout ─────────────────────────────────────────────────────────────
+//
+// The in-out shape: the payload is BOTH input and output, so the servicer mutates
+// it in place and it is moved back to the caller. This is production's
+// asset-graph bind path (AssetGraphEditorSession's draft loan), and it had zero
+// direct coverage -- every Request test above drives the by-value call() form,
+// which discards the moved-back payload.
+
+TEST(Request, CallInOutHandsTheServicersMutationBackToTheCaller)
+{
+    Request<std::vector<int>, bool> req;
+
+    std::vector<int> draft{ 1, 2, 3 };
+    RequestOutcome<bool> out;
+    std::thread caller([&] { out = req.call_inout(draft); });
+
+    bool done = false;
+    service_until_done(req, done, [&done](std::vector<int>& args) {
+        args.push_back(99);  // mutate IN PLACE -- this is the whole point
+        done = true;
+        return true;
+    });
+    caller.join();
+
+    EXPECT_TRUE(out.serviced);
+    EXPECT_TRUE(out.value);
+    EXPECT_EQ(draft, (std::vector<int>{ 1, 2, 3, 99 }))
+        << "the servicer's in-place mutation must ride the payload back";
+}
+
+TEST(Request, CallInOutLeavesTheCallersObjectAHuskWhileInFlight)
+{
+    // call_inout MOVES the payload in, so for the service window the caller's
+    // object is a husk -- which is not an accident, it is the signal
+    // AssetGraphEditorSession's draft-loan detects to refuse a re-entrant bind.
+    Request<std::vector<int>, bool> req;
+
+    std::vector<int> draft{ 4, 5, 6 };
+    std::thread caller([&] { (void)req.call_inout(draft); });
+
+    bool done = false;
+    bool husk_while_in_flight = false;
+    service_until_done(req, done, [&](std::vector<int>& args) {
+        // The caller is parked and does not touch `draft`, so reading it here is
+        // safe -- and it must be empty while we hold the payload.
+        husk_while_in_flight = draft.empty();
+        EXPECT_EQ(args, (std::vector<int>{ 4, 5, 6 })) << "we hold the real data";
+        done = true;
+        return true;
+    });
+    caller.join();
+
+    EXPECT_TRUE(husk_while_in_flight)
+        << "the payload must be MOVED in, not copied -- the loan is detectable";
+    EXPECT_EQ(draft, (std::vector<int>{ 4, 5, 6 })) << "and handed back after";
+}
+
+TEST(Request, CallInOutReclaimsThePayloadWhenAbandonedBeforeAnyClaim)
+{
+    // Teardown before the engine ever looked at it: the caller must get its data
+    // back untouched, not a husk. Losing it here would drop an edited draft on
+    // the floor at shutdown.
+    Request<std::vector<int>, bool> req;
+    req.abandon();
+
+    std::vector<int> draft{ 7, 8, 9 };
+    const RequestOutcome<bool> out = req.call_inout(draft);
+
+    EXPECT_FALSE(out.serviced);
+    EXPECT_EQ(draft, (std::vector<int>{ 7, 8, 9 }))
+        << "an abandoned in-out call must leave the caller's payload intact";
+}
+
+TEST(Request, CallInOutReturnsThePayloadWhenTheServicerThrows)
+{
+    // service() rethrows so the engine loop can log a throwing bind. The caller
+    // must still wake as NOT serviced and still get its payload back rather than
+    // being parked forever holding a husk.
+    Request<std::vector<int>, bool> req;
+
+    std::vector<int> draft{ 1, 2 };
+    RequestOutcome<bool> out{ true, true };
+    std::thread caller([&] { out = req.call_inout(draft); });
+
+    bool thrown = false;
+    while (!thrown) {
+        try {
+            req.service([](std::vector<int>&) -> bool {
+                throw std::runtime_error("bind failed");
+            });
+        }
+        catch (const std::runtime_error&) {
+            thrown = true;
+        }
+        std::this_thread::yield();
+    }
+    caller.join();
+
+    EXPECT_FALSE(out.serviced)
+        << "a throwing servicer must not read as a serviced default";
+    EXPECT_EQ(draft.size(), 2u) << "the payload comes back rather than being lost";
 }

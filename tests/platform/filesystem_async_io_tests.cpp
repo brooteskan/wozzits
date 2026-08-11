@@ -28,6 +28,8 @@
 #include <functional>
 #include <future>
 #include <mutex>
+#include <random>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -76,9 +78,19 @@ namespace
         ~ScopedExecutor() { wz::set_async_executor(prev); }
     };
 
+    // Per-PROCESS unique, deliberately. These were fixed names in the shared temp
+    // directory, so two overlapping runs of this target -- a `--repeat` sweep, a
+    // parallel ctest, or a manual run alongside either -- used the SAME file: one
+    // process's roundtrip write and remove_file raced the other's read, and the
+    // loser reported a filesystem bug that was really a test collision.
     fs::Path scratch(const char *name)
     {
-        return fs::join(fs::temp_directory_path(), name);
+        static const std::string unique = [] {
+            std::random_device rd;
+            return std::to_string(rd()) + "_" + std::to_string(rd());
+        }();
+        return fs::join(fs::temp_directory_path(),
+                        std::string("wz_") + unique + "_" + name);
     }
 }
 

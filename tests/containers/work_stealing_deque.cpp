@@ -20,6 +20,19 @@ namespace
 {
     using wz::core::containers::WorkStealingDeque;
 
+    // Thief count scaled to the machine instead of pinned at 4. Four is wrong in
+    // both directions: on a many-core box the deque barely contends, so the
+    // pop-vs-steal race this suite exists to hammer goes largely unexercised; on a
+    // 2-core box four thieves plus the owner oversubscribe and the test mostly
+    // measures the OS scheduler. Floored at 2 so the multi-thief path always runs,
+    // capped so a 64-core machine does not spawn 63 spinning threads per test.
+    int thief_count()
+    {
+        const unsigned hw = std::thread::hardware_concurrency();
+        const unsigned thieves = hw > 1u ? hw - 1u : 1u;
+        return static_cast<int>(std::clamp(thieves, 2u, 8u));
+    }
+
     TEST(WorkStealingDeque, OwnerPopsLifo)
     {
         WorkStealingDeque<int> d;
@@ -51,14 +64,42 @@ namespace
         EXPECT_FALSE(d.steal().has_value());
     }
 
+    // empty() itself had no test reference at all -- and the pool checks it on
+    // every park decision, so a wrong answer there is a worker that sleeps on a
+    // non-empty deque (lost throughput) or spins on an empty one. Approximate
+    // under concurrency by contract, so this pins it only quiescently, which is
+    // exactly how the pool uses it (re-checked under the wake lock).
+    TEST(WorkStealingDeque, EmptyTracksPushAndDrainWhenQuiescent)
+    {
+        WorkStealingDeque<int> d;
+        EXPECT_TRUE(d.empty());
+
+        d.push(1);
+        EXPECT_FALSE(d.empty());
+        d.push(2);
+        EXPECT_FALSE(d.empty());
+
+        EXPECT_EQ(d.pop().value(), 2);
+        EXPECT_FALSE(d.empty()) << "one item still queued";
+
+        EXPECT_EQ(d.steal().value(), 1);
+        EXPECT_TRUE(d.empty()) << "drained by a steal, not just by pop";
+
+        // ...and it recovers rather than latching once drained.
+        d.push(3);
+        EXPECT_FALSE(d.empty());
+        EXPECT_EQ(d.pop().value(), 3);
+        EXPECT_TRUE(d.empty());
+    }
+
     // One owner pushes 0..N-1 (interleaving pops so owner-pop races thief-steal);
-    // four thieves steal. Every value must be consumed exactly once across all
-    // threads. A correct deque conserves items, so `consumed` reaches N and the
+    // thief_count() thieves steal. Every value must be consumed exactly once
+    // across all threads. A correct deque conserves items, so `consumed` reaches N and the
     // union of every thread's take is exactly {0..N-1}.
     TEST(WorkStealingDeque, ConcurrentPopAndStealConserveEveryItem)
     {
         constexpr int N = 20000;
-        constexpr int kThieves = 4;
+        const int kThieves = thief_count();
 
         WorkStealingDeque<int> d;
         std::atomic<int> consumed{ 0 };
@@ -208,13 +249,76 @@ namespace
         EXPECT_FALSE(d.steal().has_value());
     }
 
+    // GROWTH UNDER AN IN-FLIGHT STEAL. The header promises that a thief holding a
+    // STALE (pre-grow) array pointer is still safe, "because the value at index t
+    // was copied into the new array, and old arrays are retained until
+    // destruction". Nothing tested it: the after_read hook fires once the slot has
+    // already been read, which is past the window. test_hook_steal_after_array_load
+    // parks the thief in the right place -- between loading the array and reading
+    // out of it -- so the owner can grow underneath it deterministically.
+    //
+    // If old arrays were freed on grow (the obvious "optimisation"), this is a
+    // use-after-free; if the live range were moved rather than copied, the thief
+    // reads a hole. Both come out as a wrong or missing value here.
+    TEST(WorkStealingDeque, StealSurvivesTheOwnerGrowingTheArrayUnderneathIt)
+    {
+        WorkStealingDeque<int> d;
+
+        // Enough to make the next pushes force at least one grow, whatever the
+        // initial capacity is.
+        constexpr int kSeed = 8;
+        for (int i = 0; i < kSeed; ++i)
+            d.push(i);
+
+        std::atomic<bool> thief_parked{ false };
+        std::atomic<bool> release_thief{ false };
+
+        d.test_hook_steal_after_array_load = [&]
+        {
+            thief_parked.store(true, std::memory_order_release);
+            while (!release_thief.load(std::memory_order_acquire))
+                std::this_thread::yield();
+        };
+
+        std::optional<int> stolen;
+        std::thread thief([&] { stolen = d.steal(); });
+
+        while (!thief_parked.load(std::memory_order_acquire))
+            std::this_thread::yield();
+
+        // The thief now holds the OLD array pointer and has not read from it.
+        // Grow well past the initial capacity underneath it.
+        for (int i = kSeed; i < 4096; ++i)
+            d.push(i);
+
+        release_thief.store(true, std::memory_order_release);
+        thief.join();
+
+        // It stole the OLDEST item (FIFO), read through the stale array, and got
+        // the right value rather than garbage or a fault.
+        ASSERT_TRUE(stolen.has_value())
+            << "the steal must complete across a concurrent grow";
+        EXPECT_EQ(stolen.value(), 0);
+
+        // ...and nothing else was lost or duplicated by the grow: 1..4095 remain,
+        // each exactly once.
+        d.test_hook_steal_after_array_load = nullptr;
+        std::vector<int> rest;
+        while (auto v = d.pop())
+            rest.push_back(*v);
+        ASSERT_EQ(rest.size(), 4095u);
+        std::sort(rest.begin(), rest.end());
+        for (std::size_t i = 0; i < rest.size(); ++i)
+            ASSERT_EQ(rest[i], static_cast<int>(i) + 1) << "at index " << i;
+    }
+
     // Keep the deque hovering at 0–1 items so almost every take is the last-element
     // pop-vs-steal CAS race — the ABA-prone boundary — under real thread contention.
     // Every value must still be consumed exactly once.
     TEST(WorkStealingDeque, NearEmptyConcurrentStressConservesEveryItem)
     {
         constexpr int N = 50000;
-        constexpr int kThieves = 4;
+        const int kThieves = thief_count();
 
         WorkStealingDeque<int> d;
         std::atomic<int> consumed{ 0 };
@@ -304,7 +408,7 @@ namespace
     TEST(WorkStealingDeque, WideElementsConcurrentlyConservedAndIntact)
     {
         constexpr int N = 20000;
-        constexpr int kThieves = 4;
+        const int kThieves = thief_count();
 
         WorkStealingDeque<WideValue> d;
         std::atomic<int> consumed{ 0 };

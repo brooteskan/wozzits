@@ -157,6 +157,11 @@ namespace wz::core::containers
             // (pre-grow) array pointer is safe -- the value at index t was copied into
             // the new array, and old arrays are retained until destruction.
             Array* a = array_.load(std::memory_order_acquire);
+            // Parked here, a thief holds a possibly-STALE array pointer and has not
+            // read from it yet -- the only window from which the "owner grows
+            // underneath an in-flight steal" case can be built. The hook below
+            // fires after the read, which is already past it.
+            WZ_WSD_FIRE(test_hook_steal_after_array_load);
             const T value = a->get(t);
             WZ_WSD_FIRE(test_hook_steal_after_read);
             if (top_.compare_exchange_strong(
@@ -181,6 +186,12 @@ namespace wz::core::containers
         // window a test parks a thief in to build the last-element / recycled-index
         // race deterministically. Compiles to nothing when the macro is off.
         std::function<void()> test_hook_steal_after_read;
+
+        // Fires EARLIER: between loading the array pointer and reading the slot
+        // out of it. That is where a thief holds a stale array while the owner
+        // grows, which is the case the "old arrays are retained until destruction"
+        // rule exists for -- and which the hook above fires too late to construct.
+        std::function<void()> test_hook_steal_after_array_load;
 #endif
 
     private:

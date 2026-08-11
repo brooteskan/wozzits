@@ -226,12 +226,35 @@ TEST_F(MPSCRingBufferTest, ConcurrentProducerConsumer)
     EXPECT_EQ(set.size(), out.size());
 }
 
-TEST_F(MPSCRingBufferTest, DISABLED_StressTest)
+// The ring's only real soak, and it was DISABLED_ because it ran effectively
+// forever -- for a structural reason worth recording so it is not re-disabled the
+// next time: producers used push_blocking, but the only drain ran AFTER
+// join_all(), so once 8 threads had filled the 1024-slot ring every one of them
+// spun on a queue nothing was draining. It was not a slow test, it was a stuck
+// one, and disabling it cost the MPSC channel (which diagnostics rides, #291) its
+// only multi-producer coverage.
+//
+// Now it drains CONCURRENTLY, like ConcurrentProducerConsumer above, so it
+// finishes in milliseconds rather than spinning. Deliberately modest -- a brief
+// burst, not a soak: 8 producers x 2000 still wraps the 1024-slot ring ~15 times,
+// which is where a head/tail reclaim bug shows up, and that is what this is for.
+// Anything heavier belongs behind an explicit opt-in, not in the default run.
+TEST_F(MPSCRingBufferTest, StressTestManyProducersOverAWrappingRing)
 {
     ThreadTestHarness harness;
 
     const int threads = 8;
-    const int per_thread = 10000;
+    const int per_thread = 2000;
+
+    std::atomic<bool> done{ false };
+    std::thread consumer([&] {
+        while (!done.load(std::memory_order_relaxed))
+        {
+            drain_queue();
+            std::this_thread::yield();
+        }
+        drain_queue();  // the tail, after the last producer retired
+    });
 
     harness.spawn(threads, [&](int tid)
                   {
@@ -243,11 +266,17 @@ TEST_F(MPSCRingBufferTest, DISABLED_StressTest)
     harness.start();
     harness.join_all();
 
-    drain_queue();
+    done.store(true);
+    consumer.join();
 
     auto out = get_output();
 
-    ASSERT_EQ(out.size(), threads * per_thread);
+    ASSERT_EQ(out.size(), static_cast<size_t>(threads) * per_thread);
+
+    // Every value is (tid << 32 | i) and so globally unique: a duplicate means a
+    // slot was handed out twice, a shortfall means one was lost.
+    std::unordered_set<uint64_t> set(out.begin(), out.end());
+    EXPECT_EQ(set.size(), out.size());
 }
 
 TEST_F(MPSCRingBufferTest, CapacityLimit)
