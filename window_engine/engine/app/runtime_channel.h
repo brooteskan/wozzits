@@ -258,6 +258,25 @@ namespace wz::app
         // in-out service() needs. save_ is Request<std::monostate,FileError>, so
         // there is no payload to lose here.
 
+        // Observability: is a request POSTED and not yet claimed?
+        //
+        // Non-destructive, unlike claim()/service(), which is the whole point:
+        // it is the only way to observe that a caller has arrived without also
+        // consuming its request. Teardown tests used to sleep ~50ms and hope the
+        // caller had parked by then -- and when it had not, abandon() took the
+        // "never posted" path instead of the "release a parked caller" one, so
+        // the test passed having exercised the weaker case.
+        //
+        // And it is a PROOF, not a heuristic: call() holds the lock continuously
+        // from setting state_ = Requested until cv_.wait atomically releases it,
+        // so acquiring the lock here and seeing Requested means the caller has
+        // necessarily reached that wait.
+        bool pending() const
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            return state_ == State::Requested;
+        }
+
         // Engine thread: if a request is pending, move its payload into `out`,
         // transition to InFlight, and return true; the caller stays parked until a
         // matching publish() (which may run on a different thread). Returns false

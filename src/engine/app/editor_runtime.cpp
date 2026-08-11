@@ -753,6 +753,21 @@ namespace wz::app
         }
     }
 
+    int EditorRuntimeControl::active_caller_count() const
+    {
+        return active_callers_.load(std::memory_order_acquire);
+    }
+
+    bool EditorRuntimeControl::save_request_pending() const
+    {
+        return save_.pending();
+    }
+
+    bool EditorRuntimeControl::bind_request_pending() const
+    {
+        return asset_graph_.pending();
+    }
+
     void EditorRuntimeControl::mark_finished()
     {
         {

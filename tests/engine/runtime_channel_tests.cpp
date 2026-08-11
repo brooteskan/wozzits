@@ -119,21 +119,42 @@ TEST(Mailbox, ConcurrentPostsAndDrainsLoseNothing)
     std::atomic<int> total{ 0 };
 
     // A drainer racing the producer, then a final drain to catch the tail.
+    //
+    // Run to a STOP FLAG, not a fixed 4000 spins. With the spin count the drainer
+    // could burn through every iteration before the producer got going -- the
+    // final drain then collected all 1000 on its own, the count came out right,
+    // and the test passed without a single concurrent drain having happened. The
+    // handshake below makes the overlap a fact rather than a hope.
+    std::atomic<bool> stop{ false };
     std::thread drainer([&] {
-        for (int spins = 0; spins < 4000; ++spins) {
+        while (!stop.load(std::memory_order_acquire)) {
             box.drain([&](int) { total.fetch_add(1, std::memory_order_relaxed); });
             std::this_thread::yield();
         }
+        box.drain([&](int) { total.fetch_add(1, std::memory_order_relaxed); });
     });
-    for (int i = 0; i < kPosts; ++i) {
+
+    // Post one and wait for the drainer to actually take it: from here on the
+    // drainer is provably live and racing the posts below.
+    box.post(0);
+    while (total.load(std::memory_order_relaxed) == 0) {
+        std::this_thread::yield();
+    }
+    const int taken_concurrently = total.load(std::memory_order_relaxed);
+
+    for (int i = 1; i < kPosts; ++i) {
         box.post(i);
     }
+    stop.store(true, std::memory_order_release);
     drainer.join();
     box.drain([&](int) { total.fetch_add(1, std::memory_order_relaxed); });
 
     // Append keeps every post, and drain hands each out exactly once.
     EXPECT_EQ(total.load(), kPosts);
     EXPECT_TRUE(box.empty());
+    EXPECT_GE(taken_concurrently, 1)
+        << "the drainer never ran concurrently with a post -- this test would "
+           "have been a single-threaded drain wearing a thread";
 }
 
 // ── coalesce_by ────────────────────────────────────────────────────────────
@@ -284,7 +305,14 @@ TEST(Request, AbandonReleasesABlockedCallerAsUnserviced)
     RequestOutcome<int> out{ true, 999 };  // seed with non-default to prove it clears
 
     std::thread caller([&] { out = req.call(5); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));  // let it park
+
+    // Wait for the caller to be PROVABLY parked, rather than sleeping 50ms and
+    // hoping. If the abandon lands first, call() takes its "already abandoned"
+    // early return instead -- serviced is still false, so the test passes having
+    // exercised the wrong path entirely.
+    while (!req.pending()) {
+        std::this_thread::yield();
+    }
 
     req.abandon();
     caller.join();

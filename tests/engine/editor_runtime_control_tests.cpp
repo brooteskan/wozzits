@@ -707,9 +707,13 @@ TEST(EditorRuntimeControl, BeginCloseReleasesAParkedCallerSoTheDrainTerminates)
     wz::asset::AssetGraphDraft draft = make_draft(3);
     std::thread caller([&] { report = control->bind_asset_graph(draft); });
 
-    // Let the caller reach the wait. No handshake to poll on, so this is a
-    // sleep; the assertions below do not depend on it being exact.
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Wait for the caller to be provably parked in the bind. There IS a handshake
+    // to poll now (bind_request_pending): the sleep this replaces silently
+    // exercised the "caller never arrived" path whenever 50ms was not enough, and
+    // that path does not test what this test is named for.
+    while (!control->bind_request_pending()) {
+        std::this_thread::yield();
+    }
 
     control->begin_close();
     control->wait_for_callers_to_exit();
@@ -778,9 +782,15 @@ TEST(EditorRuntimeControl, DestroyingRightAfterTheDrainIsSafeUnderConcurrentCall
         // Every caller must be INSIDE before the owner closes. The interlock
         // covers calls already in flight; it cannot cover a call that has not
         // started yet, and neither can any handle-based C API (that is the
-        // host's use-after-free, not ours). Nothing services these verbs, so
-        // after this sleep all four are parked in their waits.
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        // host's use-after-free, not ours).
+        //
+        // Waited on rather than slept for: with a 50ms sleep, a scheduling hiccup
+        // meant some callers had not entered yet, so the round tested a smaller
+        // set than it claimed and still passed. active_caller_count is exactly
+        // "how many are inside", which is the precondition this test needs.
+        while (control->active_caller_count() < kCallers) {
+            std::this_thread::yield();
+        }
 
         control->begin_close();
         control->wait_for_callers_to_exit();
@@ -950,7 +960,14 @@ TEST(EditorRuntimeControl, BeginCloseReleasesAParkedSaveCaller)
     bool serviced = true;
     std::thread caller(
         [&] { serviced = control->save_scene_blocking().serviced; });
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));  // let it park
+
+    // Provably parked in the save before the close, rather than a 50ms guess --
+    // otherwise begin_close() can land before the caller ever posts, and the test
+    // passes through the "refused on arrival" path instead of the
+    // "released while parked" one it is named for.
+    while (!control->save_request_pending()) {
+        std::this_thread::yield();
+    }
 
     control->begin_close();
     control->wait_for_callers_to_exit();

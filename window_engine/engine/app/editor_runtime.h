@@ -458,6 +458,22 @@ namespace wz::app
         // released. MUST be called before destroying this object.
         void wait_for_callers_to_exit();
 
+        // ── teardown observability ─────────────────────────────────────────
+        //
+        // The teardown-race tests could not observe the state they were built to
+        // exercise, so they slept ~50ms and hoped. When the sleep lost, the test
+        // silently exercised a WEAKER path (a caller that had not arrived yet
+        // rather than one parked mid-verb) and still passed -- which is the worst
+        // outcome for a test guarding an unkillable-editor bug.
+        //
+        // How many callers are admitted and inside a blocking verb right now.
+        [[nodiscard]] int active_caller_count() const;
+
+        // Whether a caller is parked in that specific verb, waiting for the
+        // engine thread. Proof rather than a timing guess -- see Request::pending.
+        [[nodiscard]] bool save_request_pending() const;
+        [[nodiscard]] bool bind_request_pending() const;
+
         void request_stop();
         [[nodiscard]] bool stop_requested() const;
 

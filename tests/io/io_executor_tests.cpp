@@ -22,6 +22,36 @@ namespace
 {
     using wz::io::IoExecutor;
 
+    // A job that blocks until the test lets it go. Replaces "sleep 20ms in the
+    // head job and assume the posts below queued up behind it": when that
+    // assumption lost, the head had already retired, nothing was queued, and the
+    // test passed having checked a plain sequential drain. With a gate the
+    // occupancy is a fact -- the worker cannot leave the job until released.
+    struct Gate
+    {
+        std::atomic<bool> entered{ false };
+        std::atomic<bool> open{ false };
+
+        // Called from inside the job.
+        void block_until_released()
+        {
+            entered.store(true, std::memory_order_release);
+            while (!open.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        }
+
+        // Called from the test: returns once the job is provably running.
+        void await_entry() const
+        {
+            while (!entered.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        }
+
+        void release() { open.store(true, std::memory_order_release); }
+    };
+
     TEST(IoExecutor, RunsPostedClosureOffTheCallingThread)
     {
         IoExecutor io(2);
@@ -62,17 +92,25 @@ namespace
     {
         constexpr int N = 64;
         std::atomic<int> ran{ 0 };
+        Gate head;
         {
             IoExecutor io(1);
             EXPECT_TRUE(io.post([&]
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                head.block_until_released();
                 ran.fetch_add(1, std::memory_order_relaxed);
             }));
+
+            // The lane's ONE thread is now provably inside the head job, so every
+            // post below genuinely queues behind it -- which is the state this
+            // test claims to tear down from.
+            head.await_entry();
             for (int i = 0; i < N; ++i)
                 EXPECT_TRUE(io.post(
                     [&] { ran.fetch_add(1, std::memory_order_relaxed); }));
-        }  // destructor: drain the slow job + all N queued behind it
+
+            head.release();
+        }  // destructor: drain the head job + all N queued behind it
         EXPECT_EQ(ran.load(), N + 1);
     }
 
@@ -114,13 +152,18 @@ namespace
     {
         constexpr int N = 256;
         std::atomic<int> ran{ 0 };
+        Gate head;
         IoExecutor io(1);  // one thread: everything after the head is truly queued
 
         EXPECT_TRUE(io.post([&]
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            head.block_until_released();
             ran.fetch_add(1, std::memory_order_relaxed);
         }));
+
+        // Gated, not slept: the worker is provably occupied, so the backlog below
+        // is genuinely a backlog rather than jobs that may already have run.
+        head.await_entry();
         for (int i = 0; i < N; ++i)
             EXPECT_TRUE(io.post([&] { ran.fetch_add(1, std::memory_order_relaxed); }));
 
@@ -134,6 +177,7 @@ namespace
             ran.fetch_add(1, std::memory_order_relaxed);
         }));
 
+        head.release();
         io.quiesce();
         EXPECT_EQ(ran.load(), N + 2);
     }
@@ -199,6 +243,14 @@ namespace
 
     // Work posted from inside a running job is refused once quiesce() has begun,
     // so the barrier cannot be extended indefinitely by the jobs it is draining.
+    //
+    // The one timing assumption left in this file, and deliberately: the ordering
+    // needed is "quiesce() clears accepting_ before the job's inner post", and
+    // quiesce() blocks the calling thread, so there is no thread left to open a
+    // gate from. What makes it acceptable is the FAILURE DIRECTION -- if the 20ms
+    // is somehow lost, the inner post succeeds, refused stays 0, and the
+    // expectation below FAILS loudly. It cannot degrade into a quiet pass, which
+    // is what the sleeps elsewhere in this file did before they became gates.
     TEST(IoExecutor, QuiesceTerminatesWhenAJobPostsMoreWork)
     {
         std::atomic<int> ran{ 0 };
