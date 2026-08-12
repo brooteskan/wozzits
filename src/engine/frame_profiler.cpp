@@ -7,6 +7,9 @@
 #include <file/filesystem.h>
 #include <logging/logger.h>
 
+#include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <string>
 
@@ -126,21 +129,40 @@ namespace wz::engine
             return;
         }
 
-        // Mint a wall-clock run tag ONCE per capture so each play session writes
-        // its OWN frame_profile_<tag>.csv. Successive play/stop cycles are separate
-        // host processes that all flushed one fixed filename before, so a later
-        // (e.g. no-spawn) run silently clobbered an earlier spawn run (#252).
+        // Mint a run tag ONCE per capture so each play session writes its OWN
+        // frame_profile_<tag>.csv. A bare second-resolution stamp let two flushes
+        // inside the same wall-clock second collide on one filename -- the later
+        // one silently clobbered the earlier (#252, and the sub-second cadence a
+        // single process hits when a user toggles capture off/on quickly). The
+        // tag is now second stamp + millisecond field + a process-local monotonic
+        // sequence: the sequence makes two captures in the SAME process always
+        // distinct (the ms field alone can repeat), and the ms field keeps
+        // separate processes flushing in the same second apart.
         if (run_tag_.empty()) {
-            const std::time_t now = std::time(nullptr);
+            const auto now = std::chrono::system_clock::now();
+            const std::time_t secs = std::chrono::system_clock::to_time_t(now);
+            const long long ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now.time_since_epoch()).count() % 1000;
             std::tm lt{};
 #ifdef _WIN32
-            localtime_s(&lt, &now);
+            localtime_s(&lt, &secs);
 #else
-            localtime_r(&now, &lt);
+            localtime_r(&secs, &lt);
 #endif
             char stamp[24] = {};
             std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &lt);
-            run_tag_ = stamp;
+
+            static std::atomic<std::uint64_t> mint_seq{ 0 };
+            const std::uint64_t seq =
+                mint_seq.fetch_add(1, std::memory_order_relaxed);
+
+            std::string ms_field = std::to_string(ms);
+            while (ms_field.size() < 3) {
+                ms_field.insert(ms_field.begin(), '0');
+            }
+            run_tag_ =
+                std::string(stamp) + "_" + ms_field + "_" + std::to_string(seq);
         }
 
         // Rows = frames, columns = the recorded metrics. The schema is
