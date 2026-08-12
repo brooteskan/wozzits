@@ -368,14 +368,13 @@ namespace wz::engine::assets::internal
 
             // Color: SH DC coefficient -> linear display RGB.
             //
-            // NOT clamped to [0,1], and this is the LIVE path -- the resident
-            // buffer the SplatPull VS reads. The canonical `decode_splat`
-            // clamps and pins both endpoints in a test; this decode was
-            // replicated from the legacy `make_gpu_splat_vertex` after ITS
-            // clamp had already been commented out (`6efca33b`, no reason
-            // recorded), so the omission propagated rather than being chosen.
-            // Whether the live path should clamp is #316 C3-Q2 -- it changes
-            // what renders, so it is not a comment fix. Note there is no
+            // NOT clamped to [0,1]. This is the sole decode -- the resident
+            // buffer the SplatPull VS reads. It was replicated from the legacy
+            // `make_gpu_splat_vertex` after ITS clamp had already been commented
+            // out (`6efca33b`, no reason recorded), so the omission propagated
+            // rather than being chosen. Whether the path should clamp is #277
+            // C3-Q2 -- it changes what renders, so it is not a comment fix.
+            // Note there is no
             // tonemap in the engine either (#288 puts post-processing below
             // its own R1), so an out-of-range colour is not headroom for
             // anything downstream today; it clips at the backbuffer.

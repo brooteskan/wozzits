@@ -136,7 +136,6 @@ target_sources(window_engine PRIVATE
     audio/scene_audio.cpp
 
     assets/gaussian_splat/gaussian_splat.cpp
-    assets/gaussian_splat/gaussian_splat_decode.cpp
     assets/gaussian_splat/gaussian_splat_compilers.cpp
     assets/gaussian_splat/gaussian_splat_terrain_surface_compiler.cpp
     assets/gaussian_splat/terrain_splat_from_gaea_r32_compiler.cpp
@@ -195,8 +194,6 @@ target_sources(window_engine PRIVATE
     assets/sky_gaussian/sky_gaussian_serialize.cpp
     assets/sky_gaussian/sky_gaussian_compilers.cpp
     assets/sky_gaussian_asset_module.cpp
-
-    lighting/sg_lighting.cpp
 
     motion/motion_filter.cpp
 

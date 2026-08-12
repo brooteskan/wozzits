@@ -1549,7 +1549,6 @@ if(WINDOW_ENGINE_ENABLE_TESTS)
     rs_add_test_group(sky_gaussian test_fit_convergence)
     rs_add_test_group(sky_gaussian test_creative_params)
 
-    rs_add_test_group(lighting test_sg_lighting)
     rs_add_test_group(starfield test_star_catalog)
     rs_add_test_group(starfield test_star_catalog_ply_import)
     rs_add_test_group(motion test_motion_filter)

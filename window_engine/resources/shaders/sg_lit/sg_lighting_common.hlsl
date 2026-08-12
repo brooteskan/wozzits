@@ -1,8 +1,10 @@
 // resources/shaders/sg_lit/sg_lighting_common.hlsl
 //
-// The SG-lit BRDF, shared by every sg_lit pixel shader (issue #289). A direct
-// HLSL port of wz::engine::lighting (sg_lighting.cpp), evaluated against the
-// resident sky_gaussian lobe buffer: diffuse (cosine lobe as an SG) +
+// The SG-lit BRDF, shared by every sg_lit pixel shader (issue #289). This is
+// the sole implementation of the SG lighting model (the CPU reference it was
+// modelled on was removed once it had no caller -- issue #277 C3-H21). It is
+// evaluated against the resident sky_gaussian lobe buffer: diffuse (cosine
+// lobe as an SG) +
 // warped-NDF specular ("sky in reflections"), then the exact Cook-Torrance
 // layer for the distant emitters (sun/moon).
 //

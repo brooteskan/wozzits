@@ -697,15 +697,6 @@ and multi-field recipe) plus optional color-LOD pass into a single
 `compile_terrain_splat_surface()` call. Value-type input/output, no GPU, no
 asset system, no side effects. Used by the toolhost for live tuning recompiles.
 
-### DecodedGaussianSplat
-
-**Header:** `engine/assets/gaussian_splat/gaussian_splat_decode.h`
-
-CPU-side decode of a `GaussianSplat` from its stored encoding (log-scale,
-logit-opacity, SH-DC color, PLY-convention quaternion) into world-space values.
-Centralizes the decode steps previously duplicated across the GPU upload path,
-terrain compiler, and toolhost.
-
 ### TerrainSplatPresets
 
 **Header:** `engine/assets/gaussian_splat/gaussian_splat_terrain_preset.h`
